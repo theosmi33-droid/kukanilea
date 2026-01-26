@@ -20,3 +20,5 @@ Tophandwerk_DB.sqlite3-*
 
 # Logs
 *.log
+den/
+speichern/
