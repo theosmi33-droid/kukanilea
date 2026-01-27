@@ -1358,3 +1358,241 @@ def process_with_answers(file_path: Path, answers: Dict[str, str]) -> Tuple[Path
         pass
 
     return folder, final_path, created_new
+# ==============================
+# Index (BASE_PATH only) + Dedupe + Versions
+# ==============================
+import os
+import hashlib
+
+INDEX_SUPPORTED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(chunk_size)
+            if not b:
+                break
+            h.update(b)
+    return h.hexdigest()
+
+def _iter_files_under(root: Path):
+    # scan only BASE_PATH, ignore hidden
+    root = root.resolve()
+    if not root.exists():
+        return
+    for dirpath, dirnames, filenames in os.walk(root):
+        # skip hidden dirs
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for fn in filenames:
+            if fn.startswith("."):
+                continue
+            p = Path(dirpath) / fn
+            try:
+                if not p.is_file():
+                    continue
+            except Exception:
+                continue
+            ext = p.suffix.lower()
+            if ext in INDEX_SUPPORTED_EXT:
+                yield p
+
+def _db_exec(con, sql: str, params=()):
+    cur = con.cursor()
+    cur.execute(sql, params)
+    return cur
+
+def _db_table_has_column(con, table: str, col: str) -> bool:
+    try:
+        cur = con.cursor()
+        cur.execute(f"PRAGMA table_info({table})")
+        cols = [r[1] for r in cur.fetchall()]
+        return col in cols
+    except Exception:
+        return False
+
+def _ensure_index_tables():
+    """
+    Create minimal index tables if missing.
+    This must NOT crash on older DBs.
+    """
+    con = db_connect()
+    cur = con.cursor()
+
+    # documents table (doc_id as PK)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS documents(
+        doc_id TEXT PRIMARY KEY,
+        kdnr TEXT,
+        object_path TEXT,
+        doctype TEXT,
+        title TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        current_version_id TEXT
+    )""")
+
+    # versions table
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS document_versions(
+        version_id TEXT PRIMARY KEY,
+        doc_id TEXT,
+        file_path TEXT,
+        sha256 TEXT,
+        size INTEGER,
+        mtime_ns INTEGER,
+        created_at TEXT
+    )""")
+
+    # indices (safe)
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions(doc_id)")
+    except Exception:
+        pass
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_sha ON document_versions(sha256)")
+    except Exception:
+        pass
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_kdnr ON documents(kdnr)")
+    except Exception:
+        pass
+
+    con.commit()
+    con.close()
+
+def index_upsert_file(file_path: Path, kdnr: str = "", doctype: str = "") -> str:
+    """
+    Upsert one file into documents + document_versions.
+    Dedupe by doc_id = sha256(content).
+    Adds a new version row if file_path or mtime differs and version_id not present.
+    """
+    _ensure_index_tables()
+
+    p = Path(file_path)
+    if not p.exists():
+        raise FileNotFoundError(str(p))
+    if p.suffix.lower() not in INDEX_SUPPORTED_EXT:
+        return ""
+
+    st = p.stat()
+    sha = _sha256_file(p)
+    doc_id = sha  # content-addressed doc_id
+
+    now = datetime.now().isoformat(timespec="seconds")
+    title = p.stem
+
+    # version_id: stable per path+mtime+sha
+    version_id = hashlib.sha1(f"{sha}|{st.st_size}|{st.st_mtime_ns}|{p.resolve()}".encode("utf-8", "ignore")).hexdigest()
+
+    con = db_connect()
+    cur = con.cursor()
+
+    # upsert documents
+    cur.execute("SELECT doc_id, current_version_id FROM documents WHERE doc_id=?", (doc_id,))
+    row = cur.fetchone()
+    if row is None:
+        cur.execute("""
+          INSERT INTO documents(doc_id,kdnr,object_path,doctype,title,created_at,updated_at,current_version_id)
+          VALUES(?,?,?,?,?,?,?,?)
+        """, (doc_id, kdnr or None, None, (doctype or None), title, now, now, version_id))
+    else:
+        # update meta if provided
+        cur.execute("""
+          UPDATE documents SET
+            kdnr=COALESCE(?, kdnr),
+            doctype=COALESCE(?, doctype),
+            title=COALESCE(?, title),
+            updated_at=?,
+            current_version_id=?
+          WHERE doc_id=?
+        """, (kdnr or None, doctype or None, title or None, now, version_id, doc_id))
+
+    # insert version if not exists
+    cur.execute("SELECT version_id FROM document_versions WHERE version_id=?", (version_id,))
+    if cur.fetchone() is None:
+        cur.execute("""
+          INSERT INTO document_versions(version_id,doc_id,file_path,sha256,size,mtime_ns,created_at)
+          VALUES(?,?,?,?,?,?,?)
+        """, (version_id, doc_id, str(p.resolve()), sha, int(st.st_size), int(st.st_mtime_ns), now))
+
+    con.commit()
+    con.close()
+    return doc_id
+
+def index_run_full(scan_limit: Optional[int] = None) -> Dict[str, int]:
+    """
+    Full scan of BASE_PATH only.
+    No OCR. No Eingang.
+    """
+    _ensure_index_tables()
+
+    files_seen = 0
+    docs_upserted = 0
+
+    for p in _iter_files_under(BASE_PATH):
+        try:
+            files_seen += 1
+            doc_id = index_upsert_file(p)
+            if doc_id:
+                docs_upserted += 1
+        except Exception:
+            # best effort; do not crash full scan
+            pass
+
+        if scan_limit and files_seen >= scan_limit:
+            break
+
+    return {"files_seen": files_seen, "docs_upserted": docs_upserted}
+
+def index_search(query: str, role: str = "ADMIN", limit: int = 20) -> List[Dict]:
+    """
+    Minimal search: filename/title contains query (case-insensitive).
+    RBAC gating will be added when template_nodes are fully wired to docs.
+    For now:
+      - ADMIN: sees all
+      - non-admin: sees nothing (secure default)
+    """
+    q = normalize_ws(query or "").strip()
+    if not q:
+        return []
+
+    if (role or "").upper() != "ADMIN":
+        return []
+
+    _ensure_index_tables()
+
+    con = db_connect()
+    cur = con.cursor()
+    like = f"%{q.lower()}%"
+    cur.execute("""
+      SELECT d.doc_id, d.title, d.kdnr, d.doctype, d.current_version_id,
+             v.file_path,
+             (SELECT COUNT(*) FROM document_versions vv WHERE vv.doc_id=d.doc_id) as version_count
+      FROM documents d
+      LEFT JOIN document_versions v ON v.version_id = d.current_version_id
+      WHERE lower(d.title) LIKE ?
+      ORDER BY d.updated_at DESC
+      LIMIT ?
+    """, (like, int(limit)))
+
+    rows = cur.fetchall()
+    con.close()
+
+    out = []
+    for r in rows:
+        out.append({
+            "doc_id": r[0],
+            "title": r[1],
+            "kdnr": r[2],
+            "doctype": r[3],
+            "current_path": r[5],
+            "version_count": int(r[6] or 0),
+        })
+    return out
+
+def assistant_sync_index(scan_limit: Optional[int] = None) -> Dict[str, int]:
+    """
+    Backward compatible wrapper.
+    """
+    return index_run_full(scan_limit=scan_limit)
