@@ -2,14 +2,16 @@
 # -*- coding: utf-8 -*-
 
 """
-Tophandwerk Core
+Tophandwerk Core (KUKANILEA Systems)
+
 - stabile Exporte / API-Contract für Flask UI
 - Background Analyse + Progress (Pending/Done JSON)
 - robuste Bestandskunden-Erkennung (underscore + commas)
 - Template-Repair (01..09 + Unterordner in -01)
-- bessere PDF-Extraktion: Seite 1, Region-für-Region, sinnvolle Reihenfolge, Bold/Font/Mitte gewichtung für Preview
-- SQLite “Memory”: customers, objects, documents, users/roles, audit
-- Assistant: Index + Search (inkl. Plug&Play: scan BASE_PATH)
+- bessere PDF-Extraktion: Seite 1, Region-für-Region, sinnvolle Reihenfolge,
+  Bold/Font/Mitte Gewichtung für Preview
+- SQLite “Memory”: customers, objects, documents (+versions), users/roles, audit
+- Assistant: Index + Search (Plug&Play: scan BASE_PATH), Dedupe von Zeitstempel-Suffixen
 """
 
 import os
@@ -81,6 +83,7 @@ DOCTYPE_TO_01 = {
     "RE": "Rechnungen",
     "MAHNUNG": "Mahnungen",
     "NACHTRAG": "Nachtraege",
+    "FOTO": "",  # Fotos werden in -06 erwartet (Mapping später per Admin-Template)
 }
 
 # Kundennummer / Heuristiken
@@ -88,12 +91,15 @@ KDN_RE = re.compile(r"\b(\d{3,12})\b")
 KUNDEN_KEY_RE = re.compile(r"(kundennr|kunden\-nr|kunden nr|kdnr|kd\-nr)\s*[:#]?\s*(\d{3,12})", re.IGNORECASE)
 PLZORT_RE = re.compile(r"\b(\d{5})\s+([A-ZÄÖÜ][a-zäöüß\-]+(?:\s+[A-ZÄÖÜ][a-zäöüß\-]+)*)\b")
 
-# Straße + Nr: deutlich toleranter (str / str. / straße etc.)
+# Straße + Nr: tolerant (str / str. / straße etc.)
 STREET_RE = re.compile(
     r"\b([A-ZÄÖÜa-zäöüß][\wÄÖÜäöüß\.\- ]{2,70}"
     r"(straße|strasse|str\.|str|weg|platz|allee|damm|ring|ufer|gasse|chaussee|promenade|höhe|hof|steig|pfad))\s+(\d{1,4}[a-zA-Z]?)\b",
     re.IGNORECASE
 )
+
+# dedupe suffix: "..._114520" (6 digits at end)
+_DEDUPE_TS_SUFFIX_RE = re.compile(r"_(\d{6})$")
 
 
 # ============================================================
@@ -165,17 +171,14 @@ def _db_table_columns(con: sqlite3.Connection, table: str) -> List[str]:
         return []
 
 
-def _db_has_table(con: sqlite3.Connection, table: str) -> bool:
-    cur = con.cursor()
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-    return cur.fetchone() is not None
-
-
 def _db_add_column_if_missing(con: sqlite3.Connection, table: str, col: str, decl: str):
     cols = _db_table_columns(con, table)
     if col in cols:
         return
-    con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    try:
+        con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    except Exception:
+        pass
 
 
 def _db_create_index_safe(con: sqlite3.Connection, sql: str):
@@ -219,35 +222,61 @@ def db_init():
     _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_objects_kdnr ON objects(kdnr)")
     _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_objects_folder_path ON objects(folder_path)")
 
-    # documents (Assistant index)
+    # documents (Assistant index master)
+    # canonical doc entity: doc_id
     cur.execute("""
     CREATE TABLE IF NOT EXISTS documents(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_id TEXT PRIMARY KEY,
+        title TEXT,
         kdnr TEXT,
         doctype TEXT,
-        file_path TEXT,
+        current_path TEXT,
         file_name TEXT,
         file_hash TEXT,
         preview TEXT,
         extracted_text TEXT,
+        version_count INTEGER,
         indexed_at TEXT
     )""")
-    # migrations: add any missing columns (future-proof)
     for col, decl in [
+        ("doc_id", "TEXT"),
+        ("title", "TEXT"),
         ("kdnr", "TEXT"),
         ("doctype", "TEXT"),
-        ("file_path", "TEXT"),
+        ("current_path", "TEXT"),
         ("file_name", "TEXT"),
         ("file_hash", "TEXT"),
         ("preview", "TEXT"),
         ("extracted_text", "TEXT"),
+        ("version_count", "INTEGER"),
         ("indexed_at", "TEXT"),
     ]:
         _db_add_column_if_missing(con, "documents", col, decl)
 
-    _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(file_path)")
     _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_documents_kdnr ON documents(kdnr)")
+    _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_documents_doctype ON documents(doctype)")
+    _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(current_path)")
     _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_documents_name ON documents(file_name)")
+    _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_documents_title ON documents(title)")
+
+    # versions: append-only history per doc_id
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS document_versions(
+        version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_id TEXT,
+        file_path TEXT,
+        file_hash TEXT,
+        created_at TEXT
+    )""")
+    for col, decl in [
+        ("doc_id", "TEXT"),
+        ("file_path", "TEXT"),
+        ("file_hash", "TEXT"),
+        ("created_at", "TEXT"),
+    ]:
+        _db_add_column_if_missing(con, "document_versions", col, decl)
+    _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_docvers_doc_id ON document_versions(doc_id)")
+    _db_create_index_safe(con, "CREATE INDEX IF NOT EXISTS idx_docvers_path ON document_versions(file_path)")
 
     # RBAC
     cur.execute("""
@@ -287,7 +316,6 @@ def db_init():
 # RBAC (minimal)
 # ============================================================
 def _pw_hash(username: str, password: str) -> str:
-    # salted with username; stable and local-only
     raw = (username.lower().strip() + "|" + password).encode("utf-8", errors="ignore")
     return hashlib.sha256(raw).hexdigest()
 
@@ -423,7 +451,6 @@ def parse_folder_fields_underscore(foldername: str) -> Dict[str, str]:
 
 
 def parse_folder_fields_commas(foldername: str) -> Dict[str, str]:
-    # Beispiel: "3648 BBB SO Wuhlheide, Treskowallee 211, 12459 Berlin"
     out = {"kdnr": "", "name": "", "addr": "", "plzort": ""}
     parts = [p.strip() for p in (foldername or "").split(",") if p.strip()]
     if not parts:
@@ -510,7 +537,7 @@ def best_match_object_folder(existing_folders: List[Path], addr: str, plzort: st
 
 
 # ============================================================
-# DB “Memory”: customers/objects/documents
+# DB “Memory”: customers/objects
 # ============================================================
 def db_upsert_customer(kdnr: str, name: str, addr: str, plzort: str):
     db_init()
@@ -563,68 +590,6 @@ def db_touch_object_used(folder_path: str):
     con.close()
 
 
-def db_add_or_update_document(kdnr: str, doctype: str, file_path: str, preview: str = "", extracted_text: str = ""):
-    db_init()
-    fp = str(Path(file_path).resolve())
-    fn = Path(fp).name
-    fh = file_hash(Path(fp))
-    now = datetime.now().isoformat(timespec="seconds")
-
-    con = db_connect()
-    # dedupe by file_path (canonical)
-    con.execute("DELETE FROM documents WHERE file_path=?", (fp,))
-    con.execute("""
-      INSERT INTO documents(kdnr, doctype, file_path, file_name, file_hash, preview, extracted_text, indexed_at)
-      VALUES(?,?,?,?,?,?,?,?)
-    """, (kdnr, doctype, fp, fn, fh, preview, extracted_text, now))
-    con.commit()
-    con.close()
-
-
-def db_search_documents(query: str, kdnr: str = "", limit: int = 25) -> List[Dict]:
-    db_init()
-    q = (query or "").strip()
-    if not q:
-        return []
-    k = (kdnr or "").strip()
-
-    like = f"%{q}%"
-    con = db_connect()
-    cur = con.cursor()
-
-    if k:
-        cur.execute("""
-          SELECT kdnr, doctype, file_path, file_name, preview
-          FROM documents
-          WHERE kdnr=?
-            AND (file_name LIKE ? OR file_path LIKE ? OR preview LIKE ? OR extracted_text LIKE ?)
-          ORDER BY indexed_at DESC
-          LIMIT ?
-        """, (k, like, like, like, like, int(limit)))
-    else:
-        cur.execute("""
-          SELECT kdnr, doctype, file_path, file_name, preview
-          FROM documents
-          WHERE (file_name LIKE ? OR file_path LIKE ? OR preview LIKE ? OR extracted_text LIKE ?)
-          ORDER BY indexed_at DESC
-          LIMIT ?
-        """, (like, like, like, like, int(limit)))
-
-    rows = cur.fetchall()
-    con.close()
-
-    out = []
-    for r in rows:
-        out.append({
-            "kdnr": r[0],
-            "doctype": r[1],
-            "file_path": r[2],
-            "file_name": r[3],
-            "preview": (r[4] or "")[:500],
-        })
-    return out
-
-
 # ============================================================
 # Sync DB (customers/objects) aus BASE_PATH (performant)
 # ============================================================
@@ -652,25 +617,47 @@ def sync_db_from_filesystem(base_path: Path):
 
 
 # ============================================================
-# Assistant Index (Plug&Play): scan BASE_PATH for existing docs
+# Assistant Index (Documents) — BASE_PATH only
 # ============================================================
-def _infer_kdnr_from_path(fp: Path) -> str:
-    # Expect customer folder begins with digits
-    parts = fp.parts
-    for seg in parts:
-        if re.match(r"^\d{3,12}[_\s,]", seg) or re.match(r"^\d{3,12}$", seg):
-            m = re.match(r"^(\d{3,12})", seg)
-            if m:
-                return m.group(1)
-    # fallback: any digits folder name
-    for seg in parts:
-        m = re.match(r"^(\d{3,12})_", seg)
+def _canonicalize_path_for_dedupe(fp: Path) -> str:
+    """
+    Collapse variants like:
+      /.../RE_2026...pdf
+      /.../RE_2026..._114520.pdf
+    so they become the same canonical key.
+    """
+    p = fp
+    stem = _DEDUPE_TS_SUFFIX_RE.sub("", p.stem)
+    return (str(p.parent).lower() + "/" + stem.lower() + p.suffix.lower())
+
+
+def _doc_id_for_file(fp: Path) -> str:
+    key = _canonicalize_path_for_dedupe(fp)
+    return hashlib.sha256(key.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _file_hash_fast(fp: Path) -> str:
+    try:
+        st = fp.stat()
+        raw = f"{fp.resolve()}|{st.st_size}|{st.st_mtime_ns}".encode("utf-8", errors="ignore")
+        return hashlib.sha1(raw).hexdigest()
+    except Exception:
+        return hashlib.sha1(str(fp).encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _infer_kdnr_from_path(fp: Path) -> Optional[str]:
+    # try: customer folder begins with digits
+    for seg in fp.parts:
+        m = re.match(r"^(\d{3,12})[_\s,]", seg)
         if m:
             return m.group(1)
-    return ""
+        m2 = re.match(r"^(\d{3,12})$", seg)
+        if m2:
+            return m2.group(1)
+    return None
 
 
-def _infer_doctype_from_path(fp: Path) -> str:
+def _infer_doctype_from_path(fp: Path) -> Optional[str]:
     low = str(fp).lower()
     if "angebote" in low:
         return "ANGEBOT"
@@ -686,86 +673,212 @@ def _infer_doctype_from_path(fp: Path) -> str:
         return "NACHTRAG"
     if "fotos" in low:
         return "FOTO"
-    return "SONSTIGES"
+    return None
 
 
-def assistant_sync_index(base_path: Path = BASE_PATH, max_files: int = 2000):
+def _title_for_file(fp: Path) -> str:
+    # minimal, stable
+    return fp.stem
+
+
+def _doc_upsert(con: sqlite3.Connection, doc: dict, version_fp: str, version_hash: str):
+    now = datetime.now().isoformat(timespec="seconds")
+    cur = con.cursor()
+
+    cur.execute("SELECT current_path, file_hash, version_count FROM documents WHERE doc_id=?", (doc["doc_id"],))
+    row = cur.fetchone()
+
+    if row is None:
+        cur.execute("""
+          INSERT INTO documents(doc_id,title,kdnr,doctype,current_path,file_name,file_hash,preview,extracted_text,version_count,indexed_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            doc["doc_id"],
+            doc.get("title"),
+            doc.get("kdnr"),
+            doc.get("doctype"),
+            doc.get("current_path"),
+            doc.get("file_name"),
+            doc.get("file_hash"),
+            doc.get("preview"),
+            doc.get("extracted_text"),
+            1,
+            now
+        ))
+        cur.execute("""
+          INSERT INTO document_versions(doc_id,file_path,file_hash,created_at)
+          VALUES(?,?,?,?)
+        """, (doc["doc_id"], version_fp, version_hash, now))
+        return 1
+
+    current_path, current_hash, vcnt = row[0], row[1], int(row[2] or 1)
+
+    # if same canonical doc but new version (path/hash changes)
+    changed = (current_path != doc.get("current_path")) or (current_hash != doc.get("file_hash"))
+    if changed:
+        vcnt_new = vcnt + 1
+        cur.execute("""
+          UPDATE documents
+          SET title=?, kdnr=?, doctype=?, current_path=?, file_name=?, file_hash=?, preview=?, extracted_text=?, version_count=?, indexed_at=?
+          WHERE doc_id=?
+        """, (
+            doc.get("title"),
+            doc.get("kdnr"),
+            doc.get("doctype"),
+            doc.get("current_path"),
+            doc.get("file_name"),
+            doc.get("file_hash"),
+            doc.get("preview"),
+            doc.get("extracted_text"),
+            vcnt_new,
+            now,
+            doc["doc_id"]
+        ))
+        cur.execute("""
+          INSERT INTO document_versions(doc_id,file_path,file_hash,created_at)
+          VALUES(?,?,?,?)
+        """, (doc["doc_id"], version_fp, version_hash, now))
+        return 1
+
+    # unchanged -> still refresh indexed_at sometimes (cheap)
+    cur.execute("UPDATE documents SET indexed_at=? WHERE doc_id=?", (now, doc["doc_id"]))
+    return 0
+
+
+def index_run_full(max_files: Optional[int] = None) -> Dict[str, int]:
     """
-    Plug&Play: indexiert vorhandene Dokumente aus BASE_PATH.
-    - Fokus: PDFs (Seite 1 text layer), Images nur minimal (Dateiname) um nicht alles zu OCRn.
+    Vollindex über BASE_PATH.
+    - Eingang/Pending/Done wird NIE indexiert
+    - PDF: page1 dict extract (ohne OCR) für preview/extracted_text
+    - Images: nur light preview (kein OCR-Orgie)
     """
     db_init()
-    if not base_path.exists():
-        return
+    if not BASE_PATH.exists():
+        return {"files_seen": 0, "docs_upserted": 0, "errors": 0}
 
-    count = 0
-    for fp in base_path.rglob("*"):
-        if count >= max_files:
-            break
-        if not fp.is_file():
-            continue
-        ext = fp.suffix.lower()
-        if ext not in SUPPORTED_EXT:
-            continue
+    files_seen = 0
+    docs_upserted = 0
+    errors = 0
 
-        # skip Eingang/DONE/PENDING falls darin mal indexiert wird
-        try:
-            rp = fp.resolve()
-            if str(rp).startswith(str(EINGANG.resolve()) + os.sep):
+    base = BASE_PATH.resolve()
+    ingang = EINGANG.resolve()
+    pend = PENDING_DIR.resolve()
+    done = DONE_DIR.resolve()
+
+    con = db_connect()
+    try:
+        for fp in base.rglob("*"):
+            if max_files is not None and files_seen >= int(max_files):
+                break
+            if not fp.is_file():
                 continue
-            if str(rp).startswith(str(PENDING_DIR.resolve()) + os.sep):
+            ext = fp.suffix.lower()
+            if ext not in SUPPORTED_EXT:
                 continue
-            if str(rp).startswith(str(DONE_DIR.resolve()) + os.sep):
-                continue
-        except Exception:
-            pass
 
-        kdnr = _infer_kdnr_from_path(fp)
-        doctype = _infer_doctype_from_path(fp)
+            files_seen += 1
 
-        preview = ""
-        extracted = ""
-        # PDFs: leichter Extract, keine OCR-Orgie
-        if ext == ".pdf":
-            extracted, _, preview = extract_pdf_text_weighted(fp, allow_ocr=False)
-        else:
-            # Images: nur Dateiname/Path als “light index”
-            preview = fp.name
-            extracted = ""
+            try:
+                rp = fp.resolve()
+                s = str(rp)
+                if s.startswith(str(ingang) + os.sep) or s.startswith(str(pend) + os.sep) or s.startswith(str(done) + os.sep):
+                    continue
 
-        db_add_or_update_document(kdnr, doctype, str(fp), preview=preview[:900], extracted_text=extracted[:5000])
-        count += 1
+                doc_id = _doc_id_for_file(rp)
+                kdnr = _infer_kdnr_from_path(rp)
+                doctype = _infer_doctype_from_path(rp)
+
+                preview = ""
+                extracted = ""
+                if ext == ".pdf":
+                    extracted, _, preview = extract_pdf_text_weighted(rp, allow_ocr=False)
+                else:
+                    # light index
+                    preview = rp.name
+                    extracted = ""
+
+                doc = {
+                    "doc_id": doc_id,
+                    "title": _title_for_file(rp),
+                    "kdnr": kdnr,
+                    "doctype": doctype,
+                    "current_path": str(rp),
+                    "file_name": rp.name,
+                    "file_hash": _file_hash_fast(rp),
+                    "preview": (preview or "")[:900],
+                    "extracted_text": (extracted or "")[:8000],
+                }
+
+                docs_upserted += _doc_upsert(con, doc, version_fp=str(rp), version_hash=doc["file_hash"])
+
+            except Exception:
+                errors += 1
+
+        con.commit()
+    finally:
+        con.close()
+
+    return {"files_seen": files_seen, "docs_upserted": docs_upserted, "errors": errors}
 
 
-def assistant_search(query: str, kdnr: str = "", limit: int = 25) -> List[Dict]:
+def index_search(query: str, role: str = "ADMIN", limit: int = 25, kdnr: str = "") -> List[Dict]:
     """
-    Sucht nur in Kundenablage-Index (Eingang bleibt implizit im Hintergrund).
+    Simple search in documents index.
+    UI darf das als Assistant-Suche verwenden.
     """
-    # ensure at least some index exists (plug&play)
-    assistant_sync_index(BASE_PATH, max_files=800)
+    db_init()
+    q = (query or "").strip()
+    if not q:
+        return []
 
-    rows = db_search_documents(query=query, kdnr=kdnr, limit=limit)
+    like = f"%{q}%"
+    k = (kdnr or "").strip()
 
-    # Dedup: collapse variants "...file.pdf" and "...file_114520.pdf"
+    con = db_connect()
+    cur = con.cursor()
+    if k:
+        cur.execute("""
+          SELECT doc_id, title, kdnr, doctype, current_path, version_count
+          FROM documents
+          WHERE kdnr=?
+            AND (title LIKE ? OR file_name LIKE ? OR current_path LIKE ? OR preview LIKE ? OR extracted_text LIKE ?)
+          ORDER BY indexed_at DESC
+          LIMIT ?
+        """, (k, like, like, like, like, like, int(limit)))
+    else:
+        cur.execute("""
+          SELECT doc_id, title, kdnr, doctype, current_path, version_count
+          FROM documents
+          WHERE (title LIKE ? OR file_name LIKE ? OR current_path LIKE ? OR preview LIKE ? OR extracted_text LIKE ?)
+          ORDER BY indexed_at DESC
+          LIMIT ?
+        """, (like, like, like, like, like, int(limit)))
+
+    rows = cur.fetchall()
+    con.close()
+
     out = []
-    seen = set()
-
-    def _dedupe_key(path: str) -> str:
-        p = Path(path)
-        stem = re.sub(r"_(\d{6})$", "", p.stem)
-        return str(p.parent).lower() + "/" + stem.lower() + p.suffix.lower()
-
     for r in rows:
-        fp = r.get("file_path") or ""
-        if not fp:
-            continue
-        key = _dedupe_key(fp)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(r)
-
+        out.append({
+            "doc_id": r[0],
+            "title": r[1],
+            "kdnr": r[2],
+            "doctype": r[3],
+            "current_path": r[4],
+            "version_count": int(r[5] or 1),
+        })
     return out
+
+
+# Back-compat / UI helpers
+def assistant_sync_index():
+    return index_run_full()
+
+
+def assistant_search(query: str, kdnr: str = "", limit: int = 25, role: str = "ADMIN") -> List[Dict]:
+    # ensure some index exists; do a small incremental run (cheap)
+    index_run_full(max_files=2000)
+    return index_search(query=query, kdnr=kdnr, role=role, limit=limit)
 
 
 # ============================================================
@@ -774,29 +887,23 @@ def assistant_search(query: str, kdnr: str = "", limit: int = 25) -> List[Dict]:
 def _clean_text(s: str) -> str:
     if not s:
         return ""
-    # remove control characters but keep newline/tab
     s = "".join(ch for ch in s if ch == "\n" or ch == "\t" or (ord(ch) >= 32 and ord(ch) != 127))
-    # unify whitespace (but keep line breaks for structure)
     s = s.replace("\r", "\n")
     s = re.sub(r"\n{3,}", "\n\n", s)
-    # fix hyphenation across line breaks: "Ange-\nbot" -> "Angebot"
     s = re.sub(r"(\w)-\n(\w)", r"\1\2", s)
-    # normalize
-    s = s.strip()
-    return s
+    return s.strip()
 
 
 def _line_center_weight(y0: float, y1: float, page_h: float) -> float:
     if page_h <= 0:
         return 1.0
     yc = (y0 + y1) / 2.0
-    mid = page_h * 0.52  # leicht unter Mitte
+    mid = page_h * 0.52
     dist = abs(yc - mid) / page_h
     return max(0.30, 1.15 - dist * 1.6)
 
 
 def _sort_spans_reading_order(spans: List[dict]) -> List[dict]:
-    # Sort by y then x using bbox
     def key(s):
         bb = s.get("bbox") or [0, 0, 0, 0]
         return (round(float(bb[1]) / 3.0), float(bb[0]))
@@ -804,15 +911,10 @@ def _sort_spans_reading_order(spans: List[dict]) -> List[dict]:
 
 
 def _reconstruct_text_regions(page_dict: dict, page_h: float) -> Tuple[str, List[Tuple[float, str]]]:
-    """
-    Build structured text region-by-region (top/header, middle, bottom) using spans order.
-    Also returns scored lines for preview.
-    """
     blocks = (page_dict or {}).get("blocks", [])
-    all_lines = []
+    all_lines: List[str] = []
     scored_lines: List[Tuple[float, str]] = []
 
-    # Gather spans with positions
     spans_all = []
     for b in blocks:
         for ln in b.get("lines", []) or []:
@@ -826,11 +928,10 @@ def _reconstruct_text_regions(page_dict: dict, page_h: float) -> Tuple[str, List
     if not spans_all:
         return "", []
 
-    # Determine region boundaries (top/middle/bottom)
     top_cut = page_h * 0.25
     mid_cut = page_h * 0.70
-
     regions = {"TOP": [], "MID": [], "BOT": []}
+
     for s in spans_all:
         bb = s.get("bbox") or [0, 0, 0, 0]
         y = float(bb[1])
@@ -842,18 +943,16 @@ def _reconstruct_text_regions(page_dict: dict, page_h: float) -> Tuple[str, List
             regions["BOT"].append(s)
 
     def region_to_lines(spans: List[dict]) -> List[str]:
-        # Bucket by approximate line y
-        buckets = {}
+        buckets: Dict[int, List[dict]] = {}
         for s in spans:
             bb = s.get("bbox") or [0, 0, 0, 0]
             y = float(bb[1])
-            ky = round(y / 3.0)  # coarse lines
+            ky = round(y / 3.0)
             buckets.setdefault(ky, []).append(s)
 
         lines = []
         for ky in sorted(buckets.keys()):
             row = _sort_spans_reading_order(buckets[ky])
-            # join with spaces if needed
             parts = []
             prev_x1 = None
             for sp in row:
@@ -869,22 +968,19 @@ def _reconstruct_text_regions(page_dict: dict, page_h: float) -> Tuple[str, List
                 parts.append(t)
                 prev_x1 = float(bb[2])
             line = "".join(parts).strip()
-            # de-duplicate weird single chars
             line = re.sub(r"[•·]{2,}", "•", line)
             if line:
                 lines.append(line)
         return lines
 
-    # Build text in region order
     for reg in ["TOP", "MID", "BOT"]:
         lines = region_to_lines(regions[reg])
         if lines:
             all_lines.append(f"[{reg}]")
             all_lines.extend(lines)
-            all_lines.append("")  # blank line
+            all_lines.append("")
 
-    # For preview: score lines using font size + bold + center weight
-    # We'll score from original blocks/lines to better preserve bold/size
+    # preview scoring from original lines/spans
     for b in blocks:
         for ln in b.get("lines", []) or []:
             spans = ln.get("spans", []) or []
@@ -907,7 +1003,6 @@ def _reconstruct_text_regions(page_dict: dict, page_h: float) -> Tuple[str, List
                 fn = (sp.get("font") or "").lower()
                 if "bold" in fn:
                     boldish = 1.0
-
                 bb = sp.get("bbox") or None
                 if bb and len(bb) == 4:
                     y0 = min(y0, float(bb[1]))
@@ -923,18 +1018,10 @@ def _reconstruct_text_regions(page_dict: dict, page_h: float) -> Tuple[str, List
 
 
 def extract_pdf_text_weighted(p: Path, allow_ocr: bool = True) -> Tuple[str, bool, str]:
-    """
-    Returns: extracted_text, used_ocr, preview
-    - Page 1 only
-    - PyMuPDF dict extraction -> region reconstruction
-    - fallback pypdf text layer
-    - OCR only if allow_ocr and text layer weak
-    """
     used_ocr = False
     extracted_text = ""
     preview = ""
 
-    # Primary: PyMuPDF dict
     if fitz is not None:
         try:
             doc = fitz.open(p)
@@ -943,8 +1030,6 @@ def extract_pdf_text_weighted(p: Path, allow_ocr: bool = True) -> Tuple[str, boo
                 page_h = float(page.rect.height)
                 page_dict = page.get_text("dict")
                 extracted_text, scored_lines = _reconstruct_text_regions(page_dict, page_h)
-
-                # Preview = top scored lines
                 scored_lines.sort(key=lambda x: -x[0])
                 top = [t for _, t in scored_lines[:40]]
                 preview = normalize_ws(" | ".join(top))[:900]
@@ -953,7 +1038,6 @@ def extract_pdf_text_weighted(p: Path, allow_ocr: bool = True) -> Tuple[str, boo
             extracted_text = ""
             preview = ""
 
-    # Fallback: pypdf
     if (not extracted_text or len(extracted_text) < 120) and PdfReader is not None:
         try:
             reader = PdfReader(str(p))
@@ -966,7 +1050,6 @@ def extract_pdf_text_weighted(p: Path, allow_ocr: bool = True) -> Tuple[str, boo
         except Exception:
             pass
 
-    # OCR fallback (page 1 only)
     if allow_ocr and (not extracted_text or len(extracted_text) < 120) and fitz is not None:
         used_ocr = True
         try:
@@ -1021,7 +1104,6 @@ def rank_kundennummer(text: str) -> List[List]:
 
     for m in KDN_RE.finditer(t):
         k = m.group(1)
-        # defensive noise filter
         if len(k) == 4 and k.startswith("20"):
             continue
         ranked[k] = ranked.get(k, 0) + 10
@@ -1049,15 +1131,15 @@ def suggest_address(text: str) -> List[str]:
         cand = cand.replace(" Str ", " Strasse ").replace(" str ", " strasse ")
         if cand and cand not in out:
             out.append(cand)
-    # small extra heuristic: "Str." variants
+
     if not out:
         t = (text or "")
-        # detect "Xxxstr. 12"
         m2 = re.search(r"\b([A-ZÄÖÜa-zäöüß][\wÄÖÜäöüß\.\- ]{2,70}str\.)\s*(\d{1,4}[a-zA-Z]?)\b", t, flags=re.IGNORECASE)
         if m2:
             cand = f"{normalize_component(m2.group(1))} {normalize_component(m2.group(2))}"
             if cand not in out:
                 out.append(cand)
+
     return out[:10]
 
 
@@ -1127,15 +1209,6 @@ def file_token(p: Path) -> str:
     return hashlib.sha1(raw).hexdigest()
 
 
-def file_hash(p: Path) -> str:
-    try:
-        st = p.stat()
-        raw = f"{p.resolve()}|{st.st_size}|{st.st_mtime_ns}".encode("utf-8", errors="ignore")
-        return hashlib.sha1(raw).hexdigest()
-    except Exception:
-        return hashlib.sha1(str(p).encode("utf-8")).hexdigest()
-
-
 def write_pending(token: str, payload: Dict):
     PENDING_DIR.mkdir(parents=True, exist_ok=True)
     _save_json(PENDING_DIR / f"{token}.json", payload)
@@ -1195,7 +1268,6 @@ def _set_progress(token: str, pct: float, phase: str = ""):
 def _analyze_worker(token: str, file_path: Path):
     try:
         _set_progress(token, 2.0, "Datei vorbereitet")
-
         _set_progress(token, 6.0, "Bestand synchronisieren")
         sync_db_from_filesystem(BASE_PATH)
 
@@ -1225,8 +1297,8 @@ def _analyze_worker(token: str, file_path: Path):
             "status": "READY",
         })
         write_pending(token, payload)
-
         _set_progress(token, 100.0, "Fertig")
+
     except Exception as e:
         payload = read_pending(token) or {}
         payload["status"] = "ERROR"
@@ -1266,7 +1338,10 @@ def analyze_to_pending(file_path: Path) -> str:
 def target_subfolder(folder: Path, doctype: str) -> Path:
     dt = (doctype or "SONSTIGES").upper()
     if dt in DOCTYPE_TO_01:
-        return folder / TEMPLATE_SUBFOLDERS[0] / DOCTYPE_TO_01[dt]
+        # if admin later maps FOTO etc. elsewhere, this will be adjusted there
+        sub = DOCTYPE_TO_01.get(dt) or ""
+        if sub:
+            return folder / TEMPLATE_SUBFOLDERS[0] / sub
     return folder / TEMPLATE_SUBFOLDERS[8]
 
 
@@ -1283,6 +1358,7 @@ def standard_filename(doctype: str, kdnr: str, name: str, addr: str, plzort: str
         "AW": "AW",
         "MAHNUNG": "MAH",
         "NACHTRAG": "NTR",
+        "FOTO": "FOTO",
     }.get(doctype, "DOC")
 
     core = f"{code}_{dt}_{kdnr}_{name}_{addr}_{plzort}"
@@ -1293,20 +1369,17 @@ def standard_filename(doctype: str, kdnr: str, name: str, addr: str, plzort: str
 def choose_or_create_object_folder(kdnr: str, name: str, addr: str, plzort: str, prefer_path: str = "") -> Tuple[Path, bool]:
     existing = find_existing_customer_folders(BASE_PATH, kdnr)
 
-    # UI: explizit gewählt
     if prefer_path:
         fp = Path(prefer_path)
         if fp.exists() and fp.is_dir():
             ensure_template_structure(fp)
             return fp, False
 
-    # Fuzzy Match
     best, score = best_match_object_folder(existing, addr, plzort)
     if best is not None and score >= 0.86:
         ensure_template_structure(best)
         return best, False
 
-    # Neuer Ordner (underscore canonical)
     kdnr_n = normalize_component(kdnr)
     name_n = normalize_component(name)
     addr_n = normalize_component(addr)
@@ -1338,261 +1411,36 @@ def process_with_answers(file_path: Path, answers: Dict[str, str]) -> Tuple[Path
         ts = datetime.now().strftime("%H%M%S")
         final_path = dest_dir / f"{final_path.stem}_{ts}{final_path.suffix}"
 
-    # MOVE (niemals kopieren)
     shutil.move(str(file_path), str(final_path))
 
-    # DB Memory
     db_upsert_customer(kdnr, name, addr, plzort)
     db_upsert_object(kdnr, str(folder), folder.name, name, addr, plzort, detect_folder_format(folder.name))
     db_touch_object_used(str(folder))
 
-    # Index doc (Assistant): lightweight, prefer preview from filename if expensive
+    # Update index: cheap upsert of this single file
     try:
-        ext = final_path.suffix.lower()
+        # minimal content; no OCR
         preview = ""
         extracted = ""
-        if ext == ".pdf":
+        if final_path.suffix.lower() == ".pdf":
             extracted, _, preview = extract_pdf_text_weighted(final_path, allow_ocr=False)
-        db_add_or_update_document(kdnr, doctype, str(final_path), preview=preview[:900], extracted_text=extracted[:8000])
+        con = db_connect()
+        doc_id = _doc_id_for_file(final_path.resolve())
+        doc = {
+            "doc_id": doc_id,
+            "title": _title_for_file(final_path),
+            "kdnr": kdnr or _infer_kdnr_from_path(final_path),
+            "doctype": doctype or _infer_doctype_from_path(final_path),
+            "current_path": str(final_path.resolve()),
+            "file_name": final_path.name,
+            "file_hash": _file_hash_fast(final_path),
+            "preview": (preview or "")[:900],
+            "extracted_text": (extracted or "")[:8000],
+        }
+        _doc_upsert(con, doc, version_fp=doc["current_path"], version_hash=doc["file_hash"])
+        con.commit()
+        con.close()
     except Exception:
         pass
 
     return folder, final_path, created_new
-# ==============================
-# Index (BASE_PATH only) + Dedupe + Versions
-# ==============================
-import os
-import hashlib
-
-INDEX_SUPPORTED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
-
-def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while True:
-            b = f.read(chunk_size)
-            if not b:
-                break
-            h.update(b)
-    return h.hexdigest()
-
-def _iter_files_under(root: Path):
-    # scan only BASE_PATH, ignore hidden
-    root = root.resolve()
-    if not root.exists():
-        return
-    for dirpath, dirnames, filenames in os.walk(root):
-        # skip hidden dirs
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        for fn in filenames:
-            if fn.startswith("."):
-                continue
-            p = Path(dirpath) / fn
-            try:
-                if not p.is_file():
-                    continue
-            except Exception:
-                continue
-            ext = p.suffix.lower()
-            if ext in INDEX_SUPPORTED_EXT:
-                yield p
-
-def _db_exec(con, sql: str, params=()):
-    cur = con.cursor()
-    cur.execute(sql, params)
-    return cur
-
-def _db_table_has_column(con, table: str, col: str) -> bool:
-    try:
-        cur = con.cursor()
-        cur.execute(f"PRAGMA table_info({table})")
-        cols = [r[1] for r in cur.fetchall()]
-        return col in cols
-    except Exception:
-        return False
-
-def _ensure_index_tables():
-    """
-    Create minimal index tables if missing.
-    This must NOT crash on older DBs.
-    """
-    con = db_connect()
-    cur = con.cursor()
-
-    # documents table (doc_id as PK)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS documents(
-        doc_id TEXT PRIMARY KEY,
-        kdnr TEXT,
-        object_path TEXT,
-        doctype TEXT,
-        title TEXT,
-        created_at TEXT,
-        updated_at TEXT,
-        current_version_id TEXT
-    )""")
-
-    # versions table
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS document_versions(
-        version_id TEXT PRIMARY KEY,
-        doc_id TEXT,
-        file_path TEXT,
-        sha256 TEXT,
-        size INTEGER,
-        mtime_ns INTEGER,
-        created_at TEXT
-    )""")
-
-    # indices (safe)
-    try:
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions(doc_id)")
-    except Exception:
-        pass
-    try:
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_sha ON document_versions(sha256)")
-    except Exception:
-        pass
-    try:
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_kdnr ON documents(kdnr)")
-    except Exception:
-        pass
-
-    con.commit()
-    con.close()
-
-def index_upsert_file(file_path: Path, kdnr: str = "", doctype: str = "") -> str:
-    """
-    Upsert one file into documents + document_versions.
-    Dedupe by doc_id = sha256(content).
-    Adds a new version row if file_path or mtime differs and version_id not present.
-    """
-    _ensure_index_tables()
-
-    p = Path(file_path)
-    if not p.exists():
-        raise FileNotFoundError(str(p))
-    if p.suffix.lower() not in INDEX_SUPPORTED_EXT:
-        return ""
-
-    st = p.stat()
-    sha = _sha256_file(p)
-    doc_id = sha  # content-addressed doc_id
-
-    now = datetime.now().isoformat(timespec="seconds")
-    title = p.stem
-
-    # version_id: stable per path+mtime+sha
-    version_id = hashlib.sha1(f"{sha}|{st.st_size}|{st.st_mtime_ns}|{p.resolve()}".encode("utf-8", "ignore")).hexdigest()
-
-    con = db_connect()
-    cur = con.cursor()
-
-    # upsert documents
-    cur.execute("SELECT doc_id, current_version_id FROM documents WHERE doc_id=?", (doc_id,))
-    row = cur.fetchone()
-    if row is None:
-        cur.execute("""
-          INSERT INTO documents(doc_id,kdnr,object_path,doctype,title,created_at,updated_at,current_version_id)
-          VALUES(?,?,?,?,?,?,?,?)
-        """, (doc_id, kdnr or None, None, (doctype or None), title, now, now, version_id))
-    else:
-        # update meta if provided
-        cur.execute("""
-          UPDATE documents SET
-            kdnr=COALESCE(?, kdnr),
-            doctype=COALESCE(?, doctype),
-            title=COALESCE(?, title),
-            updated_at=?,
-            current_version_id=?
-          WHERE doc_id=?
-        """, (kdnr or None, doctype or None, title or None, now, version_id, doc_id))
-
-    # insert version if not exists
-    cur.execute("SELECT version_id FROM document_versions WHERE version_id=?", (version_id,))
-    if cur.fetchone() is None:
-        cur.execute("""
-          INSERT INTO document_versions(version_id,doc_id,file_path,sha256,size,mtime_ns,created_at)
-          VALUES(?,?,?,?,?,?,?)
-        """, (version_id, doc_id, str(p.resolve()), sha, int(st.st_size), int(st.st_mtime_ns), now))
-
-    con.commit()
-    con.close()
-    return doc_id
-
-def index_run_full(scan_limit: Optional[int] = None) -> Dict[str, int]:
-    """
-    Full scan of BASE_PATH only.
-    No OCR. No Eingang.
-    """
-    _ensure_index_tables()
-
-    files_seen = 0
-    docs_upserted = 0
-
-    for p in _iter_files_under(BASE_PATH):
-        try:
-            files_seen += 1
-            doc_id = index_upsert_file(p)
-            if doc_id:
-                docs_upserted += 1
-        except Exception:
-            # best effort; do not crash full scan
-            pass
-
-        if scan_limit and files_seen >= scan_limit:
-            break
-
-    return {"files_seen": files_seen, "docs_upserted": docs_upserted}
-
-def index_search(query: str, role: str = "ADMIN", limit: int = 20) -> List[Dict]:
-    """
-    Minimal search: filename/title contains query (case-insensitive).
-    RBAC gating will be added when template_nodes are fully wired to docs.
-    For now:
-      - ADMIN: sees all
-      - non-admin: sees nothing (secure default)
-    """
-    q = normalize_ws(query or "").strip()
-    if not q:
-        return []
-
-    if (role or "").upper() != "ADMIN":
-        return []
-
-    _ensure_index_tables()
-
-    con = db_connect()
-    cur = con.cursor()
-    like = f"%{q.lower()}%"
-    cur.execute("""
-      SELECT d.doc_id, d.title, d.kdnr, d.doctype, d.current_version_id,
-             v.file_path,
-             (SELECT COUNT(*) FROM document_versions vv WHERE vv.doc_id=d.doc_id) as version_count
-      FROM documents d
-      LEFT JOIN document_versions v ON v.version_id = d.current_version_id
-      WHERE lower(d.title) LIKE ?
-      ORDER BY d.updated_at DESC
-      LIMIT ?
-    """, (like, int(limit)))
-
-    rows = cur.fetchall()
-    con.close()
-
-    out = []
-    for r in rows:
-        out.append({
-            "doc_id": r[0],
-            "title": r[1],
-            "kdnr": r[2],
-            "doctype": r[3],
-            "current_path": r[5],
-            "version_count": int(r[6] or 0),
-        })
-    return out
-
-def assistant_sync_index(scan_limit: Optional[int] = None) -> Dict[str, int]:
-    """
-    Backward compatible wrapper.
-    """
-    return index_run_full(scan_limit=scan_limit)
