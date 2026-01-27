@@ -6,7 +6,7 @@ import re
 import time
 import base64
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
 
 from flask import (
     Flask, request, jsonify, render_template_string, send_file, abort,
@@ -27,7 +27,10 @@ EINGANG = _core_get("EINGANG")
 BASE_PATH = _core_get("BASE_PATH")
 PENDING_DIR = _core_get("PENDING_DIR")
 DONE_DIR = _core_get("DONE_DIR")
-SUPPORTED_EXT = _core_get("SUPPORTED_EXT", {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"})
+SUPPORTED_EXT = _core_get(
+    "SUPPORTED_EXT",
+    {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+)
 
 analyze_to_pending = _core_get("analyze_to_pending") or _core_get("start_background_analysis")
 read_pending = _core_get("read_pending")
@@ -43,25 +46,24 @@ find_existing_customer_folders = _core_get("find_existing_customer_folders")
 parse_folder_fields = _core_get("parse_folder_fields")
 best_match_object_folder = _core_get("best_match_object_folder")
 
+# Optional new core hook
+detect_object_duplicates_for_kdnr = _core_get("detect_object_duplicates_for_kdnr")
+
 db_init = _core_get("db_init")
+
 rbac_verify_user = _core_get("rbac_verify_user")
 rbac_create_user = _core_get("rbac_create_user")
 rbac_assign_role = _core_get("rbac_assign_role")
 rbac_get_user_roles = _core_get("rbac_get_user_roles")
 audit_log = _core_get("audit_log")
-
-# NEW: Blueprint assistant index/search
-index_run_full = _core_get("index_run_full")
-index_search = _core_get("index_search")
-
-# Backwards compat: old assistant_search if needed
 assistant_search = _core_get("assistant_search")
 
 # guard rails
 REQUIRED = {
     "EINGANG": EINGANG, "BASE_PATH": BASE_PATH, "PENDING_DIR": PENDING_DIR, "DONE_DIR": DONE_DIR,
     "analyze_to_pending/start_background_analysis": analyze_to_pending,
-    "read_pending": read_pending, "write_pending": write_pending, "delete_pending": delete_pending, "list_pending": list_pending,
+    "read_pending": read_pending, "write_pending": write_pending,
+    "delete_pending": delete_pending, "list_pending": list_pending,
     "write_done": write_done, "read_done": read_done,
     "process_with_answers": process_with_answers, "normalize_component": normalize_component,
 }
@@ -80,13 +82,12 @@ PORT = int(os.environ.get("PORT", 5051))
 BOOTSTRAP_ADMIN_USER = os.environ.get("TOPHANDWERK_ADMIN_USER", "").strip().lower()
 BOOTSTRAP_ADMIN_PASS = os.environ.get("TOPHANDWERK_ADMIN_PASS", "").strip()
 
-# UI branding
-APP_TITLE = "KUKANILEA Systems"
-APP_TAGLINE = "Ordnung. Wissen. Kontrolle."
+DOCTYPE_CHOICES = [
+    "ANGEBOT", "RECHNUNG", "AUFTRAGSBESTAETIGUNG", "AW",
+    "MAHNUNG", "NACHTRAG", "SONSTIGES", "FOTO"
+]
 
-DOCTYPE_CHOICES = ["ANGEBOT", "RECHNUNG", "AUFTRAGSBESTAETIGUNG", "AW", "MAHNUNG", "NACHTRAG", "SONSTIGES"]
-
-# Assistant: Eingang ist NICHT sichtbar (nur Hintergrund) - in Blueprint index ohnehin BASE_PATH only
+# Assistant: Eingang ist NICHT sichtbar (nur Hintergrund)
 ASSISTANT_HIDE_EINGANG = True
 
 
@@ -120,16 +121,14 @@ def _current_roles() -> list:
     return session.get("roles") or []
 
 
-def _current_role() -> str:
-    roles = _current_roles()
-    return roles[0] if roles else ""
-
-
 def _audit(action: str, target: str = "", meta: dict = None):
     if audit_log is None:
         return
+    u = _current_user()
+    roles = _current_roles()
+    role = roles[0] if roles else ""
     try:
-        audit_log(user=_current_user(), role=_current_role(), action=action, target=target, meta=meta or {})
+        audit_log(user=u, role=role, action=action, target=target, meta=meta or {})
     except Exception:
         pass
 
@@ -172,15 +171,21 @@ def _render_base(content: str, active_tab: str = "upload"):
         ablage=str(BASE_PATH),
         user=_current_user() or "-",
         roles=", ".join(_current_roles()) or "-",
-        active_tab=active_tab,
-        app_title=APP_TITLE,
-        app_tagline=APP_TAGLINE,
+        active_tab=active_tab
     )
 
 
 def _card_error(msg: str) -> str:
     return f"""
       <div class="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm">
+        {msg}
+      </div>
+    """
+
+
+def _card_warn(msg: str) -> str:
+    return f"""
+      <div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
         {msg}
       </div>
     """
@@ -202,6 +207,7 @@ def _wizard_get(p: dict) -> dict:
     w.setdefault("addr", "")
     w.setdefault("plzort", "")
     w.setdefault("doctype", "")
+    w.setdefault("document_date", "")
     w.setdefault("customer_status", "")  # "BESTAND" / "NEU"
     return w
 
@@ -211,12 +217,96 @@ def _wizard_save(token: str, p: dict, w: dict):
     write_pending(token, p)
 
 
+# --- Date parsing (Excel-like acceptance) ---
+_DATE_PATTERNS = [
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%Y.%m.%d",
+    "%d.%m.%Y",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%y",
+    "%d/%m/%y",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+]
+
+
+def parse_excel_like_date(s: str) -> str:
+    """
+    Accepts common Excel-like date strings and returns normalized YYYY-MM-DD or "" if invalid.
+    Examples:
+      - 2025-10-24
+      - 24.10.2025
+      - 24/10/2025
+      - 2025-10-24 00:00:00
+    """
+    if not s:
+        return ""
+    s = str(s).strip()
+    if not s:
+        return ""
+
+    # Normalize multiple spaces
+    s = re.sub(r"\s+", " ", s)
+
+    # If user pasted ISO-like with T
+    s = s.replace("T", " ")
+
+    # Try known patterns
+    for pat in _DATE_PATTERNS:
+        try:
+            dt = datetime.strptime(s, pat)
+            d = dt.date()
+            if d.year < 1900 or d.year > 2099:
+                return ""
+            return d.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    # If it's already "YYYY-MM-DD" but with trailing junk, try to extract
+    m = re.search(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", s)
+    if m:
+        try:
+            y = int(m.group(1))
+            mo = int(m.group(2))
+            da = int(m.group(3))
+            d = date(y, mo, da)
+            if d.year < 1900 or d.year > 2099:
+                return ""
+            return d.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    # Or "DD.MM.YYYY" extract
+    m = re.search(r"(\d{1,2})[./-](\d{1,2})[./-](\d{4})", s)
+    if m:
+        try:
+            da = int(m.group(1))
+            mo = int(m.group(2))
+            y = int(m.group(3))
+            d = date(y, mo, da)
+            if d.year < 1900 or d.year > 2099:
+                return ""
+            return d.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    return ""
+
+
 def _predict_filename(w: dict, suggested: str) -> str:
     """
     UI-Vorschau: wie die Datei voraussichtlich heißen wird.
     (Final entscheidet Core. Hier nur Preview.)
     """
-    dt = datetime.now().strftime("%Y-%m-%d")
+    dt_raw = (w.get("document_date") or "").strip()
+    dt = parse_excel_like_date(dt_raw) or datetime.now().strftime("%Y-%m-%d")
+
     doctype = (w.get("doctype") or suggested or "SONSTIGES").upper()
     kdnr = (w.get("kdnr") or "").strip()
     name = (w.get("name") or "").strip()
@@ -230,6 +320,7 @@ def _predict_filename(w: dict, suggested: str) -> str:
         "AW": "AW",
         "MAHNUNG": "MAH",
         "NACHTRAG": "NTR",
+        "FOTO": "FOTO",
         "SONSTIGES": "DOC",
     }.get(doctype, "DOC")
 
@@ -259,7 +350,7 @@ HTML_BASE = r"""
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{app_title}}</title>
+<title>Tophandwerk</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   const savedTheme = localStorage.getItem("th_theme") || "dark";
@@ -300,9 +391,9 @@ HTML_BASE = r"""
 <div class="max-w-7xl mx-auto p-6">
   <div class="flex items-start justify-between gap-3 mb-6">
     <div>
-      <h1 class="text-3xl font-bold">{{app_title}}</h1>
-      <div class="muted text-sm">{{app_tagline}}</div>
-      <div class="muted text-xs mt-2">Ablage: {{ablage}}</div>
+      <h1 class="text-3xl font-bold">Tophandwerk</h1>
+      <div class="muted text-sm">Upload → Review → Ablage • Assistant (MVP)</div>
+      <div class="muted text-xs mt-1">Ablage: {{ablage}}</div>
     </div>
 
     <div class="flex items-center gap-2">
@@ -375,7 +466,7 @@ HTML_BASE = r"""
 HTML_LOGIN = r"""
 <div class="max-w-md mx-auto rounded-2xl bg-slate-900/60 border border-slate-800 p-6 card">
   <div class="text-2xl font-bold mb-2">Login</div>
-  <div class="muted text-sm mb-5">Bitte anmelden, um {{app_title}} zu nutzen.</div>
+  <div class="muted text-sm mb-5">Bitte anmelden, um Tophandwerk zu nutzen.</div>
 
   {% if error %}
     <div class="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm mb-4">{{error}}</div>
@@ -394,7 +485,7 @@ HTML_LOGIN = r"""
   </form>
 
   <div class="muted text-xs mt-4">
-    Reset/Account-Setup: Entwickler verwaltet.
+    Reset/Account-Setup: Admin/Dev verwaltet.
   </div>
 </div>
 """
@@ -659,6 +750,12 @@ HTML_CONFIRM = r"""
       <a class="text-sm underline accentText" href="/review/{{token}}/doctype">Bearbeiten</a>
     </div>
 
+    <div class="rounded-xl border border-slate-800 p-3">
+      <div class="muted text-xs">Dokumentdatum</div>
+      <div class="text-sm font-semibold break-all">{{w.document_date}}</div>
+      <a class="text-sm underline accentText" href="/review/{{token}}/docdate">Bearbeiten</a>
+    </div>
+
     <form method="post" class="pt-2 flex gap-2">
       <button class="rounded-xl px-4 py-2 font-semibold btn-primary" name="final" value="1">Alles korrekt → Ablage</button>
       <a class="rounded-xl px-4 py-2 font-semibold btn-outline card" href="/">Abbrechen</a>
@@ -681,6 +778,7 @@ HTML_DONE = r"""
       <div class="text-sm">PLZ/Ort: <span class="font-semibold">{{plzort}}</span></div>
       <div class="text-sm mt-2">Objekt: <span class="font-semibold">{{objmode}}</span></div>
       <div class="text-sm">Dokumenttyp: <span class="font-semibold">{{doctype}}</span></div>
+      <div class="text-sm">Dokumentdatum: <span class="font-semibold">{{document_date}}</span></div>
       <div class="text-sm mt-3">
         <span class="muted text-xs">Kundenstatus</span><br>
         <span class="font-semibold">{{customer_status}}</span>
@@ -707,106 +805,60 @@ HTML_DONE = r"""
 
 HTML_ASSISTANT = r"""
 <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
-  <div class="flex items-start justify-between gap-3">
-    <div>
-      <div class="text-lg font-semibold mb-1">Assistant (Index + Search)</div>
-      <div class="muted text-sm">
-        Suche über indexierte Dokumente aus der Kundenablage. Eingang ist nicht sichtbar.
-      </div>
-      <div class="muted text-xs mt-2">
-        Index-Status: <span class="font-semibold">{{idx_status}}</span>
-        {% if idx_last %}
-          • Letzter Lauf: <span class="font-semibold">{{idx_last}}</span>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="flex flex-col gap-2 min-w-[220px]">
-      <button id="reindexBtn" class="rounded-xl px-4 py-2 font-semibold btn-outline card" type="button">
-        Index aktualisieren
-      </button>
-      <div id="reindexStatus" class="muted text-xs"></div>
-    </div>
+  <div class="text-lg font-semibold mb-1">Assistant (MVP)</div>
+  <div class="muted text-sm mb-4">
+    Suche über indexierte Dokumente. Sichtbar: Kundenablage (Eingang bleibt im Hintergrund).
   </div>
 
-  <div class="mt-4">
-    <form method="get" class="flex flex-col md:flex-row gap-2 mb-4">
-      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="q"
-        value="{{q}}" placeholder="z.B. wilhelmstr aufmaß bad angebot bohrmaschine" />
-      <input class="w-full md:w-40 rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="kdnr"
-        value="{{kdnr}}" placeholder="Kdnr (optional)" />
-      <button class="rounded-xl px-4 py-2 font-semibold btn-primary md:w-40" type="submit">Suchen</button>
-    </form>
+  <form method="get" class="flex flex-col md:flex-row gap-2 mb-4">
+    <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="q"
+      value="{{q}}" placeholder="z.B. wilhelmstr aufmaß bad angebot bohrmaschine" />
+    <input class="w-full md:w-40 rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="kdnr"
+      value="{{kdnr}}" placeholder="Kdnr (optional)" />
+    <button class="rounded-xl px-4 py-2 font-semibold btn-primary md:w-40" type="submit">Suchen</button>
+  </form>
 
-    {% if q %}
-      <div class="muted text-xs mb-3">Treffer: {{results|length}}</div>
-    {% endif %}
+  {% if q %}
+    <div class="muted text-xs mb-3">Treffer: {{results|length}}</div>
+  {% endif %}
 
-    {% if results %}
-      <div class="space-y-2">
-        {% for r in results %}
-          <div class="rounded-xl border border-slate-800 p-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-sm font-semibold break-all">
-                  {{r.title or r.file_name or "Dokument"}}
-                </div>
-                <div class="muted text-xs break-all">
-                  {{r.current_path or r.file_path}}
-                </div>
-                <div class="muted text-xs mt-1">
-                  Kdnr: <span class="font-semibold">{{r.kdnr or "-"}}</span> •
-                  Typ: <span class="font-semibold">{{r.doctype or "-"}}</span>
-                  {% if r.version_count is not none %}
-                    • Versionen: <span class="font-semibold">{{r.version_count}}</span>
-                  {% endif %}
-                </div>
-                {% if r.doc_id %}
-                  <div class="muted text-[11px] mt-1">doc_id: <span class="font-mono">{{r.doc_id}}</span></div>
-                {% endif %}
+  {% if results %}
+    <div class="space-y-2">
+      {% for r in results %}
+        <div class="rounded-xl border border-slate-800 p-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="text-sm font-semibold break-all">{{r.file_name}}</div>
+              <div class="muted text-xs break-all">{{r.file_path}}</div>
+              <div class="muted text-xs mt-1">
+                Kdnr: <span class="font-semibold">{{r.kdnr or "-"}}</span> •
+                Typ: <span class="font-semibold">{{r.doctype or "-"}}</span> •
+                Versionen: <span class="font-semibold">{{r.version_count or 0}}</span>
               </div>
-              <div class="flex flex-col gap-2">
+              {% if r.note %}
+                <div class="mt-2 text-xs rounded-xl border border-amber-500/40 bg-amber-500/10 p-2">{{r.note}}</div>
+              {% endif %}
+            </div>
+            <div class="flex flex-col gap-2">
+              {% if r.file_path %}
                 <a class="rounded-xl px-3 py-2 text-sm btn-outline card" href="/open?fp={{r.fp_b64}}" target="_blank">Öffnen</a>
+              {% endif %}
+              {% if r.file_path %}
                 <button class="rounded-xl px-3 py-2 text-sm btn-outline card" type="button"
-                  onclick="navigator.clipboard.writeText('{{r.current_path or r.file_path}}')">Pfad kopieren</button>
-              </div>
+                  onclick="navigator.clipboard.writeText('{{r.file_path}}')">Pfad kopieren</button>
+              {% endif %}
             </div>
           </div>
-        {% endfor %}
-      </div>
-    {% elif q %}
-      <div class="muted text-sm">Keine Treffer.</div>
-    {% endif %}
-  </div>
+          {% if r.preview %}
+            <div class="mt-2 text-xs whitespace-pre-wrap rounded-xl border border-slate-800 p-2 bg-slate-950/40">{{r.preview}}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% elif q %}
+    <div class="muted text-sm">Keine Treffer.</div>
+  {% endif %}
 </div>
-
-<script>
-(function(){
-  const btn = document.getElementById("reindexBtn");
-  const st = document.getElementById("reindexStatus");
-
-  async function doReindex(){
-    st.textContent = "Index-Lauf startet…";
-    btn.disabled = true;
-    try{
-      const res = await fetch("/api/index/rebuild", {method:"POST"});
-      const j = await res.json();
-      if(!res.ok){
-        st.textContent = "Fehler: " + (j.error || ("HTTP " + res.status));
-        btn.disabled = false;
-        return;
-      }
-      st.textContent = "OK: files_seen=" + (j.files_seen ?? "-") + ", upserted=" + (j.docs_upserted ?? "-") + (j.errors ? (", errors=" + j.errors) : "");
-      setTimeout(()=>{ window.location.reload(); }, 500);
-    }catch(e){
-      st.textContent = "Netzwerk/Server-Fehler.";
-      btn.disabled = false;
-    }
-  }
-
-  btn?.addEventListener("click", doReindex);
-})();
-</script>
 """
 
 
@@ -854,7 +906,8 @@ def _step_form(
     extra_html: str = "",
     show_scores: bool = False,
     ranked: list = None,
-    next_label: str = "Weiter"
+    next_label: str = "Weiter",
+    placeholder: str = ""
 ):
     sug_buttons = ""
 
@@ -892,7 +945,7 @@ def _step_form(
         <div>
           <label class="muted text-xs">Eingabe (direkt tippen)</label>
           <input id="mainInput" class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input"
-            name="{field_name}" placeholder="{title}" value="{(current_value or '').replace('"','&quot;')}">
+            name="{field_name}" placeholder="{placeholder or title}" value="{(current_value or '').replace('"','&quot;')}">
         </div>
 
         <div>
@@ -949,7 +1002,7 @@ def login():
                 _audit("login", target=u, meta={"roles": roles})
                 return redirect(nxt or "/")
             error = "Login fehlgeschlagen."
-    return render_template_string(HTML_LOGIN, error=error, app_title=APP_TITLE)
+    return render_template_string(HTML_LOGIN, error=error)
 
 
 @APP.route("/logout")
@@ -982,9 +1035,6 @@ def api_progress(token):
 
 @APP.route("/api/reextract/<token>", methods=["POST"])
 def api_reextract(token):
-    """
-    Force re-extract: start a NEW analysis.
-    """
     if not _logged_in():
         return jsonify(error="unauthorized"), 401
     p = read_pending(token)
@@ -1003,36 +1053,6 @@ def api_reextract(token):
     new_token = analyze_to_pending(src)
     _audit("reextract", target=str(src), meta={"old_token": token, "new_token": new_token})
     return jsonify(token=new_token)
-
-
-@APP.route("/api/index/rebuild", methods=["POST"])
-def api_index_rebuild():
-    """
-    Run a full index rebuild (BASE_PATH only) for Assistant.
-    Prefer blueprint functions: index_run_full(); fallback: assistant_search warmup.
-    """
-    if not _logged_in():
-        return jsonify(error="unauthorized"), 401
-
-    # optional: restrict to ADMIN role if RBAC exists
-    if rbac_verify_user is not None:
-        roles = set(_current_roles() or [])
-        if "ADMIN" not in roles and "DEV" not in roles:
-            return jsonify(error="forbidden"), 403
-
-    try:
-        if index_run_full is not None:
-            res = index_run_full()
-            _audit("index_run_full", target=str(BASE_PATH), meta=res if isinstance(res, dict) else {"result": str(res)})
-            if isinstance(res, dict):
-                return jsonify(res)
-            return jsonify(ok=True, result=str(res))
-        # fallback: do nothing but keep endpoint alive
-        _audit("index_rebuild_noop", target=str(BASE_PATH), meta={"reason": "index_run_full missing"})
-        return jsonify(ok=False, error="index_run_full missing"), 400
-    except Exception as e:
-        _audit("index_rebuild_error", target=str(BASE_PATH), meta={"error": str(e)})
-        return jsonify(error=str(e)), 500
 
 
 # ============================================================
@@ -1135,6 +1155,7 @@ def done_view(token):
         final_path=d.get("final_path", ""),
         created_new=bool(d.get("created_new", False)),
         customer_status=d.get("customer_status", ""),
+        document_date=d.get("document_date", d.get("doc_date", "")),
         fp_b64=_b64(d.get("final_path", ""))
     )
     _audit("view_done", target=str(d.get("final_path", "")), meta={"token": token})
@@ -1143,7 +1164,7 @@ def done_view(token):
 
 # ============================================================
 # Review flow:
-# kdnr -> name -> addr -> plz -> doctype -> confirm -> archive
+# kdnr -> name -> addr -> plz -> doctype -> docdate -> confirm -> archive
 # ============================================================
 @APP.route("/review/<token>/kdnr", methods=["GET", "POST"])
 def review_kdnr(token):
@@ -1211,15 +1232,23 @@ def review_kdnr(token):
                     "plzort": bf.get("plzort", ""),
                     "score": best_score,
                 }
-                if adopt_existing:
-                    if bf.get("name"):
-                        w["name"] = w.get("name") or bf.get("name")
-                    if bf.get("addr"):
-                        w["addr"] = w.get("addr") or bf.get("addr")
-                    if bf.get("plzort"):
-                        w["plzort"] = w.get("plzort") or bf.get("plzort")
+                if adopt_existing or (request.form.get("adopt_existing") is None):
+                    if not w.get("name") and bf.get("name"):
+                        w["name"] = bf.get("name")
+                    if not w.get("addr") and bf.get("addr"):
+                        w["addr"] = bf.get("addr")
+                    if not w.get("plzort") and bf.get("plzort"):
+                        w["plzort"] = bf.get("plzort")
                     if not w.get("use_existing"):
                         w["use_existing"] = str(best_path)
+
+        # NEW: duplicates warning hook (store in pending)
+        if detect_object_duplicates_for_kdnr is not None:
+            try:
+                dupes = detect_object_duplicates_for_kdnr(val, threshold=0.93)
+                p["object_dupes_suggested"] = dupes or []
+            except Exception:
+                p["object_dupes_suggested"] = []
 
         _wizard_save(token, p, w)
         _audit("review_set_kdnr", target=token, meta={"kdnr": w["kdnr"], "customer_status": w["customer_status"]})
@@ -1228,6 +1257,10 @@ def review_kdnr(token):
     extra = ""
     if w.get("kdnr"):
         existing = p.get("existing_objects") or []
+        dupes = p.get("object_dupes_suggested") or []
+        if dupes:
+            extra += _card_warn(f"⚠️ Mögliche Doppel-Objekte gefunden: {len(dupes)}. Admin sollte später mergen/prüfen (verlustfrei).")
+
         if existing:
             items = ""
             for o in existing[:10]:
@@ -1249,8 +1282,8 @@ def review_kdnr(token):
                 except Exception:
                     chosen = "Bestehendes Objekt"
 
-            extra = f"""
-              {_card_info("Bestandskunde erkannt (über Kundennummer). Optional Objekt wählen, um doppelte Ordner zu vermeiden.")}
+            extra += f"""
+              {_card_info("Bestandskunde erkannt. Optional Objekt wählen, um doppelte Ordner zu vermeiden.")}
               <div class="rounded-xl border border-slate-800 p-3 mt-3">
                 <div class="text-sm font-semibold mb-2">Bestands-Objekt (optional)</div>
 
@@ -1282,7 +1315,7 @@ def review_kdnr(token):
               </script>
             """
         else:
-            extra = _card_info("Kundennummer nicht gefunden: Neuer Kunde.")
+            extra += _card_info("Kundennummer nicht gefunden: Neuer Kunde.")
 
     prefill = w.get("kdnr") or (suggestions[0] if suggestions else "")
     return _step_form(
@@ -1460,7 +1493,7 @@ def review_doctype(token):
         w["doctype"] = dt
         _wizard_save(token, p, w)
         _audit("review_set_doctype", target=token, meta={"doctype": dt, "suggested": suggested})
-        return redirect(url_for("review_confirm", token=token))
+        return redirect(url_for("review_docdate", token=token))
 
     opts = ""
     for d in DOCTYPE_CHOICES:
@@ -1496,6 +1529,77 @@ def review_doctype(token):
     return _render_review(token, right)
 
 
+@APP.route("/review/<token>/docdate", methods=["GET", "POST"])
+def review_docdate(token):
+    if not _logged_in():
+        return redirect(url_for("login", next=f"/review/{token}/docdate"))
+
+    p = read_pending(token)
+    if not p:
+        return _render_base(HTML_NOT_FOUND)
+    w = _wizard_get(p)
+    if not w.get("kdnr"):
+        return redirect(url_for("review_kdnr", token=token))
+
+    suggested_raw = (p.get("doc_date_suggested") or "").strip()
+    candidates = p.get("doc_date_candidates") or []
+
+    suggestions = []
+    if suggested_raw:
+        norm = parse_excel_like_date(suggested_raw)
+        if norm:
+            suggestions.append(norm)
+
+    for c in candidates:
+        d_raw = (c.get("date") or "").strip()
+        norm = parse_excel_like_date(d_raw)
+        if norm and norm not in suggestions:
+            suggestions.append(norm)
+
+    # Keep user's saved value first
+    user_saved_norm = parse_excel_like_date(w.get("document_date", ""))
+    if user_saved_norm and user_saved_norm not in suggestions:
+        suggestions.insert(0, user_saved_norm)
+
+    hint = _card_info(
+        "Dokumentdatum: Bitte das Datum aus dem Dokument (nicht automatisch „heute“). "
+        "Akzeptiert wie Excel: YYYY-MM-DD, DD.MM.YYYY, DD/MM/YYYY, optional mit Uhrzeit."
+    )
+
+    if request.method == "POST":
+        raw = (request.form.get("document_date") or "").strip()
+        norm = parse_excel_like_date(raw)
+        if not norm:
+            return _step_form(
+                token=token,
+                title="6) Dokumentdatum",
+                subtitle="Akzeptiert Excel-Formate. Wird gespeichert als YYYY-MM-DD.",
+                field_name="document_date",
+                current_value=w.get("document_date", "") or (suggestions[0] if suggestions else ""),
+                suggestions=suggestions,
+                error="Ungültiges Datum. Beispiele: 2025-10-24 oder 24.10.2025 (optional mit Uhrzeit).",
+                extra_html=hint,
+                placeholder="z.B. 24.10.2025 oder 2025-10-24"
+            )
+
+        w["document_date"] = norm
+        _wizard_save(token, p, w)
+        _audit("review_set_docdate", target=token, meta={"doc_date": w["document_date"]})
+        return redirect(url_for("review_confirm", token=token))
+
+    prefill = user_saved_norm or (suggestions[0] if suggestions else "")
+    return _step_form(
+        token=token,
+        title="6) Dokumentdatum",
+        subtitle="Akzeptiert Excel-Formate. Wird gespeichert als YYYY-MM-DD.",
+        field_name="document_date",
+        current_value=prefill,
+        suggestions=suggestions,
+        extra_html=hint,
+        placeholder="z.B. 24.10.2025 oder 2025-10-24"
+    )
+
+
 @APP.route("/review/<token>/confirm", methods=["GET", "POST"])
 def review_confirm(token):
     if not _logged_in():
@@ -1510,7 +1614,12 @@ def review_confirm(token):
 
     if not w.get("doctype"):
         w["doctype"] = (p.get("doctype_suggested") or "SONSTIGES").upper()
-        _wizard_save(token, p, w)
+
+    # Ensure date is normalized
+    if not w.get("document_date"):
+        w["document_date"] = parse_excel_like_date(p.get("doc_date_suggested", "")) or ""
+
+    _wizard_save(token, p, w)
 
     if request.method == "POST" and request.form.get("final") == "1":
         src = Path(p.get("path", ""))
@@ -1524,6 +1633,7 @@ def review_confirm(token):
             "addr": w.get("addr", "Adresse"),
             "plzort": w.get("plzort", "PLZ Ort"),
             "doctype": w.get("doctype", p.get("doctype_suggested", "SONSTIGES")),
+            "document_date": w.get("document_date", ""),
         }
 
         try:
@@ -1538,6 +1648,7 @@ def review_confirm(token):
             "addr": answers["addr"],
             "plzort": answers["plzort"],
             "doctype": answers.get("doctype", "SONSTIGES"),
+            "document_date": answers.get("document_date", ""),
             "folder": str(folder),
             "final_path": str(final_path),
             "created_new": bool(created_new),
@@ -1545,6 +1656,7 @@ def review_confirm(token):
             "customer_status": (w.get("customer_status") or ("BESTAND" if answers.get("use_existing") else "NEU")),
         }
         write_done(token, done_payload)
+
         delete_pending(token)
 
         _audit("archive_ok", target=str(final_path), meta={"kdnr": answers["kdnr"], "doctype": done_payload["doctype"]})
@@ -1557,24 +1669,22 @@ def review_confirm(token):
 # ============================================================
 # Assistant
 # ============================================================
-def _dedupe_assistant_paths(rows: list) -> list:
-    """
-    Additional dedupe at UI level (safety net).
-    Core should already dedupe by doc_id/version, but this keeps UI clean if old search is used.
-    """
+def _dedupe_assistant_results(rows: list) -> list:
     out = []
     seen = set()
 
     def key_for(path: str) -> str:
         try:
             p = Path(path)
-            stem2 = re.sub(r"_(\d{6})$", "", p.stem)
-            return (str(p.parent).lower() + "/" + stem2.lower() + p.suffix.lower())
+            stem = p.stem
+            # strip trailing _HHMMSS
+            stem2 = re.sub(r"_(\d{6})$", "", stem)
+            return str(p.parent) + "/" + stem2.lower() + p.suffix.lower()
         except Exception:
             return (path or "").lower()
 
     for r in rows or []:
-        fp = (r.get("current_path") or r.get("file_path") or "")
+        fp = (r.get("file_path") or r.get("current_path") or "")
         if not fp:
             continue
 
@@ -1589,8 +1699,10 @@ def _dedupe_assistant_paths(rows: list) -> list:
         if k in seen:
             continue
         seen.add(k)
-        out.append(r)
 
+        r2 = dict(r)
+        r2["file_path"] = fp
+        out.append(r2)
     return out
 
 
@@ -1602,50 +1714,28 @@ def assistant():
     q = normalize_component(request.args.get("q", "") or "")
     kdnr = normalize_component(request.args.get("kdnr", "") or "")
 
-    idx_status = "bereit" if (index_search is not None and index_run_full is not None) else "legacy"
-    idx_last = ""
-
     results = []
     if q:
+        if assistant_search is None:
+            return _render_base(_card_error("Assistant ist im Core noch nicht verfügbar."), active_tab="assistant")
         try:
-            # Prefer Blueprint
-            if index_search is not None:
-                raw = index_search(q, role=_current_role() or "DEV", limit=50)
-                raw = _dedupe_assistant_paths(raw)
-
-                for r in raw:
-                    fp = r.get("current_path") or ""
-                    r["fp_b64"] = _b64(fp)
-                    results.append(r)
-
-                _audit("assistant_index_search", target=q, meta={"kdnr": kdnr, "hits": len(results), "mode": "index_search"})
-            else:
-                # Fallback old assistant_search
-                if assistant_search is None:
-                    return _render_base(_card_error("Assistant ist im Core noch nicht verfügbar."), active_tab="assistant")
+            role = (_current_roles()[0] if _current_roles() else "ADMIN")
+            # call compat: some cores accept role, others don't
+            try:
+                raw = assistant_search(query=q, kdnr=kdnr, limit=50, role=role)
+            except TypeError:
                 raw = assistant_search(query=q, kdnr=kdnr, limit=50)
-                raw = _dedupe_assistant_paths(raw)
 
-                for r in raw:
-                    fp = r.get("file_path", "")
-                    r["fp_b64"] = _b64(fp)
-                    # map legacy fields for template
-                    r.setdefault("current_path", r.get("file_path"))
-                    r.setdefault("title", r.get("file_name"))
-                    results.append(r)
-
-                _audit("assistant_search", target=q, meta={"kdnr": kdnr, "hits": len(results), "mode": "assistant_search"})
+            raw = _dedupe_assistant_results(raw)
+            for r in raw:
+                fp = r.get("file_path", "")
+                r["fp_b64"] = _b64(fp) if fp else ""
+                results.append(r)
+            _audit("assistant_search", target=q, meta={"kdnr": kdnr, "hits": len(results)})
         except Exception as e:
             return _render_base(_card_error(f"Assistant-Fehler: {e}"), active_tab="assistant")
 
-    html = render_template_string(
-        HTML_ASSISTANT,
-        q=q,
-        kdnr=kdnr,
-        results=results,
-        idx_status=idx_status,
-        idx_last=idx_last
-    )
+    html = render_template_string(HTML_ASSISTANT, q=q, kdnr=kdnr, results=results)
     return _render_base(html, active_tab="assistant")
 
 
@@ -1664,4 +1754,3 @@ if __name__ == "__main__":
 
     print(f"http://127.0.0.1:{PORT}")
     APP.run(host="127.0.0.1", port=PORT, debug=False)
-
