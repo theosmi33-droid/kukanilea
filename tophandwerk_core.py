@@ -2,24 +2,41 @@
 # -*- coding: utf-8 -*-
 
 """
-Tophandwerk Core (FINAL)
-- Pending/Done JSON store
-- Background analysis (text extract + OCR fallback)
-- Suggestions: kdnr, name, addr, plz/ort, doctype, doc-date (Excel-like input)
-- RBAC (simple sqlite)
-- Audit log (sqlite)
-- Assistant search:
-    - FTS5 if available (fast)
-    - fallback LIKE (slow, MVP ok)
-- Dedupe: doc_id = SHA256(file bytes)
-- Versioning:
-    - logical group_key exists -> new version if bytes differ
-    - exact same bytes -> treated as duplicate (no new version)
-- Object-folder duplicate detection (similar names like ö vs oe)
-- IMPORTANT FIX:
-    - FTS5 virtual tables DO NOT support UPSERT (ON CONFLICT DO UPDATE)
-    - we use DELETE + INSERT for docs_fts
+Tophandwerk Core (FINAL v2.4 - A2 Multi-Tenant + More Formats) — DROP-IN replacement
+===================================================================================
+
+A2 Scope (today + future):
+- Mandantenfähig (Tenant/Firma) via:
+  - answers["tenant"] or answers["mandant"]
+  - OR directory convention: BASE_PATH/<TENANT>/<KUNDENORDNER>/...
+  - OR env TOPHANDWERK_TENANT_DEFAULT as fallback
+- Adds extraction + indexing for: .md, .rtf, .json, .xml, .webp, .msg (best-effort)
+- Keeps existing behaviors (dedupe, group_key, FTS5 delete+insert, pending/done JSON atomic writes)
+
+Contract (used by kundenablage_upload.py / API):
+- Paths/Config: EINGANG, BASE_PATH, PENDING_DIR, DONE_DIR, DB_PATH, SUPPORTED_EXT
+- Pending store: read_pending, write_pending, delete_pending, list_pending
+- Done store: write_done, read_done
+- Background: analyze_to_pending (alias: start_background_analysis)
+- Archive: process_with_answers
+- Helpers: normalize_component, parse_excel_like_date
+- Folder helpers: find_existing_customer_folders, parse_folder_fields, best_match_object_folder
+- Optional: detect_object_duplicates_for_kdnr, assistant_search, db_init, audit_log,
+           rbac_* , index_run_full
+
+Notes:
+- Tenant in DB is encoded as kdnr "TENANT:1234" (no DB migration needed).
+- Filesystem layout:
+    BASE_PATH/
+      <TENANT>/                    (optional)
+        1234_Name_Addr_PLZOrt/
+          DOCS...
+    If you don't use tenants, it behaves like before.
+- .msg: If you want Outlook .msg extraction, install optional dependency:
+    pip install extract_msg
 """
+
+from __future__ import annotations
 
 import os
 import re
@@ -31,10 +48,15 @@ import hashlib
 import sqlite3
 import threading
 import unicodedata
+import csv
+import zipfile
 from pathlib import Path
 from datetime import datetime, date
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
+
+from email import policy
+from email.parser import BytesParser
 
 # Optional libs
 try:
@@ -57,6 +79,22 @@ try:
 except Exception:
     pytesseract = None
 
+try:
+    from docx import Document as DocxDocument  # type: ignore
+except Exception:
+    DocxDocument = None
+
+try:
+    import openpyxl  # type: ignore
+except Exception:
+    openpyxl = None
+
+# Optional for Outlook .msg
+try:
+    import extract_msg  # type: ignore
+except Exception:
+    extract_msg = None
+
 
 # ============================================================
 # CONFIG / PATHS
@@ -65,10 +103,37 @@ EINGANG = Path.home() / "Tophandwerk_Eingang"
 BASE_PATH = Path.home() / "Tophandwerk_Kundenablage"
 PENDING_DIR = Path.home() / "Tophandwerk_Pending"
 DONE_DIR = Path.home() / "Tophandwerk_Done"
-
 DB_PATH = Path.home() / "Tophandwerk_DB.sqlite3"
 
-SUPPORTED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+# Multi-tenant behavior
+TENANT_DEFAULT = os.environ.get("TOPHANDWERK_TENANT_DEFAULT", "").strip()  # e.g. "FIRMA_X"
+TENANT_REQUIRE = os.environ.get("TOPHANDWERK_TENANT_REQUIRE", "0").strip() in ("1", "true", "TRUE", "yes", "YES")
+
+# A2: include more formats (some are store-only if extraction returns "")
+SUPPORTED_EXT = {
+    # Documents
+    ".pdf",
+    ".txt", ".md", ".rtf",
+    ".docx",
+    ".xlsx",
+    ".csv",
+    ".eml",
+    ".html", ".htm",
+    ".json", ".xml",
+
+    # Images (OCR)
+    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp",
+
+    # Outlook (best-effort)
+    ".msg",
+
+    # Containers / non-text (accepted, but extraction may be empty; store-only)
+    ".zip", ".7z", ".rar",
+    ".dwg", ".dxf", ".ifc",
+    ".p7m", ".p7s",
+    ".psd", ".ai",
+    ".mp4", ".mov", ".mp3",
+}
 
 # OCR / Extraction limits
 OCR_MAX_PAGES = 2
@@ -79,6 +144,14 @@ DEFAULT_DUP_SIM_THRESHOLD = 0.93
 
 # Assistant search result size
 ASSISTANT_DEFAULT_LIMIT = 50
+
+# Extraction size guards (prevent huge RAM / DB bloat)
+MAX_EXTRACT_CHARS = 200_000
+MAX_CSV_ROWS = 2000
+MAX_CSV_COLS = 60
+MAX_XLSX_ROWS = 2000
+MAX_XLSX_COLS = 60
+MAX_DOCX_PARAS = 4000
 
 
 # ============================================================
@@ -104,10 +177,10 @@ def _token() -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(raw).digest())[:22].decode("ascii")
 
 
-def normalize_component(s: str) -> str:
+def normalize_component(s: Any) -> str:
     """
-    Strong, filesystem-friendly normalization:
-    - normalize unicode
+    Strong normalization:
+    - normalize unicode (NFKC)
     - collapse whitespace
     """
     if s is None:
@@ -120,11 +193,11 @@ def normalize_component(s: str) -> str:
     return s
 
 
-def _norm_for_match(s: str) -> str:
+def _norm_for_match(s: Any) -> str:
     """
     Aggressive matching normalization:
     - lower
-    - replace umlauts with ascii expansions
+    - replace umlauts
     - drop non-alnum
     """
     s = normalize_component(s).lower()
@@ -138,52 +211,127 @@ def _norm_for_match(s: str) -> str:
     return s
 
 
+def _atomic_write_text(fp: Path, text: str, encoding: str = "utf-8") -> None:
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    tmp = fp.with_suffix(fp.suffix + f".tmp_{os.getpid()}_{time.time_ns()}")
+    tmp.write_text(text, encoding=encoding)
+    tmp.replace(fp)
+
+
+def _clip_text(s: str, limit: int = MAX_EXTRACT_CHARS) -> str:
+    s = s or ""
+    if len(s) <= limit:
+        return s
+    return s[:limit]
+
+
+def _html_to_text(html: str) -> str:
+    """
+    Very pragmatic HTML -> text (no external deps).
+    """
+    if not html:
+        return ""
+    html = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
+    html = re.sub(r"(?i)<br\s*/?>", "\n", html)
+    html = re.sub(r"(?i)</p\s*>", "\n", html)
+    html = re.sub(r"(?is)<[^>]+>", " ", html)
+    html = html.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    html = re.sub(r"[ \t]+", " ", html)
+    html = re.sub(r"\n{3,}", "\n\n", html)
+    return html.strip()
+
+
+# --------------------------
+# Tenant helpers (no DB migration)
+# --------------------------
+def _infer_tenant_from_path(fp: Path) -> str:
+    """
+    Convention:
+      BASE_PATH/<TENANT>/<KUNDENORDNER>/...
+    Returns tenant or "".
+    """
+    try:
+        fp = Path(fp).resolve()
+        base = Path(BASE_PATH).resolve()
+        parts = fp.parts
+        bparts = base.parts
+
+        # find BASE_PATH segment in fp
+        for i in range(len(parts) - len(bparts) + 1):
+            if parts[i : i + len(bparts)] == bparts:
+                if i + len(bparts) < len(parts):
+                    tenant = normalize_component(parts[i + len(bparts)])
+                    # If the next segment already looks like a customer folder (1234_...), it's not a tenant.
+                    if tenant and not re.match(r"^\d{3,}_", tenant):
+                        return tenant
+                break
+    except Exception:
+        pass
+    return ""
+
+
+def _tenant_prefix_kdnr(tenant: str, kdnr: str) -> str:
+    tenant = normalize_component(tenant)
+    kdnr = normalize_component(kdnr)
+    if not kdnr:
+        return ""
+    if ":" in kdnr:  # already prefixed
+        return kdnr
+    if tenant:
+        return f"{tenant}:{kdnr}"
+    return kdnr
+
+
+def _tenant_object_folder_tag(tenant: str, object_folder: str) -> str:
+    tenant = normalize_component(tenant)
+    object_folder = normalize_component(object_folder)
+    if tenant and object_folder:
+        return f"{tenant}/{object_folder}"
+    return object_folder
+
+
+def _effective_tenant(*candidates: Any) -> str:
+    """
+    Choose first non-empty tenant from candidates, else env default.
+    """
+    for c in candidates:
+        t = normalize_component(c)
+        if t:
+            return t
+    return normalize_component(TENANT_DEFAULT)
+
+
+def _safe_fs(s: Any) -> str:
+    s = normalize_component(s)
+    if not s:
+        return ""
+    s = re.sub(r"[^\wäöüÄÖÜß\-\.\, ]+", "", s)
+    s = s.replace(" ", "_")
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s[:60]
+
+
 _DATE_PATTERNS = [
-    # pure dates
-    "%Y-%m-%d",
-    "%Y/%m/%d",
-    "%Y.%m.%d",
-    "%d.%m.%Y",
-    "%d/%m/%Y",
-    "%d-%m-%Y",
-    "%d.%m.%y",
-    "%d/%m/%y",
-    "%d-%m-%y",
-    # date-time variants (Excel-ish)
-    "%Y-%m-%d %H:%M:%S",
-    "%Y-%m-%d %H:%M",
-    "%Y/%m/%d %H:%M:%S",
-    "%Y/%m/%d %H:%M",
-    "%d.%m.%Y %H:%M:%S",
-    "%d.%m.%Y %H:%M",
-    "%d/%m/%Y %H:%M:%S",
-    "%d/%m/%Y %H:%M",
-    "%d-%m-%Y %H:%M:%S",
-    "%d-%m-%Y %H:%M",
+    "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
+    "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y",
+    "%d.%m.%y", "%d/%m/%y", "%d-%m-%y",
+    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+    "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
+    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
+    "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
 ]
 
 
-def parse_excel_like_date(s: str) -> str:
+def parse_excel_like_date(s: Any) -> str:
     """
     Accept common Excel-like date strings -> normalized YYYY-MM-DD or "" if invalid.
-
-    Examples accepted:
-      24.10.2025
-      24/10/2025
-      24-10-2025
-      2025-10-24
-      2025/10/24
-      2025.10.24
-      24.10.2025 12:30
-      2025-10-24 12:30:00
     """
     if not s:
         return ""
     s = str(s).strip()
     if not s:
         return ""
-
-    # normalize separators a bit, keep time if any
     s = re.sub(r"\s+", " ", s).replace("T", " ")
 
     for pat in _DATE_PATTERNS:
@@ -196,7 +344,6 @@ def parse_excel_like_date(s: str) -> str:
         except Exception:
             pass
 
-    # ISO-ish anywhere
     m = re.search(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", s)
     if m:
         try:
@@ -210,7 +357,6 @@ def parse_excel_like_date(s: str) -> str:
         except Exception:
             pass
 
-    # DMY anywhere
     m = re.search(r"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})", s)
     if m:
         try:
@@ -218,7 +364,6 @@ def parse_excel_like_date(s: str) -> str:
             mo = int(m.group(2))
             y = int(m.group(3))
             if y < 100:
-                # 2-digit year heuristic like Excel (00-68 => 2000-2068, else 1900-1999)
                 y = 2000 + y if y <= 68 else 1900 + y
             d = date(y, mo, da)
             if d.year < 1900 or d.year > 2099:
@@ -253,7 +398,7 @@ def read_pending(token: str) -> Optional[Dict[str, Any]]:
 
 def write_pending(token: str, payload: Dict[str, Any]) -> None:
     fp = _pending_path(token)
-    fp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(fp, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def delete_pending(token: str) -> None:
@@ -266,6 +411,7 @@ def delete_pending(token: str) -> None:
 
 def list_pending() -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
+    PENDING_DIR.mkdir(parents=True, exist_ok=True)
     for fp in sorted(PENDING_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             j = json.loads(fp.read_text(encoding="utf-8"))
@@ -278,7 +424,7 @@ def list_pending() -> List[Dict[str, Any]]:
 
 def write_done(token: str, payload: Dict[str, Any]) -> None:
     fp = _done_path(token)
-    fp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(fp, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def read_done(token: str) -> Optional[Dict[str, Any]]:
@@ -367,25 +513,20 @@ def db_init() -> None:
                 """
             )
 
-            # docs = EXACT BYTES identity (dedupe)
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS docs(
                   doc_id TEXT PRIMARY KEY,                  -- sha256(file bytes)
-                  group_key TEXT NOT NULL,                  -- logical group for versioning
+                  group_key TEXT NOT NULL,                  -- heuristic group for versioning
                   kdnr TEXT,
                   object_folder TEXT,
                   doctype TEXT,
-                  doc_date TEXT,                            -- YYYY-MM-DD
+                  doc_date TEXT,                            -- YYYY-MM-DD (OPTIONAL)
                   created_at TEXT NOT NULL
                 );
                 """
             )
 
-            # versions = versions for ONE doc_id (same bytes) is pointless,
-            # but we keep it for your UI. For real “edited version” you’ll get a NEW doc_id.
-            # We therefore treat “versions” as “snapshots we stored for this doc_id”,
-            # and we also detect same group_key for “new_version_same_group_key”.
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS versions(
@@ -409,11 +550,7 @@ def db_init() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_versions_doc ON versions(doc_id);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_versions_path ON versions(file_path);")
 
-            # FTS5 (optional)
             if _has_fts5(con):
-                # IMPORTANT:
-                # - FTS5 does NOT support UPSERT
-                # - We store doc_id as UNINDEXED key; content is indexed
                 con.execute(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts
@@ -429,6 +566,7 @@ def db_init() -> None:
                     );
                     """
                 )
+
             con.commit()
         finally:
             con.close()
@@ -531,16 +669,6 @@ def audit_log(user: str, role: str, action: str, target: str = "", meta: Optiona
 # ============================================================
 # FOLDER HELPERS
 # ============================================================
-def _safe_fs(s: str) -> str:
-    s = normalize_component(s)
-    if not s:
-        return ""
-    s = re.sub(r"[^\wäöüÄÖÜß\-\.\, ]+", "", s)
-    s = s.replace(" ", "_")
-    s = re.sub(r"_+", "_", s).strip("_")
-    return s[:60]
-
-
 def parse_folder_fields(folder_name: str) -> Dict[str, str]:
     folder_name = folder_name.strip()
     parts = folder_name.split("_")
@@ -586,17 +714,45 @@ def parse_folder_fields(folder_name: str) -> Dict[str, str]:
 
 
 def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
+    """
+    Tenant-aware search without changing signature:
+    - First: search direct child dirs: <base_path>/<kdnr>_*
+    - If none: search one tenant level deep: <base_path>/<tenant>/<kdnr>_*
+    """
     kdnr = normalize_component(kdnr)
     if not kdnr:
         return []
     base_path = Path(base_path)
     if not base_path.exists():
         return []
+
     out: List[Path] = []
     prefix = f"{kdnr}_"
-    for p in base_path.iterdir():
-        if p.is_dir() and p.name.startswith(prefix):
-            out.append(p)
+
+    # direct level
+    try:
+        for p in base_path.iterdir():
+            if p.is_dir() and p.name.startswith(prefix):
+                out.append(p)
+    except Exception:
+        pass
+
+    if out:
+        return sorted(out)
+
+    # tenant level deep
+    try:
+        for tdir in base_path.iterdir():
+            if not tdir.is_dir():
+                continue
+            if re.match(r"^\d{3,}_", tdir.name):  # not a tenant dir
+                continue
+            for p in tdir.iterdir():
+                if p.is_dir() and p.name.startswith(prefix):
+                    out.append(p)
+    except Exception:
+        pass
+
     return sorted(out)
 
 
@@ -659,7 +815,7 @@ def _extract_pdf_text(fp: Path) -> str:
         return ""
     try:
         reader = PdfReader(str(fp))
-        texts = []
+        texts: List[str] = []
         for page in reader.pages[: max(1, OCR_MAX_PAGES)]:
             try:
                 t = page.extract_text() or ""
@@ -677,7 +833,7 @@ def _ocr_pdf(fp: Path) -> str:
         return ""
     try:
         doc = fitz.open(str(fp))
-        texts = []
+        texts: List[str] = []
         for i in range(min(len(doc), OCR_MAX_PAGES)):
             page = doc.load_page(i)
             pix = page.get_pixmap(dpi=250)
@@ -701,25 +857,369 @@ def _ocr_image(fp: Path) -> str:
         return ""
 
 
+def _extract_docx_text(fp: Path) -> str:
+    # Preferred: python-docx
+    if DocxDocument is not None:
+        try:
+            doc = DocxDocument(str(fp))
+            paras = []
+            for i, p in enumerate(doc.paragraphs):
+                if i >= MAX_DOCX_PARAS:
+                    break
+                t = (p.text or "").strip()
+                if t:
+                    paras.append(t)
+            return "\n".join(paras).strip()
+        except Exception:
+            pass
+
+    # Fallback: parse word/document.xml from zip (very pragmatic)
+    try:
+        with zipfile.ZipFile(str(fp), "r") as z:
+            xml = z.read("word/document.xml").decode("utf-8", errors="ignore")
+        xml = xml.replace("</w:p>", "\n").replace("</w:tr>", "\n").replace("</w:tc>", " ")
+        xml = re.sub(r"<[^>]+>", "", xml)
+        xml = re.sub(r"[ \t]+", " ", xml)
+        xml = re.sub(r"\n{3,}", "\n\n", xml)
+        return xml.strip()
+    except Exception:
+        return ""
+
+
+def _xlsx_shared_strings(z: zipfile.ZipFile) -> List[str]:
+    try:
+        sxml = z.read("xl/sharedStrings.xml").decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+    out = re.findall(r"<t[^>]*>(.*?)</t>", sxml, flags=re.IGNORECASE | re.DOTALL)
+    return [re.sub(r"\s+", " ", x).strip() for x in out]
+
+
+def _extract_xlsx_text(fp: Path) -> str:
+    # Preferred: openpyxl
+    if openpyxl is not None:
+        try:
+            wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
+            lines: List[str] = []
+            for ws in wb.worksheets[:3]:
+                lines.append(f"[Sheet] {ws.title}")
+                rcount = 0
+                for row in ws.iter_rows(values_only=True):
+                    rcount += 1
+                    if rcount > MAX_XLSX_ROWS:
+                        break
+                    vals = []
+                    for v in row[:MAX_XLSX_COLS]:
+                        if v is None:
+                            continue
+                        s = normalize_component(v)
+                        if s:
+                            vals.append(s)
+                    if vals:
+                        lines.append(" | ".join(vals))
+            return "\n".join(lines).strip()
+        except Exception:
+            pass
+
+    # Fallback: zip-read a few sheet XML files + sharedStrings
+    try:
+        with zipfile.ZipFile(str(fp), "r") as z:
+            sst = _xlsx_shared_strings(z)
+            sheet_names = [n for n in z.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+            sheet_names = sorted(sheet_names)[:3]
+            out_lines: List[str] = []
+            for sname in sheet_names:
+                xml = z.read(sname).decode("utf-8", errors="ignore")
+                out_lines.append(f"[SheetXML] {Path(sname).name}")
+                vals = re.findall(r"<v>(.*?)</v>", xml, flags=re.IGNORECASE | re.DOTALL)
+                cleaned: List[str] = []
+                for v in vals[: MAX_XLSX_ROWS * 3]:
+                    v = re.sub(r"\s+", " ", v).strip()
+                    if not v:
+                        continue
+                    if v.isdigit():
+                        idx = int(v)
+                        if 0 <= idx < len(sst):
+                            v = sst[idx]
+                    cleaned.append(v)
+                for i in range(0, min(len(cleaned), MAX_XLSX_ROWS * 10), MAX_XLSX_COLS):
+                    chunk = cleaned[i : i + MAX_XLSX_COLS]
+                    if chunk:
+                        out_lines.append(" | ".join(chunk))
+            return "\n".join(out_lines).strip()
+    except Exception:
+        return ""
+
+
+def _extract_csv_text(fp: Path) -> str:
+    raw = None
+    for enc in ("utf-8-sig", "utf-8", "latin1"):
+        try:
+            raw = fp.read_text(encoding=enc, errors="strict")
+            break
+        except Exception:
+            continue
+    if raw is None:
+        try:
+            raw = fp.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+    sio = io.StringIO(raw)
+    try:
+        sample = raw[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample)
+        except Exception:
+            dialect = csv.excel
+        reader = csv.reader(sio, dialect)
+        lines: List[str] = []
+        for r_i, row in enumerate(reader):
+            if r_i >= MAX_CSV_ROWS:
+                break
+            cols = [normalize_component(c) for c in row[:MAX_CSV_COLS]]
+            cols = [c for c in cols if c]
+            if cols:
+                lines.append(" | ".join(cols))
+        return "\n".join(lines).strip()
+    except Exception:
+        return _clip_text(raw.strip(), 50_000)
+
+
+def _extract_eml_text(fp: Path) -> str:
+    try:
+        msg = BytesParser(policy=policy.default).parsebytes(_read_bytes(fp))
+    except Exception:
+        return ""
+
+    hdr = []
+    for k in ("Subject", "From", "To", "Cc", "Date"):
+        try:
+            v = msg.get(k)
+            if v:
+                hdr.append(f"{k}: {v}")
+        except Exception:
+            pass
+
+    parts_text: List[str] = []
+
+    def add_text(t: str) -> None:
+        t = (t or "").strip()
+        if t:
+            parts_text.append(t)
+
+    try:
+        if msg.is_multipart():
+            for part in msg.walk():
+                ctype = (part.get_content_type() or "").lower()
+                disp = (part.get_content_disposition() or "").lower()
+                if disp == "attachment":
+                    continue
+                try:
+                    payload = part.get_content()
+                except Exception:
+                    payload = None
+
+                if ctype == "text/plain":
+                    if isinstance(payload, str):
+                        add_text(payload)
+                elif ctype == "text/html":
+                    if isinstance(payload, str):
+                        add_text(_html_to_text(payload))
+        else:
+            ctype = (msg.get_content_type() or "").lower()
+            try:
+                payload = msg.get_content()
+            except Exception:
+                payload = None
+            if isinstance(payload, str):
+                add_text(_html_to_text(payload) if ctype == "text/html" else payload)
+    except Exception:
+        pass
+
+    body = "\n\n".join(parts_text).strip()
+    all_text = "\n".join(hdr + (["", body] if body else [])).strip()
+    return all_text
+
+
+def _extract_html_file(fp: Path) -> str:
+    try:
+        raw = fp.read_text(encoding="utf-8", errors="ignore")
+        return _html_to_text(raw)
+    except Exception:
+        return ""
+
+
+def _extract_md_text(fp: Path) -> str:
+    try:
+        return (fp.read_text(encoding="utf-8", errors="ignore") or "").strip()
+    except Exception:
+        return ""
+
+
+def _extract_rtf_text(fp: Path) -> str:
+    """
+    Best-effort RTF -> text without extra deps.
+    """
+    raw = ""
+    try:
+        raw = fp.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        try:
+            raw = fp.read_text(encoding="latin1", errors="ignore")
+        except Exception:
+            return ""
+    raw = re.sub(r"{\\\*[^}]*}", " ", raw)
+    raw = re.sub(r"\\'[0-9a-fA-F]{2}", " ", raw)
+    raw = re.sub(r"\\[a-zA-Z]+\d* ?", " ", raw)
+    raw = raw.replace("{", " ").replace("}", " ")
+    raw = re.sub(r"\s+", " ", raw)
+    return raw.strip()
+
+
+def _extract_json_text(fp: Path) -> str:
+    try:
+        raw = fp.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        return _clip_text(raw.strip(), 50_000)
+
+    out: List[str] = []
+
+    def walk(x: Any, prefix: str = "") -> None:
+        if isinstance(x, dict):
+            for k, v in x.items():
+                walk(v, f"{prefix}{k}.")
+        elif isinstance(x, list):
+            for i, v in enumerate(x[:2000]):
+                walk(v, f"{prefix}{i}.")
+        else:
+            s = normalize_component(x)
+            if s:
+                out.append(f"{prefix}{s}")
+
+    walk(obj)
+    return "\n".join(out).strip()
+
+
+def _extract_xml_text(fp: Path) -> str:
+    try:
+        raw = fp.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+    raw = re.sub(r"(?is)<[^>]+>", " ", raw)
+    raw = raw.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    raw = re.sub(r"\s+", " ", raw)
+    return raw.strip()
+
+
+def _extract_msg_text(fp: Path) -> str:
+    """
+    Outlook .msg is proprietary.
+    If extract_msg is installed: extract subject/from/to/date/body.
+    Else: return "" (store-only).
+    """
+    if extract_msg is None:
+        return ""
+    try:
+        m = extract_msg.Message(str(fp))
+        m.process()
+        parts: List[str] = []
+        if getattr(m, "subject", None):
+            parts.append(f"Subject: {m.subject}")
+        if getattr(m, "sender", None):
+            parts.append(f"From: {m.sender}")
+        if getattr(m, "to", None):
+            parts.append(f"To: {m.to}")
+        if getattr(m, "date", None):
+            parts.append(f"Date: {m.date}")
+        if getattr(m, "body", None):
+            parts.append(str(m.body))
+        return "\n".join(parts).strip()
+    except Exception:
+        return ""
+
+
 def _extract_text(fp: Path) -> Tuple[str, bool]:
+    """
+    Returns (text, used_ocr)
+    """
     ext = fp.suffix.lower()
+
+    if ext == ".txt":
+        try:
+            t = fp.read_text(encoding="utf-8", errors="ignore")
+            return (t or "").strip(), False
+        except Exception:
+            return "", False
+
+    if ext == ".md":
+        t = _extract_md_text(fp)
+        return _clip_text(t), False
+
+    if ext == ".rtf":
+        t = _extract_rtf_text(fp)
+        return _clip_text(t), False
+
+    if ext in (".html", ".htm"):
+        t = _extract_html_file(fp)
+        return _clip_text(t), False
+
+    if ext == ".xml":
+        t = _extract_xml_text(fp)
+        return _clip_text(t), False
+
+    if ext == ".json":
+        t = _extract_json_text(fp)
+        return _clip_text(t), False
+
+    if ext == ".csv":
+        t = _extract_csv_text(fp)
+        return _clip_text(t), False
+
+    if ext == ".docx":
+        t = _extract_docx_text(fp)
+        return _clip_text(t), False
+
+    if ext == ".xlsx":
+        t = _extract_xlsx_text(fp)
+        return _clip_text(t), False
+
+    if ext == ".eml":
+        t = _extract_eml_text(fp)
+        return _clip_text(t), False
+
+    if ext == ".msg":
+        t = _extract_msg_text(fp)
+        return _clip_text(t), False
+
     if ext == ".pdf":
         t = _extract_pdf_text(fp)
         if len(t) >= MIN_TEXT_LEN_BEFORE_OCR:
-            return t, False
+            return _clip_text(t), False
         o = _ocr_pdf(fp)
         if o:
-            return o, True
-        return t, False
-    else:
+            return _clip_text(o), True
+        return _clip_text(t), False
+
+    # images (only OCR for known image formats)
+    if ext in (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"):
         o = _ocr_image(fp)
-        return o, True if o else False
+        return _clip_text(o), True if o else False
+
+    # store-only / unsupported content types
+    return "", False
 
 
 # ============================================================
 # HEURISTIC PARSING (SUGGESTIONS)
 # ============================================================
 _DOCTYPE_KEYWORDS = [
+    ("H_RECHNUNG", [r"\bh[ _-]?rechnung\b", r"\bhändler[ _-]?rechnung\b", r"\bhaendler[ _-]?rechnung\b", r"\bdealer[ _-]?invoice\b"]),
+    ("H_ANGEBOT",  [r"\bh[ _-]?angebot\b",  r"\bhändler[ _-]?angebot\b",  r"\bhaendler[ _-]?angebot\b",  r"\bdealer[ _-]?offer\b"]),
     ("RECHNUNG", [r"\brechnung\b", r"\binvoice\b"]),
     ("ANGEBOT", [r"\bangebot\b", r"\bquotation\b", r"\boffer\b"]),
     ("AUFTRAGSBESTAETIGUNG", [r"\bauftragsbest", r"\border confirmation\b"]),
@@ -749,15 +1249,18 @@ def _find_kdnr_candidates(text: str) -> List[Tuple[str, float]]:
         cands.append(m.group(2))
     for m in re.finditer(r"(kdnr\.?\s*[:#]?\s*)(\d{3,})", text, flags=re.IGNORECASE):
         cands.append(m.group(2))
+
     if not cands:
         for m in re.finditer(r"\b(\d{4,6})\b", text):
             v = m.group(1)
             if v.startswith("20"):
                 continue
             cands.append(v)
+
     freq: Dict[str, int] = {}
     for c in cands:
         freq[c] = freq.get(c, 0) + 1
+
     ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
     out: List[Tuple[str, float]] = []
     for num, f in ranked[:8]:
@@ -784,6 +1287,7 @@ def _find_dates(text: str) -> Tuple[str, List[Dict[str, Any]]]:
     best = ""
     best_score = -1.0
     low = text.lower()
+
     for c in cands:
         raw = c["raw"]
         d = c["date"]
@@ -846,11 +1350,6 @@ def _find_name_addr_plzort(text: str) -> Tuple[List[str], List[str], List[str]]:
 # INDEX / SEARCH
 # ============================================================
 def _fts_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
-    """
-    FIX:
-    FTS5 virtual tables do NOT support UPSERT.
-    We do: DELETE + INSERT.
-    """
     if not (_has_fts5(con) and _table_exists(con, "docs_fts")):
         return
 
@@ -871,7 +1370,7 @@ def _fts_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
             str(row.get("doc_date", "") or ""),
             str(row.get("file_name", "") or ""),
             str(row.get("file_path", "") or ""),
-            (str(row.get("content", "") or ""))[:200000],
+            _clip_text(str(row.get("content", "") or ""), MAX_EXTRACT_CHARS),
         ),
     )
 
@@ -881,7 +1380,7 @@ def _compute_group_key(kdnr: str, doctype: str, doc_date: str, file_name: str) -
     t = normalize_component(doctype).upper()
     d = parse_excel_like_date(doc_date) or ""
     stem = Path(file_name).stem
-    stem = re.sub(r"_(\d{6})$", "", stem)
+    stem = re.sub(r"_(v\d+|\d{6})$", "", stem, flags=re.IGNORECASE)
     stem_n = _norm_for_match(stem)
     raw = f"{k}|{t}|{d}|{stem_n}"
     return _sha256_bytes(raw.encode("utf-8"))
@@ -899,7 +1398,7 @@ def index_upsert_document(
     file_path: str,
     extracted_text: str,
     used_ocr: bool,
-    note: str = ""
+    note: str = "",
 ) -> None:
     with _DB_LOCK:
         con = _db()
@@ -908,7 +1407,7 @@ def index_upsert_document(
             if not exists:
                 con.execute(
                     "INSERT INTO docs(doc_id, group_key, kdnr, object_folder, doctype, doc_date, created_at) VALUES (?,?,?,?,?,?,?)",
-                    (doc_id, group_key, kdnr, object_folder, doctype, doc_date, _now_iso()),
+                    (doc_id, group_key, kdnr, object_folder, doctype, doc_date or "", _now_iso()),
                 )
 
             row = con.execute("SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)).fetchone()
@@ -926,7 +1425,7 @@ def index_upsert_document(
                     doc_id,
                     file_name,
                     file_path,
-                    extracted_text[:200000],
+                    _clip_text(extracted_text, MAX_EXTRACT_CHARS),
                     1 if used_ocr else 0,
                     note,
                     _now_iso(),
@@ -939,7 +1438,7 @@ def index_upsert_document(
                     "doc_id": doc_id,
                     "kdnr": kdnr,
                     "doctype": doctype,
-                    "doc_date": doc_date,
+                    "doc_date": doc_date or "",
                     "file_name": file_name,
                     "file_path": file_path,
                     "content": extracted_text or "",
@@ -951,8 +1450,17 @@ def index_upsert_document(
 
 
 def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_LIMIT, role: str = "ADMIN") -> List[Dict[str, Any]]:
+    """
+    Tenant note:
+    - If you stored kdnr as "TENANT:1234", search by the same.
+    - If you pass only "1234" and TOPHANDWERK_TENANT_DEFAULT is set, it will auto-prefix.
+    """
     query = normalize_component(query)
-    kdnr = normalize_component(kdnr)
+    kdnr_in = normalize_component(kdnr)
+
+    # auto-prefix by default tenant if user didn't pass tenant
+    if kdnr_in and ":" not in kdnr_in:
+        kdnr_in = _tenant_prefix_kdnr(TENANT_DEFAULT, kdnr_in)
 
     if not query:
         return []
@@ -964,12 +1472,10 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
             rows: List[sqlite3.Row] = []
 
             if use_fts:
-                q = query
-                tokens = [t for t in re.split(r"\s+", q) if t]
-                if len(tokens) >= 2:
-                    q = " OR ".join(tokens)
+                tokens = [t for t in re.split(r"\s+", query) if t]
+                q = " OR ".join(tokens) if tokens else query
 
-                if kdnr:
+                if kdnr_in:
                     rows = con.execute(
                         """
                         SELECT doc_id, kdnr, doctype, doc_date, file_name, file_path,
@@ -978,7 +1484,7 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
                         WHERE docs_fts MATCH ? AND kdnr=?
                         LIMIT ?
                         """,
-                        (q, kdnr, int(limit)),
+                        (q, kdnr_in, int(limit)),
                     ).fetchall()
                 else:
                     rows = con.execute(
@@ -993,7 +1499,7 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
                     ).fetchall()
             else:
                 like = f"%{query}%"
-                if kdnr:
+                if kdnr_in:
                     rows = con.execute(
                         """
                         SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date,
@@ -1005,7 +1511,7 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
                         ORDER BY v.id DESC
                         LIMIT ?
                         """,
-                        (kdnr, like, like, like, int(limit)),
+                        (kdnr_in, like, like, like, int(limit)),
                     ).fetchall()
                 else:
                     rows = con.execute(
@@ -1048,64 +1554,120 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
 def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
     base = Path(base_path) if base_path else BASE_PATH
     if not base.exists():
-        return {"ok": True, "indexed": 0, "skipped": 0, "errors": 0}
+        return {
+            "ok": True,
+            "indexed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "skipped_by_reason": {
+                "unsupported_ext": 0,
+                "already_indexed": 0,
+                "no_text": 0,
+                "parse_failed": 0,
+            },
+        }
 
     indexed = 0
     skipped = 0
     errors = 0
 
-    for fp in base.rglob("*"):
-        if not fp.is_file():
-            continue
-        if fp.suffix.lower() not in SUPPORTED_EXT:
-            continue
-        try:
-            b = _read_bytes(fp)
-            doc_id = _sha256_bytes(b)
+    skipped_by_reason = {
+        "unsupported_ext": 0,
+        "already_indexed": 0,
+        "no_text": 0,
+        "parse_failed": 0,
+    }
 
-            with _DB_LOCK:
-                con = _db()
-                try:
-                    exists = con.execute("SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)).fetchone()
-                finally:
-                    con.close()
-
-            if exists:
-                skipped += 1
+    try:
+        for fp in base.rglob("*"):
+            if not fp.is_file():
                 continue
 
-            file_name = fp.name
-            kdnr = ""
-            object_folder = ""
-            for part in reversed(fp.parts):
-                if re.match(r"^\d{3,}_", part):
-                    kdnr = part.split("_", 1)[0]
-                    object_folder = part
-                    break
+            ext = fp.suffix.lower()
+            if ext not in SUPPORTED_EXT:
+                skipped += 1
+                skipped_by_reason["unsupported_ext"] += 1
+                continue
 
-            text, used_ocr = _extract_text(fp)
-            doctype = _detect_doctype(text, file_name)
-            best_date, _ = _find_dates(text)
-            group_key = _compute_group_key(kdnr, doctype, best_date, file_name)
+            try:
+                b = _read_bytes(fp)
+                doc_id = _sha256_bytes(b)
 
-            index_upsert_document(
-                doc_id=doc_id,
-                group_key=group_key,
-                kdnr=kdnr,
-                object_folder=object_folder,
-                doctype=doctype,
-                doc_date=best_date,
-                file_name=file_name,
-                file_path=str(fp),
-                extracted_text=text,
-                used_ocr=used_ocr,
-                note="indexed_by_full_scan",
-            )
-            indexed += 1
-        except Exception:
-            errors += 1
+                with _DB_LOCK:
+                    con = _db()
+                    try:
+                        exists = con.execute("SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)).fetchone()
+                    finally:
+                        con.close()
 
-    return {"ok": True, "indexed": indexed, "skipped": skipped, "errors": errors}
+                if exists:
+                    skipped += 1
+                    skipped_by_reason["already_indexed"] += 1
+                    continue
+
+                file_name = fp.name
+
+                # infer tenant (optional)
+                tenant = _effective_tenant(_infer_tenant_from_path(fp))
+
+                # infer customer folder/kdnr from path
+                kdnr_raw = ""
+                object_folder = ""
+                for part in reversed(fp.parts):
+                    if re.match(r"^\d{3,}_", part):
+                        kdnr_raw = part.split("_", 1)[0]
+                        object_folder = part
+                        break
+
+                # if tenant required but not found, skip (policy)
+                if TENANT_REQUIRE and not tenant:
+                    skipped += 1
+                    skipped_by_reason["parse_failed"] += 1
+                    continue
+
+                kdnr_idx = _tenant_prefix_kdnr(tenant, kdnr_raw) if kdnr_raw else ""
+                object_folder_tag = _tenant_object_folder_tag(tenant, object_folder) if object_folder else ""
+
+                text, used_ocr = _extract_text(fp)
+                if not text or len(text.strip()) < 3:
+                    skipped += 1
+                    skipped_by_reason["no_text"] += 1
+                    continue
+
+                doctype = _detect_doctype(text, file_name)
+                best_date, _ = _find_dates(text)
+                group_key = _compute_group_key(kdnr_idx, doctype, best_date, file_name)
+
+                index_upsert_document(
+                    doc_id=doc_id,
+                    group_key=group_key,
+                    kdnr=kdnr_idx,
+                    object_folder=object_folder_tag,
+                    doctype=doctype,
+                    doc_date=best_date or "",
+                    file_name=file_name,
+                    file_path=str(fp),
+                    extracted_text=text,
+                    used_ocr=used_ocr,
+                    note="indexed_by_full_scan",
+                )
+                indexed += 1
+
+            except Exception:
+                skipped += 1
+                skipped_by_reason["parse_failed"] += 1
+                continue
+
+    except Exception:
+        errors += 1
+
+    return {
+        "ok": True,
+        "indexed": indexed,
+        "skipped": skipped,
+        "errors": errors,
+        "skipped_by_reason": skipped_by_reason,
+    }
 
 
 # ============================================================
@@ -1118,6 +1680,8 @@ def analyze_to_pending(src: Path) -> str:
     if not src.exists():
         raise FileNotFoundError(src)
 
+    tenant = _effective_tenant(_infer_tenant_from_path(src))
+
     t = _token()
     payload: Dict[str, Any] = {
         "status": "ANALYZING",
@@ -1126,6 +1690,7 @@ def analyze_to_pending(src: Path) -> str:
         "error": "",
         "path": str(src),
         "filename": src.name,
+        "tenant_suggested": tenant,
         "used_ocr": False,
         "extracted_text": "",
         "preview": "",
@@ -1186,7 +1751,7 @@ def _analyze_worker(token: str) -> None:
         _set_progress(token, 40.0, "Dokumenttyp/Datum erkennen…")
         d["doctype_suggested"] = _detect_doctype(text, src.name)
         best_date, date_cands = _find_dates(text)
-        d["doc_date_suggested"] = best_date
+        d["doc_date_suggested"] = best_date or ""
         d["doc_date_candidates"] = date_cands
 
         _set_progress(token, 60.0, "Kundendaten erkennen…")
@@ -1216,7 +1781,15 @@ def _analyze_worker(token: str) -> None:
 # ============================================================
 def _doctype_code(doctype: str) -> str:
     doctype = normalize_component(doctype).upper()
+
+    if doctype in {"HAENDLERRECHNUNG", "HÄNDLERRECHNUNG", "H_RE"}:
+        doctype = "H_RECHNUNG"
+    if doctype in {"HAENDLERANGEBOT", "HÄNDLERANGEBOT", "H_ANG"}:
+        doctype = "H_ANGEBOT"
+
     return {
+        "H_RECHNUNG": "H_RE",
+        "H_ANGEBOT": "H_ANG",
         "RECHNUNG": "RE",
         "ANGEBOT": "ANG",
         "AUFTRAGSBESTAETIGUNG": "AB",
@@ -1236,12 +1809,15 @@ def _compose_object_folder(kdnr: str, name: str, addr: str, plzort: str) -> str:
 
 def _compose_filename(doctype: str, doc_date: str, kdnr: str, name: str, addr: str, plzort: str, ext: str) -> str:
     code = _doctype_code(doctype)
-    d = parse_excel_like_date(doc_date) or datetime.now().strftime("%Y-%m-%d")
-    parts = [code, d]
+    d = parse_excel_like_date(doc_date) or ""
+    parts: List[str] = [code]
+    if d:
+        parts.append(d)
     for x in [kdnr, name, addr, plzort]:
         xs = _safe_fs(x)
         if xs:
             parts.append(xs)
+
     base = "_".join(parts)
     base = re.sub(r"_+", "_", base).strip("_")[:160]
     return f"{base}{ext}"
@@ -1272,7 +1848,13 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     if not src.exists():
         raise FileNotFoundError(src)
 
-    kdnr = normalize_component(answers.get("kdnr", ""))
+    # tenant: answers["tenant"] / answers["mandant"] / inferred / env default
+    tenant = _effective_tenant(answers.get("tenant"), answers.get("mandant"), _infer_tenant_from_path(src))
+    if TENANT_REQUIRE and not tenant:
+        raise ValueError("tenant/mandant missing (TENANT_REQUIRE=1)")
+
+    # raw kdnr for filesystem naming
+    kdnr_raw = normalize_component(answers.get("kdnr", ""))
     use_existing = normalize_component(answers.get("use_existing", ""))
     name = normalize_component(answers.get("name", ""))
     addr = normalize_component(answers.get("addr", ""))
@@ -1280,51 +1862,57 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     doctype = normalize_component(answers.get("doctype", "SONSTIGES")).upper()
     doc_date = parse_excel_like_date(answers.get("document_date", "")) or ""
 
-    if not kdnr:
+    if not kdnr_raw:
         raise ValueError("kdnr missing")
 
+    # index kdnr gets tenant prefix
+    kdnr_idx = _tenant_prefix_kdnr(tenant, kdnr_raw)
+
     BASE_PATH.mkdir(parents=True, exist_ok=True)
+    tenant_dir = BASE_PATH / _safe_fs(tenant) if tenant else BASE_PATH
+    tenant_dir.mkdir(parents=True, exist_ok=True)
 
     created_new_object = False
     if use_existing:
         folder = Path(use_existing)
         if not folder.exists() or not folder.is_dir():
-            folder = BASE_PATH / _compose_object_folder(kdnr, name, addr, plzort)
+            folder = tenant_dir / _compose_object_folder(kdnr_raw, name, addr, plzort)
             created_new_object = True
     else:
-        folder_name = _compose_object_folder(kdnr, name, addr, plzort)
-        folder = BASE_PATH / folder_name
+        folder_name = _compose_object_folder(kdnr_raw, name, addr, plzort)
+        folder = tenant_dir / folder_name
         if not folder.exists():
             created_new_object = True
 
     folder.mkdir(parents=True, exist_ok=True)
 
     ext = src.suffix.lower()
-    final_name = _compose_filename(doctype, doc_date, kdnr, name, addr, plzort, ext)
+    final_name = _compose_filename(doctype, doc_date, kdnr_raw, name, addr, plzort, ext)
     target = folder / final_name
 
     b = _read_bytes(src)
     doc_id = _sha256_bytes(b)
 
-    # if target exists, check byte equality
+    object_folder_tag = _tenant_object_folder_tag(tenant, folder.name)
+
     if target.exists():
         try:
             if _sha256_bytes(_read_bytes(target)) == doc_id:
-                # identical bytes: delete src; ensure index exists
                 try:
                     src.unlink()
                 except Exception:
                     pass
+
                 if not _db_has_doc(doc_id):
                     text, used_ocr = _extract_text(target)
-                    group_key = _compute_group_key(kdnr, doctype, doc_date, target.name)
+                    group_key = _compute_group_key(kdnr_idx, doctype, doc_date, target.name)
                     index_upsert_document(
                         doc_id=doc_id,
                         group_key=group_key,
-                        kdnr=kdnr,
-                        object_folder=folder.name,
+                        kdnr=kdnr_idx,
+                        object_folder=object_folder_tag,
                         doctype=doctype,
-                        doc_date=doc_date,
+                        doc_date=doc_date or "",
                         file_name=target.name,
                         file_path=str(target),
                         extracted_text=text,
@@ -1335,11 +1923,9 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
         except Exception:
             pass
 
-        # different bytes => create a versioned filename (filesystem)
         final_name = _next_version_suffix(folder, final_name, ext)
         target = folder / final_name
 
-    # Move into place
     try:
         src.replace(target)
     except Exception:
@@ -1350,7 +1936,7 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
             pass
 
     text, used_ocr = _extract_text(target)
-    group_key = _compute_group_key(kdnr, doctype, doc_date, target.name)
+    group_key = _compute_group_key(kdnr_idx, doctype, doc_date, target.name)
 
     note = ""
     with _DB_LOCK:
@@ -1365,10 +1951,10 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     index_upsert_document(
         doc_id=doc_id,
         group_key=group_key,
-        kdnr=kdnr,
-        object_folder=folder.name,
+        kdnr=kdnr_idx,
+        object_folder=object_folder_tag,
         doctype=doctype,
-        doc_date=doc_date,
+        doc_date=doc_date or "",
         file_name=target.name,
         file_path=str(target),
         extracted_text=text,
@@ -1380,7 +1966,7 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
 
 
 # ============================================================
-# INIT ON IMPORT
+# BOOTSTRAP DIRS (on import)
 # ============================================================
 def _bootstrap_dirs() -> None:
     EINGANG.mkdir(parents=True, exist_ok=True)
@@ -1391,3 +1977,5 @@ def _bootstrap_dirs() -> None:
 
 _bootstrap_dirs()
 # db_init() is intentionally not auto-called here; your Flask runner calls db_init() at startup.
+
+

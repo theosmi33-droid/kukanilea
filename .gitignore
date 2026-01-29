@@ -1,36 +1,19 @@
-# Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
 .venv/
 venv/
 .env
-
-# macOS
 .DS_Store
-
-# Tophandwerk Daten (NICHT versionieren)
-Tophandwerk_DB.sqlite3
-Tophandwerk_DB.sqlite3-*
-../Tophandwerk_Eingang/
-../Tophandwerk_Pending/
-../Tophandwerk_Done/
-../Tophandwerk_Kundenablage/
-
-# Logs
 *.log
-den/
-speichern/
 
-den/
-speichern/
+Tophandwerk_Eingang/
+Tophandwerk_Pending/
+Tophandwerk_Done/
+Tophandwerk_Kundenablage/
+_THW_TEST_SANDBOX/
 
-den/
-speichern/
-
-den/
-speichern/
-
-den/
-speichern/
+*.sqlite3
+*.db
+*.pem
+*.key
+*.bak_*

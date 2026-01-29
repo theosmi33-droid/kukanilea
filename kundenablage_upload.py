@@ -1,35 +1,56 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+"""
+Tophandwerk Upload/UI (v2.2 compatible) + Tenant/Mandant support (v2.2+)
+
+NEU (Tenant/Mandant):
+- Mandant/Firma wird beim Upload gesetzt und im Pending/Wizard gespeichert
+- Eingang wird tenant-spezifisch: EINGANG/<tenant>/...
+- Finalize übergibt answers["tenant"] an process_with_answers
+- Optional: Mandant ist Pflicht (default: ja), Allowlist möglich
+
+ENV:
+  TOPHANDWERK_TENANT_REQUIRE=1           # 1=Pflicht (default), 0=optional
+  TOPHANDWERK_TENANT_DEFAULT=firma_x     # optionaler Fallback
+  TOPHANDWERK_TENANTS=firma_x,firma_y    # optional Allowlist (lowercase)
+"""
+
 import os
 import re
 import time
 import base64
 from pathlib import Path
 from datetime import datetime, date
+from typing import Any, Dict, List, Optional, Tuple
 
 from flask import (
     Flask, request, jsonify, render_template_string, send_file, abort,
     redirect, url_for, session
 )
 
+try:
+    from werkzeug.utils import secure_filename
+except Exception:
+    secure_filename = None  # type: ignore
+
 import tophandwerk_core as core
 
 
 # ============================================================
-# Robust core access (no more ImportError contract breaks)
+# Robust core access
 # ============================================================
 def _core_get(name, default=None):
     return getattr(core, name, default)
 
 
-EINGANG = _core_get("EINGANG")
-BASE_PATH = _core_get("BASE_PATH")
-PENDING_DIR = _core_get("PENDING_DIR")
-DONE_DIR = _core_get("DONE_DIR")
+EINGANG: Path = _core_get("EINGANG")
+BASE_PATH: Path = _core_get("BASE_PATH")
+PENDING_DIR: Path = _core_get("PENDING_DIR")
+DONE_DIR: Path = _core_get("DONE_DIR")
 SUPPORTED_EXT = _core_get(
     "SUPPORTED_EXT",
-    {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+    {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"}
 )
 
 analyze_to_pending = _core_get("analyze_to_pending") or _core_get("start_background_analysis")
@@ -46,11 +67,9 @@ find_existing_customer_folders = _core_get("find_existing_customer_folders")
 parse_folder_fields = _core_get("parse_folder_fields")
 best_match_object_folder = _core_get("best_match_object_folder")
 
-# Optional new core hook
-detect_object_duplicates_for_kdnr = _core_get("detect_object_duplicates_for_kdnr")
+detect_object_duplicates_for_kdnr = _core_get("detect_object_duplicates_for_kdnr")  # optional
 
 db_init = _core_get("db_init")
-
 rbac_verify_user = _core_get("rbac_verify_user")
 rbac_create_user = _core_get("rbac_create_user")
 rbac_assign_role = _core_get("rbac_assign_role")
@@ -58,7 +77,11 @@ rbac_get_user_roles = _core_get("rbac_get_user_roles")
 audit_log = _core_get("audit_log")
 assistant_search = _core_get("assistant_search")
 
-# guard rails
+index_run_full = _core_get("index_run_full")  # optional
+core_parse_excel_like_date = _core_get("parse_excel_like_date")  # optional
+
+
+# guard rails (minimum contract)
 REQUIRED = {
     "EINGANG": EINGANG, "BASE_PATH": BASE_PATH, "PENDING_DIR": PENDING_DIR, "DONE_DIR": DONE_DIR,
     "analyze_to_pending/start_background_analysis": analyze_to_pending,
@@ -79,16 +102,27 @@ APP = Flask(__name__)
 APP.secret_key = os.environ.get("TOPHANDWERK_SECRET", "tophandwerk-dev-secret-change-me")
 PORT = int(os.environ.get("PORT", 5051))
 
+# Optional hard upload limit (bytes)
+APP.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("TOPHANDWERK_MAX_UPLOAD", str(25 * 1024 * 1024)))
+
 BOOTSTRAP_ADMIN_USER = os.environ.get("TOPHANDWERK_ADMIN_USER", "").strip().lower()
 BOOTSTRAP_ADMIN_PASS = os.environ.get("TOPHANDWERK_ADMIN_PASS", "").strip()
 
 DOCTYPE_CHOICES = [
     "ANGEBOT", "RECHNUNG", "AUFTRAGSBESTAETIGUNG", "AW",
-    "MAHNUNG", "NACHTRAG", "SONSTIGES", "FOTO"
+    "MAHNUNG", "NACHTRAG", "SONSTIGES", "FOTO",
+    "H_RECHNUNG", "H_ANGEBOT",
 ]
 
 # Assistant: Eingang ist NICHT sichtbar (nur Hintergrund)
 ASSISTANT_HIDE_EINGANG = True
+
+# ============================================================
+# Tenant/Mandant Config
+# ============================================================
+TENANT_DEFAULT = os.environ.get("TOPHANDWERK_TENANT_DEFAULT", "").strip()
+TENANT_REQUIRE = os.environ.get("TOPHANDWERK_TENANT_REQUIRE", "1").strip() == "1"
+TENANT_ALLOWLIST = [x.strip().lower() for x in os.environ.get("TOPHANDWERK_TENANTS", "").split(",") if x.strip()]
 
 
 # ============================================================
@@ -121,6 +155,11 @@ def _current_roles() -> list:
     return session.get("roles") or []
 
 
+def _has_role(role: str) -> bool:
+    role = (role or "").upper()
+    return role in [str(r).upper() for r in _current_roles()]
+
+
 def _audit(action: str, target: str = "", meta: dict = None):
     if audit_log is None:
         return
@@ -149,13 +188,32 @@ def _ensure_bootstrap_admin():
         pass
 
 
-ALLOWED_ROOTS = [EINGANG.resolve(), BASE_PATH.resolve(), PENDING_DIR.resolve(), DONE_DIR.resolve()]
+def _safe_filename(name: str) -> str:
+    raw = (name or "").strip().replace("\\", "_").replace("/", "_")
+    if secure_filename is not None:
+        out = secure_filename(raw)
+        return out or "upload"
+    raw = re.sub(r"[^a-zA-Z0-9._-]+", "_", raw)
+    raw = raw.strip("._-")
+    return raw or "upload"
+
+
+def _is_allowed_ext(filename: str) -> bool:
+    try:
+        return Path(filename).suffix.lower() in set(SUPPORTED_EXT)
+    except Exception:
+        return False
+
+
+def _allowed_roots() -> List[Path]:
+    # dynamic roots (avoid stale roots if core config changes)
+    return [EINGANG.resolve(), BASE_PATH.resolve(), PENDING_DIR.resolve(), DONE_DIR.resolve()]
 
 
 def _is_allowed_path(fp: Path) -> bool:
     try:
         rp = fp.resolve()
-        for root in ALLOWED_ROOTS:
+        for root in _allowed_roots():
             if str(rp).startswith(str(root) + os.sep) or rp == root:
                 return True
         return False
@@ -199,16 +257,39 @@ def _card_info(msg: str) -> str:
     """
 
 
+def _norm_tenant(t: str) -> str:
+    try:
+        t = normalize_component(t or "")
+    except Exception:
+        t = (t or "").strip()
+    t = t.lower().replace(" ", "_")
+    t = re.sub(r"[^a-z0-9_\-]+", "", t)
+    return t[:40]
+
+
+def _tenant_or_error(raw: str) -> Tuple[str, Optional[str]]:
+    t = _norm_tenant(raw or "")
+    if not t:
+        t = _norm_tenant(TENANT_DEFAULT)
+    if TENANT_REQUIRE and not t:
+        return "", "tenant_missing"
+    if TENANT_ALLOWLIST and t and t not in TENANT_ALLOWLIST:
+        return "", "tenant_not_allowed"
+    return t, None
+
+
 def _wizard_get(p: dict) -> dict:
     w = p.get("wizard") or {}
+    w.setdefault("tenant", "")  # NEW
     w.setdefault("kdnr", "")
     w.setdefault("use_existing", "")
     w.setdefault("name", "")
     w.setdefault("addr", "")
     w.setdefault("plzort", "")
     w.setdefault("doctype", "")
-    w.setdefault("document_date", "")
+    w.setdefault("document_date", "")  # optional in v2.2
     w.setdefault("customer_status", "")  # "BESTAND" / "NEU"
+    w.setdefault("adopt_existing", True)  # UI default: übernehmen
     return w
 
 
@@ -217,47 +298,33 @@ def _wizard_save(token: str, p: dict, w: dict):
     write_pending(token, p)
 
 
-# --- Date parsing (Excel-like acceptance) ---
+# --- Date parsing (prefer core, else local) ---
 _DATE_PATTERNS = [
-    "%Y-%m-%d",
-    "%Y/%m/%d",
-    "%Y.%m.%d",
-    "%d.%m.%Y",
-    "%d/%m/%Y",
-    "%d-%m-%Y",
-    "%d.%m.%y",
-    "%d/%m/%y",
-    "%Y-%m-%d %H:%M:%S",
-    "%Y-%m-%d %H:%M",
-    "%d.%m.%Y %H:%M:%S",
-    "%d.%m.%Y %H:%M",
-    "%d/%m/%Y %H:%M:%S",
-    "%d/%m/%Y %H:%M",
+    "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
+    "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y",
+    "%d.%m.%y", "%d/%m/%y", "%d-%m-%y",
+    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+    "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
+    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
+    "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
 ]
 
 
-def parse_excel_like_date(s: str) -> str:
-    """
-    Accepts common Excel-like date strings and returns normalized YYYY-MM-DD or "" if invalid.
-    Examples:
-      - 2025-10-24
-      - 24.10.2025
-      - 24/10/2025
-      - 2025-10-24 00:00:00
-    """
+def parse_excel_like_date(s: Any) -> str:
+    if callable(core_parse_excel_like_date):
+        try:
+            return str(core_parse_excel_like_date(s) or "")
+        except Exception:
+            pass
+
     if not s:
         return ""
     s = str(s).strip()
     if not s:
         return ""
+    s = re.sub(r"\s+", " ", s).replace("T", " ")
 
-    # Normalize multiple spaces
-    s = re.sub(r"\s+", " ", s)
-
-    # If user pasted ISO-like with T
-    s = s.replace("T", " ")
-
-    # Try known patterns
     for pat in _DATE_PATTERNS:
         try:
             dt = datetime.strptime(s, pat)
@@ -268,13 +335,10 @@ def parse_excel_like_date(s: str) -> str:
         except Exception:
             pass
 
-    # If it's already "YYYY-MM-DD" but with trailing junk, try to extract
     m = re.search(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", s)
     if m:
         try:
-            y = int(m.group(1))
-            mo = int(m.group(2))
-            da = int(m.group(3))
+            y, mo, da = int(m.group(1)), int(m.group(2)), int(m.group(3))
             d = date(y, mo, da)
             if d.year < 1900 or d.year > 2099:
                 return ""
@@ -282,13 +346,13 @@ def parse_excel_like_date(s: str) -> str:
         except Exception:
             pass
 
-    # Or "DD.MM.YYYY" extract
-    m = re.search(r"(\d{1,2})[./-](\d{1,2})[./-](\d{4})", s)
+    m = re.search(r"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})", s)
     if m:
         try:
-            da = int(m.group(1))
-            mo = int(m.group(2))
+            da, mo = int(m.group(1)), int(m.group(2))
             y = int(m.group(3))
+            if y < 100:
+                y = 2000 + y if y <= 68 else 1900 + y
             d = date(y, mo, da)
             if d.year < 1900 or d.year > 2099:
                 return ""
@@ -301,11 +365,10 @@ def parse_excel_like_date(s: str) -> str:
 
 def _predict_filename(w: dict, suggested: str) -> str:
     """
-    UI-Vorschau: wie die Datei voraussichtlich heißen wird.
-    (Final entscheidet Core. Hier nur Preview.)
+    v2.2: doc_date OPTIONAL (no fallback to today).
     """
     dt_raw = (w.get("document_date") or "").strip()
-    dt = parse_excel_like_date(dt_raw) or datetime.now().strftime("%Y-%m-%d")
+    dt = parse_excel_like_date(dt_raw) or ""  # optional
 
     doctype = (w.get("doctype") or suggested or "SONSTIGES").upper()
     kdnr = (w.get("kdnr") or "").strip()
@@ -321,18 +384,18 @@ def _predict_filename(w: dict, suggested: str) -> str:
         "MAHNUNG": "MAH",
         "NACHTRAG": "NTR",
         "FOTO": "FOTO",
+        "H_RECHNUNG": "H_RE",
+        "H_ANGEBOT": "H_ANG",
         "SONSTIGES": "DOC",
     }.get(doctype, "DOC")
 
-    parts = [code, dt]
-    if kdnr:
-        parts.append(kdnr)
-    if name:
-        parts.append(name)
-    if addr:
-        parts.append(addr)
-    if plzort:
-        parts.append(plzort)
+    parts = [code]
+    if dt:
+        parts.append(dt)
+
+    for x in [kdnr, name, addr, plzort]:
+        if x:
+            parts.append(x)
 
     s = "_".join(parts)
     s = re.sub(r"\s+", "_", s).strip("_")
@@ -392,7 +455,7 @@ HTML_BASE = r"""
   <div class="flex items-start justify-between gap-3 mb-6">
     <div>
       <h1 class="text-3xl font-bold">Tophandwerk</h1>
-      <div class="muted text-sm">Upload → Review → Ablage • Assistant (MVP)</div>
+      <div class="muted text-sm">Upload → Review → Ablage • Assistant</div>
       <div class="muted text-xs mt-1">Ablage: {{ablage}}</div>
     </div>
 
@@ -495,7 +558,7 @@ HTML_INDEX = r"""
   <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
     <div class="text-lg font-semibold mb-2">Datei hochladen</div>
     <div class="muted text-sm mb-4">
-      Unterstützt: PDF, JPG, PNG, TIFF. Upload → Analyse im Hintergrund → Review öffnet automatisch.
+      Unterstützt: PDF, JPG, PNG, TIFF, BMP, TXT. Upload → Analyse im Hintergrund → Review öffnet automatisch.
     </div>
 
     <form id="upform" class="space-y-3">
@@ -503,6 +566,10 @@ HTML_INDEX = r"""
         class="block w-full text-sm input
         file:mr-4 file:rounded-xl file:border-0 file:bg-slate-700 file:px-4 file:py-2
         file:text-sm file:font-semibold file:text-white hover:file:bg-slate-600" />
+
+      <input id="tenant" name="tenant" class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input"
+        placeholder="Mandant/Firma (z.B. firma_x)" />
+
       <button id="btn" type="submit" class="rounded-xl px-4 py-2 font-semibold btn-primary">
         Hochladen
       </button>
@@ -516,6 +583,35 @@ HTML_INDEX = r"""
       <div class="text-slate-300 text-sm mt-3" id="status"></div>
       <div class="muted text-xs mt-1" id="phase"></div>
     </div>
+
+    {% if admin_tools %}
+      <div class="mt-5 pt-4 border-t border-slate-800">
+        <div class="text-sm font-semibold mb-2">Admin Tools</div>
+        <button id="btnIndex" type="button" class="rounded-xl px-4 py-2 font-semibold btn-outline card">
+          Vollscan Index (BASE_PATH)
+        </button>
+        <div class="muted text-xs mt-2" id="idxStatus"></div>
+      </div>
+      <script>
+      (function(){
+        const b = document.getElementById("btnIndex");
+        const s = document.getElementById("idxStatus");
+        if(!b) return;
+        b.addEventListener("click", async ()=>{
+          if(!confirm("Vollscan starten? Kann dauern.")) return;
+          s.textContent = "Start…";
+          try{
+            const res = await fetch("/api/index_fullscan", {method:"POST"});
+            const j = await res.json();
+            if(!res.ok){ s.textContent = "Fehler: " + (j.error || ("HTTP " + res.status)); return; }
+            s.textContent = "OK: indexed=" + j.indexed + " skipped=" + j.skipped + " errors=" + j.errors;
+          }catch(e){
+            s.textContent = "Netzwerk/Server-Fehler.";
+          }
+        });
+      })();
+      </script>
+    {% endif %}
   </div>
 
   <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
@@ -527,15 +623,22 @@ HTML_INDEX = r"""
     {% if items %}
       <div class="space-y-2">
         {% for it in items %}
-          <a class="block rounded-xl border border-slate-800 hover:border-slate-600 px-3 py-2"
-             href="/review/{{it}}/kdnr">
-            <div class="flex items-center justify-between">
-              <div class="text-sm font-semibold">Review</div>
+          <div class="rounded-xl border border-slate-800 hover:border-slate-600 px-3 py-2">
+            <div class="flex items-center justify-between gap-2">
+              <a class="text-sm font-semibold underline accentText" href="/review/{{it}}/kdnr">
+                Review öffnen
+              </a>
               <div class="muted text-xs">{{meta[it].get('progress',0) | round(1)}}%</div>
             </div>
             <div class="muted text-xs break-all">{{meta[it].get('filename','')}}</div>
             <div class="muted text-[11px]">{{meta[it].get('progress_phase','')}}</div>
-          </a>
+            <div class="mt-2 flex gap-2">
+              <a class="rounded-xl px-3 py-2 text-xs btn-outline card" href="/file/{{it}}" target="_blank">Datei</a>
+              <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Pending wirklich löschen?')" style="display:inline;">
+                <button class="rounded-xl px-3 py-2 text-xs btn-outline card" type="submit">Delete</button>
+              </form>
+            </div>
+          </div>
         {% endfor %}
       </div>
     {% else %}
@@ -547,6 +650,7 @@ HTML_INDEX = r"""
 <script>
 const form = document.getElementById("upform");
 const fileInput = document.getElementById("file");
+const tenantInput = document.getElementById("tenant");
 const bar = document.getElementById("bar");
 const pLabel = document.getElementById("pLabel");
 const status = document.getElementById("status");
@@ -581,14 +685,17 @@ form.addEventListener("submit", (e) => {
   if(!f){ status.textContent = "Bitte eine Datei auswählen."; return; }
 
   const ext = (f.name.split(".").pop() || "").toLowerCase();
-  const ok = ["pdf","jpg","jpeg","png","tif","tiff","bmp"].includes(ext);
+  const ok = ["pdf","jpg","jpeg","png","tif","tiff","bmp","txt"].includes(ext);
   if(!ok){
-    status.textContent = "Nicht unterstützt. Bitte PDF/JPG/PNG/TIFF/BMP hochladen.";
+    status.textContent = "Nicht unterstützt. Bitte PDF/JPG/PNG/TIFF/BMP/TXT hochladen.";
     return;
   }
 
+  const tenant = (tenantInput?.value || "").trim();
+
   const fd = new FormData();
   fd.append("file", f);
+  fd.append("tenant", tenant);
 
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/upload", true);
@@ -606,7 +713,12 @@ form.addEventListener("submit", (e) => {
       status.textContent = "Upload OK. Analyse läuft…";
       poll(resp.token);
     } else {
-      status.textContent = "Fehler beim Upload: HTTP " + xhr.status;
+      try{
+        const j = JSON.parse(xhr.responseText || "{}");
+        status.textContent = "Fehler beim Upload: " + (j.error || ("HTTP " + xhr.status));
+      }catch(e){
+        status.textContent = "Fehler beim Upload: HTTP " + xhr.status;
+      }
     }
   };
 
@@ -636,6 +748,8 @@ HTML_REVIEW_SHELL = r"""
 
     <div class="mt-4 rounded-xl border border-slate-800 overflow-hidden">
       {% if is_pdf %}
+        <iframe src="/file/{{token}}" class="w-full" style="height:560px"></iframe>
+      {% elif is_text %}
         <iframe src="/file/{{token}}" class="w-full" style="height:560px"></iframe>
       {% else %}
         <img src="/file/{{token}}" class="w-full"/>
@@ -706,9 +820,9 @@ HTML_REVIEW_SHELL = r"""
 
 HTML_NOT_FOUND = r"""
 <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-6 card max-w-xl">
-  <div class="text-xl font-semibold mb-2">Review nicht gefunden</div>
+  <div class="text-xl font-semibold mb-2">Nicht gefunden</div>
   <div class="muted text-sm mb-4">
-    Der Review-Token existiert nicht mehr (z.B. bereits abgelegt oder Pending-Datei gelöscht).
+    Inhalt existiert nicht mehr (z.B. bereits abgelegt oder gelöscht).
   </div>
   <a class="rounded-xl px-4 py-2 font-semibold btn-primary inline-block" href="/">Zur Übersicht</a>
 </div>
@@ -720,6 +834,12 @@ HTML_CONFIRM = r"""
   <div class="muted text-sm mb-4">Bitte prüfen. Du kannst jeden Punkt bearbeiten oder direkt final ablegen.</div>
 
   <div class="space-y-3">
+    <div class="rounded-xl border border-slate-800 p-3">
+      <div class="muted text-xs">Mandant/Firma</div>
+      <div class="text-sm font-semibold break-all">{{w.tenant or "-"}}</div>
+      <a class="text-sm underline accentText" href="/review/{{token}}/kdnr">Bearbeiten</a>
+    </div>
+
     <div class="rounded-xl border border-slate-800 p-3">
       <div class="muted text-xs">Kundennummer</div>
       <div class="text-sm font-semibold break-all">{{w.kdnr}}</div>
@@ -751,9 +871,20 @@ HTML_CONFIRM = r"""
     </div>
 
     <div class="rounded-xl border border-slate-800 p-3">
-      <div class="muted text-xs">Dokumentdatum</div>
-      <div class="text-sm font-semibold break-all">{{w.document_date}}</div>
+      <div class="muted text-xs">Dokumentdatum (optional)</div>
+      <div class="text-sm font-semibold break-all">{{w.document_date or "-"}}</div>
       <a class="text-sm underline accentText" href="/review/{{token}}/docdate">Bearbeiten</a>
+    </div>
+
+    <div class="rounded-xl border border-slate-800 p-3">
+      <div class="muted text-xs">Objektmodus</div>
+      <div class="text-sm font-semibold break-all">
+        {% if w.use_existing %}Bestandsobjekt{% else %}Neues Objekt{% endif %}
+      </div>
+      <div class="muted text-xs break-all">
+        {% if w.use_existing %}{{w.use_existing}}{% else %}(wird neu erstellt){% endif %}
+      </div>
+      <a class="text-sm underline accentText" href="/review/{{token}}/kdnr">Bearbeiten</a>
     </div>
 
     <form method="post" class="pt-2 flex gap-2">
@@ -772,13 +903,14 @@ HTML_DONE = r"""
   <div class="grid md:grid-cols-2 gap-4">
     <div class="rounded-xl border border-slate-800 p-4">
       <div class="text-sm font-semibold mb-2">Bestätigte Daten</div>
+      <div class="text-sm">Mandant/Firma: <span class="font-semibold">{{tenant or "-"}}</span></div>
       <div class="text-sm">Kundennummer: <span class="font-semibold">{{kdnr}}</span></div>
       <div class="text-sm">Name/Firma: <span class="font-semibold">{{name}}</span></div>
       <div class="text-sm">Adresse: <span class="font-semibold">{{addr}}</span></div>
       <div class="text-sm">PLZ/Ort: <span class="font-semibold">{{plzort}}</span></div>
       <div class="text-sm mt-2">Objekt: <span class="font-semibold">{{objmode}}</span></div>
       <div class="text-sm">Dokumenttyp: <span class="font-semibold">{{doctype}}</span></div>
-      <div class="text-sm">Dokumentdatum: <span class="font-semibold">{{document_date}}</span></div>
+      <div class="text-sm">Dokumentdatum: <span class="font-semibold">{{document_date or "-"}}</span></div>
       <div class="text-sm mt-3">
         <span class="muted text-xs">Kundenstatus</span><br>
         <span class="font-semibold">{{customer_status}}</span>
@@ -833,11 +965,9 @@ HTML_ASSISTANT = r"""
               <div class="muted text-xs mt-1">
                 Kdnr: <span class="font-semibold">{{r.kdnr or "-"}}</span> •
                 Typ: <span class="font-semibold">{{r.doctype or "-"}}</span> •
+                Datum: <span class="font-semibold">{{r.doc_date or "-"}}</span> •
                 Versionen: <span class="font-semibold">{{r.version_count or 0}}</span>
               </div>
-              {% if r.note %}
-                <div class="mt-2 text-xs rounded-xl border border-amber-500/40 bg-amber-500/10 p-2">{{r.note}}</div>
-              {% endif %}
             </div>
             <div class="flex flex-col gap-2">
               {% if r.file_path %}
@@ -874,7 +1004,9 @@ def _render_review(token: str, right_html: str):
     used_ocr = bool(p.get("used_ocr", False))
     preview = p.get("preview", "")
     extracted_text = p.get("extracted_text", "")
-    is_pdf = (Path(filename).suffix.lower() == ".pdf")
+    ext = Path(filename).suffix.lower()
+    is_pdf = (ext == ".pdf")
+    is_text = (ext == ".txt")
 
     w = _wizard_get(p)
     predicted = _predict_filename(w, p.get("doctype_suggested", "SONSTIGES"))
@@ -888,6 +1020,7 @@ def _render_review(token: str, right_html: str):
             preview=preview,
             extracted_text=extracted_text,
             is_pdf=is_pdf,
+            is_text=is_text,
             predicted_name=predicted,
             right=right_html
         ),
@@ -1055,6 +1188,23 @@ def api_reextract(token):
     return jsonify(token=new_token)
 
 
+@APP.route("/api/index_fullscan", methods=["POST"])
+def api_index_fullscan():
+    if not _logged_in():
+        return jsonify(error="unauthorized"), 401
+    if not _has_role("ADMIN") and rbac_verify_user is not None:
+        return jsonify(error="forbidden"), 403
+    if not callable(index_run_full):
+        return jsonify(error="not_available"), 400
+
+    try:
+        res = index_run_full()
+        _audit("index_fullscan", target=str(BASE_PATH), meta=res)
+        return jsonify(ok=True, **(res or {}))
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+
 # ============================================================
 # Main routes
 # ============================================================
@@ -1062,16 +1212,23 @@ def api_reextract(token):
 def index():
     if not _logged_in():
         return redirect(url_for("login", next="/"))
-    items = [x["_token"] for x in list_pending()]
+
+    items_meta = list_pending()
+    items = [x.get("_token") for x in items_meta if x.get("_token")]
     meta = {}
-    for it in list_pending():
-        meta[it["_token"]] = {
+    for it in items_meta:
+        t = it.get("_token")
+        if not t:
+            continue
+        meta[t] = {
             "filename": it.get("filename", ""),
             "progress": float(it.get("progress", 0.0) or 0.0),
             "progress_phase": it.get("progress_phase", ""),
         }
+
+    admin_tools = bool(_has_role("ADMIN")) or (rbac_verify_user is None)
     _audit("view_index", target="", meta={})
-    return _render_base(render_template_string(HTML_INDEX, items=items, meta=meta), active_tab="upload")
+    return _render_base(render_template_string(HTML_INDEX, items=items, meta=meta, admin_tools=admin_tools), active_tab="upload")
 
 
 @APP.route("/upload", methods=["POST"])
@@ -1083,21 +1240,57 @@ def upload():
     if not f or not f.filename:
         return jsonify(error="no_file"), 400
 
-    filename = f.filename.replace("\\", "_").replace("/", "_").strip()
-    ext = Path(filename).suffix.lower()
-    if ext not in SUPPORTED_EXT:
+    tenant_raw = (request.form.get("tenant") or "").strip()
+    tenant, terr = _tenant_or_error(tenant_raw)
+    if terr:
+        return jsonify(error=terr), 400
+
+    filename = _safe_filename(f.filename)
+    if not _is_allowed_ext(filename):
         return jsonify(error="unsupported"), 400
 
-    EINGANG.mkdir(parents=True, exist_ok=True)
-    dest = EINGANG / filename
+    # Eingang tenant-spezifisch
+    tenant_in = (EINGANG / tenant)
+    tenant_in.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = tenant_in / f"{ts}__{filename}"
     if dest.exists():
-        dest = EINGANG / f"{int(time.time())}_{filename}"
+        dest = tenant_in / f"{ts}_{int(time.time())}__{filename}"
 
     f.save(dest)
 
     token = analyze_to_pending(dest)
-    _audit("upload", target=str(dest), meta={"token": token, "filename": filename})
-    return jsonify(token=token)
+
+    # tenant festnageln in Pending/Wizard
+    try:
+        p = read_pending(token) or {}
+        p["tenant"] = tenant
+        w = _wizard_get(p)
+        w["tenant"] = tenant
+        p["wizard"] = w
+        write_pending(token, p)
+    except Exception:
+        pass
+
+    _audit("upload", target=str(dest), meta={"token": token, "filename": filename, "tenant": tenant})
+    return jsonify(token=token, tenant=tenant)
+
+
+@APP.route("/review/<token>/delete", methods=["POST"])
+def review_delete(token):
+    if not _logged_in():
+        return redirect(url_for("login", next="/"))
+
+    p = read_pending(token)
+    if p:
+        src = Path(p.get("path", "") or "")
+        try:
+            delete_pending(token)
+        except Exception:
+            pass
+        _audit("pending_delete", target=token, meta={"path": str(src)})
+    return redirect(url_for("index"))
 
 
 @APP.route("/file/<token>")
@@ -1145,6 +1338,7 @@ def done_view(token):
 
     html = render_template_string(
         HTML_DONE,
+        tenant=d.get("tenant", ""),
         kdnr=d.get("kdnr", ""),
         name=d.get("name", ""),
         addr=d.get("addr", ""),
@@ -1162,10 +1356,71 @@ def done_view(token):
     return _render_base(html, active_tab="upload")
 
 
+@APP.route("/health")
+def health():
+    return jsonify(ok=True, ts=time.time(), app="kundenablage_upload")
+
+
 # ============================================================
 # Review flow:
 # kdnr -> name -> addr -> plz -> doctype -> docdate -> confirm -> archive
 # ============================================================
+def _build_object_picker(existing_objs: list, w_local: dict) -> str:
+    items = ""
+    for o in (existing_objs or [])[:12]:
+        folder = o.get("folder", "")
+        addr = o.get("addr", "")
+        plzort = o.get("plzort", "")
+        path_esc = (o.get("path", "") or "").replace('"', "&quot;")
+        items += f"""
+          <button type="button" class="pickbtn text-left px-3 py-2 rounded-xl" data-objpath="{path_esc}">
+            <div class="text-sm font-semibold">{folder}</div>
+            <div class="muted text-xs">{addr} • {plzort}</div>
+          </button>
+        """
+
+    chosen = "Neues Objekt"
+    if w_local.get("use_existing"):
+        try:
+            chosen = Path(w_local.get("use_existing")).name
+        except Exception:
+            chosen = "Bestehendes Objekt"
+
+    return f"""
+      {_card_info("Bestandskunde erkannt. Optional Objekt wählen, um doppelte Ordner zu vermeiden.")}
+      <div class="rounded-xl border border-slate-800 p-3 mt-3">
+        <div class="text-sm font-semibold mb-2">Bestands-Objekt (optional)</div>
+
+        <input type="hidden" id="objInput" name="use_existing" value="{(w_local.get('use_existing') or '').replace('"', '&quot;')}">
+        <input type="hidden" name="confirm_kdnr" value="1">
+
+        <label class="flex items-center gap-2 text-sm mb-3">
+          <input type="checkbox" name="adopt_existing" value="1" {'checked' if w_local.get('adopt_existing', True) else ''}>
+          <span>Bestandsdaten (Name/Adresse/PLZ) übernehmen (wenn Objekt gewählt wird)</span>
+        </label>
+
+        <div class="grid gap-2">
+          <button type="button" class="pickbtn text-left px-3 py-2 rounded-xl" data-objpath="">
+            Neues Objekt anlegen
+          </button>
+          {items}
+        </div>
+        <div class="muted text-xs mt-2">Aktuell gewählt: <span class="font-semibold">{chosen}</span></div>
+      </div>
+
+      <script>
+      (function(){{
+        const objInput = document.getElementById("objInput");
+        document.querySelectorAll("[data-objpath]").forEach(btn => {{
+          btn.addEventListener("click", () => {{
+            objInput.value = btn.getAttribute("data-objpath") || "";
+          }});
+        }});
+      }})();
+      </script>
+    """
+
+
 @APP.route("/review/<token>/kdnr", methods=["GET", "POST"])
 def review_kdnr(token):
     if not _logged_in():
@@ -1179,15 +1434,30 @@ def review_kdnr(token):
         return _render_review(token, _card_info("Analyse läuft noch… bitte kurz warten oder zurück zur Übersicht."))
 
     w = _wizard_get(p)
+
+    # Ensure tenant is present from pending/upload
+    if not w.get("tenant"):
+        w["tenant"] = p.get("tenant", "") or _norm_tenant(TENANT_DEFAULT)
+
     ranked = (p.get("kdnr_ranked") or [])
     suggestions = [x[0] for x in ranked[:8]] if ranked else []
 
     if request.method == "POST":
         val = normalize_component(request.form.get("kdnr", "") or "")
-        use_existing = (request.form.get("use_existing") or "").strip()
+        confirm_kdnr = (request.form.get("confirm_kdnr") or "").strip() == "1"
+        chosen_obj_path = (request.form.get("use_existing") or "").strip()
         adopt_existing = (request.form.get("adopt_existing") or "").strip() == "1"
 
+        # Tenant check (hard)
+        tenant, terr = _tenant_or_error(w.get("tenant") or p.get("tenant") or "")
+        if terr:
+            return _render_base(_card_error("Mandant/Firma fehlt oder ist nicht erlaubt (Upload). Bitte zurück und erneut hochladen."))
+
+        w["tenant"] = tenant
+        p["tenant"] = tenant
+
         if not val:
+            _wizard_save(token, p, w)
             return _step_form(
                 token=token,
                 title="1) Kundennummer",
@@ -1200,8 +1470,9 @@ def review_kdnr(token):
                 error="Bitte Kundennummer eingeben oder Vorschlag anklicken."
             )
 
+        # Kdnr speichern
         w["kdnr"] = val
-        w["use_existing"] = use_existing.strip()
+        w["adopt_existing"] = bool(adopt_existing)
 
         existing = find_existing_customer_folders(BASE_PATH, val) if find_existing_customer_folders else []
         w["customer_status"] = "BESTAND" if existing else "NEU"
@@ -1218,31 +1489,74 @@ def review_kdnr(token):
             })
         p["existing_objects"] = objs
 
-        if existing and best_match_object_folder and parse_folder_fields:
-            best_path, best_score = best_match_object_folder(existing, w.get("addr", ""), w.get("plzort", ""))
-            if (best_path is None) and existing:
-                best_path = existing[0]
-            if best_path is not None:
-                bf = parse_folder_fields(best_path.name)
-                p["best_existing"] = {
-                    "folder": best_path.name,
-                    "path": str(best_path),
-                    "name": bf.get("name", ""),
-                    "addr": bf.get("addr", ""),
-                    "plzort": bf.get("plzort", ""),
-                    "score": best_score,
-                }
-                if adopt_existing or (request.form.get("adopt_existing") is None):
-                    if not w.get("name") and bf.get("name"):
-                        w["name"] = bf.get("name")
-                    if not w.get("addr") and bf.get("addr"):
-                        w["addr"] = bf.get("addr")
-                    if not w.get("plzort") and bf.get("plzort"):
-                        w["plzort"] = bf.get("plzort")
-                    if not w.get("use_existing"):
-                        w["use_existing"] = str(best_path)
+        # Phase 1: Bestandskunde erkannt -> Picker anzeigen und NICHT weiterleiten
+        if existing and not confirm_kdnr:
+            # best-effort Vorauswahl
+            if best_match_object_folder and parse_folder_fields and not w.get("use_existing"):
+                try:
+                    best_path, best_score = best_match_object_folder(existing, w.get("addr", ""), w.get("plzort", ""))
+                except Exception:
+                    best_path, best_score = (existing[0] if existing else None), 0.0
+                if best_path is None and existing:
+                    best_path, best_score = existing[0], 0.0
+                if best_path is not None:
+                    bf = parse_folder_fields(best_path.name)
+                    p["best_existing"] = {
+                        "folder": best_path.name,
+                        "path": str(best_path),
+                        "name": bf.get("name", ""),
+                        "addr": bf.get("addr", ""),
+                        "plzort": bf.get("plzort", ""),
+                        "score": best_score,
+                    }
+                    w["use_existing"] = str(best_path)
 
-        # NEW: duplicates warning hook (store in pending)
+            if detect_object_duplicates_for_kdnr is not None:
+                try:
+                    dupes = detect_object_duplicates_for_kdnr(val, threshold=0.93)
+                    p["object_dupes_suggested"] = dupes or []
+                except Exception:
+                    p["object_dupes_suggested"] = []
+
+            _wizard_save(token, p, w)
+            _audit("review_set_kdnr_phase1", target=token, meta={"tenant": tenant, "kdnr": w["kdnr"], "existing": len(existing)})
+
+            extra = ""
+            dupes = p.get("object_dupes_suggested") or []
+            if dupes:
+                extra += _card_warn(f"⚠️ Mögliche Doppel-Objekte gefunden: {len(dupes)}. Admin sollte später mergen/prüfen.")
+
+            extra += _build_object_picker(p.get("existing_objects") or [], w)
+
+            prefill = w.get("kdnr") or (suggestions[0] if suggestions else "")
+            return _step_form(
+                token=token,
+                title="1) Kundennummer",
+                subtitle="Bestandskunde erkannt. Objekt optional wählen, dann Weiter.",
+                field_name="kdnr",
+                current_value=prefill,
+                suggestions=suggestions,
+                ranked=ranked,
+                show_scores=True,
+                extra_html=extra,
+                next_label="Weiter"
+            )
+
+        # Phase 2: bestätigt -> use_existing übernehmen und optional Bestandsdaten ziehen
+        w["use_existing"] = chosen_obj_path
+
+        if w.get("use_existing") and w.get("adopt_existing") and parse_folder_fields:
+            try:
+                bf = parse_folder_fields(Path(w["use_existing"]).name)
+                if not w.get("name") and bf.get("name"):
+                    w["name"] = bf.get("name")
+                if not w.get("addr") and bf.get("addr"):
+                    w["addr"] = bf.get("addr")
+                if not w.get("plzort") and bf.get("plzort"):
+                    w["plzort"] = bf.get("plzort")
+            except Exception:
+                pass
+
         if detect_object_duplicates_for_kdnr is not None:
             try:
                 dupes = detect_object_duplicates_for_kdnr(val, threshold=0.93)
@@ -1251,73 +1565,17 @@ def review_kdnr(token):
                 p["object_dupes_suggested"] = []
 
         _wizard_save(token, p, w)
-        _audit("review_set_kdnr", target=token, meta={"kdnr": w["kdnr"], "customer_status": w["customer_status"]})
+        _audit("review_set_kdnr", target=token, meta={"tenant": tenant, "kdnr": w["kdnr"], "customer_status": w["customer_status"]})
         return redirect(url_for("review_name", token=token))
 
+    # GET
+    _wizard_save(token, p, w)
+    prefill = w.get("kdnr") or (suggestions[0] if suggestions else "")
     extra = ""
     if w.get("kdnr"):
         existing = p.get("existing_objects") or []
-        dupes = p.get("object_dupes_suggested") or []
-        if dupes:
-            extra += _card_warn(f"⚠️ Mögliche Doppel-Objekte gefunden: {len(dupes)}. Admin sollte später mergen/prüfen (verlustfrei).")
-
         if existing:
-            items = ""
-            for o in existing[:10]:
-                folder = o.get("folder", "")
-                addr = o.get("addr", "")
-                plzort = o.get("plzort", "")
-                path_esc = (o.get("path", "") or "").replace('"', "&quot;")
-                items += f"""
-                  <button type="button" class="pickbtn text-left px-3 py-2 rounded-xl" data-objpath="{path_esc}">
-                    <div class="text-sm font-semibold">{folder}</div>
-                    <div class="muted text-xs">{addr} • {plzort}</div>
-                  </button>
-                """
-
-            chosen = "Neues Objekt"
-            if w.get("use_existing"):
-                try:
-                    chosen = Path(w.get("use_existing")).name
-                except Exception:
-                    chosen = "Bestehendes Objekt"
-
-            extra += f"""
-              {_card_info("Bestandskunde erkannt. Optional Objekt wählen, um doppelte Ordner zu vermeiden.")}
-              <div class="rounded-xl border border-slate-800 p-3 mt-3">
-                <div class="text-sm font-semibold mb-2">Bestands-Objekt (optional)</div>
-
-                <input type="hidden" id="objInput" name="use_existing" value="{(w.get('use_existing') or '').replace('"', '&quot;')}">
-
-                <label class="flex items-center gap-2 text-sm mb-3">
-                  <input type="checkbox" name="adopt_existing" value="1" checked>
-                  <span>Bestandsdaten (Name/Adresse/PLZ) als Vorschlag übernehmen</span>
-                </label>
-
-                <div class="grid gap-2">
-                  <button type="button" class="pickbtn text-left px-3 py-2 rounded-xl" data-objpath="">
-                    Neues Objekt anlegen
-                  </button>
-                  {items}
-                </div>
-                <div class="muted text-xs mt-2">Aktuell gewählt: <span class="font-semibold">{chosen}</span></div>
-              </div>
-
-              <script>
-              (function(){{
-                const objInput = document.getElementById("objInput");
-                document.querySelectorAll("[data-objpath]").forEach(btn => {{
-                  btn.addEventListener("click", () => {{
-                    objInput.value = btn.getAttribute("data-objpath") || "";
-                  }});
-                }});
-              }})();
-              </script>
-            """
-        else:
-            extra += _card_info("Kundennummer nicht gefunden: Neuer Kunde.")
-
-    prefill = w.get("kdnr") or (suggestions[0] if suggestions else "")
+            extra += _build_object_picker(existing, w)
     return _step_form(
         token=token,
         title="1) Kundennummer",
@@ -1393,7 +1651,7 @@ def review_addr(token):
 
     hint = ""
     if not suggestions:
-        hint = _card_info("Adresse-Vorschläge noch leer? Tipp: Straße + Hausnummer manuell eintragen (z.B. „Treskowallee 211“).")
+        hint = _card_info("Adresse-Vorschläge leer? Straße + Hausnummer manuell eintragen (z.B. „Treskowallee 211“).")
 
     if request.method == "POST":
         val = normalize_component(request.form.get("addr", "") or "")
@@ -1544,7 +1802,7 @@ def review_docdate(token):
     suggested_raw = (p.get("doc_date_suggested") or "").strip()
     candidates = p.get("doc_date_candidates") or []
 
-    suggestions = []
+    suggestions: List[str] = []
     if suggested_raw:
         norm = parse_excel_like_date(suggested_raw)
         if norm:
@@ -1556,30 +1814,37 @@ def review_docdate(token):
         if norm and norm not in suggestions:
             suggestions.append(norm)
 
-    # Keep user's saved value first
     user_saved_norm = parse_excel_like_date(w.get("document_date", ""))
     if user_saved_norm and user_saved_norm not in suggestions:
         suggestions.insert(0, user_saved_norm)
 
     hint = _card_info(
-        "Dokumentdatum: Bitte das Datum aus dem Dokument (nicht automatisch „heute“). "
-        "Akzeptiert wie Excel: YYYY-MM-DD, DD.MM.YYYY, DD/MM/YYYY, optional mit Uhrzeit."
+        "Dokumentdatum ist OPTIONAL. Leer lassen ist erlaubt. "
+        "Wenn gesetzt: z.B. 2025-10-24 oder 24.10.2025 (optional mit Uhrzeit)."
     )
 
     if request.method == "POST":
         raw = (request.form.get("document_date") or "").strip()
+
+        # OPTIONAL: leeres Datum zulassen
+        if not raw:
+            w["document_date"] = ""
+            _wizard_save(token, p, w)
+            _audit("review_set_docdate", target=token, meta={"doc_date": ""})
+            return redirect(url_for("review_confirm", token=token))
+
         norm = parse_excel_like_date(raw)
         if not norm:
             return _step_form(
                 token=token,
-                title="6) Dokumentdatum",
-                subtitle="Akzeptiert Excel-Formate. Wird gespeichert als YYYY-MM-DD.",
+                title="6) Dokumentdatum (optional)",
+                subtitle="Akzeptiert Excel-Formate. Wird gespeichert als YYYY-MM-DD. Leer ist erlaubt.",
                 field_name="document_date",
                 current_value=w.get("document_date", "") or (suggestions[0] if suggestions else ""),
                 suggestions=suggestions,
-                error="Ungültiges Datum. Beispiele: 2025-10-24 oder 24.10.2025 (optional mit Uhrzeit).",
+                error="Ungültiges Datum. Beispiele: 2025-10-24 oder 24.10.2025 (optional mit Uhrzeit). Oder Feld leer lassen.",
                 extra_html=hint,
-                placeholder="z.B. 24.10.2025 oder 2025-10-24"
+                placeholder="z.B. 24.10.2025 oder leer"
             )
 
         w["document_date"] = norm
@@ -1587,16 +1852,16 @@ def review_docdate(token):
         _audit("review_set_docdate", target=token, meta={"doc_date": w["document_date"]})
         return redirect(url_for("review_confirm", token=token))
 
-    prefill = user_saved_norm or (suggestions[0] if suggestions else "")
+    prefill = w.get("document_date") or (suggestions[0] if suggestions else "")
     return _step_form(
         token=token,
-        title="6) Dokumentdatum",
-        subtitle="Akzeptiert Excel-Formate. Wird gespeichert als YYYY-MM-DD.",
+        title="6) Dokumentdatum (optional)",
+        subtitle="Akzeptiert Excel-Formate. Wird gespeichert als YYYY-MM-DD. Leer ist erlaubt.",
         field_name="document_date",
         current_value=prefill,
         suggestions=suggestions,
         extra_html=hint,
-        placeholder="z.B. 24.10.2025 oder 2025-10-24"
+        placeholder="z.B. 24.10.2025 oder leer"
     )
 
 
@@ -1615,34 +1880,44 @@ def review_confirm(token):
     if not w.get("doctype"):
         w["doctype"] = (p.get("doctype_suggested") or "SONSTIGES").upper()
 
-    # Ensure date is normalized
-    if not w.get("document_date"):
-        w["document_date"] = parse_excel_like_date(p.get("doc_date_suggested", "")) or ""
+    # doc_date remains optional: do NOT force-fill with today
+    if w.get("document_date"):
+        w["document_date"] = parse_excel_like_date(w.get("document_date")) or ""
+
+    # Ensure tenant is valid
+    tenant, terr = _tenant_or_error(w.get("tenant") or p.get("tenant") or "")
+    if terr:
+        return _render_base(_card_error("Mandant/Firma fehlt oder ist nicht erlaubt. Bitte Upload erneut durchführen."))
+    w["tenant"] = tenant
+    p["tenant"] = tenant
 
     _wizard_save(token, p, w)
 
     if request.method == "POST" and request.form.get("final") == "1":
         src = Path(p.get("path", ""))
         if not src.exists():
+            _audit("archive_missing_src", target=str(src), meta={"token": token})
             return _render_base(_card_error("Datei im Eingang nicht gefunden (evtl. verschoben/gelöscht)."))
 
         answers = {
+            "tenant": tenant,  # NEW
             "kdnr": w.get("kdnr", ""),
             "use_existing": w.get("use_existing", ""),
             "name": w.get("name", "Kunde"),
             "addr": w.get("addr", "Adresse"),
             "plzort": w.get("plzort", "PLZ Ort"),
             "doctype": w.get("doctype", p.get("doctype_suggested", "SONSTIGES")),
-            "document_date": w.get("document_date", ""),
+            "document_date": w.get("document_date", ""),  # may be ""
         }
 
         try:
             folder, final_path, created_new = process_with_answers(src, answers)
         except Exception as e:
-            _audit("archive_error", target=str(src), meta={"error": str(e)})
+            _audit("archive_error", target=str(src), meta={"error": str(e), "tenant": tenant})
             return _render_base(_card_error(f"Ablage fehlgeschlagen: {e}"))
 
         done_payload = {
+            "tenant": tenant,
             "kdnr": answers["kdnr"],
             "name": answers["name"],
             "addr": answers["addr"],
@@ -1659,7 +1934,7 @@ def review_confirm(token):
 
         delete_pending(token)
 
-        _audit("archive_ok", target=str(final_path), meta={"kdnr": answers["kdnr"], "doctype": done_payload["doctype"]})
+        _audit("archive_ok", target=str(final_path), meta={"tenant": tenant, "kdnr": answers["kdnr"], "doctype": done_payload["doctype"]})
         return redirect(url_for("done_view", token=token))
 
     right = render_template_string(HTML_CONFIRM, token=token, w=w)
@@ -1677,7 +1952,6 @@ def _dedupe_assistant_results(rows: list) -> list:
         try:
             p = Path(path)
             stem = p.stem
-            # strip trailing _HHMMSS
             stem2 = re.sub(r"_(\d{6})$", "", stem)
             return str(p.parent) + "/" + stem2.lower() + p.suffix.lower()
         except Exception:
@@ -1720,7 +1994,6 @@ def assistant():
             return _render_base(_card_error("Assistant ist im Core noch nicht verfügbar."), active_tab="assistant")
         try:
             role = (_current_roles()[0] if _current_roles() else "ADMIN")
-            # call compat: some cores accept role, others don't
             try:
                 raw = assistant_search(query=q, kdnr=kdnr, limit=50, role=role)
             except TypeError:
@@ -1754,3 +2027,5 @@ if __name__ == "__main__":
 
     print(f"http://127.0.0.1:{PORT}")
     APP.run(host="127.0.0.1", port=PORT, debug=False)
+
+
