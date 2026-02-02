@@ -2,38 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-Tophandwerk Core (FINAL v2.4 - A2 Multi-Tenant + More Formats) — DROP-IN replacement
-===================================================================================
+KUKANILEA Core (v2.4 - A2 Multi-Tenant + More Formats) — DROP-IN replacement
+============================================================================
 
-A2 Scope (today + future):
-- Mandantenfähig (Tenant/Firma) via:
-  - answers["tenant"] or answers["mandant"]
-  - OR directory convention: BASE_PATH/<TENANT>/<KUNDENORDNER>/...
-  - OR env TOPHANDWERK_TENANT_DEFAULT as fallback
-- Adds extraction + indexing for: .md, .rtf, .json, .xml, .webp, .msg (best-effort)
-- Keeps existing behaviors (dedupe, group_key, FTS5 delete+insert, pending/done JSON atomic writes)
+Das ist dein `kukanilea_core.py` als kompletter, kopierfertiger Code.
 
-Contract (used by kundenablage_upload.py / API):
-- Paths/Config: EINGANG, BASE_PATH, PENDING_DIR, DONE_DIR, DB_PATH, SUPPORTED_EXT
-- Pending store: read_pending, write_pending, delete_pending, list_pending
-- Done store: write_done, read_done
-- Background: analyze_to_pending (alias: start_background_analysis)
-- Archive: process_with_answers
-- Helpers: normalize_component, parse_excel_like_date
-- Folder helpers: find_existing_customer_folders, parse_folder_fields, best_match_object_folder
-- Optional: detect_object_duplicates_for_kdnr, assistant_search, db_init, audit_log,
-           rbac_* , index_run_full
+Wichtig (Kompatibilität):
+- Exportiert die gleichen Funktionen/Variablen wie vorher (Contract).
+- Behält **TOPHANDWERK_*** ENV-Variablen für Abwärtskompatibilität.
+- Zusätzlich werden **KUKANILEA_*** ENV-Variablen als Alias akzeptiert (haben Vorrang).
 
-Notes:
-- Tenant in DB is encoded as kdnr "TENANT:1234" (no DB migration needed).
-- Filesystem layout:
-    BASE_PATH/
-      <TENANT>/                    (optional)
-        1234_Name_Addr_PLZOrt/
-          DOCS...
-    If you don't use tenants, it behaves like before.
-- .msg: If you want Outlook .msg extraction, install optional dependency:
-    pip install extract_msg
+Hinweis:
+- In `kukanilea_upload.py` musst du nur den Import anpassen:
+    import kukanilea_core as core
+  (statt `import tophandwerk_core as core`)
 """
 
 from __future__ import annotations
@@ -97,17 +79,43 @@ except Exception:
 
 
 # ============================================================
+# ENV helpers (KUKANILEA_* overrides TOPHANDWERK_*)
+# ============================================================
+def _env(key: str, default: str = "") -> str:
+    """
+    Read env with alias support:
+      KUKANILEA_<key> overrides TOPHANDWERK_<key>.
+    key is expected WITHOUT prefix, e.g. "TENANT_DEFAULT".
+    """
+    k1 = f"KUKANILEA_{key}"
+    k2 = f"TOPHANDWERK_{key}"
+    v = os.environ.get(k1)
+    if v is not None:
+        return str(v)
+    v = os.environ.get(k2)
+    if v is not None:
+        return str(v)
+    return default
+
+
+def _env_bool(key: str, default: str = "0") -> bool:
+    v = _env(key, default).strip()
+    return v in ("1", "true", "TRUE", "yes", "YES", "on", "ON")
+
+
+# ============================================================
 # CONFIG / PATHS
 # ============================================================
-EINGANG = Path.home() / "Tophandwerk_Eingang"
-BASE_PATH = Path.home() / "Tophandwerk_Kundenablage"
-PENDING_DIR = Path.home() / "Tophandwerk_Pending"
-DONE_DIR = Path.home() / "Tophandwerk_Done"
-DB_PATH = Path.home() / "Tophandwerk_DB.sqlite3"
+# (bewusst: Default-Pfade bleiben "Tophandwerk_*", damit bestehende Daten nicht verloren gehen)
+EINGANG = Path.home() / _env("EINGANG_DIRNAME", "Tophandwerk_Eingang")
+BASE_PATH = Path.home() / _env("BASE_DIRNAME", "Tophandwerk_Kundenablage")
+PENDING_DIR = Path.home() / _env("PENDING_DIRNAME", "Tophandwerk_Pending")
+DONE_DIR = Path.home() / _env("DONE_DIRNAME", "Tophandwerk_Done")
+DB_PATH = Path.home() / _env("DB_FILENAME", "Tophandwerk_DB.sqlite3")
 
 # Multi-tenant behavior
-TENANT_DEFAULT = os.environ.get("TOPHANDWERK_TENANT_DEFAULT", "").strip()  # e.g. "FIRMA_X"
-TENANT_REQUIRE = os.environ.get("TOPHANDWERK_TENANT_REQUIRE", "0").strip() in ("1", "true", "TRUE", "yes", "YES")
+TENANT_DEFAULT = _env("TENANT_DEFAULT", "").strip()  # e.g. "FIRMA_X"
+TENANT_REQUIRE = _env_bool("TENANT_REQUIRE", "0")
 
 # A2: include more formats (some are store-only if extraction returns "")
 SUPPORTED_EXT = {
@@ -256,12 +264,10 @@ def _infer_tenant_from_path(fp: Path) -> str:
         parts = fp.parts
         bparts = base.parts
 
-        # find BASE_PATH segment in fp
         for i in range(len(parts) - len(bparts) + 1):
             if parts[i : i + len(bparts)] == bparts:
                 if i + len(bparts) < len(parts):
                     tenant = normalize_component(parts[i + len(bparts)])
-                    # If the next segment already looks like a customer folder (1234_...), it's not a tenant.
                     if tenant and not re.match(r"^\d{3,}_", tenant):
                         return tenant
                 break
@@ -275,7 +281,7 @@ def _tenant_prefix_kdnr(tenant: str, kdnr: str) -> str:
     kdnr = normalize_component(kdnr)
     if not kdnr:
         return ""
-    if ":" in kdnr:  # already prefixed
+    if ":" in kdnr:
         return kdnr
     if tenant:
         return f"{tenant}:{kdnr}"
@@ -729,7 +735,6 @@ def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
     out: List[Path] = []
     prefix = f"{kdnr}_"
 
-    # direct level
     try:
         for p in base_path.iterdir():
             if p.is_dir() and p.name.startswith(prefix):
@@ -740,12 +745,11 @@ def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
     if out:
         return sorted(out)
 
-    # tenant level deep
     try:
         for tdir in base_path.iterdir():
             if not tdir.is_dir():
                 continue
-            if re.match(r"^\d{3,}_", tdir.name):  # not a tenant dir
+            if re.match(r"^\d{3,}_", tdir.name):
                 continue
             for p in tdir.iterdir():
                 if p.is_dir() and p.name.startswith(prefix):
@@ -858,7 +862,6 @@ def _ocr_image(fp: Path) -> str:
 
 
 def _extract_docx_text(fp: Path) -> str:
-    # Preferred: python-docx
     if DocxDocument is not None:
         try:
             doc = DocxDocument(str(fp))
@@ -873,7 +876,6 @@ def _extract_docx_text(fp: Path) -> str:
         except Exception:
             pass
 
-    # Fallback: parse word/document.xml from zip (very pragmatic)
     try:
         with zipfile.ZipFile(str(fp), "r") as z:
             xml = z.read("word/document.xml").decode("utf-8", errors="ignore")
@@ -896,7 +898,6 @@ def _xlsx_shared_strings(z: zipfile.ZipFile) -> List[str]:
 
 
 def _extract_xlsx_text(fp: Path) -> str:
-    # Preferred: openpyxl
     if openpyxl is not None:
         try:
             wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
@@ -921,7 +922,6 @@ def _extract_xlsx_text(fp: Path) -> str:
         except Exception:
             pass
 
-    # Fallback: zip-read a few sheet XML files + sharedStrings
     try:
         with zipfile.ZipFile(str(fp), "r") as z:
             sst = _xlsx_shared_strings(z)
@@ -1058,9 +1058,6 @@ def _extract_md_text(fp: Path) -> str:
 
 
 def _extract_rtf_text(fp: Path) -> str:
-    """
-    Best-effort RTF -> text without extra deps.
-    """
     raw = ""
     try:
         raw = fp.read_text(encoding="utf-8", errors="ignore")
@@ -1117,11 +1114,6 @@ def _extract_xml_text(fp: Path) -> str:
 
 
 def _extract_msg_text(fp: Path) -> str:
-    """
-    Outlook .msg is proprietary.
-    If extract_msg is installed: extract subject/from/to/date/body.
-    Else: return "" (store-only).
-    """
     if extract_msg is None:
         return ""
     try:
@@ -1205,12 +1197,10 @@ def _extract_text(fp: Path) -> Tuple[str, bool]:
             return _clip_text(o), True
         return _clip_text(t), False
 
-    # images (only OCR for known image formats)
     if ext in (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"):
         o = _ocr_image(fp)
         return _clip_text(o), True if o else False
 
-    # store-only / unsupported content types
     return "", False
 
 
@@ -1453,12 +1443,11 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
     """
     Tenant note:
     - If you stored kdnr as "TENANT:1234", search by the same.
-    - If you pass only "1234" and TOPHANDWERK_TENANT_DEFAULT is set, it will auto-prefix.
+    - If you pass only "1234" and TENANT_DEFAULT is set, it will auto-prefix.
     """
     query = normalize_component(query)
     kdnr_in = normalize_component(kdnr)
 
-    # auto-prefix by default tenant if user didn't pass tenant
     if kdnr_in and ":" not in kdnr_in:
         kdnr_in = _tenant_prefix_kdnr(TENANT_DEFAULT, kdnr_in)
 
@@ -1607,10 +1596,8 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
 
                 file_name = fp.name
 
-                # infer tenant (optional)
                 tenant = _effective_tenant(_infer_tenant_from_path(fp))
 
-                # infer customer folder/kdnr from path
                 kdnr_raw = ""
                 object_folder = ""
                 for part in reversed(fp.parts):
@@ -1619,7 +1606,6 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                         object_folder = part
                         break
 
-                # if tenant required but not found, skip (policy)
                 if TENANT_REQUIRE and not tenant:
                     skipped += 1
                     skipped_by_reason["parse_failed"] += 1
@@ -1848,12 +1834,10 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     if not src.exists():
         raise FileNotFoundError(src)
 
-    # tenant: answers["tenant"] / answers["mandant"] / inferred / env default
     tenant = _effective_tenant(answers.get("tenant"), answers.get("mandant"), _infer_tenant_from_path(src))
     if TENANT_REQUIRE and not tenant:
         raise ValueError("tenant/mandant missing (TENANT_REQUIRE=1)")
 
-    # raw kdnr for filesystem naming
     kdnr_raw = normalize_component(answers.get("kdnr", ""))
     use_existing = normalize_component(answers.get("use_existing", ""))
     name = normalize_component(answers.get("name", ""))
@@ -1865,7 +1849,6 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     if not kdnr_raw:
         raise ValueError("kdnr missing")
 
-    # index kdnr gets tenant prefix
     kdnr_idx = _tenant_prefix_kdnr(tenant, kdnr_raw)
 
     BASE_PATH.mkdir(parents=True, exist_ok=True)
@@ -1977,5 +1960,3 @@ def _bootstrap_dirs() -> None:
 
 _bootstrap_dirs()
 # db_init() is intentionally not auto-called here; your Flask runner calls db_init() at startup.
-
-
