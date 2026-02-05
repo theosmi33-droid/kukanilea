@@ -1,31 +1,47 @@
-# KUKANILEA Systems — Local UI (Release v1)
+# KUKANILEA Systems — Agent Orchestra (Local)
 
 ## What this bundle contains
-- `kukanilea_app.py` — main Flask UI (Upload/Review/Ablage/Tasks/Assistant/Local Chat/Mail Agent tab)
-- `kukanilea_core_v3_fixed.py` — core logic (DB, ingest, OCR/extract, archive rules)
-- `kukanilea_weather_plugin.py` — weather helper (for Local Chat tools)
-- `requirements.txt` — minimal Python deps
-- `scripts/start_ui.sh` — starts UI + installs deps + sets env vars
-- `scripts/ollama_bootstrap.sh` — starts Ollama + pulls model
+- `kukanilea_app.py` — single entry point (uses `create_app()` in `app/`).
+- `app/` — app factory, auth, db, web routes.
+- `kukanilea_core_v3_fixed.py` — core logic (DB, ingest, OCR/extract, archive rules).
+- `kukanilea_weather_plugin.py` — optional weather helper.
+- `requirements.txt` — minimal Python deps.
+- `scripts/start_ui.sh` — zsh-safe starter.
+- `scripts/dev_run.sh` — idempotent dev runner (seeds users).
 
 ## Quick start (macOS)
-1) (Optional) install Ollama
-- `brew install ollama`
-- Run once: `scripts/ollama_bootstrap.sh`
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python scripts/seed_dev_users.py
+python kukanilea_app.py
+```
+Open: http://127.0.0.1:5051
 
-2) Start UI
-- `scripts/start_ui.sh`
-- Open: http://127.0.0.1:5051
+**Logins**
+- `admin/admin` → Tenant: **KUKANILEA** (ADMIN)
+- `dev/dev` → Tenant: **KUKANILEA Dev** (DEV)
+
+### One-command dev run
+```bash
+./scripts/dev_run.sh
+```
+
+### Dev bootstrap
+```bash
+./scripts/dev_bootstrap.sh
+```
 
 ## Notes
-- If you see a `zsh: parse error near ')'`, you likely pasted numbered lines like `# 1)` *without* the leading `#` or your terminal replaced quotes.
-  Use the scripts above instead of copy/paste.
-- Tenant/mandant: configured via account/license inside the app. Dev tenant: `KUKANILEA Dev`.
+- Tenant is derived from account membership and never entered in the UI.
+- If you see a `zsh: parse error near ')'`, use `scripts/start_ui.sh` or `scripts/dev_run.sh` instead of copying numbered lists.
 
-## GitHub recommended layout
-Put these in a repo root:
-- `kukanilea_app.py`
-- `kukanilea_core_v3_fixed.py`
-- `kukanilea_weather_plugin.py`
-- `requirements.txt`
-- `scripts/`
+## Known Limits
+- OCR fallback depends on system tools (tesseract/poppler) if enabled.
+- Search may fall back to DB/FS if FTS is unavailable.
+
+## Docs
+- `docs/ARCHITECTURE.md`
+- `ROADMAP.md`
+- `PACKAGING.md`

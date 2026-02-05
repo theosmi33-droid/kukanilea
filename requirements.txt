@@ -1,2 +1,6 @@
 flask
 requests
+python-dotenv
+pydantic
+rapidfuzz
+pytest
