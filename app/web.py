@@ -55,7 +55,17 @@ from flask import (
 from kukanilea.agents import AgentContext
 from kukanilea.orchestrator import Orchestrator
 
-from .auth import current_role, current_tenant, current_user, hash_password, login_required, login_user, logout_user
+from .auth import (
+    current_role,
+    current_tenant,
+    current_user,
+    hash_password,
+    login_required,
+    login_user,
+    logout_user,
+    require_role,
+)
+from .config import Config
 from .db import AuthDB
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
@@ -201,6 +211,51 @@ def _audit(action: str, target: str = "", meta: dict = None) -> None:
         audit_log(user=user, role=role, action=action, target=target, meta=meta or {}, tenant_id=current_tenant())
     except Exception:
         pass
+
+
+def _allowlisted_dirs() -> List[Path]:
+    base = Config.BASE_DIR
+    instance_dir = base / "instance"
+    core_db_dir = Path(getattr(core, "DB_PATH", instance_dir)).resolve().parent
+    return [instance_dir.resolve(), core_db_dir]
+
+
+def _is_allowlisted_path(path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except Exception:
+        return False
+    for allowed in _allowlisted_dirs():
+        try:
+            if resolved.is_relative_to(allowed):
+                return True
+        except AttributeError:
+            if str(resolved).startswith(str(allowed)):
+                return True
+    return False
+
+
+def _list_allowlisted_db_files() -> List[Path]:
+    files: List[Path] = []
+    for folder in _allowlisted_dirs():
+        if not folder.exists():
+            continue
+        for fp in folder.glob("*.db"):
+            files.append(fp)
+        for fp in folder.glob("*.sqlite3"):
+            files.append(fp)
+    return sorted({f.resolve() for f in files})
+
+
+def _seed_dev_users(auth_db: AuthDB) -> str:
+    now = datetime.utcnow().isoformat()
+    auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+    auth_db.upsert_tenant("KUKANILEA Dev", "KUKANILEA Dev", now)
+    auth_db.upsert_user("admin", hash_password("admin"), now)
+    auth_db.upsert_user("dev", hash_password("dev"), now)
+    auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+    auth_db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
+    return "Seeded users: admin/admin, dev/dev"
 
 
 def _safe_filename(name: str) -> str:
@@ -363,6 +418,9 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
       <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
       <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
+      {% if roles == 'DEV' %}
+      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
+      {% endif %}
     </nav>
     <div class="mt-8 text-xs muted">
       Ablage: {{ablage}}
@@ -737,9 +795,9 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     try{
       const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
       const j = await res.json();
-      if(!res.ok){ add("system", "Fehler: " + (j.error || ("HTTP " + res.status))); }
-      else { add("assistant", j.answer || "(leer)", j.actions || []); }
-    }catch(e){ add("system", "Netzwerk/Server Fehler."); }
+      if(!res.ok){ add("system", "Fehler: " + (j.message || j.error || ("HTTP " + res.status))); }
+      else { add("assistant", j.message || "(leer)", j.actions || []); }
+    }catch(e){ add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e)); }
     finally{ send.disabled = false; }
   }
   send.addEventListener("click", doSend);
@@ -835,13 +893,13 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       let j = {};
       try{ j = await r.json(); }catch(e){}
       if(!r.ok){
-        const msg = j.error || ('HTTP ' + r.status);
+        const msg = j.message || j.error || ('HTTP ' + r.status);
         _cwAppend('assistant', 'Fehler: ' + msg);
         if(_cw.status) _cw.status.textContent = 'Fehler';
         if(_cw.retry) _cw.retry.classList.remove('hidden');
         return;
       }
-      _cwAppend('assistant', j.answer || '(keine Antwort)', j.actions || []);
+      _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || []);
       if(_cw.status) _cw.status.textContent = 'OK';
       _cwSave();
     }catch(e){
@@ -969,6 +1027,7 @@ def _weather_adapter(message: str) -> str:
 
 
 ORCHESTRATOR = Orchestrator(core, weather_adapter=_weather_adapter)
+_DEV_STATUS = {"index": None, "scan": None, "llm": None, "db": None}
 
 
 def _mock_generate(prompt: str) -> str:
@@ -983,7 +1042,7 @@ def api_chat():
       { "q": "...", "kdnr": "1234" (optional), "token": "..." (optional) }
 
     JSON out:
-      { ok: true, answer: "...", actions: [...] }
+      { ok: true, message: "...", results: [...], actions: [...], debug: {...} }
     """
     payload = request.get_json(silent=True) or {}
     q = (payload.get("q") or "").strip()
@@ -991,7 +1050,7 @@ def api_chat():
     token = (payload.get("token") or "").strip()
 
     if not q:
-        return jsonify(ok=False, answer="Leer."), 400
+        return jsonify(ok=False, message="Leer."), 400
 
     user = current_user() or "dev"
     role = current_role()
@@ -1003,7 +1062,15 @@ def api_chat():
         token=token,
     )
     result = ORCHESTRATOR.handle(q, context)
-    return jsonify(ok=True, answer=result.text, actions=result.actions, intent=result.intent, data=result.data)
+    payload_out = {
+        "ok": True,
+        "message": result.text,
+        "results": result.data.get("results", []) if isinstance(result.data, dict) else [],
+        "actions": result.actions,
+    }
+    if current_role() == "DEV":
+        payload_out["debug"] = {"intent": result.intent, "data": result.data}
+    return jsonify(payload_out)
 
 
 # ==============================
@@ -1165,6 +1232,107 @@ HTML_MAIL = """
 </script>
 """
 
+HTML_SETTINGS = """
+<div class="grid gap-4">
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">DEV Settings</div>
+    <div class="grid gap-3 md:grid-cols-2 text-sm">
+      <div>
+        <div class="muted text-xs mb-1">Core DB</div>
+        <div><strong>{{ core_db.path }}</strong></div>
+        <div class="muted text-xs">Schema: {{ core_db.schema_version }} · Tenants: {{ core_db.tenants }}</div>
+      </div>
+      <div>
+        <div class="muted text-xs mb-1">Auth DB</div>
+        <div><strong>{{ auth_db_path }}</strong></div>
+        <div class="muted text-xs">Schema: {{ auth_schema }} · Tenants: {{ auth_tenants }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">DB wechseln (Allowlist)</div>
+    <div class="flex flex-wrap gap-2 items-center">
+      <select id="dbSelect" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
+        {% for p in db_files %}
+          <option value="{{ p }}">{{ p }}</option>
+        {% endfor %}
+      </select>
+      <button id="dbSwitch" class="rounded-xl px-3 py-2 text-sm btn-primary">DB wechseln</button>
+      <span id="dbSwitchStatus" class="text-xs muted"></span>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Tools</div>
+    <div class="flex flex-wrap gap-2">
+      <button id="seedUsers" class="rounded-xl px-3 py-2 text-sm btn-outline">Seed Dev Users</button>
+      <button id="rebuildIndex" class="rounded-xl px-3 py-2 text-sm btn-outline">Rebuild Index</button>
+      <button id="fullScan" class="rounded-xl px-3 py-2 text-sm btn-outline">Full Scan</button>
+      <button id="testLLM" class="rounded-xl px-3 py-2 text-sm btn-outline">Test LLM</button>
+    </div>
+    <div id="toolStatus" class="text-xs muted mt-2"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  async function postJson(url, body){
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});
+    let j = {};
+    try{ j = await r.json(); }catch(e){}
+    if(!r.ok){
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+    return j;
+  }
+
+  const status = document.getElementById('toolStatus');
+  const dbStatus = document.getElementById('dbSwitchStatus');
+
+  document.getElementById('seedUsers')?.addEventListener('click', async () => {
+    status.textContent = 'Seeding...';
+    try{
+      const j = await postJson('/api/dev/seed-users');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('rebuildIndex')?.addEventListener('click', async () => {
+    status.textContent = 'Rebuild läuft...';
+    try{
+      const j = await postJson('/api/dev/rebuild-index');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('fullScan')?.addEventListener('click', async () => {
+    status.textContent = 'Scan läuft...';
+    try{
+      const j = await postJson('/api/dev/full-scan');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('testLLM')?.addEventListener('click', async () => {
+    status.textContent = 'Teste LLM...';
+    try{
+      const j = await postJson('/api/dev/test-llm', {q:'suche rechnung von gerd'});
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('dbSwitch')?.addEventListener('click', async () => {
+    const sel = document.getElementById('dbSelect');
+    const path = sel ? sel.value : '';
+    if(!path){ return; }
+    dbStatus.textContent = 'Wechsle...';
+    try{
+      const j = await postJson('/api/dev/switch-db', {path});
+      dbStatus.textContent = j.message || 'OK';
+      window.location.reload();
+    }catch(e){ dbStatus.textContent = 'Fehler: ' + e.message; }
+  });
+})();
+</script>
+"""
+
 def _mail_prompt(to: str, subject: str, tone: str, length: str, context: str) -> str:
     return f"""Du bist ein deutscher Office-Assistent. Schreibe einen professionellen E-Mail-Entwurf.
 Wichtig:
@@ -1190,6 +1358,102 @@ Kontext/Stichpunkte:
 def mail_page():
     google_configured = bool(current_app.config.get("GOOGLE_CLIENT_ID") and current_app.config.get("GOOGLE_CLIENT_SECRET"))
     return _render_base(render_template_string(HTML_MAIL, google_configured=google_configured), active_tab="mail")
+
+
+@bp.get("/settings")
+@login_required
+@require_role("DEV")
+def settings_page():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    if callable(getattr(core, "get_db_info", None)):
+        core_db = core.get_db_info()
+    else:
+        core_db = {"path": str(getattr(core, "DB_PATH", "")), "schema_version": "?", "tenants": "?"}
+    return _render_base(
+        render_template_string(
+            HTML_SETTINGS,
+            core_db=core_db,
+            auth_db_path=str(auth_db.path),
+            auth_schema=auth_db.get_schema_version(),
+            auth_tenants=auth_db.count_tenants(),
+            db_files=[str(p) for p in _list_allowlisted_db_files()],
+        ),
+        active_tab="settings",
+    )
+
+
+@bp.post("/api/dev/seed-users")
+@login_required
+@require_role("DEV")
+def api_seed_users():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    msg = _seed_dev_users(auth_db)
+    _audit("seed_users", meta={"status": "ok"})
+    return jsonify(ok=True, message=msg)
+
+
+@bp.post("/api/dev/rebuild-index")
+@login_required
+@require_role("DEV")
+def api_rebuild_index():
+    if callable(getattr(core, "index_rebuild", None)):
+        result = core.index_rebuild()
+    elif callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
+    _DEV_STATUS["index"] = result
+    _audit("rebuild_index", meta={"result": result})
+    return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
+
+
+@bp.post("/api/dev/full-scan")
+@login_required
+@require_role("DEV")
+def api_full_scan():
+    if callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Scan nicht verfügbar."), 400
+    _DEV_STATUS["scan"] = result
+    _audit("full_scan", meta={"result": result})
+    return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
+
+
+@bp.post("/api/dev/switch-db")
+@login_required
+@require_role("DEV")
+def api_switch_db():
+    payload = request.get_json(silent=True) or {}
+    path = Path(str(payload.get("path", ""))).expanduser()
+    if not path:
+        return jsonify(ok=False, message="Pfad fehlt."), 400
+    if not _is_allowlisted_path(path):
+        return jsonify(ok=False, message="Pfad nicht erlaubt."), 400
+    if not path.exists():
+        return jsonify(ok=False, message="Datei existiert nicht."), 400
+    old_path = str(getattr(core, "DB_PATH", ""))
+    if callable(getattr(core, "set_db_path", None)):
+        core.set_db_path(path)
+        _DEV_STATUS["db"] = {"old": old_path, "new": str(path)}
+        _audit("switch_db", target=str(path), meta={"old": old_path})
+        return jsonify(ok=True, message="DB gewechselt.", path=str(path))
+    return jsonify(ok=False, message="DB switch nicht verfügbar."), 400
+
+
+@bp.post("/api/dev/test-llm")
+@login_required
+@require_role("DEV")
+def api_test_llm():
+    payload = request.get_json(silent=True) or {}
+    q = str(payload.get("q") or "suche rechnung")
+    llm = getattr(ORCHESTRATOR, "llm", None)
+    if not llm:
+        return jsonify(ok=False, message="LLM nicht verfügbar."), 400
+    result = llm.rewrite_query(q)
+    _DEV_STATUS["llm"] = result
+    _audit("test_llm", meta={"result": result})
+    return jsonify(ok=True, message=f"LLM: {llm.name}, intent={result.get('intent')}")
 
 @bp.post("/api/mail/draft")
 @login_required

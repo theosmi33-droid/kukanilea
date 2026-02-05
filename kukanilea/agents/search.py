@@ -42,7 +42,7 @@ class SearchAgent(BaseAgent):
     name = "search"
     required_role = "READONLY"
     scope = "search"
-    tools = ["search"]
+    tools = ["search_docs"]
 
     def __init__(self, core_module) -> None:
         self.core = core_module
@@ -123,6 +123,8 @@ class SearchAgent(BaseAgent):
         return hits
 
     def _did_you_mean(self, query: str, context: AgentContext) -> List[str]:
+        if callable(getattr(self.core, "assistant_suggest", None)):
+            return self.core.assistant_suggest(query=query, tenant_id=context.tenant_id)
         base = getattr(self.core, "BASE_PATH", None)
         if base is None or process is None or fuzz is None:
             return []
