@@ -11,6 +11,7 @@ from kukanilea.agents import (
     CustomerAgent,
     IndexAgent,
     MailAgent,
+    MockLLM,
     OpenFileAgent,
     ReviewAgent,
     SearchAgent,
@@ -34,7 +35,8 @@ class OrchestratorResult:
 
 class Orchestrator:
     def __init__(self, core_module, weather_adapter=None) -> None:
-        self.intent_parser = IntentParser()
+        self.llm = MockLLM()
+        self.intent_parser = IntentParser(self.llm)
         self.policy = PolicyEngine()
         self.tools = ToolRegistry()
         self.agents = [

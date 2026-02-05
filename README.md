@@ -33,12 +33,6 @@ Open: http://127.0.0.1:5051
 ./scripts/dev_bootstrap.sh
 ```
 
-### Validation (M0)
-```bash
-python -m app.smoke
-pytest -q
-```
-
 ## Notes
 - Tenant is derived from account membership and never entered in the UI.
 - If you see a `zsh: parse error near ')'`, use `scripts/start_ui.sh` or `scripts/dev_run.sh` instead of copying numbered lists.

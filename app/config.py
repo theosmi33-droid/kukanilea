@@ -20,11 +20,3 @@ class Config:
     FEATURE_GOOGLE_OAUTH = _env("FEATURE_GOOGLE_OAUTH", "0") == "1"
     GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET = _env("GOOGLE_CLIENT_SECRET", "")
-    EMAIL_ENABLED = _env("EMAIL_ENABLED", "0") == "1"
-    IMAP_SMTP = _env("IMAP_SMTP", "0") == "1"
-    GMAIL_OAUTH = _env("GMAIL_OAUTH", "0") == "1"
-    WHATSAPP_WEB = _env("WHATSAPP_WEB", "0") == "1"
-    WHATSAPP_BUSINESS = _env("WHATSAPP_BUSINESS", "0") == "1"
-    CALDAV = _env("CALDAV", "0") == "1"
-    GOOGLE_CAL = _env("GOOGLE_CAL", "0") == "1"
-    MS_GRAPH = _env("MS_GRAPH", "0") == "1"
