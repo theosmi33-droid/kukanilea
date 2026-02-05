@@ -1,22 +1,17 @@
 # Project Status
 
 ## GOALS
-- App-Factory + Blueprints für stabile, testbare Struktur.
-- Auth & Tenant-Membership (keine Tenant-Eingabe im UI).
-- Agent-Orchestrator mit deterministischen Tools und RBAC.
-- Upload → Review → Archive mit Vorschlagslogik.
+- Premium UI/UX refresh with app shell and design system.
+- Chat UX refresh with deterministic tools and better errors.
+- Intent parsing + search reliability improvements.
+- Review page header + embedded PDF viewer.
 
-## TODO
-- Upload-Job State Machine in DB persistieren.
-- OCR-Fallback (Feature-Flag) hinzufügen.
-- Messenger/Time-Tracking Feature-Flags als Stubs ergänzen.
+## PLANNED
+- None in this sprint.
 
 ## DONE
-- `app/` Struktur mit `create_app()` + Blueprints.
-- Seed-Skript für admin/dev User.
-- Tenant-Header + Tenant-freies UI.
-- Orchestrator + PolicyEngine + ToolRegistry erweitert.
-- Google OAuth Platzhalter + Mail-Stub UI ergänzt.
-- Smoke-Test + GitHub Actions Workflow.
-- README/ROADMAP/PACKAGING aktualisiert.
-- Wetter-Plugin Fallback angebunden.
+- App shell + unified design system (CSS variables, nav, topbar).
+- Copilot-style chat drawer with quick actions + retry + unread indicator.
+- Intent parser broadened for short queries + KDNR recognition.
+- Search fallback chain + fuzzy "did you mean" suggestions.
+- Review page header + embedded PDF viewer + confidence meter.

@@ -5,7 +5,7 @@ from .base import AgentContext, AgentResult, BaseAgent
 
 class MailAgent(BaseAgent):
     name = "mail"
-    required_role = "STAFF"
+    required_role = "OPERATOR"
     scope = "mail"
     tools = ["mail"]
 

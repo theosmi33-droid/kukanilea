@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-ROLE_ORDER = ["READONLY", "STAFF", "ADMIN", "DEVELOPER"]
+ROLE_ORDER = ["READONLY", "OPERATOR", "ADMIN", "DEV"]
 
 
 class PolicyEngine:

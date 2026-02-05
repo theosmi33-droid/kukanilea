@@ -5,7 +5,7 @@ from .base import AgentContext, AgentResult, BaseAgent
 
 class ReviewAgent(BaseAgent):
     name = "review"
-    required_role = "STAFF"
+    required_role = "OPERATOR"
     scope = "review"
     tools = ["review"]
 

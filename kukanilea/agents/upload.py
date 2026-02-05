@@ -5,7 +5,7 @@ from .base import AgentContext, AgentResult, BaseAgent
 
 class UploadAgent(BaseAgent):
     name = "upload"
-    required_role = "STAFF"
+    required_role = "OPERATOR"
     scope = "upload"
     tools = ["upload"]
 

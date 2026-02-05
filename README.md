@@ -21,16 +21,25 @@ Open: http://127.0.0.1:5051
 
 **Logins**
 - `admin/admin` → Tenant: **KUKANILEA** (ADMIN)
-- `dev/dev` → Tenant: **KUKANILEA Dev** (DEVELOPER)
+- `dev/dev` → Tenant: **KUKANILEA Dev** (DEV)
 
 ### One-command dev run
 ```bash
 ./scripts/dev_run.sh
 ```
 
+### Dev bootstrap
+```bash
+./scripts/dev_bootstrap.sh
+```
+
 ## Notes
 - Tenant is derived from account membership and never entered in the UI.
 - If you see a `zsh: parse error near ')'`, use `scripts/start_ui.sh` or `scripts/dev_run.sh` instead of copying numbered lists.
+
+## Known Limits
+- OCR fallback depends on system tools (tesseract/poppler) if enabled.
+- Search may fall back to DB/FS if FTS is unavailable.
 
 ## Docs
 - `docs/ARCHITECTURE.md`

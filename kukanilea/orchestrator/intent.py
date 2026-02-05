@@ -21,14 +21,18 @@ class IntentParser:
         if not text:
             return IntentResult(intent="unknown", confidence=0.0)
 
-        if re.search(r"\b(öffne|open)\b", text):
+        if re.search(r"\b(öffne|open|zeige)\b", text):
             return IntentResult(intent="open_token", confidence=0.9)
         if re.search(r"\b(suche|finde|search)\b", text):
             return IntentResult(intent="search", confidence=0.8)
-        if re.search(r"\b(kunde|kdnr)\b", text):
+        if re.search(r"\b(kunde|kdnr|kundennr|wer ist)\b", text):
             return IntentResult(intent="customer_lookup", confidence=0.7)
         if re.search(r"\b(zusammenfassung|summary|kurzfassung)\b", text):
             return IntentResult(intent="summary", confidence=0.6)
+        if re.fullmatch(r"\d{3,6}", text):
+            return IntentResult(intent="customer_lookup", confidence=0.6)
+        if any(k in text for k in ["rechnung", "angebot", "vertrag", "mahnung"]):
+            return IntentResult(intent="search", confidence=0.55)
         if re.search(r"\b(index|reindex)\b", text):
             return IntentResult(intent="index", confidence=0.7)
         if re.search(r"\b(mail|email|entwurf)\b", text):

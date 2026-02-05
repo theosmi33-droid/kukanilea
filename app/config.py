@@ -13,7 +13,7 @@ class Config:
     PORT = int(_env("PORT", "5051"))
     SECRET_KEY = _env("KUKANILEA_SECRET", "kukanilea-dev-secret-change-me")
     MAX_CONTENT_LENGTH = int(_env("KUKANILEA_MAX_UPLOAD", str(25 * 1024 * 1024)))
-    AUTH_DB = Path(_env("KUKANILEA_AUTH_DB", str(Path.home() / "kukanilea_auth.sqlite3")))
+    AUTH_DB = Path(_env("KUKANILEA_AUTH_DB", str(Path(__file__).resolve().parent.parent / "instance" / "kukanilea.db")))
     CORE_DB = Path(_env("DB_FILENAME", str(Path.home() / "Tophandwerk_DB.sqlite3")))
     TENANT_DEFAULT = _env("TENANT_DEFAULT", "KUKANILEA")
     TENANT_FIXED = _env("TENANT_FIXED", "1") not in ("0", "false", "False", "no", "NO")

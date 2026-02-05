@@ -295,78 +295,139 @@ HTML_BASE = r"""<!doctype html>
   document.documentElement.dataset.accent = savedAccent;
 </script>
 <style>
-  :root{ --accent-500:#6366f1; --accent-600:#4f46e5; }
+  :root{
+    --bg:#0b1220;
+    --bg-elev:#111a2c;
+    --bg-panel:#0f172a;
+    --border:rgba(148,163,184,.15);
+    --text:#e2e8f0;
+    --muted:#94a3b8;
+    --accent-500:#6366f1;
+    --accent-600:#4f46e5;
+    --shadow:0 8px 30px rgba(15,23,42,.35);
+    --radius-lg:18px;
+    --radius-md:14px;
+  }
   html[data-accent="indigo"]{ --accent-500:#6366f1; --accent-600:#4f46e5; }
   html[data-accent="emerald"]{ --accent-500:#10b981; --accent-600:#059669; }
   html[data-accent="amber"]{ --accent-500:#f59e0b; --accent-600:#d97706; }
-  .btn-primary{ background:var(--accent-600); color:white; }
-  .btn-primary:hover{ filter:brightness(1.05); }
-  .btn-outline{ border:1px solid rgba(148,163,184,.35); }
-  .light body { background:#f8fafc !important; color:#0f172a !important; }
-  .light .card { background:rgba(255,255,255,.95) !important; border-color:#e2e8f0 !important; }
-  .light .muted { color:#475569 !important; }
-  .light .input { background:#ffffff !important; border-color:#cbd5e1 !important; color:#0f172a !important; }
-  .light .btn-outline{ border-color:#cbd5e1 !important; }
-  .accentText{ color:var(--accent-500); }
-  .tab { border:1px solid rgba(148,163,184,.25); }
-  .tab.active { border-color: rgba(148,163,184,.55); background: rgba(2,6,23,.35); }
-  .light .tab.active { background:#ffffff !important; }
+  .light body{
+    --bg:#f8fafc;
+    --bg-elev:#ffffff;
+    --bg-panel:#ffffff;
+    --border:rgba(148,163,184,.25);
+    --text:#0f172a;
+    --muted:#475569;
+    --shadow:0 8px 30px rgba(15,23,42,.12);
+  }
+  body{ background:var(--bg); color:var(--text); }
+  .app-shell{ display:flex; min-height:100vh; }
+  .app-nav{
+    width:240px; background:var(--bg-elev); border-right:1px solid var(--border);
+    padding:24px 18px; position:sticky; top:0; height:100vh;
+  }
+  .app-main{ flex:1; display:flex; flex-direction:column; }
+  .app-topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:22px 28px; border-bottom:1px solid var(--border); background:var(--bg-elev);
+  }
+  .app-content{ padding:24px 28px; }
+  .nav-link{
+    display:flex; gap:12px; align-items:center; padding:10px 12px; border-radius:12px;
+    color:var(--muted); text-decoration:none; transition:all .15s ease;
+  }
+  .nav-link:hover{ background:rgba(148,163,184,.08); color:var(--text); }
+  .nav-link.active{ background:rgba(99,102,241,.15); color:var(--text); border:1px solid rgba(99,102,241,.25); }
+  .badge{ font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
+  .card{ background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow); }
+  .btn-primary{ background:var(--accent-600); color:white; border-radius:12px; }
+  .btn-outline{ border:1px solid var(--border); border-radius:12px; }
+  .input{ background:transparent; border:1px solid var(--border); border-radius:12px; }
+  .muted{ color:var(--muted); }
+  .pill{ background:rgba(99,102,241,.12); color:var(--text); border:1px solid rgba(99,102,241,.2); padding:2px 8px; border-radius:999px; font-size:11px; }
 </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
-<div class="max-w-[1600px] mx-auto p-4 md:p-6">
-  <div class="flex items-start justify-between gap-3 mb-5">
-    <div>
-      <h1 class="text-3xl font-bold">KUKANILEA Systems</h1>
-      <div class="muted text-sm">Upload → Review → Ablage • Tasks • Local Chat</div>
-      <div class="muted text-xs mt-1">Ablage: {{ablage}}</div>
-    </div>
-    <div class="flex items-center gap-2">
-      <div class="text-right">
-        <div class="text-xs muted">Login</div>
-        <div class="text-sm font-semibold">{{user}}</div>
-        <div class="text-[11px] muted">{{roles}}</div>
-        <div class="text-[11px] muted">{{tenant}}</div>
+<body>
+<div class="app-shell">
+  <aside class="app-nav">
+    <div class="flex items-center gap-2 mb-6">
+      <div class="h-10 w-10 rounded-2xl flex items-center justify-center" style="background:rgba(99,102,241,.2);">✦</div>
+      <div>
+        <div class="text-sm font-semibold">KUKANILEA</div>
+        <div class="text-[11px] muted">Agent Orchestra</div>
       </div>
-      {% if user and user != '-' %}
-      <a class="rounded-xl px-3 py-2 text-sm card btn-outline" href="/logout">Logout</a>
-      {% endif %}
-      <button id="accentBtn" class="rounded-xl px-3 py-2 text-sm card btn-outline">Accent: <span id="accentLabel"></span></button>
-      <button id="themeBtn" class="rounded-xl px-3 py-2 text-sm card btn-outline">Theme: <span id="themeLabel"></span></button>
     </div>
-  </div>
-  <div class="flex flex-wrap gap-2 mb-5">
-    <a class="tab rounded-xl px-4 py-2 text-sm {{'active' if active_tab=='upload' else ''}}" href="/">Upload/Queue</a>
-    <a class="tab rounded-xl px-4 py-2 text-sm {{'active' if active_tab=='tasks' else ''}}" href="/tasks">Tasks</a>
-    <a class="tab rounded-xl px-4 py-2 text-sm {{'active' if active_tab=='assistant' else ''}}" href="/assistant">Assistant</a>
-    <a class="tab rounded-xl px-4 py-2 text-sm {{'active' if active_tab=='chat' else ''}}" href="/chat">Local Chat</a>
-    <a class="tab rounded-xl px-4 py-2 text-sm {{'active' if active_tab=='mail' else ''}}" href="/mail">Mail Agent</a>
-  </div>
-  {{ content|safe }}
+    <nav class="space-y-2">
+      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">📥 Upload</a>
+      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">✅ Tasks</a>
+      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
+      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
+      <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
+    </nav>
+    <div class="mt-8 text-xs muted">
+      Ablage: {{ablage}}
+    </div>
+  </aside>
+  <main class="app-main">
+    <div class="app-topbar">
+      <div>
+        <div class="text-lg font-semibold">Workspace</div>
+        <div class="text-xs muted">Upload → Review → Ablage</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="badge">User: {{user}}</span>
+        <span class="badge">Role: {{roles}}</span>
+        <span class="badge">Tenant: {{tenant}}</span>
+        {% if user and user != '-' %}
+        <a class="px-3 py-2 text-sm btn-outline" href="/logout">Logout</a>
+        {% endif %}
+        <button id="accentBtn" class="px-3 py-2 text-sm btn-outline">Accent: <span id="accentLabel"></span></button>
+        <button id="themeBtn" class="px-3 py-2 text-sm btn-outline">Theme: <span id="themeLabel"></span></button>
+      </div>
+    </div>
+    <div class="app-content">
+      {{ content|safe }}
+    </div>
+  </main>
 </div>
 
 <!-- Floating Chat Widget -->
-<div id="chatWidgetBtn" title="Chat" class="fixed bottom-5 right-5 z-50 cursor-pointer select-none rounded-full border bg-white/90 text-slate-900 shadow-lg backdrop-blur px-4 py-3 text-sm dark:bg-slate-900/90 dark:text-slate-100">
-  💬
+<div id="chatWidgetBtn" title="Chat" class="fixed bottom-6 right-6 z-50 cursor-pointer select-none">
+  <div class="relative h-12 w-12 rounded-full flex items-center justify-center" style="background:var(--accent-600); box-shadow:var(--shadow); color:white;">
+    💬
+    <span id="chatUnread" class="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-500 hidden"></span>
+  </div>
 </div>
 
-<div id="chatWidgetPanel" class="fixed bottom-20 right-5 z-50 hidden w-[380px] max-w-[92vw] overflow-hidden rounded-2xl border bg-white shadow-2xl dark:bg-slate-900">
-  <div class="flex items-center justify-between border-b px-4 py-2 dark:border-slate-800">
-    <div class="text-sm font-semibold">KUKANILEA Chat</div>
-    <button id="chatWidgetClose" class="rounded-lg px-2 py-1 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">✕</button>
-  </div>
-  <div class="px-4 py-2 border-b dark:border-slate-800">
-    <div class="flex gap-2 items-center">
-      <input id="chatWidgetKdnr" class="w-24 rounded-lg border px-2 py-1 text-sm dark:bg-slate-950 dark:border-slate-800" placeholder="KDNR" />
-      <button id="chatWidgetClear" class="rounded-lg border px-2 py-1 text-sm hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800">Clear</button>
+<div id="chatDrawer" class="fixed inset-y-0 right-0 z-50 hidden w-[420px] max-w-[92vw] border-l" style="background:var(--bg-elev); border-color:var(--border); box-shadow:var(--shadow);">
+  <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:var(--border);">
+    <div>
+      <div class="text-sm font-semibold">KUKANILEA Assistant</div>
+      <div class="text-xs muted">Tenant: {{tenant}}</div>
     </div>
-    <div id="chatWidgetStatus" class="mt-1 text-xs opacity-75">Tippe eine Frage…</div>
+    <div class="flex items-center gap-2">
+      <span id="chatWidgetStatus" class="text-[11px] muted">Bereit</span>
+      <button id="chatWidgetClose" class="rounded-lg px-2 py-1 text-sm btn-outline">✕</button>
+    </div>
   </div>
-  <div id="chatWidgetMsgs" class="h-[340px] overflow-auto px-3 py-3 space-y-2 text-sm"></div>
-  <div class="border-t px-3 py-2 dark:border-slate-800">
+  <div class="px-4 py-3 border-b" style="border-color:var(--border);">
+    <div class="flex flex-wrap gap-2">
+      <button class="chat-quick pill" data-q="suche rechnung">Suche Rechnung</button>
+      <button class="chat-quick pill" data-q="suche angebot">Suche Angebot</button>
+      <button class="chat-quick pill" data-q="zeige letzte uploads">Letzte Uploads</button>
+      <button class="chat-quick pill" data-q="hilfe">Hilfe</button>
+    </div>
+  </div>
+  <div id="chatWidgetMsgs" class="flex-1 overflow-auto px-4 py-4 space-y-3 text-sm" style="height: calc(100vh - 230px);"></div>
+  <div class="border-t px-4 py-3 space-y-2" style="border-color:var(--border);">
     <div class="flex gap-2">
-      <input id="chatWidgetInput" class="flex-1 rounded-xl border px-3 py-2 text-sm dark:bg-slate-950 dark:border-slate-800" placeholder="Nachrichten…" />
-      <button id="chatWidgetSend" class="rounded-xl border px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800">Senden</button>
+      <input id="chatWidgetKdnr" class="w-24 rounded-xl input px-3 py-2 text-sm" placeholder="KDNR" />
+      <input id="chatWidgetInput" class="flex-1 rounded-xl input px-3 py-2 text-sm" placeholder="Frag etwas…" />
+      <button id="chatWidgetSend" class="rounded-xl px-3 py-2 text-sm btn-primary">Senden</button>
+    </div>
+    <div class="flex items-center justify-between">
+      <button id="chatWidgetRetry" class="text-xs btn-outline px-3 py-1 hidden">Retry</button>
+      <button id="chatWidgetClear" class="text-xs btn-outline px-3 py-1">Clear</button>
     </div>
   </div>
 </div>
@@ -398,110 +459,6 @@ HTML_BASE = r"""<!doctype html>
     const i = order.indexOf(curAccent());
     applyAccent(order[(i+1) % order.length]);
   });
-})();
-</script>
-
-<!-- Floating Chat Widget -->
-<button id="chatFab" class="fixed bottom-4 right-4 rounded-full shadow-lg px-4 py-3 text-sm card btn-primary z-50">
-  💬 KI
-</button>
-
-<div id="chatModal" class="fixed inset-0 hidden z-50">
-  <div class="absolute inset-0 bg-black/50" id="chatBackdrop"></div>
-  <div class="absolute bottom-6 right-6 w-[92vw] max-w-md card rounded-2xl shadow-xl border overflow-hidden">
-    <div class="flex items-center justify-between px-4 py-3 border-b">
-      <div class="font-semibold">KUKANILEA Chat</div>
-      <button id="chatClose" class="btn-outline rounded-xl px-3 py-1 text-sm">✕</button>
-    </div>
-    <div class="p-3">
-      <div class="text-xs opacity-70 mb-2">Frage etwas oder gib einen Auftrag: „Suche Rechnung von …“</div>
-      <div id="chatMsgs" class="h-72 overflow-auto rounded-xl border p-2 text-sm space-y-2"></div>
-      <div class="mt-3 flex gap-2">
-        <input id="chatInput" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Nachricht…" />
-        <button id="chatSend" class="rounded-xl px-4 py-2 text-sm card btn-primary">Senden</button>
-      </div>
-      <div class="mt-2 text-xs opacity-60" id="chatStatus"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  const fab=document.getElementById('chatFab');
-  const modal=document.getElementById('chatModal');
-  const backdrop=document.getElementById('chatBackdrop');
-  const closeBtn=document.getElementById('chatClose');
-  const msgs=document.getElementById('chatMsgs');
-  const input=document.getElementById('chatInput');
-  const sendBtn=document.getElementById('chatSend');
-  const status=document.getElementById('chatStatus');
-
-  function open(){ modal.classList.remove('hidden'); input.focus(); }
-  function close(){ modal.classList.add('hidden'); }
-  function add(role, text, actions){
-    const wrap=document.createElement('div');
-    wrap.className = role==='user' ? 'flex justify-end' : 'flex justify-start';
-    const bubble=document.createElement('div');
-    bubble.className = role==='user'
-      ? 'max-w-[85%] rounded-2xl px-3 py-2 bg-emerald-600 text-white'
-      : 'max-w-[85%] rounded-2xl px-3 py-2 border';
-    bubble.textContent = text;
-    if(actions && actions.length){
-      const list=document.createElement('div');
-      list.className='mt-2 flex flex-wrap gap-2 text-xs';
-      actions.forEach((action)=>{
-        if(action.type==='open_token' && action.token){
-          const link=document.createElement('a');
-          link.href='/review/'+action.token;
-          link.textContent='Öffnen '+action.token.slice(0,10)+'…';
-          link.className='rounded-full border px-2 py-1 hover:bg-slate-50';
-          list.appendChild(link);
-        }
-      });
-      bubble.appendChild(list);
-    }
-    wrap.appendChild(bubble);
-    msgs.appendChild(wrap);
-    msgs.scrollTop = msgs.scrollHeight;
-  }
-
-  async function send(){
-    const q=input.value.trim();
-    if(!q) return;
-    input.value='';
-    add('user', q);
-    status.textContent='Denke…';
-    try{
-      const res = await fetch('/api/chat', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({q:q})
-      });
-      if(!res.ok){
-        const t = await res.text();
-        status.textContent='Fehler: '+res.status;
-        add('assistant', 'Fehler beim Chat ('+res.status+'). Bitte eingeloggt?');
-        return;
-      }
-      const data = await res.json();
-      add('assistant', data.answer || '(keine Antwort)', data.actions || []);
-      status.textContent='';
-    }catch(e){
-      status.textContent='Fehler';
-      add('assistant', 'Verbindung fehlgeschlagen: '+e);
-    }
-  }
-
-  fab && fab.addEventListener('click', open);
-  backdrop && backdrop.addEventListener('click', close);
-  closeBtn && closeBtn.addEventListener('click', close);
-  sendBtn && sendBtn.addEventListener('click', send);
-  input && input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') send(); });
-
-  // greet once per page load
-  if(msgs && msgs.childElementCount===0){
-    add('assistant', 'Hi! Wie kann ich helfen?');
-  }
 })();
 </script>
 
@@ -625,34 +582,40 @@ form.addEventListener("submit", (e) => {
 </script>"""
 
 HTML_REVIEW_SPLIT = r"""<div class="grid lg:grid-cols-2 gap-4">
-  <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 card">
+  <div class="card p-4 sticky top-6 h-fit">
     <div class="flex items-center justify-between gap-2">
       <div>
-        <div class="text-lg font-semibold">Preview</div>
-        <div class="muted text-xs break-all">Token: {{token}} • Datei: {{filename}}</div>
+        <div class="text-lg font-semibold">Dokument</div>
+        <div class="muted text-xs break-all">{{filename}}</div>
       </div>
-      <div class="flex items-center gap-2">
-        <a class="text-sm underline accentText" href="/file/{{token}}" target="_blank">Datei öffnen</a>
-        <a class="text-sm underline muted" href="/">Home</a>
+      <div class="flex items-center gap-2 text-xs">
+        <a class="underline" href="/file/{{token}}" target="_blank">Download</a>
+        <a class="underline muted" href="/">Home</a>
       </div>
     </div>
-    <div class="mt-3 rounded-xl border border-slate-800 overflow-hidden" style="height:72vh">
+    <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div class="badge">KDNR: {{w.kdnr or '-'}}</div>
+      <div class="badge">Typ: {{suggested_doctype}}</div>
+      <div class="badge">Datum: {{suggested_date or '-'}}</div>
+      <div class="badge">Confidence: {{confidence}}%</div>
+    </div>
+    <div class="mt-3 rounded-xl overflow-hidden border" style="border-color:var(--border); height:70vh;">
       {% if is_pdf %}
-        <iframe src="/file/{{token}}" class="w-full h-full"></iframe>
+        <iframe src="/file/{{token}}#page=1" class="w-full h-full"></iframe>
       {% elif is_text %}
         <iframe src="/file/{{token}}" class="w-full h-full"></iframe>
       {% else %}
-        <img src="/file/{{token}}" class="w-full h-full object-contain bg-black/20"/>
+        <img src="/file/{{token}}" class="w-full h-full object-contain"/>
       {% endif %}
     </div>
     {% if preview %}
       <div class="mt-3">
         <div class="text-sm font-semibold mb-1">Preview (Auszug)</div>
-        <pre class="text-xs whitespace-pre-wrap rounded-xl border border-slate-800 p-3 bg-slate-950/40 max-h-48 overflow-auto">{{preview}}</pre>
+        <pre class="text-xs whitespace-pre-wrap rounded-xl border p-3 max-h-48 overflow-auto" style="border-color:var(--border); background:rgba(15,23,42,.35);">{{preview}}</pre>
       </div>
     {% endif %}
   </div>
-  <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 card">
+  <div class="card p-4">
     {{ right|safe }}
   </div>
 </div>"""
@@ -785,7 +748,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   // ---- Floating Chat Widget ----
   const _cw = {
     btn: document.getElementById('chatWidgetBtn'),
-    panel: document.getElementById('chatWidgetPanel'),
+    drawer: document.getElementById('chatDrawer'),
     close: document.getElementById('chatWidgetClose'),
     msgs: document.getElementById('chatWidgetMsgs'),
     input: document.getElementById('chatWidgetInput'),
@@ -793,7 +756,11 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     kdnr: document.getElementById('chatWidgetKdnr'),
     clear: document.getElementById('chatWidgetClear'),
     status: document.getElementById('chatWidgetStatus'),
+    retry: document.getElementById('chatWidgetRetry'),
+    unread: document.getElementById('chatUnread'),
+    quick: document.querySelectorAll('.chat-quick'),
   };
+  let _cwLastBody = null;
   function _cwAppend(role, text, actions){
     if(!_cw.msgs) return;
     const wrap = document.createElement('div');
@@ -801,8 +768,8 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     wrap.className = 'flex ' + (isUser ? 'justify-end' : 'justify-start');
     const bubble = document.createElement('div');
     bubble.className = (isUser
-      ? 'max-w-[85%] rounded-2xl px-3 py-2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-      : 'max-w-[85%] rounded-2xl px-3 py-2 border bg-white dark:bg-slate-950 dark:border-slate-800');
+      ? 'max-w-[85%] rounded-2xl px-3 py-2 text-white'
+      : 'max-w-[85%] rounded-2xl px-3 py-2 border') + ' card';
     bubble.textContent = text;
     if(actions && actions.length){
       const list = document.createElement('div');
@@ -812,15 +779,21 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
           const link = document.createElement('a');
           link.href = '/review/' + action.token;
           link.textContent = 'Öffnen ' + action.token.slice(0,10) + '…';
-          link.className = 'rounded-full border px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-800';
+          link.className = 'rounded-full border px-2 py-1';
           list.appendChild(link);
         }
       });
       bubble.appendChild(list);
     }
+    if(isUser){
+      bubble.style.background = 'var(--accent-600)';
+    }
     wrap.appendChild(bubble);
     _cw.msgs.appendChild(wrap);
     _cw.msgs.scrollTop = _cw.msgs.scrollHeight;
+    if(_cw.unread && _cw.drawer?.classList.contains('hidden')){
+      _cw.unread.classList.remove('hidden');
+    }
   }
   function _cwLoad(){
     try{
@@ -854,30 +827,53 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     if(_cw.input) _cw.input.value = '';
     _cwSave();
     if(_cw.status) _cw.status.textContent = 'Denke…';
+    if(_cw.retry) _cw.retry.classList.add('hidden');
     try{
       const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
+      _cwLastBody = body;
       const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-      const j = await r.json();
+      let j = {};
+      try{ j = await r.json(); }catch(e){}
+      if(!r.ok){
+        const msg = j.error || ('HTTP ' + r.status);
+        _cwAppend('assistant', 'Fehler: ' + msg);
+        if(_cw.status) _cw.status.textContent = 'Fehler';
+        if(_cw.retry) _cw.retry.classList.remove('hidden');
+        return;
+      }
       _cwAppend('assistant', j.answer || '(keine Antwort)', j.actions || []);
       if(_cw.status) _cw.status.textContent = 'OK';
       _cwSave();
     }catch(e){
       _cwAppend('assistant', 'Fehler: ' + (e && e.message ? e.message : e));
       if(_cw.status) _cw.status.textContent = 'Fehler';
+      if(_cw.retry) _cw.retry.classList.remove('hidden');
     }
   }
-  if(_cw.btn && _cw.panel){
+  if(_cw.btn && _cw.drawer){
     _cw.btn.addEventListener('click', () => {
-      _cw.panel.classList.toggle('hidden');
+      _cw.drawer.classList.toggle('hidden');
+      if(_cw.unread) _cw.unread.classList.add('hidden');
       _cwLoad();
-      if(!_cw.panel.classList.contains('hidden') && _cw.input) _cw.input.focus();
+      if(!_cw.drawer.classList.contains('hidden') && _cw.input) _cw.input.focus();
     });
   }
-  if(_cw.close) _cw.close.addEventListener('click', () => _cw.panel && _cw.panel.classList.add('hidden'));
+  if(_cw.close) _cw.close.addEventListener('click', () => _cw.drawer && _cw.drawer.classList.add('hidden'));
   if(_cw.send) _cw.send.addEventListener('click', _cwSend);
   if(_cw.input) _cw.input.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); _cwSend(); }});
   if(_cw.kdnr) _cw.kdnr.addEventListener('change', _cwSave);
   if(_cw.clear) _cw.clear.addEventListener('click', () => { if(_cw.msgs) _cw.msgs.innerHTML=''; localStorage.removeItem('kukanilea_cw_hist'); _cwSave(); });
+  if(_cw.retry) _cw.retry.addEventListener('click', () => {
+    if(!_cwLastBody) return;
+    if(_cw.input) _cw.input.value = _cwLastBody.q || '';
+    _cwSend();
+  });
+  _cw.quick?.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if(_cw.input) _cw.input.value = btn.dataset.q || '';
+      _cwSend();
+    });
+  });
   // ---- /Floating Chat Widget ----
 })();
 </script>"""
@@ -1011,7 +1007,7 @@ def api_chat():
 
 
 # ==============================
-# Mail Agent Tab (Template/Mock + optional DeepL Write workflow)
+# Mail Agent Tab (Template/Mock workflow)
 # ==============================
 HTML_MAIL = """
 <div class="grid gap-4">
@@ -1032,7 +1028,7 @@ HTML_MAIL = """
   </div>
   <div class="card p-4 rounded-2xl border">
     <div class="text-lg font-semibold mb-1">Mail Agent</div>
-    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM. Danach optional in DeepL Write veredeln (ohne API: Copy/Paste).</div>
+    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM. Keine Drittanbieter-Links.</div>
 
     <div class="grid gap-3 md:grid-cols-2">
       <div>
@@ -1073,7 +1069,7 @@ HTML_MAIL = """
       <button id="m_gen" class="rounded-xl px-4 py-2 text-sm card btn-primary">Entwurf erzeugen</button>
       <button id="m_copy" class="rounded-xl px-4 py-2 text-sm btn-outline" disabled>Copy</button>
       <button id="m_eml" class="rounded-xl px-4 py-2 text-sm btn-outline" disabled>.eml Export</button>
-      <button id="m_deepl" class="rounded-xl px-4 py-2 text-sm btn-outline">DeepL Write öffnen</button>
+      <button id="m_rewrite" class="rounded-xl px-4 py-2 text-sm btn-outline">Stil verbessern</button>
       <div class="text-xs opacity-70 flex items-center" id="m_status"></div>
     </div>
   </div>
@@ -1091,7 +1087,7 @@ HTML_MAIL = """
 (function(){
   const gen=document.getElementById('m_gen');
   const copy=document.getElementById('m_copy');
-  const deepl=document.getElementById('m_deepl');
+  const rewrite=document.getElementById('m_rewrite');
   const eml=document.getElementById('m_eml');
   const status=document.getElementById('m_status');
   const out=document.getElementById('m_out');
@@ -1151,13 +1147,19 @@ HTML_MAIL = """
     URL.revokeObjectURL(url);
   }
 
-  function openDeepl(){
-    window.open('https://www.deepl.com/write', '_blank');
+  function rewriteLocal(){
+    if(!out.value) return;
+    const lines = out.value.split('\\n').map(l => l.trim()).filter(Boolean);
+    const greeting = lines[0]?.startsWith('Betreff') ? '' : 'Guten Tag,';
+    const closing = 'Mit freundlichen Grüßen';
+    const body = lines.filter(l => !l.toLowerCase().startsWith('betreff')).join('\\n');
+    out.value = [greeting, body, '', closing].filter(Boolean).join('\\n');
+    status.textContent='Stil verbessert (lokal).';
   }
 
   gen && gen.addEventListener('click', run);
   copy && copy.addEventListener('click', doCopy);
-  deepl && deepl.addEventListener('click', openDeepl);
+  rewrite && rewrite.addEventListener('click', rewriteLocal);
   eml && eml.addEventListener('click', doEml);
 })();
 </script>
@@ -1294,7 +1296,22 @@ def review(token: str):
         return _render_base(_card("error", "Nicht gefunden."), active_tab="upload")
     if p.get("status") == "ANALYZING":
         right = _card("info", "Analyse läuft noch. Bitte kurz warten oder zurück zur Übersicht.")
-        return _render_base(render_template_string(HTML_REVIEW_SPLIT, token=token, filename=p.get("filename",""), is_pdf=True, is_text=False, preview="", right=right), active_tab="upload")
+        return _render_base(
+            render_template_string(
+                HTML_REVIEW_SPLIT,
+                token=token,
+                filename=p.get("filename", ""),
+                is_pdf=True,
+                is_text=False,
+                preview="",
+                right=right,
+                w=_wizard_get(p),
+                suggested_doctype="SONSTIGES",
+                suggested_date="",
+                confidence=0,
+            ),
+            active_tab="upload",
+        )
 
     w = _wizard_get(p)
     if True:
@@ -1305,6 +1322,14 @@ def review(token: str):
     if not w.get("doctype"):
         w["doctype"] = suggested_doctype if suggested_doctype in DOCTYPE_CHOICES else "SONSTIGES"
     suggested_date = (p.get("doc_date_suggested") or "").strip()
+    confidence = 40
+    if suggested_doctype and suggested_doctype != "SONSTIGES":
+        confidence += 20
+    if suggested_date:
+        confidence += 20
+    if w.get("kdnr"):
+        confidence += 20
+    confidence = min(95, confidence)
 
     # Suggest an existing customer folder (best effort)
     existing_folder_hint = ""
@@ -1385,7 +1410,22 @@ def review(token: str):
         existing_folder_hint=existing_folder_hint,
         existing_folder_score=f"{existing_folder_score:.2f}" if existing_folder_hint else "",
     )
-    return _render_base(render_template_string(HTML_REVIEW_SPLIT, token=token, filename=filename, is_pdf=is_pdf, is_text=is_text, preview=p.get("preview",""), right=right), active_tab="upload")
+    return _render_base(
+        render_template_string(
+            HTML_REVIEW_SPLIT,
+            token=token,
+            filename=filename,
+            is_pdf=is_pdf,
+            is_text=is_text,
+            preview=p.get("preview", ""),
+            right=right,
+            w=w,
+            suggested_doctype=suggested_doctype,
+            suggested_date=suggested_date,
+            confidence=confidence,
+        ),
+        active_tab="upload",
+    )
 
 @bp.route("/done/<token>")
 def done_view(token: str):

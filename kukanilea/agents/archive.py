@@ -5,7 +5,7 @@ from .base import AgentContext, AgentResult, BaseAgent
 
 class ArchiveAgent(BaseAgent):
     name = "archive"
-    required_role = "STAFF"
+    required_role = "OPERATOR"
     scope = "archive"
     tools = ["archive"]
 
