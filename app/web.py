@@ -728,6 +728,23 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
   }
+  function addSuggestions(items){
+    if(!items || !items.length) return;
+    const wrap = document.createElement("div");
+    wrap.className = "mb-3 flex flex-wrap gap-2";
+    items.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.className = "pill";
+      btn.textContent = item;
+      btn.addEventListener("click", () => {
+        q.value = item;
+        doSend();
+      });
+      wrap.appendChild(btn);
+    });
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+  }
   async function doSend(){
     const msg = (q.value || "").trim();
     if(!msg) return;
@@ -735,10 +752,16 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     q.value = "";
     send.disabled = true;
     try{
-      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
-      const j = await res.json();
-      if(!res.ok){ add("system", "Fehler: " + (j.error || ("HTTP " + res.status))); }
-      else { add("assistant", j.answer || "(leer)", j.actions || []); }
+      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
+      let j = {};
+      try{ j = await res.json(); }catch(e){}
+      if(!res.ok){
+        add("system", "Fehler: " + (j.error || ("HTTP " + res.status)));
+        if(j.suggestions){ addSuggestions(j.suggestions); }
+      } else {
+        add("assistant", j.answer || "(leer)", j.actions || []);
+        if(j.suggestions){ addSuggestions(j.suggestions); }
+      }
     }catch(e){ add("system", "Netzwerk/Server Fehler."); }
     finally{ send.disabled = false; }
   }
@@ -766,6 +789,8 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     const wrap = document.createElement('div');
     const isUser = role === 'you';
     wrap.className = 'flex ' + (isUser ? 'justify-end' : 'justify-start');
+    wrap.dataset.kind = 'message';
+    wrap.dataset.role = role;
     const bubble = document.createElement('div');
     bubble.className = (isUser
       ? 'max-w-[85%] rounded-2xl px-3 py-2 text-white'
@@ -799,6 +824,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     if(!_cw.msgs || !items || !items.length) return;
     const wrap = document.createElement('div');
     wrap.className = 'flex justify-start';
+    wrap.dataset.kind = 'suggestions';
     const box = document.createElement('div');
     box.className = 'max-w-[85%] rounded-2xl px-3 py-2 border card';
     const label = document.createElement('div');
@@ -820,6 +846,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     box.appendChild(row);
     wrap.appendChild(box);
     _cw.msgs.appendChild(wrap);
+    _cw.msgs.scrollTop = _cw.msgs.scrollHeight;
   }
   function _cwLoad(){
     try{
@@ -837,10 +864,10 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       if(_cw.kdnr) localStorage.setItem('kukanilea_cw_kdnr', _cw.kdnr.value || '');
       const hist = [];
       if(_cw.msgs){
-        _cw.msgs.querySelectorAll('div.flex').forEach(row => {
-          const isUser = row.className.includes('justify-end');
+        _cw.msgs.querySelectorAll('div[data-kind="message"]').forEach(row => {
+          const role = row.dataset.role || (row.className.includes('justify-end') ? 'you' : 'assistant');
           const bubble = row.querySelector('div');
-          hist.push({role: isUser ? 'you' : 'assistant', text: bubble ? bubble.textContent : ''});
+          hist.push({role: role, text: bubble ? bubble.textContent : ''});
         });
       }
       localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
@@ -863,6 +890,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       if(!r.ok){
         const msg = j.error || ('HTTP ' + r.status);
         _cwAppend('assistant', 'Fehler: ' + msg);
+        if(j.suggestions){ _cwAppendSuggestions(j.suggestions); }
         if(_cw.status) _cw.status.textContent = 'Fehler';
         if(_cw.retry) _cw.retry.classList.remove('hidden');
         return;
@@ -915,6 +943,8 @@ def _guard_login():
     p = request.path or "/"
     if p.startswith("/static/") or p in ["/login", "/health", "/auth/google/start", "/auth/google/callback"]:
         return None
+    if p.startswith("/api/") and not current_user():
+        return jsonify(ok=False, error="unauthorized", code="unauthorized"), 401
     if not current_user():
         return redirect(url_for("web.login", next=p))
     return None
@@ -1012,13 +1042,25 @@ def api_chat():
     JSON out:
       { ok: true, answer: "...", actions: [...] }
     """
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = request.get_json(force=False, silent=False)
+    except Exception:
+        return jsonify(ok=False, error="Ungültiges JSON.", code="invalid_json"), 400
+    payload = payload or {}
     q = (payload.get("q") or "").strip()
     kdnr = (payload.get("kdnr") or "").strip()
     token = (payload.get("token") or "").strip()
 
     if not q:
-        return jsonify(ok=False, error="Leere Anfrage.", suggestions=["suche rechnung", "kunde 12393"]), 400
+        return (
+            jsonify(
+                ok=False,
+                error="Leere Anfrage.",
+                code="empty_query",
+                suggestions=["suche rechnung", "kunde 12393"],
+            ),
+            400,
+        )
 
     user = current_user() or "dev"
     role = current_role()
@@ -1032,7 +1074,7 @@ def api_chat():
     try:
         result = ORCHESTRATOR.handle(q, context)
         suggestions = []
-        if result.intent == "unknown":
+        if result.intent == "unknown" or len(q.split()) < 2:
             suggestions = ["suche rechnung", "kunde 12393", "öffne <token>"]
         return jsonify(
             ok=True,
@@ -1042,8 +1084,9 @@ def api_chat():
             data=result.data,
             suggestions=suggestions,
         )
-    except Exception as exc:
-        return jsonify(ok=False, error=f"Serverfehler: {exc}"), 500
+    except Exception:
+        current_app.logger.exception("api_chat failed")
+        return jsonify(ok=False, error="Serverfehler. Bitte später erneut versuchen.", code="server_error"), 500
 
 
 # ==============================

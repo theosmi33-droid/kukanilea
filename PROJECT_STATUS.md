@@ -6,7 +6,8 @@
 - Roadmap M0–M6 defined with acceptance tests.
 - Security model + connector docs added.
 - Feature flags added for email/whatsapp/calendar.
-- /api/chat now returns consistent JSON + suggestions.
+- /api/chat now returns consistent JSON + suggestions, including API auth errors.
+- Deterministic intent parser expanded for review/archive/weather/index flows.
 
 ## TODO
 - M1: OCR fallback + entity extraction boosts + folder matcher confirmation.
