@@ -9,7 +9,7 @@ class CustomerAgent(BaseAgent):
     name = "customer"
     required_role = "OPERATOR"
     scope = "customer"
-    tools = ["customer_lookup"]
+    tools = ["show_customer"]
 
     def __init__(self, core_module) -> None:
         self.core = core_module

@@ -1,11 +1,12 @@
 import unittest
 
+from kukanilea.llm import MockProvider
 from kukanilea.orchestrator.intent import IntentParser
 
 
 class IntentParserTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.parser = IntentParser()
+        self.parser = IntentParser(MockProvider())
 
     def test_open_token(self):
         result = self.parser.parse("öffne abcdef1234567890abcd")
@@ -22,6 +23,11 @@ class IntentParserTests(unittest.TestCase):
     def test_weather_intent(self):
         result = self.parser.parse("wetter in berlin")
         self.assertEqual(result.intent, "weather")
+
+    def test_short_queries(self):
+        self.assertEqual(self.parser.parse("rechnung").intent, "search")
+        self.assertEqual(self.parser.parse("wer ist 12393").intent, "customer_lookup")
+        self.assertEqual(self.parser.parse("öffne abcdef1234567890abcd").intent, "open_token")
 
 
 if __name__ == "__main__":

@@ -112,6 +112,7 @@ BASE_PATH = Path.home() / _env("BASE_DIRNAME", "Tophandwerk_Kundenablage")
 PENDING_DIR = Path.home() / _env("PENDING_DIRNAME", "Tophandwerk_Pending")
 DONE_DIR = Path.home() / _env("DONE_DIRNAME", "Tophandwerk_Done")
 DB_PATH = Path.home() / _env("DB_FILENAME", "Tophandwerk_DB.sqlite3")
+SCHEMA_VERSION = 3
 
 # Multi-tenant behavior
 TENANT_DEFAULT = _env("TENANT_DEFAULT", "").strip()  # e.g. "FIRMA_X"
@@ -604,6 +605,27 @@ def db_init() -> None:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS docs_index(
+                  doc_id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  kdnr TEXT,
+                  doctype TEXT,
+                  customer_name TEXT,
+                  address TEXT,
+                  doc_date TEXT,
+                  doc_number TEXT,
+                  file_name TEXT,
+                  file_path TEXT,
+                  tokens TEXT,
+                  snippet TEXT,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(doc_id) REFERENCES docs(doc_id) ON DELETE CASCADE
+                );
+                """
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS tenants(
                   tenant_id TEXT PRIMARY KEY,
                   display_name TEXT NOT NULL,
@@ -669,6 +691,8 @@ def db_init() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_versions_tenant ON versions(tenant_id);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_entities_doc ON entities(doc_id, tenant_id);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type, norm_value);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_docs_index_tenant ON docs_index(tenant_id, kdnr, doctype);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_docs_index_tokens ON docs_index(tokens);")
 
             if _has_fts5(con):
                 con.execute(
@@ -687,6 +711,11 @@ def db_init() -> None:
                     );
                     """
                 )
+
+            row = con.execute("PRAGMA user_version").fetchone()
+            cur_ver = int(row[0] if row else 0)
+            if cur_ver < SCHEMA_VERSION:
+                con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
             con.commit()
         finally:
@@ -1697,6 +1726,14 @@ def extract_entities(text: str) -> List[Dict[str, Any]]:
     if date:
         entities.append({"entity_type": "date", "value": date})
 
+    names, addrs, plzort = _find_name_addr_plzort(text)
+    for name in names[:2]:
+        entities.append({"entity_type": "customer_name", "value": name})
+    for addr in addrs[:2]:
+        entities.append({"entity_type": "address", "value": addr})
+    for plz in plzort[:2]:
+        entities.append({"entity_type": "postal_city", "value": plz})
+
     return entities
 
 
@@ -1734,6 +1771,90 @@ def _store_entities(con: sqlite3.Connection, tenant_id: str, doc_id: str, text: 
 # ============================================================
 # INDEX / SEARCH
 # ============================================================
+def _index_tokens(text: str, extra: Optional[List[str]] = None, limit: int = 120) -> str:
+    tokens: List[str] = []
+    if extra:
+        tokens.extend(extra)
+    if text:
+        tokens.extend(re.split(r"[\\s,;:/()\\[\\]{}<>]+", text))
+    cleaned = []
+    seen = set()
+    for tok in tokens:
+        norm = _norm_for_match(tok)
+        if len(norm) < 2:
+            continue
+        if norm in seen:
+            continue
+        seen.add(norm)
+        cleaned.append(norm)
+        if len(cleaned) >= limit:
+            break
+    return " ".join(cleaned)
+
+
+def _index_extract_fields(text: str, file_name: str) -> Dict[str, str]:
+    names, addrs, plzort = _find_name_addr_plzort(text)
+    entities = extract_entities(text)
+    doc_number = ""
+    for ent in entities:
+        if ent.get("entity_type") == "doc_number":
+            doc_number = str(ent.get("value", ""))
+            break
+    if not doc_number:
+        match = re.search(r"\\b(\\d{4,}[\\-/]?\\d*)\\b", file_name)
+        if match:
+            doc_number = match.group(1)
+    address = " ".join([*addrs[:1], *plzort[:1]]).strip()
+    return {
+        "customer_name": names[0] if names else "",
+        "address": address,
+        "doc_number": doc_number,
+    }
+
+
+def _index_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
+    doc_id = str(row.get("doc_id", "") or "")
+    if not doc_id:
+        return
+    tokens = _index_tokens(
+        " ".join(
+            [
+                str(row.get("file_name", "") or ""),
+                str(row.get("doctype", "") or ""),
+                str(row.get("kdnr", "") or ""),
+                str(row.get("customer_name", "") or ""),
+                str(row.get("address", "") or ""),
+                str(row.get("doc_number", "") or ""),
+                str(row.get("content", "") or ""),
+            ]
+        ),
+        extra=[row.get("doc_date", "")],
+    )
+    con.execute("DELETE FROM docs_index WHERE doc_id = ?", (doc_id,))
+    con.execute(
+        """
+        INSERT INTO docs_index(
+            doc_id, tenant_id, kdnr, doctype, customer_name, address,
+            doc_date, doc_number, file_name, file_path, tokens, snippet, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            doc_id,
+            str(row.get("tenant_id", "") or ""),
+            str(row.get("kdnr", "") or ""),
+            str(row.get("doctype", "") or ""),
+            str(row.get("customer_name", "") or ""),
+            str(row.get("address", "") or ""),
+            str(row.get("doc_date", "") or ""),
+            str(row.get("doc_number", "") or ""),
+            str(row.get("file_name", "") or ""),
+            str(row.get("file_path", "") or ""),
+            tokens,
+            _clip_text(str(row.get("snippet", "") or ""), 240),
+            _now_iso(),
+        ),
+    )
+
 def _fts_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
     if not (_has_fts5(con) and _table_exists(con, "docs_fts")):
         return
@@ -1851,6 +1972,22 @@ def index_upsert_document(
                     "content": extracted_text or "",
                 },
             )
+            extra = _index_extract_fields(extracted_text or "", file_name)
+            _index_put(
+                con,
+                {
+                    "doc_id": doc_id,
+                    "tenant_id": tenant_id,
+                    "kdnr": kdnr,
+                    "doctype": doctype,
+                    "doc_date": doc_date or "",
+                    "file_name": file_name,
+                    "file_path": file_path,
+                    "content": extracted_text or "",
+                    "snippet": extracted_text or "",
+                    **extra,
+                },
+            )
             _store_entities(con, tenant_id, doc_id, extracted_text)
             con.commit()
         finally:
@@ -1886,7 +2023,7 @@ def assistant_search(
             rows: List[sqlite3.Row] = []
 
             if use_fts:
-                tokens = [t for t in re.split(r"\s+", query) if t]
+                tokens = [t for t in re.split(r"\\s+", query) if t]
                 q = " OR ".join(tokens) if tokens else query
 
                 if kdnr_in:
@@ -1896,7 +2033,7 @@ def assistant_search(
                                snippet(docs_fts, 7, '', '', ' … ', 12) AS snip
                         FROM docs_fts f
                         JOIN docs d ON d.doc_id=f.doc_id
-                        WHERE docs_fts MATCH ? AND d.kdnr=? AND (d.tenant_id=? OR d.tenant_id IS NULL)
+                        WHERE docs_fts MATCH ? AND d.kdnr=? AND d.tenant_id=?
                         LIMIT ?
                         """,
                         (q, kdnr_in, tenant_id, int(limit)),
@@ -1908,43 +2045,59 @@ def assistant_search(
                                snippet(docs_fts, 7, '', '', ' … ', 12) AS snip
                         FROM docs_fts f
                         JOIN docs d ON d.doc_id=f.doc_id
-                        WHERE docs_fts MATCH ? AND (d.tenant_id=? OR d.tenant_id IS NULL)
+                        WHERE docs_fts MATCH ? AND d.tenant_id=?
                         LIMIT ?
                         """,
                         (q, tenant_id, int(limit)),
                     ).fetchall()
             else:
-                like = f"%{query}%"
+                if not _table_exists(con, "docs_index"):
+                    return []
+                tokens = [t for t in re.split(r"\\s+", query) if t]
+                like = f"%{_norm_for_match(query)}%"
                 if kdnr_in:
                     rows = con.execute(
                         """
                         SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date,
-                               v.file_name, v.file_path, substr(v.extracted_text,1,240) AS snip
+                               x.file_name, x.file_path, x.snippet AS snip
                         FROM docs d
-                        JOIN versions v ON v.doc_id=d.doc_id
-                        WHERE d.kdnr=? AND (d.tenant_id=? OR d.tenant_id IS NULL)
-                          AND (v.extracted_text LIKE ? OR v.file_name LIKE ? OR v.file_path LIKE ?)
-                        GROUP BY d.doc_id
-                        ORDER BY v.id DESC
+                        JOIN docs_index x ON x.doc_id=d.doc_id
+                        WHERE d.kdnr=? AND x.tenant_id=?
+                          AND x.tokens LIKE ?
                         LIMIT ?
                         """,
-                        (kdnr_in, tenant_id, like, like, like, int(limit)),
+                        (kdnr_in, tenant_id, like, int(limit)),
                     ).fetchall()
                 else:
                     rows = con.execute(
                         """
                         SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date,
-                               v.file_name, v.file_path, substr(v.extracted_text,1,240) AS snip
+                               x.file_name, x.file_path, x.snippet AS snip
                         FROM docs d
-                        JOIN versions v ON v.doc_id=d.doc_id
-                        WHERE (d.tenant_id=? OR d.tenant_id IS NULL)
-                          AND (v.extracted_text LIKE ? OR v.file_name LIKE ? OR v.file_path LIKE ?)
-                        GROUP BY d.doc_id
-                        ORDER BY v.id DESC
+                        JOIN docs_index x ON x.doc_id=d.doc_id
+                        WHERE x.tenant_id=?
+                          AND x.tokens LIKE ?
                         LIMIT ?
                         """,
-                        (tenant_id, like, like, like, int(limit)),
+                        (tenant_id, like, int(limit)),
                     ).fetchall()
+
+                if not rows and tokens:
+                    for tok in tokens[:3]:
+                        like_tok = f"%{_norm_for_match(tok)}%"
+                        rows = con.execute(
+                            """
+                            SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date,
+                                   x.file_name, x.file_path, x.snippet AS snip
+                            FROM docs d
+                            JOIN docs_index x ON x.doc_id=d.doc_id
+                            WHERE x.tenant_id=? AND x.tokens LIKE ?
+                            LIMIT ?
+                            """,
+                            (tenant_id, like_tok, int(limit)),
+                        ).fetchall()
+                        if rows:
+                            break
 
             out: List[Dict[str, Any]] = []
             for r in rows:
@@ -1967,6 +2120,45 @@ def assistant_search(
             return out
         finally:
             con.close()
+
+
+def assistant_suggest(query: str, tenant_id: str = "", limit: int = 3) -> List[str]:
+    try:
+        from rapidfuzz import process, fuzz  # type: ignore
+    except Exception:
+        return []
+
+    query = normalize_component(query)
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    if not query:
+        return []
+
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if not _table_exists(con, "docs_index"):
+                return []
+            rows = con.execute(
+                """
+                SELECT customer_name, kdnr, doctype, doc_number, file_name
+                FROM docs_index
+                WHERE tenant_id=?
+                """,
+                (tenant_id,),
+            ).fetchall()
+        finally:
+            con.close()
+
+    candidates = set()
+    for r in rows:
+        for key in ("customer_name", "kdnr", "doctype", "doc_number", "file_name"):
+            val = str(r[key] or "").strip()
+            if val:
+                candidates.add(val)
+    if not candidates:
+        return []
+    matches = process.extract(query, list(candidates), scorer=fuzz.partial_ratio, limit=limit)
+    return [m[0] for m in matches if m[1] >= 70]
 
 
 def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
@@ -2084,6 +2276,45 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
         "errors": errors,
         "skipped_by_reason": skipped_by_reason,
     }
+
+
+def index_rebuild(base_path: Optional[Path] = None) -> Dict[str, Any]:
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if _table_exists(con, "docs_fts"):
+                con.execute("DELETE FROM docs_fts")
+            if _table_exists(con, "docs_index"):
+                con.execute("DELETE FROM docs_index")
+            con.commit()
+        finally:
+            con.close()
+    return index_run_full(base_path=base_path)
+
+
+def set_db_path(new_path: Path) -> None:
+    global DB_PATH
+    DB_PATH = Path(new_path)
+    db_init()
+
+
+def get_db_info() -> Dict[str, Any]:
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute("PRAGMA user_version").fetchone()
+            schema_version = int(row[0] if row else 0)
+            tenants = 0
+            if _table_exists(con, "tenants"):
+                trow = con.execute("SELECT COUNT(*) AS c FROM tenants").fetchone()
+                tenants = int(trow["c"] or 0) if trow else 0
+            return {
+                "path": str(DB_PATH),
+                "schema_version": schema_version,
+                "tenants": tenants,
+            }
+        finally:
+            con.close()
 
 
 # ============================================================

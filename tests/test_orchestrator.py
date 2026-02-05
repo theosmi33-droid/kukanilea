@@ -1,6 +1,7 @@
 import unittest
 
 from kukanilea.agents import AgentContext
+from kukanilea.llm import MockProvider
 from kukanilea.orchestrator import Orchestrator
 
 
@@ -21,7 +22,7 @@ class DummyCore:
 
 class OrchestratorTests(unittest.TestCase):
     def setUp(self):
-        self.orch = Orchestrator(DummyCore())
+        self.orch = Orchestrator(DummyCore(), llm_provider=MockProvider())
         self.context = AgentContext(tenant_id="KUKANILEA", user="dev", role="ADMIN")
 
     def test_search_intent(self):

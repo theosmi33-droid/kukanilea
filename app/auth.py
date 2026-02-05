@@ -69,7 +69,14 @@ def require_role(min_role: str):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            if ROLE_ORDER.index(current_role()) < ROLE_ORDER.index(min_role):
+            try:
+                role = current_role()
+                if role not in ROLE_ORDER:
+                    role = "READONLY"
+                required = min_role if min_role in ROLE_ORDER else "READONLY"
+                if ROLE_ORDER.index(role) < ROLE_ORDER.index(required):
+                    abort(403)
+            except ValueError:
                 abort(403)
             return func(*args, **kwargs)
 
@@ -80,6 +87,8 @@ def require_role(min_role: str):
 
 def policy_allows(membership: Membership, required: str) -> bool:
     try:
-        return ROLE_ORDER.index(membership.role) >= ROLE_ORDER.index(required)
+        role = membership.role if membership.role in ROLE_ORDER else "READONLY"
+        required_role = required if required in ROLE_ORDER else "READONLY"
+        return ROLE_ORDER.index(role) >= ROLE_ORDER.index(required_role)
     except ValueError:
         return False
