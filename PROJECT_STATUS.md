@@ -16,7 +16,7 @@
 - Seed-Skript für admin/dev User.
 - Tenant-Header + Tenant-freies UI.
 - Orchestrator + PolicyEngine + ToolRegistry erweitert.
-- Google OAuth Platzhalter + Mail-Stub UI ergänzt (ohne Drittanbieter-Links).
-- Smoke-Test + GitHub Actions Workflow + pytest.
+- Google OAuth Platzhalter + Mail-Stub UI ergänzt.
+- Smoke-Test + GitHub Actions Workflow.
 - README/ROADMAP/PACKAGING aktualisiert.
 - Wetter-Plugin Fallback angebunden.

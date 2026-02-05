@@ -9,7 +9,7 @@ from flask import abort, g, redirect, request, session, url_for
 from .db import AuthDB, Membership
 
 
-ROLE_ORDER = ["READONLY", "OPERATOR", "ADMIN", "DEV"]
+ROLE_ORDER = ["READONLY", "STAFF", "ADMIN", "DEVELOPER"]
 
 
 def hash_password(password: str) -> str:

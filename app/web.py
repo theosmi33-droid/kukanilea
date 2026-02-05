@@ -1011,7 +1011,7 @@ def api_chat():
 
 
 # ==============================
-# Mail Agent Tab (Template/Mock workflow)
+# Mail Agent Tab (Template/Mock + optional DeepL Write workflow)
 # ==============================
 HTML_MAIL = """
 <div class="grid gap-4">
@@ -1032,7 +1032,7 @@ HTML_MAIL = """
   </div>
   <div class="card p-4 rounded-2xl border">
     <div class="text-lg font-semibold mb-1">Mail Agent</div>
-    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM. Keine Drittanbieter-Links.</div>
+    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM. Danach optional in DeepL Write veredeln (ohne API: Copy/Paste).</div>
 
     <div class="grid gap-3 md:grid-cols-2">
       <div>
@@ -1073,7 +1073,7 @@ HTML_MAIL = """
       <button id="m_gen" class="rounded-xl px-4 py-2 text-sm card btn-primary">Entwurf erzeugen</button>
       <button id="m_copy" class="rounded-xl px-4 py-2 text-sm btn-outline" disabled>Copy</button>
       <button id="m_eml" class="rounded-xl px-4 py-2 text-sm btn-outline" disabled>.eml Export</button>
-      <button id="m_rewrite" class="rounded-xl px-4 py-2 text-sm btn-outline">Stil verbessern</button>
+      <button id="m_deepl" class="rounded-xl px-4 py-2 text-sm btn-outline">DeepL Write öffnen</button>
       <div class="text-xs opacity-70 flex items-center" id="m_status"></div>
     </div>
   </div>
@@ -1091,7 +1091,7 @@ HTML_MAIL = """
 (function(){
   const gen=document.getElementById('m_gen');
   const copy=document.getElementById('m_copy');
-  const rewrite=document.getElementById('m_rewrite');
+  const deepl=document.getElementById('m_deepl');
   const eml=document.getElementById('m_eml');
   const status=document.getElementById('m_status');
   const out=document.getElementById('m_out');
@@ -1151,19 +1151,13 @@ HTML_MAIL = """
     URL.revokeObjectURL(url);
   }
 
-  function rewriteLocal(){
-    if(!out.value) return;
-    const lines = out.value.split('\\n').map(l => l.trim()).filter(Boolean);
-    const greeting = lines[0]?.startsWith('Betreff') ? '' : 'Guten Tag,';
-    const closing = 'Mit freundlichen Grüßen';
-    const body = lines.filter(l => !l.toLowerCase().startsWith('betreff')).join('\\n');
-    out.value = [greeting, body, '', closing].filter(Boolean).join('\\n');
-    status.textContent='Stil verbessert (lokal).';
+  function openDeepl(){
+    window.open('https://www.deepl.com/write', '_blank');
   }
 
   gen && gen.addEventListener('click', run);
   copy && copy.addEventListener('click', doCopy);
-  rewrite && rewrite.addEventListener('click', rewriteLocal);
+  deepl && deepl.addEventListener('click', openDeepl);
   eml && eml.addEventListener('click', doEml);
 })();
 </script>

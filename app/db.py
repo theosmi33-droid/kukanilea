@@ -70,15 +70,6 @@ class AuthDB:
                 );
                 """
             )
-            con.execute(
-                """
-                CREATE TABLE IF NOT EXISTS meta(
-                  key TEXT PRIMARY KEY,
-                  value TEXT NOT NULL
-                );
-                """
-            )
-            con.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')")
             con.commit()
         finally:
             con.close()
@@ -143,21 +134,5 @@ class AuthDB:
             if not row:
                 return None
             return Tenant(tenant_id=row["tenant_id"], display_name=row["display_name"])
-        finally:
-            con.close()
-
-    def get_schema_version(self) -> str:
-        con = self._db()
-        try:
-            row = con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            return str(row["value"]) if row else "0"
-        finally:
-            con.close()
-
-    def count_tenants(self) -> int:
-        con = self._db()
-        try:
-            row = con.execute("SELECT COUNT(*) AS c FROM tenants").fetchone()
-            return int(row["c"] or 0) if row else 0
         finally:
             con.close()

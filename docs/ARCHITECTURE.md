@@ -13,7 +13,7 @@ KUKANILEA nutzt eine Agent-Orchester-Architektur: jede „Tool“-Funktion ist e
 
 ### Orchestrator
 - **IntentParser**: Regelbasierte Intent-Erkennung + MockLLM-Fallback (deterministisch).
-- **Orchestrator**: Validiert Rollen (READONLY, OPERATOR, ADMIN, DEV), ruft passende Agenten, sammelt Aktionen für die UI.
+- **Orchestrator**: Validiert Rollen (READONLY, STAFF, ADMIN, DEVELOPER), ruft passende Agenten, sammelt Aktionen für die UI.
 - **PolicyEngine**: zentrale RBAC-Prüfung.
 - **ToolRegistry**: Auflistung der verfügbaren Tools pro Agent.
 - **AgentContext**: tenant_id, user, role, kdnr, token, meta.

@@ -7,7 +7,7 @@ from .base import AgentContext, AgentResult, BaseAgent
 
 class CustomerAgent(BaseAgent):
     name = "customer"
-    required_role = "OPERATOR"
+    required_role = "STAFF"
     scope = "customer"
     tools = ["customer_lookup"]
 
