@@ -1,4 +1,4 @@
-# KUKANILEA Systems — FIXED10 (UI + Tool-Chat + Mail Tab)
+# KUKANILEA Systems — FIXED10 (Legacy UI)
 
 ## Start (Mac / zsh)
 > Tipp: kopiere **jede Zeile einzeln**. Keine Klammern, keine Platzhalter.
@@ -11,18 +11,10 @@ python3 -m pip install -U pip
 python3 -m pip install -r requirements.txt
 ```
 
-### 2) Ollama (einmalig Model ziehen)
-```bash
-ollama pull llama3.1
-```
-
-### 3) UI starten (auto Ollama-Start aktiv)
+### 2) UI starten (lokaler Agent-Orchestrator, kein externes LLM)
 ```bash
 source .venv/bin/activate
-export OLLAMA_HOST="http://127.0.0.1:11434"
-export KUKANILEA_OLLAMA_MODEL="llama3.1"
-export KUKANILEA_AUTO_START_OLLAMA="1"
-python3 kukanilea_upload_ui_fixed10.py
+./scripts/dev_run.sh
 ```
 
 UI läuft auf: http://127.0.0.1:5051
@@ -36,7 +28,11 @@ UI läuft auf: http://127.0.0.1:5051
 - Floating Button unten rechts → Chat.
 - Beispiele:
   - `suche rechnung gerd 24-10-2025`
-  - `open 1` (öffnet Treffer 1 im Browser)
+- `öffne <token>` (öffnet den Datensatz im Browser)
+
+## Projektstatus & Architektur
+- Status: `PROJECT_STATUS.md`
+- Architektur: `docs/ARCHITECTURE.md`
 
 ## GitHub Push (ohne Platzhalter-Zeilen)
 ```bash

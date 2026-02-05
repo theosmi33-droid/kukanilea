@@ -467,6 +467,16 @@ def _table_exists(con: sqlite3.Connection, name: str) -> bool:
     return bool(row)
 
 
+def _column_exists(con: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = con.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r[1] == column for r in rows)
+
+
+def _ensure_column(con: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
+    if not _column_exists(con, table, column):
+        con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
+
 def _has_fts5(con: sqlite3.Connection) -> bool:
     global _FTS5_AVAILABLE
     if _FTS5_AVAILABLE is not None:
@@ -563,6 +573,7 @@ def db_init() -> None:
                 CREATE TABLE IF NOT EXISTS docs(
                   doc_id TEXT PRIMARY KEY,                  -- sha256(file bytes)
                   group_key TEXT NOT NULL,                  -- heuristic group for versioning
+                  tenant_id TEXT,
                   kdnr TEXT,
                   object_folder TEXT,
                   doctype TEXT,
@@ -585,15 +596,79 @@ def db_init() -> None:
                   used_ocr INTEGER NOT NULL DEFAULT 0,
                   note TEXT,
                   created_at TEXT NOT NULL,
+                  tenant_id TEXT,
                   FOREIGN KEY(doc_id) REFERENCES docs(doc_id) ON DELETE CASCADE
                 );
                 """
             )
 
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tenants(
+                  tenant_id TEXT PRIMARY KEY,
+                  display_name TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tenant_users(
+                  tenant_id TEXT NOT NULL,
+                  username TEXT NOT NULL,
+                  role TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  PRIMARY KEY(tenant_id, username),
+                  FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS entities(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  doc_id TEXT NOT NULL,
+                  entity_type TEXT NOT NULL,
+                  value TEXT NOT NULL,
+                  norm_value TEXT,
+                  meta_json TEXT,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(doc_id) REFERENCES docs(doc_id) ON DELETE CASCADE
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS links(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  doc_id TEXT NOT NULL,
+                  entity_id INTEGER,
+                  link_type TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(doc_id) REFERENCES docs(doc_id) ON DELETE CASCADE,
+                  FOREIGN KEY(entity_id) REFERENCES entities(id) ON DELETE CASCADE
+                );
+                """
+            )
+
+            _ensure_column(con, "docs", "tenant_id", "TEXT")
+            _ensure_column(con, "versions", "tenant_id", "TEXT")
+            _ensure_column(con, "audit", "tenant_id", "TEXT")
+            _ensure_column(con, "tasks", "tenant_id", "TEXT")
+
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_group ON docs(group_key);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_kdnr ON docs(kdnr);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_docs_tenant ON docs(tenant_id, kdnr);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_versions_doc ON versions(doc_id);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_versions_path ON versions(file_path);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_versions_tenant ON versions(tenant_id);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_entities_doc ON entities(doc_id, tenant_id);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type, norm_value);")
 
             if _has_fts5(con):
                 con.execute(
@@ -601,6 +676,7 @@ def db_init() -> None:
                     CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts
                     USING fts5(
                         doc_id UNINDEXED,
+                        tenant_id UNINDEXED,
                         kdnr UNINDEXED,
                         doctype UNINDEXED,
                         doc_date UNINDEXED,
@@ -692,20 +768,34 @@ def rbac_get_user_roles(username: str) -> List[str]:
 # ============================================================
 # AUDIT
 # ============================================================
-def audit_log(user: str, role: str, action: str, target: str = "", meta: Optional[dict] = None) -> None:
+def audit_log(
+    user: str,
+    role: str,
+    action: str,
+    target: str = "",
+    meta: Optional[dict] = None,
+    tenant_id: str = "",
+) -> None:
     user = normalize_component(user).lower()
     role = normalize_component(role).upper()
     action = normalize_component(action)
     target = normalize_component(target)
     meta_json = json.dumps(meta or {}, ensure_ascii=False)
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
 
     with _DB_LOCK:
         con = _db()
         try:
-            con.execute(
-                "INSERT INTO audit(ts, user, role, action, target, meta_json) VALUES (?,?,?,?,?,?)",
-                (_now_iso(), user, role, action, target, meta_json),
-            )
+            if _column_exists(con, "audit", "tenant_id"):
+                con.execute(
+                    "INSERT INTO audit(ts, user, role, action, target, meta_json, tenant_id) VALUES (?,?,?,?,?,?,?)",
+                    (_now_iso(), user, role, action, target, meta_json, tenant_id),
+                )
+            else:
+                con.execute(
+                    "INSERT INTO audit(ts, user, role, action, target, meta_json) VALUES (?,?,?,?,?,?)",
+                    (_now_iso(), user, role, action, target, meta_json),
+                )
             con.commit()
         finally:
             con.close()
@@ -1579,6 +1669,68 @@ def _find_name_addr_plzort(text: str) -> Tuple[List[str], List[str], List[str]]:
     return name[:8], addr[:8], plzort[:8]
 
 
+def _normalize_entity(value: str) -> str:
+    return re.sub(r"\\s+", " ", value.strip().lower())
+
+
+def extract_entities(text: str) -> List[Dict[str, Any]]:
+    entities: List[Dict[str, Any]] = []
+    if not text:
+        return entities
+    emails = set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", text))
+    for email in emails:
+        entities.append({"entity_type": "email", "value": email})
+
+    phones = set(re.findall(r"(\\+?\\d[\\d\\s()/.-]{6,}\\d)", text))
+    for phone in phones:
+        entities.append({"entity_type": "phone", "value": phone})
+
+    kdnr_matches = re.findall(r"\\b(?:KDNR|Kundennr|KundenNr)\\s*[:#]?\\s*(\\d{3,})\\b", text, re.IGNORECASE)
+    for kdnr in set(kdnr_matches):
+        entities.append({"entity_type": "kdnr", "value": kdnr})
+
+    invoice_matches = re.findall(r"\\b(?:Rechnung|Angebot|Auftrag|Lieferschein|Bestellung)\\D{0,8}(\\d{3,}[\\-/]?\\d*)\\b", text, re.IGNORECASE)
+    for inv in set(invoice_matches):
+        entities.append({"entity_type": "doc_number", "value": inv})
+
+    date, _ = _find_dates(text)
+    if date:
+        entities.append({"entity_type": "date", "value": date})
+
+    return entities
+
+
+def _store_entities(con: sqlite3.Connection, tenant_id: str, doc_id: str, text: str) -> None:
+    entities = extract_entities(text)
+    if not entities:
+        return
+    seen = set()
+    for ent in entities:
+        value = str(ent.get("value", "") or "")
+        if not value:
+            continue
+        norm = _normalize_entity(value)
+        key = (ent.get("entity_type"), norm)
+        if key in seen:
+            continue
+        seen.add(key)
+        con.execute(
+            """
+            INSERT INTO entities(tenant_id, doc_id, entity_type, value, norm_value, meta_json, created_at)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (
+                tenant_id,
+                doc_id,
+                str(ent.get("entity_type", "")),
+                value,
+                norm,
+                json.dumps(ent.get("meta", {})),
+                _now_iso(),
+            ),
+        )
+
+
 # ============================================================
 # INDEX / SEARCH
 # ============================================================
@@ -1591,21 +1743,39 @@ def _fts_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
         return
 
     con.execute("DELETE FROM docs_fts WHERE doc_id = ?", (doc_id,))
-    con.execute(
-        """
-        INSERT INTO docs_fts(doc_id, kdnr, doctype, doc_date, file_name, file_path, content)
-        VALUES (?,?,?,?,?,?,?)
-        """,
-        (
-            doc_id,
-            str(row.get("kdnr", "") or ""),
-            str(row.get("doctype", "") or ""),
-            str(row.get("doc_date", "") or ""),
-            str(row.get("file_name", "") or ""),
-            str(row.get("file_path", "") or ""),
-            _clip_text(str(row.get("content", "") or ""), MAX_EXTRACT_CHARS),
-        ),
-    )
+    if _column_exists(con, "docs_fts", "tenant_id"):
+        con.execute(
+            """
+            INSERT INTO docs_fts(doc_id, tenant_id, kdnr, doctype, doc_date, file_name, file_path, content)
+            VALUES (?,?,?,?,?,?,?,?)
+            """,
+            (
+                doc_id,
+                str(row.get("tenant_id", "") or ""),
+                str(row.get("kdnr", "") or ""),
+                str(row.get("doctype", "") or ""),
+                str(row.get("doc_date", "") or ""),
+                str(row.get("file_name", "") or ""),
+                str(row.get("file_path", "") or ""),
+                _clip_text(str(row.get("content", "") or ""), MAX_EXTRACT_CHARS),
+            ),
+        )
+    else:
+        con.execute(
+            """
+            INSERT INTO docs_fts(doc_id, kdnr, doctype, doc_date, file_name, file_path, content)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (
+                doc_id,
+                str(row.get("kdnr", "") or ""),
+                str(row.get("doctype", "") or ""),
+                str(row.get("doc_date", "") or ""),
+                str(row.get("file_name", "") or ""),
+                str(row.get("file_path", "") or ""),
+                _clip_text(str(row.get("content", "") or ""), MAX_EXTRACT_CHARS),
+            ),
+        )
 
 
 def _compute_group_key(kdnr: str, doctype: str, doc_date: str, file_name: str) -> str:
@@ -1632,15 +1802,17 @@ def index_upsert_document(
     extracted_text: str,
     used_ocr: bool,
     note: str = "",
+    tenant_id: str = "",
 ) -> None:
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
     with _DB_LOCK:
         con = _db()
         try:
             exists = con.execute("SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)).fetchone()
             if not exists:
                 con.execute(
-                    "INSERT INTO docs(doc_id, group_key, kdnr, object_folder, doctype, doc_date, created_at) VALUES (?,?,?,?,?,?,?)",
-                    (doc_id, group_key, kdnr, object_folder, doctype, doc_date or "", _now_iso()),
+                    "INSERT INTO docs(doc_id, group_key, tenant_id, kdnr, object_folder, doctype, doc_date, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (doc_id, group_key, tenant_id, kdnr, object_folder, doctype, doc_date or "", _now_iso()),
                 )
 
             row = con.execute("SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)).fetchone()
@@ -1649,8 +1821,8 @@ def index_upsert_document(
 
             con.execute(
                 """
-                INSERT INTO versions(doc_id, version_no, bytes_sha256, file_name, file_path, extracted_text, used_ocr, note, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                INSERT INTO versions(doc_id, version_no, bytes_sha256, file_name, file_path, extracted_text, used_ocr, note, created_at, tenant_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     doc_id,
@@ -1662,6 +1834,7 @@ def index_upsert_document(
                     1 if used_ocr else 0,
                     note,
                     _now_iso(),
+                    tenant_id,
                 ),
             )
 
@@ -1669,6 +1842,7 @@ def index_upsert_document(
                 con,
                 {
                     "doc_id": doc_id,
+                    "tenant_id": tenant_id,
                     "kdnr": kdnr,
                     "doctype": doctype,
                     "doc_date": doc_date or "",
@@ -1677,12 +1851,19 @@ def index_upsert_document(
                     "content": extracted_text or "",
                 },
             )
+            _store_entities(con, tenant_id, doc_id, extracted_text)
             con.commit()
         finally:
             con.close()
 
 
-def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_LIMIT, role: str = "ADMIN") -> List[Dict[str, Any]]:
+def assistant_search(
+    query: str,
+    kdnr: str = "",
+    limit: int = ASSISTANT_DEFAULT_LIMIT,
+    role: str = "ADMIN",
+    tenant_id: str = "",
+) -> List[Dict[str, Any]]:
     """
     Tenant note:
     - If you stored kdnr as "TENANT:1234", search by the same.
@@ -1690,6 +1871,7 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
     """
     query = normalize_component(query)
     kdnr_in = normalize_component(kdnr)
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
 
     if kdnr_in and ":" not in kdnr_in:
         kdnr_in = _tenant_prefix_kdnr(TENANT_DEFAULT, kdnr_in)
@@ -1710,24 +1892,26 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
                 if kdnr_in:
                     rows = con.execute(
                         """
-                        SELECT doc_id, kdnr, doctype, doc_date, file_name, file_path,
-                               snippet(docs_fts, 6, '', '', ' … ', 12) AS snip
-                        FROM docs_fts
-                        WHERE docs_fts MATCH ? AND kdnr=?
+                        SELECT f.doc_id, d.kdnr, d.doctype, d.doc_date, f.file_name, f.file_path,
+                               snippet(docs_fts, 7, '', '', ' … ', 12) AS snip
+                        FROM docs_fts f
+                        JOIN docs d ON d.doc_id=f.doc_id
+                        WHERE docs_fts MATCH ? AND d.kdnr=? AND (d.tenant_id=? OR d.tenant_id IS NULL)
                         LIMIT ?
                         """,
-                        (q, kdnr_in, int(limit)),
+                        (q, kdnr_in, tenant_id, int(limit)),
                     ).fetchall()
                 else:
                     rows = con.execute(
                         """
-                        SELECT doc_id, kdnr, doctype, doc_date, file_name, file_path,
-                               snippet(docs_fts, 6, '', '', ' … ', 12) AS snip
-                        FROM docs_fts
-                        WHERE docs_fts MATCH ?
+                        SELECT f.doc_id, d.kdnr, d.doctype, d.doc_date, f.file_name, f.file_path,
+                               snippet(docs_fts, 7, '', '', ' … ', 12) AS snip
+                        FROM docs_fts f
+                        JOIN docs d ON d.doc_id=f.doc_id
+                        WHERE docs_fts MATCH ? AND (d.tenant_id=? OR d.tenant_id IS NULL)
                         LIMIT ?
                         """,
-                        (q, int(limit)),
+                        (q, tenant_id, int(limit)),
                     ).fetchall()
             else:
                 like = f"%{query}%"
@@ -1738,12 +1922,13 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
                                v.file_name, v.file_path, substr(v.extracted_text,1,240) AS snip
                         FROM docs d
                         JOIN versions v ON v.doc_id=d.doc_id
-                        WHERE d.kdnr=? AND (v.extracted_text LIKE ? OR v.file_name LIKE ? OR v.file_path LIKE ?)
+                        WHERE d.kdnr=? AND (d.tenant_id=? OR d.tenant_id IS NULL)
+                          AND (v.extracted_text LIKE ? OR v.file_name LIKE ? OR v.file_path LIKE ?)
                         GROUP BY d.doc_id
                         ORDER BY v.id DESC
                         LIMIT ?
                         """,
-                        (kdnr_in, like, like, like, int(limit)),
+                        (kdnr_in, tenant_id, like, like, like, int(limit)),
                     ).fetchall()
                 else:
                     rows = con.execute(
@@ -1752,12 +1937,13 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
                                v.file_name, v.file_path, substr(v.extracted_text,1,240) AS snip
                         FROM docs d
                         JOIN versions v ON v.doc_id=d.doc_id
-                        WHERE (v.extracted_text LIKE ? OR v.file_name LIKE ? OR v.file_path LIKE ?)
+                        WHERE (d.tenant_id=? OR d.tenant_id IS NULL)
+                          AND (v.extracted_text LIKE ? OR v.file_name LIKE ? OR v.file_path LIKE ?)
                         GROUP BY d.doc_id
                         ORDER BY v.id DESC
                         LIMIT ?
                         """,
-                        (like, like, like, int(limit)),
+                        (tenant_id, like, like, like, int(limit)),
                     ).fetchall()
 
             out: List[Dict[str, Any]] = []
@@ -1879,6 +2065,7 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                     extracted_text=text,
                     used_ocr=used_ocr,
                     note="indexed_by_full_scan",
+                    tenant_id=tenant,
                 )
                 indexed += 1
 
@@ -2162,6 +2349,7 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
                         extracted_text=text,
                         used_ocr=used_ocr,
                         note="dedupe_same_bytes_existing_target",
+                        tenant_id=tenant,
                     )
                 return folder, target, created_new_object
         except Exception:
@@ -2204,6 +2392,7 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
         extracted_text=text,
         used_ocr=used_ocr,
         note=note,
+        tenant_id=tenant,
     )
 
     return folder, target, created_new_object
