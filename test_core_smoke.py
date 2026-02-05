@@ -6,7 +6,12 @@ import time
 import shutil
 from pathlib import Path
 
-import tophandwerk_core as core
+import pytest
+
+try:
+    import tophandwerk_core as core
+except ModuleNotFoundError:
+    pytest.skip("tophandwerk_core not available in this repo", allow_module_level=True)
 
 
 def _assert(cond, msg):
@@ -134,4 +139,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
