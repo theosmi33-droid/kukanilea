@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Profile",
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "db_path": {"type": "string"},
+    "base_path": {"type": "string"}
+  },
+  "required": ["db_path", "base_path"],
+  "additionalProperties": false
+}

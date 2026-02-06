@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SearchResult",
+  "type": "object",
+  "properties": {
+    "ok": {"type": "boolean"},
+    "message": {"type": "string"},
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "doc_id": {"type": "string"},
+          "kdnr": {"type": "string"},
+          "doctype": {"type": "string"},
+          "doc_date": {"type": "string"},
+          "file_name": {"type": "string"},
+          "file_path": {"type": "string"},
+          "preview": {"type": "string"}
+        },
+        "required": ["doc_id", "file_name"]
+      }
+    },
+    "did_you_mean": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["ok", "results"],
+  "additionalProperties": true
+}

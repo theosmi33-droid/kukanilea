@@ -32,10 +32,34 @@ def test_chat_api_ok(monkeypatch):
         sess["user"] = "dev"
         sess["role"] = "ADMIN"
         sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "test-token"
 
-    res = client.post("/api/chat", json={"q": "rechnung"})
+    res = client.post("/api/chat", json={"q": "rechnung"}, headers={"X-CSRF-Token": "test-token"})
     assert res.status_code == 200
     data = res.get_json()
     assert data["ok"] is True
     assert "message" in data
     assert "actions" in data
+    assert "suggestions" in data
+
+
+def test_api_health_no_redirect():
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    client = app.test_client()
+    res = client.get("/api/health")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["ok"] is True
+
+
+def test_api_chat_requires_auth(monkeypatch):
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    orch = Orchestrator(DummyCore(), llm_provider=MockProvider())
+    monkeypatch.setattr(web, "ORCHESTRATOR", orch)
+    client = app.test_client()
+    res = client.post("/api/chat", json={"q": "rechnung"})
+    assert res.status_code in {401, 403}
+    data = res.get_json()
+    assert data["ok"] is False

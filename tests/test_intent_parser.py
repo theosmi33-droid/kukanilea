@@ -28,6 +28,8 @@ class IntentParserTests(unittest.TestCase):
         self.assertEqual(self.parser.parse("rechnung").intent, "search")
         self.assertEqual(self.parser.parse("wer ist 12393").intent, "customer_lookup")
         self.assertEqual(self.parser.parse("öffne abcdef1234567890abcd").intent, "open_token")
+        self.assertEqual(self.parser.parse("test").intent, "search")
+        self.assertEqual(self.parser.parse("warmbrunn").intent, "search")
 
 
 if __name__ == "__main__":

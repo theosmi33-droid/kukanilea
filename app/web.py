@@ -50,10 +50,15 @@ from flask import (
     redirect,
     url_for,
     current_app,
+    session,
 )
 
-from kukanilea.agents import AgentContext
+from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
+from .errors import json_error, error_payload
+from .rate_limit import chat_limiter, search_limiter, upload_limiter
+from .security import get_csrf_token
+from .timeout import time_limit
 
 from .auth import (
     current_role,
@@ -247,6 +252,23 @@ def _list_allowlisted_db_files() -> List[Path]:
     return sorted({f.resolve() for f in files})
 
 
+def _list_allowlisted_base_paths() -> List[Path]:
+    candidates = {BASE_PATH.resolve()}
+    base_dir = Config.BASE_DIR.resolve()
+    data_dir = base_dir / "data"
+    if data_dir.exists():
+        candidates.add(data_dir.resolve())
+    return sorted(candidates)
+
+
+def _is_storage_path_valid(path: Path) -> bool:
+    try:
+        resolved = path.expanduser().resolve()
+    except Exception:
+        return False
+    return resolved.exists() and resolved.is_dir()
+
+
 def _seed_dev_users(auth_db: AuthDB) -> str:
     now = datetime.utcnow().isoformat()
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
@@ -256,6 +278,12 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
     auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
     auth_db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
     return "Seeded users: admin/admin, dev/dev"
+
+
+def _rate_key() -> str:
+    user = current_user() or "anon"
+    ip = request.remote_addr or "unknown"
+    return f"{user}:{ip}"
 
 
 def _safe_filename(name: str) -> str:
@@ -324,6 +352,7 @@ def _card(kind: str, msg: str) -> str:
 
 
 def _render_base(content: str, active_tab: str = "upload") -> str:
+    profile = _get_profile()
     return render_template_string(
         HTML_BASE,
         content=content,
@@ -331,8 +360,16 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
         user=current_user() or "-",
         roles=current_role(),
         tenant=current_tenant() or "-",
+        profile=profile,
+        csrf_token=get_csrf_token(),
         active_tab=active_tab
     )
+
+
+def _get_profile() -> dict:
+    if callable(getattr(core, "get_profile", None)):
+        return core.get_profile()
+    return {"name": "default", "db_path": str(getattr(core, "DB_PATH", "")), "base_path": str(BASE_PATH)}
 
 
 # -------- UI Templates ----------
@@ -341,6 +378,7 @@ HTML_BASE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token }}">
 <title>KUKANILEA Systems</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -348,6 +386,8 @@ HTML_BASE = r"""<!doctype html>
   const savedAccent = localStorage.getItem("ks_accent") || "indigo";
   if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
   document.documentElement.dataset.accent = savedAccent;
+  window.KS_CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+  window.KS_SAFE_MODE = localStorage.getItem("ks_safe_mode") === "1";
 </script>
 <style>
   :root{
@@ -436,6 +476,7 @@ HTML_BASE = r"""<!doctype html>
         <span class="badge">User: {{user}}</span>
         <span class="badge">Role: {{roles}}</span>
         <span class="badge">Tenant: {{tenant}}</span>
+        <span class="badge">Profile: {{ profile.name }}</span>
         {% if user and user != '-' %}
         <a class="px-3 py-2 text-sm btn-outline" href="/logout">Logout</a>
         {% endif %}
@@ -533,6 +574,7 @@ HTML_LOGIN = r"""
     <p class="text-sm opacity-80 mb-4">Accounts: <b>admin</b>/<b>admin</b> (Tenant: KUKANILEA) • <b>dev</b>/<b>dev</b> (Tenant: KUKANILEA Dev)</p>
     {% if error %}<div class="alert alert-error mb-3">{{ error }}</div>{% endif %}
     <form method="post" class="space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div>
         <label class="label">Username</label>
         <input class="input w-full" name="username" autocomplete="username" required>
@@ -581,6 +623,7 @@ HTML_INDEX = r"""<div class="grid lg:grid-cols-2 gap-6">
             <div class="mt-2 flex gap-2">
               <a class="rounded-xl px-3 py-2 text-xs btn-outline card" href="/file/{{it}}" target="_blank">Datei</a>
               <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Pending wirklich löschen?')" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="rounded-xl px-3 py-2 text-xs btn-outline card" type="submit">Delete</button>
               </form>
             </div>
@@ -605,7 +648,7 @@ function setProgress(p){
   pLabel.textContent = pct.toFixed(1) + "%";
 }
 async function poll(token){
-  const res = await fetch("/api/progress/" + token, {cache:"no-store", credentials:"same-origin"});
+  const res = await fetch("/api/progress/" + token, {cache:"no-store", credentials:"same-origin", headers: {"X-CSRF-Token": window.KS_CSRF}});
   const j = await res.json();
   setProgress(j.progress || 0);
   phase.textContent = j.progress_phase || "";
@@ -621,6 +664,7 @@ form.addEventListener("submit", (e) => {
   fd.append("file", f);
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/upload", true);
+  xhr.setRequestHeader("X-CSRF-Token", window.KS_CSRF);
   xhr.upload.onprogress = (ev) => {
     if(ev.lengthComputable){ setProgress((ev.loaded / ev.total) * 35); phase.textContent = "Upload…"; }
   };
@@ -630,7 +674,10 @@ form.addEventListener("submit", (e) => {
       status.textContent = "Upload OK. Analyse läuft…";
       poll(resp.token);
     } else {
-      try{ const j = JSON.parse(xhr.responseText || "{}"); status.textContent = "Fehler beim Upload: " + (j.error || ("HTTP " + xhr.status)); }
+      try{
+        const j = JSON.parse(xhr.responseText || "{}");
+        status.textContent = "Fehler beim Upload: " + (j.error?.message || j.error || ("HTTP " + xhr.status));
+      }
       catch(e){ status.textContent = "Fehler beim Upload: HTTP " + xhr.status; }
     }
   };
@@ -679,6 +726,7 @@ HTML_REVIEW_SPLIT = r"""<div class="grid lg:grid-cols-2 gap-4">
 </div>"""
 
 HTML_WIZARD = r"""<form method="post" class="space-y-3" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="flex items-start justify-between gap-3">
     <div>
       <div class="text-lg font-semibold">Review</div>
@@ -759,6 +807,13 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     <input id="q" class="rounded-xl bg-slate-800 border border-slate-700 p-2 input flex-1" placeholder="Frag etwas… z.B. 'suche Rechnung KDNR 12393'" />
     <button id="send" class="rounded-xl px-4 py-2 font-semibold btn-primary md:w-40">Senden</button>
   </div>
+  <div class="mt-2 flex items-center gap-3 text-xs muted">
+    <label class="inline-flex items-center gap-2">
+      <input id="safeMode" type="checkbox" class="rounded border border-slate-700 bg-slate-800" />
+      Safe Mode (LLM aus)
+    </label>
+    <span id="chatStatus"></span>
+  </div>
   <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3" style="height:62vh; overflow:auto" id="log"></div>
   <div class="muted text-xs mt-3">
     Tipp: Nutze „öffne &lt;token&gt;“ um direkt in die Review-Ansicht zu springen.
@@ -770,19 +825,140 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   const q = document.getElementById("q");
   const kdnr = document.getElementById("kdnr");
   const send = document.getElementById("send");
-  function add(role, text, actions){
+  const safeMode = document.getElementById("safeMode");
+  const chatStatus = document.getElementById("chatStatus");
+  if(safeMode){
+    safeMode.checked = window.KS_SAFE_MODE === true;
+    safeMode.addEventListener("change", () => {
+      window.KS_SAFE_MODE = safeMode.checked;
+      localStorage.setItem("ks_safe_mode", safeMode.checked ? "1" : "0");
+    });
+  }
+  function setStatus(msg){ if(chatStatus) chatStatus.textContent = msg; }
+  async function postWithRetry(url, body, attempts=2){
+    let lastErr = null;
+    for(let i=0; i<=attempts; i++){
+      try{
+        const res = await fetch(url, {
+          method:"POST",
+          credentials:"same-origin",
+          headers: {"Content-Type":"application/json", "X-CSRF-Token": window.KS_CSRF},
+          body: JSON.stringify(body)
+        });
+        let j = {};
+        try{ j = await res.json(); }catch(e){}
+        if(!res.ok){
+          const msg = j.error?.message || j.message || j.error || ("HTTP " + res.status);
+          throw new Error(msg);
+        }
+        return j;
+      }catch(e){
+        lastErr = e;
+        await new Promise(r => setTimeout(r, 300 * (i + 1)));
+      }
+    }
+    throw lastErr || new Error("Unbekannter Fehler");
+  }
+  async function createTaskFromChat(text){
+    if(!text) return;
+    try{
+      await postWithRetry("/api/tasks", {title: "Chat Follow-up", details: text});
+      setStatus("Task erstellt.");
+    }catch(e){
+      setStatus("Task Fehler: " + (e && e.message ? e.message : e));
+    }
+  }
+  function add(role, text, actions, results, suggestions, debug){
     const d = document.createElement("div");
     d.className = "mb-3";
-    let actionHtml = "";
+    const label = document.createElement("div");
+    label.className = "muted text-[11px]";
+    label.textContent = role;
+    const body = document.createElement("div");
+    body.className = "text-sm whitespace-pre-wrap";
+    body.textContent = text;
+    d.appendChild(label);
+    d.appendChild(body);
+
+    const pillWrap = document.createElement("div");
+    pillWrap.className = "mt-2 flex flex-wrap gap-2";
     if(actions && actions.length){
-      actionHtml = actions.map(a => {
+      actions.forEach((a) => {
         if(a.type === "open_token" && a.token){
-          return `<a class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" href="/review/${a.token}">Öffnen ${a.token.slice(0,10)}…</a>`;
+          const link = document.createElement("a");
+          link.href = "/review/" + a.token;
+          link.textContent = "Öffnen " + a.token.slice(0,10) + "…";
+          link.className = "inline-block rounded-full border px-2 py-1 text-xs hover:bg-slate-800";
+          pillWrap.appendChild(link);
+        } else if(a.type){
+          const tag = document.createElement("span");
+          tag.className = "inline-block rounded-full border px-2 py-1 text-xs";
+          tag.textContent = "Action: " + a.type;
+          pillWrap.appendChild(tag);
         }
-        return "";
-      }).join("");
+      });
     }
-    d.innerHTML = `<div class="muted text-[11px]">${role}</div><div class="text-sm whitespace-pre-wrap">${text}</div>${actionHtml}`;
+    if(results && results.length){
+      results.forEach((r) => {
+        const token = r.doc_id || "";
+        const label = r.file_name || token || "Dokument";
+        if(token){
+          const link = document.createElement("a");
+          link.href = "/review/" + token;
+          link.textContent = label;
+          link.className = "inline-block rounded-full border px-2 py-1 text-xs hover:bg-slate-800";
+          pillWrap.appendChild(link);
+        }
+      });
+    }
+    if(suggestions && suggestions.length){
+      suggestions.forEach((s) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "inline-block rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion";
+        btn.dataset.q = s;
+        btn.textContent = s;
+        pillWrap.appendChild(btn);
+      });
+    }
+    if(pillWrap.childElementCount){
+      d.appendChild(pillWrap);
+    }
+
+    if(role === "assistant"){
+      const actionRow = document.createElement("div");
+      actionRow.className = "mt-2 flex gap-2";
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "rounded-full border px-2 py-1 text-xs hover:bg-slate-800";
+      copyBtn.textContent = "Copy";
+      copyBtn.addEventListener("click", async () => {
+        try{ await navigator.clipboard.writeText(text || ""); }catch(e){}
+      });
+      const taskBtn = document.createElement("button");
+      taskBtn.type = "button";
+      taskBtn.className = "rounded-full border px-2 py-1 text-xs hover:bg-slate-800";
+      taskBtn.textContent = "Create Task";
+      taskBtn.addEventListener("click", async () => {
+        await createTaskFromChat(text);
+      });
+      actionRow.appendChild(copyBtn);
+      actionRow.appendChild(taskBtn);
+      d.appendChild(actionRow);
+      if(debug){
+        const details = document.createElement("details");
+        details.className = "mt-2 text-xs";
+        const summary = document.createElement("summary");
+        summary.textContent = "Explain why (DEV)";
+        const pre = document.createElement("pre");
+        pre.className = "mt-1 rounded-lg border border-slate-800 p-2 bg-slate-950/40 whitespace-pre-wrap";
+        pre.textContent = JSON.stringify(debug, null, 2);
+        details.appendChild(summary);
+        details.appendChild(pre);
+        d.appendChild(details);
+      }
+    }
+
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
   }
@@ -792,16 +968,22 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     add("you", msg);
     q.value = "";
     send.disabled = true;
+    setStatus("Sende…");
     try{
-      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
-      const j = await res.json();
-      if(!res.ok){ add("system", "Fehler: " + (j.message || j.error || ("HTTP " + res.status))); }
-      else { add("assistant", j.message || "(leer)", j.actions || []); }
+      const j = await postWithRetry("/api/chat", {q: msg, kdnr: (kdnr.value||"").trim(), safe_mode: window.KS_SAFE_MODE || false});
+      add("assistant", j.message || "(leer)", j.actions || [], j.results || [], j.suggestions || [], j.debug || null);
+      setStatus(j.ok === false ? "Hinweis" : "OK");
     }catch(e){ add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e)); }
     finally{ send.disabled = false; }
   }
   send.addEventListener("click", doSend);
   q.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSend(); }});
+  log.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-suggestion");
+    if(!btn) return;
+    q.value = btn.dataset.q || "";
+    doSend();
+  });
 
   // ---- Floating Chat Widget ----
   const _cw = {
@@ -819,7 +1001,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     quick: document.querySelectorAll('.chat-quick'),
   };
   let _cwLastBody = null;
-  function _cwAppend(role, text, actions){
+  function _cwAppend(role, text, actions, results, suggestions){
     if(!_cw.msgs) return;
     const wrap = document.createElement('div');
     const isUser = role === 'you';
@@ -839,7 +1021,40 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
           link.textContent = 'Öffnen ' + action.token.slice(0,10) + '…';
           link.className = 'rounded-full border px-2 py-1';
           list.appendChild(link);
+        } else if(action.type){
+          const tag = document.createElement('span');
+          tag.textContent = 'Action: ' + action.type;
+          tag.className = 'rounded-full border px-2 py-1';
+          list.appendChild(tag);
         }
+      });
+      bubble.appendChild(list);
+    }
+    if(results && results.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      results.forEach((row) => {
+        const token = row.doc_id || '';
+        const label = row.file_name || token || 'Dokument';
+        if(token){
+          const link = document.createElement('a');
+          link.href = '/review/' + token;
+          link.textContent = label;
+          link.className = 'rounded-full border px-2 py-1';
+          list.appendChild(link);
+        }
+      });
+      bubble.appendChild(list);
+    }
+    if(suggestions && suggestions.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      suggestions.forEach((s) => {
+        const btn = document.createElement('button');
+        btn.textContent = s;
+        btn.dataset.q = s;
+        btn.className = 'rounded-full border px-2 py-1 chat-suggestion';
+        list.appendChild(btn);
       });
       bubble.appendChild(list);
     }
@@ -878,6 +1093,25 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
     }catch(e){}
   }
+  async function _cwPostChat(body, attempts=2){
+    let lastErr = null;
+    for(let i=0; i<=attempts; i++){
+      try{
+        const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': window.KS_CSRF}, body: JSON.stringify(body)});
+        let j = {};
+        try{ j = await r.json(); }catch(e){}
+        if(!r.ok){
+          const msg = j.error?.message || j.message || j.error || ('HTTP ' + r.status);
+          throw new Error(msg);
+        }
+        return j;
+      }catch(e){
+        lastErr = e;
+        await new Promise(r => setTimeout(r, 300 * (i + 1)));
+      }
+    }
+    throw lastErr || new Error("Unbekannter Fehler");
+  }
   async function _cwSend(){
     const q = (_cw.input && _cw.input.value ? _cw.input.value.trim() : '');
     if(!q) return;
@@ -887,26 +1121,25 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     if(_cw.status) _cw.status.textContent = 'Denke…';
     if(_cw.retry) _cw.retry.classList.add('hidden');
     try{
-      const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
+      const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '', safe_mode: window.KS_SAFE_MODE || false };
       _cwLastBody = body;
-      const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-      let j = {};
-      try{ j = await r.json(); }catch(e){}
-      if(!r.ok){
-        const msg = j.message || j.error || ('HTTP ' + r.status);
-        _cwAppend('assistant', 'Fehler: ' + msg);
-        if(_cw.status) _cw.status.textContent = 'Fehler';
-        if(_cw.retry) _cw.retry.classList.remove('hidden');
-        return;
-      }
-      _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || []);
-      if(_cw.status) _cw.status.textContent = 'OK';
+      const j = await _cwPostChat(body);
+      _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || [], j.results || [], j.suggestions || []);
+      if(_cw.status) _cw.status.textContent = j.ok === false ? 'Hinweis' : 'OK';
       _cwSave();
     }catch(e){
       _cwAppend('assistant', 'Fehler: ' + (e && e.message ? e.message : e));
       if(_cw.status) _cw.status.textContent = 'Fehler';
       if(_cw.retry) _cw.retry.classList.remove('hidden');
     }
+  }
+  if(_cw.msgs){
+    _cw.msgs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chat-suggestion');
+      if(!btn) return;
+      if(_cw.input) _cw.input.value = btn.dataset.q || '';
+      _cwSend();
+    });
   }
   if(_cw.btn && _cw.drawer){
     _cw.btn.addEventListener('click', () => {
@@ -944,10 +1177,28 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 @bp.before_app_request
 def _guard_login():
     p = request.path or "/"
-    if p.startswith("/static/") or p in ["/login", "/health", "/auth/google/start", "/auth/google/callback"]:
+    if p.startswith("/static/") or p in ["/login", "/health", "/auth/google/start", "/auth/google/callback", "/api/health", "/api/ping"]:
         return None
     if not current_user():
+        if p.startswith("/api/"):
+            return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
         return redirect(url_for("web.login", next=p))
+    return None
+
+
+@bp.before_app_request
+def _csrf_guard():
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    if request.path in {"/login"}:
+        token = request.form.get("csrf_token")
+    else:
+        token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    expected = session.get("csrf_token")
+    if not expected or not token or token != expected:
+        if request.path.startswith("/api/"):
+            return json_error("csrf_failed", "CSRF-Token fehlt oder ungültig.", status=403)
+        abort(403)
     return None
 
 
@@ -1000,11 +1251,12 @@ def logout():
 @bp.route("/api/progress/<token>")
 def api_progress(token: str):
     if (not current_user()) and (request.remote_addr not in ("127.0.0.1","::1")):
-        return jsonify(error="unauthorized"), 401
+        return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
     p = read_pending(token)
     if not p:
-        return jsonify(error="not_found"), 404
+        return json_error("not_found", "Token nicht gefunden.", status=404)
     return jsonify(
+        ok=True,
         status=p.get("status", ""),
         progress=float(p.get("progress", 0.0) or 0.0),
         progress_phase=p.get("progress_phase", ""),
@@ -1048,29 +1300,154 @@ def api_chat():
     q = (payload.get("q") or "").strip()
     kdnr = (payload.get("kdnr") or "").strip()
     token = (payload.get("token") or "").strip()
+    safe_mode = bool(payload.get("safe_mode"))
 
+    if not chat_limiter.allow(_rate_key()):
+        return json_error("rate_limited", "Zu viele Anfragen. Bitte kurz warten.", status=429)
     if not q:
-        return jsonify(ok=False, message="Leer."), 400
+        return json_error("empty_query", "Leer.", status=400)
 
     user = current_user() or "dev"
     role = current_role()
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    auth_db.add_chat_message(
+        ts=datetime.utcnow().isoformat(),
+        tenant_id=current_tenant(),
+        username=str(user),
+        role=str(role),
+        direction="user",
+        message=q,
+    )
     context = AgentContext(
         tenant_id=current_tenant(),
         user=str(user),
         role=str(role),
         kdnr=kdnr,
         token=token,
+        meta={"safe_mode": safe_mode},
     )
-    result = ORCHESTRATOR.handle(q, context)
+    try:
+        with time_limit(5):
+            result = ORCHESTRATOR.handle(q, context)
+    except TimeoutError:
+        return json_error("timeout", "Die Anfrage hat zu lange gedauert.", status=504)
     payload_out = {
-        "ok": True,
+        "ok": result.ok,
         "message": result.text,
+        "suggestions": result.suggestions or [],
         "results": result.data.get("results", []) if isinstance(result.data, dict) else [],
         "actions": result.actions,
+        "error": error_payload(result.error or "error", result.text) if not result.ok else None,
     }
+    auth_db.add_chat_message(
+        ts=datetime.utcnow().isoformat(),
+        tenant_id=current_tenant(),
+        username=str(user),
+        role=str(role),
+        direction="assistant",
+        message=result.text,
+    )
     if current_role() == "DEV":
         payload_out["debug"] = {"intent": result.intent, "data": result.data}
     return jsonify(payload_out)
+
+
+@bp.post("/api/search")
+@login_required
+def api_search():
+    payload = request.get_json(silent=True) or {}
+    query = (payload.get("query") or "").strip()
+    kdnr = (payload.get("kdnr") or "").strip()
+    limit = int(payload.get("limit") or 8)
+    if not query:
+        return json_error("missing_query", "Query fehlt.", status=400)
+    if not search_limiter.allow(_rate_key()):
+        return json_error("rate_limited", "Zu viele Suchanfragen. Bitte kurz warten.", status=429)
+    context = AgentContext(
+        tenant_id=current_tenant(),
+        user=str(current_user() or "dev"),
+        role=str(current_role()),
+        kdnr=kdnr,
+    )
+    agent = SearchAgent(core)
+    results, suggestions = agent.search(query, context, limit=limit)
+    message = "OK" if results else "Keine Treffer gefunden."
+    return jsonify(ok=True, message=message, results=results, did_you_mean=suggestions or [])
+
+
+@bp.post("/api/customer")
+@login_required
+@require_role("OPERATOR")
+def api_customer():
+    payload = request.get_json(silent=True) or {}
+    kdnr = (payload.get("kdnr") or "").strip()
+    if not kdnr:
+        return json_error("missing_kdnr", "KDNR fehlt.", status=400)
+    context = AgentContext(
+        tenant_id=current_tenant(),
+        user=str(current_user() or "dev"),
+        role=str(current_role()),
+        kdnr=kdnr,
+    )
+    agent = CustomerAgent(core)
+    result = agent.handle(kdnr, "customer_lookup", context)
+    results = result.data.get("results", []) if isinstance(result.data, dict) else []
+    summary = results[0] if results else {}
+    return jsonify(
+        ok=result.error is None,
+        kdnr=str(summary.get("kdnr") or kdnr),
+        customer_name=str(summary.get("customer_name") or ""),
+        last_doc=str(summary.get("file_name") or ""),
+        last_doc_date=str(summary.get("doc_date") or ""),
+        results=results,
+        message=result.text,
+    )
+
+
+@bp.get("/api/tasks")
+@login_required
+def api_tasks():
+    status = (request.args.get("status") or "OPEN").strip().upper()
+    if callable(task_list):
+        tasks = task_list(tenant=current_tenant(), status=status, limit=200)  # type: ignore
+    else:
+        tasks = []
+    return jsonify(ok=True, tasks=tasks)
+
+
+@bp.post("/api/tasks")
+@login_required
+@require_role("OPERATOR")
+def api_task_create():
+    payload = request.get_json(silent=True) or {}
+    title = (payload.get("title") or "").strip()
+    details = (payload.get("details") or "").strip()
+    if not title:
+        return json_error("missing_title", "Titel fehlt.", status=400)
+    if not callable(getattr(core, "task_create", None)):
+        return json_error("tasks_unavailable", "Task-System nicht verfügbar.", status=400)
+    task_id = core.task_create(
+        tenant=current_tenant() or "default",
+        severity="INFO",
+        task_type="CHAT",
+        title=title,
+        details=details,
+        created_by=current_user() or "",
+    )
+    _audit("task_create", target=str(task_id), meta={"title": title})
+    return jsonify(ok=True, task_id=task_id)
+
+
+@bp.get("/api/audit")
+@login_required
+@require_role("ADMIN")
+def api_audit():
+    limit = int(request.args.get("limit") or 100)
+    if callable(getattr(core, "audit_list", None)):
+        events = core.audit_list(tenant_id=current_tenant(), limit=limit)
+    else:
+        events = []
+    return jsonify(ok=True, events=events)
 
 
 # ==============================
@@ -1169,7 +1546,7 @@ HTML_MAIL = """
     try{
       const res = await fetch('/api/mail/draft', {
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:{'Content-Type':'application/json', 'X-CSRF-Token': window.KS_CSRF},
         body: JSON.stringify({
           to: v('m_to'),
           subject: v('m_subj'),
@@ -1180,7 +1557,7 @@ HTML_MAIL = """
       });
       const data = await res.json();
       if(!res.ok){
-        status.textContent = 'Fehler: ' + (data.error || res.status);
+        status.textContent = 'Fehler: ' + (data.error?.message || data.error || res.status);
         return;
       }
       out.value = data.text || '';
@@ -1204,7 +1581,7 @@ HTML_MAIL = """
   async function doEml(){
     if(!out.value) return;
     const payload = { to: v('m_to'), subject: v('m_subj'), body: out.value };
-    const res = await fetch('/api/mail/eml', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const res = await fetch('/api/mail/eml', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': window.KS_CSRF}, body: JSON.stringify(payload)});
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1238,6 +1615,11 @@ HTML_SETTINGS = """
     <div class="text-lg font-semibold mb-2">DEV Settings</div>
     <div class="grid gap-3 md:grid-cols-2 text-sm">
       <div>
+        <div class="muted text-xs mb-1">Profile</div>
+        <div><strong>{{ profile.name }}</strong></div>
+        <div class="muted text-xs">Base Path: {{ profile.base_path }}</div>
+      </div>
+      <div>
         <div class="muted text-xs mb-1">Core DB</div>
         <div><strong>{{ core_db.path }}</strong></div>
         <div class="muted text-xs">Schema: {{ core_db.schema_version }} · Tenants: {{ core_db.tenants }}</div>
@@ -1264,11 +1646,26 @@ HTML_SETTINGS = """
   </div>
 
   <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Ablage-Pfad wechseln (DEV)</div>
+    <div class="flex flex-wrap gap-2 items-center">
+      <select id="baseSelect" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
+        {% for p in base_paths %}
+          <option value="{{ p }}">{{ p }}</option>
+        {% endfor %}
+      </select>
+      <input id="baseCustom" class="rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Benutzerdefinierter Pfad" />
+      <button id="baseSwitch" class="rounded-xl px-3 py-2 text-sm btn-primary">Ablage wechseln</button>
+      <span id="baseSwitchStatus" class="text-xs muted"></span>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">Tools</div>
     <div class="flex flex-wrap gap-2">
       <button id="seedUsers" class="rounded-xl px-3 py-2 text-sm btn-outline">Seed Dev Users</button>
       <button id="rebuildIndex" class="rounded-xl px-3 py-2 text-sm btn-outline">Rebuild Index</button>
       <button id="fullScan" class="rounded-xl px-3 py-2 text-sm btn-outline">Full Scan</button>
+      <button id="repairDrift" class="rounded-xl px-3 py-2 text-sm btn-outline">Repair Drift Scan</button>
       <button id="testLLM" class="rounded-xl px-3 py-2 text-sm btn-outline">Test LLM</button>
     </div>
     <div id="toolStatus" class="text-xs muted mt-2"></div>
@@ -1278,17 +1675,18 @@ HTML_SETTINGS = """
 <script>
 (function(){
   async function postJson(url, body){
-    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': window.KS_CSRF}, body: JSON.stringify(body || {})});
     let j = {};
     try{ j = await r.json(); }catch(e){}
     if(!r.ok){
-      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+      throw new Error(j.error?.message || j.message || j.error || ('HTTP ' + r.status));
     }
     return j;
   }
 
   const status = document.getElementById('toolStatus');
   const dbStatus = document.getElementById('dbSwitchStatus');
+  const baseStatus = document.getElementById('baseSwitchStatus');
 
   document.getElementById('seedUsers')?.addEventListener('click', async () => {
     status.textContent = 'Seeding...';
@@ -1311,6 +1709,13 @@ HTML_SETTINGS = """
       status.textContent = j.message || 'OK';
     }catch(e){ status.textContent = 'Fehler: ' + e.message; }
   });
+  document.getElementById('repairDrift')?.addEventListener('click', async () => {
+    status.textContent = 'Drift-Scan läuft...';
+    try{
+      const j = await postJson('/api/dev/repair-drift');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
   document.getElementById('testLLM')?.addEventListener('click', async () => {
     status.textContent = 'Teste LLM...';
     try{
@@ -1328,6 +1733,18 @@ HTML_SETTINGS = """
       dbStatus.textContent = j.message || 'OK';
       window.location.reload();
     }catch(e){ dbStatus.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('baseSwitch')?.addEventListener('click', async () => {
+    const sel = document.getElementById('baseSelect');
+    const custom = document.getElementById('baseCustom');
+    const path = (custom && custom.value ? custom.value : (sel ? sel.value : ''));
+    if(!path){ return; }
+    baseStatus.textContent = 'Wechsle...';
+    try{
+      const j = await postJson('/api/dev/switch-base', {path});
+      baseStatus.textContent = j.message || 'OK';
+      window.location.reload();
+    }catch(e){ baseStatus.textContent = 'Fehler: ' + e.message; }
   });
 })();
 </script>
@@ -1377,6 +1794,8 @@ def settings_page():
             auth_schema=auth_db.get_schema_version(),
             auth_tenants=auth_db.count_tenants(),
             db_files=[str(p) for p in _list_allowlisted_db_files()],
+            base_paths=[str(p) for p in _list_allowlisted_base_paths()],
+            profile=_get_profile(),
         ),
         active_tab="settings",
     )
@@ -1401,7 +1820,7 @@ def api_rebuild_index():
     elif callable(getattr(core, "index_run_full", None)):
         result = core.index_run_full()
     else:
-        return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
+        return json_error("index_unavailable", "Indexing nicht verfügbar.", status=400)
     _DEV_STATUS["index"] = result
     _audit("rebuild_index", meta={"result": result})
     return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
@@ -1414,10 +1833,23 @@ def api_full_scan():
     if callable(getattr(core, "index_run_full", None)):
         result = core.index_run_full()
     else:
-        return jsonify(ok=False, message="Scan nicht verfügbar."), 400
+        return json_error("scan_unavailable", "Scan nicht verfügbar.", status=400)
     _DEV_STATUS["scan"] = result
     _audit("full_scan", meta={"result": result})
     return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
+
+
+@bp.post("/api/dev/repair-drift")
+@login_required
+@require_role("DEV")
+def api_repair_drift():
+    if callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return json_error("drift_scan_unavailable", "Drift-Scan nicht verfügbar.", status=400)
+    _DEV_STATUS["scan"] = result
+    _audit("repair_drift", meta={"result": result})
+    return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
 
 
 @bp.post("/api/dev/switch-db")
@@ -1427,18 +1859,39 @@ def api_switch_db():
     payload = request.get_json(silent=True) or {}
     path = Path(str(payload.get("path", ""))).expanduser()
     if not path:
-        return jsonify(ok=False, message="Pfad fehlt."), 400
+        return json_error("missing_path", "Pfad fehlt.", status=400)
     if not _is_allowlisted_path(path):
-        return jsonify(ok=False, message="Pfad nicht erlaubt."), 400
+        return json_error("path_not_allowed", "Pfad nicht erlaubt.", status=400)
     if not path.exists():
-        return jsonify(ok=False, message="Datei existiert nicht."), 400
+        return json_error("path_not_found", "Datei existiert nicht.", status=400)
     old_path = str(getattr(core, "DB_PATH", ""))
     if callable(getattr(core, "set_db_path", None)):
         core.set_db_path(path)
         _DEV_STATUS["db"] = {"old": old_path, "new": str(path)}
         _audit("switch_db", target=str(path), meta={"old": old_path})
         return jsonify(ok=True, message="DB gewechselt.", path=str(path))
-    return jsonify(ok=False, message="DB switch nicht verfügbar."), 400
+    return json_error("db_switch_unavailable", "DB switch nicht verfügbar.", status=400)
+
+
+@bp.post("/api/dev/switch-base")
+@login_required
+@require_role("DEV")
+def api_switch_base():
+    payload = request.get_json(silent=True) or {}
+    path = Path(str(payload.get("path", ""))).expanduser()
+    if not path:
+        return json_error("missing_path", "Pfad fehlt.", status=400)
+    if not _is_storage_path_valid(path):
+        return json_error("path_not_allowed", "Pfad nicht erlaubt oder nicht vorhanden.", status=400)
+    old_path = str(getattr(core, "BASE_PATH", ""))
+    if callable(getattr(core, "set_base_path", None)):
+        core.set_base_path(path)
+        global BASE_PATH
+        BASE_PATH = path
+        _DEV_STATUS["base"] = {"old": old_path, "new": str(path)}
+        _audit("switch_base", target=str(path), meta={"old": old_path})
+        return jsonify(ok=True, message="Ablage gewechselt.", path=str(path))
+    return json_error("base_switch_unavailable", "Ablage switch nicht verfügbar.", status=400)
 
 
 @bp.post("/api/dev/test-llm")
@@ -1449,7 +1902,7 @@ def api_test_llm():
     q = str(payload.get("q") or "suche rechnung")
     llm = getattr(ORCHESTRATOR, "llm", None)
     if not llm:
-        return jsonify(ok=False, message="LLM nicht verfügbar."), 400
+        return json_error("llm_unavailable", "LLM nicht verfügbar.", status=400)
     result = llm.rewrite_query(q)
     _DEV_STATUS["llm"] = result
     _audit("test_llm", meta={"result": result})
@@ -1467,12 +1920,12 @@ def api_mail_draft():
         context = (payload.get("context") or "").strip()
 
         if not context and not subject:
-            return jsonify({"error": "Bitte Kontext oder Betreff angeben."}), 400
+            return json_error("missing_context", "Bitte Kontext oder Betreff angeben.", status=400)
 
         text = _mock_generate(_mail_prompt(to, subject, tone, length, context))
-        return jsonify({"text": text, "meta": "mode=mock"}), 200
+        return jsonify({"ok": True, "text": text, "meta": "mode=mock"}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return json_error("mail_draft_failed", "Mail-Entwurf fehlgeschlagen.", status=500, details={"reason": str(e)})
 
 
 @bp.post("/api/mail/eml")
@@ -1483,7 +1936,7 @@ def api_mail_eml():
     subject = (payload.get("subject") or "").strip()
     body = (payload.get("body") or "").strip()
     if not body:
-        return jsonify({"error": "Body fehlt."}), 400
+        return json_error("missing_body", "Body fehlt.", status=400)
     import email.message
     msg = email.message.EmailMessage()
     msg["To"] = to or "unknown@example.com"
@@ -1510,12 +1963,14 @@ def index():
 def upload():
     f = request.files.get("file")
     if not f or not f.filename:
-        return jsonify(error="no_file"), 400
+        return json_error("no_file", "Keine Datei hochgeladen.", status=400)
+    if not upload_limiter.allow(_rate_key()):
+        return json_error("rate_limited", "Zu viele Uploads. Bitte kurz warten.", status=429)
     tenant = _norm_tenant(current_tenant() or "default")
     # tenant is fixed by license/account; no user input here.
     filename = _safe_filename(f.filename)
     if not _is_allowed_ext(filename):
-        return jsonify(error="unsupported"), 400
+        return json_error("unsupported", "Dateityp nicht unterstützt.", status=400)
     tenant_in = (EINGANG / tenant)
     tenant_in.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

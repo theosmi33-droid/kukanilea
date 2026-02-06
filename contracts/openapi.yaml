@@ -1,0 +1,193 @@
+openapi: 3.0.3
+info:
+  title: KUKANILEA API
+  version: 0.1.0
+  description: Local-first office assistant API (tenant-scoped, DB-first).
+servers:
+  - url: http://localhost:5051
+paths:
+  /api/ping:
+    get:
+      summary: Liveness ping
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
+  /api/health:
+    get:
+      summary: Health and index stats
+      responses:
+        '200':
+          description: Health payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  schema_version:
+                    type: integer
+                  auth_db_path:
+                    type: string
+                  tenants:
+                    type: integer
+                  last_indexed_at:
+                    type: string
+                    nullable: true
+                  doc_count:
+                    type: integer
+                  fts_enabled:
+                    type: boolean
+                  tenant_id:
+                    type: string
+                  profile:
+                    $ref: './schemas/Profile.json'
+                  db_path:
+                    type: string
+                required: [ok]
+  /api/chat:
+    post:
+      summary: Chat entrypoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './schemas/ChatRequest.json'
+      responses:
+        '200':
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/ChatResponse.json'
+  /api/search:
+    post:
+      summary: Search documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './schemas/SearchQuery.json'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/SearchResult.json'
+  /api/customer:
+    post:
+      summary: Customer lookup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kdnr:
+                  type: string
+              required: [kdnr]
+      responses:
+        '200':
+          description: Customer summary
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/CustomerSummary.json'
+  /api/tasks:
+    get:
+      summary: List tasks
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            default: OPEN
+      responses:
+        '200':
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  tasks:
+                    type: array
+                    items:
+                      $ref: './schemas/Task.json'
+                required: [ok, tasks]
+    post:
+      summary: Create task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                details:
+                  type: string
+              required: [title]
+      responses:
+        '200':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  task_id:
+                    type: integer
+                required: [ok, task_id]
+  /api/audit:
+    get:
+      summary: Audit log
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  events:
+                    type: array
+                    items:
+                      $ref: './schemas/AuditEvent.json'
+                required: [ok, events]
+components:
+  schemas:
+    ErrorEnvelope:
+      $ref: './schemas/ErrorEnvelope.json'
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+security:
+  - sessionCookie: []

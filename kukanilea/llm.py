@@ -5,7 +5,7 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 def _env(key: str, default: str = "") -> str:
@@ -19,6 +19,11 @@ class LLMProvider:
 
     def complete(self, prompt: str, *, temperature: float = 0.0) -> str:
         raise NotImplementedError
+
+    def generate(self, system_prompt: str, messages: List[Dict[str, str]], context: Dict[str, Any] | None = None) -> str:
+        _ = context
+        prompt = system_prompt + "\n" + "\n".join(f"{m.get('role')}: {m.get('content')}" for m in messages)
+        return self.complete(prompt, temperature=0.0)
 
     def rewrite_query(self, query: str) -> Dict[str, str]:
         return {"intent": "unknown", "query": query}
@@ -34,6 +39,11 @@ class MockProvider(LLMProvider):
     def complete(self, prompt: str, *, temperature: float = 0.0) -> str:
         _ = temperature
         return f"[mocked] {prompt.strip()[:160]}"
+
+    def generate(self, system_prompt: str, messages: List[Dict[str, str]], context: Dict[str, Any] | None = None) -> str:
+        _ = context
+        head = system_prompt.strip()[:80]
+        return f"[mocked] {head} :: {len(messages)} messages"
 
     def rewrite_query(self, query: str) -> Dict[str, str]:
         text = query.lower().strip()
@@ -91,6 +101,20 @@ class OllamaProvider(LLMProvider):
         data = self._post_json("/api/generate", payload)
         return str(data.get("response", "")).strip()
 
+    def generate(self, system_prompt: str, messages: List[Dict[str, str]], context: Dict[str, Any] | None = None) -> str:
+        if not self.available:
+            raise RuntimeError("Ollama not available")
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system_prompt}] + messages,
+            "stream": False,
+        }
+        if context:
+            payload["context"] = context
+        data = self._post_json("/api/chat", payload)
+        message = data.get("message", {})
+        return str(message.get("content", "")).strip()
+
     def rewrite_query(self, query: str) -> Dict[str, str]:
         prompt = (
             "Du bist ein lokaler Assistent. Wandle die Nutzeranfrage in JSON um: "
@@ -124,10 +148,12 @@ class OllamaProvider(LLMProvider):
 def get_default_provider() -> LLMProvider:
     host = _env("OLLAMA_HOST", "http://127.0.0.1:11434")
     model = _env("OLLAMA_MODEL", "llama3.1")
+    enabled = _env("OLLAMA_ENABLED", "0").lower() in {"1", "true", "yes"}
     try:
-        provider = OllamaProvider(host, model)
-        if provider.available:
-            return provider
+        if enabled:
+            provider = OllamaProvider(host, model)
+            if provider.available:
+                return provider
     except Exception:
         pass
     return MockProvider()

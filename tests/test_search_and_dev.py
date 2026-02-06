@@ -26,6 +26,30 @@ def test_search_fallback_and_fuzzy(tmp_path):
     assert "Meintest du" in result.text
 
 
+def test_search_fs_fallback(tmp_path):
+    tenant_dir = tmp_path / "KUKANILEA" / "1234_kunde"
+    tenant_dir.mkdir(parents=True, exist_ok=True)
+    (tenant_dir / "rechnung_1234.pdf").write_text("test")
+    core = DummyCore(tmp_path)
+    agent = SearchAgent(core)
+    ctx = AgentContext(tenant_id="KUKANILEA", user="dev", role="ADMIN")
+    results, _ = agent.search("rechnung", ctx, limit=5)
+    assert results
+
+
+def test_search_tenant_isolation(tmp_path):
+    tenant_dir = tmp_path / "KUKANILEA" / "1234_kunde"
+    other_dir = tmp_path / "OTHER" / "9999_kunde"
+    tenant_dir.mkdir(parents=True, exist_ok=True)
+    other_dir.mkdir(parents=True, exist_ok=True)
+    (other_dir / "rechnung_9999.pdf").write_text("test")
+    core = DummyCore(tmp_path)
+    agent = SearchAgent(core)
+    ctx = AgentContext(tenant_id="KUKANILEA", user="dev", role="ADMIN")
+    results, _ = agent.search("rechnung_9999", ctx, limit=5)
+    assert results == []
+
+
 def test_dev_db_switch_allowlist(tmp_path):
     instance_dir = (web.Config.BASE_DIR / "instance").resolve()
     instance_dir.mkdir(parents=True, exist_ok=True)
