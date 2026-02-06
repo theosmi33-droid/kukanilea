@@ -43,5 +43,8 @@ Open: http://127.0.0.1:5051
 
 ## Docs
 - `docs/ARCHITECTURE.md`
+- `docs/CONSTITUTION.md`
+- `docs/LOOP.md`
+- `docs/METRICS.md`
 - `ROADMAP.md`
 - `PACKAGING.md`

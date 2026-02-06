@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TimeProject",
+  "type": "object",
+  "properties": {
+    "id": {"type": "integer"},
+    "tenant_id": {"type": "string"},
+    "name": {"type": "string"},
+    "customer_name": {"type": "string"},
+    "created_at": {"type": "string"}
+  },
+  "required": ["id", "tenant_id", "name"],
+  "additionalProperties": true
+}

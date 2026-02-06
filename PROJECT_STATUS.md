@@ -6,14 +6,17 @@
 - DEV controls for DB switching + LLM checks.
 
 ## PLANNED
+- Add connector module stubs (mail/calendar/messaging) with feature flags.
 - Expand task tooling inside chat (list/resolve).
 - Add richer document summarization UI.
 
 ## DONE
-- Chat API now returns structured JSON and frontend renders errors safely.
-- Intent parsing expanded for short queries and key commands.
-- Tenant-scoped index table + FTS fallback + fuzzy suggestions.
-- DEV Settings page with DB switching + rebuild index + LLM test.
+- Spec-first contracts (/contracts) and ADRs (/docs/adr) created for enterprise core.
+- Added Constitution, threat model, and phase-1 spec/plan docs.
+- Standardized API error envelopes, request-id correlation, and CSRF hardening.
+- Chat UI now includes retries/backoff, safe mode toggle, explain-why panel, and task creation.
+- Added rate limits, chat history persistence, and expanded smoke/integration tests.
+- Added local-first time tracking (projects/entries) with CSV export.
 
 ## TODO
 - Add role-based task list + resolution actions in chat.
@@ -34,5 +37,7 @@
 4) DEV Settings:
    - Navigate to /settings as dev → shows DB info.
    - Switch DB from allowlist → audit logged, page reloads.
+   - Switch Ablage path → audit logged, page reloads.
    - Rebuild index → status updates.
+   - Repair drift scan → status updates.
    - Test LLM → returns provider name and intent.

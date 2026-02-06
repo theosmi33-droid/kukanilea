@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TimeEntry",
+  "type": "object",
+  "properties": {
+    "id": {"type": "integer"},
+    "tenant_id": {"type": "string"},
+    "username": {"type": "string"},
+    "project_id": {"type": ["integer", "null"]},
+    "started_at": {"type": "string"},
+    "stopped_at": {"type": ["string", "null"]},
+    "note": {"type": "string"}
+  },
+  "required": ["id", "tenant_id", "username", "started_at"],
+  "additionalProperties": true
+}

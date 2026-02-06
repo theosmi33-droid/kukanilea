@@ -678,6 +678,34 @@ def db_init() -> None:
                 """
             )
 
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS time_projects(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  customer_name TEXT,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS time_entries(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  username TEXT NOT NULL,
+                  project_id INTEGER,
+                  started_at TEXT NOT NULL,
+                  stopped_at TEXT,
+                  note TEXT,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(project_id) REFERENCES time_projects(id) ON DELETE SET NULL
+                );
+                """
+            )
+
             _ensure_column(con, "docs", "tenant_id", "TEXT")
             _ensure_column(con, "versions", "tenant_id", "TEXT")
             _ensure_column(con, "audit", "tenant_id", "TEXT")
@@ -693,6 +721,8 @@ def db_init() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type, norm_value);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_index_tenant ON docs_index(tenant_id, kdnr, doctype);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_index_tokens ON docs_index(tokens);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_time_projects_tenant ON time_projects(tenant_id);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_time_entries_tenant ON time_entries(tenant_id, username);")
 
             if _has_fts5(con):
                 con.execute(
@@ -926,6 +956,152 @@ def task_set_status(task_id: int, status: str, resolved_by: str = "") -> bool:
             return True
         finally:
             con.close()
+
+
+# ============================================================
+# TIME TRACKING
+# ============================================================
+def time_project_create(*, tenant: str, name: str, customer_name: str = "") -> int:
+    tenant = normalize_component(tenant).lower()
+    name = normalize_component(name)
+    customer_name = normalize_component(customer_name)
+    if not tenant or not name:
+        raise ValueError("tenant and name required")
+    with _DB_LOCK:
+        con = _db()
+        try:
+            cur = con.execute(
+                """
+                INSERT INTO time_projects(tenant_id, name, customer_name, created_at)
+                VALUES (?,?,?,?)
+                """,
+                (tenant, name, customer_name, _now_iso()),
+            )
+            con.commit()
+            return int(cur.lastrowid or 0)
+        finally:
+            con.close()
+
+
+def time_project_list(*, tenant: str) -> List[Dict[str, Any]]:
+    tenant = normalize_component(tenant).lower()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            rows = con.execute(
+                "SELECT * FROM time_projects WHERE tenant_id=? ORDER BY id DESC",
+                (tenant,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+
+def time_entry_start(
+    *,
+    tenant: str,
+    username: str,
+    project_id: Optional[int] = None,
+    note: str = "",
+) -> int:
+    tenant = normalize_component(tenant).lower()
+    username = normalize_component(username).lower()
+    note = normalize_component(note)
+    if not tenant or not username:
+        raise ValueError("tenant and username required")
+    with _DB_LOCK:
+        con = _db()
+        try:
+            open_row = con.execute(
+                """
+                SELECT id FROM time_entries
+                WHERE tenant_id=? AND username=? AND stopped_at IS NULL
+                ORDER BY id DESC LIMIT 1
+                """,
+                (tenant, username),
+            ).fetchone()
+            if open_row:
+                return int(open_row["id"])
+            cur = con.execute(
+                """
+                INSERT INTO time_entries(tenant_id, username, project_id, started_at, note, created_at)
+                VALUES (?,?,?,?,?,?)
+                """,
+                (tenant, username, project_id, _now_iso(), note, _now_iso()),
+            )
+            con.commit()
+            return int(cur.lastrowid or 0)
+        finally:
+            con.close()
+
+
+def time_entry_stop(*, tenant: str, username: str) -> Optional[int]:
+    tenant = normalize_component(tenant).lower()
+    username = normalize_component(username).lower()
+    if not tenant or not username:
+        raise ValueError("tenant and username required")
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                """
+                SELECT id FROM time_entries
+                WHERE tenant_id=? AND username=? AND stopped_at IS NULL
+                ORDER BY id DESC LIMIT 1
+                """,
+                (tenant, username),
+            ).fetchone()
+            if not row:
+                return None
+            con.execute(
+                "UPDATE time_entries SET stopped_at=? WHERE id=?",
+                (_now_iso(), int(row["id"])),
+            )
+            con.commit()
+            return int(row["id"])
+        finally:
+            con.close()
+
+
+def time_entry_list_week(*, tenant: str, username: str, week_start: str) -> List[Dict[str, Any]]:
+    tenant = normalize_component(tenant).lower()
+    username = normalize_component(username).lower()
+    if not tenant or not username:
+        return []
+    try:
+        start = datetime.fromisoformat(week_start).date()
+    except Exception:
+        start = datetime.utcnow().date()
+    end = start + timedelta(days=6)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            rows = con.execute(
+                """
+                SELECT * FROM time_entries
+                WHERE tenant_id=? AND username=? AND started_at>=? AND started_at<=?
+                ORDER BY started_at DESC
+                """,
+                (
+                    tenant,
+                    username,
+                    start.isoformat() + "T00:00:00",
+                    end.isoformat() + "T23:59:59",
+                ),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+
+def time_entry_export_csv(*, tenant: str, username: str, week_start: str) -> str:
+    rows = time_entry_list_week(tenant=tenant, username=username, week_start=week_start)
+    lines = ["id,started_at,stopped_at,project_id,note"]
+    for row in rows:
+        lines.append(
+            f"{row.get('id','')},{row.get('started_at','')},{row.get('stopped_at','')},{row.get('project_id','')},{row.get('note','')}"
+        )
+    return "\n".join(lines)
 
 
 # ============================================================
@@ -2313,6 +2489,73 @@ def get_db_info() -> Dict[str, Any]:
                 "schema_version": schema_version,
                 "tenants": tenants,
             }
+        finally:
+            con.close()
+
+
+def set_base_path(new_path: Path) -> None:
+    global BASE_PATH
+    BASE_PATH = Path(new_path)
+
+
+def get_profile() -> Dict[str, Any]:
+    name = _env("KUKANILEA_PROFILE", "").strip()
+    if not name:
+        name = f"db:{DB_PATH.stem}"
+    return {
+        "name": name,
+        "db_path": str(DB_PATH),
+        "base_path": str(BASE_PATH),
+    }
+
+
+def get_health_stats(tenant_id: str = "") -> Dict[str, Any]:
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    with _DB_LOCK:
+        con = _db()
+        try:
+            fts_enabled = _has_fts5(con) and _table_exists(con, "docs_fts")
+            if _table_exists(con, "docs"):
+                row = con.execute(
+                    "SELECT COUNT(*) AS c FROM docs WHERE tenant_id=?",
+                    (tenant_id,),
+                ).fetchone()
+                doc_count = int(row["c"] or 0) if row else 0
+            else:
+                doc_count = 0
+            last_indexed_at = None
+            if _table_exists(con, "docs_index"):
+                row = con.execute(
+                    "SELECT MAX(updated_at) AS ts FROM docs_index WHERE tenant_id=?",
+                    (tenant_id,),
+                ).fetchone()
+                last_indexed_at = str(row["ts"]) if row and row["ts"] else None
+            return {
+                "doc_count": doc_count,
+                "last_indexed_at": last_indexed_at,
+                "fts_enabled": bool(fts_enabled),
+            }
+        finally:
+            con.close()
+
+
+def audit_list(*, tenant_id: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+    tenant_id = normalize_component(tenant_id)
+    limit = max(1, min(int(limit), 2000))
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if tenant_id and _column_exists(con, "audit", "tenant_id"):
+                rows = con.execute(
+                    "SELECT * FROM audit WHERE tenant_id=? ORDER BY id DESC LIMIT ?",
+                    (tenant_id, limit),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT * FROM audit ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            return [dict(r) for r in rows]
         finally:
             con.close()
 

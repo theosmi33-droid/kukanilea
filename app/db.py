@@ -78,6 +78,19 @@ class AuthDB:
                 );
                 """
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_history(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ts TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  username TEXT NOT NULL,
+                  role TEXT NOT NULL,
+                  direction TEXT NOT NULL,
+                  message TEXT NOT NULL
+                );
+                """
+            )
             con.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')")
             con.commit()
         finally:
@@ -159,5 +172,35 @@ class AuthDB:
         try:
             row = con.execute("SELECT COUNT(*) AS c FROM tenants").fetchone()
             return int(row["c"] or 0) if row else 0
+        finally:
+            con.close()
+
+    def add_chat_message(self, *, ts: str, tenant_id: str, username: str, role: str, direction: str, message: str) -> None:
+        con = self._db()
+        try:
+            con.execute(
+                """
+                INSERT INTO chat_history(ts, tenant_id, username, role, direction, message)
+                VALUES (?,?,?,?,?,?)
+                """,
+                (ts, tenant_id, username, role, direction, message),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    def list_chat_messages(self, *, tenant_id: str, limit: int = 50) -> List[dict]:
+        con = self._db()
+        try:
+            rows = con.execute(
+                """
+                SELECT * FROM chat_history
+                WHERE tenant_id=?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (tenant_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
         finally:
             con.close()

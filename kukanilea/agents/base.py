@@ -9,6 +9,8 @@ class AgentResult:
     text: str
     actions: List[Dict[str, Any]] = field(default_factory=list)
     data: Dict[str, Any] = field(default_factory=dict)
+    suggestions: List[str] = field(default_factory=list)
+    error: str | None = None
 
 
 @dataclass
