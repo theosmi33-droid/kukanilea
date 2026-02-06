@@ -153,6 +153,258 @@ paths:
                     items:
                       $ref: './schemas/AuditEvent.json'
                 required: [ok, events]
+  /api/time/projects:
+    get:
+      summary: List time tracking projects
+      responses:
+        '200':
+          description: Project list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  projects:
+                    type: array
+                    items:
+                      $ref: './schemas/TimeProject.json'
+                required: [ok, projects]
+    post:
+      summary: Create a time tracking project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+              required: [name]
+      responses:
+        '200':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  project:
+                    $ref: './schemas/TimeProject.json'
+                required: [ok, project]
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/ErrorEnvelope.json'
+  /api/time/start:
+    post:
+      summary: Start a time entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project_id:
+                  type: integer
+                  nullable: true
+                note:
+                  type: string
+      responses:
+        '200':
+          description: Timer started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  entry:
+                    $ref: './schemas/TimeEntry.json'
+                required: [ok, entry]
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/ErrorEnvelope.json'
+  /api/time/stop:
+    post:
+      summary: Stop a time entry
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entry_id:
+                  type: integer
+      responses:
+        '200':
+          description: Timer stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  entry:
+                    $ref: './schemas/TimeEntry.json'
+                required: [ok, entry]
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/ErrorEnvelope.json'
+  /api/time/entries:
+    get:
+      summary: List time entries for a day or week
+      parameters:
+        - in: query
+          name: range
+          schema:
+            type: string
+            enum: [day, week]
+            default: week
+        - in: query
+          name: date
+          schema:
+            type: string
+            description: YYYY-MM-DD
+        - in: query
+          name: user
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Time entries and summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  entries:
+                    type: array
+                    items:
+                      $ref: './schemas/TimeEntry.json'
+                  summary:
+                    type: array
+                    items:
+                      $ref: './schemas/TimeEntrySummary.json'
+                required: [ok, entries, summary]
+  /api/time/entry/edit:
+    post:
+      summary: Edit a time entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entry_id:
+                  type: integer
+                project_id:
+                  type: integer
+                start_at:
+                  type: string
+                end_at:
+                  type: string
+                note:
+                  type: string
+              required: [entry_id]
+      responses:
+        '200':
+          description: Entry updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  entry:
+                    $ref: './schemas/TimeEntry.json'
+                required: [ok, entry]
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/ErrorEnvelope.json'
+  /api/time/entry/approve:
+    post:
+      summary: Approve a time entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entry_id:
+                  type: integer
+              required: [entry_id]
+      responses:
+        '200':
+          description: Entry approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  entry:
+                    $ref: './schemas/TimeEntry.json'
+                required: [ok, entry]
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/ErrorEnvelope.json'
+  /api/time/export:
+    get:
+      summary: Export time entries as CSV
+      parameters:
+        - in: query
+          name: range
+          schema:
+            type: string
+            enum: [day, week]
+            default: week
+        - in: query
+          name: date
+          schema:
+            type: string
+            description: YYYY-MM-DD
+        - in: query
+          name: user
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
 components:
   securitySchemes:
     sessionCookie:

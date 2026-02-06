@@ -4,7 +4,9 @@ import functools
 import hashlib
 from typing import Optional
 
-from flask import abort, g, jsonify, redirect, request, session, url_for
+from flask import abort, g, redirect, request, session, url_for
+
+from .errors import json_error
 
 from .db import AuthDB, Membership
 
@@ -59,12 +61,7 @@ def login_required(func):
     def wrapper(*args, **kwargs):
         if not current_user():
             if request.path.startswith("/api/"):
-                return (
-                    jsonify(
-                        ok=False, message="Authentifizierung erforderlich.", error="auth_required"
-                    ),
-                    401,
-                )
+                return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
             return redirect(url_for("web.login", next=request.path))
         return func(*args, **kwargs)
 
@@ -81,8 +78,12 @@ def require_role(min_role: str):
                     role = "READONLY"
                 required = min_role if min_role in ROLE_ORDER else "READONLY"
                 if ROLE_ORDER.index(role) < ROLE_ORDER.index(required):
+                    if request.path.startswith("/api/"):
+                        return json_error("forbidden", "Nicht erlaubt.", status=403)
                     abort(403)
             except ValueError:
+                if request.path.startswith("/api/"):
+                    return json_error("forbidden", "Nicht erlaubt.", status=403)
                 abort(403)
             return func(*args, **kwargs)
 
