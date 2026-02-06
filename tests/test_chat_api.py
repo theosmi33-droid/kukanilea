@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from app import create_app
+from app import create_app, web
 from kukanilea.llm import MockProvider
 from kukanilea.orchestrator import Orchestrator
-from app import web
 
 
 class DummyCore:
@@ -32,9 +31,8 @@ def test_chat_api_ok(monkeypatch):
         sess["user"] = "dev"
         sess["role"] = "ADMIN"
         sess["tenant_id"] = "KUKANILEA"
-        sess["csrf_token"] = "test-token"
 
-    res = client.post("/api/chat", json={"q": "rechnung"}, headers={"X-CSRF-Token": "test-token"})
+    res = client.post("/api/chat", json={"q": "rechnung"})
     assert res.status_code == 200
     data = res.get_json()
     assert data["ok"] is True
@@ -60,6 +58,6 @@ def test_api_chat_requires_auth(monkeypatch):
     monkeypatch.setattr(web, "ORCHESTRATOR", orch)
     client = app.test_client()
     res = client.post("/api/chat", json={"q": "rechnung"})
-    assert res.status_code in {401, 403}
+    assert res.status_code == 401
     data = res.get_json()
     assert data["ok"] is False

@@ -8,16 +8,7 @@
     "suggestions": {"type": "array", "items": {"type": "string"}},
     "results": {"type": "array", "items": {"type": "object"}},
     "actions": {"type": "array", "items": {"type": "object"}},
-    "error": {
-      "type": ["object", "null"],
-      "properties": {
-        "code": {"type": "string"},
-        "message": {"type": "string"},
-        "details": {"type": "object"}
-      },
-      "required": ["code", "message"],
-      "additionalProperties": true
-    }
+    "error": {"type": "string"}
   },
   "required": ["ok", "message", "suggestions", "results", "actions"],
   "additionalProperties": true

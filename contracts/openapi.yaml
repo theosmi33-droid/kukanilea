@@ -129,33 +129,6 @@ paths:
                     items:
                       $ref: './schemas/Task.json'
                 required: [ok, tasks]
-    post:
-      summary: Create task
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                title:
-                  type: string
-                details:
-                  type: string
-              required: [title]
-      responses:
-        '200':
-          description: Task created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  task_id:
-                    type: integer
-                required: [ok, task_id]
   /api/audit:
     get:
       summary: Audit log
@@ -181,9 +154,6 @@ paths:
                       $ref: './schemas/AuditEvent.json'
                 required: [ok, events]
 components:
-  schemas:
-    ErrorEnvelope:
-      $ref: './schemas/ErrorEnvelope.json'
   securitySchemes:
     sessionCookie:
       type: apiKey

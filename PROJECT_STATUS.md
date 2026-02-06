@@ -12,10 +12,12 @@
 
 ## DONE
 - Spec-first contracts (/contracts) and ADRs (/docs/adr) created for enterprise core.
-- Added Constitution, threat model, and phase-1 spec/plan docs.
-- Standardized API error envelopes, request-id correlation, and CSRF hardening.
-- Chat UI now includes retries/backoff, safe mode toggle, explain-why panel, and task creation.
-- Added rate limits, chat history persistence, and expanded smoke/integration tests.
+- Chat API returns structured JSON with suggestions, results, and actions; UI shows tool actions and quick suggestions.
+- Intent parsing expanded for short queries, KDNR-only, and “wer ist <kdnr>” routing.
+- Search ranking improved (KDNR, name similarity, doctype match, recency) with deterministic fallback + fuzzy suggestions.
+- DEV Settings page includes DB/base-path switching, rebuild index, and drift scan actions.
+- Ollama provider gated by feature flag with deterministic fallback.
+- Prompt injection guardrails + regression tests for blocked prompts.
 
 ## TODO
 - Add role-based task list + resolution actions in chat.

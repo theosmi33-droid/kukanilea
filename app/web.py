@@ -28,37 +28,30 @@ Notes:
 
 from __future__ import annotations
 
-import os
-import re
-import json
-import time
 import base64
 import importlib
 import importlib.util
-
-from pathlib import Path
+import os
+import re
+import time
 from datetime import datetime
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import List, Tuple
 
 from flask import (
     Blueprint,
-    request,
-    jsonify,
-    render_template_string,
-    send_file,
     abort,
-    redirect,
-    url_for,
     current_app,
-    session,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    send_file,
+    url_for,
 )
 
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
-from .errors import json_error, error_payload
-from .rate_limit import chat_limiter, search_limiter, upload_limiter
-from .security import get_csrf_token
-from .timeout import time_limit
 
 from .auth import (
     current_role,
@@ -76,7 +69,9 @@ from .db import AuthDB
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
     _weather_mod = importlib.import_module("kukanilea_weather_plugin")
-    get_weather = getattr(_weather_mod, "get_weather", None) or getattr(_weather_mod, "get_berlin_weather_now", None)
+    get_weather = getattr(_weather_mod, "get_weather", None) or getattr(
+        _weather_mod, "get_berlin_weather_now", None
+    )
 else:
     get_weather = None  # type: ignore
 
@@ -115,7 +110,9 @@ EINGANG: Path = _core_get("EINGANG")
 BASE_PATH: Path = _core_get("BASE_PATH")
 PENDING_DIR: Path = _core_get("PENDING_DIR")
 DONE_DIR: Path = _core_get("DONE_DIR")
-SUPPORTED_EXT = set(_core_get("SUPPORTED_EXT", {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"}))
+SUPPORTED_EXT = set(
+    _core_get("SUPPORTED_EXT", {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"})
+)
 
 # Core functions (minimum)
 analyze_to_pending = _core_get("analyze_to_pending") or _core_get("start_background_analysis")
@@ -140,12 +137,25 @@ task_dismiss = _core_get("task_dismiss")
 
 # Guard minimum contract
 _missing = []
-if EINGANG is None: _missing.append("EINGANG")
-if BASE_PATH is None: _missing.append("BASE_PATH")
-if PENDING_DIR is None: _missing.append("PENDING_DIR")
-if DONE_DIR is None: _missing.append("DONE_DIR")
-if not callable(analyze_to_pending): _missing.append("analyze_to_pending")
-for fn in (read_pending, write_pending, delete_pending, list_pending, write_done, read_done, process_with_answers):
+if EINGANG is None:
+    _missing.append("EINGANG")
+if BASE_PATH is None:
+    _missing.append("BASE_PATH")
+if PENDING_DIR is None:
+    _missing.append("PENDING_DIR")
+if DONE_DIR is None:
+    _missing.append("DONE_DIR")
+if not callable(analyze_to_pending):
+    _missing.append("analyze_to_pending")
+for fn in (
+    read_pending,
+    write_pending,
+    delete_pending,
+    list_pending,
+    write_done,
+    read_done,
+    process_with_answers,
+):
     if fn is None:
         _missing.append("core_fn_missing")
         break
@@ -189,10 +199,18 @@ def suggest_existing_folder(base_path: str, tenant: str, kdnr: str, name: str) -
     except Exception:
         return "", 0.0
 
+
 DOCTYPE_CHOICES = [
-    "ANGEBOT", "RECHNUNG", "AUFTRAGSBESTAETIGUNG", "AW",
-    "MAHNUNG", "NACHTRAG", "SONSTIGES", "FOTO",
-    "H_RECHNUNG", "H_ANGEBOT",
+    "ANGEBOT",
+    "RECHNUNG",
+    "AUFTRAGSBESTAETIGUNG",
+    "AW",
+    "MAHNUNG",
+    "NACHTRAG",
+    "SONSTIGES",
+    "FOTO",
+    "H_RECHNUNG",
+    "H_ANGEBOT",
 ]
 
 ASSISTANT_HIDE_EINGANG = True
@@ -213,7 +231,14 @@ def _audit(action: str, target: str = "", meta: dict = None) -> None:
     try:
         role = current_role()
         user = current_user() or ""
-        audit_log(user=user, role=role, action=action, target=target, meta=meta or {}, tenant_id=current_tenant())
+        audit_log(
+            user=user,
+            role=role,
+            action=action,
+            target=target,
+            meta=meta or {},
+            tenant_id=current_tenant(),
+        )
     except Exception:
         pass
 
@@ -278,12 +303,6 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
     auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
     auth_db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
     return "Seeded users: admin/admin, dev/dev"
-
-
-def _rate_key() -> str:
-    user = current_user() or "anon"
-    ip = request.remote_addr or "unknown"
-    return f"{user}:{ip}"
 
 
 def _safe_filename(name: str) -> str:
@@ -361,15 +380,18 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
         roles=current_role(),
         tenant=current_tenant() or "-",
         profile=profile,
-        csrf_token=get_csrf_token(),
-        active_tab=active_tab
+        active_tab=active_tab,
     )
 
 
 def _get_profile() -> dict:
     if callable(getattr(core, "get_profile", None)):
         return core.get_profile()
-    return {"name": "default", "db_path": str(getattr(core, "DB_PATH", "")), "base_path": str(BASE_PATH)}
+    return {
+        "name": "default",
+        "db_path": str(getattr(core, "DB_PATH", "")),
+        "base_path": str(BASE_PATH),
+    }
 
 
 # -------- UI Templates ----------
@@ -378,7 +400,6 @@ HTML_BASE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="csrf-token" content="{{ csrf_token }}">
 <title>KUKANILEA Systems</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -386,8 +407,6 @@ HTML_BASE = r"""<!doctype html>
   const savedAccent = localStorage.getItem("ks_accent") || "indigo";
   if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
   document.documentElement.dataset.accent = savedAccent;
-  window.KS_CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-  window.KS_SAFE_MODE = localStorage.getItem("ks_safe_mode") === "1";
 </script>
 <style>
   :root{
@@ -574,7 +593,6 @@ HTML_LOGIN = r"""
     <p class="text-sm opacity-80 mb-4">Accounts: <b>admin</b>/<b>admin</b> (Tenant: KUKANILEA) • <b>dev</b>/<b>dev</b> (Tenant: KUKANILEA Dev)</p>
     {% if error %}<div class="alert alert-error mb-3">{{ error }}</div>{% endif %}
     <form method="post" class="space-y-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div>
         <label class="label">Username</label>
         <input class="input w-full" name="username" autocomplete="username" required>
@@ -623,7 +641,6 @@ HTML_INDEX = r"""<div class="grid lg:grid-cols-2 gap-6">
             <div class="mt-2 flex gap-2">
               <a class="rounded-xl px-3 py-2 text-xs btn-outline card" href="/file/{{it}}" target="_blank">Datei</a>
               <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Pending wirklich löschen?')" style="display:inline;">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="rounded-xl px-3 py-2 text-xs btn-outline card" type="submit">Delete</button>
               </form>
             </div>
@@ -648,7 +665,7 @@ function setProgress(p){
   pLabel.textContent = pct.toFixed(1) + "%";
 }
 async function poll(token){
-  const res = await fetch("/api/progress/" + token, {cache:"no-store", credentials:"same-origin", headers: {"X-CSRF-Token": window.KS_CSRF}});
+  const res = await fetch("/api/progress/" + token, {cache:"no-store", credentials:"same-origin"});
   const j = await res.json();
   setProgress(j.progress || 0);
   phase.textContent = j.progress_phase || "";
@@ -664,7 +681,6 @@ form.addEventListener("submit", (e) => {
   fd.append("file", f);
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/upload", true);
-  xhr.setRequestHeader("X-CSRF-Token", window.KS_CSRF);
   xhr.upload.onprogress = (ev) => {
     if(ev.lengthComputable){ setProgress((ev.loaded / ev.total) * 35); phase.textContent = "Upload…"; }
   };
@@ -674,10 +690,7 @@ form.addEventListener("submit", (e) => {
       status.textContent = "Upload OK. Analyse läuft…";
       poll(resp.token);
     } else {
-      try{
-        const j = JSON.parse(xhr.responseText || "{}");
-        status.textContent = "Fehler beim Upload: " + (j.error?.message || j.error || ("HTTP " + xhr.status));
-      }
+      try{ const j = JSON.parse(xhr.responseText || "{}"); status.textContent = "Fehler beim Upload: " + (j.error || ("HTTP " + xhr.status)); }
       catch(e){ status.textContent = "Fehler beim Upload: HTTP " + xhr.status; }
     }
   };
@@ -726,7 +739,6 @@ HTML_REVIEW_SPLIT = r"""<div class="grid lg:grid-cols-2 gap-4">
 </div>"""
 
 HTML_WIZARD = r"""<form method="post" class="space-y-3" autocomplete="off">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="flex items-start justify-between gap-3">
     <div>
       <div class="text-lg font-semibold">Review</div>
@@ -807,13 +819,6 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     <input id="q" class="rounded-xl bg-slate-800 border border-slate-700 p-2 input flex-1" placeholder="Frag etwas… z.B. 'suche Rechnung KDNR 12393'" />
     <button id="send" class="rounded-xl px-4 py-2 font-semibold btn-primary md:w-40">Senden</button>
   </div>
-  <div class="mt-2 flex items-center gap-3 text-xs muted">
-    <label class="inline-flex items-center gap-2">
-      <input id="safeMode" type="checkbox" class="rounded border border-slate-700 bg-slate-800" />
-      Safe Mode (LLM aus)
-    </label>
-    <span id="chatStatus"></span>
-  </div>
   <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3" style="height:62vh; overflow:auto" id="log"></div>
   <div class="muted text-xs mt-3">
     Tipp: Nutze „öffne &lt;token&gt;“ um direkt in die Review-Ansicht zu springen.
@@ -825,140 +830,34 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   const q = document.getElementById("q");
   const kdnr = document.getElementById("kdnr");
   const send = document.getElementById("send");
-  const safeMode = document.getElementById("safeMode");
-  const chatStatus = document.getElementById("chatStatus");
-  if(safeMode){
-    safeMode.checked = window.KS_SAFE_MODE === true;
-    safeMode.addEventListener("change", () => {
-      window.KS_SAFE_MODE = safeMode.checked;
-      localStorage.setItem("ks_safe_mode", safeMode.checked ? "1" : "0");
-    });
-  }
-  function setStatus(msg){ if(chatStatus) chatStatus.textContent = msg; }
-  async function postWithRetry(url, body, attempts=2){
-    let lastErr = null;
-    for(let i=0; i<=attempts; i++){
-      try{
-        const res = await fetch(url, {
-          method:"POST",
-          credentials:"same-origin",
-          headers: {"Content-Type":"application/json", "X-CSRF-Token": window.KS_CSRF},
-          body: JSON.stringify(body)
-        });
-        let j = {};
-        try{ j = await res.json(); }catch(e){}
-        if(!res.ok){
-          const msg = j.error?.message || j.message || j.error || ("HTTP " + res.status);
-          throw new Error(msg);
-        }
-        return j;
-      }catch(e){
-        lastErr = e;
-        await new Promise(r => setTimeout(r, 300 * (i + 1)));
-      }
-    }
-    throw lastErr || new Error("Unbekannter Fehler");
-  }
-  async function createTaskFromChat(text){
-    if(!text) return;
-    try{
-      await postWithRetry("/api/tasks", {title: "Chat Follow-up", details: text});
-      setStatus("Task erstellt.");
-    }catch(e){
-      setStatus("Task Fehler: " + (e && e.message ? e.message : e));
-    }
-  }
-  function add(role, text, actions, results, suggestions, debug){
+  function add(role, text, actions, results, suggestions){
     const d = document.createElement("div");
     d.className = "mb-3";
-    const label = document.createElement("div");
-    label.className = "muted text-[11px]";
-    label.textContent = role;
-    const body = document.createElement("div");
-    body.className = "text-sm whitespace-pre-wrap";
-    body.textContent = text;
-    d.appendChild(label);
-    d.appendChild(body);
-
-    const pillWrap = document.createElement("div");
-    pillWrap.className = "mt-2 flex flex-wrap gap-2";
+    let actionHtml = "";
     if(actions && actions.length){
-      actions.forEach((a) => {
+      actionHtml = actions.map(a => {
         if(a.type === "open_token" && a.token){
-          const link = document.createElement("a");
-          link.href = "/review/" + a.token;
-          link.textContent = "Öffnen " + a.token.slice(0,10) + "…";
-          link.className = "inline-block rounded-full border px-2 py-1 text-xs hover:bg-slate-800";
-          pillWrap.appendChild(link);
-        } else if(a.type){
-          const tag = document.createElement("span");
-          tag.className = "inline-block rounded-full border px-2 py-1 text-xs";
-          tag.textContent = "Action: " + a.type;
-          pillWrap.appendChild(tag);
+          return `<a class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" href="/review/${a.token}">Öffnen ${a.token.slice(0,10)}…</a>`;
         }
-      });
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${a.type || 'tool'}</span>`;
+      }).join("");
     }
+    let resultHtml = "";
     if(results && results.length){
-      results.forEach((r) => {
+      resultHtml = results.map(r => {
         const token = r.doc_id || "";
-        const label = r.file_name || token || "Dokument";
+        const label = r.file_name || token;
         if(token){
-          const link = document.createElement("a");
-          link.href = "/review/" + token;
-          link.textContent = label;
-          link.className = "inline-block rounded-full border px-2 py-1 text-xs hover:bg-slate-800";
-          pillWrap.appendChild(link);
+          return `<a class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" href="/review/${token}">${label}</a>`;
         }
-      });
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${label}</span>`;
+      }).join("");
     }
+    let suggestionHtml = "";
     if(suggestions && suggestions.length){
-      suggestions.forEach((s) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "inline-block rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion";
-        btn.dataset.q = s;
-        btn.textContent = s;
-        pillWrap.appendChild(btn);
-      });
+      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${s}">${s}</button>`).join("");
     }
-    if(pillWrap.childElementCount){
-      d.appendChild(pillWrap);
-    }
-
-    if(role === "assistant"){
-      const actionRow = document.createElement("div");
-      actionRow.className = "mt-2 flex gap-2";
-      const copyBtn = document.createElement("button");
-      copyBtn.type = "button";
-      copyBtn.className = "rounded-full border px-2 py-1 text-xs hover:bg-slate-800";
-      copyBtn.textContent = "Copy";
-      copyBtn.addEventListener("click", async () => {
-        try{ await navigator.clipboard.writeText(text || ""); }catch(e){}
-      });
-      const taskBtn = document.createElement("button");
-      taskBtn.type = "button";
-      taskBtn.className = "rounded-full border px-2 py-1 text-xs hover:bg-slate-800";
-      taskBtn.textContent = "Create Task";
-      taskBtn.addEventListener("click", async () => {
-        await createTaskFromChat(text);
-      });
-      actionRow.appendChild(copyBtn);
-      actionRow.appendChild(taskBtn);
-      d.appendChild(actionRow);
-      if(debug){
-        const details = document.createElement("details");
-        details.className = "mt-2 text-xs";
-        const summary = document.createElement("summary");
-        summary.textContent = "Explain why (DEV)";
-        const pre = document.createElement("pre");
-        pre.className = "mt-1 rounded-lg border border-slate-800 p-2 bg-slate-950/40 whitespace-pre-wrap";
-        pre.textContent = JSON.stringify(debug, null, 2);
-        details.appendChild(summary);
-        details.appendChild(pre);
-        d.appendChild(details);
-      }
-    }
-
+    d.innerHTML = `<div class="muted text-[11px]">${role}</div><div class="text-sm whitespace-pre-wrap">${text}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
   }
@@ -968,11 +867,11 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     add("you", msg);
     q.value = "";
     send.disabled = true;
-    setStatus("Sende…");
     try{
-      const j = await postWithRetry("/api/chat", {q: msg, kdnr: (kdnr.value||"").trim(), safe_mode: window.KS_SAFE_MODE || false});
-      add("assistant", j.message || "(leer)", j.actions || [], j.results || [], j.suggestions || [], j.debug || null);
-      setStatus(j.ok === false ? "Hinweis" : "OK");
+      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
+      const j = await res.json();
+      if(!res.ok){ add("system", "Fehler: " + (j.message || j.error || ("HTTP " + res.status))); }
+      else { add("assistant", j.message || "(leer)", j.actions || [], j.results || [], j.suggestions || []); }
     }catch(e){ add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e)); }
     finally{ send.disabled = false; }
   }
@@ -1093,25 +992,6 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
     }catch(e){}
   }
-  async function _cwPostChat(body, attempts=2){
-    let lastErr = null;
-    for(let i=0; i<=attempts; i++){
-      try{
-        const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': window.KS_CSRF}, body: JSON.stringify(body)});
-        let j = {};
-        try{ j = await r.json(); }catch(e){}
-        if(!r.ok){
-          const msg = j.error?.message || j.message || j.error || ('HTTP ' + r.status);
-          throw new Error(msg);
-        }
-        return j;
-      }catch(e){
-        lastErr = e;
-        await new Promise(r => setTimeout(r, 300 * (i + 1)));
-      }
-    }
-    throw lastErr || new Error("Unbekannter Fehler");
-  }
   async function _cwSend(){
     const q = (_cw.input && _cw.input.value ? _cw.input.value.trim() : '');
     if(!q) return;
@@ -1121,11 +1001,20 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     if(_cw.status) _cw.status.textContent = 'Denke…';
     if(_cw.retry) _cw.retry.classList.add('hidden');
     try{
-      const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '', safe_mode: window.KS_SAFE_MODE || false };
+      const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
       _cwLastBody = body;
-      const j = await _cwPostChat(body);
+      const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      let j = {};
+      try{ j = await r.json(); }catch(e){}
+      if(!r.ok){
+        const msg = j.message || j.error || ('HTTP ' + r.status);
+        _cwAppend('assistant', 'Fehler: ' + msg);
+        if(_cw.status) _cw.status.textContent = 'Fehler';
+        if(_cw.retry) _cw.retry.classList.remove('hidden');
+        return;
+      }
       _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || [], j.results || [], j.suggestions || []);
-      if(_cw.status) _cw.status.textContent = j.ok === false ? 'Hinweis' : 'OK';
+      if(_cw.status) _cw.status.textContent = 'OK';
       _cwSave();
     }catch(e){
       _cwAppend('assistant', 'Fehler: ' + (e && e.message ? e.message : e));
@@ -1171,34 +1060,29 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 
 # -------- Routes / API ----------
 
+
 # ============================================================
 # Auth routes + global guard
 # ============================================================
 @bp.before_app_request
 def _guard_login():
     p = request.path or "/"
-    if p.startswith("/static/") or p in ["/login", "/health", "/auth/google/start", "/auth/google/callback", "/api/health", "/api/ping"]:
+    if p.startswith("/static/") or p in [
+        "/login",
+        "/health",
+        "/auth/google/start",
+        "/auth/google/callback",
+        "/api/health",
+        "/api/ping",
+    ]:
         return None
     if not current_user():
         if p.startswith("/api/"):
-            return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
+            return (
+                jsonify(ok=False, message="Authentifizierung erforderlich.", error="auth_required"),
+                401,
+            )
         return redirect(url_for("web.login", next=p))
-    return None
-
-
-@bp.before_app_request
-def _csrf_guard():
-    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
-        return None
-    if request.path in {"/login"}:
-        token = request.form.get("csrf_token")
-    else:
-        token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
-    expected = session.get("csrf_token")
-    if not expected or not token or token != expected:
-        if request.path.startswith("/api/"):
-            return json_error("csrf_failed", "CSRF-Token fehlt oder ungültig.", status=403)
-        abort(403)
     return None
 
 
@@ -1221,7 +1105,11 @@ def login():
                 else:
                     membership = memberships[0]
                     login_user(u, membership.role, membership.tenant_id)
-                    _audit("login", target=u, meta={"role": membership.role, "tenant": membership.tenant_id})
+                    _audit(
+                        "login",
+                        target=u,
+                        meta={"role": membership.role, "tenant": membership.tenant_id},
+                    )
                     return redirect(nxt or url_for("web.index"))
             else:
                 error = "Login fehlgeschlagen."
@@ -1230,9 +1118,17 @@ def login():
 
 @bp.get("/auth/google/start")
 def google_start():
-    if not (current_app.config.get("GOOGLE_CLIENT_ID") and current_app.config.get("GOOGLE_CLIENT_SECRET")):
-        return _render_base(_card("info", "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET."), active_tab="mail")
-    return _render_base(_card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."), active_tab="mail")
+    if not (
+        current_app.config.get("GOOGLE_CLIENT_ID")
+        and current_app.config.get("GOOGLE_CLIENT_SECRET")
+    ):
+        return _render_base(
+            _card("info", "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET."),
+            active_tab="mail",
+        )
+    return _render_base(
+        _card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."), active_tab="mail"
+    )
 
 
 @bp.get("/auth/google/callback")
@@ -1250,18 +1146,18 @@ def logout():
 
 @bp.route("/api/progress/<token>")
 def api_progress(token: str):
-    if (not current_user()) and (request.remote_addr not in ("127.0.0.1","::1")):
-        return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
+    if (not current_user()) and (request.remote_addr not in ("127.0.0.1", "::1")):
+        return jsonify(error="unauthorized"), 401
     p = read_pending(token)
     if not p:
-        return json_error("not_found", "Token nicht gefunden.", status=404)
+        return jsonify(error="not_found"), 404
     return jsonify(
-        ok=True,
         status=p.get("status", ""),
         progress=float(p.get("progress", 0.0) or 0.0),
         progress_phase=p.get("progress_phase", ""),
-        error=p.get("error", "")
+        error=p.get("error", ""),
     )
+
 
 def _weather_answer(city: str) -> str:
     info = get_weather(city)
@@ -1300,53 +1196,38 @@ def api_chat():
     q = (payload.get("q") or "").strip()
     kdnr = (payload.get("kdnr") or "").strip()
     token = (payload.get("token") or "").strip()
-    safe_mode = bool(payload.get("safe_mode"))
 
-    if not chat_limiter.allow(_rate_key()):
-        return json_error("rate_limited", "Zu viele Anfragen. Bitte kurz warten.", status=429)
     if not q:
-        return json_error("empty_query", "Leer.", status=400)
+        return (
+            jsonify(
+                ok=False,
+                message="Leer.",
+                suggestions=[],
+                results=[],
+                actions=[],
+                error="empty_query",
+            ),
+            400,
+        )
 
     user = current_user() or "dev"
     role = current_role()
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    auth_db.add_chat_message(
-        ts=datetime.utcnow().isoformat(),
-        tenant_id=current_tenant(),
-        username=str(user),
-        role=str(role),
-        direction="user",
-        message=q,
-    )
     context = AgentContext(
         tenant_id=current_tenant(),
         user=str(user),
         role=str(role),
         kdnr=kdnr,
         token=token,
-        meta={"safe_mode": safe_mode},
     )
-    try:
-        with time_limit(5):
-            result = ORCHESTRATOR.handle(q, context)
-    except TimeoutError:
-        return json_error("timeout", "Die Anfrage hat zu lange gedauert.", status=504)
+    result = ORCHESTRATOR.handle(q, context)
     payload_out = {
         "ok": result.ok,
         "message": result.text,
         "suggestions": result.suggestions or [],
         "results": result.data.get("results", []) if isinstance(result.data, dict) else [],
         "actions": result.actions,
-        "error": error_payload(result.error or "error", result.text) if not result.ok else None,
+        "error": result.error,
     }
-    auth_db.add_chat_message(
-        ts=datetime.utcnow().isoformat(),
-        tenant_id=current_tenant(),
-        username=str(user),
-        role=str(role),
-        direction="assistant",
-        message=result.text,
-    )
     if current_role() == "DEV":
         payload_out["debug"] = {"intent": result.intent, "data": result.data}
     return jsonify(payload_out)
@@ -1360,9 +1241,7 @@ def api_search():
     kdnr = (payload.get("kdnr") or "").strip()
     limit = int(payload.get("limit") or 8)
     if not query:
-        return json_error("missing_query", "Query fehlt.", status=400)
-    if not search_limiter.allow(_rate_key()):
-        return json_error("rate_limited", "Zu viele Suchanfragen. Bitte kurz warten.", status=429)
+        return jsonify(ok=False, message="Query fehlt.", results=[], did_you_mean=[]), 400
     context = AgentContext(
         tenant_id=current_tenant(),
         user=str(current_user() or "dev"),
@@ -1382,7 +1261,7 @@ def api_customer():
     payload = request.get_json(silent=True) or {}
     kdnr = (payload.get("kdnr") or "").strip()
     if not kdnr:
-        return json_error("missing_kdnr", "KDNR fehlt.", status=400)
+        return jsonify(ok=False, message="KDNR fehlt.", kdnr=""), 400
     context = AgentContext(
         tenant_id=current_tenant(),
         user=str(current_user() or "dev"),
@@ -1413,29 +1292,6 @@ def api_tasks():
     else:
         tasks = []
     return jsonify(ok=True, tasks=tasks)
-
-
-@bp.post("/api/tasks")
-@login_required
-@require_role("OPERATOR")
-def api_task_create():
-    payload = request.get_json(silent=True) or {}
-    title = (payload.get("title") or "").strip()
-    details = (payload.get("details") or "").strip()
-    if not title:
-        return json_error("missing_title", "Titel fehlt.", status=400)
-    if not callable(getattr(core, "task_create", None)):
-        return json_error("tasks_unavailable", "Task-System nicht verfügbar.", status=400)
-    task_id = core.task_create(
-        tenant=current_tenant() or "default",
-        severity="INFO",
-        task_type="CHAT",
-        title=title,
-        details=details,
-        created_by=current_user() or "",
-    )
-    _audit("task_create", target=str(task_id), meta={"title": title})
-    return jsonify(ok=True, task_id=task_id)
 
 
 @bp.get("/api/audit")
@@ -1546,7 +1402,7 @@ HTML_MAIL = """
     try{
       const res = await fetch('/api/mail/draft', {
         method:'POST',
-        headers:{'Content-Type':'application/json', 'X-CSRF-Token': window.KS_CSRF},
+        headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           to: v('m_to'),
           subject: v('m_subj'),
@@ -1557,7 +1413,7 @@ HTML_MAIL = """
       });
       const data = await res.json();
       if(!res.ok){
-        status.textContent = 'Fehler: ' + (data.error?.message || data.error || res.status);
+        status.textContent = 'Fehler: ' + (data.error || res.status);
         return;
       }
       out.value = data.text || '';
@@ -1581,7 +1437,7 @@ HTML_MAIL = """
   async function doEml(){
     if(!out.value) return;
     const payload = { to: v('m_to'), subject: v('m_subj'), body: out.value };
-    const res = await fetch('/api/mail/eml', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': window.KS_CSRF}, body: JSON.stringify(payload)});
+    const res = await fetch('/api/mail/eml', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1675,11 +1531,11 @@ HTML_SETTINGS = """
 <script>
 (function(){
   async function postJson(url, body){
-    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': window.KS_CSRF}, body: JSON.stringify(body || {})});
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});
     let j = {};
     try{ j = await r.json(); }catch(e){}
     if(!r.ok){
-      throw new Error(j.error?.message || j.message || j.error || ('HTTP ' + r.status));
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
     }
     return j;
   }
@@ -1750,6 +1606,7 @@ HTML_SETTINGS = """
 </script>
 """
 
+
 def _mail_prompt(to: str, subject: str, tone: str, length: str, context: str) -> str:
     return f"""Du bist ein deutscher Office-Assistent. Schreibe einen professionellen E-Mail-Entwurf.
 Wichtig:
@@ -1770,11 +1627,17 @@ Kontext/Stichpunkte:
 {context or '(leer)'}
 """
 
+
 @bp.get("/mail")
 @login_required
 def mail_page():
-    google_configured = bool(current_app.config.get("GOOGLE_CLIENT_ID") and current_app.config.get("GOOGLE_CLIENT_SECRET"))
-    return _render_base(render_template_string(HTML_MAIL, google_configured=google_configured), active_tab="mail")
+    google_configured = bool(
+        current_app.config.get("GOOGLE_CLIENT_ID")
+        and current_app.config.get("GOOGLE_CLIENT_SECRET")
+    )
+    return _render_base(
+        render_template_string(HTML_MAIL, google_configured=google_configured), active_tab="mail"
+    )
 
 
 @bp.get("/settings")
@@ -1820,7 +1683,7 @@ def api_rebuild_index():
     elif callable(getattr(core, "index_run_full", None)):
         result = core.index_run_full()
     else:
-        return json_error("index_unavailable", "Indexing nicht verfügbar.", status=400)
+        return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
     _DEV_STATUS["index"] = result
     _audit("rebuild_index", meta={"result": result})
     return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
@@ -1833,7 +1696,7 @@ def api_full_scan():
     if callable(getattr(core, "index_run_full", None)):
         result = core.index_run_full()
     else:
-        return json_error("scan_unavailable", "Scan nicht verfügbar.", status=400)
+        return jsonify(ok=False, message="Scan nicht verfügbar."), 400
     _DEV_STATUS["scan"] = result
     _audit("full_scan", meta={"result": result})
     return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
@@ -1846,7 +1709,7 @@ def api_repair_drift():
     if callable(getattr(core, "index_run_full", None)):
         result = core.index_run_full()
     else:
-        return json_error("drift_scan_unavailable", "Drift-Scan nicht verfügbar.", status=400)
+        return jsonify(ok=False, message="Drift-Scan nicht verfügbar."), 400
     _DEV_STATUS["scan"] = result
     _audit("repair_drift", meta={"result": result})
     return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
@@ -1859,18 +1722,18 @@ def api_switch_db():
     payload = request.get_json(silent=True) or {}
     path = Path(str(payload.get("path", ""))).expanduser()
     if not path:
-        return json_error("missing_path", "Pfad fehlt.", status=400)
+        return jsonify(ok=False, message="Pfad fehlt."), 400
     if not _is_allowlisted_path(path):
-        return json_error("path_not_allowed", "Pfad nicht erlaubt.", status=400)
+        return jsonify(ok=False, message="Pfad nicht erlaubt."), 400
     if not path.exists():
-        return json_error("path_not_found", "Datei existiert nicht.", status=400)
+        return jsonify(ok=False, message="Datei existiert nicht."), 400
     old_path = str(getattr(core, "DB_PATH", ""))
     if callable(getattr(core, "set_db_path", None)):
         core.set_db_path(path)
         _DEV_STATUS["db"] = {"old": old_path, "new": str(path)}
         _audit("switch_db", target=str(path), meta={"old": old_path})
         return jsonify(ok=True, message="DB gewechselt.", path=str(path))
-    return json_error("db_switch_unavailable", "DB switch nicht verfügbar.", status=400)
+    return jsonify(ok=False, message="DB switch nicht verfügbar."), 400
 
 
 @bp.post("/api/dev/switch-base")
@@ -1880,9 +1743,9 @@ def api_switch_base():
     payload = request.get_json(silent=True) or {}
     path = Path(str(payload.get("path", ""))).expanduser()
     if not path:
-        return json_error("missing_path", "Pfad fehlt.", status=400)
+        return jsonify(ok=False, message="Pfad fehlt."), 400
     if not _is_storage_path_valid(path):
-        return json_error("path_not_allowed", "Pfad nicht erlaubt oder nicht vorhanden.", status=400)
+        return jsonify(ok=False, message="Pfad nicht erlaubt oder nicht vorhanden."), 400
     old_path = str(getattr(core, "BASE_PATH", ""))
     if callable(getattr(core, "set_base_path", None)):
         core.set_base_path(path)
@@ -1891,7 +1754,7 @@ def api_switch_base():
         _DEV_STATUS["base"] = {"old": old_path, "new": str(path)}
         _audit("switch_base", target=str(path), meta={"old": old_path})
         return jsonify(ok=True, message="Ablage gewechselt.", path=str(path))
-    return json_error("base_switch_unavailable", "Ablage switch nicht verfügbar.", status=400)
+    return jsonify(ok=False, message="Ablage switch nicht verfügbar."), 400
 
 
 @bp.post("/api/dev/test-llm")
@@ -1902,11 +1765,12 @@ def api_test_llm():
     q = str(payload.get("q") or "suche rechnung")
     llm = getattr(ORCHESTRATOR, "llm", None)
     if not llm:
-        return json_error("llm_unavailable", "LLM nicht verfügbar.", status=400)
+        return jsonify(ok=False, message="LLM nicht verfügbar."), 400
     result = llm.rewrite_query(q)
     _DEV_STATUS["llm"] = result
     _audit("test_llm", meta={"result": result})
     return jsonify(ok=True, message=f"LLM: {llm.name}, intent={result.get('intent')}")
+
 
 @bp.post("/api/mail/draft")
 @login_required
@@ -1920,12 +1784,12 @@ def api_mail_draft():
         context = (payload.get("context") or "").strip()
 
         if not context and not subject:
-            return json_error("missing_context", "Bitte Kontext oder Betreff angeben.", status=400)
+            return jsonify({"error": "Bitte Kontext oder Betreff angeben."}), 400
 
         text = _mock_generate(_mail_prompt(to, subject, tone, length, context))
-        return jsonify({"ok": True, "text": text, "meta": "mode=mock"}), 200
+        return jsonify({"text": text, "meta": "mode=mock"}), 200
     except Exception as e:
-        return json_error("mail_draft_failed", "Mail-Entwurf fehlgeschlagen.", status=500, details={"reason": str(e)})
+        return jsonify({"error": str(e)}), 500
 
 
 @bp.post("/api/mail/eml")
@@ -1936,8 +1800,9 @@ def api_mail_eml():
     subject = (payload.get("subject") or "").strip()
     body = (payload.get("body") or "").strip()
     if not body:
-        return json_error("missing_body", "Body fehlt.", status=400)
+        return jsonify({"error": "Body fehlt."}), 400
     import email.message
+
     msg = email.message.EmailMessage()
     msg["To"] = to or "unknown@example.com"
     msg["From"] = "noreply@kukanilea.local"
@@ -1945,7 +1810,6 @@ def api_mail_eml():
     msg.set_content(body)
     eml_bytes = msg.as_bytes()
     return current_app.response_class(eml_bytes, mimetype="message/rfc822")
-
 
 
 @bp.route("/")
@@ -1956,22 +1820,27 @@ def index():
     for it in items_meta:
         t = it.get("_token")
         if t:
-            meta[t] = {"filename": it.get("filename",""), "progress": float(it.get("progress",0.0) or 0.0), "progress_phase": it.get("progress_phase","")}
-    return _render_base(render_template_string(HTML_INDEX, items=items, meta=meta), active_tab="upload")
+            meta[t] = {
+                "filename": it.get("filename", ""),
+                "progress": float(it.get("progress", 0.0) or 0.0),
+                "progress_phase": it.get("progress_phase", ""),
+            }
+    return _render_base(
+        render_template_string(HTML_INDEX, items=items, meta=meta), active_tab="upload"
+    )
+
 
 @bp.route("/upload", methods=["POST"])
 def upload():
     f = request.files.get("file")
     if not f or not f.filename:
-        return json_error("no_file", "Keine Datei hochgeladen.", status=400)
-    if not upload_limiter.allow(_rate_key()):
-        return json_error("rate_limited", "Zu viele Uploads. Bitte kurz warten.", status=429)
+        return jsonify(error="no_file"), 400
     tenant = _norm_tenant(current_tenant() or "default")
     # tenant is fixed by license/account; no user input here.
     filename = _safe_filename(f.filename)
     if not _is_allowed_ext(filename):
-        return json_error("unsupported", "Dateityp nicht unterstützt.", status=400)
-    tenant_in = (EINGANG / tenant)
+        return jsonify(error="unsupported"), 400
+    tenant_in = EINGANG / tenant
     tenant_in.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = tenant_in / f"{ts}__{filename}"
@@ -1988,6 +1857,7 @@ def upload():
         pass
     return jsonify(token=token, tenant=tenant)
 
+
 @bp.route("/review/<token>/delete", methods=["POST"])
 def review_delete(token: str):
     try:
@@ -1995,6 +1865,7 @@ def review_delete(token: str):
     except Exception:
         pass
     return redirect(url_for("web.index"))
+
 
 @bp.route("/file/<token>")
 def file_preview(token: str):
@@ -2008,7 +1879,8 @@ def file_preview(token: str):
         abort(403)
     return send_file(file_path, as_attachment=False)
 
-@bp.route("/review/<token>/kdnr", methods=["GET","POST"])
+
+@bp.route("/review/<token>/kdnr", methods=["GET", "POST"])
 def review(token: str):
     p = read_pending(token)
     if not p:
@@ -2054,7 +1926,9 @@ def review(token: str):
     existing_folder_hint = ""
     existing_folder_score = 0.0
     if not (w.get("existing_folder") or "").strip():
-        match_path, match_score = suggest_existing_folder(BASE_PATH, w["tenant"], w.get("kdnr",""), w.get("name",""))
+        match_path, match_score = suggest_existing_folder(
+            BASE_PATH, w["tenant"], w.get("kdnr", ""), w.get("name", "")
+        )
         if match_path:
             w["existing_folder"] = match_path
             existing_folder_hint = match_path
@@ -2063,10 +1937,12 @@ def review(token: str):
     msg = ""
     if request.method == "POST":
         if request.form.get("reextract") == "1":
-            src = Path(p.get("path",""))
+            src = Path(p.get("path", ""))
             if src.exists():
-                try: delete_pending(token)
-                except Exception: pass
+                try:
+                    delete_pending(token)
+                except Exception:
+                    pass
                 new_token = analyze_to_pending(src)
                 return redirect(url_for("web.review", token=new_token))
             msg = "Quelle nicht gefunden – Re-Extract nicht möglich."
@@ -2079,7 +1955,9 @@ def review(token: str):
             else:
                 w["tenant"] = tenant
                 w["kdnr"] = normalize_component(request.form.get("kdnr") or "")
-                w["doctype"] = (request.form.get("doctype") or w.get("doctype") or "SONSTIGES").upper()
+                w["doctype"] = (
+                    request.form.get("doctype") or w.get("doctype") or "SONSTIGES"
+                ).upper()
                 w["document_date"] = normalize_component(request.form.get("document_date") or "")
                 w["name"] = normalize_component(request.form.get("name") or "")
                 w["addr"] = normalize_component(request.form.get("addr") or "")
@@ -2089,14 +1967,14 @@ def review(token: str):
                 if not w["kdnr"]:
                     msg = "KDNR fehlt."
                 else:
-                    src = Path(p.get("path",""))
+                    src = Path(p.get("path", ""))
                     if not src.exists():
                         msg = "Datei im Eingang nicht gefunden."
                     else:
                         answers = {
                             "tenant": w["tenant"],
                             "kdnr": w["kdnr"],
-                            "use_existing": w.get("use_existing",""),
+                            "use_existing": w.get("use_existing", ""),
                             "name": w.get("name") or "Kunde",
                             "addr": w.get("addr") or "Adresse",
                             "plzort": w.get("plzort") or "PLZ Ort",
@@ -2104,7 +1982,9 @@ def review(token: str):
                             "document_date": w.get("document_date") or "",
                         }
                         try:
-                            folder, final_path, created_new = process_with_answers(Path(p.get("path","")), answers)
+                            folder, final_path, created_new = process_with_answers(
+                                Path(p.get("path", "")), answers
+                            )
                             write_done(token, {"final_path": str(final_path), **answers})
                             delete_pending(token)
                             return redirect(url_for("web.done_view", token=token))
@@ -2113,7 +1993,7 @@ def review(token: str):
 
     _wizard_save(token, p, w)
 
-    filename = p.get("filename","")
+    filename = p.get("filename", "")
     ext = Path(filename).suffix.lower()
     is_pdf = ext == ".pdf"
     is_text = ext == ".txt"
@@ -2146,10 +2026,11 @@ def review(token: str):
         active_tab="upload",
     )
 
+
 @bp.route("/done/<token>")
 def done_view(token: str):
     d = read_done(token) or {}
-    fp = d.get("final_path","")
+    fp = d.get("final_path", "")
     html = f"""<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-6 card'>
       <div class='text-2xl font-bold mb-2'>Fertig</div>
       <div class='muted text-sm mb-4'>Datei wurde abgelegt.</div>
@@ -2159,20 +2040,24 @@ def done_view(token: str):
     </div>"""
     return _render_base(html, active_tab="upload")
 
+
 @bp.route("/assistant")
 def assistant():
     # Ensure core searches within current tenant
     try:
         import kukanilea_core_v3_fixed as _core
+
         _core.TENANT_DEFAULT = current_tenant() or _core.TENANT_DEFAULT
     except Exception:
         pass
-    q = normalize_component(request.args.get("q","") or "")
-    kdnr = normalize_component(request.args.get("kdnr","") or "")
+    q = normalize_component(request.args.get("q", "") or "")
+    kdnr = normalize_component(request.args.get("kdnr", "") or "")
     results = []
     if q and assistant_search is not None:
         try:
-            raw = assistant_search(query=q, kdnr=kdnr, limit=50, role=current_role(), tenant_id=current_tenant())
+            raw = assistant_search(
+                query=q, kdnr=kdnr, limit=50, role=current_role(), tenant_id=current_tenant()
+            )
             for r in raw or []:
                 fp = r.get("file_path") or ""
                 if ASSISTANT_HIDE_EINGANG and fp:
@@ -2193,8 +2078,11 @@ def assistant():
         <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
       </form>
       <div class='muted text-xs'>Treffer: {n}</div>
-    </div>""".format(q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results))
+    </div>""".format(
+        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
+    )
     return _render_base(html, active_tab="assistant")
+
 
 @bp.route("/tasks")
 def tasks():
@@ -2212,12 +2100,16 @@ def tasks():
     html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
       <div class='text-lg font-semibold'>Tasks</div>
       <div class='muted text-xs mt-1'>Offen: {n}</div>
-    </div>""".format(n=len(items))
+    </div>""".format(
+        n=len(items)
+    )
     return _render_base(html, active_tab="tasks")
+
 
 @bp.route("/chat")
 def chat():
     return _render_base(HTML_CHAT, active_tab="chat")
+
 
 @bp.route("/health")
 def health():

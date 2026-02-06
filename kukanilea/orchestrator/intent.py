@@ -16,7 +16,7 @@ class IntentParser:
     def __init__(self, llm: LLMProvider) -> None:
         self.llm = llm
 
-    def parse(self, message: str, *, allow_llm: bool = True) -> IntentResult:
+    def parse(self, message: str) -> IntentResult:
         text = message.strip().lower()
         if not text:
             return IntentResult(intent="unknown", confidence=0.0)
@@ -37,7 +37,10 @@ class IntentParser:
             return IntentResult(intent="weather", confidence=0.6)
         if re.fullmatch(r"\d{3,6}", text):
             return IntentResult(intent="customer_lookup", confidence=0.6)
-        if any(k in text for k in ["rechnung", "angebot", "vertrag", "mahnung", "lieferschein", "bestellung"]):
+        if any(
+            k in text
+            for k in ["rechnung", "angebot", "vertrag", "mahnung", "lieferschein", "bestellung"]
+        ):
             return IntentResult(intent="search", confidence=0.55)
         if re.search(r"\b(index|reindex)\b", text):
             return IntentResult(intent="index", confidence=0.7)
@@ -49,9 +52,8 @@ class IntentParser:
         if len(text.split()) <= 2:
             return IntentResult(intent="search", confidence=0.35)
 
-        if allow_llm:
-            rewrite = self.llm.rewrite_query(message)
-            intent = str(rewrite.get("intent", "unknown"))
-            if intent in {"search", "open_token", "customer_lookup", "summary"}:
-                return IntentResult(intent=intent, confidence=0.4)
+        rewrite = self.llm.rewrite_query(message)
+        intent = str(rewrite.get("intent", "unknown"))
+        if intent in {"search", "open_token", "customer_lookup", "summary"}:
+            return IntentResult(intent=intent, confidence=0.4)
         return IntentResult(intent="unknown", confidence=0.3)

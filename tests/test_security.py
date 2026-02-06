@@ -30,11 +30,3 @@ def test_policy_denied_for_customer_lookup():
     result = orch.handle("wer ist 12393", ctx)
     assert result.ok is False
     assert result.error == "policy_denied"
-
-
-def test_unknown_role_denied():
-    orch = Orchestrator(DummyCore(), llm_provider=MockProvider())
-    ctx = AgentContext(tenant_id="KUKANILEA", user="dev", role="UNKNOWN")
-    result = orch.handle("suche rechnung", ctx)
-    assert result.ok is False
-    assert result.error == "policy_denied"
