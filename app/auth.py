@@ -4,7 +4,7 @@ import functools
 import hashlib
 from typing import Optional
 
-from flask import abort, g, redirect, request, session, url_for
+from flask import abort, g, redirect, request, session, url_for, jsonify
 
 from .db import AuthDB, Membership
 
@@ -59,6 +59,8 @@ def login_required(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if not current_user():
+            if request.path.startswith("/api/"):
+                return jsonify(ok=False, message="Authentifizierung erforderlich.", error="auth_required"), 401
             return redirect(url_for("web.login", next=request.path))
         return func(*args, **kwargs)
 

@@ -2317,6 +2317,73 @@ def get_db_info() -> Dict[str, Any]:
             con.close()
 
 
+def set_base_path(new_path: Path) -> None:
+    global BASE_PATH
+    BASE_PATH = Path(new_path)
+
+
+def get_profile() -> Dict[str, Any]:
+    name = _env("KUKANILEA_PROFILE", "").strip()
+    if not name:
+        name = f"db:{DB_PATH.stem}"
+    return {
+        "name": name,
+        "db_path": str(DB_PATH),
+        "base_path": str(BASE_PATH),
+    }
+
+
+def get_health_stats(tenant_id: str = "") -> Dict[str, Any]:
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    with _DB_LOCK:
+        con = _db()
+        try:
+            fts_enabled = _has_fts5(con) and _table_exists(con, "docs_fts")
+            if _table_exists(con, "docs"):
+                row = con.execute(
+                    "SELECT COUNT(*) AS c FROM docs WHERE tenant_id=?",
+                    (tenant_id,),
+                ).fetchone()
+                doc_count = int(row["c"] or 0) if row else 0
+            else:
+                doc_count = 0
+            last_indexed_at = None
+            if _table_exists(con, "docs_index"):
+                row = con.execute(
+                    "SELECT MAX(updated_at) AS ts FROM docs_index WHERE tenant_id=?",
+                    (tenant_id,),
+                ).fetchone()
+                last_indexed_at = str(row["ts"]) if row and row["ts"] else None
+            return {
+                "doc_count": doc_count,
+                "last_indexed_at": last_indexed_at,
+                "fts_enabled": bool(fts_enabled),
+            }
+        finally:
+            con.close()
+
+
+def audit_list(*, tenant_id: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+    tenant_id = normalize_component(tenant_id)
+    limit = max(1, min(int(limit), 2000))
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if tenant_id and _column_exists(con, "audit", "tenant_id"):
+                rows = con.execute(
+                    "SELECT * FROM audit WHERE tenant_id=? ORDER BY id DESC LIMIT ?",
+                    (tenant_id, limit),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT * FROM audit ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+
 # ============================================================
 # BACKGROUND ANALYSIS -> PENDING
 # ============================================================

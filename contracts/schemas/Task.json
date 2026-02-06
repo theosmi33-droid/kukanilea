@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task",
+  "type": "object",
+  "properties": {
+    "id": {"type": "integer"},
+    "ts": {"type": "string"},
+    "tenant": {"type": "string"},
+    "severity": {"type": "string"},
+    "task_type": {"type": "string"},
+    "status": {"type": "string"},
+    "title": {"type": "string"},
+    "details": {"type": "string"},
+    "token": {"type": "string"},
+    "path": {"type": "string"},
+    "meta_json": {"type": "string"},
+    "created_by": {"type": "string"}
+  },
+  "required": ["id", "tenant", "status", "title"],
+  "additionalProperties": true
+}

@@ -6,14 +6,18 @@
 - DEV controls for DB switching + LLM checks.
 
 ## PLANNED
+- Add connector module stubs (mail/calendar/messaging) with feature flags.
 - Expand task tooling inside chat (list/resolve).
 - Add richer document summarization UI.
 
 ## DONE
-- Chat API now returns structured JSON and frontend renders errors safely.
-- Intent parsing expanded for short queries and key commands.
-- Tenant-scoped index table + FTS fallback + fuzzy suggestions.
-- DEV Settings page with DB switching + rebuild index + LLM test.
+- Spec-first contracts (/contracts) and ADRs (/docs/adr) created for enterprise core.
+- Chat API returns structured JSON with suggestions, results, and actions; UI shows tool actions and quick suggestions.
+- Intent parsing expanded for short queries, KDNR-only, and “wer ist <kdnr>” routing.
+- Search ranking improved (KDNR, name similarity, doctype match, recency) with deterministic fallback + fuzzy suggestions.
+- DEV Settings page includes DB/base-path switching, rebuild index, and drift scan actions.
+- Ollama provider gated by feature flag with deterministic fallback.
+- Prompt injection guardrails + regression tests for blocked prompts.
 
 ## TODO
 - Add role-based task list + resolution actions in chat.
@@ -34,5 +38,7 @@
 4) DEV Settings:
    - Navigate to /settings as dev → shows DB info.
    - Switch DB from allowlist → audit logged, page reloads.
+   - Switch Ablage path → audit logged, page reloads.
    - Rebuild index → status updates.
+   - Repair drift scan → status updates.
    - Test LLM → returns provider name and intent.

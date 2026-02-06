@@ -52,7 +52,7 @@ from flask import (
     current_app,
 )
 
-from kukanilea.agents import AgentContext
+from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
 from .auth import (
@@ -247,6 +247,23 @@ def _list_allowlisted_db_files() -> List[Path]:
     return sorted({f.resolve() for f in files})
 
 
+def _list_allowlisted_base_paths() -> List[Path]:
+    candidates = {BASE_PATH.resolve()}
+    base_dir = Config.BASE_DIR.resolve()
+    data_dir = base_dir / "data"
+    if data_dir.exists():
+        candidates.add(data_dir.resolve())
+    return sorted(candidates)
+
+
+def _is_storage_path_valid(path: Path) -> bool:
+    try:
+        resolved = path.expanduser().resolve()
+    except Exception:
+        return False
+    return resolved.exists() and resolved.is_dir()
+
+
 def _seed_dev_users(auth_db: AuthDB) -> str:
     now = datetime.utcnow().isoformat()
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
@@ -324,6 +341,7 @@ def _card(kind: str, msg: str) -> str:
 
 
 def _render_base(content: str, active_tab: str = "upload") -> str:
+    profile = _get_profile()
     return render_template_string(
         HTML_BASE,
         content=content,
@@ -331,8 +349,15 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
         user=current_user() or "-",
         roles=current_role(),
         tenant=current_tenant() or "-",
+        profile=profile,
         active_tab=active_tab
     )
+
+
+def _get_profile() -> dict:
+    if callable(getattr(core, "get_profile", None)):
+        return core.get_profile()
+    return {"name": "default", "db_path": str(getattr(core, "DB_PATH", "")), "base_path": str(BASE_PATH)}
 
 
 # -------- UI Templates ----------
@@ -436,6 +461,7 @@ HTML_BASE = r"""<!doctype html>
         <span class="badge">User: {{user}}</span>
         <span class="badge">Role: {{roles}}</span>
         <span class="badge">Tenant: {{tenant}}</span>
+        <span class="badge">Profile: {{ profile.name }}</span>
         {% if user and user != '-' %}
         <a class="px-3 py-2 text-sm btn-outline" href="/logout">Logout</a>
         {% endif %}
@@ -770,7 +796,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   const q = document.getElementById("q");
   const kdnr = document.getElementById("kdnr");
   const send = document.getElementById("send");
-  function add(role, text, actions){
+  function add(role, text, actions, results, suggestions){
     const d = document.createElement("div");
     d.className = "mb-3";
     let actionHtml = "";
@@ -779,10 +805,25 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
         if(a.type === "open_token" && a.token){
           return `<a class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" href="/review/${a.token}">Öffnen ${a.token.slice(0,10)}…</a>`;
         }
-        return "";
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${a.type || 'tool'}</span>`;
       }).join("");
     }
-    d.innerHTML = `<div class="muted text-[11px]">${role}</div><div class="text-sm whitespace-pre-wrap">${text}</div>${actionHtml}`;
+    let resultHtml = "";
+    if(results && results.length){
+      resultHtml = results.map(r => {
+        const token = r.doc_id || "";
+        const label = r.file_name || token;
+        if(token){
+          return `<a class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" href="/review/${token}">${label}</a>`;
+        }
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${label}</span>`;
+      }).join("");
+    }
+    let suggestionHtml = "";
+    if(suggestions && suggestions.length){
+      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${s}">${s}</button>`).join("");
+    }
+    d.innerHTML = `<div class="muted text-[11px]">${role}</div><div class="text-sm whitespace-pre-wrap">${text}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
   }
@@ -796,12 +837,18 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
       const j = await res.json();
       if(!res.ok){ add("system", "Fehler: " + (j.message || j.error || ("HTTP " + res.status))); }
-      else { add("assistant", j.message || "(leer)", j.actions || []); }
+      else { add("assistant", j.message || "(leer)", j.actions || [], j.results || [], j.suggestions || []); }
     }catch(e){ add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e)); }
     finally{ send.disabled = false; }
   }
   send.addEventListener("click", doSend);
   q.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSend(); }});
+  log.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-suggestion");
+    if(!btn) return;
+    q.value = btn.dataset.q || "";
+    doSend();
+  });
 
   // ---- Floating Chat Widget ----
   const _cw = {
@@ -819,7 +866,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     quick: document.querySelectorAll('.chat-quick'),
   };
   let _cwLastBody = null;
-  function _cwAppend(role, text, actions){
+  function _cwAppend(role, text, actions, results, suggestions){
     if(!_cw.msgs) return;
     const wrap = document.createElement('div');
     const isUser = role === 'you';
@@ -839,7 +886,40 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
           link.textContent = 'Öffnen ' + action.token.slice(0,10) + '…';
           link.className = 'rounded-full border px-2 py-1';
           list.appendChild(link);
+        } else if(action.type){
+          const tag = document.createElement('span');
+          tag.textContent = 'Action: ' + action.type;
+          tag.className = 'rounded-full border px-2 py-1';
+          list.appendChild(tag);
         }
+      });
+      bubble.appendChild(list);
+    }
+    if(results && results.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      results.forEach((row) => {
+        const token = row.doc_id || '';
+        const label = row.file_name || token || 'Dokument';
+        if(token){
+          const link = document.createElement('a');
+          link.href = '/review/' + token;
+          link.textContent = label;
+          link.className = 'rounded-full border px-2 py-1';
+          list.appendChild(link);
+        }
+      });
+      bubble.appendChild(list);
+    }
+    if(suggestions && suggestions.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      suggestions.forEach((s) => {
+        const btn = document.createElement('button');
+        btn.textContent = s;
+        btn.dataset.q = s;
+        btn.className = 'rounded-full border px-2 py-1 chat-suggestion';
+        list.appendChild(btn);
       });
       bubble.appendChild(list);
     }
@@ -899,7 +979,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
         if(_cw.retry) _cw.retry.classList.remove('hidden');
         return;
       }
-      _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || []);
+      _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || [], j.results || [], j.suggestions || []);
       if(_cw.status) _cw.status.textContent = 'OK';
       _cwSave();
     }catch(e){
@@ -907,6 +987,14 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       if(_cw.status) _cw.status.textContent = 'Fehler';
       if(_cw.retry) _cw.retry.classList.remove('hidden');
     }
+  }
+  if(_cw.msgs){
+    _cw.msgs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chat-suggestion');
+      if(!btn) return;
+      if(_cw.input) _cw.input.value = btn.dataset.q || '';
+      _cwSend();
+    });
   }
   if(_cw.btn && _cw.drawer){
     _cw.btn.addEventListener('click', () => {
@@ -944,9 +1032,11 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 @bp.before_app_request
 def _guard_login():
     p = request.path or "/"
-    if p.startswith("/static/") or p in ["/login", "/health", "/auth/google/start", "/auth/google/callback"]:
+    if p.startswith("/static/") or p in ["/login", "/health", "/auth/google/start", "/auth/google/callback", "/api/health", "/api/ping"]:
         return None
     if not current_user():
+        if p.startswith("/api/"):
+            return jsonify(ok=False, message="Authentifizierung erforderlich.", error="auth_required"), 401
         return redirect(url_for("web.login", next=p))
     return None
 
@@ -1050,7 +1140,7 @@ def api_chat():
     token = (payload.get("token") or "").strip()
 
     if not q:
-        return jsonify(ok=False, message="Leer."), 400
+        return jsonify(ok=False, message="Leer.", suggestions=[], results=[], actions=[], error="empty_query"), 400
 
     user = current_user() or "dev"
     role = current_role()
@@ -1063,14 +1153,89 @@ def api_chat():
     )
     result = ORCHESTRATOR.handle(q, context)
     payload_out = {
-        "ok": True,
+        "ok": result.ok,
         "message": result.text,
+        "suggestions": result.suggestions or [],
         "results": result.data.get("results", []) if isinstance(result.data, dict) else [],
         "actions": result.actions,
+        "error": result.error,
     }
     if current_role() == "DEV":
         payload_out["debug"] = {"intent": result.intent, "data": result.data}
     return jsonify(payload_out)
+
+
+@bp.post("/api/search")
+@login_required
+def api_search():
+    payload = request.get_json(silent=True) or {}
+    query = (payload.get("query") or "").strip()
+    kdnr = (payload.get("kdnr") or "").strip()
+    limit = int(payload.get("limit") or 8)
+    if not query:
+        return jsonify(ok=False, message="Query fehlt.", results=[], did_you_mean=[]), 400
+    context = AgentContext(
+        tenant_id=current_tenant(),
+        user=str(current_user() or "dev"),
+        role=str(current_role()),
+        kdnr=kdnr,
+    )
+    agent = SearchAgent(core)
+    results, suggestions = agent.search(query, context, limit=limit)
+    message = "OK" if results else "Keine Treffer gefunden."
+    return jsonify(ok=True, message=message, results=results, did_you_mean=suggestions or [])
+
+
+@bp.post("/api/customer")
+@login_required
+@require_role("OPERATOR")
+def api_customer():
+    payload = request.get_json(silent=True) or {}
+    kdnr = (payload.get("kdnr") or "").strip()
+    if not kdnr:
+        return jsonify(ok=False, message="KDNR fehlt.", kdnr=""), 400
+    context = AgentContext(
+        tenant_id=current_tenant(),
+        user=str(current_user() or "dev"),
+        role=str(current_role()),
+        kdnr=kdnr,
+    )
+    agent = CustomerAgent(core)
+    result = agent.handle(kdnr, "customer_lookup", context)
+    results = result.data.get("results", []) if isinstance(result.data, dict) else []
+    summary = results[0] if results else {}
+    return jsonify(
+        ok=result.error is None,
+        kdnr=str(summary.get("kdnr") or kdnr),
+        customer_name=str(summary.get("customer_name") or ""),
+        last_doc=str(summary.get("file_name") or ""),
+        last_doc_date=str(summary.get("doc_date") or ""),
+        results=results,
+        message=result.text,
+    )
+
+
+@bp.get("/api/tasks")
+@login_required
+def api_tasks():
+    status = (request.args.get("status") or "OPEN").strip().upper()
+    if callable(task_list):
+        tasks = task_list(tenant=current_tenant(), status=status, limit=200)  # type: ignore
+    else:
+        tasks = []
+    return jsonify(ok=True, tasks=tasks)
+
+
+@bp.get("/api/audit")
+@login_required
+@require_role("ADMIN")
+def api_audit():
+    limit = int(request.args.get("limit") or 100)
+    if callable(getattr(core, "audit_list", None)):
+        events = core.audit_list(tenant_id=current_tenant(), limit=limit)
+    else:
+        events = []
+    return jsonify(ok=True, events=events)
 
 
 # ==============================
@@ -1238,6 +1403,11 @@ HTML_SETTINGS = """
     <div class="text-lg font-semibold mb-2">DEV Settings</div>
     <div class="grid gap-3 md:grid-cols-2 text-sm">
       <div>
+        <div class="muted text-xs mb-1">Profile</div>
+        <div><strong>{{ profile.name }}</strong></div>
+        <div class="muted text-xs">Base Path: {{ profile.base_path }}</div>
+      </div>
+      <div>
         <div class="muted text-xs mb-1">Core DB</div>
         <div><strong>{{ core_db.path }}</strong></div>
         <div class="muted text-xs">Schema: {{ core_db.schema_version }} · Tenants: {{ core_db.tenants }}</div>
@@ -1264,11 +1434,26 @@ HTML_SETTINGS = """
   </div>
 
   <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Ablage-Pfad wechseln (DEV)</div>
+    <div class="flex flex-wrap gap-2 items-center">
+      <select id="baseSelect" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
+        {% for p in base_paths %}
+          <option value="{{ p }}">{{ p }}</option>
+        {% endfor %}
+      </select>
+      <input id="baseCustom" class="rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Benutzerdefinierter Pfad" />
+      <button id="baseSwitch" class="rounded-xl px-3 py-2 text-sm btn-primary">Ablage wechseln</button>
+      <span id="baseSwitchStatus" class="text-xs muted"></span>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">Tools</div>
     <div class="flex flex-wrap gap-2">
       <button id="seedUsers" class="rounded-xl px-3 py-2 text-sm btn-outline">Seed Dev Users</button>
       <button id="rebuildIndex" class="rounded-xl px-3 py-2 text-sm btn-outline">Rebuild Index</button>
       <button id="fullScan" class="rounded-xl px-3 py-2 text-sm btn-outline">Full Scan</button>
+      <button id="repairDrift" class="rounded-xl px-3 py-2 text-sm btn-outline">Repair Drift Scan</button>
       <button id="testLLM" class="rounded-xl px-3 py-2 text-sm btn-outline">Test LLM</button>
     </div>
     <div id="toolStatus" class="text-xs muted mt-2"></div>
@@ -1289,6 +1474,7 @@ HTML_SETTINGS = """
 
   const status = document.getElementById('toolStatus');
   const dbStatus = document.getElementById('dbSwitchStatus');
+  const baseStatus = document.getElementById('baseSwitchStatus');
 
   document.getElementById('seedUsers')?.addEventListener('click', async () => {
     status.textContent = 'Seeding...';
@@ -1311,6 +1497,13 @@ HTML_SETTINGS = """
       status.textContent = j.message || 'OK';
     }catch(e){ status.textContent = 'Fehler: ' + e.message; }
   });
+  document.getElementById('repairDrift')?.addEventListener('click', async () => {
+    status.textContent = 'Drift-Scan läuft...';
+    try{
+      const j = await postJson('/api/dev/repair-drift');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
   document.getElementById('testLLM')?.addEventListener('click', async () => {
     status.textContent = 'Teste LLM...';
     try{
@@ -1328,6 +1521,18 @@ HTML_SETTINGS = """
       dbStatus.textContent = j.message || 'OK';
       window.location.reload();
     }catch(e){ dbStatus.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('baseSwitch')?.addEventListener('click', async () => {
+    const sel = document.getElementById('baseSelect');
+    const custom = document.getElementById('baseCustom');
+    const path = (custom && custom.value ? custom.value : (sel ? sel.value : ''));
+    if(!path){ return; }
+    baseStatus.textContent = 'Wechsle...';
+    try{
+      const j = await postJson('/api/dev/switch-base', {path});
+      baseStatus.textContent = j.message || 'OK';
+      window.location.reload();
+    }catch(e){ baseStatus.textContent = 'Fehler: ' + e.message; }
   });
 })();
 </script>
@@ -1377,6 +1582,8 @@ def settings_page():
             auth_schema=auth_db.get_schema_version(),
             auth_tenants=auth_db.count_tenants(),
             db_files=[str(p) for p in _list_allowlisted_db_files()],
+            base_paths=[str(p) for p in _list_allowlisted_base_paths()],
+            profile=_get_profile(),
         ),
         active_tab="settings",
     )
@@ -1420,6 +1627,19 @@ def api_full_scan():
     return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
 
 
+@bp.post("/api/dev/repair-drift")
+@login_required
+@require_role("DEV")
+def api_repair_drift():
+    if callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Drift-Scan nicht verfügbar."), 400
+    _DEV_STATUS["scan"] = result
+    _audit("repair_drift", meta={"result": result})
+    return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
+
+
 @bp.post("/api/dev/switch-db")
 @login_required
 @require_role("DEV")
@@ -1439,6 +1659,27 @@ def api_switch_db():
         _audit("switch_db", target=str(path), meta={"old": old_path})
         return jsonify(ok=True, message="DB gewechselt.", path=str(path))
     return jsonify(ok=False, message="DB switch nicht verfügbar."), 400
+
+
+@bp.post("/api/dev/switch-base")
+@login_required
+@require_role("DEV")
+def api_switch_base():
+    payload = request.get_json(silent=True) or {}
+    path = Path(str(payload.get("path", ""))).expanduser()
+    if not path:
+        return jsonify(ok=False, message="Pfad fehlt."), 400
+    if not _is_storage_path_valid(path):
+        return jsonify(ok=False, message="Pfad nicht erlaubt oder nicht vorhanden."), 400
+    old_path = str(getattr(core, "BASE_PATH", ""))
+    if callable(getattr(core, "set_base_path", None)):
+        core.set_base_path(path)
+        global BASE_PATH
+        BASE_PATH = path
+        _DEV_STATUS["base"] = {"old": old_path, "new": str(path)}
+        _audit("switch_base", target=str(path), meta={"old": old_path})
+        return jsonify(ok=True, message="Ablage gewechselt.", path=str(path))
+    return jsonify(ok=False, message="Ablage switch nicht verfügbar."), 400
 
 
 @bp.post("/api/dev/test-llm")

@@ -21,6 +21,8 @@ class IntentParser:
         if not text:
             return IntentResult(intent="unknown", confidence=0.0)
 
+        if re.search(r"\bwer ist\s+\d{3,}\b", text):
+            return IntentResult(intent="customer_lookup", confidence=0.8)
         if re.search(r"\b(öffne|open|zeige)\b", text):
             return IntentResult(intent="open_token", confidence=0.9)
         if re.search(r"\b(suche|finde|search)\b", text):
@@ -43,6 +45,9 @@ class IntentParser:
             return IntentResult(intent="mail", confidence=0.6)
         if re.search(r"\b(upload)\b", text):
             return IntentResult(intent="upload", confidence=0.6)
+
+        if len(text.split()) <= 2:
+            return IntentResult(intent="search", confidence=0.35)
 
         rewrite = self.llm.rewrite_query(message)
         intent = str(rewrite.get("intent", "unknown"))
