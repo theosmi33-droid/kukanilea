@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from .base import AgentContext, AgentResult, BaseAgent
+from kukanilea.guards import neutralize_untrusted_text
 
 
 class SummaryAgent(BaseAgent):
@@ -32,8 +33,9 @@ class SummaryAgent(BaseAgent):
         text = str(payload.get("text") or payload.get("extracted_text") or "")
         if not text:
             text = json.dumps(payload, ensure_ascii=False)
+        safe_text = neutralize_untrusted_text(text)
         if self.llm and getattr(self.llm, "available", False):
-            summary = self.llm.summarize(text)
+            summary = self.llm.summarize(safe_text)
         else:
-            summary = text.strip()[:400]
+            summary = safe_text.strip()[:400]
         return AgentResult(text=summary)

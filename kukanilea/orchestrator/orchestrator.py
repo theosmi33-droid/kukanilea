@@ -20,6 +20,7 @@ from kukanilea.agents import (
     WeatherAgent,
 )
 from kukanilea.llm import LLMProvider, MockProvider, get_default_provider
+from kukanilea.guards import build_safe_suggestions, detect_prompt_injection
 from .intent import IntentParser
 from .policy import PolicyEngine
 from .tool_registry import ToolRegistry
@@ -31,15 +32,20 @@ class OrchestratorResult:
     actions: List[Dict[str, Any]]
     intent: str
     data: Dict[str, Any]
+    suggestions: List[str]
+    ok: bool = True
+    error: str | None = None
 
 
 class Orchestrator:
     def __init__(self, core_module, weather_adapter=None, llm_provider: LLMProvider | None = None) -> None:
+        self.core = core_module
         self.llm = llm_provider or get_default_provider()
         self.intent_parser = IntentParser(self.llm)
         self.policy = PolicyEngine()
         self.tools = ToolRegistry()
         self.audit_log = getattr(core_module, "audit_log", None)
+        self.task_create = getattr(core_module, "task_create", None)
         self.allowed_tools = {
             "search_docs",
             "open_doc",
@@ -68,15 +74,44 @@ class Orchestrator:
     def handle(self, message: str, context: AgentContext) -> OrchestratorResult:
         intent_result = self.intent_parser.parse(message)
         intent = intent_result.intent
+        injection, reasons = detect_prompt_injection(message)
+        if injection:
+            self._record_failure(
+                context,
+                action="prompt_injection_blocked",
+                target=message,
+                meta={"intent": intent, "reasons": reasons},
+            )
+            suggestions = build_safe_suggestions(
+                ["suche rechnung", "wer ist 12393", "öffne <token>"]
+            )
+            return OrchestratorResult(
+                text="Diese Anfrage wurde aus Sicherheitsgründen blockiert. Bitte formuliere eine normale Such- oder Kundenanfrage.",
+                actions=[],
+                intent=intent,
+                data={"error": "prompt_injection_blocked"},
+                suggestions=suggestions,
+                ok=False,
+                error="prompt_injection_blocked",
+            )
 
         for agent in self.agents:
             if agent.can_handle(intent, message):
                 if not self.policy.allows(context.role, agent.required_role):
+                    self._record_failure(
+                        context,
+                        action="policy_denied",
+                        target=agent.name,
+                        meta={"intent": intent, "required_role": agent.required_role},
+                    )
                     return OrchestratorResult(
                         text="Keine Berechtigung für diese Aktion.",
                         actions=[],
                         intent=intent,
-                        data={},
+                        data={"error": "policy_denied"},
+                        suggestions=build_safe_suggestions(["hilfe", "suche rechnung"]),
+                        ok=False,
+                        error="policy_denied",
                     )
                 result: AgentResult = agent.handle(message, intent, context)
                 actions = self._apply_policy(context, agent, result.actions)
@@ -85,22 +120,46 @@ class Orchestrator:
                     actions=actions,
                     intent=intent,
                     data=result.data,
+                    suggestions=build_safe_suggestions(result.suggestions),
+                    ok=result.error is None,
+                    error=result.error,
                 )
 
+        self._record_failure(
+            context,
+            action="intent_unhandled",
+            target=message,
+            meta={"intent": intent},
+        )
         return OrchestratorResult(
             text="Ich bin mir nicht sicher. Formuliere bitte konkreter (z.B. 'suche Rechnung KDNR 123').",
             actions=[],
             intent=intent,
-            data={},
+            data={"error": "intent_unhandled"},
+            suggestions=build_safe_suggestions(["suche rechnung", "wer ist 12393"]),
+            ok=False,
+            error="intent_unhandled",
         )
 
     def _apply_policy(self, context: AgentContext, agent, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         filtered: List[Dict[str, Any]] = []
         tool_name = agent.tools[0] if agent.tools else ""
         if tool_name and tool_name not in self.allowed_tools:
+            self._record_failure(
+                context,
+                action="tool_not_allowlisted",
+                target=tool_name,
+                meta={"intent": agent.name},
+            )
             return []
         for action in actions or []:
             if not self.policy.policy_check(context.role, context.tenant_id, action.get("type", ""), agent.scope):
+                self._record_failure(
+                    context,
+                    action="tool_policy_denied",
+                    target=str(action.get("type", "")),
+                    meta={"intent": agent.name},
+                )
                 continue
             filtered.append(action)
             if callable(self.audit_log):
@@ -113,3 +172,24 @@ class Orchestrator:
                     tenant_id=context.tenant_id,
                 )
         return filtered
+
+    def _record_failure(self, context: AgentContext, action: str, target: str, meta: Dict[str, Any]) -> None:
+        if callable(self.audit_log):
+            self.audit_log(
+                user=context.user,
+                role=context.role,
+                action=action,
+                target=str(target)[:256],
+                meta=meta,
+                tenant_id=context.tenant_id,
+            )
+        if callable(self.task_create):
+            self.task_create(
+                tenant=context.tenant_id or "default",
+                severity="WARN",
+                task_type="SECURITY" if "prompt_injection" in action else "POLICY",
+                title=f"Orchestrator blocked action: {action}",
+                details=str(target)[:500],
+                meta=meta,
+                created_by=context.user or "",
+            )

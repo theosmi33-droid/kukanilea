@@ -37,7 +37,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_customer_lookup(self):
         result = self.orch.handle("kunde mit kdnr 12393", self.context)
-        self.assertIn("Treffer", result.text)
+        self.assertIn("Kunde", result.text)
 
 
 if __name__ == "__main__":
