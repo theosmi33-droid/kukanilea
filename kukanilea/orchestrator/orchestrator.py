@@ -72,7 +72,8 @@ class Orchestrator:
                 self.tools.register(tool, agent.name)
 
     def handle(self, message: str, context: AgentContext) -> OrchestratorResult:
-        intent_result = self.intent_parser.parse(message)
+        safe_mode = bool(context.meta.get("safe_mode"))
+        intent_result = self.intent_parser.parse(message, allow_llm=not safe_mode)
         intent = intent_result.intent
         injection, reasons = detect_prompt_injection(message)
         if injection:

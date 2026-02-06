@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app import web
 from kukanilea.agents import AgentContext
 from kukanilea.agents.search import SearchAgent
-from app import web
 
 
 class DummyCore:

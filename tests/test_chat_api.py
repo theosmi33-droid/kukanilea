@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from app import create_app
+from app import create_app, web
 from kukanilea.llm import MockProvider
 from kukanilea.orchestrator import Orchestrator
-from app import web
 
 
 class DummyCore:

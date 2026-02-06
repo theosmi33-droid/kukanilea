@@ -28,28 +28,26 @@ Notes:
 
 from __future__ import annotations
 
-import os
-import re
-import json
-import time
 import base64
 import importlib
 import importlib.util
-
-from pathlib import Path
+import os
+import re
+import time
 from datetime import datetime
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import List, Tuple
 
 from flask import (
     Blueprint,
-    request,
-    jsonify,
-    render_template_string,
-    send_file,
     abort,
-    redirect,
-    url_for,
     current_app,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    send_file,
+    url_for,
 )
 
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
@@ -71,7 +69,9 @@ from .db import AuthDB
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
     _weather_mod = importlib.import_module("kukanilea_weather_plugin")
-    get_weather = getattr(_weather_mod, "get_weather", None) or getattr(_weather_mod, "get_berlin_weather_now", None)
+    get_weather = getattr(_weather_mod, "get_weather", None) or getattr(
+        _weather_mod, "get_berlin_weather_now", None
+    )
 else:
     get_weather = None  # type: ignore
 
@@ -110,7 +110,9 @@ EINGANG: Path = _core_get("EINGANG")
 BASE_PATH: Path = _core_get("BASE_PATH")
 PENDING_DIR: Path = _core_get("PENDING_DIR")
 DONE_DIR: Path = _core_get("DONE_DIR")
-SUPPORTED_EXT = set(_core_get("SUPPORTED_EXT", {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"}))
+SUPPORTED_EXT = set(
+    _core_get("SUPPORTED_EXT", {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"})
+)
 
 # Core functions (minimum)
 analyze_to_pending = _core_get("analyze_to_pending") or _core_get("start_background_analysis")
@@ -135,12 +137,25 @@ task_dismiss = _core_get("task_dismiss")
 
 # Guard minimum contract
 _missing = []
-if EINGANG is None: _missing.append("EINGANG")
-if BASE_PATH is None: _missing.append("BASE_PATH")
-if PENDING_DIR is None: _missing.append("PENDING_DIR")
-if DONE_DIR is None: _missing.append("DONE_DIR")
-if not callable(analyze_to_pending): _missing.append("analyze_to_pending")
-for fn in (read_pending, write_pending, delete_pending, list_pending, write_done, read_done, process_with_answers):
+if EINGANG is None:
+    _missing.append("EINGANG")
+if BASE_PATH is None:
+    _missing.append("BASE_PATH")
+if PENDING_DIR is None:
+    _missing.append("PENDING_DIR")
+if DONE_DIR is None:
+    _missing.append("DONE_DIR")
+if not callable(analyze_to_pending):
+    _missing.append("analyze_to_pending")
+for fn in (
+    read_pending,
+    write_pending,
+    delete_pending,
+    list_pending,
+    write_done,
+    read_done,
+    process_with_answers,
+):
     if fn is None:
         _missing.append("core_fn_missing")
         break
@@ -184,10 +199,18 @@ def suggest_existing_folder(base_path: str, tenant: str, kdnr: str, name: str) -
     except Exception:
         return "", 0.0
 
+
 DOCTYPE_CHOICES = [
-    "ANGEBOT", "RECHNUNG", "AUFTRAGSBESTAETIGUNG", "AW",
-    "MAHNUNG", "NACHTRAG", "SONSTIGES", "FOTO",
-    "H_RECHNUNG", "H_ANGEBOT",
+    "ANGEBOT",
+    "RECHNUNG",
+    "AUFTRAGSBESTAETIGUNG",
+    "AW",
+    "MAHNUNG",
+    "NACHTRAG",
+    "SONSTIGES",
+    "FOTO",
+    "H_RECHNUNG",
+    "H_ANGEBOT",
 ]
 
 ASSISTANT_HIDE_EINGANG = True
@@ -208,7 +231,14 @@ def _audit(action: str, target: str = "", meta: dict = None) -> None:
     try:
         role = current_role()
         user = current_user() or ""
-        audit_log(user=user, role=role, action=action, target=target, meta=meta or {}, tenant_id=current_tenant())
+        audit_log(
+            user=user,
+            role=role,
+            action=action,
+            target=target,
+            meta=meta or {},
+            tenant_id=current_tenant(),
+        )
     except Exception:
         pass
 
@@ -350,14 +380,18 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
         roles=current_role(),
         tenant=current_tenant() or "-",
         profile=profile,
-        active_tab=active_tab
+        active_tab=active_tab,
     )
 
 
 def _get_profile() -> dict:
     if callable(getattr(core, "get_profile", None)):
         return core.get_profile()
-    return {"name": "default", "db_path": str(getattr(core, "DB_PATH", "")), "base_path": str(BASE_PATH)}
+    return {
+        "name": "default",
+        "db_path": str(getattr(core, "DB_PATH", "")),
+        "base_path": str(BASE_PATH),
+    }
 
 
 # -------- UI Templates ----------
@@ -1026,17 +1060,28 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 
 # -------- Routes / API ----------
 
+
 # ============================================================
 # Auth routes + global guard
 # ============================================================
 @bp.before_app_request
 def _guard_login():
     p = request.path or "/"
-    if p.startswith("/static/") or p in ["/login", "/health", "/auth/google/start", "/auth/google/callback", "/api/health", "/api/ping"]:
+    if p.startswith("/static/") or p in [
+        "/login",
+        "/health",
+        "/auth/google/start",
+        "/auth/google/callback",
+        "/api/health",
+        "/api/ping",
+    ]:
         return None
     if not current_user():
         if p.startswith("/api/"):
-            return jsonify(ok=False, message="Authentifizierung erforderlich.", error="auth_required"), 401
+            return (
+                jsonify(ok=False, message="Authentifizierung erforderlich.", error="auth_required"),
+                401,
+            )
         return redirect(url_for("web.login", next=p))
     return None
 
@@ -1060,7 +1105,11 @@ def login():
                 else:
                     membership = memberships[0]
                     login_user(u, membership.role, membership.tenant_id)
-                    _audit("login", target=u, meta={"role": membership.role, "tenant": membership.tenant_id})
+                    _audit(
+                        "login",
+                        target=u,
+                        meta={"role": membership.role, "tenant": membership.tenant_id},
+                    )
                     return redirect(nxt or url_for("web.index"))
             else:
                 error = "Login fehlgeschlagen."
@@ -1069,9 +1118,17 @@ def login():
 
 @bp.get("/auth/google/start")
 def google_start():
-    if not (current_app.config.get("GOOGLE_CLIENT_ID") and current_app.config.get("GOOGLE_CLIENT_SECRET")):
-        return _render_base(_card("info", "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET."), active_tab="mail")
-    return _render_base(_card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."), active_tab="mail")
+    if not (
+        current_app.config.get("GOOGLE_CLIENT_ID")
+        and current_app.config.get("GOOGLE_CLIENT_SECRET")
+    ):
+        return _render_base(
+            _card("info", "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET."),
+            active_tab="mail",
+        )
+    return _render_base(
+        _card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."), active_tab="mail"
+    )
 
 
 @bp.get("/auth/google/callback")
@@ -1089,7 +1146,7 @@ def logout():
 
 @bp.route("/api/progress/<token>")
 def api_progress(token: str):
-    if (not current_user()) and (request.remote_addr not in ("127.0.0.1","::1")):
+    if (not current_user()) and (request.remote_addr not in ("127.0.0.1", "::1")):
         return jsonify(error="unauthorized"), 401
     p = read_pending(token)
     if not p:
@@ -1098,8 +1155,9 @@ def api_progress(token: str):
         status=p.get("status", ""),
         progress=float(p.get("progress", 0.0) or 0.0),
         progress_phase=p.get("progress_phase", ""),
-        error=p.get("error", "")
+        error=p.get("error", ""),
     )
+
 
 def _weather_answer(city: str) -> str:
     info = get_weather(city)
@@ -1140,7 +1198,17 @@ def api_chat():
     token = (payload.get("token") or "").strip()
 
     if not q:
-        return jsonify(ok=False, message="Leer.", suggestions=[], results=[], actions=[], error="empty_query"), 400
+        return (
+            jsonify(
+                ok=False,
+                message="Leer.",
+                suggestions=[],
+                results=[],
+                actions=[],
+                error="empty_query",
+            ),
+            400,
+        )
 
     user = current_user() or "dev"
     role = current_role()
@@ -1538,6 +1606,7 @@ HTML_SETTINGS = """
 </script>
 """
 
+
 def _mail_prompt(to: str, subject: str, tone: str, length: str, context: str) -> str:
     return f"""Du bist ein deutscher Office-Assistent. Schreibe einen professionellen E-Mail-Entwurf.
 Wichtig:
@@ -1558,11 +1627,17 @@ Kontext/Stichpunkte:
 {context or '(leer)'}
 """
 
+
 @bp.get("/mail")
 @login_required
 def mail_page():
-    google_configured = bool(current_app.config.get("GOOGLE_CLIENT_ID") and current_app.config.get("GOOGLE_CLIENT_SECRET"))
-    return _render_base(render_template_string(HTML_MAIL, google_configured=google_configured), active_tab="mail")
+    google_configured = bool(
+        current_app.config.get("GOOGLE_CLIENT_ID")
+        and current_app.config.get("GOOGLE_CLIENT_SECRET")
+    )
+    return _render_base(
+        render_template_string(HTML_MAIL, google_configured=google_configured), active_tab="mail"
+    )
 
 
 @bp.get("/settings")
@@ -1696,6 +1771,7 @@ def api_test_llm():
     _audit("test_llm", meta={"result": result})
     return jsonify(ok=True, message=f"LLM: {llm.name}, intent={result.get('intent')}")
 
+
 @bp.post("/api/mail/draft")
 @login_required
 def api_mail_draft():
@@ -1726,6 +1802,7 @@ def api_mail_eml():
     if not body:
         return jsonify({"error": "Body fehlt."}), 400
     import email.message
+
     msg = email.message.EmailMessage()
     msg["To"] = to or "unknown@example.com"
     msg["From"] = "noreply@kukanilea.local"
@@ -1733,7 +1810,6 @@ def api_mail_eml():
     msg.set_content(body)
     eml_bytes = msg.as_bytes()
     return current_app.response_class(eml_bytes, mimetype="message/rfc822")
-
 
 
 @bp.route("/")
@@ -1744,8 +1820,15 @@ def index():
     for it in items_meta:
         t = it.get("_token")
         if t:
-            meta[t] = {"filename": it.get("filename",""), "progress": float(it.get("progress",0.0) or 0.0), "progress_phase": it.get("progress_phase","")}
-    return _render_base(render_template_string(HTML_INDEX, items=items, meta=meta), active_tab="upload")
+            meta[t] = {
+                "filename": it.get("filename", ""),
+                "progress": float(it.get("progress", 0.0) or 0.0),
+                "progress_phase": it.get("progress_phase", ""),
+            }
+    return _render_base(
+        render_template_string(HTML_INDEX, items=items, meta=meta), active_tab="upload"
+    )
+
 
 @bp.route("/upload", methods=["POST"])
 def upload():
@@ -1757,7 +1840,7 @@ def upload():
     filename = _safe_filename(f.filename)
     if not _is_allowed_ext(filename):
         return jsonify(error="unsupported"), 400
-    tenant_in = (EINGANG / tenant)
+    tenant_in = EINGANG / tenant
     tenant_in.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = tenant_in / f"{ts}__{filename}"
@@ -1774,6 +1857,7 @@ def upload():
         pass
     return jsonify(token=token, tenant=tenant)
 
+
 @bp.route("/review/<token>/delete", methods=["POST"])
 def review_delete(token: str):
     try:
@@ -1781,6 +1865,7 @@ def review_delete(token: str):
     except Exception:
         pass
     return redirect(url_for("web.index"))
+
 
 @bp.route("/file/<token>")
 def file_preview(token: str):
@@ -1794,7 +1879,8 @@ def file_preview(token: str):
         abort(403)
     return send_file(file_path, as_attachment=False)
 
-@bp.route("/review/<token>/kdnr", methods=["GET","POST"])
+
+@bp.route("/review/<token>/kdnr", methods=["GET", "POST"])
 def review(token: str):
     p = read_pending(token)
     if not p:
@@ -1840,7 +1926,9 @@ def review(token: str):
     existing_folder_hint = ""
     existing_folder_score = 0.0
     if not (w.get("existing_folder") or "").strip():
-        match_path, match_score = suggest_existing_folder(BASE_PATH, w["tenant"], w.get("kdnr",""), w.get("name",""))
+        match_path, match_score = suggest_existing_folder(
+            BASE_PATH, w["tenant"], w.get("kdnr", ""), w.get("name", "")
+        )
         if match_path:
             w["existing_folder"] = match_path
             existing_folder_hint = match_path
@@ -1849,10 +1937,12 @@ def review(token: str):
     msg = ""
     if request.method == "POST":
         if request.form.get("reextract") == "1":
-            src = Path(p.get("path",""))
+            src = Path(p.get("path", ""))
             if src.exists():
-                try: delete_pending(token)
-                except Exception: pass
+                try:
+                    delete_pending(token)
+                except Exception:
+                    pass
                 new_token = analyze_to_pending(src)
                 return redirect(url_for("web.review", token=new_token))
             msg = "Quelle nicht gefunden – Re-Extract nicht möglich."
@@ -1865,7 +1955,9 @@ def review(token: str):
             else:
                 w["tenant"] = tenant
                 w["kdnr"] = normalize_component(request.form.get("kdnr") or "")
-                w["doctype"] = (request.form.get("doctype") or w.get("doctype") or "SONSTIGES").upper()
+                w["doctype"] = (
+                    request.form.get("doctype") or w.get("doctype") or "SONSTIGES"
+                ).upper()
                 w["document_date"] = normalize_component(request.form.get("document_date") or "")
                 w["name"] = normalize_component(request.form.get("name") or "")
                 w["addr"] = normalize_component(request.form.get("addr") or "")
@@ -1875,14 +1967,14 @@ def review(token: str):
                 if not w["kdnr"]:
                     msg = "KDNR fehlt."
                 else:
-                    src = Path(p.get("path",""))
+                    src = Path(p.get("path", ""))
                     if not src.exists():
                         msg = "Datei im Eingang nicht gefunden."
                     else:
                         answers = {
                             "tenant": w["tenant"],
                             "kdnr": w["kdnr"],
-                            "use_existing": w.get("use_existing",""),
+                            "use_existing": w.get("use_existing", ""),
                             "name": w.get("name") or "Kunde",
                             "addr": w.get("addr") or "Adresse",
                             "plzort": w.get("plzort") or "PLZ Ort",
@@ -1890,7 +1982,9 @@ def review(token: str):
                             "document_date": w.get("document_date") or "",
                         }
                         try:
-                            folder, final_path, created_new = process_with_answers(Path(p.get("path","")), answers)
+                            folder, final_path, created_new = process_with_answers(
+                                Path(p.get("path", "")), answers
+                            )
                             write_done(token, {"final_path": str(final_path), **answers})
                             delete_pending(token)
                             return redirect(url_for("web.done_view", token=token))
@@ -1899,7 +1993,7 @@ def review(token: str):
 
     _wizard_save(token, p, w)
 
-    filename = p.get("filename","")
+    filename = p.get("filename", "")
     ext = Path(filename).suffix.lower()
     is_pdf = ext == ".pdf"
     is_text = ext == ".txt"
@@ -1932,10 +2026,11 @@ def review(token: str):
         active_tab="upload",
     )
 
+
 @bp.route("/done/<token>")
 def done_view(token: str):
     d = read_done(token) or {}
-    fp = d.get("final_path","")
+    fp = d.get("final_path", "")
     html = f"""<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-6 card'>
       <div class='text-2xl font-bold mb-2'>Fertig</div>
       <div class='muted text-sm mb-4'>Datei wurde abgelegt.</div>
@@ -1945,20 +2040,24 @@ def done_view(token: str):
     </div>"""
     return _render_base(html, active_tab="upload")
 
+
 @bp.route("/assistant")
 def assistant():
     # Ensure core searches within current tenant
     try:
         import kukanilea_core_v3_fixed as _core
+
         _core.TENANT_DEFAULT = current_tenant() or _core.TENANT_DEFAULT
     except Exception:
         pass
-    q = normalize_component(request.args.get("q","") or "")
-    kdnr = normalize_component(request.args.get("kdnr","") or "")
+    q = normalize_component(request.args.get("q", "") or "")
+    kdnr = normalize_component(request.args.get("kdnr", "") or "")
     results = []
     if q and assistant_search is not None:
         try:
-            raw = assistant_search(query=q, kdnr=kdnr, limit=50, role=current_role(), tenant_id=current_tenant())
+            raw = assistant_search(
+                query=q, kdnr=kdnr, limit=50, role=current_role(), tenant_id=current_tenant()
+            )
             for r in raw or []:
                 fp = r.get("file_path") or ""
                 if ASSISTANT_HIDE_EINGANG and fp:
@@ -1979,8 +2078,11 @@ def assistant():
         <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
       </form>
       <div class='muted text-xs'>Treffer: {n}</div>
-    </div>""".format(q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results))
+    </div>""".format(
+        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
+    )
     return _render_base(html, active_tab="assistant")
+
 
 @bp.route("/tasks")
 def tasks():
@@ -1998,12 +2100,16 @@ def tasks():
     html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
       <div class='text-lg font-semibold'>Tasks</div>
       <div class='muted text-xs mt-1'>Offen: {n}</div>
-    </div>""".format(n=len(items))
+    </div>""".format(
+        n=len(items)
+    )
     return _render_base(html, active_tab="tasks")
+
 
 @bp.route("/chat")
 def chat():
     return _render_base(HTML_CHAT, active_tab="chat")
+
 
 @bp.route("/health")
 def health():

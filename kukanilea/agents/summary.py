@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 
-from .base import AgentContext, AgentResult, BaseAgent
 from kukanilea.guards import neutralize_untrusted_text
+
+from .base import AgentContext, AgentResult, BaseAgent
 
 
 class SummaryAgent(BaseAgent):
