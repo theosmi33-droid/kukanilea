@@ -56,6 +56,8 @@ paths:
   /api/chat:
     post:
       summary: Chat entrypoint
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
       requestBody:
         required: true
         content:
@@ -78,6 +80,8 @@ paths:
   /api/search:
     post:
       summary: Search documents
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
       requestBody:
         required: true
         content:
@@ -94,6 +98,8 @@ paths:
   /api/customer:
     post:
       summary: Customer lookup
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
       requestBody:
         required: true
         content:
@@ -179,6 +185,8 @@ paths:
                 required: [ok, projects]
     post:
       summary: Create a time tracking project
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
       requestBody:
         required: true
         content:
@@ -213,6 +221,8 @@ paths:
   /api/time/start:
     post:
       summary: Start a time entry
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
       requestBody:
         required: true
         content:
@@ -247,6 +257,8 @@ paths:
   /api/time/stop:
     post:
       summary: Stop a time entry
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
       requestBody:
         required: false
         content:
@@ -316,6 +328,8 @@ paths:
   /api/time/entry/edit:
     post:
       summary: Edit a time entry
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
       requestBody:
         required: true
         content:
@@ -356,6 +370,8 @@ paths:
   /api/time/entry/approve:
     post:
       summary: Approve a time entry
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
       requestBody:
         required: true
         content:
@@ -412,6 +428,13 @@ paths:
               schema:
                 type: string
 components:
+  parameters:
+    csrfToken:
+      in: header
+      name: X-CSRF-Token
+      required: true
+      schema:
+        type: string
   securitySchemes:
     sessionCookie:
       type: apiKey

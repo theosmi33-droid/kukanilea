@@ -47,6 +47,7 @@ from flask import (
     render_template_string,
     request,
     send_file,
+    session,
     url_for,
 )
 
@@ -66,6 +67,9 @@ from .auth import (
 from .config import Config
 from .db import AuthDB
 from .errors import json_error
+from .rate_limit import chat_limiter, search_limiter, upload_limiter
+from .security import get_csrf_token
+from .timeout import time_limit
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
@@ -141,6 +145,7 @@ time_project_create = _core_get("time_project_create")
 time_project_list = _core_get("time_project_list")
 time_entry_start = _core_get("time_entry_start")
 time_entry_stop = _core_get("time_entry_stop")
+time_entry_get = _core_get("time_entry_get")
 time_entry_list = _core_get("time_entries_list")
 time_entry_update = _core_get("time_entry_update")
 time_entry_approve = _core_get("time_entry_approve")
@@ -392,6 +397,7 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
         tenant=current_tenant() or "-",
         profile=profile,
         active_tab=active_tab,
+        csrf_token=get_csrf_token(),
     )
 
 
@@ -431,6 +437,7 @@ HTML_BASE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token }}">
 <title>KUKANILEA Systems</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -438,6 +445,7 @@ HTML_BASE = r"""<!doctype html>
   const savedAccent = localStorage.getItem("ks_accent") || "indigo";
   if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
   document.documentElement.dataset.accent = savedAccent;
+  window.csrfToken = "{{ csrf_token }}";
 </script>
 <style>
   :root{
@@ -891,6 +899,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
 </div>
 <script>
 (function(){
+  const csrfToken = window.csrfToken || "";
   const role = "{{role}}";
   const timeProject = document.getElementById("timeProject");
   const timeNote = document.getElementById("timeNote");
@@ -992,7 +1001,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   async function startTimer(){
     setStatus("Starte…", false);
     const payload = {project_id: timeProject.value || null, note: timeNote.value || ""};
-    const res = await fetch("/api/time/start", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+    const res = await fetch("/api/time/start", {method:"POST", headers: {"Content-Type":"application/json", "X-CSRF-Token": csrfToken}, credentials:"same-origin", body: JSON.stringify(payload)});
     const data = await res.json();
     if(!res.ok){
       setStatus(data.error?.message || "Fehler beim Start.", true);
@@ -1004,7 +1013,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
 
   async function stopTimer(){
     setStatus("Stoppe…", false);
-    const res = await fetch("/api/time/stop", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({})});
+    const res = await fetch("/api/time/stop", {method:"POST", headers: {"Content-Type":"application/json", "X-CSRF-Token": csrfToken}, credentials:"same-origin", body: JSON.stringify({})});
     const data = await res.json();
     if(!res.ok){
       setStatus(data.error?.message || "Fehler beim Stoppen.", true);
@@ -1016,7 +1025,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   async function createProject(){
     projectStatus.textContent = "Speichern…";
     const payload = {name: projectName.value || "", description: projectDesc.value || ""};
-    const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+    const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json", "X-CSRF-Token": csrfToken}, credentials:"same-origin", body: JSON.stringify(payload)});
     const data = await res.json();
     if(!res.ok){
       projectStatus.textContent = data.error?.message || "Fehler beim Anlegen.";
@@ -1037,13 +1046,13 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       const endAt = prompt("Endzeit (YYYY-MM-DDTHH:MM:SS oder leer)", "");
       const note = prompt("Notiz (optional)", "");
       const payload = {entry_id: parseInt(editId, 10), start_at: startAt || null, end_at: endAt || null, note: note || null};
-      const res = await fetch("/api/time/entry/edit", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+      const res = await fetch("/api/time/entry/edit", {method:"POST", headers: {"Content-Type":"application/json", "X-CSRF-Token": csrfToken}, credentials:"same-origin", body: JSON.stringify(payload)});
       const data = await res.json();
       if(!res.ok){ alert(data.error?.message || "Fehler beim Update."); }
       await loadEntries();
     }
     if(approveId){
-      const res = await fetch("/api/time/entry/approve", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({entry_id: parseInt(approveId, 10)})});
+      const res = await fetch("/api/time/entry/approve", {method:"POST", headers: {"Content-Type":"application/json", "X-CSRF-Token": csrfToken}, credentials:"same-origin", body: JSON.stringify({entry_id: parseInt(approveId, 10)})});
       const data = await res.json();
       if(!res.ok){ alert(data.error?.message || "Fehler beim Freigeben."); }
       await loadEntries();
@@ -1085,6 +1094,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 </div>
 <script>
 (function(){
+  const csrfToken = window.csrfToken || "";
   const log = document.getElementById("log");
   const q = document.getElementById("q");
   const kdnr = document.getElementById("kdnr");
@@ -1127,7 +1137,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     q.value = "";
     send.disabled = true;
     try{
-      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
+      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", headers: {"Content-Type":"application/json", "X-CSRF-Token": csrfToken}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
       const j = await res.json();
       if(!res.ok){
         const errMsg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ("HTTP " + res.status));
@@ -1265,7 +1275,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     try{
       const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
       _cwLastBody = body;
-      const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': csrfToken}, body: JSON.stringify(body)});
       let j = {};
       try{ j = await r.json(); }catch(e){}
       if(!r.ok){
@@ -1342,6 +1352,21 @@ def _guard_login():
         if p.startswith("/api/"):
             return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
         return redirect(url_for("web.login", next=p))
+    return None
+
+
+@bp.before_app_request
+def _guard_csrf():
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    if not request.path.startswith("/api/"):
+        return None
+    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    session_token = session.get("csrf_token") or get_csrf_token()
+    if not token:
+        return json_error("csrf_missing", "CSRF Token fehlt.", status=403)
+    if token != session_token:
+        return json_error("csrf_invalid", "CSRF Token ungültig.", status=403)
     return None
 
 
@@ -1461,6 +1486,9 @@ def api_chat():
 
     user = current_user() or "dev"
     role = current_role()
+    limiter_key = f"chat:{user or request.remote_addr}"
+    if not chat_limiter.allow(limiter_key):
+        return json_error("rate_limited", "Rate limit überschritten.", status=429)
     context = AgentContext(
         tenant_id=current_tenant(),
         user=str(user),
@@ -1468,7 +1496,11 @@ def api_chat():
         kdnr=kdnr,
         token=token,
     )
-    result = ORCHESTRATOR.handle(q, context)
+    try:
+        with time_limit(8):
+            result = ORCHESTRATOR.handle(q, context)
+    except TimeoutError:
+        return json_error("timeout", "Zeitüberschreitung bei der Anfrage.", status=504)
     if not result.ok:
         return json_error(
             result.error or "chat_error",
@@ -1502,6 +1534,9 @@ def api_search():
     limit = int(payload.get("limit") or 8)
     if not query:
         return json_error("query_missing", "Query fehlt.", status=400)
+    limiter_key = f"search:{current_user() or request.remote_addr}"
+    if not search_limiter.allow(limiter_key):
+        return json_error("rate_limited", "Rate limit überschritten.", status=429)
     context = AgentContext(
         tenant_id=current_tenant(),
         user=str(current_user() or "dev"),
@@ -1625,10 +1660,23 @@ def api_time_stop():
         return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
     payload = request.get_json(silent=True) or {}
     entry_id = payload.get("entry_id")
+    if entry_id and callable(time_entry_get):
+        entry = time_entry_get(tenant_id=current_tenant(), entry_id=int(entry_id))  # type: ignore
+        if not entry:
+            return json_error("entry_not_found", "Eintrag nicht gefunden.", status=404)
+        if entry.get("end_at"):
+            return json_error("timer_already_stopped", "Timer wurde bereits gestoppt.", status=409)
+        if current_role() not in {"ADMIN", "DEV"} and entry.get("user") != (current_user() or ""):
+            return json_error("forbidden", "Nicht erlaubt.", status=403)
+        stop_user = (
+            entry.get("user") if current_role() in {"ADMIN", "DEV"} else (current_user() or "")
+        )
+    else:
+        stop_user = current_user() or ""
     try:
         entry = time_entry_stop(  # type: ignore
             tenant_id=current_tenant(),
-            user=current_user() or "",
+            user=stop_user,
             entry_id=int(entry_id) if entry_id else None,
         )
     except ValueError as exc:
@@ -1675,6 +1723,12 @@ def api_time_entry_edit():
     entry_id = payload.get("entry_id")
     if not entry_id:
         return json_error("entry_id_required", "Eintrag fehlt.", status=400)
+    if callable(time_entry_get):
+        entry = time_entry_get(tenant_id=current_tenant(), entry_id=int(entry_id))  # type: ignore
+        if not entry:
+            return json_error("entry_not_found", "Eintrag nicht gefunden.", status=404)
+        if current_role() not in {"ADMIN", "DEV"} and entry.get("user") != (current_user() or ""):
+            return json_error("forbidden", "Nicht erlaubt.", status=403)
     try:
         entry = time_entry_update(  # type: ignore
             tenant_id=current_tenant(),
@@ -1812,6 +1866,7 @@ HTML_MAIL = """
 
 <script>
 (function(){
+  const csrfToken = window.csrfToken || "";
   const gen=document.getElementById('m_gen');
   const copy=document.getElementById('m_copy');
   const rewrite=document.getElementById('m_rewrite');
@@ -1829,7 +1884,7 @@ HTML_MAIL = """
     try{
       const res = await fetch('/api/mail/draft', {
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:{'Content-Type':'application/json', 'X-CSRF-Token': csrfToken},
         body: JSON.stringify({
           to: v('m_to'),
           subject: v('m_subj'),
@@ -1865,7 +1920,7 @@ HTML_MAIL = """
   async function doEml(){
     if(!out.value) return;
     const payload = { to: v('m_to'), subject: v('m_subj'), body: out.value };
-    const res = await fetch('/api/mail/eml', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const res = await fetch('/api/mail/eml', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': csrfToken}, body: JSON.stringify(payload)});
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1958,8 +2013,9 @@ HTML_SETTINGS = """
 
 <script>
 (function(){
+  const csrfToken = window.csrfToken || "";
   async function postJson(url, body){
-    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': csrfToken}, body: JSON.stringify(body || {})});
     let j = {};
     try{ j = await r.json(); }catch(e){}
     if(!r.ok){
@@ -2268,14 +2324,17 @@ def index():
 
 @bp.route("/upload", methods=["POST"])
 def upload():
+    limiter_key = f"upload:{current_user() or request.remote_addr}"
+    if not upload_limiter.allow(limiter_key):
+        return json_error("rate_limited", "Rate limit überschritten.", status=429)
     f = request.files.get("file")
     if not f or not f.filename:
-        return jsonify(error="no_file"), 400
+        return json_error("no_file", "Keine Datei erhalten.", status=400)
     tenant = _norm_tenant(current_tenant() or "default")
     # tenant is fixed by license/account; no user input here.
     filename = _safe_filename(f.filename)
     if not _is_allowed_ext(filename):
-        return jsonify(error="unsupported"), 400
+        return json_error("unsupported", "Dateiformat nicht erlaubt.", status=400)
     tenant_in = EINGANG / tenant
     tenant_in.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -1223,7 +1223,7 @@ def time_entry_stop(
                 row = con.execute(
                     """
                     SELECT id, start_at FROM time_entries
-                    WHERE tenant_id=? AND user=? AND id=?
+                    WHERE tenant_id=? AND user=? AND id=? AND end_at IS NULL
                     """,
                     (tenant_id, user, int(entry_id)),
                 ).fetchone()

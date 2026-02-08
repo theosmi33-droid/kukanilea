@@ -9,7 +9,7 @@
 - `scripts/start_ui.sh` — zsh-safe starter.
 - `scripts/dev_run.sh` — idempotent dev runner (seeds users).
 
-## Quick start (macOS)
+## Lokales Setup (macOS)
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -31,6 +31,20 @@ Open: http://127.0.0.1:5051
 ### Dev bootstrap
 ```bash
 ./scripts/dev_bootstrap.sh
+```
+
+## Update Button
+```bash
+./update.sh
+```
+Runs update + tests locally (rebase origin/main, install deps if `.venv` exists, then ruff/format/pytest/smoke).
+
+## PR testen (optional)
+```bash
+git checkout <branch>
+git fetch origin
+git rebase origin/main
+./update.sh
 ```
 
 ## Notes
