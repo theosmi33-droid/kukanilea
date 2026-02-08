@@ -20,25 +20,24 @@ Hinweis:
 
 from __future__ import annotations
 
-import os
-import re
+import base64
+import csv
+import hashlib
 import io
 import json
-import time
-import base64
-import hashlib
+import os
+import re
 import sqlite3
 import threading
+import time
 import unicodedata
-import csv
 import zipfile
-from pathlib import Path
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional, Tuple
-
 from email import policy
 from email.parser import BytesParser
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 # Optional libs
 try:
@@ -112,7 +111,7 @@ BASE_PATH = Path.home() / _env("BASE_DIRNAME", "Tophandwerk_Kundenablage")
 PENDING_DIR = Path.home() / _env("PENDING_DIRNAME", "Tophandwerk_Pending")
 DONE_DIR = Path.home() / _env("DONE_DIRNAME", "Tophandwerk_Done")
 DB_PATH = Path.home() / _env("DB_FILENAME", "Tophandwerk_DB.sqlite3")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Multi-tenant behavior
 TENANT_DEFAULT = _env("TENANT_DEFAULT", "").strip()  # e.g. "FIRMA_X"
@@ -122,26 +121,41 @@ TENANT_REQUIRE = _env_bool("TENANT_REQUIRE", "0")
 SUPPORTED_EXT = {
     # Documents
     ".pdf",
-    ".txt", ".md", ".rtf",
+    ".txt",
+    ".md",
+    ".rtf",
     ".docx",
     ".xlsx",
     ".csv",
     ".eml",
-    ".html", ".htm",
-    ".json", ".xml",
-
+    ".html",
+    ".htm",
+    ".json",
+    ".xml",
     # Images (OCR)
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp",
-
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".bmp",
+    ".webp",
     # Outlook (best-effort)
     ".msg",
-
     # Containers / non-text (accepted, but extraction may be empty; store-only)
-    ".zip", ".7z", ".rar",
-    ".dwg", ".dxf", ".ifc",
-    ".p7m", ".p7s",
-    ".psd", ".ai",
-    ".mp4", ".mov", ".mp3",
+    ".zip",
+    ".7z",
+    ".rar",
+    ".dwg",
+    ".dxf",
+    ".ifc",
+    ".p7m",
+    ".p7s",
+    ".psd",
+    ".ai",
+    ".mp4",
+    ".mov",
+    ".mp3",
 }
 
 # OCR / Extraction limits
@@ -210,12 +224,7 @@ def _norm_for_match(s: Any) -> str:
     - drop non-alnum
     """
     s = normalize_component(s).lower()
-    s = (
-        s.replace("ä", "ae")
-        .replace("ö", "oe")
-        .replace("ü", "ue")
-        .replace("ß", "ss")
-    )
+    s = s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
     s = re.sub(r"[^a-z0-9]+", "", s)
     return s
 
@@ -244,7 +253,9 @@ def _html_to_text(html: str) -> str:
     html = re.sub(r"(?i)<br\s*/?>", "\n", html)
     html = re.sub(r"(?i)</p\s*>", "\n", html)
     html = re.sub(r"(?is)<[^>]+>", " ", html)
-    html = html.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    html = (
+        html.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    )
     html = re.sub(r"[ \t]+", " ", html)
     html = re.sub(r"\n{3,}", "\n\n", html)
     return html.strip()
@@ -319,14 +330,25 @@ def _safe_fs(s: Any) -> str:
 
 
 _DATE_PATTERNS = [
-    "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
-    "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y",
-    "%d.%m.%y", "%d/%m/%y", "%d-%m-%y",
-    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-    "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
-    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M",
-    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
-    "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%Y.%m.%d",
+    "%d.%m.%Y",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%y",
+    "%d/%m/%y",
+    "%d-%m-%y",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%Y/%m/%d %H:%M:%S",
+    "%Y/%m/%d %H:%M",
+    "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d-%m-%Y %H:%M:%S",
+    "%d-%m-%Y %H:%M",
 ]
 
 
@@ -555,6 +577,58 @@ def db_init() -> None:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS time_projects(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  description TEXT,
+                  status TEXT NOT NULL DEFAULT 'ACTIVE',
+                  created_by TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_time_projects_tenant ON time_projects(tenant_id, status);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS time_entries(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  project_id INTEGER,
+                  user TEXT NOT NULL,
+                  start_at TEXT NOT NULL,
+                  end_at TEXT,
+                  duration_seconds INTEGER,
+                  note TEXT,
+                  approval_status TEXT NOT NULL DEFAULT 'PENDING',
+                  approved_by TEXT,
+                  approved_at TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(project_id) REFERENCES time_projects(id) ON DELETE SET NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_time_entries_tenant ON time_entries(tenant_id, start_at);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_time_entries_user ON time_entries(tenant_id, user, start_at);"
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_time_entries_running
+                ON time_entries(tenant_id, user)
+                WHERE end_at IS NULL;
+                """
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS review_locks(
                   token TEXT PRIMARY KEY,
                   tenant TEXT NOT NULL,
@@ -567,7 +641,6 @@ def db_init() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_locks_tenant ON review_locks(tenant);")
-
 
             con.execute(
                 """
@@ -689,9 +762,15 @@ def db_init() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_versions_doc ON versions(doc_id);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_versions_path ON versions(file_path);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_versions_tenant ON versions(tenant_id);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_entities_doc ON entities(doc_id, tenant_id);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type, norm_value);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_docs_index_tenant ON docs_index(tenant_id, kdnr, doctype);")
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_entities_doc ON entities(doc_id, tenant_id);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type, norm_value);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_docs_index_tenant ON docs_index(tenant_id, kdnr, doctype);"
+            )
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_index_tokens ON docs_index(tokens);")
 
             if _has_fts5(con):
@@ -756,7 +835,9 @@ def rbac_verify_user(username: str, password: str) -> bool:
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT pass_sha256 FROM users WHERE username=?", (username,)).fetchone()
+            row = con.execute(
+                "SELECT pass_sha256 FROM users WHERE username=?", (username,)
+            ).fetchone()
             if not row:
                 return False
             return str(row["pass_sha256"]) == _pw_hash(password)
@@ -788,7 +869,9 @@ def rbac_get_user_roles(username: str) -> List[str]:
     with _DB_LOCK:
         con = _db()
         try:
-            rows = con.execute("SELECT role FROM roles WHERE username=? ORDER BY role", (username,)).fetchall()
+            rows = con.execute(
+                "SELECT role FROM roles WHERE username=? ORDER BY role", (username,)
+            ).fetchall()
             return [str(r["role"]) for r in rows]
         finally:
             con.close()
@@ -830,8 +913,6 @@ def audit_log(
             con.close()
 
 
-
-
 # ============================================================
 # TASKS
 # ============================================================
@@ -865,7 +946,19 @@ def task_create(
                 INSERT INTO tasks(ts, tenant, severity, task_type, status, title, details, token, path, meta_json, created_by)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                (_now_iso(), tenant, severity, task_type, "OPEN", title, details, token, path, meta_json, created_by),
+                (
+                    _now_iso(),
+                    tenant,
+                    severity,
+                    task_type,
+                    "OPEN",
+                    title,
+                    details,
+                    token,
+                    path,
+                    meta_json,
+                    created_by,
+                ),
             )
             con.commit()
             return int(cur.lastrowid or 0)
@@ -929,6 +1022,447 @@ def task_set_status(task_id: int, status: str, resolved_by: str = "") -> bool:
 
 
 # ============================================================
+# TIME TRACKING
+# ============================================================
+def _time_tenant(tenant_id: str) -> str:
+    return _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+
+
+def _parse_iso(value: str) -> datetime:
+    return datetime.fromisoformat(value)
+
+
+def _duration_seconds(start_at: str, end_at: str) -> int:
+    return max(0, int((_parse_iso(end_at) - _parse_iso(start_at)).total_seconds()))
+
+
+def time_project_create(
+    *,
+    tenant_id: str,
+    name: str,
+    description: str = "",
+    created_by: str = "",
+) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    name = normalize_component(name)
+    description = (description or "").strip()
+    created_by = normalize_component(created_by).lower()
+    if not name:
+        raise ValueError("project_name_required")
+
+    now = _now_iso()
+    project_id = 0
+    with _DB_LOCK:
+        con = _db()
+        try:
+            cur = con.execute(
+                """
+                INSERT INTO time_projects(tenant_id, name, description, status, created_by, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (tenant_id, name, description, "ACTIVE", created_by, now, now),
+            )
+            con.commit()
+            project_id = int(cur.lastrowid or 0)
+        finally:
+            con.close()
+    audit_log(
+        user=created_by or "system",
+        role="SYSTEM",
+        action="TIME_PROJECT_CREATE",
+        target=str(project_id),
+        meta={"name": name},
+        tenant_id=tenant_id,
+    )
+    return {
+        "id": project_id,
+        "tenant_id": tenant_id,
+        "name": name,
+        "description": description,
+        "status": "ACTIVE",
+        "created_by": created_by,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def time_project_list(*, tenant_id: str, status: str = "ACTIVE") -> List[Dict[str, Any]]:
+    tenant_id = _time_tenant(tenant_id)
+    status = normalize_component(status).upper() or "ACTIVE"
+    with _DB_LOCK:
+        con = _db()
+        try:
+            rows = con.execute(
+                """
+                SELECT * FROM time_projects
+                WHERE tenant_id=? AND status=?
+                ORDER BY name
+                """,
+                (tenant_id, status),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+
+def _time_project_lookup(
+    con: sqlite3.Connection, tenant_id: str, project_id: Optional[int]
+) -> Optional[dict]:
+    if project_id is None:
+        return None
+    row = con.execute(
+        "SELECT * FROM time_projects WHERE id=? AND tenant_id=?",
+        (int(project_id), tenant_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def time_entry_start(
+    *,
+    tenant_id: str,
+    user: str,
+    project_id: Optional[int] = None,
+    note: str = "",
+    started_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    user = normalize_component(user).lower()
+    note = (note or "").strip()
+    if not user:
+        raise ValueError("user_required")
+
+    now = started_at or _now_iso()
+    entry_id = 0
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if project_id is not None and not _time_project_lookup(con, tenant_id, project_id):
+                raise ValueError("project_not_found")
+            row = con.execute(
+                "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL",
+                (tenant_id, user),
+            ).fetchone()
+            if row:
+                raise ValueError("running_timer_exists")
+            cur = con.execute(
+                """
+                INSERT INTO time_entries(
+                    tenant_id, project_id, user, start_at, end_at, duration_seconds, note,
+                    approval_status, created_at, updated_at
+                )
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (tenant_id, project_id, user, now, None, None, note, "PENDING", now, now),
+            )
+            con.commit()
+            entry_id = int(cur.lastrowid or 0)
+        finally:
+            con.close()
+    audit_log(
+        user=user,
+        role="OPERATOR",
+        action="TIME_ENTRY_START",
+        target=str(entry_id),
+        meta={"project_id": project_id or ""},
+        tenant_id=tenant_id,
+    )
+    return time_entry_get(tenant_id=tenant_id, entry_id=entry_id) or {}
+
+
+def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]:
+    tenant_id = _time_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                """
+                SELECT te.*, tp.name AS project_name
+                FROM time_entries te
+                LEFT JOIN time_projects tp ON tp.id = te.project_id
+                WHERE te.tenant_id=? AND te.id=?
+                """,
+                (tenant_id, int(entry_id)),
+            ).fetchone()
+            if not row:
+                return None
+            entry = dict(row)
+            if entry.get("end_at"):
+                entry["duration_seconds"] = _duration_seconds(entry["start_at"], entry["end_at"])
+            else:
+                entry["duration_seconds"] = _duration_seconds(entry["start_at"], _now_iso())
+            return entry
+        finally:
+            con.close()
+
+
+def time_entry_stop(
+    *,
+    tenant_id: str,
+    user: str,
+    entry_id: Optional[int] = None,
+    ended_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    user = normalize_component(user).lower()
+    if not user:
+        raise ValueError("user_required")
+    end_ts = ended_at or _now_iso()
+
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if entry_id is None:
+                row = con.execute(
+                    """
+                    SELECT id, start_at FROM time_entries
+                    WHERE tenant_id=? AND user=? AND end_at IS NULL
+                    """,
+                    (tenant_id, user),
+                ).fetchone()
+            else:
+                row = con.execute(
+                    """
+                    SELECT id, start_at FROM time_entries
+                    WHERE tenant_id=? AND user=? AND id=?
+                    """,
+                    (tenant_id, user, int(entry_id)),
+                ).fetchone()
+            if not row:
+                raise ValueError("no_running_timer")
+            start_at = str(row["start_at"])
+            if _parse_iso(end_ts) < _parse_iso(start_at):
+                raise ValueError("invalid_time_range")
+            duration = _duration_seconds(start_at, end_ts)
+            con.execute(
+                """
+                UPDATE time_entries
+                SET end_at=?, duration_seconds=?, updated_at=?
+                WHERE id=? AND tenant_id=?
+                """,
+                (end_ts, duration, _now_iso(), int(row["id"]), tenant_id),
+            )
+            con.commit()
+            stopped_id = int(row["id"])
+        finally:
+            con.close()
+    audit_log(
+        user=user,
+        role="OPERATOR",
+        action="TIME_ENTRY_STOP",
+        target=str(stopped_id),
+        meta={"duration_seconds": duration},
+        tenant_id=tenant_id,
+    )
+    return time_entry_get(tenant_id=tenant_id, entry_id=stopped_id) or {}
+
+
+def time_entry_update(
+    *,
+    tenant_id: str,
+    entry_id: int,
+    project_id: Optional[int] = None,
+    start_at: Optional[str] = None,
+    end_at: Optional[str] = None,
+    note: Optional[str] = None,
+    user: str = "",
+) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    user = normalize_component(user).lower()
+
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                "SELECT * FROM time_entries WHERE id=? AND tenant_id=?",
+                (int(entry_id), tenant_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("entry_not_found")
+            if project_id is not None and not _time_project_lookup(con, tenant_id, project_id):
+                raise ValueError("project_not_found")
+            start_val = start_at or row["start_at"]
+            end_val = end_at if end_at is not None else row["end_at"]
+            duration_val = None
+            if end_val:
+                if _parse_iso(end_val) < _parse_iso(start_val):
+                    raise ValueError("invalid_time_range")
+                duration_val = _duration_seconds(start_val, end_val)
+            con.execute(
+                """
+                UPDATE time_entries
+                SET project_id=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
+                WHERE id=? AND tenant_id=?
+                """,
+                (
+                    project_id if project_id is not None else row["project_id"],
+                    start_val,
+                    end_val,
+                    duration_val,
+                    note if note is not None else row["note"],
+                    _now_iso(),
+                    int(entry_id),
+                    tenant_id,
+                ),
+            )
+            con.commit()
+        finally:
+            con.close()
+    audit_log(
+        user=user or "system",
+        role="OPERATOR",
+        action="TIME_ENTRY_EDIT",
+        target=str(entry_id),
+        meta={"project_id": project_id or "", "note_changed": note is not None},
+        tenant_id=tenant_id,
+    )
+    return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
+
+
+def time_entry_approve(*, tenant_id: str, entry_id: int, approved_by: str) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    approved_by = normalize_component(approved_by).lower()
+    if not approved_by:
+        raise ValueError("approved_by_required")
+    now = _now_iso()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                "SELECT id FROM time_entries WHERE id=? AND tenant_id=?",
+                (int(entry_id), tenant_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("entry_not_found")
+            con.execute(
+                """
+                UPDATE time_entries
+                SET approval_status=?, approved_by=?, approved_at=?, updated_at=?
+                WHERE id=? AND tenant_id=?
+                """,
+                ("APPROVED", approved_by, now, now, int(entry_id), tenant_id),
+            )
+            con.commit()
+        finally:
+            con.close()
+    audit_log(
+        user=approved_by,
+        role="ADMIN",
+        action="TIME_ENTRY_APPROVE",
+        target=str(entry_id),
+        meta={},
+        tenant_id=tenant_id,
+    )
+    return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
+
+
+def time_entries_list(
+    *,
+    tenant_id: str,
+    user: Optional[str] = None,
+    start_at: Optional[str] = None,
+    end_at: Optional[str] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    tenant_id = _time_tenant(tenant_id)
+    user = normalize_component(user or "").lower()
+    limit = max(1, min(int(limit), 2000))
+
+    clauses = ["te.tenant_id=?"]
+    params: List[Any] = [tenant_id]
+    if user:
+        clauses.append("te.user=?")
+        params.append(user)
+    if start_at:
+        clauses.append("te.start_at>=?")
+        params.append(start_at)
+    if end_at:
+        clauses.append("te.start_at<=?")
+        params.append(end_at)
+
+    where_sql = " AND ".join(clauses)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            rows = con.execute(
+                f"""
+                SELECT te.*, tp.name AS project_name
+                FROM time_entries te
+                LEFT JOIN time_projects tp ON tp.id = te.project_id
+                WHERE {where_sql}
+                ORDER BY te.start_at DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            entries = [dict(r) for r in rows]
+            now = _now_iso()
+            for entry in entries:
+                if entry.get("end_at"):
+                    entry["duration_seconds"] = _duration_seconds(
+                        entry["start_at"], entry["end_at"]
+                    )
+                else:
+                    entry["duration_seconds"] = _duration_seconds(entry["start_at"], now)
+            return entries
+        finally:
+            con.close()
+
+
+def time_entries_export_csv(
+    *,
+    tenant_id: str,
+    user: Optional[str] = None,
+    start_at: Optional[str] = None,
+    end_at: Optional[str] = None,
+    limit: int = 2000,
+) -> str:
+    entries = time_entries_list(
+        tenant_id=tenant_id,
+        user=user,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "entry_id",
+            "project_id",
+            "project_name",
+            "user",
+            "start_at",
+            "end_at",
+            "duration_seconds",
+            "duration_hours",
+            "note",
+            "approval_status",
+            "approved_by",
+            "approved_at",
+        ]
+    )
+    for entry in entries[:MAX_CSV_ROWS]:
+        duration_seconds = int(entry.get("duration_seconds") or 0)
+        writer.writerow(
+            [
+                entry.get("id"),
+                entry.get("project_id"),
+                entry.get("project_name") or "",
+                entry.get("user"),
+                entry.get("start_at"),
+                entry.get("end_at") or "",
+                duration_seconds,
+                round(duration_seconds / 3600.0, 2),
+                entry.get("note") or "",
+                entry.get("approval_status") or "",
+                entry.get("approved_by") or "",
+                entry.get("approved_at") or "",
+            ]
+        )
+    return output.getvalue()
+
+
+# ============================================================
 # REVIEW LOCKS (soft locking for concurrent review)
 # ============================================================
 _REVIEW_LOCK_TTL_SECONDS = int(_env("REVIEW_LOCK_TTL_SECONDS", "90") or 90)
@@ -958,12 +1492,16 @@ def lock_acquire(token: str, tenant: str, user: str, roles: List[str]) -> Dict[s
     lock_prune_expired()
 
     now = _now_iso()
-    exp = (datetime.now() + timedelta(seconds=_REVIEW_LOCK_TTL_SECONDS)).isoformat(timespec="seconds")
+    exp = (datetime.now() + timedelta(seconds=_REVIEW_LOCK_TTL_SECONDS)).isoformat(
+        timespec="seconds"
+    )
 
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT locked_by, expires_at FROM review_locks WHERE token=?", (token,)).fetchone()
+            row = con.execute(
+                "SELECT locked_by, expires_at FROM review_locks WHERE token=?", (token,)
+            ).fetchone()
             if row:
                 locked_by = str(row["locked_by"])
                 if locked_by == user:
@@ -973,7 +1511,12 @@ def lock_acquire(token: str, tenant: str, user: str, roles: List[str]) -> Dict[s
                     )
                     con.commit()
                     return {"ok": True, "status": "renewed", "locked_by": user, "expires_at": exp}
-                return {"ok": False, "status": "conflict", "locked_by": locked_by, "expires_at": str(row["expires_at"])}
+                return {
+                    "ok": False,
+                    "status": "conflict",
+                    "locked_by": locked_by,
+                    "expires_at": str(row["expires_at"]),
+                }
             con.execute(
                 "INSERT INTO review_locks(token, tenant, locked_by, locked_roles, locked_at, heartbeat_at, expires_at) VALUES (?,?,?,?,?,?,?)",
                 (token, tenant, user, roles_s, now, now, exp),
@@ -994,16 +1537,25 @@ def lock_heartbeat(token: str, user: str, roles: List[str]) -> Dict[str, Any]:
 
     lock_prune_expired()
     now = _now_iso()
-    exp = (datetime.now() + timedelta(seconds=_REVIEW_LOCK_TTL_SECONDS)).isoformat(timespec="seconds")
+    exp = (datetime.now() + timedelta(seconds=_REVIEW_LOCK_TTL_SECONDS)).isoformat(
+        timespec="seconds"
+    )
 
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT locked_by, expires_at FROM review_locks WHERE token=?", (token,)).fetchone()
+            row = con.execute(
+                "SELECT locked_by, expires_at FROM review_locks WHERE token=?", (token,)
+            ).fetchone()
             if not row:
                 return {"ok": False, "status": "missing"}
             if str(row["locked_by"]) != user:
-                return {"ok": False, "status": "conflict", "locked_by": str(row["locked_by"]), "expires_at": str(row["expires_at"])}
+                return {
+                    "ok": False,
+                    "status": "conflict",
+                    "locked_by": str(row["locked_by"]),
+                    "expires_at": str(row["expires_at"]),
+                }
             con.execute(
                 "UPDATE review_locks SET heartbeat_at=?, expires_at=?, locked_roles=? WHERE token=?",
                 (now, exp, roles_s, token),
@@ -1023,7 +1575,9 @@ def lock_release(token: str, user: str) -> Dict[str, Any]:
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT locked_by FROM review_locks WHERE token=?", (token,)).fetchone()
+            row = con.execute(
+                "SELECT locked_by FROM review_locks WHERE token=?", (token,)
+            ).fetchone()
             if not row:
                 return {"ok": True, "status": "missing"}
             if str(row["locked_by"]) != user:
@@ -1033,6 +1587,7 @@ def lock_release(token: str, user: str) -> Dict[str, Any]:
             return {"ok": True, "status": "released"}
         finally:
             con.close()
+
 
 # ============================================================
 # FOLDER HELPERS
@@ -1060,7 +1615,7 @@ def parse_folder_fields(folder_name: str) -> Dict[str, str]:
     if plz_idx is not None:
         plz = rest[plz_idx]
         ort = "_".join(rest[plz_idx + 1 :]) if plz_idx + 1 < len(rest) else ""
-        out["plzort"] = normalize_component(f"{plz} {ort.replace('_',' ')}").strip()
+        out["plzort"] = normalize_component(f"{plz} {ort.replace('_', ' ')}").strip()
         before = rest[:plz_idx]
     else:
         before = rest
@@ -1068,7 +1623,21 @@ def parse_folder_fields(folder_name: str) -> Dict[str, str]:
     addr_start = None
     for i, t in enumerate(before):
         low = t.lower()
-        if any(x in low for x in ["str", "straße", "strasse", "weg", "allee", "platz", "ring", "damm", "ufer", "gasse"]):
+        if any(
+            x in low
+            for x in [
+                "str",
+                "straße",
+                "strasse",
+                "weg",
+                "allee",
+                "platz",
+                "ring",
+                "damm",
+                "ufer",
+                "gasse",
+            ]
+        ):
             addr_start = i
             break
 
@@ -1122,7 +1691,9 @@ def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
     return sorted(out)
 
 
-def best_match_object_folder(existing: List[Path], addr: str, plzort: str) -> Tuple[Optional[Path], float]:
+def best_match_object_folder(
+    existing: List[Path], addr: str, plzort: str
+) -> Tuple[Optional[Path], float]:
     addr_n = _norm_for_match(addr)
     plz_n = _norm_for_match(plzort)
 
@@ -1145,7 +1716,9 @@ def best_match_object_folder(existing: List[Path], addr: str, plzort: str) -> Tu
     return best, best_score
 
 
-def detect_object_duplicates_for_kdnr(kdnr: str, threshold: float = DEFAULT_DUP_SIM_THRESHOLD) -> List[Dict[str, Any]]:
+def detect_object_duplicates_for_kdnr(
+    kdnr: str, threshold: float = DEFAULT_DUP_SIM_THRESHOLD
+) -> List[Dict[str, Any]]:
     kdnr = normalize_component(kdnr)
     folders = find_existing_customer_folders(BASE_PATH, kdnr)
     names = [(f, _norm_for_match(f.name)) for f in folders]
@@ -1287,7 +1860,11 @@ def _extract_xlsx_text(fp: Path) -> str:
     try:
         with zipfile.ZipFile(str(fp), "r") as z:
             sst = _xlsx_shared_strings(z)
-            sheet_names = [n for n in z.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+            sheet_names = [
+                n
+                for n in z.namelist()
+                if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
+            ]
             sheet_names = sorted(sheet_names)[:3]
             out_lines: List[str] = []
             for sname in sheet_names:
@@ -1570,8 +2147,24 @@ def _extract_text(fp: Path) -> Tuple[str, bool]:
 # HEURISTIC PARSING (SUGGESTIONS)
 # ============================================================
 _DOCTYPE_KEYWORDS = [
-    ("H_RECHNUNG", [r"\bh[ _-]?rechnung\b", r"\bhändler[ _-]?rechnung\b", r"\bhaendler[ _-]?rechnung\b", r"\bdealer[ _-]?invoice\b"]),
-    ("H_ANGEBOT",  [r"\bh[ _-]?angebot\b",  r"\bhändler[ _-]?angebot\b",  r"\bhaendler[ _-]?angebot\b",  r"\bdealer[ _-]?offer\b"]),
+    (
+        "H_RECHNUNG",
+        [
+            r"\bh[ _-]?rechnung\b",
+            r"\bhändler[ _-]?rechnung\b",
+            r"\bhaendler[ _-]?rechnung\b",
+            r"\bdealer[ _-]?invoice\b",
+        ],
+    ),
+    (
+        "H_ANGEBOT",
+        [
+            r"\bh[ _-]?angebot\b",
+            r"\bhändler[ _-]?angebot\b",
+            r"\bhaendler[ _-]?angebot\b",
+            r"\bdealer[ _-]?offer\b",
+        ],
+    ),
     ("RECHNUNG", [r"\brechnung\b", r"\binvoice\b"]),
     ("ANGEBOT", [r"\bangebot\b", r"\bquotation\b", r"\boffer\b"]),
     ("AUFTRAGSBESTAETIGUNG", [r"\bauftragsbest", r"\border confirmation\b"]),
@@ -1667,32 +2260,47 @@ def _find_dates(text: str) -> Tuple[str, List[Dict[str, Any]]]:
 
 def _find_name_addr_plzort(text: str) -> Tuple[List[str], List[str], List[str]]:
     lines = [normalize_component(x) for x in (text or "").splitlines()]
-    lines = [l for l in lines if l]
+    lines = [line for line in lines if line]
 
     plzort: List[str] = []
     addr: List[str] = []
     name: List[str] = []
 
-    for l in lines:
-        m = re.search(r"\b(\d{5})\s+([A-Za-zÄÖÜäöüß\- ]{2,})\b", l)
+    for line in lines:
+        m = re.search(r"\b(\d{5})\s+([A-Za-zÄÖÜäöüß\- ]{2,})\b", line)
         if m:
             candidate = normalize_component(f"{m.group(1)} {m.group(2)}")
             if candidate not in plzort:
                 plzort.append(candidate)
 
-    for l in lines:
-        if re.search(r"\b(str\.?|straße|strasse|weg|allee|platz|ring|damm|ufer|gasse)\b", l, flags=re.IGNORECASE) and re.search(r"\b\d{1,4}[a-zA-Z]?\b", l):
-            if l not in addr:
-                addr.append(l)
+    for line in lines:
+        if re.search(
+            r"\b(str\.?|straße|strasse|weg|allee|platz|ring|damm|ufer|gasse)\b",
+            line,
+            flags=re.IGNORECASE,
+        ) and re.search(r"\b\d{1,4}[a-zA-Z]?\b", line):
+            if line not in addr:
+                addr.append(line)
 
-    for l in lines[:15]:
-        if len(l) < 3:
+    for line in lines[:15]:
+        if len(line) < 3:
             continue
-        if any(x in l.lower() for x in ["angebot", "rechnung", "datum:", "kunden-nr", "kunden nr", "projekt-nr", "bearbeiter"]):
+        if any(
+            x in line.lower()
+            for x in [
+                "angebot",
+                "rechnung",
+                "datum:",
+                "kunden-nr",
+                "kunden nr",
+                "projekt-nr",
+                "bearbeiter",
+            ]
+        ):
             continue
-        if re.search(r"(www\.|http|tel|fax|@)", l, flags=re.IGNORECASE):
+        if re.search(r"(www\.|http|tel|fax|@)", line, flags=re.IGNORECASE):
             continue
-        name.append(l)
+        name.append(line)
         break
 
     return name[:8], addr[:8], plzort[:8]
@@ -1714,11 +2322,17 @@ def extract_entities(text: str) -> List[Dict[str, Any]]:
     for phone in phones:
         entities.append({"entity_type": "phone", "value": phone})
 
-    kdnr_matches = re.findall(r"\\b(?:KDNR|Kundennr|KundenNr)\\s*[:#]?\\s*(\\d{3,})\\b", text, re.IGNORECASE)
+    kdnr_matches = re.findall(
+        r"\\b(?:KDNR|Kundennr|KundenNr)\\s*[:#]?\\s*(\\d{3,})\\b", text, re.IGNORECASE
+    )
     for kdnr in set(kdnr_matches):
         entities.append({"entity_type": "kdnr", "value": kdnr})
 
-    invoice_matches = re.findall(r"\\b(?:Rechnung|Angebot|Auftrag|Lieferschein|Bestellung)\\D{0,8}(\\d{3,}[\\-/]?\\d*)\\b", text, re.IGNORECASE)
+    invoice_matches = re.findall(
+        r"\\b(?:Rechnung|Angebot|Auftrag|Lieferschein|Bestellung)\\D{0,8}(\\d{3,}[\\-/]?\\d*)\\b",
+        text,
+        re.IGNORECASE,
+    )
     for inv in set(invoice_matches):
         entities.append({"entity_type": "doc_number", "value": inv})
 
@@ -1855,6 +2469,7 @@ def _index_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
         ),
     )
 
+
 def _fts_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
     if not (_has_fts5(con) and _table_exists(con, "docs_fts")):
         return
@@ -1933,10 +2548,21 @@ def index_upsert_document(
             if not exists:
                 con.execute(
                     "INSERT INTO docs(doc_id, group_key, tenant_id, kdnr, object_folder, doctype, doc_date, created_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (doc_id, group_key, tenant_id, kdnr, object_folder, doctype, doc_date or "", _now_iso()),
+                    (
+                        doc_id,
+                        group_key,
+                        tenant_id,
+                        kdnr,
+                        object_folder,
+                        doctype,
+                        doc_date or "",
+                        _now_iso(),
+                    ),
                 )
 
-            row = con.execute("SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)).fetchone()
+            row = con.execute(
+                "SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)
+            ).fetchone()
             mx = int(row["mx"] or 0) if row else 0
             version_no = mx + 1
 
@@ -2102,7 +2728,9 @@ def assistant_search(
             out: List[Dict[str, Any]] = []
             for r in rows:
                 doc_id = str(r["doc_id"])
-                vc = con.execute("SELECT COUNT(*) AS c FROM versions WHERE doc_id=?", (doc_id,)).fetchone()
+                vc = con.execute(
+                    "SELECT COUNT(*) AS c FROM versions WHERE doc_id=?", (doc_id,)
+                ).fetchone()
                 version_count = int(vc["c"] or 0) if vc else 0
                 out.append(
                     {
@@ -2124,7 +2752,7 @@ def assistant_search(
 
 def assistant_suggest(query: str, tenant_id: str = "", limit: int = 3) -> List[str]:
     try:
-        from rapidfuzz import process, fuzz  # type: ignore
+        from rapidfuzz import fuzz, process  # type: ignore
     except Exception:
         return []
 
@@ -2206,7 +2834,9 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                 with _DB_LOCK:
                     con = _db()
                     try:
-                        exists = con.execute("SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)).fetchone()
+                        exists = con.execute(
+                            "SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)
+                        ).fetchone()
                     finally:
                         con.close()
 
@@ -2233,7 +2863,9 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                     continue
 
                 kdnr_idx = _tenant_prefix_kdnr(tenant, kdnr_raw) if kdnr_raw else ""
-                object_folder_tag = _tenant_object_folder_tag(tenant, object_folder) if object_folder else ""
+                object_folder_tag = (
+                    _tenant_object_folder_tag(tenant, object_folder) if object_folder else ""
+                )
 
                 text, used_ocr = _extract_text(fp)
                 if not text or len(text.strip()) < 3:
@@ -2521,7 +3153,9 @@ def _compose_object_folder(kdnr: str, name: str, addr: str, plzort: str) -> str:
     return "_".join(parts)[:180]
 
 
-def _compose_filename(doctype: str, doc_date: str, kdnr: str, name: str, addr: str, plzort: str, ext: str) -> str:
+def _compose_filename(
+    doctype: str, doc_date: str, kdnr: str, name: str, addr: str, plzort: str, ext: str
+) -> str:
     code = _doctype_code(doctype)
     d = parse_excel_like_date(doc_date) or ""
     parts: List[str] = [code]
@@ -2547,8 +3181,6 @@ def _next_version_suffix(target_dir: Path, base_name: str, ext: str) -> str:
         n += 1
 
 
-
-
 def db_latest_path_for_doc(doc_id: str) -> str:
     """Return latest file_path for a given doc_id (sha256 bytes), or ''."""
     doc_id = normalize_component(doc_id)
@@ -2565,6 +3197,7 @@ def db_latest_path_for_doc(doc_id: str) -> str:
         finally:
             con.close()
 
+
 def _db_has_doc(doc_id: str) -> bool:
     with _DB_LOCK:
         con = _db()
@@ -2580,7 +3213,9 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     if not src.exists():
         raise FileNotFoundError(src)
 
-    tenant = _effective_tenant(answers.get("tenant"), answers.get("mandant"), _infer_tenant_from_path(src))
+    tenant = _effective_tenant(
+        answers.get("tenant"), answers.get("mandant"), _infer_tenant_from_path(src)
+    )
     if TENANT_REQUIRE and not tenant:
         raise ValueError("tenant/mandant missing (TENANT_REQUIRE=1)")
 
@@ -2672,7 +3307,9 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     with _DB_LOCK:
         con = _db()
         try:
-            g = con.execute("SELECT doc_id FROM docs WHERE group_key=? LIMIT 1", (group_key,)).fetchone()
+            g = con.execute(
+                "SELECT doc_id FROM docs WHERE group_key=? LIMIT 1", (group_key,)
+            ).fetchone()
             if g and str(g["doc_id"]) != doc_id:
                 note = "new_version_same_group_key"
         finally:

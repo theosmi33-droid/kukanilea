@@ -4,11 +4,12 @@
 - Local-first office assistant with deterministic tool routing.
 - Tenant-scoped indexing/search with rebuild tooling.
 - DEV controls for DB switching + LLM checks.
+- Phase 2 product core: time tracking, jobs/tasks, hardened intake.
 
 ## PLANNED
-- Add connector module stubs (mail/calendar/messaging) with feature flags.
-- Expand task tooling inside chat (list/resolve).
-- Add richer document summarization UI.
+- Phase 2.1: Work time tracking (projects, timers, approvals, export).
+- Phase 2.2: Jobs/projects/tasks core with due dates + assignees.
+- Phase 2.3: Document intake → review → archive hardening.
 
 ## DONE
 - Spec-first contracts (/contracts) and ADRs (/docs/adr) created for enterprise core.
@@ -18,6 +19,7 @@
 - DEV Settings page includes DB/base-path switching, rebuild index, and drift scan actions.
 - Ollama provider gated by feature flag with deterministic fallback.
 - Prompt injection guardrails + regression tests for blocked prompts.
+- Phase 2 spec + ADR for time tracking created.
 
 ## TODO
 - Add role-based task list + resolution actions in chat.

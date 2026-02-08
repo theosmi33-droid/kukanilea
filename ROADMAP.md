@@ -1,5 +1,10 @@
 # Roadmap
 
+## Phase 2 Product Core (Handwerk)
+- Work time tracking (projects, timers, approvals, CSV export).
+- Jobs/projects/tasks core with deterministic reminders.
+- Document intake → review → archive hardening.
+
 ## v1 Local Agent Orchestra
 - App factory + blueprint structure.
 - Deterministic agent orchestration (no LLM runtime).

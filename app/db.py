@@ -132,7 +132,9 @@ class AuthDB:
     def get_user(self, username: str) -> Optional[User]:
         con = self._db()
         try:
-            row = con.execute("SELECT username, password_hash FROM users WHERE username=?", (username,)).fetchone()
+            row = con.execute(
+                "SELECT username, password_hash FROM users WHERE username=?", (username,)
+            ).fetchone()
             if not row:
                 return None
             return User(username=row["username"], password_hash=row["password_hash"])
@@ -145,14 +147,19 @@ class AuthDB:
             rows = con.execute(
                 "SELECT username, tenant_id, role FROM memberships WHERE username=?", (username,)
             ).fetchall()
-            return [Membership(username=r["username"], tenant_id=r["tenant_id"], role=r["role"]) for r in rows]
+            return [
+                Membership(username=r["username"], tenant_id=r["tenant_id"], role=r["role"])
+                for r in rows
+            ]
         finally:
             con.close()
 
     def get_tenant(self, tenant_id: str) -> Optional[Tenant]:
         con = self._db()
         try:
-            row = con.execute("SELECT tenant_id, display_name FROM tenants WHERE tenant_id=?", (tenant_id,)).fetchone()
+            row = con.execute(
+                "SELECT tenant_id, display_name FROM tenants WHERE tenant_id=?", (tenant_id,)
+            ).fetchone()
             if not row:
                 return None
             return Tenant(tenant_id=row["tenant_id"], display_name=row["display_name"])
@@ -175,7 +182,9 @@ class AuthDB:
         finally:
             con.close()
 
-    def add_chat_message(self, *, ts: str, tenant_id: str, username: str, role: str, direction: str, message: str) -> None:
+    def add_chat_message(
+        self, *, ts: str, tenant_id: str, username: str, role: str, direction: str, message: str
+    ) -> None:
         con = self._db()
         try:
             con.execute(

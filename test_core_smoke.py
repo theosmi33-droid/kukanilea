@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
-import time
 import shutil
+import time
 from pathlib import Path
 
 import pytest

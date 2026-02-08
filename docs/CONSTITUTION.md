@@ -6,9 +6,10 @@
 3. **Local‑first**: The product works fully offline. Connectors are optional and explicitly enabled.
 4. **Prompt‑injection resistance**: All untrusted inputs (docs, mail, chat) are hostile. No tool execution without policy gate + provenance.
 5. **Determinism**: Core workflows are reproducible and testable (idempotent jobs, stable outputs).
-6. **Observability**: Critical paths emit logs, metrics, and audit events.
-7. **Premium UX**: Consistent UI components, accessible defaults, zero broken states.
-8. **Spec‑driven delivery**: Every major change updates specs, ADRs, and tests.
+6. **Deterministic API envelopes**: Every API error responds with the ErrorEnvelope contract.
+7. **Observability**: Critical paths emit logs, metrics, and audit events.
+8. **Premium UX**: Consistent UI components, accessible defaults, zero broken states.
+9. **Spec‑driven delivery**: Every major change updates specs, ADRs, and tests.
 
 ## Engineering Commitments
 - Prefer small, mergeable commits.

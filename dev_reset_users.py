@@ -1,4 +1,5 @@
-from tophandwerk_core import db_connect, audit_log
+from tophandwerk_core import db_connect
+
 
 def reset_users():
     con = db_connect()
@@ -11,6 +12,7 @@ def reset_users():
     con.commit()
     con.close()
     print("✅ Alle User & Rollen wurden gelöscht.")
+
 
 if __name__ == "__main__":
     reset_users()

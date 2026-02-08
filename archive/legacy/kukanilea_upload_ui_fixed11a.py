@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # KUKANILEA Systems – UI FIXED11a (single file, runnable)
 
-from flask import Flask, request, redirect, url_for, session, render_template_string
 from functools import wraps
+
+from flask import Flask, redirect, render_template_string, request, session, url_for
 
 app = Flask(__name__)
 app.secret_key = "kukanilea-dev-secret"
@@ -10,15 +11,18 @@ app.secret_key = "kukanilea-dev-secret"
 APP_NAME = "KUKANILEA Systems"
 DEV_TENANT = "KUKANILEA Dev"
 
+
 def login_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not session.get("user"):
             return redirect(url_for("login", next=request.path))
         return fn(*args, **kwargs)
+
     return wrapper
 
-BASE_HTML = '''
+
+BASE_HTML = """
 <!doctype html>
 <html>
 <head>
@@ -51,18 +55,19 @@ button { width:auto; cursor:pointer; }
 <main>{{content|safe}}</main>
 </body>
 </html>
-'''
+"""
 
-@app.route("/login", methods=["GET","POST"])
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
     if request.method == "POST":
-        if request.form.get("user")=="dev" and request.form.get("pw")=="dev":
-            session["user"]="DEVELOPER"
-            session["tenant"]=DEV_TENANT
-            return redirect(request.args.get("next","/"))
-        error="Login fehlgeschlagen (dev/dev)"
-    content = f'''
+        if request.form.get("user") == "dev" and request.form.get("pw") == "dev":
+            session["user"] = "DEVELOPER"
+            session["tenant"] = DEV_TENANT
+            return redirect(request.args.get("next", "/"))
+        error = "Login fehlgeschlagen (dev/dev)"
+    content = f"""
     <div class="card">
     <h2>Login</h2>
     <form method="post">
@@ -72,42 +77,70 @@ def login():
     <div class="muted">{error}</div>
     </form>
     </div>
-    '''
-    return render_template_string(BASE_HTML, title="Login", app=APP_NAME, user=None, tenant=None, content=content)
+    """
+    return render_template_string(
+        BASE_HTML, title="Login", app=APP_NAME, user=None, tenant=None, content=content
+    )
+
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
 @app.route("/")
 @login_required
 def upload():
-    return render_template_string(BASE_HTML, title="Upload", app=APP_NAME,
-        user=session["user"], tenant=session["tenant"],
-        content="<div class='card'><h2>Upload</h2><p class='muted'>Stub – stabiler Startpunkt.</p></div>")
+    return render_template_string(
+        BASE_HTML,
+        title="Upload",
+        app=APP_NAME,
+        user=session["user"],
+        tenant=session["tenant"],
+        content="<div class='card'><h2>Upload</h2><p class='muted'>Stub – stabiler Startpunkt.</p></div>",
+    )
+
 
 @app.route("/assistant")
 @login_required
 def assistant():
-    return render_template_string(BASE_HTML, title="Assistant", app=APP_NAME,
-        user=session["user"], tenant=session["tenant"],
-        content="<div class='card'><h2>Agent Chat</h2><input placeholder='Frag etwas…'/></div>")
+    return render_template_string(
+        BASE_HTML,
+        title="Assistant",
+        app=APP_NAME,
+        user=session["user"],
+        tenant=session["tenant"],
+        content="<div class='card'><h2>Agent Chat</h2><input placeholder='Frag etwas…'/></div>",
+    )
+
 
 @app.route("/mail")
 @login_required
 def mail():
-    return render_template_string(BASE_HTML, title="Mail Agent", app=APP_NAME,
-        user=session["user"], tenant=session["tenant"],
-        content="<div class='card'><h2>Mail Agent</h2><textarea></textarea></div>")
+    return render_template_string(
+        BASE_HTML,
+        title="Mail Agent",
+        app=APP_NAME,
+        user=session["user"],
+        tenant=session["tenant"],
+        content="<div class='card'><h2>Mail Agent</h2><textarea></textarea></div>",
+    )
+
 
 @app.route("/weather")
 @login_required
 def weather():
-    return render_template_string(BASE_HTML, title="Weather", app=APP_NAME,
-        user=session["user"], tenant=session["tenant"],
-        content="<div class='card'><h2>Weather</h2><p class='muted'>Stub</p></div>")
+    return render_template_string(
+        BASE_HTML,
+        title="Weather",
+        app=APP_NAME,
+        user=session["user"],
+        tenant=session["tenant"],
+        content="<div class='card'><h2>Weather</h2><p class='muted'>Stub</p></div>",
+    )
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     print("http://127.0.0.1:5051")
     app.run(port=5051, debug=True)

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from app.auth import hash_password
 from app.config import Config
 from app.db import AuthDB
-from app.auth import hash_password
 
 
 def main() -> None:

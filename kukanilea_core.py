@@ -20,25 +20,24 @@ Hinweis:
 
 from __future__ import annotations
 
-import os
-import re
+import base64
+import csv
+import hashlib
 import io
 import json
-import time
-import base64
-import hashlib
+import os
+import re
 import sqlite3
 import threading
+import time
 import unicodedata
-import csv
 import zipfile
-from pathlib import Path
-from datetime import datetime, date
+from datetime import date, datetime
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional, Tuple
-
 from email import policy
 from email.parser import BytesParser
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 # Optional libs
 try:
@@ -121,26 +120,41 @@ TENANT_REQUIRE = _env_bool("TENANT_REQUIRE", "0")
 SUPPORTED_EXT = {
     # Documents
     ".pdf",
-    ".txt", ".md", ".rtf",
+    ".txt",
+    ".md",
+    ".rtf",
     ".docx",
     ".xlsx",
     ".csv",
     ".eml",
-    ".html", ".htm",
-    ".json", ".xml",
-
+    ".html",
+    ".htm",
+    ".json",
+    ".xml",
     # Images (OCR)
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp",
-
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".bmp",
+    ".webp",
     # Outlook (best-effort)
     ".msg",
-
     # Containers / non-text (accepted, but extraction may be empty; store-only)
-    ".zip", ".7z", ".rar",
-    ".dwg", ".dxf", ".ifc",
-    ".p7m", ".p7s",
-    ".psd", ".ai",
-    ".mp4", ".mov", ".mp3",
+    ".zip",
+    ".7z",
+    ".rar",
+    ".dwg",
+    ".dxf",
+    ".ifc",
+    ".p7m",
+    ".p7s",
+    ".psd",
+    ".ai",
+    ".mp4",
+    ".mov",
+    ".mp3",
 }
 
 # OCR / Extraction limits
@@ -209,12 +223,7 @@ def _norm_for_match(s: Any) -> str:
     - drop non-alnum
     """
     s = normalize_component(s).lower()
-    s = (
-        s.replace("ä", "ae")
-        .replace("ö", "oe")
-        .replace("ü", "ue")
-        .replace("ß", "ss")
-    )
+    s = s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
     s = re.sub(r"[^a-z0-9]+", "", s)
     return s
 
@@ -243,7 +252,9 @@ def _html_to_text(html: str) -> str:
     html = re.sub(r"(?i)<br\s*/?>", "\n", html)
     html = re.sub(r"(?i)</p\s*>", "\n", html)
     html = re.sub(r"(?is)<[^>]+>", " ", html)
-    html = html.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    html = (
+        html.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    )
     html = re.sub(r"[ \t]+", " ", html)
     html = re.sub(r"\n{3,}", "\n\n", html)
     return html.strip()
@@ -318,14 +329,25 @@ def _safe_fs(s: Any) -> str:
 
 
 _DATE_PATTERNS = [
-    "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
-    "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y",
-    "%d.%m.%y", "%d/%m/%y", "%d-%m-%y",
-    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-    "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
-    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M",
-    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
-    "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%Y.%m.%d",
+    "%d.%m.%Y",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%y",
+    "%d/%m/%y",
+    "%d-%m-%y",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%Y/%m/%d %H:%M:%S",
+    "%Y/%m/%d %H:%M",
+    "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d-%m-%Y %H:%M:%S",
+    "%d-%m-%Y %H:%M",
 ]
 
 
@@ -612,7 +634,9 @@ def rbac_verify_user(username: str, password: str) -> bool:
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT pass_sha256 FROM users WHERE username=?", (username,)).fetchone()
+            row = con.execute(
+                "SELECT pass_sha256 FROM users WHERE username=?", (username,)
+            ).fetchone()
             if not row:
                 return False
             return str(row["pass_sha256"]) == _pw_hash(password)
@@ -644,7 +668,9 @@ def rbac_get_user_roles(username: str) -> List[str]:
     with _DB_LOCK:
         con = _db()
         try:
-            rows = con.execute("SELECT role FROM roles WHERE username=? ORDER BY role", (username,)).fetchall()
+            rows = con.execute(
+                "SELECT role FROM roles WHERE username=? ORDER BY role", (username,)
+            ).fetchall()
             return [str(r["role"]) for r in rows]
         finally:
             con.close()
@@ -653,7 +679,9 @@ def rbac_get_user_roles(username: str) -> List[str]:
 # ============================================================
 # AUDIT
 # ============================================================
-def audit_log(user: str, role: str, action: str, target: str = "", meta: Optional[dict] = None) -> None:
+def audit_log(
+    user: str, role: str, action: str, target: str = "", meta: Optional[dict] = None
+) -> None:
     user = normalize_component(user).lower()
     role = normalize_component(role).upper()
     action = normalize_component(action)
@@ -698,7 +726,7 @@ def parse_folder_fields(folder_name: str) -> Dict[str, str]:
     if plz_idx is not None:
         plz = rest[plz_idx]
         ort = "_".join(rest[plz_idx + 1 :]) if plz_idx + 1 < len(rest) else ""
-        out["plzort"] = normalize_component(f"{plz} {ort.replace('_',' ')}").strip()
+        out["plzort"] = normalize_component(f"{plz} {ort.replace('_', ' ')}").strip()
         before = rest[:plz_idx]
     else:
         before = rest
@@ -706,7 +734,21 @@ def parse_folder_fields(folder_name: str) -> Dict[str, str]:
     addr_start = None
     for i, t in enumerate(before):
         low = t.lower()
-        if any(x in low for x in ["str", "straße", "strasse", "weg", "allee", "platz", "ring", "damm", "ufer", "gasse"]):
+        if any(
+            x in low
+            for x in [
+                "str",
+                "straße",
+                "strasse",
+                "weg",
+                "allee",
+                "platz",
+                "ring",
+                "damm",
+                "ufer",
+                "gasse",
+            ]
+        ):
             addr_start = i
             break
 
@@ -760,7 +802,9 @@ def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
     return sorted(out)
 
 
-def best_match_object_folder(existing: List[Path], addr: str, plzort: str) -> Tuple[Optional[Path], float]:
+def best_match_object_folder(
+    existing: List[Path], addr: str, plzort: str
+) -> Tuple[Optional[Path], float]:
     addr_n = _norm_for_match(addr)
     plz_n = _norm_for_match(plzort)
 
@@ -783,7 +827,9 @@ def best_match_object_folder(existing: List[Path], addr: str, plzort: str) -> Tu
     return best, best_score
 
 
-def detect_object_duplicates_for_kdnr(kdnr: str, threshold: float = DEFAULT_DUP_SIM_THRESHOLD) -> List[Dict[str, Any]]:
+def detect_object_duplicates_for_kdnr(
+    kdnr: str, threshold: float = DEFAULT_DUP_SIM_THRESHOLD
+) -> List[Dict[str, Any]]:
     kdnr = normalize_component(kdnr)
     folders = find_existing_customer_folders(BASE_PATH, kdnr)
     names = [(f, _norm_for_match(f.name)) for f in folders]
@@ -925,7 +971,11 @@ def _extract_xlsx_text(fp: Path) -> str:
     try:
         with zipfile.ZipFile(str(fp), "r") as z:
             sst = _xlsx_shared_strings(z)
-            sheet_names = [n for n in z.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+            sheet_names = [
+                n
+                for n in z.namelist()
+                if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
+            ]
             sheet_names = sorted(sheet_names)[:3]
             out_lines: List[str] = []
             for sname in sheet_names:
@@ -1208,8 +1258,24 @@ def _extract_text(fp: Path) -> Tuple[str, bool]:
 # HEURISTIC PARSING (SUGGESTIONS)
 # ============================================================
 _DOCTYPE_KEYWORDS = [
-    ("H_RECHNUNG", [r"\bh[ _-]?rechnung\b", r"\bhändler[ _-]?rechnung\b", r"\bhaendler[ _-]?rechnung\b", r"\bdealer[ _-]?invoice\b"]),
-    ("H_ANGEBOT",  [r"\bh[ _-]?angebot\b",  r"\bhändler[ _-]?angebot\b",  r"\bhaendler[ _-]?angebot\b",  r"\bdealer[ _-]?offer\b"]),
+    (
+        "H_RECHNUNG",
+        [
+            r"\bh[ _-]?rechnung\b",
+            r"\bhändler[ _-]?rechnung\b",
+            r"\bhaendler[ _-]?rechnung\b",
+            r"\bdealer[ _-]?invoice\b",
+        ],
+    ),
+    (
+        "H_ANGEBOT",
+        [
+            r"\bh[ _-]?angebot\b",
+            r"\bhändler[ _-]?angebot\b",
+            r"\bhaendler[ _-]?angebot\b",
+            r"\bdealer[ _-]?offer\b",
+        ],
+    ),
     ("RECHNUNG", [r"\brechnung\b", r"\binvoice\b"]),
     ("ANGEBOT", [r"\bangebot\b", r"\bquotation\b", r"\boffer\b"]),
     ("AUFTRAGSBESTAETIGUNG", [r"\bauftragsbest", r"\border confirmation\b"]),
@@ -1305,32 +1371,47 @@ def _find_dates(text: str) -> Tuple[str, List[Dict[str, Any]]]:
 
 def _find_name_addr_plzort(text: str) -> Tuple[List[str], List[str], List[str]]:
     lines = [normalize_component(x) for x in (text or "").splitlines()]
-    lines = [l for l in lines if l]
+    lines = [line for line in lines if line]
 
     plzort: List[str] = []
     addr: List[str] = []
     name: List[str] = []
 
-    for l in lines:
-        m = re.search(r"\b(\d{5})\s+([A-Za-zÄÖÜäöüß\- ]{2,})\b", l)
+    for line in lines:
+        m = re.search(r"\b(\d{5})\s+([A-Za-zÄÖÜäöüß\- ]{2,})\b", line)
         if m:
             candidate = normalize_component(f"{m.group(1)} {m.group(2)}")
             if candidate not in plzort:
                 plzort.append(candidate)
 
-    for l in lines:
-        if re.search(r"\b(str\.?|straße|strasse|weg|allee|platz|ring|damm|ufer|gasse)\b", l, flags=re.IGNORECASE) and re.search(r"\b\d{1,4}[a-zA-Z]?\b", l):
-            if l not in addr:
-                addr.append(l)
+    for line in lines:
+        if re.search(
+            r"\b(str\.?|straße|strasse|weg|allee|platz|ring|damm|ufer|gasse)\b",
+            line,
+            flags=re.IGNORECASE,
+        ) and re.search(r"\b\d{1,4}[a-zA-Z]?\b", line):
+            if line not in addr:
+                addr.append(line)
 
-    for l in lines[:15]:
-        if len(l) < 3:
+    for line in lines[:15]:
+        if len(line) < 3:
             continue
-        if any(x in l.lower() for x in ["angebot", "rechnung", "datum:", "kunden-nr", "kunden nr", "projekt-nr", "bearbeiter"]):
+        if any(
+            x in line.lower()
+            for x in [
+                "angebot",
+                "rechnung",
+                "datum:",
+                "kunden-nr",
+                "kunden nr",
+                "projekt-nr",
+                "bearbeiter",
+            ]
+        ):
             continue
-        if re.search(r"(www\.|http|tel|fax|@)", l, flags=re.IGNORECASE):
+        if re.search(r"(www\.|http|tel|fax|@)", line, flags=re.IGNORECASE):
             continue
-        name.append(l)
+        name.append(line)
         break
 
     return name[:8], addr[:8], plzort[:8]
@@ -1400,7 +1481,9 @@ def index_upsert_document(
                     (doc_id, group_key, kdnr, object_folder, doctype, doc_date or "", _now_iso()),
                 )
 
-            row = con.execute("SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)).fetchone()
+            row = con.execute(
+                "SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)
+            ).fetchone()
             mx = int(row["mx"] or 0) if row else 0
             version_no = mx + 1
 
@@ -1439,7 +1522,9 @@ def index_upsert_document(
             con.close()
 
 
-def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_LIMIT, role: str = "ADMIN") -> List[Dict[str, Any]]:
+def assistant_search(
+    query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_LIMIT, role: str = "ADMIN"
+) -> List[Dict[str, Any]]:
     """
     Tenant note:
     - If you stored kdnr as "TENANT:1234", search by the same.
@@ -1520,7 +1605,9 @@ def assistant_search(query: str, kdnr: str = "", limit: int = ASSISTANT_DEFAULT_
             out: List[Dict[str, Any]] = []
             for r in rows:
                 doc_id = str(r["doc_id"])
-                vc = con.execute("SELECT COUNT(*) AS c FROM versions WHERE doc_id=?", (doc_id,)).fetchone()
+                vc = con.execute(
+                    "SELECT COUNT(*) AS c FROM versions WHERE doc_id=?", (doc_id,)
+                ).fetchone()
                 version_count = int(vc["c"] or 0) if vc else 0
                 out.append(
                     {
@@ -1585,7 +1672,9 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                 with _DB_LOCK:
                     con = _db()
                     try:
-                        exists = con.execute("SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)).fetchone()
+                        exists = con.execute(
+                            "SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)
+                        ).fetchone()
                     finally:
                         con.close()
 
@@ -1612,7 +1701,9 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                     continue
 
                 kdnr_idx = _tenant_prefix_kdnr(tenant, kdnr_raw) if kdnr_raw else ""
-                object_folder_tag = _tenant_object_folder_tag(tenant, object_folder) if object_folder else ""
+                object_folder_tag = (
+                    _tenant_object_folder_tag(tenant, object_folder) if object_folder else ""
+                )
 
                 text, used_ocr = _extract_text(fp)
                 if not text or len(text.strip()) < 3:
@@ -1793,7 +1884,9 @@ def _compose_object_folder(kdnr: str, name: str, addr: str, plzort: str) -> str:
     return "_".join(parts)[:180]
 
 
-def _compose_filename(doctype: str, doc_date: str, kdnr: str, name: str, addr: str, plzort: str, ext: str) -> str:
+def _compose_filename(
+    doctype: str, doc_date: str, kdnr: str, name: str, addr: str, plzort: str, ext: str
+) -> str:
     code = _doctype_code(doctype)
     d = parse_excel_like_date(doc_date) or ""
     parts: List[str] = [code]
@@ -1834,7 +1927,9 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     if not src.exists():
         raise FileNotFoundError(src)
 
-    tenant = _effective_tenant(answers.get("tenant"), answers.get("mandant"), _infer_tenant_from_path(src))
+    tenant = _effective_tenant(
+        answers.get("tenant"), answers.get("mandant"), _infer_tenant_from_path(src)
+    )
     if TENANT_REQUIRE and not tenant:
         raise ValueError("tenant/mandant missing (TENANT_REQUIRE=1)")
 
@@ -1925,7 +2020,9 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     with _DB_LOCK:
         con = _db()
         try:
-            g = con.execute("SELECT doc_id FROM docs WHERE group_key=? LIMIT 1", (group_key,)).fetchone()
+            g = con.execute(
+                "SELECT doc_id FROM docs WHERE group_key=? LIMIT 1", (group_key,)
+            ).fetchone()
             if g and str(g["doc_id"]) != doc_id:
                 note = "new_version_same_group_key"
         finally:

@@ -34,7 +34,7 @@ import importlib.util
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
 
@@ -65,6 +65,7 @@ from .auth import (
 )
 from .config import Config
 from .db import AuthDB
+from .errors import json_error
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
@@ -134,6 +135,16 @@ audit_log = _core_get("audit_log")
 task_list = _core_get("task_list")
 task_resolve = _core_get("task_resolve")
 task_dismiss = _core_get("task_dismiss")
+
+# Optional time tracking
+time_project_create = _core_get("time_project_create")
+time_project_list = _core_get("time_project_list")
+time_entry_start = _core_get("time_entry_start")
+time_entry_stop = _core_get("time_entry_stop")
+time_entry_list = _core_get("time_entries_list")
+time_entry_update = _core_get("time_entry_update")
+time_entry_approve = _core_get("time_entry_approve")
+time_entries_export_csv = _core_get("time_entries_export_csv")
 
 # Guard minimum contract
 _missing = []
@@ -394,6 +405,26 @@ def _get_profile() -> dict:
     }
 
 
+def _parse_date(value: str) -> datetime.date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except Exception:
+        return datetime.now().date()
+
+
+def _time_range_params(range_name: str, date_value: str) -> tuple[str, str]:
+    base_date = _parse_date(date_value)
+    if range_name == "day":
+        start_date = base_date
+        end_date = base_date
+    else:
+        start_date = base_date - timedelta(days=base_date.weekday())
+        end_date = start_date + timedelta(days=6)
+    start_at = f"{start_date.isoformat()}T00:00:00"
+    end_at = f"{end_date.isoformat()}T23:59:59"
+    return start_at, end_at
+
+
 # -------- UI Templates ----------
 HTML_BASE = r"""<!doctype html>
 <html lang="de">
@@ -474,6 +505,7 @@ HTML_BASE = r"""<!doctype html>
     <nav class="space-y-2">
       <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">📥 Upload</a>
       <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">✅ Tasks</a>
+      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">⏱️ Time</a>
       <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
       <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
       <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
@@ -807,6 +839,233 @@ HTML_WIZARD = r"""<form method="post" class="space-y-3" autocomplete="off">
   </div>
 </form>"""
 
+HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
+  <div class="lg:col-span-1 space-y-4">
+    <div class="card p-4">
+      <div class="text-lg font-semibold">Timer</div>
+      <div class="muted text-sm">Starte und stoppe Zeiten pro Projekt.</div>
+      <div class="mt-3 space-y-2">
+        <label class="text-xs muted">Projekt</label>
+        <select id="timeProject" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"></select>
+        <label class="text-xs muted">Notiz</label>
+        <input id="timeNote" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Baustelle Prüfen" />
+        <div class="flex gap-2 pt-2">
+          <button id="timeStart" class="px-4 py-2 text-sm btn-primary w-full">Start</button>
+          <button id="timeStop" class="px-4 py-2 text-sm btn-outline w-full">Stop</button>
+        </div>
+        <div id="timeStatus" class="muted text-xs pt-2">Timer bereit.</div>
+      </div>
+    </div>
+    <div class="card p-4">
+      <div class="text-lg font-semibold">Projekt anlegen</div>
+      <div class="mt-3 space-y-2">
+        <input id="projectName" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Projektname" />
+        <textarea id="projectDesc" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" rows="3" placeholder="Beschreibung (optional)"></textarea>
+        <button id="projectCreate" class="px-4 py-2 text-sm btn-outline w-full">Anlegen</button>
+        <div id="projectStatus" class="muted text-xs pt-1"></div>
+      </div>
+    </div>
+    <div class="card p-4">
+      <div class="text-lg font-semibold">Export</div>
+      <div class="muted text-xs">CSV Export der aktuellen Woche.</div>
+      <button id="exportWeek" class="mt-3 px-4 py-2 text-sm btn-outline w-full">CSV herunterladen</button>
+    </div>
+  </div>
+  <div class="lg:col-span-2 space-y-4">
+    <div class="card p-4">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div>
+          <div class="text-lg font-semibold">Wochenübersicht</div>
+          <div class="muted text-xs">Summen pro Tag, direkt prüfbar.</div>
+        </div>
+        <input id="weekDate" type="date" class="rounded-xl border px-3 py-2 text-sm bg-transparent" />
+      </div>
+      <div id="weekSummary" class="grid md:grid-cols-2 gap-3 mt-4"></div>
+    </div>
+    <div class="card p-4">
+      <div class="text-lg font-semibold">Einträge</div>
+      <div class="muted text-xs">Klick auf „Bearbeiten“ für Korrekturen.</div>
+      <div id="entryList" class="mt-4 space-y-3"></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const role = "{{role}}";
+  const timeProject = document.getElementById("timeProject");
+  const timeNote = document.getElementById("timeNote");
+  const timeStart = document.getElementById("timeStart");
+  const timeStop = document.getElementById("timeStop");
+  const timeStatus = document.getElementById("timeStatus");
+  const projectName = document.getElementById("projectName");
+  const projectDesc = document.getElementById("projectDesc");
+  const projectCreate = document.getElementById("projectCreate");
+  const projectStatus = document.getElementById("projectStatus");
+  const weekDate = document.getElementById("weekDate");
+  const weekSummary = document.getElementById("weekSummary");
+  const entryList = document.getElementById("entryList");
+  const exportWeek = document.getElementById("exportWeek");
+
+  function fmtDuration(seconds){
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${m}m`;
+  }
+
+  function setStatus(msg, isError){
+    timeStatus.textContent = msg;
+    timeStatus.style.color = isError ? "#f87171" : "";
+  }
+
+  async function loadProjects(){
+    const res = await fetch("/api/time/projects", {credentials:"same-origin"});
+    const data = await res.json();
+    timeProject.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Ohne Projekt";
+    timeProject.appendChild(opt);
+    (data.projects || []).forEach(p => {
+      const o = document.createElement("option");
+      o.value = p.id;
+      o.textContent = p.name;
+      timeProject.appendChild(o);
+    });
+  }
+
+  function renderSummary(items){
+    weekSummary.innerHTML = "";
+    if(!items.length){
+      weekSummary.innerHTML = "<div class='muted text-sm'>Keine Einträge.</div>";
+      return;
+    }
+    items.forEach(day => {
+      const card = document.createElement("div");
+      card.className = "rounded-xl border p-3";
+      card.innerHTML = `<div class="text-sm font-semibold">${day.date}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
+      weekSummary.appendChild(card);
+    });
+  }
+
+  function renderEntries(entries){
+    entryList.innerHTML = "";
+    if(!entries.length){
+      entryList.innerHTML = "<div class='muted text-sm'>Keine Einträge in dieser Woche.</div>";
+      return;
+    }
+    entries.forEach(entry => {
+      const wrap = document.createElement("div");
+      wrap.className = "rounded-xl border p-3";
+      const approveBtn = (role === "ADMIN" || role === "DEV") && entry.approval_status !== "APPROVED"
+        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entry.id}">Freigeben</button>`
+        : "";
+      wrap.innerHTML = `
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <div>
+            <div class="text-sm font-semibold">${entry.project_name || "Ohne Projekt"}</div>
+            <div class="muted text-xs">${entry.start_at} → ${entry.end_at || "läuft"} · ${fmtDuration(entry.duration_seconds || 0)}</div>
+            <div class="muted text-xs">Status: ${entry.approval_status || "PENDING"} ${entry.approved_by ? "(von " + entry.approved_by + ")" : ""}</div>
+            ${entry.note ? `<div class="text-xs mt-1">${entry.note}</div>` : ""}
+          </div>
+          <div class="flex gap-2">
+            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entry.id}">Bearbeiten</button>
+            ${approveBtn}
+          </div>
+        </div>`;
+      entryList.appendChild(wrap);
+    });
+  }
+
+  async function loadEntries(){
+    const dateValue = weekDate.value;
+    const res = await fetch(`/api/time/entries?range=week&date=${encodeURIComponent(dateValue)}`, {credentials:"same-origin"});
+    const data = await res.json();
+    renderSummary(data.summary || []);
+    renderEntries(data.entries || []);
+    if(data.running){
+      setStatus(`Läuft seit ${data.running.start_at}.`, false);
+    } else {
+      setStatus("Timer bereit.", false);
+    }
+  }
+
+  async function startTimer(){
+    setStatus("Starte…", false);
+    const payload = {project_id: timeProject.value || null, note: timeNote.value || ""};
+    const res = await fetch("/api/time/start", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(!res.ok){
+      setStatus(data.error?.message || "Fehler beim Start.", true);
+      return;
+    }
+    timeNote.value = "";
+    await loadEntries();
+  }
+
+  async function stopTimer(){
+    setStatus("Stoppe…", false);
+    const res = await fetch("/api/time/stop", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({})});
+    const data = await res.json();
+    if(!res.ok){
+      setStatus(data.error?.message || "Fehler beim Stoppen.", true);
+      return;
+    }
+    await loadEntries();
+  }
+
+  async function createProject(){
+    projectStatus.textContent = "Speichern…";
+    const payload = {name: projectName.value || "", description: projectDesc.value || ""};
+    const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(!res.ok){
+      projectStatus.textContent = data.error?.message || "Fehler beim Anlegen.";
+      return;
+    }
+    projectName.value = "";
+    projectDesc.value = "";
+    projectStatus.textContent = "Projekt angelegt.";
+    await loadProjects();
+  }
+
+  entryList.addEventListener("click", async (e) => {
+    const editId = e.target.getAttribute("data-edit");
+    const approveId = e.target.getAttribute("data-approve");
+    if(editId){
+      const startAt = prompt("Startzeit (YYYY-MM-DDTHH:MM:SS)", "");
+      if(startAt === null) return;
+      const endAt = prompt("Endzeit (YYYY-MM-DDTHH:MM:SS oder leer)", "");
+      const note = prompt("Notiz (optional)", "");
+      const payload = {entry_id: parseInt(editId, 10), start_at: startAt || null, end_at: endAt || null, note: note || null};
+      const res = await fetch("/api/time/entry/edit", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+      const data = await res.json();
+      if(!res.ok){ alert(data.error?.message || "Fehler beim Update."); }
+      await loadEntries();
+    }
+    if(approveId){
+      const res = await fetch("/api/time/entry/approve", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({entry_id: parseInt(approveId, 10)})});
+      const data = await res.json();
+      if(!res.ok){ alert(data.error?.message || "Fehler beim Freigeben."); }
+      await loadEntries();
+    }
+  });
+
+  exportWeek.addEventListener("click", () => {
+    const dateValue = weekDate.value;
+    window.location.href = `/api/time/export?range=week&date=${encodeURIComponent(dateValue)}`;
+  });
+
+  timeStart.addEventListener("click", startTimer);
+  timeStop.addEventListener("click", stopTimer);
+  projectCreate.addEventListener("click", createProject);
+
+  const today = new Date().toISOString().slice(0, 10);
+  weekDate.value = today;
+  loadProjects().then(loadEntries);
+})();
+</script>
+"""
+
 HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
   <div class="flex items-center justify-between gap-2">
     <div>
@@ -870,7 +1129,10 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     try{
       const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
       const j = await res.json();
-      if(!res.ok){ add("system", "Fehler: " + (j.message || j.error || ("HTTP " + res.status))); }
+      if(!res.ok){
+        const errMsg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ("HTTP " + res.status));
+        add("system", "Fehler: " + errMsg);
+      }
       else { add("assistant", j.message || "(leer)", j.actions || [], j.results || [], j.suggestions || []); }
     }catch(e){ add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e)); }
     finally{ send.disabled = false; }
@@ -1007,7 +1269,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       let j = {};
       try{ j = await r.json(); }catch(e){}
       if(!r.ok){
-        const msg = j.message || j.error || ('HTTP ' + r.status);
+        const msg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ('HTTP ' + r.status));
         _cwAppend('assistant', 'Fehler: ' + msg);
         if(_cw.status) _cw.status.textContent = 'Fehler';
         if(_cw.retry) _cw.retry.classList.remove('hidden');
@@ -1078,10 +1340,7 @@ def _guard_login():
         return None
     if not current_user():
         if p.startswith("/api/"):
-            return (
-                jsonify(ok=False, message="Authentifizierung erforderlich.", error="auth_required"),
-                401,
-            )
+            return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
         return redirect(url_for("web.login", next=p))
     return None
 
@@ -1163,7 +1422,7 @@ def _weather_answer(city: str) -> str:
     info = get_weather(city)
     if not info:
         return f"Ich konnte das Wetter für {city} nicht abrufen."
-    return f"Wetter {info.get('city','')}: {info.get('summary','')} (Temp: {info.get('temp_c','?')}°C, Wind: {info.get('wind_kmh','?')} km/h)"
+    return f"Wetter {info.get('city', '')}: {info.get('summary', '')} (Temp: {info.get('temp_c', '?')}°C, Wind: {info.get('wind_kmh', '?')} km/h)"
 
 
 def _weather_adapter(message: str) -> str:
@@ -1198,17 +1457,7 @@ def api_chat():
     token = (payload.get("token") or "").strip()
 
     if not q:
-        return (
-            jsonify(
-                ok=False,
-                message="Leer.",
-                suggestions=[],
-                results=[],
-                actions=[],
-                error="empty_query",
-            ),
-            400,
-        )
+        return json_error("empty_query", "Leer.", status=400)
 
     user = current_user() or "dev"
     role = current_role()
@@ -1220,6 +1469,17 @@ def api_chat():
         token=token,
     )
     result = ORCHESTRATOR.handle(q, context)
+    if not result.ok:
+        return json_error(
+            result.error or "chat_error",
+            result.text or "Chat konnte nicht verarbeitet werden.",
+            status=400,
+            details={
+                "suggestions": result.suggestions or [],
+                "actions": result.actions or [],
+                "results": result.data.get("results", []) if isinstance(result.data, dict) else [],
+            },
+        )
     payload_out = {
         "ok": result.ok,
         "message": result.text,
@@ -1241,7 +1501,7 @@ def api_search():
     kdnr = (payload.get("kdnr") or "").strip()
     limit = int(payload.get("limit") or 8)
     if not query:
-        return jsonify(ok=False, message="Query fehlt.", results=[], did_you_mean=[]), 400
+        return json_error("query_missing", "Query fehlt.", status=400)
     context = AgentContext(
         tenant_id=current_tenant(),
         user=str(current_user() or "dev"),
@@ -1261,7 +1521,7 @@ def api_customer():
     payload = request.get_json(silent=True) or {}
     kdnr = (payload.get("kdnr") or "").strip()
     if not kdnr:
-        return jsonify(ok=False, message="KDNR fehlt.", kdnr=""), 400
+        return json_error("kdnr_missing", "KDNR fehlt.", status=400)
     context = AgentContext(
         tenant_id=current_tenant(),
         user=str(current_user() or "dev"),
@@ -1304,6 +1564,173 @@ def api_audit():
     else:
         events = []
     return jsonify(ok=True, events=events)
+
+
+@bp.get("/api/time/projects")
+@login_required
+def api_time_projects():
+    if not callable(time_project_list):
+        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+    projects = time_project_list(tenant_id=current_tenant(), status="ACTIVE")  # type: ignore
+    return jsonify(ok=True, projects=projects)
+
+
+@bp.post("/api/time/projects")
+@login_required
+@require_role("OPERATOR")
+def api_time_projects_create():
+    if not callable(time_project_create):
+        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("name") or "").strip()
+    description = (payload.get("description") or "").strip()
+    try:
+        project = time_project_create(  # type: ignore
+            tenant_id=current_tenant(),
+            name=name,
+            description=description,
+            created_by=current_user() or "",
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Projekt konnte nicht angelegt werden.", status=400)
+    return jsonify(ok=True, project=project)
+
+
+@bp.post("/api/time/start")
+@login_required
+@require_role("OPERATOR")
+def api_time_start():
+    if not callable(time_entry_start):
+        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    project_id = payload.get("project_id")
+    note = (payload.get("note") or "").strip()
+    try:
+        entry = time_entry_start(  # type: ignore
+            tenant_id=current_tenant(),
+            user=current_user() or "",
+            project_id=int(project_id) if project_id else None,
+            note=note,
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Timer konnte nicht gestartet werden.", status=400)
+    return jsonify(ok=True, entry=entry)
+
+
+@bp.post("/api/time/stop")
+@login_required
+@require_role("OPERATOR")
+def api_time_stop():
+    if not callable(time_entry_stop):
+        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    entry_id = payload.get("entry_id")
+    try:
+        entry = time_entry_stop(  # type: ignore
+            tenant_id=current_tenant(),
+            user=current_user() or "",
+            entry_id=int(entry_id) if entry_id else None,
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
+    return jsonify(ok=True, entry=entry)
+
+
+@bp.get("/api/time/entries")
+@login_required
+def api_time_entries():
+    if not callable(time_entry_list):
+        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+    range_name = (request.args.get("range") or "week").strip().lower()
+    date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
+    user = (request.args.get("user") or "").strip()
+    if current_role() not in {"ADMIN", "DEV"}:
+        user = current_user() or ""
+    start_at, end_at = _time_range_params(range_name, date_value)
+    entries = time_entry_list(  # type: ignore
+        tenant_id=current_tenant(),
+        user=user or None,
+        start_at=start_at,
+        end_at=end_at,
+        limit=500,
+    )
+    summary: dict[str, int] = {}
+    running = None
+    for entry in entries:
+        day = (entry.get("start_at") or "").split("T")[0]
+        summary[day] = summary.get(day, 0) + int(entry.get("duration_seconds") or 0)
+        if not entry.get("end_at") and running is None:
+            running = entry
+    summary_list = [{"date": k, "total_seconds": v} for k, v in sorted(summary.items())]
+    return jsonify(ok=True, entries=entries, summary=summary_list, running=running)
+
+
+@bp.post("/api/time/entry/edit")
+@login_required
+@require_role("OPERATOR")
+def api_time_entry_edit():
+    if not callable(time_entry_update):
+        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    entry_id = payload.get("entry_id")
+    if not entry_id:
+        return json_error("entry_id_required", "Eintrag fehlt.", status=400)
+    try:
+        entry = time_entry_update(  # type: ignore
+            tenant_id=current_tenant(),
+            entry_id=int(entry_id),
+            project_id=int(payload.get("project_id")) if payload.get("project_id") else None,
+            start_at=(payload.get("start_at") or None),
+            end_at=(payload.get("end_at") or None),
+            note=payload.get("note"),
+            user=current_user() or "",
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Eintrag konnte nicht aktualisiert werden.", status=400)
+    return jsonify(ok=True, entry=entry)
+
+
+@bp.post("/api/time/entry/approve")
+@login_required
+@require_role("ADMIN")
+def api_time_entry_approve():
+    if not callable(time_entry_approve):
+        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    entry_id = payload.get("entry_id")
+    if not entry_id:
+        return json_error("entry_id_required", "Eintrag fehlt.", status=400)
+    try:
+        entry = time_entry_approve(  # type: ignore
+            tenant_id=current_tenant(),
+            entry_id=int(entry_id),
+            approved_by=current_user() or "",
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Eintrag konnte nicht freigegeben werden.", status=400)
+    return jsonify(ok=True, entry=entry)
+
+
+@bp.get("/api/time/export")
+@login_required
+def api_time_export():
+    if not callable(time_entries_export_csv):
+        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+    range_name = (request.args.get("range") or "week").strip().lower()
+    date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
+    user = (request.args.get("user") or "").strip()
+    if current_role() not in {"ADMIN", "DEV"}:
+        user = current_user() or ""
+    start_at, end_at = _time_range_params(range_name, date_value)
+    csv_payload = time_entries_export_csv(  # type: ignore
+        tenant_id=current_tenant(),
+        user=user or None,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    response = current_app.response_class(csv_payload, mimetype="text/csv")
+    response.headers["Content-Disposition"] = "attachment; filename=time_entries.csv"
+    return response
 
 
 # ==============================
@@ -1413,7 +1840,8 @@ HTML_MAIL = """
       });
       const data = await res.json();
       if(!res.ok){
-        status.textContent = 'Fehler: ' + (data.error || res.status);
+        const msg = (data && data.error && data.error.message) ? data.error.message : (data.error || res.status);
+        status.textContent = 'Fehler: ' + msg;
         return;
       }
       out.value = data.text || '';
@@ -1535,7 +1963,8 @@ HTML_SETTINGS = """
     let j = {};
     try{ j = await r.json(); }catch(e){}
     if(!r.ok){
-      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+      const msg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ('HTTP ' + r.status));
+      throw new Error(msg);
     }
     return j;
   }
@@ -1618,13 +2047,13 @@ BETREFF: <eine Zeile>
 TEXT:
 <Mailtext>
 
-Empfänger: {to or '(nicht angegeben)'}
-Betreff-Vorschlag (falls vorhanden): {subject or '(leer)'}
+Empfänger: {to or "(nicht angegeben)"}
+Betreff-Vorschlag (falls vorhanden): {subject or "(leer)"}
 Ton: {tone}
 Länge: {length}
 
 Kontext/Stichpunkte:
-{context or '(leer)'}
+{context or "(leer)"}
 """
 
 
@@ -1683,7 +2112,7 @@ def api_rebuild_index():
     elif callable(getattr(core, "index_run_full", None)):
         result = core.index_run_full()
     else:
-        return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
+        return json_error("feature_unavailable", "Indexing nicht verfügbar.", status=400)
     _DEV_STATUS["index"] = result
     _audit("rebuild_index", meta={"result": result})
     return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
@@ -1696,7 +2125,7 @@ def api_full_scan():
     if callable(getattr(core, "index_run_full", None)):
         result = core.index_run_full()
     else:
-        return jsonify(ok=False, message="Scan nicht verfügbar."), 400
+        return json_error("feature_unavailable", "Scan nicht verfügbar.", status=400)
     _DEV_STATUS["scan"] = result
     _audit("full_scan", meta={"result": result})
     return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
@@ -1709,7 +2138,7 @@ def api_repair_drift():
     if callable(getattr(core, "index_run_full", None)):
         result = core.index_run_full()
     else:
-        return jsonify(ok=False, message="Drift-Scan nicht verfügbar."), 400
+        return json_error("feature_unavailable", "Drift-Scan nicht verfügbar.", status=400)
     _DEV_STATUS["scan"] = result
     _audit("repair_drift", meta={"result": result})
     return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
@@ -1722,18 +2151,18 @@ def api_switch_db():
     payload = request.get_json(silent=True) or {}
     path = Path(str(payload.get("path", ""))).expanduser()
     if not path:
-        return jsonify(ok=False, message="Pfad fehlt."), 400
+        return json_error("path_missing", "Pfad fehlt.", status=400)
     if not _is_allowlisted_path(path):
-        return jsonify(ok=False, message="Pfad nicht erlaubt."), 400
+        return json_error("path_not_allowed", "Pfad nicht erlaubt.", status=400)
     if not path.exists():
-        return jsonify(ok=False, message="Datei existiert nicht."), 400
+        return json_error("path_not_found", "Datei existiert nicht.", status=400)
     old_path = str(getattr(core, "DB_PATH", ""))
     if callable(getattr(core, "set_db_path", None)):
         core.set_db_path(path)
         _DEV_STATUS["db"] = {"old": old_path, "new": str(path)}
         _audit("switch_db", target=str(path), meta={"old": old_path})
         return jsonify(ok=True, message="DB gewechselt.", path=str(path))
-    return jsonify(ok=False, message="DB switch nicht verfügbar."), 400
+    return json_error("feature_unavailable", "DB switch nicht verfügbar.", status=400)
 
 
 @bp.post("/api/dev/switch-base")
@@ -1743,9 +2172,11 @@ def api_switch_base():
     payload = request.get_json(silent=True) or {}
     path = Path(str(payload.get("path", ""))).expanduser()
     if not path:
-        return jsonify(ok=False, message="Pfad fehlt."), 400
+        return json_error("path_missing", "Pfad fehlt.", status=400)
     if not _is_storage_path_valid(path):
-        return jsonify(ok=False, message="Pfad nicht erlaubt oder nicht vorhanden."), 400
+        return json_error(
+            "path_not_allowed", "Pfad nicht erlaubt oder nicht vorhanden.", status=400
+        )
     old_path = str(getattr(core, "BASE_PATH", ""))
     if callable(getattr(core, "set_base_path", None)):
         core.set_base_path(path)
@@ -1754,7 +2185,7 @@ def api_switch_base():
         _DEV_STATUS["base"] = {"old": old_path, "new": str(path)}
         _audit("switch_base", target=str(path), meta={"old": old_path})
         return jsonify(ok=True, message="Ablage gewechselt.", path=str(path))
-    return jsonify(ok=False, message="Ablage switch nicht verfügbar."), 400
+    return json_error("feature_unavailable", "Ablage switch nicht verfügbar.", status=400)
 
 
 @bp.post("/api/dev/test-llm")
@@ -1765,7 +2196,7 @@ def api_test_llm():
     q = str(payload.get("q") or "suche rechnung")
     llm = getattr(ORCHESTRATOR, "llm", None)
     if not llm:
-        return jsonify(ok=False, message="LLM nicht verfügbar."), 400
+        return json_error("feature_unavailable", "LLM nicht verfügbar.", status=400)
     result = llm.rewrite_query(q)
     _DEV_STATUS["llm"] = result
     _audit("test_llm", meta={"result": result})
@@ -1784,12 +2215,17 @@ def api_mail_draft():
         context = (payload.get("context") or "").strip()
 
         if not context and not subject:
-            return jsonify({"error": "Bitte Kontext oder Betreff angeben."}), 400
+            return json_error("missing_context", "Bitte Kontext oder Betreff angeben.", status=400)
 
         text = _mock_generate(_mail_prompt(to, subject, tone, length, context))
         return jsonify({"text": text, "meta": "mode=mock"}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return json_error(
+            "mail_draft_failed",
+            "Mail-Entwurf fehlgeschlagen.",
+            status=500,
+            details={"reason": str(e)},
+        )
 
 
 @bp.post("/api/mail/eml")
@@ -1800,7 +2236,7 @@ def api_mail_eml():
     subject = (payload.get("subject") or "").strip()
     body = (payload.get("body") or "").strip()
     if not body:
-        return jsonify({"error": "Body fehlt."}), 400
+        return json_error("body_missing", "Body fehlt.", status=400)
     import email.message
 
     msg = email.message.EmailMessage()
@@ -2078,9 +2514,7 @@ def assistant():
         <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
       </form>
       <div class='muted text-xs'>Treffer: {n}</div>
-    </div>""".format(
-        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
-    )
+    </div>""".format(q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results))
     return _render_base(html, active_tab="assistant")
 
 
@@ -2100,10 +2534,20 @@ def tasks():
     html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
       <div class='text-lg font-semibold'>Tasks</div>
       <div class='muted text-xs mt-1'>Offen: {n}</div>
-    </div>""".format(
-        n=len(items)
-    )
+    </div>""".format(n=len(items))
     return _render_base(html, active_tab="tasks")
+
+
+@bp.route("/time")
+@login_required
+def time_tracking():
+    if not callable(time_entry_list):
+        html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
+          <div class='text-lg font-semibold'>Time Tracking</div>
+          <div class='muted text-sm mt-2'>Time Tracking ist im Core nicht verfügbar.</div>
+        </div>"""
+        return _render_base(html, active_tab="time")
+    return _render_base(render_template_string(HTML_TIME, role=current_role()), active_tab="time")
 
 
 @bp.route("/chat")
