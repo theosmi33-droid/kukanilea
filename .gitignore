@@ -17,3 +17,6 @@ _THW_TEST_SANDBOX/
 *.pem
 *.key
 *.bak_*
+instance/*.db
+instance/*.db-wal
+instance/*.db-shm
