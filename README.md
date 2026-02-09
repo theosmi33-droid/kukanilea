@@ -57,6 +57,8 @@ git rebase origin/main
 
 ## Docs
 - `docs/ARCHITECTURE.md`
+- `docs/ONBOARDING.md`
+- `docs/DOMAIN.md`
 - `docs/CONSTITUTION.md`
 - `ROADMAP.md`
 - `PACKAGING.md`
