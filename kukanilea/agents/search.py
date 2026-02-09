@@ -101,8 +101,8 @@ class SearchAgent(BaseAgent):
         lines = []
         for hit in ranked:
             row = hit.row
-            token = str(row.get("doc_id", ""))
-            line = f"{row.get('doctype','')} {row.get('kdnr','')} {row.get('doc_date','')} {row.get('file_name','')}"
+            token = str(row.get("token") or row.get("doc_id") or "")
+            line = f"{row.get('doctype', '')} {row.get('kdnr', '')} {row.get('doc_date', '')} {row.get('file_name', '')}"
             lines.append(line.strip())
             if token:
                 actions.append({"type": "open_token", "token": token})
@@ -164,6 +164,7 @@ class SearchAgent(BaseAgent):
                 hits.append(
                     {
                         "doc_id": fp.name,
+                        "token": fp.name,
                         "kdnr": "",
                         "doctype": "",
                         "doc_date": "",

@@ -15,3 +15,4 @@
 - Prefer small, mergeable commits.
 - Keep APIs consistent with error envelopes and correlation IDs.
 - Maintain tenant isolation in every query and filesystem access path.
+- DEV-only maintenance/import tools must be allowlisted and audited.

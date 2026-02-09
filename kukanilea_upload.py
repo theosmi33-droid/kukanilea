@@ -1133,7 +1133,7 @@ def _step_form(
         <div>
           <label class="muted text-xs">Eingabe (direkt tippen)</label>
           <input id="mainInput" class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input"
-            name="{field_name}" placeholder="{placeholder or title}" value="{(current_value or '').replace('"','&quot;')}">
+            name="{field_name}" placeholder="{placeholder or title}" value="{(current_value or "").replace('"', "&quot;")}">
         </div>
 
         <div>
@@ -1457,11 +1457,11 @@ def _build_object_picker(existing_objs: list, w_local: dict) -> str:
       <div class="rounded-xl border border-slate-800 p-3 mt-3">
         <div class="text-sm font-semibold mb-2">Bestands-Objekt (optional)</div>
 
-        <input type="hidden" id="objInput" name="use_existing" value="{(w_local.get('use_existing') or '').replace('"', '&quot;')}">
+        <input type="hidden" id="objInput" name="use_existing" value="{(w_local.get("use_existing") or "").replace('"', "&quot;")}">
         <input type="hidden" name="confirm_kdnr" value="1">
 
         <label class="flex items-center gap-2 text-sm mb-3">
-          <input type="checkbox" name="adopt_existing" value="1" {'checked' if w_local.get('adopt_existing', True) else ''}>
+          <input type="checkbox" name="adopt_existing" value="1" {"checked" if w_local.get("adopt_existing", True) else ""}>
           <span>Bestandsdaten (Name/Adresse/PLZ) übernehmen (wenn Objekt gewählt wird)</span>
         </label>
 

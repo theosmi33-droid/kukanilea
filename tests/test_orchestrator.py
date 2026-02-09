@@ -10,6 +10,7 @@ class DummyCore:
         return [
             {
                 "doc_id": "abc123def456",
+                "token": "abc123def456",
                 "kdnr": kdnr or "12393",
                 "doctype": "RECHNUNG",
                 "doc_date": "2024-06-01",

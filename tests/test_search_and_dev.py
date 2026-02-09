@@ -35,6 +35,7 @@ def test_search_fs_fallback(tmp_path):
     ctx = AgentContext(tenant_id="KUKANILEA", user="dev", role="ADMIN")
     results, _ = agent.search("rechnung", ctx, limit=5)
     assert results
+    assert results[0].get("token")
 
 
 def test_dev_db_switch_allowlist(tmp_path):

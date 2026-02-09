@@ -20,6 +20,7 @@ class Config:
         )
     )
     CORE_DB = Path(_env("DB_FILENAME", str(Path.home() / "Tophandwerk_DB.sqlite3")))
+    IMPORT_ROOT = Path(_env("IMPORT_ROOT", str(Path.home() / "kukanilea_imports")))
     TENANT_DEFAULT = _env("TENANT_DEFAULT", "KUKANILEA")
     TENANT_FIXED = _env("TENANT_FIXED", "1") not in ("0", "false", "False", "no", "NO")
     FEATURE_GOOGLE_OAUTH = _env("FEATURE_GOOGLE_OAUTH", "0") == "1"
