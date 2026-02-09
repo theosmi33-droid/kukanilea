@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, current_app, jsonify
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 

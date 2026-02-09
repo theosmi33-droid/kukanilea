@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
-import time
 import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -99,7 +98,10 @@ def main():
 
     # Expect filename prefix RE_ and date present
     _assert(target.name.startswith("RE_"), "filename should start with RE_")
-    _assert("2026-01-12" in target.name, "date should be normalized to YYYY-MM-DD in filename")
+    _assert(
+        "2026-01-12" in target.name,
+        "date should be normalized to YYYY-MM-DD in filename",
+    )
 
     # --- 4) Dedupe test: process same content again -> should NOT create new file ---
     src2 = core.EINGANG / "dummy_rechnung_copy.txt"
@@ -113,12 +115,16 @@ def main():
 
     # --- 5) Version test: changed bytes -> should create _v2 file ---
     src3 = core.EINGANG / "dummy_rechnung_changed.txt"
-    src3.write_text(target.read_text(encoding="utf-8") + "\nNEU: Zusatzzeile\n", encoding="utf-8")
+    src3.write_text(
+        target.read_text(encoding="utf-8") + "\nNEU: Zusatzzeile\n", encoding="utf-8"
+    )
 
     folder3, target3, created3 = core.process_with_answers(src3, answers)
     _assert(target3.exists(), "target3 missing")
     _assert(target3.name != target.name, "changed bytes should produce a new filename")
-    _assert("_v2" in target3.stem or "_v" in target3.stem, "should create version suffix")
+    _assert(
+        "_v2" in target3.stem or "_v" in target3.stem, "should create version suffix"
+    )
     print("OK: versioning on changed bytes ->", target3.name)
 
     # --- 6) Search test ---

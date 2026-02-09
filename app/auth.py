@@ -6,9 +6,8 @@ from typing import Optional
 
 from flask import abort, g, redirect, request, session, url_for
 
-from .errors import json_error
-
 from .db import AuthDB, Membership
+from .errors import json_error
 
 ROLE_ORDER = ["READONLY", "OPERATOR", "ADMIN", "DEV"]
 
@@ -61,7 +60,9 @@ def login_required(func):
     def wrapper(*args, **kwargs):
         if not current_user():
             if request.path.startswith("/api/"):
-                return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
+                return json_error(
+                    "auth_required", "Authentifizierung erforderlich.", status=401
+                )
             return redirect(url_for("web.login", next=request.path))
         return func(*args, **kwargs)
 

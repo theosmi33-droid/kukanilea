@@ -99,7 +99,9 @@ for mod in ("kukanilea_core_v3_fixed", "kukanilea_core_v3", "kukanilea_core"):
         _core_import_errors.append(f"{mod}: {e}")
 
 if core is None:
-    raise RuntimeError("KUKANILEA core import failed: " + " | ".join(_core_import_errors))
+    raise RuntimeError(
+        "KUKANILEA core import failed: " + " | ".join(_core_import_errors)
+    )
 
 
 def _core_get(name: str, default=None):
@@ -112,11 +114,16 @@ BASE_PATH: Path = _core_get("BASE_PATH")
 PENDING_DIR: Path = _core_get("PENDING_DIR")
 DONE_DIR: Path = _core_get("DONE_DIR")
 SUPPORTED_EXT = set(
-    _core_get("SUPPORTED_EXT", {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"})
+    _core_get(
+        "SUPPORTED_EXT",
+        {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"},
+    )
 )
 
 # Core functions (minimum)
-analyze_to_pending = _core_get("analyze_to_pending") or _core_get("start_background_analysis")
+analyze_to_pending = _core_get("analyze_to_pending") or _core_get(
+    "start_background_analysis"
+)
 read_pending = _core_get("read_pending")
 write_pending = _core_get("write_pending")
 delete_pending = _core_get("delete_pending")
@@ -182,7 +189,9 @@ ORCHESTRATOR = None
 HTML_LOGIN = ""  # will be overwritten later by the full template block
 
 
-def suggest_existing_folder(base_path: str, tenant: str, kdnr: str, name: str) -> Tuple[str, float]:
+def suggest_existing_folder(
+    base_path: str, tenant: str, kdnr: str, name: str
+) -> Tuple[str, float]:
     """Heuristic: find an existing customer folder for this tenant."""
     try:
         root = Path(base_path) / tenant
@@ -233,7 +242,9 @@ def _b64(s: str) -> str:
 
 
 def _unb64(s: str) -> str:
-    return base64.urlsafe_b64decode((s or "").encode("ascii")).decode("utf-8", errors="ignore")
+    return base64.urlsafe_b64decode((s or "").encode("ascii")).decode(
+        "utf-8", errors="ignore"
+    )
 
 
 def _audit(action: str, target: str = "", meta: dict = None) -> None:
@@ -333,7 +344,12 @@ def _is_allowed_ext(filename: str) -> bool:
 
 
 def _allowed_roots() -> List[Path]:
-    return [EINGANG.resolve(), BASE_PATH.resolve(), PENDING_DIR.resolve(), DONE_DIR.resolve()]
+    return [
+        EINGANG.resolve(),
+        BASE_PATH.resolve(),
+        PENDING_DIR.resolve(),
+        DONE_DIR.resolve(),
+    ]
 
 
 def _is_allowed_path(fp: Path) -> bool:
@@ -1340,7 +1356,9 @@ def _guard_login():
         return None
     if not current_user():
         if p.startswith("/api/"):
-            return json_error("auth_required", "Authentifizierung erforderlich.", status=401)
+            return json_error(
+                "auth_required", "Authentifizierung erforderlich.", status=401
+            )
         return redirect(url_for("web.login", next=p))
     return None
 
@@ -1372,7 +1390,9 @@ def login():
                     return redirect(nxt or url_for("web.index"))
             else:
                 error = "Login fehlgeschlagen."
-    return _render_base(render_template_string(HTML_LOGIN, error=error), active_tab="upload")
+    return _render_base(
+        render_template_string(HTML_LOGIN, error=error), active_tab="upload"
+    )
 
 
 @bp.get("/auth/google/start")
@@ -1382,17 +1402,23 @@ def google_start():
         and current_app.config.get("GOOGLE_CLIENT_SECRET")
     ):
         return _render_base(
-            _card("info", "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET."),
+            _card(
+                "info",
+                "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET.",
+            ),
             active_tab="mail",
         )
     return _render_base(
-        _card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."), active_tab="mail"
+        _card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."),
+        active_tab="mail",
     )
 
 
 @bp.get("/auth/google/callback")
 def google_callback():
-    return _render_base(_card("info", "Google OAuth Callback (Stub)."), active_tab="mail")
+    return _render_base(
+        _card("info", "Google OAuth Callback (Stub)."), active_tab="mail"
+    )
 
 
 @bp.route("/logout")
@@ -1473,7 +1499,9 @@ def api_chat():
         "ok": result.ok,
         "message": result.text,
         "suggestions": result.suggestions or [],
-        "results": result.data.get("results", []) if isinstance(result.data, dict) else [],
+        "results": (
+            result.data.get("results", []) if isinstance(result.data, dict) else []
+        ),
         "actions": result.actions,
         "error": result.error,
     }
@@ -1500,7 +1528,9 @@ def api_search():
     agent = SearchAgent(core)
     results, suggestions = agent.search(query, context, limit=limit)
     message = "OK" if results else "Keine Treffer gefunden."
-    return jsonify(ok=True, message=message, results=results, did_you_mean=suggestions or [])
+    return jsonify(
+        ok=True, message=message, results=results, did_you_mean=suggestions or []
+    )
 
 
 @bp.post("/api/customer")
@@ -1559,7 +1589,9 @@ def api_audit():
 @login_required
 def api_time_projects():
     if not callable(time_project_list):
-        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
     projects = time_project_list(tenant_id=current_tenant(), status="ACTIVE")  # type: ignore
     return jsonify(ok=True, projects=projects)
 
@@ -1569,7 +1601,9 @@ def api_time_projects():
 @require_role("OPERATOR")
 def api_time_projects_create():
     if not callable(time_project_create):
-        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
     payload = request.get_json(silent=True) or {}
     name = (payload.get("name") or "").strip()
     description = (payload.get("description") or "").strip()
@@ -1590,7 +1624,9 @@ def api_time_projects_create():
 @require_role("OPERATOR")
 def api_time_start():
     if not callable(time_entry_start):
-        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
     payload = request.get_json(silent=True) or {}
     project_id = payload.get("project_id")
     note = (payload.get("note") or "").strip()
@@ -1611,7 +1647,9 @@ def api_time_start():
 @require_role("OPERATOR")
 def api_time_stop():
     if not callable(time_entry_stop):
-        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
     payload = request.get_json(silent=True) or {}
     entry_id = payload.get("entry_id")
     try:
@@ -1629,7 +1667,9 @@ def api_time_stop():
 @login_required
 def api_time_entries():
     if not callable(time_entry_list):
-        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
     range_name = (request.args.get("range") or "week").strip().lower()
     date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
     user = (request.args.get("user") or "").strip()
@@ -1659,7 +1699,9 @@ def api_time_entries():
 @require_role("OPERATOR")
 def api_time_entry_edit():
     if not callable(time_entry_update):
-        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
     payload = request.get_json(silent=True) or {}
     entry_id = payload.get("entry_id")
     if not entry_id:
@@ -1668,14 +1710,18 @@ def api_time_entry_edit():
         entry = time_entry_update(  # type: ignore
             tenant_id=current_tenant(),
             entry_id=int(entry_id),
-            project_id=int(payload.get("project_id")) if payload.get("project_id") else None,
+            project_id=(
+                int(payload.get("project_id")) if payload.get("project_id") else None
+            ),
             start_at=(payload.get("start_at") or None),
             end_at=(payload.get("end_at") or None),
             note=payload.get("note"),
             user=current_user() or "",
         )
     except ValueError as exc:
-        return json_error(str(exc), "Eintrag konnte nicht aktualisiert werden.", status=400)
+        return json_error(
+            str(exc), "Eintrag konnte nicht aktualisiert werden.", status=400
+        )
     return jsonify(ok=True, entry=entry)
 
 
@@ -1684,7 +1730,9 @@ def api_time_entry_edit():
 @require_role("ADMIN")
 def api_time_entry_approve():
     if not callable(time_entry_approve):
-        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
     payload = request.get_json(silent=True) or {}
     entry_id = payload.get("entry_id")
     if not entry_id:
@@ -1696,7 +1744,9 @@ def api_time_entry_approve():
             approved_by=current_user() or "",
         )
     except ValueError as exc:
-        return json_error(str(exc), "Eintrag konnte nicht freigegeben werden.", status=400)
+        return json_error(
+            str(exc), "Eintrag konnte nicht freigegeben werden.", status=400
+        )
     return jsonify(ok=True, entry=entry)
 
 
@@ -1704,7 +1754,9 @@ def api_time_entry_approve():
 @login_required
 def api_time_export():
     if not callable(time_entries_export_csv):
-        return json_error("feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501)
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
     range_name = (request.args.get("range") or "week").strip().lower()
     date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
     user = (request.args.get("user") or "").strip()
@@ -2052,7 +2104,8 @@ def mail_page():
         and current_app.config.get("GOOGLE_CLIENT_SECRET")
     )
     return _render_base(
-        render_template_string(HTML_MAIL, google_configured=google_configured), active_tab="mail"
+        render_template_string(HTML_MAIL, google_configured=google_configured),
+        active_tab="mail",
     )
 
 
@@ -2064,7 +2117,11 @@ def settings_page():
     if callable(getattr(core, "get_db_info", None)):
         core_db = core.get_db_info()
     else:
-        core_db = {"path": str(getattr(core, "DB_PATH", "")), "schema_version": "?", "tenants": "?"}
+        core_db = {
+            "path": str(getattr(core, "DB_PATH", "")),
+            "schema_version": "?",
+            "tenants": "?",
+        }
     return _render_base(
         render_template_string(
             HTML_SETTINGS,
@@ -2161,7 +2218,10 @@ def api_switch_base():
     if not path:
         return jsonify(ok=False, message="Pfad fehlt."), 400
     if not _is_storage_path_valid(path):
-        return jsonify(ok=False, message="Pfad nicht erlaubt oder nicht vorhanden."), 400
+        return (
+            jsonify(ok=False, message="Pfad nicht erlaubt oder nicht vorhanden."),
+            400,
+        )
     old_path = str(getattr(core, "BASE_PATH", ""))
     if callable(getattr(core, "set_base_path", None)):
         core.set_base_path(path)
@@ -2302,7 +2362,9 @@ def review(token: str):
     if not p:
         return _render_base(_card("error", "Nicht gefunden."), active_tab="upload")
     if p.get("status") == "ANALYZING":
-        right = _card("info", "Analyse läuft noch. Bitte kurz warten oder zurück zur Übersicht.")
+        right = _card(
+            "info", "Analyse läuft noch. Bitte kurz warten oder zurück zur Übersicht."
+        )
         return _render_base(
             render_template_string(
                 HTML_REVIEW_SPLIT,
@@ -2327,7 +2389,9 @@ def review(token: str):
 
     suggested_doctype = (p.get("doctype_suggested") or "SONSTIGES").upper()
     if not w.get("doctype"):
-        w["doctype"] = suggested_doctype if suggested_doctype in DOCTYPE_CHOICES else "SONSTIGES"
+        w["doctype"] = (
+            suggested_doctype if suggested_doctype in DOCTYPE_CHOICES else "SONSTIGES"
+        )
     suggested_date = (p.get("doc_date_suggested") or "").strip()
     confidence = 40
     if suggested_doctype and suggested_doctype != "SONSTIGES":
@@ -2374,11 +2438,15 @@ def review(token: str):
                 w["doctype"] = (
                     request.form.get("doctype") or w.get("doctype") or "SONSTIGES"
                 ).upper()
-                w["document_date"] = normalize_component(request.form.get("document_date") or "")
+                w["document_date"] = normalize_component(
+                    request.form.get("document_date") or ""
+                )
                 w["name"] = normalize_component(request.form.get("name") or "")
                 w["addr"] = normalize_component(request.form.get("addr") or "")
                 w["plzort"] = normalize_component(request.form.get("plzort") or "")
-                w["use_existing"] = normalize_component(request.form.get("use_existing") or "")
+                w["use_existing"] = normalize_component(
+                    request.form.get("use_existing") or ""
+                )
 
                 if not w["kdnr"]:
                     msg = "KDNR fehlt."
@@ -2401,7 +2469,9 @@ def review(token: str):
                             folder, final_path, created_new = process_with_answers(
                                 Path(p.get("path", "")), answers
                             )
-                            write_done(token, {"final_path": str(final_path), **answers})
+                            write_done(
+                                token, {"final_path": str(final_path), **answers}
+                            )
                             delete_pending(token)
                             return redirect(url_for("web.done_view", token=token))
                         except Exception as e:
@@ -2423,7 +2493,9 @@ def review(token: str):
         extracted_text=p.get("extracted_text", ""),
         msg=msg,
         existing_folder_hint=existing_folder_hint,
-        existing_folder_score=f"{existing_folder_score:.2f}" if existing_folder_hint else "",
+        existing_folder_score=(
+            f"{existing_folder_score:.2f}" if existing_folder_hint else ""
+        ),
     )
     return _render_base(
         render_template_string(
@@ -2472,13 +2544,19 @@ def assistant():
     if q and assistant_search is not None:
         try:
             raw = assistant_search(
-                query=q, kdnr=kdnr, limit=50, role=current_role(), tenant_id=current_tenant()
+                query=q,
+                kdnr=kdnr,
+                limit=50,
+                role=current_role(),
+                tenant_id=current_tenant(),
             )
             for r in raw or []:
                 fp = r.get("file_path") or ""
                 if ASSISTANT_HIDE_EINGANG and fp:
                     try:
-                        if str(Path(fp).resolve()).startswith(str(EINGANG.resolve()) + os.sep):
+                        if str(Path(fp).resolve()).startswith(
+                            str(EINGANG.resolve()) + os.sep
+                        ):
                             continue
                     except Exception:
                         pass
@@ -2531,7 +2609,9 @@ def time_tracking():
           <div class='muted text-sm mt-2'>Time Tracking ist im Core nicht verfügbar.</div>
         </div>"""
         return _render_base(html, active_tab="time")
-    return _render_base(render_template_string(HTML_TIME, role=current_role()), active_tab="time")
+    return _render_base(
+        render_template_string(HTML_TIME, role=current_role()), active_tab="time"
+    )
 
 
 @bp.route("/chat")

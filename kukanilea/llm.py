@@ -20,9 +20,18 @@ class LLMProvider:
     def complete(self, prompt: str, *, temperature: float = 0.0) -> str:
         raise NotImplementedError
 
-    def generate(self, system_prompt: str, messages: List[Dict[str, str]], context: Dict[str, Any] | None = None) -> str:
+    def generate(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, str]],
+        context: Dict[str, Any] | None = None,
+    ) -> str:
         _ = context
-        prompt = system_prompt + "\n" + "\n".join(f"{m.get('role')}: {m.get('content')}" for m in messages)
+        prompt = (
+            system_prompt
+            + "\n"
+            + "\n".join(f"{m.get('role')}: {m.get('content')}" for m in messages)
+        )
         return self.complete(prompt, temperature=0.0)
 
     def rewrite_query(self, query: str) -> Dict[str, str]:
@@ -40,7 +49,12 @@ class MockProvider(LLMProvider):
         _ = temperature
         return f"[mocked] {prompt.strip()[:160]}"
 
-    def generate(self, system_prompt: str, messages: List[Dict[str, str]], context: Dict[str, Any] | None = None) -> str:
+    def generate(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, str]],
+        context: Dict[str, Any] | None = None,
+    ) -> str:
         _ = context
         head = system_prompt.strip()[:80]
         return f"[mocked] {head} :: {len(messages)} messages"
@@ -52,7 +66,9 @@ class MockProvider(LLMProvider):
             intent = "open_token"
         elif "wer ist" in text or "kunde" in text or "kdnr" in text:
             intent = "customer_lookup"
-        elif any(k in text for k in ["rechnung", "angebot", "suche", "finde", "search"]):
+        elif any(
+            k in text for k in ["rechnung", "angebot", "suche", "finde", "search"]
+        ):
             intent = "search"
         elif "zusammenfassung" in text or "summary" in text:
             intent = "summary"
@@ -78,7 +94,9 @@ class OllamaProvider(LLMProvider):
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    def _post_json(self, path: str, payload: Dict[str, Any], timeout: float = 8.0) -> Dict[str, Any]:
+    def _post_json(
+        self, path: str, payload: Dict[str, Any], timeout: float = 8.0
+    ) -> Dict[str, Any]:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             self.host + path,
@@ -101,7 +119,12 @@ class OllamaProvider(LLMProvider):
         data = self._post_json("/api/generate", payload)
         return str(data.get("response", "")).strip()
 
-    def generate(self, system_prompt: str, messages: List[Dict[str, str]], context: Dict[str, Any] | None = None) -> str:
+    def generate(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, str]],
+        context: Dict[str, Any] | None = None,
+    ) -> str:
         if not self.available:
             raise RuntimeError("Ollama not available")
         payload = {

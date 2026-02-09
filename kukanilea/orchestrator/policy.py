@@ -7,8 +7,21 @@ class PolicyEngine:
     ACTION_ALLOWLIST = {
         "READONLY": {"search_docs", "open_token"},
         "OPERATOR": {"search_docs", "open_token", "show_customer"},
-        "ADMIN": {"search_docs", "open_token", "show_customer", "summarize_doc", "list_tasks"},
-        "DEV": {"search_docs", "open_token", "show_customer", "summarize_doc", "list_tasks", "rebuild_index"},
+        "ADMIN": {
+            "search_docs",
+            "open_token",
+            "show_customer",
+            "summarize_doc",
+            "list_tasks",
+        },
+        "DEV": {
+            "search_docs",
+            "open_token",
+            "show_customer",
+            "summarize_doc",
+            "list_tasks",
+            "rebuild_index",
+        },
     }
 
     def normalize_role(self, role: str) -> str:

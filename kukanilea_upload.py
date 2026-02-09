@@ -16,17 +16,24 @@ ENV:
   TOPHANDWERK_TENANTS=firma_x,firma_y    # optional Allowlist (lowercase)
 """
 
+import base64
 import os
 import re
 import time
-import base64
+from datetime import date, datetime
 from pathlib import Path
-from datetime import datetime, date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from flask import (
-    Flask, request, jsonify, render_template_string, send_file, abort,
-    redirect, url_for, session
+    Flask,
+    abort,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    send_file,
+    session,
+    url_for,
 )
 
 try:
@@ -49,11 +56,12 @@ BASE_PATH: Path = _core_get("BASE_PATH")
 PENDING_DIR: Path = _core_get("PENDING_DIR")
 DONE_DIR: Path = _core_get("DONE_DIR")
 SUPPORTED_EXT = _core_get(
-    "SUPPORTED_EXT",
-    {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"}
+    "SUPPORTED_EXT", {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"}
 )
 
-analyze_to_pending = _core_get("analyze_to_pending") or _core_get("start_background_analysis")
+analyze_to_pending = _core_get("analyze_to_pending") or _core_get(
+    "start_background_analysis"
+)
 read_pending = _core_get("read_pending")
 write_pending = _core_get("write_pending")
 delete_pending = _core_get("delete_pending")
@@ -67,7 +75,9 @@ find_existing_customer_folders = _core_get("find_existing_customer_folders")
 parse_folder_fields = _core_get("parse_folder_fields")
 best_match_object_folder = _core_get("best_match_object_folder")
 
-detect_object_duplicates_for_kdnr = _core_get("detect_object_duplicates_for_kdnr")  # optional
+detect_object_duplicates_for_kdnr = _core_get(
+    "detect_object_duplicates_for_kdnr"
+)  # optional
 
 db_init = _core_get("db_init")
 rbac_verify_user = _core_get("rbac_verify_user")
@@ -83,12 +93,19 @@ core_parse_excel_like_date = _core_get("parse_excel_like_date")  # optional
 
 # guard rails (minimum contract)
 REQUIRED = {
-    "EINGANG": EINGANG, "BASE_PATH": BASE_PATH, "PENDING_DIR": PENDING_DIR, "DONE_DIR": DONE_DIR,
+    "EINGANG": EINGANG,
+    "BASE_PATH": BASE_PATH,
+    "PENDING_DIR": PENDING_DIR,
+    "DONE_DIR": DONE_DIR,
     "analyze_to_pending/start_background_analysis": analyze_to_pending,
-    "read_pending": read_pending, "write_pending": write_pending,
-    "delete_pending": delete_pending, "list_pending": list_pending,
-    "write_done": write_done, "read_done": read_done,
-    "process_with_answers": process_with_answers, "normalize_component": normalize_component,
+    "read_pending": read_pending,
+    "write_pending": write_pending,
+    "delete_pending": delete_pending,
+    "list_pending": list_pending,
+    "write_done": write_done,
+    "read_done": read_done,
+    "process_with_answers": process_with_answers,
+    "normalize_component": normalize_component,
 }
 _missing = [k for k, v in REQUIRED.items() if v is None]
 if _missing:
@@ -99,19 +116,30 @@ if _missing:
 # Flask
 # ============================================================
 APP = Flask(__name__)
-APP.secret_key = os.environ.get("TOPHANDWERK_SECRET", "tophandwerk-dev-secret-change-me")
+APP.secret_key = os.environ.get(
+    "TOPHANDWERK_SECRET", "tophandwerk-dev-secret-change-me"
+)
 PORT = int(os.environ.get("PORT", 5051))
 
 # Optional hard upload limit (bytes)
-APP.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("TOPHANDWERK_MAX_UPLOAD", str(25 * 1024 * 1024)))
+APP.config["MAX_CONTENT_LENGTH"] = int(
+    os.environ.get("TOPHANDWERK_MAX_UPLOAD", str(25 * 1024 * 1024))
+)
 
 BOOTSTRAP_ADMIN_USER = os.environ.get("TOPHANDWERK_ADMIN_USER", "").strip().lower()
 BOOTSTRAP_ADMIN_PASS = os.environ.get("TOPHANDWERK_ADMIN_PASS", "").strip()
 
 DOCTYPE_CHOICES = [
-    "ANGEBOT", "RECHNUNG", "AUFTRAGSBESTAETIGUNG", "AW",
-    "MAHNUNG", "NACHTRAG", "SONSTIGES", "FOTO",
-    "H_RECHNUNG", "H_ANGEBOT",
+    "ANGEBOT",
+    "RECHNUNG",
+    "AUFTRAGSBESTAETIGUNG",
+    "AW",
+    "MAHNUNG",
+    "NACHTRAG",
+    "SONSTIGES",
+    "FOTO",
+    "H_RECHNUNG",
+    "H_ANGEBOT",
 ]
 
 # Assistant: Eingang ist NICHT sichtbar (nur Hintergrund)
@@ -122,7 +150,11 @@ ASSISTANT_HIDE_EINGANG = True
 # ============================================================
 TENANT_DEFAULT = os.environ.get("TOPHANDWERK_TENANT_DEFAULT", "").strip()
 TENANT_REQUIRE = os.environ.get("TOPHANDWERK_TENANT_REQUIRE", "1").strip() == "1"
-TENANT_ALLOWLIST = [x.strip().lower() for x in os.environ.get("TOPHANDWERK_TENANTS", "").split(",") if x.strip()]
+TENANT_ALLOWLIST = [
+    x.strip().lower()
+    for x in os.environ.get("TOPHANDWERK_TENANTS", "").split(",")
+    if x.strip()
+]
 
 
 # ============================================================
@@ -133,7 +165,9 @@ def _b64(s: str) -> str:
 
 
 def _unb64(s: str) -> str:
-    return base64.urlsafe_b64decode((s or "").encode("ascii")).decode("utf-8", errors="ignore")
+    return base64.urlsafe_b64decode((s or "").encode("ascii")).decode(
+        "utf-8", errors="ignore"
+    )
 
 
 def _logged_in() -> bool:
@@ -174,7 +208,12 @@ def _audit(action: str, target: str = "", meta: dict = None):
 
 def _ensure_bootstrap_admin():
     # nur wenn RBAC implementiert ist
-    if rbac_verify_user is None or rbac_create_user is None or rbac_assign_role is None or rbac_get_user_roles is None:
+    if (
+        rbac_verify_user is None
+        or rbac_create_user is None
+        or rbac_assign_role is None
+        or rbac_get_user_roles is None
+    ):
         return
     if not (BOOTSTRAP_ADMIN_USER and BOOTSTRAP_ADMIN_PASS):
         return
@@ -207,7 +246,12 @@ def _is_allowed_ext(filename: str) -> bool:
 
 def _allowed_roots() -> List[Path]:
     # dynamic roots (avoid stale roots if core config changes)
-    return [EINGANG.resolve(), BASE_PATH.resolve(), PENDING_DIR.resolve(), DONE_DIR.resolve()]
+    return [
+        EINGANG.resolve(),
+        BASE_PATH.resolve(),
+        PENDING_DIR.resolve(),
+        DONE_DIR.resolve(),
+    ]
 
 
 def _is_allowed_path(fp: Path) -> bool:
@@ -229,7 +273,7 @@ def _render_base(content: str, active_tab: str = "upload"):
         ablage=str(BASE_PATH),
         user=_current_user() or "-",
         roles=", ".join(_current_roles()) or "-",
-        active_tab=active_tab
+        active_tab=active_tab,
     )
 
 
@@ -300,14 +344,25 @@ def _wizard_save(token: str, p: dict, w: dict):
 
 # --- Date parsing (prefer core, else local) ---
 _DATE_PATTERNS = [
-    "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
-    "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y",
-    "%d.%m.%y", "%d/%m/%y", "%d-%m-%y",
-    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-    "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
-    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M",
-    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
-    "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%Y.%m.%d",
+    "%d.%m.%Y",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%y",
+    "%d/%m/%y",
+    "%d-%m-%y",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%Y/%m/%d %H:%M:%S",
+    "%Y/%m/%d %H:%M",
+    "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d-%m-%Y %H:%M:%S",
+    "%d-%m-%Y %H:%M",
 ]
 
 
@@ -1005,8 +1060,8 @@ def _render_review(token: str, right_html: str):
     preview = p.get("preview", "")
     extracted_text = p.get("extracted_text", "")
     ext = Path(filename).suffix.lower()
-    is_pdf = (ext == ".pdf")
-    is_text = (ext == ".txt")
+    is_pdf = ext == ".pdf"
+    is_text = ext == ".txt"
 
     w = _wizard_get(p)
     predicted = _predict_filename(w, p.get("doctype_suggested", "SONSTIGES"))
@@ -1022,9 +1077,9 @@ def _render_review(token: str, right_html: str):
             is_pdf=is_pdf,
             is_text=is_text,
             predicted_name=predicted,
-            right=right_html
+            right=right_html,
         ),
-        active_tab="upload"
+        active_tab="upload",
     )
 
 
@@ -1040,7 +1095,7 @@ def _step_form(
     show_scores: bool = False,
     ranked: list = None,
     next_label: str = "Weiter",
-    placeholder: str = ""
+    placeholder: str = "",
 ):
     sug_buttons = ""
 
@@ -1162,7 +1217,7 @@ def api_progress(token):
         status=p.get("status", ""),
         progress=float(p.get("progress", 0.0) or 0.0),
         progress_phase=p.get("progress_phase", ""),
-        error=p.get("error", "")
+        error=p.get("error", ""),
     )
 
 
@@ -1184,7 +1239,9 @@ def api_reextract(token):
         pass
 
     new_token = analyze_to_pending(src)
-    _audit("reextract", target=str(src), meta={"old_token": token, "new_token": new_token})
+    _audit(
+        "reextract", target=str(src), meta={"old_token": token, "new_token": new_token}
+    )
     return jsonify(token=new_token)
 
 
@@ -1228,7 +1285,12 @@ def index():
 
     admin_tools = bool(_has_role("ADMIN")) or (rbac_verify_user is None)
     _audit("view_index", target="", meta={})
-    return _render_base(render_template_string(HTML_INDEX, items=items, meta=meta, admin_tools=admin_tools), active_tab="upload")
+    return _render_base(
+        render_template_string(
+            HTML_INDEX, items=items, meta=meta, admin_tools=admin_tools
+        ),
+        active_tab="upload",
+    )
 
 
 @APP.route("/upload", methods=["POST"])
@@ -1250,7 +1312,7 @@ def upload():
         return jsonify(error="unsupported"), 400
 
     # Eingang tenant-spezifisch
-    tenant_in = (EINGANG / tenant)
+    tenant_in = EINGANG / tenant
     tenant_in.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1273,7 +1335,11 @@ def upload():
     except Exception:
         pass
 
-    _audit("upload", target=str(dest), meta={"token": token, "filename": filename, "tenant": tenant})
+    _audit(
+        "upload",
+        target=str(dest),
+        meta={"token": token, "filename": filename, "tenant": tenant},
+    )
     return jsonify(token=token, tenant=tenant)
 
 
@@ -1350,7 +1416,7 @@ def done_view(token):
         created_new=bool(d.get("created_new", False)),
         customer_status=d.get("customer_status", ""),
         document_date=d.get("document_date", d.get("doc_date", "")),
-        fp_b64=_b64(d.get("final_path", ""))
+        fp_b64=_b64(d.get("final_path", "")),
     )
     _audit("view_done", target=str(d.get("final_path", "")), meta={"token": token})
     return _render_base(html, active_tab="upload")
@@ -1431,7 +1497,12 @@ def review_kdnr(token):
         return _render_base(HTML_NOT_FOUND)
 
     if p.get("status") == "ANALYZING":
-        return _render_review(token, _card_info("Analyse läuft noch… bitte kurz warten oder zurück zur Übersicht."))
+        return _render_review(
+            token,
+            _card_info(
+                "Analyse läuft noch… bitte kurz warten oder zurück zur Übersicht."
+            ),
+        )
 
     w = _wizard_get(p)
 
@@ -1439,7 +1510,7 @@ def review_kdnr(token):
     if not w.get("tenant"):
         w["tenant"] = p.get("tenant", "") or _norm_tenant(TENANT_DEFAULT)
 
-    ranked = (p.get("kdnr_ranked") or [])
+    ranked = p.get("kdnr_ranked") or []
     suggestions = [x[0] for x in ranked[:8]] if ranked else []
 
     if request.method == "POST":
@@ -1451,7 +1522,11 @@ def review_kdnr(token):
         # Tenant check (hard)
         tenant, terr = _tenant_or_error(w.get("tenant") or p.get("tenant") or "")
         if terr:
-            return _render_base(_card_error("Mandant/Firma fehlt oder ist nicht erlaubt (Upload). Bitte zurück und erneut hochladen."))
+            return _render_base(
+                _card_error(
+                    "Mandant/Firma fehlt oder ist nicht erlaubt (Upload). Bitte zurück und erneut hochladen."
+                )
+            )
 
         w["tenant"] = tenant
         p["tenant"] = tenant
@@ -1467,34 +1542,46 @@ def review_kdnr(token):
                 suggestions=suggestions,
                 ranked=ranked,
                 show_scores=True,
-                error="Bitte Kundennummer eingeben oder Vorschlag anklicken."
+                error="Bitte Kundennummer eingeben oder Vorschlag anklicken.",
             )
 
         # Kdnr speichern
         w["kdnr"] = val
         w["adopt_existing"] = bool(adopt_existing)
 
-        existing = find_existing_customer_folders(BASE_PATH, val) if find_existing_customer_folders else []
+        existing = (
+            find_existing_customer_folders(BASE_PATH, val)
+            if find_existing_customer_folders
+            else []
+        )
         w["customer_status"] = "BESTAND" if existing else "NEU"
 
         objs = []
         for f in existing:
             fields = parse_folder_fields(f.name) if parse_folder_fields else {}
-            objs.append({
-                "folder": f.name,
-                "path": str(f),
-                "name": fields.get("name", ""),
-                "addr": fields.get("addr", ""),
-                "plzort": fields.get("plzort", ""),
-            })
+            objs.append(
+                {
+                    "folder": f.name,
+                    "path": str(f),
+                    "name": fields.get("name", ""),
+                    "addr": fields.get("addr", ""),
+                    "plzort": fields.get("plzort", ""),
+                }
+            )
         p["existing_objects"] = objs
 
         # Phase 1: Bestandskunde erkannt -> Picker anzeigen und NICHT weiterleiten
         if existing and not confirm_kdnr:
             # best-effort Vorauswahl
-            if best_match_object_folder and parse_folder_fields and not w.get("use_existing"):
+            if (
+                best_match_object_folder
+                and parse_folder_fields
+                and not w.get("use_existing")
+            ):
                 try:
-                    best_path, best_score = best_match_object_folder(existing, w.get("addr", ""), w.get("plzort", ""))
+                    best_path, best_score = best_match_object_folder(
+                        existing, w.get("addr", ""), w.get("plzort", "")
+                    )
                 except Exception:
                     best_path, best_score = (existing[0] if existing else None), 0.0
                 if best_path is None and existing:
@@ -1519,12 +1606,18 @@ def review_kdnr(token):
                     p["object_dupes_suggested"] = []
 
             _wizard_save(token, p, w)
-            _audit("review_set_kdnr_phase1", target=token, meta={"tenant": tenant, "kdnr": w["kdnr"], "existing": len(existing)})
+            _audit(
+                "review_set_kdnr_phase1",
+                target=token,
+                meta={"tenant": tenant, "kdnr": w["kdnr"], "existing": len(existing)},
+            )
 
             extra = ""
             dupes = p.get("object_dupes_suggested") or []
             if dupes:
-                extra += _card_warn(f"⚠️ Mögliche Doppel-Objekte gefunden: {len(dupes)}. Admin sollte später mergen/prüfen.")
+                extra += _card_warn(
+                    f"⚠️ Mögliche Doppel-Objekte gefunden: {len(dupes)}. Admin sollte später mergen/prüfen."
+                )
 
             extra += _build_object_picker(p.get("existing_objects") or [], w)
 
@@ -1539,7 +1632,7 @@ def review_kdnr(token):
                 ranked=ranked,
                 show_scores=True,
                 extra_html=extra,
-                next_label="Weiter"
+                next_label="Weiter",
             )
 
         # Phase 2: bestätigt -> use_existing übernehmen und optional Bestandsdaten ziehen
@@ -1565,7 +1658,15 @@ def review_kdnr(token):
                 p["object_dupes_suggested"] = []
 
         _wizard_save(token, p, w)
-        _audit("review_set_kdnr", target=token, meta={"tenant": tenant, "kdnr": w["kdnr"], "customer_status": w["customer_status"]})
+        _audit(
+            "review_set_kdnr",
+            target=token,
+            meta={
+                "tenant": tenant,
+                "kdnr": w["kdnr"],
+                "customer_status": w["customer_status"],
+            },
+        )
         return redirect(url_for("review_name", token=token))
 
     # GET
@@ -1585,7 +1686,7 @@ def review_kdnr(token):
         suggestions=suggestions,
         ranked=ranked,
         show_scores=True,
-        extra_html=extra
+        extra_html=extra,
     )
 
 
@@ -1615,7 +1716,7 @@ def review_name(token):
                 field_name="name",
                 current_value=w.get("name", ""),
                 suggestions=suggestions,
-                error="Bitte Name/Firma eingeben oder Vorschlag anklicken."
+                error="Bitte Name/Firma eingeben oder Vorschlag anklicken.",
             )
         w["name"] = val
         _wizard_save(token, p, w)
@@ -1629,7 +1730,7 @@ def review_name(token):
         subtitle="Wenn es stimmt: Weiter.",
         field_name="name",
         current_value=prefill,
-        suggestions=suggestions
+        suggestions=suggestions,
     )
 
 
@@ -1651,7 +1752,9 @@ def review_addr(token):
 
     hint = ""
     if not suggestions:
-        hint = _card_info("Adresse-Vorschläge leer? Straße + Hausnummer manuell eintragen (z.B. „Treskowallee 211“).")
+        hint = _card_info(
+            "Adresse-Vorschläge leer? Straße + Hausnummer manuell eintragen (z.B. „Treskowallee 211“)."
+        )
 
     if request.method == "POST":
         val = normalize_component(request.form.get("addr", "") or "")
@@ -1664,7 +1767,7 @@ def review_addr(token):
                 current_value=w.get("addr", ""),
                 suggestions=suggestions,
                 error="Bitte Adresse eingeben oder Vorschlag anklicken.",
-                extra_html=hint
+                extra_html=hint,
             )
         w["addr"] = val
         _wizard_save(token, p, w)
@@ -1679,7 +1782,7 @@ def review_addr(token):
         field_name="addr",
         current_value=prefill,
         suggestions=suggestions,
-        extra_html=hint
+        extra_html=hint,
     )
 
 
@@ -1697,7 +1800,9 @@ def review_plz(token):
 
     suggestions = (p.get("plzort_suggestions") or ["PLZ Ort"])[:8]
     if w.get("plzort"):
-        suggestions = [w.get("plzort")] + [s for s in suggestions if s != w.get("plzort")]
+        suggestions = [w.get("plzort")] + [
+            s for s in suggestions if s != w.get("plzort")
+        ]
 
     if request.method == "POST":
         val = normalize_component(request.form.get("plzort", "") or "")
@@ -1709,7 +1814,7 @@ def review_plz(token):
                 field_name="plzort",
                 current_value=w.get("plzort", ""),
                 suggestions=suggestions,
-                error="Bitte PLZ/Ort eingeben oder Vorschlag anklicken."
+                error="Bitte PLZ/Ort eingeben oder Vorschlag anklicken.",
             )
         w["plzort"] = val
         _wizard_save(token, p, w)
@@ -1723,7 +1828,7 @@ def review_plz(token):
         subtitle="Wenn es stimmt: Weiter.",
         field_name="plzort",
         current_value=prefill,
-        suggestions=suggestions
+        suggestions=suggestions,
     )
 
 
@@ -1750,7 +1855,11 @@ def review_doctype(token):
             dt = "SONSTIGES"
         w["doctype"] = dt
         _wizard_save(token, p, w)
-        _audit("review_set_doctype", target=token, meta={"doctype": dt, "suggested": suggested})
+        _audit(
+            "review_set_doctype",
+            target=token,
+            meta={"doctype": dt, "suggested": suggested},
+        )
         return redirect(url_for("review_docdate", token=token))
 
     opts = ""
@@ -1840,16 +1949,19 @@ def review_docdate(token):
                 title="6) Dokumentdatum (optional)",
                 subtitle="Akzeptiert Excel-Formate. Wird gespeichert als YYYY-MM-DD. Leer ist erlaubt.",
                 field_name="document_date",
-                current_value=w.get("document_date", "") or (suggestions[0] if suggestions else ""),
+                current_value=w.get("document_date", "")
+                or (suggestions[0] if suggestions else ""),
                 suggestions=suggestions,
                 error="Ungültiges Datum. Beispiele: 2025-10-24 oder 24.10.2025 (optional mit Uhrzeit). Oder Feld leer lassen.",
                 extra_html=hint,
-                placeholder="z.B. 24.10.2025 oder leer"
+                placeholder="z.B. 24.10.2025 oder leer",
             )
 
         w["document_date"] = norm
         _wizard_save(token, p, w)
-        _audit("review_set_docdate", target=token, meta={"doc_date": w["document_date"]})
+        _audit(
+            "review_set_docdate", target=token, meta={"doc_date": w["document_date"]}
+        )
         return redirect(url_for("review_confirm", token=token))
 
     prefill = w.get("document_date") or (suggestions[0] if suggestions else "")
@@ -1861,7 +1973,7 @@ def review_docdate(token):
         current_value=prefill,
         suggestions=suggestions,
         extra_html=hint,
-        placeholder="z.B. 24.10.2025 oder leer"
+        placeholder="z.B. 24.10.2025 oder leer",
     )
 
 
@@ -1887,7 +1999,11 @@ def review_confirm(token):
     # Ensure tenant is valid
     tenant, terr = _tenant_or_error(w.get("tenant") or p.get("tenant") or "")
     if terr:
-        return _render_base(_card_error("Mandant/Firma fehlt oder ist nicht erlaubt. Bitte Upload erneut durchführen."))
+        return _render_base(
+            _card_error(
+                "Mandant/Firma fehlt oder ist nicht erlaubt. Bitte Upload erneut durchführen."
+            )
+        )
     w["tenant"] = tenant
     p["tenant"] = tenant
 
@@ -1897,7 +2013,11 @@ def review_confirm(token):
         src = Path(p.get("path", ""))
         if not src.exists():
             _audit("archive_missing_src", target=str(src), meta={"token": token})
-            return _render_base(_card_error("Datei im Eingang nicht gefunden (evtl. verschoben/gelöscht)."))
+            return _render_base(
+                _card_error(
+                    "Datei im Eingang nicht gefunden (evtl. verschoben/gelöscht)."
+                )
+            )
 
         answers = {
             "tenant": tenant,  # NEW
@@ -1913,7 +2033,11 @@ def review_confirm(token):
         try:
             folder, final_path, created_new = process_with_answers(src, answers)
         except Exception as e:
-            _audit("archive_error", target=str(src), meta={"error": str(e), "tenant": tenant})
+            _audit(
+                "archive_error",
+                target=str(src),
+                meta={"error": str(e), "tenant": tenant},
+            )
             return _render_base(_card_error(f"Ablage fehlgeschlagen: {e}"))
 
         done_payload = {
@@ -1927,14 +2051,27 @@ def review_confirm(token):
             "folder": str(folder),
             "final_path": str(final_path),
             "created_new": bool(created_new),
-            "objmode": ("Bestehendes Objekt" if answers.get("use_existing") else "Neues Objekt"),
-            "customer_status": (w.get("customer_status") or ("BESTAND" if answers.get("use_existing") else "NEU")),
+            "objmode": (
+                "Bestehendes Objekt" if answers.get("use_existing") else "Neues Objekt"
+            ),
+            "customer_status": (
+                w.get("customer_status")
+                or ("BESTAND" if answers.get("use_existing") else "NEU")
+            ),
         }
         write_done(token, done_payload)
 
         delete_pending(token)
 
-        _audit("archive_ok", target=str(final_path), meta={"tenant": tenant, "kdnr": answers["kdnr"], "doctype": done_payload["doctype"]})
+        _audit(
+            "archive_ok",
+            target=str(final_path),
+            meta={
+                "tenant": tenant,
+                "kdnr": answers["kdnr"],
+                "doctype": done_payload["doctype"],
+            },
+        )
         return redirect(url_for("done_view", token=token))
 
     right = render_template_string(HTML_CONFIRM, token=token, w=w)
@@ -1958,7 +2095,7 @@ def _dedupe_assistant_results(rows: list) -> list:
             return (path or "").lower()
 
     for r in rows or []:
-        fp = (r.get("file_path") or r.get("current_path") or "")
+        fp = r.get("file_path") or r.get("current_path") or ""
         if not fp:
             continue
 
@@ -1991,9 +2128,12 @@ def assistant():
     results = []
     if q:
         if assistant_search is None:
-            return _render_base(_card_error("Assistant ist im Core noch nicht verfügbar."), active_tab="assistant")
+            return _render_base(
+                _card_error("Assistant ist im Core noch nicht verfügbar."),
+                active_tab="assistant",
+            )
         try:
-            role = (_current_roles()[0] if _current_roles() else "ADMIN")
+            role = _current_roles()[0] if _current_roles() else "ADMIN"
             try:
                 raw = assistant_search(query=q, kdnr=kdnr, limit=50, role=role)
             except TypeError:
@@ -2004,9 +2144,13 @@ def assistant():
                 fp = r.get("file_path", "")
                 r["fp_b64"] = _b64(fp) if fp else ""
                 results.append(r)
-            _audit("assistant_search", target=q, meta={"kdnr": kdnr, "hits": len(results)})
+            _audit(
+                "assistant_search", target=q, meta={"kdnr": kdnr, "hits": len(results)}
+            )
         except Exception as e:
-            return _render_base(_card_error(f"Assistant-Fehler: {e}"), active_tab="assistant")
+            return _render_base(
+                _card_error(f"Assistant-Fehler: {e}"), active_tab="assistant"
+            )
 
     html = render_template_string(HTML_ASSISTANT, q=q, kdnr=kdnr, results=results)
     return _render_base(html, active_tab="assistant")
@@ -2027,5 +2171,3 @@ if __name__ == "__main__":
 
     print(f"http://127.0.0.1:{PORT}")
     APP.run(host="127.0.0.1", port=PORT, debug=False)
-
-

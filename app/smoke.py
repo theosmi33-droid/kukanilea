@@ -37,7 +37,10 @@ def main() -> None:
             raise SystemExit("health failed")
 
         login_page = client.get("/login")
-        token_match = re.search(r'name=\"csrf-token\" content=\"([^\"]+)\"', login_page.get_data(as_text=True))
+        token_match = re.search(
+            r"name=\"csrf-token\" content=\"([^\"]+)\"",
+            login_page.get_data(as_text=True),
+        )
         csrf_token = token_match.group(1) if token_match else ""
         login_resp = client.post(
             "/login",
@@ -69,6 +72,7 @@ def main() -> None:
             raise SystemExit("search failed")
 
         import io
+
         data = {"file": (io.BytesIO(b"demo"), "demo.txt")}
         upload = client.post("/upload", data=data, headers={"X-CSRF-Token": csrf_token})
         if upload.status_code != 200:

@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import annotations
-from dataclasses import dataclass, asdict
-from typing import List, Optional, Dict, Literal
-import os
-import json
-import requests
+
 import datetime
+import os
+from dataclasses import asdict, dataclass
+from typing import Dict, List, Literal
+
+import requests
 
 Tone = Literal["freundlich", "neutral", "bestimmt", "streng"]
 Length = Literal["kurz", "normal", "ausfuehrlich"]
@@ -15,6 +16,7 @@ Legal = Literal["none", "light", "strong"]
 Goal = Literal["rabatt", "gutschrift", "ersatz", "nachbesserung", "ruecknahme"]
 Recipient = Literal["haendler", "kunde", "behoerde", "versicherung"]
 RewriteMode = Literal["off", "local", "ollama", "deepl_api"]
+
 
 @dataclass
 class MailOptions:
@@ -29,10 +31,13 @@ class MailOptions:
     include_signature_block: bool = True
     rewrite_mode: RewriteMode = "local"  # local rules by default
 
+
 @dataclass
 class MailInput:
     context: str
-    facts: Dict[str, str]  # e.g. {"lieferdatum":"30.01.2026","lieferschein":"...","kunde":"..."}
+    facts: Dict[
+        str, str
+    ]  # e.g. {"lieferdatum":"30.01.2026","lieferschein":"...","kunde":"..."}
     attachments: List[str]
     sender_name: str = "Peter Nguyen"
     sender_company: str = "FLISA-Bau"
@@ -43,6 +48,7 @@ class MailInput:
     recipient_company: str = ""
     draft: str = ""  # optional existing draft to rewrite
 
+
 class MailAgent:
     def __init__(self):
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
@@ -50,12 +56,16 @@ class MailAgent:
 
         # Optional: DeepL API (only if you have a key)
         self.deepl_api_key = os.getenv("DEEPL_API_KEY", "")
-        self.deepl_api_url = os.getenv("DEEPL_API_URL", "https://api-free.deepl.com/v2/translate")
+        self.deepl_api_url = os.getenv(
+            "DEEPL_API_URL", "https://api-free.deepl.com/v2/translate"
+        )
 
     def _deadline_text(self, opt: MailOptions) -> str:
         if not opt.set_deadline:
             return ""
-        target_date = (datetime.date.today() + datetime.timedelta(days=opt.deadline_days)).strftime("%d.%m.%Y")
+        target_date = (
+            datetime.date.today() + datetime.timedelta(days=opt.deadline_days)
+        ).strftime("%d.%m.%Y")
         if opt.legal_level == "strong":
             return f"\nBitte teilen Sie uns bis spätestens {target_date} mit, wie die Regulierung erfolgt.\n"
         return f"\nÜber eine Rückmeldung bis {target_date} würden wir uns freuen.\n"
@@ -103,7 +113,9 @@ class MailAgent:
             facts_lines.append(f"Projekt: {inp.facts['projekt']}")
         facts_section = ""
         if facts_lines and opt.length != "kurz":
-            facts_section = "Bezug:\n" + "\n".join(f"- {l}" for l in facts_lines) + "\n\n"
+            facts_section = (
+                "Bezug:\n" + "\n".join(f"- {line}" for line in facts_lines) + "\n\n"
+            )
 
         # Main message
         main = "bei der gelieferten Ware wurde ein Mangel festgestellt. Mehrere Fliesen weisen sichtbare Beschädigungen auf.\n"
@@ -120,7 +132,10 @@ class MailAgent:
         deadline = self._deadline_text(opt)
 
         closing = ""
-        if opt.tone in ("bestimmt", "streng") and opt.legal_level in ("light", "strong"):
+        if opt.tone in ("bestimmt", "streng") and opt.legal_level in (
+            "light",
+            "strong",
+        ):
             closing += "Vielen Dank für die zeitnahe Bearbeitung.\n"
         else:
             closing += "Vielen Dank.\n"
@@ -137,7 +152,17 @@ class MailAgent:
             )
 
         # Assemble
-        body = opening + facts_section + main + attachments_hint + ask + deadline + "\n" + closing + signature
+        body = (
+            opening
+            + facts_section
+            + main
+            + attachments_hint
+            + ask
+            + deadline
+            + "\n"
+            + closing
+            + signature
+        )
         return body
 
     def _local_rewrite(self, text: str, opt: MailOptions) -> str:
@@ -146,7 +171,10 @@ class MailAgent:
         while "\n\n\n" in t:
             t = t.replace("\n\n\n", "\n\n")
         # Make wording a bit tighter
-        t = t.replace("Wir bitten Sie um Prüfung des Sachverhalts", "Bitte prüfen Sie den Sachverhalt")
+        t = t.replace(
+            "Wir bitten Sie um Prüfung des Sachverhalts",
+            "Bitte prüfen Sie den Sachverhalt",
+        )
         t = t.replace("Wir bitten Sie um", "Bitte")
         return t.strip() + "\n"
 
@@ -202,7 +230,9 @@ class MailAgent:
 
         checklist = []
         if inp.attachments:
-            checklist.append(f"Anhänge geprüft: {len(inp.attachments)} Datei(en) angehängt")
+            checklist.append(
+                f"Anhänge geprüft: {len(inp.attachments)} Datei(en) angehängt"
+            )
         else:
             checklist.append("Anhänge fehlen: Fotos anhängen")
 
@@ -229,9 +259,14 @@ if __name__ == "__main__":
             "93fa3e12-ed8c-46de-85db-334b5c517b68.jpg",
         ],
     )
-    opt = MailOptions(tone="neutral", length="normal", legal_level="light", goal="rabatt", rewrite_mode="ollama")
+    opt = MailOptions(
+        tone="neutral",
+        length="normal",
+        legal_level="light",
+        goal="rabatt",
+        rewrite_mode="ollama",
+    )
     out = agent.generate(inp, opt)
     print("BETREFF:", out["subject"])
     print("\nTEXT:\n", out["body"])
     print("\nCHECKLISTE:", out["checklist"])
-

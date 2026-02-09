@@ -23,7 +23,9 @@ class SummaryAgent(BaseAgent):
     def handle(self, message: str, intent: str, context: AgentContext) -> AgentResult:
         token = context.token
         if not token:
-            return AgentResult(text="Bitte gib einen Token an, den ich zusammenfassen soll.")
+            return AgentResult(
+                text="Bitte gib einen Token an, den ich zusammenfassen soll."
+            )
         payload = None
         if callable(getattr(self.core, "read_done", None)):
             payload = self.core.read_done(token)

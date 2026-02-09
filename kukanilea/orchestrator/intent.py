@@ -39,7 +39,14 @@ class IntentParser:
             return IntentResult(intent="customer_lookup", confidence=0.6)
         if any(
             k in text
-            for k in ["rechnung", "angebot", "vertrag", "mahnung", "lieferschein", "bestellung"]
+            for k in [
+                "rechnung",
+                "angebot",
+                "vertrag",
+                "mahnung",
+                "lieferschein",
+                "bestellung",
+            ]
         ):
             return IntentResult(intent="search", confidence=0.55)
         if re.search(r"\b(index|reindex)\b", text):

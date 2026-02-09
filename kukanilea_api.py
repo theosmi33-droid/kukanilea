@@ -31,16 +31,16 @@ Start:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import time
-import hashlib
-from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, Optional, List, Tuple
 from functools import wraps
+from pathlib import Path
+from typing import List, Optional
 
-from flask import Flask, request, jsonify, abort, send_file, render_template_string
+from flask import Flask, abort, jsonify, render_template_string, request, send_file
 
 import kukanilea_core as core
 
@@ -83,7 +83,9 @@ SUPPORTED_EXT = getattr(
     {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"},
 )
 
-analyze_to_pending = getattr(core, "analyze_to_pending", None) or getattr(core, "start_background_analysis", None)
+analyze_to_pending = getattr(core, "analyze_to_pending", None) or getattr(
+    core, "start_background_analysis", None
+)
 read_pending = getattr(core, "read_pending", None)
 write_pending = getattr(core, "write_pending", None)
 delete_pending = getattr(core, "delete_pending", None)
@@ -147,7 +149,12 @@ def _is_allowed_ext(filename: str) -> bool:
 
 
 def _allowed_roots() -> List[Path]:
-    return [EINGANG.resolve(), BASE_PATH.resolve(), PENDING_DIR.resolve(), DONE_DIR.resolve()]
+    return [
+        EINGANG.resolve(),
+        BASE_PATH.resolve(),
+        PENDING_DIR.resolve(),
+        DONE_DIR.resolve(),
+    ]
 
 
 def _is_allowed_path(fp: Path) -> bool:
@@ -194,6 +201,7 @@ def require_api_key(fn):
     - if API_KEY not set => dev-open
     - else require X-API-Key
     """
+
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if request.path in ("/health", "/ui"):
@@ -206,6 +214,7 @@ def require_api_key(fn):
         if provided != API_KEY:
             abort(401)
         return fn(*args, **kwargs)
+
     return wrapper
 
 
@@ -726,7 +735,9 @@ def root():
             "POST /index/fullscan",
             "GET  /file/<token>",
         ],
-        auth=("X-API-Key required (except /health,/ui)" if API_KEY else "open (dev mode)"),
+        auth=(
+            "X-API-Key required (except /health,/ui)" if API_KEY else "open (dev mode)"
+        ),
     )
 
 
@@ -784,7 +795,12 @@ def upload():
             dest.unlink()
         except Exception:
             pass
-        return jsonify(ok=False, error="duplicate_pending", token=existing_token, doc_id=doc_id), 409
+        return (
+            jsonify(
+                ok=False, error="duplicate_pending", token=existing_token, doc_id=doc_id
+            ),
+            409,
+        )
 
     # 2) archived/indexed dedupe (optional, only if core exposes it)
     if callable(core_has_doc_id):
@@ -817,7 +833,9 @@ def upload():
     except Exception:
         pass
 
-    return jsonify(ok=True, token=token, path=str(dest), filename=filename, doc_id=doc_id)
+    return jsonify(
+        ok=True, token=token, path=str(dest), filename=filename, doc_id=doc_id
+    )
 
 
 @APP.get("/pending")
@@ -957,7 +975,9 @@ def process(token: str):
         return _json_error(f"process_failed: {e}", 500)
 
     done_payload = {
-        "tenant": answers.get("tenant") or answers.get("mandant") or p.get("tenant_suggested", ""),
+        "tenant": answers.get("tenant")
+        or answers.get("mandant")
+        or p.get("tenant_suggested", ""),
         "kdnr": answers.get("kdnr", ""),
         "name": answers.get("name", ""),
         "addr": answers.get("addr", ""),
@@ -967,7 +987,9 @@ def process(token: str):
         "folder": str(folder),
         "final_path": str(final_path),
         "created_new": bool(created_new),
-        "objmode": ("Bestehendes Objekt" if answers.get("use_existing") else "Neues Objekt"),
+        "objmode": (
+            "Bestehendes Objekt" if answers.get("use_existing") else "Neues Objekt"
+        ),
         "doc_id": p.get("doc_id", ""),
     }
 
@@ -1082,5 +1104,3 @@ if __name__ == "__main__":
     else:
         print("Auth: OPEN (dev mode)")
     APP.run(host="127.0.0.1", port=PORT, debug=False)
-
-

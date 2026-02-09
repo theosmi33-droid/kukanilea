@@ -31,7 +31,9 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(result.actions)
 
     def test_open_token(self):
-        ctx = AgentContext(tenant_id="KUKANILEA", user="dev", role="ADMIN", token="abc123def456")
+        ctx = AgentContext(
+            tenant_id="KUKANILEA", user="dev", role="ADMIN", token="abc123def456"
+        )
         result = self.orch.handle("öffne abc123def456", ctx)
         self.assertEqual(result.actions[0]["type"], "open_token")
 

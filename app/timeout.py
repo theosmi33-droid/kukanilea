@@ -11,8 +11,10 @@ def time_limit(seconds: int):
         yield
         return
     if hasattr(signal, "SIGALRM"):
+
         def _handler(signum, frame):
             raise TimeoutError("request timeout")
+
         old_handler = signal.signal(signal.SIGALRM, _handler)
         signal.setitimer(signal.ITIMER_REAL, seconds)
         try:

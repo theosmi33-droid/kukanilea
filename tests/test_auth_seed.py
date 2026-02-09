@@ -1,8 +1,5 @@
-import os
-from pathlib import Path
-
-from app.db import AuthDB
 from app.auth import hash_password
+from app.db import AuthDB
 
 
 def test_seed_users(tmp_path):
