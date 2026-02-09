@@ -16,11 +16,17 @@ def _init_core(tmp_path: Path) -> None:
 
 def test_time_tracking_one_running_timer(tmp_path: Path) -> None:
     _init_core(tmp_path)
-    project = core.time_project_create(tenant_id="TENANT1", name="Projekt A", created_by="dev")
-    entry = core.time_entry_start(tenant_id="TENANT1", user="alice", project_id=project["id"])
+    project = core.time_project_create(
+        tenant_id="TENANT1", name="Projekt A", created_by="dev"
+    )
+    entry = core.time_entry_start(
+        tenant_id="TENANT1", user="alice", project_id=project["id"]
+    )
     assert entry["end_at"] is None
     with pytest.raises(ValueError):
-        core.time_entry_start(tenant_id="TENANT1", user="alice", project_id=project["id"])
+        core.time_entry_start(
+            tenant_id="TENANT1", user="alice", project_id=project["id"]
+        )
     stopped = core.time_entry_stop(tenant_id="TENANT1", user="alice")
     assert stopped["end_at"]
     assert stopped["duration_seconds"] >= 0
@@ -41,7 +47,9 @@ def test_time_tracking_tenant_isolation(tmp_path: Path) -> None:
 
 def test_time_tracking_export_csv(tmp_path: Path) -> None:
     _init_core(tmp_path)
-    project = core.time_project_create(tenant_id="TENANT1", name="Export", created_by="dev")
+    project = core.time_project_create(
+        tenant_id="TENANT1", name="Export", created_by="dev"
+    )
     core.time_entry_start(tenant_id="TENANT1", user="alice", project_id=project["id"])
     core.time_entry_stop(tenant_id="TENANT1", user="alice")
     csv_payload = core.time_entries_export_csv(

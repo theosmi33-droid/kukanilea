@@ -20,25 +20,24 @@ Hinweis:
 
 from __future__ import annotations
 
-import os
-import re
+import base64
+import csv
+import hashlib
 import io
 import json
-import time
-import base64
-import hashlib
+import os
+import re
 import sqlite3
 import threading
+import time
 import unicodedata
-import csv
 import zipfile
-from pathlib import Path
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional, Tuple
-
 from email import policy
 from email.parser import BytesParser
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 # Optional libs
 try:
@@ -122,26 +121,41 @@ TENANT_REQUIRE = _env_bool("TENANT_REQUIRE", "0")
 SUPPORTED_EXT = {
     # Documents
     ".pdf",
-    ".txt", ".md", ".rtf",
+    ".txt",
+    ".md",
+    ".rtf",
     ".docx",
     ".xlsx",
     ".csv",
     ".eml",
-    ".html", ".htm",
-    ".json", ".xml",
-
+    ".html",
+    ".htm",
+    ".json",
+    ".xml",
     # Images (OCR)
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp",
-
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".bmp",
+    ".webp",
     # Outlook (best-effort)
     ".msg",
-
     # Containers / non-text (accepted, but extraction may be empty; store-only)
-    ".zip", ".7z", ".rar",
-    ".dwg", ".dxf", ".ifc",
-    ".p7m", ".p7s",
-    ".psd", ".ai",
-    ".mp4", ".mov", ".mp3",
+    ".zip",
+    ".7z",
+    ".rar",
+    ".dwg",
+    ".dxf",
+    ".ifc",
+    ".p7m",
+    ".p7s",
+    ".psd",
+    ".ai",
+    ".mp4",
+    ".mov",
+    ".mp3",
 }
 
 # OCR / Extraction limits
@@ -210,12 +224,7 @@ def _norm_for_match(s: Any) -> str:
     - drop non-alnum
     """
     s = normalize_component(s).lower()
-    s = (
-        s.replace("ä", "ae")
-        .replace("ö", "oe")
-        .replace("ü", "ue")
-        .replace("ß", "ss")
-    )
+    s = s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
     s = re.sub(r"[^a-z0-9]+", "", s)
     return s
 
@@ -244,7 +253,12 @@ def _html_to_text(html: str) -> str:
     html = re.sub(r"(?i)<br\s*/?>", "\n", html)
     html = re.sub(r"(?i)</p\s*>", "\n", html)
     html = re.sub(r"(?is)<[^>]+>", " ", html)
-    html = html.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    html = (
+        html.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+    )
     html = re.sub(r"[ \t]+", " ", html)
     html = re.sub(r"\n{3,}", "\n\n", html)
     return html.strip()
@@ -319,14 +333,25 @@ def _safe_fs(s: Any) -> str:
 
 
 _DATE_PATTERNS = [
-    "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
-    "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y",
-    "%d.%m.%y", "%d/%m/%y", "%d-%m-%y",
-    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-    "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
-    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M",
-    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
-    "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%Y.%m.%d",
+    "%d.%m.%Y",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%y",
+    "%d/%m/%y",
+    "%d-%m-%y",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%Y/%m/%d %H:%M:%S",
+    "%Y/%m/%d %H:%M",
+    "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d-%m-%Y %H:%M:%S",
+    "%d-%m-%Y %H:%M",
 ]
 
 
@@ -405,7 +430,9 @@ def read_pending(token: str) -> Optional[Dict[str, Any]]:
 
 def write_pending(token: str, payload: Dict[str, Any]) -> None:
     fp = _pending_path(token)
-    _atomic_write_text(fp, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(
+        fp, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def delete_pending(token: str) -> None:
@@ -419,7 +446,9 @@ def delete_pending(token: str) -> None:
 def list_pending() -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     PENDING_DIR.mkdir(parents=True, exist_ok=True)
-    for fp in sorted(PENDING_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+    for fp in sorted(
+        PENDING_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+    ):
         try:
             j = json.loads(fp.read_text(encoding="utf-8"))
             j["_token"] = fp.stem
@@ -431,7 +460,9 @@ def list_pending() -> List[Dict[str, Any]]:
 
 def write_done(token: str, payload: Dict[str, Any]) -> None:
     fp = _done_path(token)
-    _atomic_write_text(fp, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(
+        fp, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def read_done(token: str) -> Optional[Dict[str, Any]]:
@@ -473,7 +504,9 @@ def _column_exists(con: sqlite3.Connection, table: str, column: str) -> bool:
     return any(r[1] == column for r in rows)
 
 
-def _ensure_column(con: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
+def _ensure_column(
+    con: sqlite3.Connection, table: str, column: str, col_type: str
+) -> None:
     if not _column_exists(con, table, column):
         con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
@@ -550,8 +583,12 @@ def db_init() -> None:
                 );
                 """
             )
-            con.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, ts);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_tasks_tenant ON tasks(tenant, status, ts);")
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, ts);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tasks_tenant ON tasks(tenant, status, ts);"
+            )
 
             con.execute(
                 """
@@ -567,7 +604,9 @@ def db_init() -> None:
                 );
                 """
             )
-            con.execute("CREATE INDEX IF NOT EXISTS idx_time_projects_tenant ON time_projects(tenant_id, status);")
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_time_projects_tenant ON time_projects(tenant_id, status);"
+            )
 
             con.execute(
                 """
@@ -592,7 +631,9 @@ def db_init() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_time_entries_tenant ON time_entries(tenant_id, start_at);"
             )
-            con.execute("CREATE INDEX IF NOT EXISTS idx_time_entries_user ON time_entries(tenant_id, user, start_at);")
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_time_entries_user ON time_entries(tenant_id, user, start_at);"
+            )
             con.execute(
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_time_entries_running
@@ -614,8 +655,9 @@ def db_init() -> None:
                 );
                 """
             )
-            con.execute("CREATE INDEX IF NOT EXISTS idx_locks_tenant ON review_locks(tenant);")
-
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_locks_tenant ON review_locks(tenant);"
+            )
 
             con.execute(
                 """
@@ -733,14 +775,30 @@ def db_init() -> None:
 
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_group ON docs(group_key);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_kdnr ON docs(kdnr);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_docs_tenant ON docs(tenant_id, kdnr);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_versions_doc ON versions(doc_id);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_versions_path ON versions(file_path);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_versions_tenant ON versions(tenant_id);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_entities_doc ON entities(doc_id, tenant_id);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type, norm_value);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_docs_index_tenant ON docs_index(tenant_id, kdnr, doctype);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_docs_index_tokens ON docs_index(tokens);")
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_docs_tenant ON docs(tenant_id, kdnr);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_versions_doc ON versions(doc_id);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_versions_path ON versions(file_path);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_versions_tenant ON versions(tenant_id);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_entities_doc ON entities(doc_id, tenant_id);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type, norm_value);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_docs_index_tenant ON docs_index(tenant_id, kdnr, doctype);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_docs_index_tokens ON docs_index(tokens);"
+            )
 
             if _has_fts5(con):
                 con.execute(
@@ -804,7 +862,9 @@ def rbac_verify_user(username: str, password: str) -> bool:
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT pass_sha256 FROM users WHERE username=?", (username,)).fetchone()
+            row = con.execute(
+                "SELECT pass_sha256 FROM users WHERE username=?", (username,)
+            ).fetchone()
             if not row:
                 return False
             return str(row["pass_sha256"]) == _pw_hash(password)
@@ -836,7 +896,9 @@ def rbac_get_user_roles(username: str) -> List[str]:
     with _DB_LOCK:
         con = _db()
         try:
-            rows = con.execute("SELECT role FROM roles WHERE username=? ORDER BY role", (username,)).fetchall()
+            rows = con.execute(
+                "SELECT role FROM roles WHERE username=? ORDER BY role", (username,)
+            ).fetchall()
             return [str(r["role"]) for r in rows]
         finally:
             con.close()
@@ -858,7 +920,9 @@ def audit_log(
     action = normalize_component(action)
     target = normalize_component(target)
     meta_json = json.dumps(meta or {}, ensure_ascii=False)
-    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    tenant_id = (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
 
     with _DB_LOCK:
         con = _db()
@@ -876,8 +940,6 @@ def audit_log(
             con.commit()
         finally:
             con.close()
-
-
 
 
 # ============================================================
@@ -913,7 +975,19 @@ def task_create(
                 INSERT INTO tasks(ts, tenant, severity, task_type, status, title, details, token, path, meta_json, created_by)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                (_now_iso(), tenant, severity, task_type, "OPEN", title, details, token, path, meta_json, created_by),
+                (
+                    _now_iso(),
+                    tenant,
+                    severity,
+                    task_type,
+                    "OPEN",
+                    title,
+                    details,
+                    token,
+                    path,
+                    meta_json,
+                    created_by,
+                ),
             )
             con.commit()
             return int(cur.lastrowid or 0)
@@ -921,7 +995,9 @@ def task_create(
             con.close()
 
 
-def task_list(*, tenant: str = "", status: str = "OPEN", limit: int = 200) -> List[Dict[str, Any]]:
+def task_list(
+    *, tenant: str = "", status: str = "OPEN", limit: int = 200
+) -> List[Dict[str, Any]]:
     tenant = normalize_component(tenant).lower()
     status = normalize_component(status).upper()
     limit = max(1, min(int(limit), 2000))
@@ -963,7 +1039,9 @@ def task_set_status(task_id: int, status: str, resolved_by: str = "") -> bool:
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT id FROM tasks WHERE id=?", (int(task_id),)).fetchone()
+            row = con.execute(
+                "SELECT id FROM tasks WHERE id=?", (int(task_id),)
+            ).fetchone()
             if not row:
                 return False
             con.execute(
@@ -980,7 +1058,9 @@ def task_set_status(task_id: int, status: str, resolved_by: str = "") -> bool:
 # TIME TRACKING
 # ============================================================
 def _time_tenant(tenant_id: str) -> str:
-    return _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    return (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
 
 
 def _parse_iso(value: str) -> datetime:
@@ -1041,7 +1121,9 @@ def time_project_create(
     }
 
 
-def time_project_list(*, tenant_id: str, status: str = "ACTIVE") -> List[Dict[str, Any]]:
+def time_project_list(
+    *, tenant_id: str, status: str = "ACTIVE"
+) -> List[Dict[str, Any]]:
     tenant_id = _time_tenant(tenant_id)
     status = normalize_component(status).upper() or "ACTIVE"
     with _DB_LOCK:
@@ -1060,7 +1142,9 @@ def time_project_list(*, tenant_id: str, status: str = "ACTIVE") -> List[Dict[st
             con.close()
 
 
-def _time_project_lookup(con: sqlite3.Connection, tenant_id: str, project_id: Optional[int]) -> Optional[dict]:
+def _time_project_lookup(
+    con: sqlite3.Connection, tenant_id: str, project_id: Optional[int]
+) -> Optional[dict]:
     if project_id is None:
         return None
     row = con.execute(
@@ -1089,7 +1173,9 @@ def time_entry_start(
     with _DB_LOCK:
         con = _db()
         try:
-            if project_id is not None and not _time_project_lookup(con, tenant_id, project_id):
+            if project_id is not None and not _time_project_lookup(
+                con, tenant_id, project_id
+            ):
                 raise ValueError("project_not_found")
             row = con.execute(
                 "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL",
@@ -1105,7 +1191,18 @@ def time_entry_start(
                 )
                 VALUES (?,?,?,?,?,?,?,?,?,?)
                 """,
-                (tenant_id, project_id, user, now, None, None, note, "PENDING", now, now),
+                (
+                    tenant_id,
+                    project_id,
+                    user,
+                    now,
+                    None,
+                    None,
+                    note,
+                    "PENDING",
+                    now,
+                    now,
+                ),
             )
             con.commit()
             entry_id = int(cur.lastrowid or 0)
@@ -1140,9 +1237,13 @@ def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]
                 return None
             entry = dict(row)
             if entry.get("end_at"):
-                entry["duration_seconds"] = _duration_seconds(entry["start_at"], entry["end_at"])
+                entry["duration_seconds"] = _duration_seconds(
+                    entry["start_at"], entry["end_at"]
+                )
             else:
-                entry["duration_seconds"] = _duration_seconds(entry["start_at"], _now_iso())
+                entry["duration_seconds"] = _duration_seconds(
+                    entry["start_at"], _now_iso()
+                )
             return entry
         finally:
             con.close()
@@ -1231,7 +1332,9 @@ def time_entry_update(
             ).fetchone()
             if not row:
                 raise ValueError("entry_not_found")
-            if project_id is not None and not _time_project_lookup(con, tenant_id, project_id):
+            if project_id is not None and not _time_project_lookup(
+                con, tenant_id, project_id
+            ):
                 raise ValueError("project_not_found")
             start_val = start_at or row["start_at"]
             end_val = end_at if end_at is not None else row["end_at"]
@@ -1271,7 +1374,9 @@ def time_entry_update(
     return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
 
 
-def time_entry_approve(*, tenant_id: str, entry_id: int, approved_by: str) -> Dict[str, Any]:
+def time_entry_approve(
+    *, tenant_id: str, entry_id: int, approved_by: str
+) -> Dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     approved_by = normalize_component(approved_by).lower()
     if not approved_by:
@@ -1351,9 +1456,13 @@ def time_entries_list(
             now = _now_iso()
             for entry in entries:
                 if entry.get("end_at"):
-                    entry["duration_seconds"] = _duration_seconds(entry["start_at"], entry["end_at"])
+                    entry["duration_seconds"] = _duration_seconds(
+                        entry["start_at"], entry["end_at"]
+                    )
                 else:
-                    entry["duration_seconds"] = _duration_seconds(entry["start_at"], now)
+                    entry["duration_seconds"] = _duration_seconds(
+                        entry["start_at"], now
+                    )
             return entries
         finally:
             con.close()
@@ -1431,7 +1540,9 @@ def lock_prune_expired() -> int:
             con.close()
 
 
-def lock_acquire(token: str, tenant: str, user: str, roles: List[str]) -> Dict[str, Any]:
+def lock_acquire(
+    token: str, tenant: str, user: str, roles: List[str]
+) -> Dict[str, Any]:
     token = normalize_component(token)
     tenant = normalize_component(tenant).lower()
     user = normalize_component(user).lower()
@@ -1443,12 +1554,16 @@ def lock_acquire(token: str, tenant: str, user: str, roles: List[str]) -> Dict[s
     lock_prune_expired()
 
     now = _now_iso()
-    exp = (datetime.now() + timedelta(seconds=_REVIEW_LOCK_TTL_SECONDS)).isoformat(timespec="seconds")
+    exp = (datetime.now() + timedelta(seconds=_REVIEW_LOCK_TTL_SECONDS)).isoformat(
+        timespec="seconds"
+    )
 
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT locked_by, expires_at FROM review_locks WHERE token=?", (token,)).fetchone()
+            row = con.execute(
+                "SELECT locked_by, expires_at FROM review_locks WHERE token=?", (token,)
+            ).fetchone()
             if row:
                 locked_by = str(row["locked_by"])
                 if locked_by == user:
@@ -1457,14 +1572,29 @@ def lock_acquire(token: str, tenant: str, user: str, roles: List[str]) -> Dict[s
                         (now, exp, roles_s, token),
                     )
                     con.commit()
-                    return {"ok": True, "status": "renewed", "locked_by": user, "expires_at": exp}
-                return {"ok": False, "status": "conflict", "locked_by": locked_by, "expires_at": str(row["expires_at"])}
+                    return {
+                        "ok": True,
+                        "status": "renewed",
+                        "locked_by": user,
+                        "expires_at": exp,
+                    }
+                return {
+                    "ok": False,
+                    "status": "conflict",
+                    "locked_by": locked_by,
+                    "expires_at": str(row["expires_at"]),
+                }
             con.execute(
                 "INSERT INTO review_locks(token, tenant, locked_by, locked_roles, locked_at, heartbeat_at, expires_at) VALUES (?,?,?,?,?,?,?)",
                 (token, tenant, user, roles_s, now, now, exp),
             )
             con.commit()
-            return {"ok": True, "status": "acquired", "locked_by": user, "expires_at": exp}
+            return {
+                "ok": True,
+                "status": "acquired",
+                "locked_by": user,
+                "expires_at": exp,
+            }
         finally:
             con.close()
 
@@ -1479,22 +1609,36 @@ def lock_heartbeat(token: str, user: str, roles: List[str]) -> Dict[str, Any]:
 
     lock_prune_expired()
     now = _now_iso()
-    exp = (datetime.now() + timedelta(seconds=_REVIEW_LOCK_TTL_SECONDS)).isoformat(timespec="seconds")
+    exp = (datetime.now() + timedelta(seconds=_REVIEW_LOCK_TTL_SECONDS)).isoformat(
+        timespec="seconds"
+    )
 
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT locked_by, expires_at FROM review_locks WHERE token=?", (token,)).fetchone()
+            row = con.execute(
+                "SELECT locked_by, expires_at FROM review_locks WHERE token=?", (token,)
+            ).fetchone()
             if not row:
                 return {"ok": False, "status": "missing"}
             if str(row["locked_by"]) != user:
-                return {"ok": False, "status": "conflict", "locked_by": str(row["locked_by"]), "expires_at": str(row["expires_at"])}
+                return {
+                    "ok": False,
+                    "status": "conflict",
+                    "locked_by": str(row["locked_by"]),
+                    "expires_at": str(row["expires_at"]),
+                }
             con.execute(
                 "UPDATE review_locks SET heartbeat_at=?, expires_at=?, locked_roles=? WHERE token=?",
                 (now, exp, roles_s, token),
             )
             con.commit()
-            return {"ok": True, "status": "renewed", "locked_by": user, "expires_at": exp}
+            return {
+                "ok": True,
+                "status": "renewed",
+                "locked_by": user,
+                "expires_at": exp,
+            }
         finally:
             con.close()
 
@@ -1508,16 +1652,23 @@ def lock_release(token: str, user: str) -> Dict[str, Any]:
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute("SELECT locked_by FROM review_locks WHERE token=?", (token,)).fetchone()
+            row = con.execute(
+                "SELECT locked_by FROM review_locks WHERE token=?", (token,)
+            ).fetchone()
             if not row:
                 return {"ok": True, "status": "missing"}
             if str(row["locked_by"]) != user:
-                return {"ok": False, "status": "conflict", "locked_by": str(row["locked_by"])}
+                return {
+                    "ok": False,
+                    "status": "conflict",
+                    "locked_by": str(row["locked_by"]),
+                }
             con.execute("DELETE FROM review_locks WHERE token=?", (token,))
             con.commit()
             return {"ok": True, "status": "released"}
         finally:
             con.close()
+
 
 # ============================================================
 # FOLDER HELPERS
@@ -1553,13 +1704,31 @@ def parse_folder_fields(folder_name: str) -> Dict[str, str]:
     addr_start = None
     for i, t in enumerate(before):
         low = t.lower()
-        if any(x in low for x in ["str", "straße", "strasse", "weg", "allee", "platz", "ring", "damm", "ufer", "gasse"]):
+        if any(
+            x in low
+            for x in [
+                "str",
+                "straße",
+                "strasse",
+                "weg",
+                "allee",
+                "platz",
+                "ring",
+                "damm",
+                "ufer",
+                "gasse",
+            ]
+        ):
             addr_start = i
             break
 
     if addr_start is not None:
-        out["name"] = normalize_component(" ".join(before[:addr_start]).replace("_", " "))
-        out["addr"] = normalize_component(" ".join(before[addr_start:]).replace("_", " "))
+        out["name"] = normalize_component(
+            " ".join(before[:addr_start]).replace("_", " ")
+        )
+        out["addr"] = normalize_component(
+            " ".join(before[addr_start:]).replace("_", " ")
+        )
     else:
         out["name"] = normalize_component(" ".join(before).replace("_", " "))
 
@@ -1607,7 +1776,9 @@ def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
     return sorted(out)
 
 
-def best_match_object_folder(existing: List[Path], addr: str, plzort: str) -> Tuple[Optional[Path], float]:
+def best_match_object_folder(
+    existing: List[Path], addr: str, plzort: str
+) -> Tuple[Optional[Path], float]:
     addr_n = _norm_for_match(addr)
     plz_n = _norm_for_match(plzort)
 
@@ -1630,7 +1801,9 @@ def best_match_object_folder(existing: List[Path], addr: str, plzort: str) -> Tu
     return best, best_score
 
 
-def detect_object_duplicates_for_kdnr(kdnr: str, threshold: float = DEFAULT_DUP_SIM_THRESHOLD) -> List[Dict[str, Any]]:
+def detect_object_duplicates_for_kdnr(
+    kdnr: str, threshold: float = DEFAULT_DUP_SIM_THRESHOLD
+) -> List[Dict[str, Any]]:
     kdnr = normalize_component(kdnr)
     folders = find_existing_customer_folders(BASE_PATH, kdnr)
     names = [(f, _norm_for_match(f.name)) for f in folders]
@@ -1726,7 +1899,9 @@ def _extract_docx_text(fp: Path) -> str:
     try:
         with zipfile.ZipFile(str(fp), "r") as z:
             xml = z.read("word/document.xml").decode("utf-8", errors="ignore")
-        xml = xml.replace("</w:p>", "\n").replace("</w:tr>", "\n").replace("</w:tc>", " ")
+        xml = (
+            xml.replace("</w:p>", "\n").replace("</w:tr>", "\n").replace("</w:tc>", " ")
+        )
         xml = re.sub(r"<[^>]+>", "", xml)
         xml = re.sub(r"[ \t]+", " ", xml)
         xml = re.sub(r"\n{3,}", "\n\n", xml)
@@ -1772,7 +1947,11 @@ def _extract_xlsx_text(fp: Path) -> str:
     try:
         with zipfile.ZipFile(str(fp), "r") as z:
             sst = _xlsx_shared_strings(z)
-            sheet_names = [n for n in z.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+            sheet_names = [
+                n
+                for n in z.namelist()
+                if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
+            ]
             sheet_names = sorted(sheet_names)[:3]
             out_lines: List[str] = []
             for sname in sheet_names:
@@ -1955,7 +2134,12 @@ def _extract_xml_text(fp: Path) -> str:
     except Exception:
         return ""
     raw = re.sub(r"(?is)<[^>]+>", " ", raw)
-    raw = raw.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    raw = (
+        raw.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+    )
     raw = re.sub(r"\s+", " ", raw)
     return raw.strip()
 
@@ -2055,8 +2239,24 @@ def _extract_text(fp: Path) -> Tuple[str, bool]:
 # HEURISTIC PARSING (SUGGESTIONS)
 # ============================================================
 _DOCTYPE_KEYWORDS = [
-    ("H_RECHNUNG", [r"\bh[ _-]?rechnung\b", r"\bhändler[ _-]?rechnung\b", r"\bhaendler[ _-]?rechnung\b", r"\bdealer[ _-]?invoice\b"]),
-    ("H_ANGEBOT",  [r"\bh[ _-]?angebot\b",  r"\bhändler[ _-]?angebot\b",  r"\bhaendler[ _-]?angebot\b",  r"\bdealer[ _-]?offer\b"]),
+    (
+        "H_RECHNUNG",
+        [
+            r"\bh[ _-]?rechnung\b",
+            r"\bhändler[ _-]?rechnung\b",
+            r"\bhaendler[ _-]?rechnung\b",
+            r"\bdealer[ _-]?invoice\b",
+        ],
+    ),
+    (
+        "H_ANGEBOT",
+        [
+            r"\bh[ _-]?angebot\b",
+            r"\bhändler[ _-]?angebot\b",
+            r"\bhaendler[ _-]?angebot\b",
+            r"\bdealer[ _-]?offer\b",
+        ],
+    ),
     ("RECHNUNG", [r"\brechnung\b", r"\binvoice\b"]),
     ("ANGEBOT", [r"\bangebot\b", r"\bquotation\b", r"\boffer\b"]),
     ("AUFTRAGSBESTAETIGUNG", [r"\bauftragsbest", r"\border confirmation\b"]),
@@ -2082,7 +2282,9 @@ def _detect_doctype(text: str, filename: str) -> str:
 
 def _find_kdnr_candidates(text: str) -> List[Tuple[str, float]]:
     cands: List[str] = []
-    for m in re.finditer(r"(kunden[\s\-]*nr\.?\s*[:#]?\s*)(\d{3,})", text, flags=re.IGNORECASE):
+    for m in re.finditer(
+        r"(kunden[\s\-]*nr\.?\s*[:#]?\s*)(\d{3,})", text, flags=re.IGNORECASE
+    ):
         cands.append(m.group(2))
     for m in re.finditer(r"(kdnr\.?\s*[:#]?\s*)(\d{3,})", text, flags=re.IGNORECASE):
         cands.append(m.group(2))
@@ -2152,32 +2354,47 @@ def _find_dates(text: str) -> Tuple[str, List[Dict[str, Any]]]:
 
 def _find_name_addr_plzort(text: str) -> Tuple[List[str], List[str], List[str]]:
     lines = [normalize_component(x) for x in (text or "").splitlines()]
-    lines = [l for l in lines if l]
+    lines = [line for line in lines if line]
 
     plzort: List[str] = []
     addr: List[str] = []
     name: List[str] = []
 
-    for l in lines:
-        m = re.search(r"\b(\d{5})\s+([A-Za-zÄÖÜäöüß\- ]{2,})\b", l)
+    for line in lines:
+        m = re.search(r"\b(\d{5})\s+([A-Za-zÄÖÜäöüß\- ]{2,})\b", line)
         if m:
             candidate = normalize_component(f"{m.group(1)} {m.group(2)}")
             if candidate not in plzort:
                 plzort.append(candidate)
 
-    for l in lines:
-        if re.search(r"\b(str\.?|straße|strasse|weg|allee|platz|ring|damm|ufer|gasse)\b", l, flags=re.IGNORECASE) and re.search(r"\b\d{1,4}[a-zA-Z]?\b", l):
-            if l not in addr:
-                addr.append(l)
+    for line in lines:
+        if re.search(
+            r"\b(str\.?|straße|strasse|weg|allee|platz|ring|damm|ufer|gasse)\b",
+            line,
+            flags=re.IGNORECASE,
+        ) and re.search(r"\b\d{1,4}[a-zA-Z]?\b", line):
+            if line not in addr:
+                addr.append(line)
 
-    for l in lines[:15]:
-        if len(l) < 3:
+    for line in lines[:15]:
+        if len(line) < 3:
             continue
-        if any(x in l.lower() for x in ["angebot", "rechnung", "datum:", "kunden-nr", "kunden nr", "projekt-nr", "bearbeiter"]):
+        if any(
+            x in line.lower()
+            for x in [
+                "angebot",
+                "rechnung",
+                "datum:",
+                "kunden-nr",
+                "kunden nr",
+                "projekt-nr",
+                "bearbeiter",
+            ]
+        ):
             continue
-        if re.search(r"(www\.|http|tel|fax|@)", l, flags=re.IGNORECASE):
+        if re.search(r"(www\.|http|tel|fax|@)", line, flags=re.IGNORECASE):
             continue
-        name.append(l)
+        name.append(line)
         break
 
     return name[:8], addr[:8], plzort[:8]
@@ -2199,11 +2416,17 @@ def extract_entities(text: str) -> List[Dict[str, Any]]:
     for phone in phones:
         entities.append({"entity_type": "phone", "value": phone})
 
-    kdnr_matches = re.findall(r"\\b(?:KDNR|Kundennr|KundenNr)\\s*[:#]?\\s*(\\d{3,})\\b", text, re.IGNORECASE)
+    kdnr_matches = re.findall(
+        r"\\b(?:KDNR|Kundennr|KundenNr)\\s*[:#]?\\s*(\\d{3,})\\b", text, re.IGNORECASE
+    )
     for kdnr in set(kdnr_matches):
         entities.append({"entity_type": "kdnr", "value": kdnr})
 
-    invoice_matches = re.findall(r"\\b(?:Rechnung|Angebot|Auftrag|Lieferschein|Bestellung)\\D{0,8}(\\d{3,}[\\-/]?\\d*)\\b", text, re.IGNORECASE)
+    invoice_matches = re.findall(
+        r"\\b(?:Rechnung|Angebot|Auftrag|Lieferschein|Bestellung)\\D{0,8}(\\d{3,}[\\-/]?\\d*)\\b",
+        text,
+        re.IGNORECASE,
+    )
     for inv in set(invoice_matches):
         entities.append({"entity_type": "doc_number", "value": inv})
 
@@ -2222,7 +2445,9 @@ def extract_entities(text: str) -> List[Dict[str, Any]]:
     return entities
 
 
-def _store_entities(con: sqlite3.Connection, tenant_id: str, doc_id: str, text: str) -> None:
+def _store_entities(
+    con: sqlite3.Connection, tenant_id: str, doc_id: str, text: str
+) -> None:
     entities = extract_entities(text)
     if not entities:
         return
@@ -2256,7 +2481,9 @@ def _store_entities(con: sqlite3.Connection, tenant_id: str, doc_id: str, text: 
 # ============================================================
 # INDEX / SEARCH
 # ============================================================
-def _index_tokens(text: str, extra: Optional[List[str]] = None, limit: int = 120) -> str:
+def _index_tokens(
+    text: str, extra: Optional[List[str]] = None, limit: int = 120
+) -> str:
     tokens: List[str] = []
     if extra:
         tokens.extend(extra)
@@ -2340,6 +2567,7 @@ def _index_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
         ),
     )
 
+
 def _fts_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
     if not (_has_fts5(con) and _table_exists(con, "docs_fts")):
         return
@@ -2410,18 +2638,33 @@ def index_upsert_document(
     note: str = "",
     tenant_id: str = "",
 ) -> None:
-    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    tenant_id = (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
     with _DB_LOCK:
         con = _db()
         try:
-            exists = con.execute("SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)).fetchone()
+            exists = con.execute(
+                "SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)
+            ).fetchone()
             if not exists:
                 con.execute(
                     "INSERT INTO docs(doc_id, group_key, tenant_id, kdnr, object_folder, doctype, doc_date, created_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (doc_id, group_key, tenant_id, kdnr, object_folder, doctype, doc_date or "", _now_iso()),
+                    (
+                        doc_id,
+                        group_key,
+                        tenant_id,
+                        kdnr,
+                        object_folder,
+                        doctype,
+                        doc_date or "",
+                        _now_iso(),
+                    ),
                 )
 
-            row = con.execute("SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)).fetchone()
+            row = con.execute(
+                "SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)
+            ).fetchone()
             mx = int(row["mx"] or 0) if row else 0
             version_no = mx + 1
 
@@ -2493,7 +2736,9 @@ def assistant_search(
     """
     query = normalize_component(query)
     kdnr_in = normalize_component(kdnr)
-    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    tenant_id = (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
 
     if kdnr_in and ":" not in kdnr_in:
         kdnr_in = _tenant_prefix_kdnr(TENANT_DEFAULT, kdnr_in)
@@ -2587,7 +2832,9 @@ def assistant_search(
             out: List[Dict[str, Any]] = []
             for r in rows:
                 doc_id = str(r["doc_id"])
-                vc = con.execute("SELECT COUNT(*) AS c FROM versions WHERE doc_id=?", (doc_id,)).fetchone()
+                vc = con.execute(
+                    "SELECT COUNT(*) AS c FROM versions WHERE doc_id=?", (doc_id,)
+                ).fetchone()
                 version_count = int(vc["c"] or 0) if vc else 0
                 out.append(
                     {
@@ -2609,12 +2856,14 @@ def assistant_search(
 
 def assistant_suggest(query: str, tenant_id: str = "", limit: int = 3) -> List[str]:
     try:
-        from rapidfuzz import process, fuzz  # type: ignore
+        from rapidfuzz import fuzz, process  # type: ignore
     except Exception:
         return []
 
     query = normalize_component(query)
-    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    tenant_id = (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
     if not query:
         return []
 
@@ -2642,7 +2891,9 @@ def assistant_suggest(query: str, tenant_id: str = "", limit: int = 3) -> List[s
                 candidates.add(val)
     if not candidates:
         return []
-    matches = process.extract(query, list(candidates), scorer=fuzz.partial_ratio, limit=limit)
+    matches = process.extract(
+        query, list(candidates), scorer=fuzz.partial_ratio, limit=limit
+    )
     return [m[0] for m in matches if m[1] >= 70]
 
 
@@ -2691,7 +2942,9 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                 with _DB_LOCK:
                     con = _db()
                     try:
-                        exists = con.execute("SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)).fetchone()
+                        exists = con.execute(
+                            "SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)
+                        ).fetchone()
                     finally:
                         con.close()
 
@@ -2718,7 +2971,11 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                     continue
 
                 kdnr_idx = _tenant_prefix_kdnr(tenant, kdnr_raw) if kdnr_raw else ""
-                object_folder_tag = _tenant_object_folder_tag(tenant, object_folder) if object_folder else ""
+                object_folder_tag = (
+                    _tenant_object_folder_tag(tenant, object_folder)
+                    if object_folder
+                    else ""
+                )
 
                 text, used_ocr = _extract_text(fp)
                 if not text or len(text.strip()) < 3:
@@ -2819,7 +3076,9 @@ def get_profile() -> Dict[str, Any]:
 
 
 def get_health_stats(tenant_id: str = "") -> Dict[str, Any]:
-    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    tenant_id = (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
     with _DB_LOCK:
         con = _db()
         try:
@@ -3006,7 +3265,9 @@ def _compose_object_folder(kdnr: str, name: str, addr: str, plzort: str) -> str:
     return "_".join(parts)[:180]
 
 
-def _compose_filename(doctype: str, doc_date: str, kdnr: str, name: str, addr: str, plzort: str, ext: str) -> str:
+def _compose_filename(
+    doctype: str, doc_date: str, kdnr: str, name: str, addr: str, plzort: str, ext: str
+) -> str:
     code = _doctype_code(doctype)
     d = parse_excel_like_date(doc_date) or ""
     parts: List[str] = [code]
@@ -3032,8 +3293,6 @@ def _next_version_suffix(target_dir: Path, base_name: str, ext: str) -> str:
         n += 1
 
 
-
-
 def db_latest_path_for_doc(doc_id: str) -> str:
     """Return latest file_path for a given doc_id (sha256 bytes), or ''."""
     doc_id = normalize_component(doc_id)
@@ -3050,11 +3309,14 @@ def db_latest_path_for_doc(doc_id: str) -> str:
         finally:
             con.close()
 
+
 def _db_has_doc(doc_id: str) -> bool:
     with _DB_LOCK:
         con = _db()
         try:
-            r = con.execute("SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)).fetchone()
+            r = con.execute(
+                "SELECT doc_id FROM docs WHERE doc_id=?", (doc_id,)
+            ).fetchone()
             return bool(r)
         finally:
             con.close()
@@ -3065,7 +3327,9 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     if not src.exists():
         raise FileNotFoundError(src)
 
-    tenant = _effective_tenant(answers.get("tenant"), answers.get("mandant"), _infer_tenant_from_path(src))
+    tenant = _effective_tenant(
+        answers.get("tenant"), answers.get("mandant"), _infer_tenant_from_path(src)
+    )
     if TENANT_REQUIRE and not tenant:
         raise ValueError("tenant/mandant missing (TENANT_REQUIRE=1)")
 
@@ -3119,7 +3383,9 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
 
                 if not _db_has_doc(doc_id):
                     text, used_ocr = _extract_text(target)
-                    group_key = _compute_group_key(kdnr_idx, doctype, doc_date, target.name)
+                    group_key = _compute_group_key(
+                        kdnr_idx, doctype, doc_date, target.name
+                    )
                     index_upsert_document(
                         doc_id=doc_id,
                         group_key=group_key,
@@ -3157,7 +3423,9 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     with _DB_LOCK:
         con = _db()
         try:
-            g = con.execute("SELECT doc_id FROM docs WHERE group_key=? LIMIT 1", (group_key,)).fetchone()
+            g = con.execute(
+                "SELECT doc_id FROM docs WHERE group_key=? LIMIT 1", (group_key,)
+            ).fetchone()
             if g and str(g["doc_id"]) != doc_id:
                 note = "new_version_same_group_key"
         finally:

@@ -15,7 +15,9 @@ INJECTION_PATTERNS = [
     r"bypass policy",
 ]
 
-INSTRUCTION_LINE = re.compile(r"\b(ignore|override|bypass|system|developer)\b", re.IGNORECASE)
+INSTRUCTION_LINE = re.compile(
+    r"\b(ignore|override|bypass|system|developer)\b", re.IGNORECASE
+)
 
 
 def detect_prompt_injection(text: str) -> Tuple[bool, List[str]]:

@@ -33,6 +33,20 @@ Open: http://127.0.0.1:5051
 ./scripts/dev_bootstrap.sh
 ```
 
+## Development quality checks
+### Setup (linting/formatting)
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
+### Pre-commit hooks
+```bash
+pre-commit install
+pre-commit run --all-files
+```
+
 ## Notes
 - Tenant is derived from account membership and never entered in the UI.
 - If you see a `zsh: parse error near ')'`, use `scripts/start_ui.sh` or `scripts/dev_run.sh` instead of copying numbered lists.

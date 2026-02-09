@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from flask import Flask
 
+from . import api, web
+from .auth import init_auth
 from .config import Config
 from .db import AuthDB
-from .auth import init_auth
-from . import web, api
 from .logging import init_request_logging
 
 

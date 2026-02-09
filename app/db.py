@@ -91,7 +91,9 @@ class AuthDB:
                 );
                 """
             )
-            con.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')")
+            con.execute(
+                "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')"
+            )
             con.commit()
         finally:
             con.close()
@@ -118,7 +120,9 @@ class AuthDB:
         finally:
             con.close()
 
-    def upsert_membership(self, username: str, tenant_id: str, role: str, created_at: str) -> None:
+    def upsert_membership(
+        self, username: str, tenant_id: str, role: str, created_at: str
+    ) -> None:
         con = self._db()
         try:
             con.execute(
@@ -132,7 +136,10 @@ class AuthDB:
     def get_user(self, username: str) -> Optional[User]:
         con = self._db()
         try:
-            row = con.execute("SELECT username, password_hash FROM users WHERE username=?", (username,)).fetchone()
+            row = con.execute(
+                "SELECT username, password_hash FROM users WHERE username=?",
+                (username,),
+            ).fetchone()
             if not row:
                 return None
             return User(username=row["username"], password_hash=row["password_hash"])
@@ -143,16 +150,25 @@ class AuthDB:
         con = self._db()
         try:
             rows = con.execute(
-                "SELECT username, tenant_id, role FROM memberships WHERE username=?", (username,)
+                "SELECT username, tenant_id, role FROM memberships WHERE username=?",
+                (username,),
             ).fetchall()
-            return [Membership(username=r["username"], tenant_id=r["tenant_id"], role=r["role"]) for r in rows]
+            return [
+                Membership(
+                    username=r["username"], tenant_id=r["tenant_id"], role=r["role"]
+                )
+                for r in rows
+            ]
         finally:
             con.close()
 
     def get_tenant(self, tenant_id: str) -> Optional[Tenant]:
         con = self._db()
         try:
-            row = con.execute("SELECT tenant_id, display_name FROM tenants WHERE tenant_id=?", (tenant_id,)).fetchone()
+            row = con.execute(
+                "SELECT tenant_id, display_name FROM tenants WHERE tenant_id=?",
+                (tenant_id,),
+            ).fetchone()
             if not row:
                 return None
             return Tenant(tenant_id=row["tenant_id"], display_name=row["display_name"])
@@ -162,7 +178,9 @@ class AuthDB:
     def get_schema_version(self) -> str:
         con = self._db()
         try:
-            row = con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+            row = con.execute(
+                "SELECT value FROM meta WHERE key='schema_version'"
+            ).fetchone()
             return str(row["value"]) if row else "0"
         finally:
             con.close()
@@ -175,7 +193,16 @@ class AuthDB:
         finally:
             con.close()
 
-    def add_chat_message(self, *, ts: str, tenant_id: str, username: str, role: str, direction: str, message: str) -> None:
+    def add_chat_message(
+        self,
+        *,
+        ts: str,
+        tenant_id: str,
+        username: str,
+        role: str,
+        direction: str,
+        message: str,
+    ) -> None:
         con = self._db()
         try:
             con.execute(

@@ -8,17 +8,19 @@ Source: Open-Meteo (no key). Requires internet.
 If offline, returns a graceful message.
 """
 from __future__ import annotations
+
 import json
-import urllib.request
 import urllib.parse
-from datetime import datetime, timezone
+import urllib.request
 
 BERLIN = {"lat": 52.5200, "lon": 13.4050, "name": "Berlin"}
+
 
 def _http_json(url: str, timeout: int = 8) -> dict:
     req = urllib.request.Request(url, headers={"User-Agent": "KUKANILEA/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
+
 
 def get_berlin_weather_now() -> str:
     # Open-Meteo current weather
@@ -31,7 +33,7 @@ def get_berlin_weather_now() -> str:
     }
     url = base + "?" + urllib.parse.urlencode(params)
     data = _http_json(url)
-    cur = (data.get("current") or {})
+    cur = data.get("current") or {}
     t = cur.get("temperature_2m")
     feels = cur.get("apparent_temperature")
     hum = cur.get("relative_humidity_2m")
@@ -54,6 +56,7 @@ def get_berlin_weather_now() -> str:
     if precip is not None:
         parts.append(f"Niederschlag {precip} mm")
     return " · ".join(parts)
+
 
 def answer_weather_if_applicable(question: str) -> str | None:
     q = (question or "").strip().lower()

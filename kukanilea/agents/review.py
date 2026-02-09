@@ -13,4 +13,6 @@ class ReviewAgent(BaseAgent):
         return intent == "review"
 
     def handle(self, message: str, intent: str, context: AgentContext) -> AgentResult:
-        return AgentResult(text="Ich kann Vorschläge für die Ablage machen. Öffne einen Datensatz über die Trefferliste.")
+        return AgentResult(
+            text="Ich kann Vorschläge für die Ablage machen. Öffne einen Datensatz über die Trefferliste."
+        )

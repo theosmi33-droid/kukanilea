@@ -13,4 +13,6 @@ class MailAgent(BaseAgent):
         return intent == "mail"
 
     def handle(self, message: str, intent: str, context: AgentContext) -> AgentResult:
-        return AgentResult(text="Mail-Entwürfe findest du im Mail-Tab. Ich kann dort Vorlagen vorschlagen.")
+        return AgentResult(
+            text="Mail-Entwürfe findest du im Mail-Tab. Ich kann dort Vorlagen vorschlagen."
+        )

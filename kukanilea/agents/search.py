@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
-from pathlib import Path
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List
 
 from .base import AgentContext, AgentResult, BaseAgent
 
 try:
-    from rapidfuzz import process, fuzz  # type: ignore
+    from rapidfuzz import fuzz, process  # type: ignore
 except Exception:
     process = None  # type: ignore
     fuzz = None  # type: ignore
@@ -87,7 +87,10 @@ class SearchAgent(BaseAgent):
                     suggestions=suggestions,
                     data={"did_you_mean": suggestions},
                 )
-            return AgentResult(text="Keine Treffer gefunden.", suggestions=["suche rechnung", "suche angebot"])
+            return AgentResult(
+                text="Keine Treffer gefunden.",
+                suggestions=["suche rechnung", "suche angebot"],
+            )
 
         ranked: List[SearchHit] = []
         for row in results:
@@ -115,7 +118,9 @@ class SearchAgent(BaseAgent):
             suggestions=["öffne <token>", "suche weiteres dokument"],
         )
 
-    def search(self, message: str, context: AgentContext, limit: int = 8) -> tuple[List[Dict[str, Any]], List[str]]:
+    def search(
+        self, message: str, context: AgentContext, limit: int = 8
+    ) -> tuple[List[Dict[str, Any]], List[str]]:
         query = message.strip()
         kdnr = context.kdnr
         kdnr_match = re.search(r"kdnr\s*(\d{3,})", query, re.IGNORECASE)

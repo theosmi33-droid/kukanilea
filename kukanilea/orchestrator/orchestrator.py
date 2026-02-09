@@ -15,12 +15,12 @@ from kukanilea.agents import (
     ReviewAgent,
     SearchAgent,
     SummaryAgent,
-    UIAgent,
     UploadAgent,
     WeatherAgent,
 )
-from kukanilea.llm import LLMProvider, MockProvider, get_default_provider
 from kukanilea.guards import build_safe_suggestions, detect_prompt_injection
+from kukanilea.llm import LLMProvider, get_default_provider
+
 from .intent import IntentParser
 from .policy import PolicyEngine
 from .tool_registry import ToolRegistry
@@ -38,7 +38,9 @@ class OrchestratorResult:
 
 
 class Orchestrator:
-    def __init__(self, core_module, weather_adapter=None, llm_provider: LLMProvider | None = None) -> None:
+    def __init__(
+        self, core_module, weather_adapter=None, llm_provider: LLMProvider | None = None
+    ) -> None:
         self.core = core_module
         self.llm = llm_provider or get_default_provider()
         self.intent_parser = IntentParser(self.llm)
@@ -142,7 +144,9 @@ class Orchestrator:
             error="intent_unhandled",
         )
 
-    def _apply_policy(self, context: AgentContext, agent, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _apply_policy(
+        self, context: AgentContext, agent, actions: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         filtered: List[Dict[str, Any]] = []
         agent_tool_set = set(agent.tools or [])
         allowlisted_agent_tools = agent_tool_set.intersection(self.allowed_tools)
@@ -173,7 +177,9 @@ class Orchestrator:
                     meta={"intent": agent.name},
                 )
                 continue
-            if not self.policy.policy_check(context.role, context.tenant_id, action_type, agent.scope):
+            if not self.policy.policy_check(
+                context.role, context.tenant_id, action_type, agent.scope
+            ):
                 self._record_failure(
                     context,
                     action="tool_policy_denied",
@@ -193,7 +199,9 @@ class Orchestrator:
                 )
         return filtered
 
-    def _record_failure(self, context: AgentContext, action: str, target: str, meta: Dict[str, Any]) -> None:
+    def _record_failure(
+        self, context: AgentContext, action: str, target: str, meta: Dict[str, Any]
+    ) -> None:
         if callable(self.audit_log):
             self.audit_log(
                 user=context.user,

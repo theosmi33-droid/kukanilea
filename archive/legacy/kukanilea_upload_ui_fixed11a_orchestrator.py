@@ -14,9 +14,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
-from flask import Flask, request, redirect, url_for, session, render_template_string, jsonify
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
 
 # =========================
 # Flask app + auth (demo)
@@ -35,8 +43,15 @@ USERS = {
 }
 
 # Paths (override via env)
-BASE_PATH = Path(os.environ.get("KUKANILEA_BASE_PATH", str(Path.home() / "Tophandwerk_Kundenablage"))).expanduser()
-DB_INDEX_PATH = Path(os.environ.get("KUKANILEA_INDEX_PATH", str(Path.home() / ".kukanilea" / "index.json"))).expanduser()
+BASE_PATH = Path(
+    os.environ.get("KUKANILEA_BASE_PATH", str(Path.home() / "Tophandwerk_Kundenablage"))
+).expanduser()
+DB_INDEX_PATH = Path(
+    os.environ.get(
+        "KUKANILEA_INDEX_PATH", str(Path.home() / ".kukanilea" / "index.json")
+    )
+).expanduser()
+
 
 def login_required(fn):
     @wraps(fn)
@@ -44,7 +59,9 @@ def login_required(fn):
         if not session.get("user"):
             return redirect(url_for("login", next=request.path))
         return fn(*args, **kwargs)
+
     return wrapper
+
 
 def current_user() -> Dict[str, str]:
     return {
@@ -52,6 +69,7 @@ def current_user() -> Dict[str, str]:
         "role": session.get("role", "USER"),
         "tenant": session.get("tenant", DEV_TENANT),
     }
+
 
 # =========================
 # Orchestrator core types
@@ -82,6 +100,7 @@ class Permissions:
             )
         return Permissions()
 
+
 @dataclass
 class AgentContext:
     tenant: str
@@ -91,11 +110,13 @@ class AgentContext:
     base_path: Path = BASE_PATH
     index_path: Path = DB_INDEX_PATH
 
+
 @dataclass
 class ToolAction:
     # UI actions for frontend
     type: str
     payload: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class AgentResult:
@@ -104,6 +125,7 @@ class AgentResult:
     data: Dict[str, Any] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
 
+
 class BaseAgent:
     name: str = "base"
     description: str = ""
@@ -111,8 +133,11 @@ class BaseAgent:
     def can_handle(self, text: str) -> bool:
         return False
 
-    def handle(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
+    def handle(
+        self, ctx: AgentContext, text: str, state: Dict[str, Any]
+    ) -> AgentResult:
         return AgentResult(messages=[f"{self.name}: no-op"])
+
 
 # =========================
 # Simple local index (JSON)
@@ -125,9 +150,11 @@ def _load_index(path: Path) -> Dict[str, Any]:
     except Exception:
         return {"docs": [], "updated_at": None}
 
+
 def _save_index(path: Path, idx: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(idx, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 def index_build(base_path: Path, index_path: Path) -> Dict[str, Any]:
     """
@@ -136,23 +163,35 @@ def index_build(base_path: Path, index_path: Path) -> Dict[str, Any]:
     """
     docs: List[Dict[str, Any]] = []
     for p in base_path.rglob("*"):
-        if p.is_file() and p.suffix.lower() in (".pdf", ".png", ".jpg", ".jpeg", ".txt", ".docx"):
+        if p.is_file() and p.suffix.lower() in (
+            ".pdf",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".txt",
+            ".docx",
+        ):
             rel = str(p.relative_to(base_path))
             name = p.name
             tokens = sorted(set(re.findall(r"[A-Za-zÄÖÜäöüß]+|\d{2,}", name)))
-            docs.append({
-                "path": str(p),
-                "rel": rel,
-                "name": name,
-                "ext": p.suffix.lower(),
-                "tokens": [t.lower() for t in tokens],
-                "mtime": int(p.stat().st_mtime),
-            })
+            docs.append(
+                {
+                    "path": str(p),
+                    "rel": rel,
+                    "name": name,
+                    "ext": p.suffix.lower(),
+                    "tokens": [t.lower() for t in tokens],
+                    "mtime": int(p.stat().st_mtime),
+                }
+            )
     idx = {"docs": docs, "updated_at": datetime.utcnow().isoformat() + "Z"}
     _save_index(index_path, idx)
     return idx
 
-def index_search(idx: Dict[str, Any], query: str, limit: int = 10) -> List[Dict[str, Any]]:
+
+def index_search(
+    idx: Dict[str, Any], query: str, limit: int = 10
+) -> List[Dict[str, Any]]:
     q = (query or "").strip().lower()
     if not q:
         return []
@@ -167,6 +206,7 @@ def index_search(idx: Dict[str, Any], query: str, limit: int = 10) -> List[Dict[
     scored.sort(key=lambda x: (-x[0], -x[1].get("mtime", 0)))
     return [d for _, d in scored[:limit]]
 
+
 # =========================
 # Agents
 # =========================
@@ -177,17 +217,22 @@ class HelpAgent(BaseAgent):
     def can_handle(self, text: str) -> bool:
         return text.strip().lower() in ("help", "hilfe", "?")
 
-    def handle(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
-        return AgentResult(messages=[
-            "Agent-Chat (ARCH, ohne LLM). Commands:",
-            "• help",
-            "• index neu",
-            "• suche <keywords>",
-            "• öffne <pfad>   (nur Admin/Dev)",
-            "• zusammenfassen <text>",
-            "• mail: <anlass> (nur Admin/Dev)",
-            "• wetter berlin  (stub)",
-        ])
+    def handle(
+        self, ctx: AgentContext, text: str, state: Dict[str, Any]
+    ) -> AgentResult:
+        return AgentResult(
+            messages=[
+                "Agent-Chat (ARCH, ohne LLM). Commands:",
+                "• help",
+                "• index neu",
+                "• suche <keywords>",
+                "• öffne <pfad>   (nur Admin/Dev)",
+                "• zusammenfassen <text>",
+                "• mail: <anlass> (nur Admin/Dev)",
+                "• wetter berlin  (stub)",
+            ]
+        )
+
 
 class IndexAgent(BaseAgent):
     name = "index"
@@ -196,20 +241,31 @@ class IndexAgent(BaseAgent):
     def can_handle(self, text: str) -> bool:
         return text.strip().lower().startswith("index")
 
-    def handle(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
+    def handle(
+        self, ctx: AgentContext, text: str, state: Dict[str, Any]
+    ) -> AgentResult:
         t = text.strip().lower()
         if "neu" in t or "rebuild" in t or "build" in t:
             idx = index_build(ctx.base_path, ctx.index_path)
             return AgentResult(
-                messages=[f"Index aktualisiert: {len(idx.get('docs', []))} Dateien.", f"Stand: {idx.get('updated_at')}"],
-                data={"index_updated_at": idx.get("updated_at"), "count": len(idx.get("docs", []))},
+                messages=[
+                    f"Index aktualisiert: {len(idx.get('docs', []))} Dateien.",
+                    f"Stand: {idx.get('updated_at')}",
+                ],
+                data={
+                    "index_updated_at": idx.get("updated_at"),
+                    "count": len(idx.get("docs", [])),
+                },
             )
         idx = _load_index(ctx.index_path)
-        return AgentResult(messages=[
-            f"Index: {len(idx.get('docs', []))} Dateien.",
-            f"Stand: {idx.get('updated_at') or 'unbekannt'}",
-            f"Pfad: {ctx.index_path}",
-        ])
+        return AgentResult(
+            messages=[
+                f"Index: {len(idx.get('docs', []))} Dateien.",
+                f"Stand: {idx.get('updated_at') or 'unbekannt'}",
+                f"Pfad: {ctx.index_path}",
+            ]
+        )
+
 
 class SearchAgent(BaseAgent):
     name = "search"
@@ -219,7 +275,9 @@ class SearchAgent(BaseAgent):
         t = text.strip().lower()
         return t.startswith("suche") or t.startswith("search")
 
-    def handle(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
+    def handle(
+        self, ctx: AgentContext, text: str, state: Dict[str, Any]
+    ) -> AgentResult:
         if not ctx.permissions.can_search:
             return AgentResult(errors=["Keine Berechtigung zum Suchen."])
 
@@ -230,7 +288,9 @@ class SearchAgent(BaseAgent):
         q = re.sub(r"^(suche|search)\s*", "", text.strip(), flags=re.I).strip()
         hits = index_search(idx, q, limit=10)
         if not hits:
-            return AgentResult(messages=[f"Keine Treffer für: {q!r}. Tipp: `index neu`"])
+            return AgentResult(
+                messages=[f"Keine Treffer für: {q!r}. Tipp: `index neu`"]
+            )
 
         redacted = []
         for h in hits:
@@ -251,6 +311,7 @@ class SearchAgent(BaseAgent):
             data={"results": redacted, "handled_by": self.name},
         )
 
+
 class OpenFileAgent(BaseAgent):
     name = "open"
     description = "Open file (admin/dev)."
@@ -259,14 +320,23 @@ class OpenFileAgent(BaseAgent):
         t = text.strip().lower()
         return t.startswith("öffne") or t.startswith("open")
 
-    def handle(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
+    def handle(
+        self, ctx: AgentContext, text: str, state: Dict[str, Any]
+    ) -> AgentResult:
         if not ctx.permissions.can_open_files:
-            return AgentResult(messages=[
-                "Keine Berechtigung zum Öffnen.",
-                "Nutze `suche ...` oder Admin/Dev."
-            ])
+            return AgentResult(
+                messages=[
+                    "Keine Berechtigung zum Öffnen.",
+                    "Nutze `suche ...` oder Admin/Dev.",
+                ]
+            )
 
-        path = re.sub(r"^(öffne|open)\s*", "", text.strip(), flags=re.I).strip().strip('"').strip("'")
+        path = (
+            re.sub(r"^(öffne|open)\s*", "", text.strip(), flags=re.I)
+            .strip()
+            .strip('"')
+            .strip("'")
+        )
         if not path:
             path = (state.get("last_selected_path") or "").strip()
         if not path:
@@ -286,6 +356,7 @@ class OpenFileAgent(BaseAgent):
             data={"path": str(p), "handled_by": self.name},
         )
 
+
 class SummaryAgent(BaseAgent):
     name = "summary"
     description = "Rule-based summarizer."
@@ -294,16 +365,23 @@ class SummaryAgent(BaseAgent):
         t = text.strip().lower()
         return t.startswith("zusammenfassen") or t.startswith("summary")
 
-    def handle(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
-        raw = re.sub(r"^(zusammenfassen|summary)\s*", "", text.strip(), flags=re.I).strip()
+    def handle(
+        self, ctx: AgentContext, text: str, state: Dict[str, Any]
+    ) -> AgentResult:
+        raw = re.sub(
+            r"^(zusammenfassen|summary)\s*", "", text.strip(), flags=re.I
+        ).strip()
         if not raw:
             raw = (state.get("last_text") or "").strip()
         if not raw:
             return AgentResult(errors=["Kein Text zum Zusammenfassen."])
-        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
         head = lines[:6]
-        bullets = [f"• {l[:140]}" for l in head]
-        return AgentResult(messages=["Kurz-Zusammenfassung:"] + bullets, data={"handled_by": self.name})
+        bullets = [f"• {line[:140]}" for line in head]
+        return AgentResult(
+            messages=["Kurz-Zusammenfassung:"] + bullets, data={"handled_by": self.name}
+        )
+
 
 class WeatherAgent(BaseAgent):
     name = "weather"
@@ -313,11 +391,17 @@ class WeatherAgent(BaseAgent):
         t = text.strip().lower()
         return "wetter" in t or t.startswith("weather")
 
-    def handle(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
-        return AgentResult(messages=[
-            "Weather-Agent (Stub): keine externe API in dieser Version.",
-            "Nächster Schritt: Plugin anschließen + UI-Kachel (Wind/Luftqualität).",
-        ], data={"handled_by": self.name})
+    def handle(
+        self, ctx: AgentContext, text: str, state: Dict[str, Any]
+    ) -> AgentResult:
+        return AgentResult(
+            messages=[
+                "Weather-Agent (Stub): keine externe API in dieser Version.",
+                "Nächster Schritt: Plugin anschließen + UI-Kachel (Wind/Luftqualität).",
+            ],
+            data={"handled_by": self.name},
+        )
+
 
 class MailAgent(BaseAgent):
     name = "mail"
@@ -326,7 +410,9 @@ class MailAgent(BaseAgent):
     def can_handle(self, text: str) -> bool:
         return text.strip().lower().startswith("mail:")
 
-    def handle(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
+    def handle(
+        self, ctx: AgentContext, text: str, state: Dict[str, Any]
+    ) -> AgentResult:
         if not ctx.permissions.can_write_mail:
             return AgentResult(errors=["Keine Berechtigung für Mail-Entwürfe."])
         body = text.split(":", 1)[1].strip()
@@ -347,6 +433,7 @@ class MailAgent(BaseAgent):
             data={"draft": draft, "handled_by": self.name},
         )
 
+
 # =========================
 # Orchestrator
 # =========================
@@ -365,7 +452,9 @@ class AgentOrchestrator:
     def route(self, ctx: AgentContext, text: str, state: Dict[str, Any]) -> AgentResult:
         text = (text or "").strip()
         if not text:
-            return AgentResult(messages=["Sag `help` für Beispiele."], data={"handled_by": "empty"})
+            return AgentResult(
+                messages=["Sag `help` für Beispiele."], data={"handled_by": "empty"}
+            )
 
         for ag in self.agents:
             if ag.can_handle(text):
@@ -376,17 +465,18 @@ class AgentOrchestrator:
         return AgentResult(
             messages=[
                 "Nicht erkannt.",
-                "Tipps: `suche ...`, `index neu`, `öffne ...`, `mail: ...`, `help`"
+                "Tipps: `suche ...`, `index neu`, `öffne ...`, `mail: ...`, `help`",
             ],
             data={"handled_by": "fallback"},
         )
+
 
 ORCH = AgentOrchestrator()
 
 # =========================
 # UI (minimal) + floating chat
 # =========================
-BASE_HTML = '''
+BASE_HTML = """
 <!doctype html>
 <html>
 <head>
@@ -517,7 +607,8 @@ form.addEventListener('submit', async (e) => {
 </script>
 </body>
 </html>
-'''
+"""
+
 
 def _render_base(content: str, title: str, active_tab: str):
     u = current_user()
@@ -531,10 +622,11 @@ def _render_base(content: str, title: str, active_tab: str):
         content=content,
     )
 
+
 # =========================
 # Routes
 # =========================
-HTML_LOGIN = '''
+HTML_LOGIN = """
 <div class="card">
   <h2>Login</h2>
   <p class="muted">Demo-Login. Dev-Tenant ist fix: <b>KUKANILEA Dev</b></p>
@@ -546,7 +638,8 @@ HTML_LOGIN = '''
   </form>
   <p class="muted small">Tipp: dev/dev oder admin/admin</p>
 </div>
-'''
+"""
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -563,30 +656,35 @@ def login():
             session["role"] = rec["role"]
             session["tenant"] = rec["tenant"]
             return redirect(nxt)
-    return _render_base(render_template_string(HTML_LOGIN, error=error), "Login", "home")
+    return _render_base(
+        render_template_string(HTML_LOGIN, error=error), "Login", "home"
+    )
+
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
 @app.route("/")
 @login_required
 def home():
-    content = f'''
+    content = f"""
     <div class="card">
       <h2>Home</h2>
       <p class="muted">Base-Path: <b>{BASE_PATH}</b></p>
       <p class="muted">Index: <b>{DB_INDEX_PATH}</b></p>
       <p class="muted small">Chat unten rechts: 💬</p>
     </div>
-    '''
+    """
     return _render_base(content, APP_NAME, "home")
+
 
 @app.route("/assistant")
 @login_required
 def assistant():
-    content = '''
+    content = """
     <div class="card">
       <h2>Assistant</h2>
       <p class="muted">Der Orchestrator ist aktiv. Nutze den 💬-Button oder sende JSON an <code>/api/agent</code>.</p>
@@ -599,32 +697,35 @@ suche rechnung gerd 24.10.2025
 mail: defekte fliesenlieferung, bitte rabatt</pre>
       </div>
     </div>
-    '''
+    """
     return _render_base(content, "Assistant", "assistant")
+
 
 @app.route("/mail")
 @login_required
 def mail():
-    content = '''
+    content = """
     <div class="card">
       <h2>Mail Agent</h2>
       <p class="muted">ARCH-only: Mail-Entwürfe via <code>mail: ...</code> im Chat.</p>
       <p class="muted small">Später: API-Anbindung (SMTP/Gmail/Exchange) + Versand-Flow.</p>
     </div>
-    '''
+    """
     return _render_base(content, "Mail Agent", "mail")
+
 
 @app.route("/weather")
 @login_required
 def weather():
-    content = '''
+    content = """
     <div class="card">
       <h2>Weather</h2>
       <p class="muted">ARCH-only: Weather-Agent ist stub (keine externe API).</p>
       <p class="muted small">Später: Plugin mit Wind/Luftqualität + Forecast-Kachel.</p>
     </div>
-    '''
+    """
     return _render_base(content, "Weather", "weather")
+
 
 @app.route("/api/agent", methods=["POST"])
 @login_required
@@ -645,12 +746,15 @@ def api_agent():
 
     res = ORCH.route(ctx, msg, state)
 
-    return jsonify({
-        "messages": res.messages,
-        "actions": [a.__dict__ for a in res.actions],
-        "data": res.data,
-        "errors": res.errors,
-    })
+    return jsonify(
+        {
+            "messages": res.messages,
+            "actions": [a.__dict__ for a in res.actions],
+            "data": res.data,
+            "errors": res.errors,
+        }
+    )
+
 
 if __name__ == "__main__":
     print("http://127.0.0.1:5051")
