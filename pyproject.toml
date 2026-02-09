@@ -3,6 +3,7 @@ line-length = 88
 
 [tool.ruff]
 line-length = 88
+exclude = ["archive/legacy"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
