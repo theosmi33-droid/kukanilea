@@ -69,7 +69,7 @@ class SearchAgent(BaseAgent):
     name = "search"
     required_role = "READONLY"
     scope = "search"
-    tools = ["search_docs"]
+    tools = ["search_docs", "open_token"]
 
     def __init__(self, core_module) -> None:
         self.core = core_module

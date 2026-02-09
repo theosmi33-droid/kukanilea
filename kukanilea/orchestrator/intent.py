@@ -16,7 +16,7 @@ class IntentParser:
     def __init__(self, llm: LLMProvider) -> None:
         self.llm = llm
 
-    def parse(self, message: str) -> IntentResult:
+    def parse(self, message: str, allow_llm: bool = True) -> IntentResult:
         text = message.strip().lower()
         if not text:
             return IntentResult(intent="unknown", confidence=0.0)
@@ -51,6 +51,9 @@ class IntentParser:
 
         if len(text.split()) <= 2:
             return IntentResult(intent="search", confidence=0.35)
+
+        if not allow_llm:
+            return IntentResult(intent="unknown", confidence=0.25)
 
         rewrite = self.llm.rewrite_query(message)
         intent = str(rewrite.get("intent", "unknown"))

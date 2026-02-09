@@ -48,7 +48,7 @@ class Orchestrator:
         self.task_create = getattr(core_module, "task_create", None)
         self.allowed_tools = {
             "search_docs",
-            "open_doc",
+            "open_token",
             "show_customer",
             "summarize_doc",
             "list_tasks",
@@ -144,21 +144,40 @@ class Orchestrator:
 
     def _apply_policy(self, context: AgentContext, agent, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         filtered: List[Dict[str, Any]] = []
-        tool_name = agent.tools[0] if agent.tools else ""
-        if tool_name and tool_name not in self.allowed_tools:
+        agent_tool_set = set(agent.tools or [])
+        allowlisted_agent_tools = agent_tool_set.intersection(self.allowed_tools)
+        if agent_tool_set and not allowlisted_agent_tools:
             self._record_failure(
                 context,
                 action="tool_not_allowlisted",
-                target=tool_name,
+                target=",".join(sorted(agent_tool_set)),
                 meta={"intent": agent.name},
             )
             return []
         for action in actions or []:
-            if not self.policy.policy_check(context.role, context.tenant_id, action.get("type", ""), agent.scope):
+            action_type = action.get("type", "")
+            if not action_type or action_type not in self.allowed_tools:
+                self._record_failure(
+                    context,
+                    action="tool_not_allowlisted",
+                    target=str(action_type),
+                    meta={"intent": agent.name},
+                )
+                continue
+            registered_agents = self.tools.list_tools().get(action_type, [])
+            if agent.name not in registered_agents or action_type not in agent_tool_set:
+                self._record_failure(
+                    context,
+                    action="tool_registry_mismatch",
+                    target=str(action_type),
+                    meta={"intent": agent.name},
+                )
+                continue
+            if not self.policy.policy_check(context.role, context.tenant_id, action_type, agent.scope):
                 self._record_failure(
                     context,
                     action="tool_policy_denied",
-                    target=str(action.get("type", "")),
+                    target=str(action_type),
                     meta={"intent": agent.name},
                 )
                 continue
