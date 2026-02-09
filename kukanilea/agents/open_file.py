@@ -9,7 +9,7 @@ class OpenFileAgent(BaseAgent):
     name = "open_file"
     required_role = "READONLY"
     scope = "ui"
-    tools = ["open_doc"]
+    tools = ["open_token"]
 
     def can_handle(self, intent: str, message: str) -> bool:
         return intent == "open_token"
