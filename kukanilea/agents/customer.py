@@ -38,7 +38,7 @@ class CustomerAgent(BaseAgent):
             if results:
                 first = results[0]
                 return AgentResult(
-                    text=f"Kunde {first.get('kdnr','')} – letzter Treffer: {first.get('file_name','')} ({first.get('doc_date','')})",
+                    text=f"Kunde {first.get('kdnr', '')} – letzter Treffer: {first.get('file_name', '')} ({first.get('doc_date', '')})",
                     data={"results": results, "kdnr": first.get("kdnr", kdnr)},
                     suggestions=["suche letzte rechnung", "öffne <token>"],
                 )

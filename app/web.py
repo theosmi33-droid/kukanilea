@@ -137,6 +137,8 @@ normalize_component = _core_get("normalize_component", lambda s: (s or "").strip
 db_init = _core_get("db_init")
 assistant_search = _core_get("assistant_search")
 audit_log = _core_get("audit_log")
+db_latest_path_for_doc = _core_get("db_latest_path_for_doc")
+db_path_for_doc = _core_get("db_path_for_doc")
 
 # Optional tasks
 task_list = _core_get("task_list")
@@ -265,11 +267,36 @@ def _audit(action: str, target: str = "", meta: dict = None) -> None:
         pass
 
 
+def _resolve_doc_path(token: str, pending: dict | None = None) -> Path | None:
+    pending = pending or {}
+    direct = Path(pending.get("path", "")) if pending.get("path") else None
+    if direct and direct.exists():
+        return direct
+    doc_id = normalize_component(pending.get("doc_id") or token)
+    tenant_id = (
+        current_tenant() or pending.get("tenant") or pending.get("tenant_id") or ""
+    )
+    if doc_id:
+        if callable(db_latest_path_for_doc):
+            latest = db_latest_path_for_doc(doc_id, tenant_id=tenant_id)
+            if latest and Path(latest).exists():
+                return Path(latest)
+        if callable(db_path_for_doc):
+            fallback = db_path_for_doc(doc_id, tenant_id=tenant_id)
+            if fallback and Path(fallback).exists():
+                return Path(fallback)
+    return None
+
+
 def _allowlisted_dirs() -> List[Path]:
     base = Config.BASE_DIR
     instance_dir = base / "instance"
     core_db_dir = Path(getattr(core, "DB_PATH", instance_dir)).resolve().parent
-    return [instance_dir.resolve(), core_db_dir]
+    import_root = Path(str(Config.IMPORT_ROOT or "")).expanduser()
+    allowlist = [instance_dir.resolve(), core_db_dir]
+    if str(import_root):
+        allowlist.append(import_root.resolve())
+    return allowlist
 
 
 def _is_allowlisted_path(path: Path) -> bool:
@@ -525,7 +552,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
       <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
       <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
-      {% if roles == 'DEV' %}
+      {% if roles in ['DEV', 'ADMIN'] %}
       <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
       {% endif %}
     </nav>
@@ -1105,6 +1132,34 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   const q = document.getElementById("q");
   const kdnr = document.getElementById("kdnr");
   const send = document.getElementById("send");
+  async function openToken(token){
+    if(!token) return;
+    try{
+      const res = await fetch('/api/open', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body: JSON.stringify({token})});
+      const data = await res.json();
+      if(!res.ok){
+        const errMsg = (data && data.error && data.error.message) ? data.error.message : (data.message || data.error || ('HTTP ' + res.status));
+        add("system", "Fehler: " + errMsg);
+        return;
+      }
+      if(data && data.token){
+        window.location.href = '/review/' + data.token + '/kdnr';
+      }
+    }catch(e){
+      add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e));
+    }
+  }
+  async function copyToken(token){
+    if(!token) return;
+    try{
+      await navigator.clipboard.writeText(token);
+      add("system", "Token kopiert: " + token);
+    }catch(e){
+      add("system", "Kopieren fehlgeschlagen: " + (e && e.message ? e.message : e));
+    }
+  }
+  window.openToken = openToken;
+  window.copyToken = copyToken;
   function add(role, text, actions, results, suggestions){
     const d = document.createElement("div");
     d.className = "mb-3";
@@ -1112,7 +1167,8 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     if(actions && actions.length){
       actionHtml = actions.map(a => {
         if(a.type === "open_token" && a.token){
-          return `<a class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" href="/review/${a.token}">Öffnen ${a.token.slice(0,10)}…</a>`;
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${a.token}')">Öffnen ${a.token.slice(0,10)}…</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${a.token}')">Token ${a.token.slice(0,10)}…</button>`;
         }
         return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${a.type || 'tool'}</span>`;
       }).join("");
@@ -1120,10 +1176,11 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     let resultHtml = "";
     if(results && results.length){
       resultHtml = results.map(r => {
-        const token = r.doc_id || "";
+        const token = r.token || r.doc_id || "";
         const label = r.file_name || token;
         if(token){
-          return `<a class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" href="/review/${token}">${label}</a>`;
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${token}')">${label}</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${token}')">Token ${token.slice(0,10)}…</button>`;
         }
         return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${label}</span>`;
       }).join("");
@@ -1193,11 +1250,16 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
       actions.forEach((action) => {
         if(action.type === 'open_token' && action.token){
-          const link = document.createElement('a');
-          link.href = '/review/' + action.token;
-          link.textContent = 'Öffnen ' + action.token.slice(0,10) + '…';
-          link.className = 'rounded-full border px-2 py-1';
-          list.appendChild(link);
+          const btn = document.createElement('button');
+          btn.textContent = 'Öffnen ' + action.token.slice(0,10) + '…';
+          btn.className = 'rounded-full border px-2 py-1';
+          btn.addEventListener('click', () => openToken(action.token));
+          list.appendChild(btn);
+          const tokenBtn = document.createElement('button');
+          tokenBtn.textContent = 'Token ' + action.token.slice(0,10) + '…';
+          tokenBtn.className = 'rounded-full border px-2 py-1';
+          tokenBtn.addEventListener('click', () => copyToken(action.token));
+          list.appendChild(tokenBtn);
         } else if(action.type){
           const tag = document.createElement('span');
           tag.textContent = 'Action: ' + action.type;
@@ -1211,14 +1273,19 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       const list = document.createElement('div');
       list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
       results.forEach((row) => {
-        const token = row.doc_id || '';
+        const token = row.token || row.doc_id || '';
         const label = row.file_name || token || 'Dokument';
         if(token){
-          const link = document.createElement('a');
-          link.href = '/review/' + token;
-          link.textContent = label;
-          link.className = 'rounded-full border px-2 py-1';
-          list.appendChild(link);
+          const btn = document.createElement('button');
+          btn.textContent = label;
+          btn.className = 'rounded-full border px-2 py-1';
+          btn.addEventListener('click', () => openToken(token));
+          list.appendChild(btn);
+          const tokenBtn = document.createElement('button');
+          tokenBtn.textContent = 'Token ' + token.slice(0,10) + '…';
+          tokenBtn.className = 'rounded-full border px-2 py-1';
+          tokenBtn.addEventListener('click', () => copyToken(token));
+          list.appendChild(tokenBtn);
         }
       });
       bubble.appendChild(list);
@@ -1448,7 +1515,7 @@ def _weather_answer(city: str) -> str:
     info = get_weather(city)
     if not info:
         return f"Ich konnte das Wetter für {city} nicht abrufen."
-    return f"Wetter {info.get('city','')}: {info.get('summary','')} (Temp: {info.get('temp_c','?')}°C, Wind: {info.get('wind_kmh','?')} km/h)"
+    return f"Wetter {info.get('city', '')}: {info.get('summary', '')} (Temp: {info.get('temp_c', '?')}°C, Wind: {info.get('wind_kmh', '?')} km/h)"
 
 
 def _weather_adapter(message: str) -> str:
@@ -1531,6 +1598,33 @@ def api_search():
     return jsonify(
         ok=True, message=message, results=results, did_you_mean=suggestions or []
     )
+
+
+@bp.post("/api/open")
+@login_required
+def api_open():
+    payload = request.get_json(silent=True) or {}
+    token = (payload.get("token") or "").strip()
+    if not token:
+        return json_error("token_missing", "Token fehlt.", status=400)
+    src = _resolve_doc_path(token, {})
+    if not src or not src.exists():
+        return json_error(
+            "FILE_NOT_FOUND",
+            "Datei nicht gefunden. Bitte suche erneut oder prüfe den Token.",
+            status=404,
+            details={"token": token},
+        )
+    try:
+        new_token = analyze_to_pending(src)
+    except FileNotFoundError:
+        return json_error(
+            "FILE_NOT_FOUND",
+            "Datei nicht gefunden. Bitte suche erneut oder prüfe den Token.",
+            status=404,
+            details={"token": token},
+        )
+    return jsonify(ok=True, token=new_token)
 
 
 @bp.post("/api/customer")
@@ -1984,6 +2078,15 @@ HTML_SETTINGS = """
   </div>
 
   <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Import (DEV)</div>
+    <div class="muted text-xs mb-2">IMPORT_ROOT: {{ import_root }}</div>
+    <div class="flex flex-wrap gap-2 items-center">
+      <button id="runImport" class="rounded-xl px-3 py-2 text-sm btn-outline">Import starten</button>
+      <span id="importStatus" class="text-xs muted"></span>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">Tools</div>
     <div class="flex flex-wrap gap-2">
       <button id="seedUsers" class="rounded-xl px-3 py-2 text-sm btn-outline">Seed Dev Users</button>
@@ -2011,6 +2114,7 @@ HTML_SETTINGS = """
   const status = document.getElementById('toolStatus');
   const dbStatus = document.getElementById('dbSwitchStatus');
   const baseStatus = document.getElementById('baseSwitchStatus');
+  const importStatus = document.getElementById('importStatus');
 
   document.getElementById('seedUsers')?.addEventListener('click', async () => {
     status.textContent = 'Seeding...';
@@ -2070,6 +2174,14 @@ HTML_SETTINGS = """
       window.location.reload();
     }catch(e){ baseStatus.textContent = 'Fehler: ' + e.message; }
   });
+
+  document.getElementById('runImport')?.addEventListener('click', async () => {
+    importStatus.textContent = 'Import läuft...';
+    try{
+      const j = await postJson('/api/dev/import/run');
+      importStatus.textContent = j.message || 'OK';
+    }catch(e){ importStatus.textContent = 'Fehler: ' + e.message; }
+  });
 })();
 </script>
 """
@@ -2086,13 +2198,13 @@ BETREFF: <eine Zeile>
 TEXT:
 <Mailtext>
 
-Empfänger: {to or '(nicht angegeben)'}
-Betreff-Vorschlag (falls vorhanden): {subject or '(leer)'}
+Empfänger: {to or "(nicht angegeben)"}
+Betreff-Vorschlag (falls vorhanden): {subject or "(leer)"}
 Ton: {tone}
 Länge: {length}
 
 Kontext/Stichpunkte:
-{context or '(leer)'}
+{context or "(leer)"}
 """
 
 
@@ -2111,8 +2223,9 @@ def mail_page():
 
 @bp.get("/settings")
 @login_required
-@require_role("DEV")
 def settings_page():
+    if current_role() not in {"ADMIN", "DEV"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
     auth_db: AuthDB = current_app.extensions["auth_db"]
     if callable(getattr(core, "get_db_info", None)):
         core_db = core.get_db_info()
@@ -2132,6 +2245,7 @@ def settings_page():
             db_files=[str(p) for p in _list_allowlisted_db_files()],
             base_paths=[str(p) for p in _list_allowlisted_base_paths()],
             profile=_get_profile(),
+            import_root=str(current_app.config.get("IMPORT_ROOT", "")),
         ),
         active_tab="settings",
     )
@@ -2186,6 +2300,34 @@ def api_repair_drift():
     _DEV_STATUS["scan"] = result
     _audit("repair_drift", meta={"result": result})
     return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
+
+
+@bp.post("/api/dev/import/run")
+@login_required
+@require_role("DEV")
+def api_import_run():
+    import_root = Path(str(current_app.config.get("IMPORT_ROOT", ""))).expanduser()
+    if not str(import_root):
+        return json_error("import_root_missing", "IMPORT_ROOT fehlt.", status=400)
+    if not _is_allowlisted_path(import_root):
+        return json_error(
+            "import_root_forbidden", "IMPORT_ROOT nicht erlaubt.", status=403
+        )
+    if not import_root.exists():
+        return json_error(
+            "import_root_missing", "IMPORT_ROOT existiert nicht.", status=400
+        )
+    if callable(getattr(core, "import_run", None)):
+        result = core.import_run(
+            import_root=import_root,
+            user=str(current_user() or "dev"),
+            role=str(current_role()),
+        )
+    else:
+        return json_error("import_not_available", "Import nicht verfügbar.", status=400)
+    _DEV_STATUS["scan"] = result
+    _audit("import_run", meta={"result": result, "root": str(import_root)})
+    return jsonify(ok=True, message="Import abgeschlossen.", result=result)
 
 
 @bp.post("/api/dev/switch-db")
@@ -2417,8 +2559,8 @@ def review(token: str):
     msg = ""
     if request.method == "POST":
         if request.form.get("reextract") == "1":
-            src = Path(p.get("path", ""))
-            if src.exists():
+            src = _resolve_doc_path(token, p)
+            if src and src.exists():
                 try:
                     delete_pending(token)
                 except Exception:
@@ -2594,9 +2736,7 @@ def tasks():
     html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
       <div class='text-lg font-semibold'>Tasks</div>
       <div class='muted text-xs mt-1'>Offen: {n}</div>
-    </div>""".format(
-        n=len(items)
-    )
+    </div>""".format(n=len(items))
     return _render_base(html, active_tab="tasks")
 
 

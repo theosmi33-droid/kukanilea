@@ -85,6 +85,38 @@ paths:
             application/json:
               schema:
                 $ref: './schemas/SearchResult.json'
+  /api/open:
+    post:
+      summary: Open a document by token/doc_id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+              required: [token]
+      responses:
+        '200':
+          description: Opened document token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  token:
+                    type: string
+                required: [ok, token]
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/ErrorEnvelope.json'
   /api/customer:
     post:
       summary: Customer lookup
@@ -105,6 +137,30 @@ paths:
             application/json:
               schema:
                 $ref: './schemas/CustomerSummary.json'
+  /api/dev/import/run:
+    post:
+      summary: DEV-only import pipeline run
+      responses:
+        '200':
+          description: Import summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                  result:
+                    type: object
+                required: [ok, message]
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: './schemas/ErrorEnvelope.json'
   /api/tasks:
     get:
       summary: List tasks

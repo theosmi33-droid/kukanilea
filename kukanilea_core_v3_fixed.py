@@ -1696,7 +1696,7 @@ def parse_folder_fields(folder_name: str) -> Dict[str, str]:
     if plz_idx is not None:
         plz = rest[plz_idx]
         ort = "_".join(rest[plz_idx + 1 :]) if plz_idx + 1 < len(rest) else ""
-        out["plzort"] = normalize_component(f"{plz} {ort.replace('_',' ')}").strip()
+        out["plzort"] = normalize_component(f"{plz} {ort.replace('_', ' ')}").strip()
         before = rest[:plz_idx]
     else:
         before = rest
@@ -2839,6 +2839,7 @@ def assistant_search(
                 out.append(
                     {
                         "doc_id": doc_id,
+                        "token": doc_id,
                         "kdnr": str(r["kdnr"] or ""),
                         "doctype": str(r["doctype"] or ""),
                         "doc_date": str(r["doc_date"] or ""),
@@ -3020,6 +3021,125 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
     }
 
 
+def import_run(*, import_root: Path, user: str = "", role: str = "") -> Dict[str, Any]:
+    root = Path(import_root)
+    if not root.exists():
+        return {
+            "ok": False,
+            "indexed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "skipped_by_reason": {},
+        }
+
+    indexed = 0
+    skipped = 0
+    errors = 0
+    skipped_by_reason = {
+        "unsupported_ext": 0,
+        "already_indexed": 0,
+        "no_text": 0,
+        "parse_failed": 0,
+    }
+
+    for fp in root.rglob("*"):
+        if not fp.is_file():
+            continue
+
+        ext = fp.suffix.lower()
+        if ext not in SUPPORTED_EXT:
+            skipped += 1
+            skipped_by_reason["unsupported_ext"] += 1
+            continue
+
+        try:
+            b = _read_bytes(fp)
+            doc_id = _sha256_bytes(b)
+
+            with _DB_LOCK:
+                con = _db()
+                try:
+                    exists = con.execute(
+                        "SELECT 1 FROM versions WHERE doc_id=? AND file_path=? LIMIT 1",
+                        (doc_id, str(fp)),
+                    ).fetchone()
+                finally:
+                    con.close()
+
+            if exists:
+                skipped += 1
+                skipped_by_reason["already_indexed"] += 1
+                continue
+
+            tenant = _effective_tenant(_infer_tenant_from_path(fp))
+            if TENANT_REQUIRE and not tenant:
+                skipped += 1
+                skipped_by_reason["parse_failed"] += 1
+                continue
+
+            kdnr_raw = ""
+            object_folder = ""
+            for part in reversed(fp.parts):
+                if re.match(r"^\d{3,}_", part):
+                    kdnr_raw = part.split("_", 1)[0]
+                    object_folder = part
+                    break
+
+            kdnr_idx = _tenant_prefix_kdnr(tenant, kdnr_raw) if kdnr_raw else ""
+            object_folder_tag = (
+                _tenant_object_folder_tag(tenant, object_folder)
+                if object_folder
+                else ""
+            )
+
+            text, used_ocr = _extract_text(fp)
+            if not text or len(text.strip()) < 3:
+                skipped += 1
+                skipped_by_reason["no_text"] += 1
+                continue
+
+            doctype = _detect_doctype(text, fp.name)
+            best_date, _ = _find_dates(text)
+            group_key = _compute_group_key(kdnr_idx, doctype, best_date, fp.name)
+
+            index_upsert_document(
+                doc_id=doc_id,
+                group_key=group_key,
+                kdnr=kdnr_idx,
+                object_folder=object_folder_tag,
+                doctype=doctype,
+                doc_date=best_date or "",
+                file_name=fp.name,
+                file_path=str(fp),
+                extracted_text=text,
+                used_ocr=used_ocr,
+                note="import_run",
+                tenant_id=tenant,
+            )
+            indexed += 1
+            if callable(audit_log):
+                audit_log(
+                    user=user or "system",
+                    role=role or "SYSTEM",
+                    action="import_file",
+                    target=doc_id,
+                    meta={"path": str(fp), "root": str(root)},
+                    tenant_id=tenant,
+                )
+        except Exception:
+            errors += 1
+            skipped_by_reason["parse_failed"] += 1
+            continue
+
+    return {
+        "ok": True,
+        "indexed": indexed,
+        "skipped": skipped,
+        "errors": errors,
+        "skipped_by_reason": skipped_by_reason,
+    }
+
+
 def index_rebuild(base_path: Optional[Path] = None) -> Dict[str, Any]:
     with _DB_LOCK:
         con = _db()
@@ -3032,6 +3152,33 @@ def index_rebuild(base_path: Optional[Path] = None) -> Dict[str, Any]:
         finally:
             con.close()
     return index_run_full(base_path=base_path)
+
+
+def index_warmup(tenant_id: str = "") -> Dict[str, Any]:
+    tenant_id = normalize_component(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            fts_enabled = _has_fts5(con)
+            tenants: List[str] = []
+            if tenant_id:
+                tenants = [tenant_id]
+            elif _table_exists(con, "tenants"):
+                rows = con.execute("SELECT tenant_id FROM tenants").fetchall()
+                tenants = [str(r["tenant_id"]) for r in rows if r["tenant_id"]]
+            elif _table_exists(con, "docs_index"):
+                rows = con.execute(
+                    "SELECT DISTINCT tenant_id FROM docs_index"
+                ).fetchall()
+                tenants = [str(r["tenant_id"]) for r in rows if r["tenant_id"]]
+            for t in tenants:
+                con.execute(
+                    "SELECT COUNT(*) AS c FROM docs_index WHERE tenant_id=?",
+                    (t,),
+                ).fetchone()
+            return {"ok": True, "fts_enabled": fts_enabled, "tenants": len(tenants)}
+        finally:
+            con.close()
 
 
 def set_db_path(new_path: Path) -> None:
@@ -3293,19 +3440,73 @@ def _next_version_suffix(target_dir: Path, base_name: str, ext: str) -> str:
         n += 1
 
 
-def db_latest_path_for_doc(doc_id: str) -> str:
+def db_latest_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     """Return latest file_path for a given doc_id (sha256 bytes), or ''."""
     doc_id = normalize_component(doc_id)
     if not doc_id:
         return ""
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or ""
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute(
-                "SELECT file_path FROM versions WHERE doc_id=? ORDER BY id DESC LIMIT 1",
-                (doc_id,),
-            ).fetchone()
+            if tenant_id and _column_exists(con, "versions", "tenant_id"):
+                row = con.execute(
+                    """
+                    SELECT file_path FROM versions
+                    WHERE doc_id=? AND tenant_id=?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (doc_id, tenant_id),
+                ).fetchone()
+            else:
+                row = con.execute(
+                    "SELECT file_path FROM versions WHERE doc_id=? ORDER BY id DESC LIMIT 1",
+                    (doc_id,),
+                ).fetchone()
             return str(row["file_path"]) if row and row["file_path"] else ""
+        finally:
+            con.close()
+
+
+def db_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
+    """Return a file path for a doc_id by checking versions + docs_index."""
+    doc_id = normalize_component(doc_id)
+    if not doc_id:
+        return ""
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or ""
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if tenant_id and _column_exists(con, "versions", "tenant_id"):
+                row = con.execute(
+                    """
+                    SELECT file_path FROM versions
+                    WHERE doc_id=? AND tenant_id=?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (doc_id, tenant_id),
+                ).fetchone()
+            else:
+                row = con.execute(
+                    "SELECT file_path FROM versions WHERE doc_id=? ORDER BY id DESC LIMIT 1",
+                    (doc_id,),
+                ).fetchone()
+            if row and row["file_path"]:
+                return str(row["file_path"])
+            if _table_exists(con, "docs_index"):
+                if tenant_id:
+                    row = con.execute(
+                        "SELECT file_path FROM docs_index WHERE doc_id=? AND tenant_id=? LIMIT 1",
+                        (doc_id, tenant_id),
+                    ).fetchone()
+                else:
+                    row = con.execute(
+                        "SELECT file_path FROM docs_index WHERE doc_id=? LIMIT 1",
+                        (doc_id,),
+                    ).fetchone()
+                if row and row["file_path"]:
+                    return str(row["file_path"])
+            return ""
         finally:
             con.close()
 

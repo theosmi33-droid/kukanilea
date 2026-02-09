@@ -28,6 +28,8 @@ def create_app() -> Flask:
     if web.db_init is not None:
         try:
             web.db_init()
+            if callable(getattr(web.core, "index_warmup", None)):
+                web.core.index_warmup(tenant_id=app.config.get("TENANT_DEFAULT", ""))
         except Exception:
             pass
     return app

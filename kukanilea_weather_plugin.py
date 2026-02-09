@@ -7,6 +7,7 @@ Minimal "tool" for the local chat: answers simple Berlin weather questions.
 Source: Open-Meteo (no key). Requires internet.
 If offline, returns a graceful message.
 """
+
 from __future__ import annotations
 
 import json

@@ -11,6 +11,7 @@
         "type": "object",
         "properties": {
           "doc_id": {"type": "string"},
+          "token": {"type": "string"},
           "kdnr": {"type": "string"},
           "doctype": {"type": "string"},
           "doc_date": {"type": "string"},
@@ -18,7 +19,7 @@
           "file_path": {"type": "string"},
           "preview": {"type": "string"}
         },
-        "required": ["doc_id", "file_name"]
+        "required": ["doc_id", "token", "file_name"]
       }
     },
     "did_you_mean": {"type": "array", "items": {"type": "string"}}
