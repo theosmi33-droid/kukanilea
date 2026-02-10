@@ -20,6 +20,7 @@
 - Ollama provider gated by feature flag with deterministic fallback.
 - Prompt injection guardrails + regression tests for blocked prompts.
 - Phase 2 spec + ADR for time tracking created.
+- PR1 started: re-extract path resolution now uses allowlisted DB fallback (`versions.file_path`) with deterministic `source_not_found` metadata and audit events (`reextract_ok` / `reextract_failed`).
 
 ## TODO
 - Add role-based task list + resolution actions in chat.

@@ -90,6 +90,7 @@ read_pending = getattr(core, "read_pending", None)
 write_pending = getattr(core, "write_pending", None)
 delete_pending = getattr(core, "delete_pending", None)
 list_pending = getattr(core, "list_pending", None)
+resolve_source_path = getattr(core, "resolve_source_path", None)
 
 process_with_answers = getattr(core, "process_with_answers", None)
 
@@ -218,8 +219,14 @@ def require_api_key(fn):
     return wrapper
 
 
-def _json_error(msg: str, code: int = 400):
-    return jsonify(ok=False, error=msg), code
+def _json_error(msg: str, code: int = 400, meta: Optional[dict] = None):
+    payload = {"ok": False, "error": msg}
+    if meta is not None:
+        payload["meta"] = meta
+    request_id = (request.headers.get("X-Request-Id") or "").strip()
+    if request_id:
+        payload["request_id"] = request_id
+    return jsonify(payload), code
 
 
 # ============================================================
@@ -897,9 +904,38 @@ def reextract(token: str):
     if not p:
         return _json_error("not_found", 404)
 
-    src = Path(p.get("path", "") or "")
-    if not src.exists():
-        return _json_error("file_missing", 404)
+    tenant_id = str(p.get("tenant_id") or p.get("tenant") or "")
+    tried_path = str(p.get("path", "") or "")
+    doc_id = str(p.get("doc_id") or token)
+
+    if callable(resolve_source_path):
+        src = resolve_source_path(token, p, tenant_id=tenant_id)
+    else:
+        fallback = Path(tried_path) if tried_path else None
+        src = (
+            fallback
+            if fallback and fallback.exists() and _is_allowed_path(fallback)
+            else None
+        )
+
+    if src is None:
+        meta = {
+            "token": token,
+            "doc_id": doc_id,
+            "tried_path": tried_path,
+            "hint": "Source file not found under allowlisted roots; check versions.file_path or re-upload.",
+        }
+        try:
+            core.audit_log(
+                user="api",
+                role="SYSTEM",
+                action="reextract_failed",
+                target=doc_id,
+                meta={**meta, "reason": "source_not_found"},
+            )
+        except Exception:
+            pass
+        return _json_error("source_not_found", 404, meta=meta)
 
     # keep same file, just restart analysis with a new token
     try:
@@ -910,15 +946,48 @@ def reextract(token: str):
     try:
         new_token = analyze_to_pending(src)
     except Exception as e:
-        return _json_error(f"analyze_start_failed: {e}", 500)
+        meta = {
+            "token": token,
+            "doc_id": doc_id,
+            "resolved_path": str(src),
+            "reason": "analyze_start_failed",
+            "detail": str(e),
+        }
+        try:
+            core.audit_log(
+                user="api",
+                role="SYSTEM",
+                action="reextract_failed",
+                target=doc_id,
+                meta=meta,
+            )
+        except Exception:
+            pass
+        return _json_error("analyze_start_failed", 500, meta=meta)
 
     # preserve doc_id if available
+    old_doc_id = str(p.get("doc_id", "") or "")
     try:
-        old_doc_id = p.get("doc_id", "")
         if old_doc_id:
             np = read_pending(new_token) or {}
             np["doc_id"] = old_doc_id
             write_pending(new_token, np)
+    except Exception:
+        pass
+
+    try:
+        core.audit_log(
+            user="api",
+            role="SYSTEM",
+            action="reextract_ok",
+            target=str(old_doc_id or doc_id),
+            meta={
+                "old_token": token,
+                "new_token": new_token,
+                "doc_id": str(old_doc_id or doc_id),
+                "resolved_path": str(src),
+            },
+        )
     except Exception:
         pass
 

@@ -66,6 +66,7 @@ read_pending = _core_get("read_pending")
 write_pending = _core_get("write_pending")
 delete_pending = _core_get("delete_pending")
 list_pending = _core_get("list_pending")
+resolve_source_path = _core_get("resolve_source_path")
 write_done = _core_get("write_done")
 read_done = _core_get("read_done")
 process_with_answers = _core_get("process_with_answers")
@@ -1229,20 +1230,66 @@ def api_reextract(token):
     if not p:
         return jsonify(error="not_found"), 404
 
-    src = Path(p.get("path", ""))
-    if not src.exists():
-        return jsonify(error="file_missing"), 404
+    tenant_id = _norm_tenant(str(p.get("tenant_id") or p.get("tenant") or ""))
+    doc_id = str(p.get("doc_id") or token)
+    tried_path = str(p.get("path", "") or "")
+
+    if callable(resolve_source_path):
+        src = resolve_source_path(token, p, tenant_id=tenant_id)
+    else:
+        fallback = Path(tried_path) if tried_path else None
+        src = (
+            fallback
+            if fallback and fallback.exists() and _is_allowed_path(fallback)
+            else None
+        )
+
+    if src is None:
+        meta = {
+            "token": token,
+            "doc_id": doc_id,
+            "tried_path": tried_path,
+            "hint": "Source file not found under allowlisted roots; check versions.file_path or re-upload.",
+        }
+        _audit(
+            "reextract_failed",
+            target=token,
+            meta={**meta, "old_token": token, "reason": "source_not_found"},
+        )
+        return jsonify(error="source_not_found", meta=meta), 404
 
     try:
         delete_pending(token)
     except Exception:
         pass
 
-    new_token = analyze_to_pending(src)
+    try:
+        new_token = analyze_to_pending(src)
+    except Exception as e:
+        _audit(
+            "reextract_failed",
+            target=token,
+            meta={
+                "old_token": token,
+                "doc_id": doc_id,
+                "resolved_path": str(src),
+                "reason": "analyze_start_failed",
+                "detail": str(e),
+            },
+        )
+        return jsonify(error="analyze_start_failed"), 500
+
     _audit(
-        "reextract", target=str(src), meta={"old_token": token, "new_token": new_token}
+        "reextract_ok",
+        target=str(src),
+        meta={
+            "old_token": token,
+            "new_token": new_token,
+            "doc_id": doc_id,
+            "resolved_path": str(src),
+        },
     )
-    return jsonify(token=new_token)
+    return jsonify(token=new_token, old_token=token)
 
 
 @APP.route("/api/index_fullscan", methods=["POST"])

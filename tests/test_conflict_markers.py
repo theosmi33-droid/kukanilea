@@ -8,7 +8,7 @@ def test_no_conflict_markers() -> None:
             "grep",
             "-n",
             "-E",
-            r"<<<<<<<|=======|>>>>>>>",
+            r"^(<<<<<<< |=======$|>>>>>>> )",
             "--",
             ".",
         ],
@@ -20,6 +20,4 @@ def test_no_conflict_markers() -> None:
             "Conflict markers found:\n" + (result.stdout or result.stderr)
         )
     if result.returncode not in (0, 1):
-        raise AssertionError(
-            "git grep failed:\n" + (result.stdout or result.stderr)
-        )
+        raise AssertionError("git grep failed:\n" + (result.stdout or result.stderr))
