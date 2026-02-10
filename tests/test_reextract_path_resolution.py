@@ -137,3 +137,43 @@ def test_resolve_source_path_rejects_non_allowlisted_version_path(
         "tok-999", pending=pending, tenant_id="tenant_a"
     )
     assert resolved is None
+
+
+def test_api_process_uses_resolved_source_path_for_stale_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api = importlib.import_module("kukanilea_api")
+    core = _setup_core("kukanilea_core", tmp_path)
+
+    stale_path = core.EINGANG / "stale.pdf"
+    stale_path.write_text("stale")
+    moved_path = core.BASE_PATH / "tenant_a" / "moved.pdf"
+    moved_path.parent.mkdir(parents=True, exist_ok=True)
+    moved_path.write_text("fresh")
+    stale_path.unlink()
+
+    doc_id = "doc-api-1"
+    pending = {"path": str(stale_path), "doc_id": doc_id, "tenant_id": "tenant_a"}
+    _insert_version_row(core, doc_id=doc_id, file_path=moved_path, tenant_id="tenant_a")
+
+    monkeypatch.setattr(api, "resolve_source_path", core.resolve_source_path)
+    monkeypatch.setattr(
+        api, "read_pending", lambda token: pending if token == "tok-1" else None
+    )
+    monkeypatch.setattr(api, "write_done", lambda token, payload: None)
+    monkeypatch.setattr(api, "delete_pending", lambda token: None)
+    monkeypatch.setattr(api.core, "audit_log", lambda **kwargs: None)
+
+    seen = {}
+
+    def _fake_process(src: Path, answers: dict):
+        seen["src"] = Path(src)
+        out_folder = tmp_path / "folder"
+        out_final = out_folder / "final.pdf"
+        return out_folder, out_final, True
+
+    monkeypatch.setattr(api, "process_with_answers", _fake_process)
+    client = api.APP.test_client()
+    res = client.post("/process/tok-1", json={"kdnr": "1234"})
+    assert res.status_code == 200
+    assert seen["src"] == moved_path

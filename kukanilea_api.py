@@ -91,6 +91,7 @@ write_pending = getattr(core, "write_pending", None)
 delete_pending = getattr(core, "delete_pending", None)
 list_pending = getattr(core, "list_pending", None)
 resolve_source_path = getattr(core, "resolve_source_path", None)
+is_allowed_source_path = getattr(core, "is_allowed_source_path", None)
 
 process_with_answers = getattr(core, "process_with_answers", None)
 
@@ -1014,9 +1015,43 @@ def process(token: str):
     if not p:
         return _json_error("not_found", 404)
 
-    src = Path(p.get("path", "") or "")
-    if not src.exists():
-        return _json_error("file_missing", 404)
+    tenant_id = str(p.get("tenant_id") or p.get("tenant") or "")
+    doc_id = str(p.get("doc_id") or token)
+    tried_path = str(p.get("path", "") or "")
+    if callable(resolve_source_path):
+        src = resolve_source_path(token, p, tenant_id=tenant_id)
+    else:
+        fallback = Path(tried_path) if tried_path else None
+        if callable(is_allowed_source_path):
+            src = (
+                fallback
+                if fallback and fallback.exists() and is_allowed_source_path(fallback)
+                else None
+            )
+        else:
+            src = (
+                fallback
+                if fallback and fallback.exists() and _is_allowed_path(fallback)
+                else None
+            )
+    if src is None:
+        meta = {
+            "token": token,
+            "doc_id": doc_id,
+            "tried_path": tried_path,
+            "hint": "Source file not found under allowlisted roots; check versions.file_path or re-upload.",
+        }
+        try:
+            core.audit_log(
+                user="api",
+                role="SYSTEM",
+                action="process_failed",
+                target=doc_id,
+                meta={**meta, "reason": "source_not_found"},
+            )
+        except Exception:
+            pass
+        return _json_error("source_not_found", 404, meta=meta)
 
     try:
         body = request.get_json(force=True, silent=False) or {}
@@ -1041,7 +1076,24 @@ def process(token: str):
     try:
         folder, final_path, created_new = process_with_answers(src, answers)
     except Exception as e:
-        return _json_error(f"process_failed: {e}", 500)
+        meta = {
+            "token": token,
+            "doc_id": doc_id,
+            "resolved_path": str(src),
+            "reason": "process_failed",
+            "detail": str(e),
+        }
+        try:
+            core.audit_log(
+                user="api",
+                role="SYSTEM",
+                action="process_failed",
+                target=doc_id,
+                meta=meta,
+            )
+        except Exception:
+            pass
+        return _json_error("process_failed", 500, meta=meta)
 
     done_payload = {
         "tenant": answers.get("tenant")
@@ -1069,6 +1121,22 @@ def process(token: str):
 
     try:
         delete_pending(token)
+    except Exception:
+        pass
+    try:
+        core.audit_log(
+            user="api",
+            role="SYSTEM",
+            action="process_ok",
+            target=doc_id,
+            meta={
+                "token": token,
+                "doc_id": doc_id,
+                "resolved_path": str(src),
+                "final_path": str(final_path),
+                "created_new": bool(created_new),
+            },
+        )
     except Exception:
         pass
 

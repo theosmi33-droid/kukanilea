@@ -2124,12 +2124,20 @@ def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     with _DB_LOCK:
         con = _db()
         try:
+            order_expr = (
+                "version_no DESC, id DESC"
+                if _column_exists(con, "versions", "version_no")
+                else "id DESC"
+            )
             if tenant_id and _column_exists(con, "versions", "tenant_id"):
                 row = con.execute(
                     """
                     SELECT file_path FROM versions
                     WHERE doc_id=? AND tenant_id=?
-                    ORDER BY version_no DESC, id DESC LIMIT 1
+                    ORDER BY """
+                    + order_expr
+                    + """
+                    LIMIT 1
                     """,
                     (doc_id, tenant_id),
                 ).fetchone()
@@ -2138,7 +2146,10 @@ def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
                     """
                     SELECT file_path FROM versions
                     WHERE doc_id=?
-                    ORDER BY version_no DESC, id DESC LIMIT 1
+                    ORDER BY """
+                    + order_expr
+                    + """
+                    LIMIT 1
                     """,
                     (doc_id,),
                 ).fetchone()
@@ -2165,22 +2176,7 @@ def resolve_source_path(
     tenant_ctx = _effective_tenant(
         tenant_id, pending.get("tenant_id", ""), pending.get("tenant", "")
     )
-    latest_path = ""
-
-    fn = globals().get("db_latest_path_for_doc")
-    if doc_id and callable(fn):
-        try:
-            latest_path = str(fn(doc_id, tenant_id=tenant_ctx) or "")
-        except TypeError:
-            try:
-                latest_path = str(fn(doc_id) or "")
-            except Exception:
-                latest_path = ""
-        except Exception:
-            latest_path = ""
-
-    if not latest_path and doc_id:
-        latest_path = _db_latest_version_path_for_doc(doc_id, tenant_ctx)
+    latest_path = db_latest_path_for_doc(doc_id, tenant_id=tenant_ctx) if doc_id else ""
 
     if latest_path:
         candidate = Path(latest_path)
@@ -2192,30 +2188,7 @@ def resolve_source_path(
 
 def db_latest_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     """Return latest file_path for a given doc_id (sha256 bytes), or ''."""
-    doc_id = normalize_component(doc_id)
-    if not doc_id:
-        return ""
-    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or ""
-    with _DB_LOCK:
-        con = _db()
-        try:
-            if tenant_id and _column_exists(con, "versions", "tenant_id"):
-                row = con.execute(
-                    """
-                    SELECT file_path FROM versions
-                    WHERE doc_id=? AND tenant_id=?
-                    ORDER BY id DESC LIMIT 1
-                    """,
-                    (doc_id, tenant_id),
-                ).fetchone()
-            else:
-                row = con.execute(
-                    "SELECT file_path FROM versions WHERE doc_id=? ORDER BY id DESC LIMIT 1",
-                    (doc_id,),
-                ).fetchone()
-            return str(row["file_path"]) if row and row["file_path"] else ""
-        finally:
-            con.close()
+    return _db_latest_version_path_for_doc(doc_id, tenant_id=tenant_id)
 
 
 def db_path_for_doc(doc_id: str, tenant_id: str = "") -> str:

@@ -71,6 +71,7 @@ write_done = _core_get("write_done")
 read_done = _core_get("read_done")
 process_with_answers = _core_get("process_with_answers")
 normalize_component = _core_get("normalize_component")
+is_allowed_source_path = _core_get("is_allowed_source_path")
 
 find_existing_customer_folders = _core_get("find_existing_customer_folders")
 parse_folder_fields = _core_get("parse_folder_fields")
@@ -256,6 +257,11 @@ def _allowed_roots() -> List[Path]:
 
 
 def _is_allowed_path(fp: Path) -> bool:
+    if callable(is_allowed_source_path):
+        try:
+            return bool(is_allowed_source_path(Path(fp)))
+        except Exception:
+            return False
     try:
         rp = fp.resolve()
         for root in _allowed_roots():
@@ -276,6 +282,16 @@ def _render_base(content: str, active_tab: str = "upload"):
         roles=", ".join(_current_roles()) or "-",
         active_tab=active_tab,
     )
+
+
+def _error_envelope(code: str, status: int = 400, meta: dict | None = None):
+    payload = {"ok": False, "error": code}
+    if meta is not None:
+        payload["meta"] = meta
+    request_id = (request.headers.get("X-Request-Id") or "").strip()
+    if request_id:
+        payload["request_id"] = request_id
+    return jsonify(payload), status
 
 
 def _card_error(msg: str) -> str:
@@ -1210,10 +1226,10 @@ def logout():
 @APP.route("/api/progress/<token>")
 def api_progress(token):
     if not _logged_in():
-        return jsonify(error="unauthorized"), 401
+        return _error_envelope("unauthorized", 401)
     p = read_pending(token)
     if not p:
-        return jsonify(error="not_found"), 404
+        return _error_envelope("not_found", 404)
     return jsonify(
         status=p.get("status", ""),
         progress=float(p.get("progress", 0.0) or 0.0),
@@ -1225,10 +1241,10 @@ def api_progress(token):
 @APP.route("/api/reextract/<token>", methods=["POST"])
 def api_reextract(token):
     if not _logged_in():
-        return jsonify(error="unauthorized"), 401
+        return _error_envelope("unauthorized", 401)
     p = read_pending(token)
     if not p:
-        return jsonify(error="not_found"), 404
+        return _error_envelope("not_found", 404)
 
     tenant_id = _norm_tenant(str(p.get("tenant_id") or p.get("tenant") or ""))
     doc_id = str(p.get("doc_id") or token)
@@ -1256,7 +1272,7 @@ def api_reextract(token):
             target=token,
             meta={**meta, "old_token": token, "reason": "source_not_found"},
         )
-        return jsonify(error="source_not_found", meta=meta), 404
+        return _error_envelope("source_not_found", 404, meta=meta)
 
     try:
         delete_pending(token)
@@ -1277,7 +1293,7 @@ def api_reextract(token):
                 "detail": str(e),
             },
         )
-        return jsonify(error="analyze_start_failed"), 500
+        return _error_envelope("analyze_start_failed", 500)
 
     _audit(
         "reextract_ok",

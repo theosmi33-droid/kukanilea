@@ -21,6 +21,7 @@
 - Prompt injection guardrails + regression tests for blocked prompts.
 - Phase 2 spec + ADR for time tracking created.
 - PR1 started: re-extract path resolution now uses allowlisted DB fallback (`versions.file_path`) with deterministic `source_not_found` metadata and audit events (`reextract_ok` / `reextract_failed`).
+- PR1C cleanup: unified latest-version DB ordering, applied resolver to `/process/<token>`, and standardized upload API error envelope with request_id support.
 
 ## TODO
 - Add role-based task list + resolution actions in chat.
