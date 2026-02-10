@@ -1,77 +1,188 @@
-# KUKANILEA Agent Orchestra Architecture
+# KUKANILEA Architecture (Local‑First)
 
-## Überblick
-KUKANILEA nutzt eine Agent-Orchester-Architektur: jede „Tool“-Funktion ist ein eigener Agent. Der Orchestrator analysiert Benutzer-Intent, prüft Berechtigungen (PolicyEngine) und delegiert die Aufgabe an spezialisierte Agenten. Das System ist mandantenfähig (tenant_id), auditierbar und erweiterbar.
+**Last updated:** 2026-02-09
 
-## App-Struktur
-- `app/__init__.py`: App-Factory (`create_app`) + Blueprint-Registrierung.
-- `app/auth.py`: Login, Rollenprüfung, Tenant-Resolution.
-- `app/db.py`: User/Tenant/Membership DB für Auth.
-- `app/web.py`: UI + API-Routen (Blueprint).
+KUKANILEA is a **local‑first**, **tenant‑isolated**, **audit‑driven** agent orchestrator for Handwerk workflows.
 
-## Kernmodule
+## Non‑negotiables
 
-### Orchestrator
-- **IntentParser**: Regelbasierte Intent-Erkennung + MockLLM-Fallback (deterministisch).
-- **Orchestrator**: Validiert Rollen (READONLY, OPERATOR, ADMIN, DEV), ruft passende Agenten, sammelt Aktionen für die UI.
-- **PolicyEngine**: zentrale RBAC-Prüfung.
-- **ToolRegistry**: Auflistung der verfügbaren Tools pro Agent.
-- **AgentContext**: tenant_id, user, role, kdnr, token, meta.
+- **DB is the source of truth** (SQLite). File system is “reality” (bytes live on disk), but **the DB decides meaning, ownership, and permissions**.
+- **Absolute tenant isolation** (no cross‑tenant reads/writes).
+- **Deny‑by‑default policy** for every tool/action. Anything meaningful is **audited**.
+- **Deterministic API contracts**: every `/api/*` error path returns an **ErrorEnvelope**.
+- **Prompt‑injection resilience**: guards run **before** orchestration and before any tool proposal/execution.
+- **LLMs are optional tools, never authorities**. **Safe‑mode disables all LLM calls** and keeps behavior deterministic/offline.
 
-### Agenten (kukanilea/agents)
-| Agent | Verantwortung | Beispiel | Rolle |
-|---|---|---|---|
-| UploadAgent | Upload-Queue Hinweise | „Upload starten“ | STAFF |
-| ReviewAgent | Review-Flow Hinweise | „Review öffnen“ | STAFF |
-| ArchiveAgent | Archiv-Flow Hinweise | „Archivieren“ | STAFF |
-| IndexAgent | Indexierung auslösen | „Index neu bauen“ | ADMIN |
-| SearchAgent | Strukturierte Suche | „suche Rechnung KDNR 12393“ | READONLY |
-| MailAgent | Mail-Entwürfe steuern | „mail entwerfen“ | STAFF |
-| WeatherAgent | Wetter-Stub | „Wetter Berlin“ | READONLY |
-| AuthTenantAgent | Mandantenstatus | „welcher Mandant“ | READONLY |
-| OpenFileAgent | UI-Aktionen | „öffne <token>“ | READONLY |
-| CustomerAgent | Kunde/KDNR | „kunde mit kdnr 123“ | STAFF |
-| SummaryAgent | Zusammenfassung (Stub) | „zusammenfassen“ | ADMIN |
+---
 
-### LLMAdapter (Mock)
-Kein Ollama/externes LLM in dieser Sprint-Architektur. MockLLM liefert deterministische Antworten für Tests/UI.
+## System overview
 
-## Multi-Tenant Datenmodell
-**Ziel**: Mandanten-Scope erzwingen, spätere SaaS-Fähigkeit sicherstellen.
+```mermaid
+flowchart TB
+  %% --- Clients ---
+  subgraph C[Clients]
+    UI[Web UI (Flask templates + JS)]
+    API[HTTP clients (curl / scripts)]
+  end
 
-### Tabellen
-- `tenants`: tenant_id, display_name
-- `tenant_users`: M:N Users ↔ Tenant (Rolle)
-- `docs`: tenant_id, kdnr, doctype, doc_date
-- `versions`: tenant_id, file_name, file_path
-- `entities`: erkannte Entitäten (KDNR, Telefon, E-Mail, Dokumentnummer)
-- `links`: optionale Verknüpfungen
-- `audit`: tenant_id, action, target
+  %% --- App ---
+  subgraph A[Flask App]
+    W[app/web.py routes]
+    AUTH[app/auth.py session + roles]
+    ERR[app/errors.py ErrorEnvelope + json_error]
+    MW[Middleware: request_id, CSRF, rate limit, timeout]
+  end
 
-Jede Query im SearchAgent berücksichtigt tenant_id.
+  %% --- Orchestration ---
+  subgraph O[Orchestration]
+    ORCH[kukanilea/orchestrator/Orchestrator]
+    INTENT[IntentParser (allow_llm toggle)]
+    POLICY[Policy engine (deny-by-default)]
+    GUARDS[Prompt-injection guards]
+    AGENTS[Agents: search / summary / customer / mail ...]
+    PROV[Provenance tagging]
+    AUDIT[Audit log]
+  end
 
-## Entity Extraction v1
-Regelbasierte Extraktion (keine externen LLMs):
-- KDNR
-- Dokumentnummern (Rechnung/Angebot/Auftrag)
-- Datum
-- E-Mail
-- Telefon
+  %% --- Storage ---
+  subgraph S[Local Storage]
+    DB[(SQLite: instance/*.db)]
+    FS[(Local FS: Eingang / Pending / Kundenablage / Done)]
+    IDX[Index tables (FTS + metadata)]
+  end
 
-Diese Entitäten werden in `entities` gespeichert und stehen für strukturierte Suche bereit.
+  UI -->|/api/*| W
+  API -->|/api/*| W
 
-## UI Actions
-Agenten können Aktionen zurückgeben, z. B.:
-- `open_token`: öffnet Review-Ansicht
+  W --> ERR
+  W --> AUTH
+  W --> MW
+  W --> ORCH
 
-UI zeigt passende Buttons/Links im Chat an.
+  ORCH --> GUARDS
+  ORCH --> INTENT
+  ORCH --> POLICY
+  ORCH --> AGENTS
+  ORCH --> PROV
+  ORCH --> AUDIT
 
-## Erweiterungspunkte
-- `LLMAdapter`: späterer Anschluss z. B. OpenAI oder On-Prem
-- `EmailProvider`: Dummy + FutureGmailProvider (Stub)
-- `WeatherAgent`: Adapter-Pattern
+  AGENTS --> DB
+  AGENTS --> FS
+  AGENTS --> IDX
+  AUDIT --> DB
+  AUTH --> DB
+  ERR --> W
+```
 
-## Security
-- Rollenprüfung pro Agent
-- Tenant-Scope im Context
-- Audit-Log mit tenant_id
+---
+
+## Request lifecycle: Chat (deterministic)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User (UI)
+  participant W as Flask /api/chat
+  participant G as Guards
+  participant I as IntentParser
+  participant P as Policy
+  participant O as Orchestrator
+  participant A as Agent
+  participant D as SQLite (DB)
+
+  U->>W: POST /api/chat {q}
+  W->>G: detect_prompt_injection(q)
+  alt Injection detected
+    G-->>W: blocked + reason
+    W-->>U: ErrorEnvelope (403)
+  else Clean input
+    W->>O: handle(q, ctx)
+    O->>I: parse(q, allow_llm = !safe_mode)
+    I-->>O: intent
+    O->>P: is_allowed(intent, ctx)
+    alt denied
+      P-->>O: denied + reason
+      O->>D: write audit(task/denial)
+      W-->>U: ErrorEnvelope (403)
+    else allowed
+      O->>A: run(intent)
+      A->>D: read/write tenant-scoped
+      A-->>O: result + provenance
+      O->>D: write audit(event)
+      W-->>U: ChatResponse (200)
+    end
+  end
+```
+
+**Key invariants**
+- The API response is always either **ChatResponse (200)** or **ErrorEnvelope (4xx/5xx)**.
+- All DB writes include `tenant_id`.
+- Denials are audited (and may create a “task” for follow‑up).
+
+---
+
+## Document pipeline: Upload → Review → Ablage
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User (UI)
+  participant W as Flask /upload + /review
+  participant CORE as kukanilea_core_v3_fixed.py
+  participant FS as Local FS
+  participant DB as SQLite
+
+  U->>W: upload file
+  W->>FS: store in Eingang/
+  W->>CORE: extract+classify (OCR optional)
+  CORE->>DB: persist document metadata (tenant-scoped)
+  CORE-->>W: proposed fields (type, KDNR, date, etc.)
+  W-->>U: Review screen with suggestions
+
+  U->>W: "Alles korrekt → Ablage"
+  W->>CORE: archive_commit(fields)
+  CORE->>FS: move to Kundenablage/<customer>/...
+  CORE->>DB: update truth (final doc record + audit)
+  W-->>U: success + open-by-token
+```
+
+---
+
+## Data boundaries & tenant isolation
+
+- **Every table** must have `tenant_id` and every query must constrain by `tenant_id`.
+- File system paths are treated as untrusted input; the DB controls what a path *means*.
+- UI routes require `session["tenant_id"]` and role checks for sensitive operations.
+
+---
+
+## “Safe‑mode”
+
+Safe‑mode is a context flag (e.g. `ctx.meta["safe_mode"]=True`) that forces:
+- `IntentParser.parse(..., allow_llm=False)`
+- LLM provider calls to be blocked (provider gating)
+- Deterministic fallbacks (rules/regex) only
+
+---
+
+## Extension points
+
+### Add a new agent
+1. Implement `kukanilea/agents/<name>.py` with strict input/output schema.
+2. Add allowlisted actions in `kukanilea/orchestrator/policy.py`.
+3. Add tests:
+   - prompt injection guard triggers
+   - tenant isolation
+   - deterministic error envelopes
+
+### Add a new API surface
+1. Update `contracts/openapi.yaml` + JSON schema(s).
+2. Implement route in `app/web.py` with `json_error(...)` for all error paths.
+3. Add tests verifying ErrorEnvelope and request_id.
+
+---
+
+## Known sharp edges (track in ROADMAP/LOOP)
+
+- Replace `datetime.utcnow()` with timezone‑aware UTC (see warnings in tests).
+- Keep generated `instance/*.db-wal` and `*.db-shm` out of Git (dev artifacts).
