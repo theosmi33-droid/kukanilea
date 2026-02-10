@@ -22,6 +22,12 @@
     - `{ ok: false, error: <code>, meta?: {...}, request_id?: <id> }`
   - Applied to `/api/reextract/<token>` and auth/not-found errors in upload API endpoints touched by PR1C.
   - `_is_allowed_path(...)` now reuses `core.is_allowed_source_path(...)` when available.
+- `kukanilea_api.py`
+  - Added shared `error_envelope(...)` helper and kept `_json_error(...)` as a thin wrapper.
+- `kukanilea/agents/search.py`
+  - Filesystem scan fallback is disabled by default.
+  - Fallback can be explicitly enabled only via `KUKANILEA_ENABLE_FS_SCAN_FALLBACK=1` (DEV use).
+  - Default path is DB/FTS-only behavior.
 
 ## Tests
 - Extended `tests/test_reextract_path_resolution.py` with endpoint coverage:

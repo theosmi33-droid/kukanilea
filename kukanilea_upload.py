@@ -284,14 +284,20 @@ def _render_base(content: str, active_tab: str = "upload"):
     )
 
 
-def _error_envelope(code: str, status: int = 400, meta: dict | None = None):
+def error_envelope(
+    code: str, http_status: int = 400, meta: dict | None = None, request_id: str = ""
+):
     payload = {"ok": False, "error": code}
     if meta is not None:
         payload["meta"] = meta
-    request_id = (request.headers.get("X-Request-Id") or "").strip()
-    if request_id:
-        payload["request_id"] = request_id
-    return jsonify(payload), status
+    rid = request_id or (request.headers.get("X-Request-Id") or "").strip()
+    if rid:
+        payload["request_id"] = rid
+    return jsonify(payload), http_status
+
+
+def _error_envelope(code: str, status: int = 400, meta: dict | None = None):
+    return error_envelope(code, http_status=status, meta=meta)
 
 
 def _card_error(msg: str) -> str:

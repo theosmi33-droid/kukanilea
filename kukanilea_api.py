@@ -220,14 +220,23 @@ def require_api_key(fn):
     return wrapper
 
 
-def _json_error(msg: str, code: int = 400, meta: Optional[dict] = None):
-    payload = {"ok": False, "error": msg}
+def error_envelope(
+    code: str,
+    http_status: int = 400,
+    meta: Optional[dict] = None,
+    request_id: str = "",
+):
+    payload = {"ok": False, "error": code}
     if meta is not None:
         payload["meta"] = meta
-    request_id = (request.headers.get("X-Request-Id") or "").strip()
-    if request_id:
-        payload["request_id"] = request_id
-    return jsonify(payload), code
+    rid = request_id or (request.headers.get("X-Request-Id") or "").strip()
+    if rid:
+        payload["request_id"] = rid
+    return jsonify(payload), http_status
+
+
+def _json_error(msg: str, code: int = 400, meta: Optional[dict] = None):
+    return error_envelope(msg, http_status=code, meta=meta)
 
 
 # ============================================================
