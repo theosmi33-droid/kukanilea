@@ -42,3 +42,10 @@ dist/*.sha256
 
 # build outputs
 dist/
+
+# local scratch
+nousage/
+reports/
+.venv/
+__pycache__/
+*.pyc
