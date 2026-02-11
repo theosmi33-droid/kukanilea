@@ -32,3 +32,6 @@ reports/cleanup/*
 
 # local reports
 reports/zip_sync/*
+
+# local reports
+reports/
