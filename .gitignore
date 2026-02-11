@@ -35,3 +35,10 @@ reports/zip_sync/*
 
 # local reports
 reports/
+
+# release artifacts
+dist/*.zip
+dist/*.sha256
+
+# build outputs
+dist/

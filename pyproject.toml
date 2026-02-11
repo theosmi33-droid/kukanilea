@@ -1,3 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kukanilea"
+version = "0.1.0"
+description = "Local-first KUKANILEA document and agent MVP"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["app*", "kukanilea*"]
+exclude = ["tests*", "archive*", "nousage*", "reports*", "instance*"]
+
 [tool.black]
 line-length = 88
 

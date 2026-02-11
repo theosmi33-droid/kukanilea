@@ -19,6 +19,16 @@ python kukanilea_app.py
 ```
 Open: http://127.0.0.1:5051
 
+### Run locally (Flask CLI)
+```bash
+export FLASK_APP=app
+flask run --port 5051
+```
+Alternativ direkt:
+```bash
+flask --app app run --port 5051
+```
+
 **Logins**
 - `admin/admin` → Tenant: **KUKANILEA** (ADMIN)
 - `dev/dev` → Tenant: **KUKANILEA Dev** (DEV)
