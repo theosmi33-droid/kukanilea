@@ -4,3 +4,9 @@ python-dotenv
 pydantic
 rapidfuzz
 pytest
+waitress
+platformdirs
+cryptography
+pyinstaller
+dmgbuild
+pip-audit

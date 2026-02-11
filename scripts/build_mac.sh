@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="KUKANILEA"
-ENTRYPOINT="kukanilea_app.py"
+ENTRYPOINT="$ROOT_DIR/kukanilea_server.py"
 
-python3 -m pip install --upgrade pyinstaller
+PY_BIN="${PYTHON:-python3}"
+
+"$PY_BIN" -m pip install --upgrade pyinstaller waitress platformdirs cryptography
 
 pyinstaller \
+  --noconfirm \
+  --clean \
   --name "$APP_NAME" \
   --onefile \
   --windowed \
   "$ENTRYPOINT"
 
-echo "Build complete: dist/${APP_NAME}.app"
+echo "Build complete: $ROOT_DIR/dist/${APP_NAME}.app"

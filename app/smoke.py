@@ -11,7 +11,7 @@ from app.db import AuthDB
 
 
 def main() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         tmp_dir = os.path.abspath(tmp)
         os.environ["HOME"] = tmp_dir
         os.environ["KUKANILEA_AUTH_DB"] = os.path.join(tmp_dir, "auth.db")

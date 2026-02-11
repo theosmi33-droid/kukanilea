@@ -3,6 +3,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+try:
+    from platformdirs import user_data_dir
+except Exception:  # pragma: no cover - fallback when dependency not installed
+
+    def user_data_dir(appname: str, appauthor: bool = False) -> str:
+        return str(Path.home() / "Library" / "Application Support" / appname)
+
 
 def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
@@ -13,14 +20,29 @@ class Config:
     PORT = int(_env("PORT", "5051"))
     SECRET_KEY = _env("KUKANILEA_SECRET", "kukanilea-dev-secret-change-me")
     MAX_CONTENT_LENGTH = int(_env("KUKANILEA_MAX_UPLOAD", str(25 * 1024 * 1024)))
-    AUTH_DB = Path(
+
+    USER_DATA_ROOT = Path(
         _env(
-            "KUKANILEA_AUTH_DB",
-            str(Path(__file__).resolve().parent.parent / "instance" / "kukanilea.db"),
+            "KUKANILEA_USER_DATA_ROOT",
+            user_data_dir("KUKANILEA", appauthor=False),
         )
     )
-    CORE_DB = Path(_env("DB_FILENAME", str(Path.home() / "Tophandwerk_DB.sqlite3")))
-    IMPORT_ROOT = Path(_env("IMPORT_ROOT", str(Path.home() / "kukanilea_imports")))
+    USER_DATA_ROOT.mkdir(parents=True, exist_ok=True)
+
+    LOG_DIR = USER_DATA_ROOT / "logs"
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    AUTH_DB = Path(_env("KUKANILEA_AUTH_DB", str(USER_DATA_ROOT / "auth.sqlite3")))
+    CORE_DB = Path(_env("KUKANILEA_CORE_DB", str(USER_DATA_ROOT / "core.sqlite3")))
+    LICENSE_PATH = Path(
+        _env("KUKANILEA_LICENSE_PATH", str(USER_DATA_ROOT / "license.json"))
+    )
+    TRIAL_PATH = Path(_env("KUKANILEA_TRIAL_PATH", str(USER_DATA_ROOT / "trial.json")))
+    TRIAL_DAYS = int(_env("KUKANILEA_TRIAL_DAYS", "14"))
+
+    IMPORT_ROOT = Path(_env("IMPORT_ROOT", str(USER_DATA_ROOT / "imports")))
+    IMPORT_ROOT.mkdir(parents=True, exist_ok=True)
+
     TENANT_DEFAULT = _env("TENANT_DEFAULT", "KUKANILEA")
     TENANT_FIXED = _env("TENANT_FIXED", "1") not in ("0", "false", "False", "no", "NO")
     FEATURE_GOOGLE_OAUTH = _env("FEATURE_GOOGLE_OAUTH", "0") == "1"

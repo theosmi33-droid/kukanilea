@@ -579,6 +579,15 @@ HTML_BASE = r"""<!doctype html>
       </div>
     </div>
     <div class="app-content">
+      {% if read_only %}
+      <div class="mb-4 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm">
+        Read-only mode aktiv ({{license_reason}}). Schreibaktionen sind deaktiviert.
+      </div>
+      {% elif trial_active and trial_days_left <= 3 %}
+      <div class="mb-4 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm">
+        Trial aktiv: noch {{trial_days_left}} Tage.
+      </div>
+      {% endif %}
       {{ content|safe }}
     </div>
   </main>

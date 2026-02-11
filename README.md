@@ -1,72 +1,50 @@
-# KUKANILEA Systems — Agent Orchestra (Local)
+# KUKANILEA (macOS, local-first)
 
-## What this bundle contains
-- `kukanilea_app.py` — single entry point (uses `create_app()` in `app/`).
-- `app/` — app factory, auth, db, web routes.
-- `kukanilea_core_v3_fixed.py` — core logic (DB, ingest, OCR/extract, archive rules).
-- `kukanilea_weather_plugin.py` — optional weather helper.
-- `requirements.txt` — minimal Python deps.
-- `scripts/start_ui.sh` — zsh-safe starter.
-- `scripts/dev_run.sh` — idempotent dev runner (seeds users).
+## End-user install (DMG)
+1. Open `KUKANILEA.dmg`.
+2. Drag `KUKANILEA.app` to `Applications`.
+3. Start the app and open [http://127.0.0.1:5051](http://127.0.0.1:5051).
 
-## Quick start (macOS)
+KUKANILEA runs local-only and binds to `127.0.0.1`.
+
+## Data location (macOS)
+All writable data is stored under:
+`~/Library/Application Support/KUKANILEA/`
+
+Files include:
+- `auth.sqlite3`
+- `core.sqlite3`
+- `license.json`
+- `trial.json`
+- `logs/`
+
+## Licensing and trial
+- No online license validation.
+- If `license.json` is missing, a 14-day trial starts on first run (`trial.json`).
+- If trial expires, license expires, or device binding mismatches, app enters read-only mode.
+- Read-only mode blocks all `POST/PUT/PATCH/DELETE` requests server-side (HTTP 403).
+
+### Apply a license
+Place a signed `license.json` into:
+`~/Library/Application Support/KUKANILEA/license.json`
+
+## Run (production entrypoint)
+```bash
+python kukanilea_server.py
+```
+
+## Build artifacts
+```bash
+bash scripts/release_zip.sh
+bash scripts/build_mac.sh
+bash scripts/make_dmg.sh
+```
+
+## Developer checks
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python scripts/seed_dev_users.py
-python kukanilea_app.py
+pytest -q
+python -m app.smoke
 ```
-Open: http://127.0.0.1:5051
-
-### Run locally (Flask CLI)
-```bash
-export FLASK_APP=app
-flask run --port 5051
-```
-Alternativ direkt:
-```bash
-flask --app app run --port 5051
-```
-
-**Logins**
-- `admin/admin` → Tenant: **KUKANILEA** (ADMIN)
-- `dev/dev` → Tenant: **KUKANILEA Dev** (DEV)
-
-### One-command dev run
-```bash
-./scripts/dev_run.sh
-```
-
-### Dev bootstrap
-```bash
-./scripts/dev_bootstrap.sh
-```
-
-## Development quality checks
-### Setup (linting/formatting)
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-```
-
-### Pre-commit hooks
-```bash
-pre-commit install
-pre-commit run --all-files
-```
-
-## Notes
-- Tenant is derived from account membership and never entered in the UI.
-- If you see a `zsh: parse error near ')'`, use `scripts/start_ui.sh` or `scripts/dev_run.sh` instead of copying numbered lists.
-
-## Known Limits
-- OCR fallback depends on system tools (tesseract/poppler) if enabled.
-- Search may fall back to DB/FS if FTS is unavailable.
-
-## Docs
-- `docs/ARCHITECTURE.md`
-- `docs/CONSTITUTION.md`
-- `ROADMAP.md`
-- `PACKAGING.md`
