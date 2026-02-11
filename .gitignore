@@ -20,3 +20,18 @@ _THW_TEST_SANDBOX/
 instance/*.db
 instance/*.db-wal
 instance/*.db-shm
+.pytest_cache/
+.ruff_cache/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+nousage/
+reports/cleanup/*
+
+# local reports
+reports/zip_sync/*
+
+# local reports
+reports/

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -74,6 +75,11 @@ class SearchAgent(BaseAgent):
     def __init__(self, core_module) -> None:
         self.core = core_module
 
+    def _fs_scan_fallback_enabled(self) -> bool:
+        """Enable FS fallback only in explicit DEV mode (default: off)."""
+        raw = os.getenv("KUKANILEA_ENABLE_FS_SCAN_FALLBACK", "0").strip().lower()
+        return raw in ("1", "true", "yes", "on")
+
     def can_handle(self, intent: str, message: str) -> bool:
         return intent == "search"
 
@@ -139,7 +145,7 @@ class SearchAgent(BaseAgent):
                 tenant_id=context.tenant_id,
             )
 
-        if not results:
+        if not results and self._fs_scan_fallback_enabled():
             results = self._fs_scan(query, context)
 
         suggestions: List[str] = []
@@ -148,6 +154,8 @@ class SearchAgent(BaseAgent):
         return results, suggestions
 
     def _fs_scan(self, query: str, context: AgentContext) -> List[Dict[str, Any]]:
+        if not self._fs_scan_fallback_enabled():
+            return []
         base = getattr(self.core, "BASE_PATH", None)
         if base is None:
             return []
@@ -180,6 +188,8 @@ class SearchAgent(BaseAgent):
     def _did_you_mean(self, query: str, context: AgentContext) -> List[str]:
         if callable(getattr(self.core, "assistant_suggest", None)):
             return self.core.assistant_suggest(query=query, tenant_id=context.tenant_id)
+        if not self._fs_scan_fallback_enabled():
+            return []
         base = getattr(self.core, "BASE_PATH", None)
         if base is None or process is None or fuzz is None:
             return []

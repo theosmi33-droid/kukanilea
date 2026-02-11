@@ -2094,8 +2094,29 @@ def _next_version_suffix(target_dir: Path, base_name: str, ext: str) -> str:
         n += 1
 
 
-def db_latest_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
-    """Return latest file_path for a given doc_id (sha256 bytes), or ''."""
+def _source_allowlist_roots() -> List[Path]:
+    roots = [EINGANG, BASE_PATH, PENDING_DIR, DONE_DIR]
+    out: List[Path] = []
+    for root in roots:
+        try:
+            out.append(Path(root).resolve())
+        except Exception:
+            continue
+    return out
+
+
+def is_allowed_source_path(p: Path) -> bool:
+    try:
+        rp = Path(p).expanduser().resolve()
+    except Exception:
+        return False
+    for root in _source_allowlist_roots():
+        if rp == root or str(rp).startswith(str(root) + os.sep):
+            return True
+    return False
+
+
+def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     doc_id = normalize_component(doc_id)
     if not doc_id:
         return ""
@@ -2103,23 +2124,71 @@ def db_latest_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     with _DB_LOCK:
         con = _db()
         try:
+            order_expr = (
+                "version_no DESC, id DESC"
+                if _column_exists(con, "versions", "version_no")
+                else "id DESC"
+            )
             if tenant_id and _column_exists(con, "versions", "tenant_id"):
                 row = con.execute(
                     """
                     SELECT file_path FROM versions
                     WHERE doc_id=? AND tenant_id=?
-                    ORDER BY id DESC LIMIT 1
+                    ORDER BY """
+                    + order_expr
+                    + """
+                    LIMIT 1
                     """,
                     (doc_id, tenant_id),
                 ).fetchone()
             else:
                 row = con.execute(
-                    "SELECT file_path FROM versions WHERE doc_id=? ORDER BY id DESC LIMIT 1",
+                    """
+                    SELECT file_path FROM versions
+                    WHERE doc_id=?
+                    ORDER BY """
+                    + order_expr
+                    + """
+                    LIMIT 1
+                    """,
                     (doc_id,),
                 ).fetchone()
             return str(row["file_path"]) if row and row["file_path"] else ""
         finally:
             con.close()
+
+
+def resolve_source_path(
+    token: str, pending: Optional[Dict[str, Any]] = None, tenant_id: str = ""
+) -> Optional[Path]:
+    token = normalize_component(token)
+    pending = pending or read_pending(token) or {}
+    if not isinstance(pending, dict):
+        pending = {}
+
+    direct_raw = str(pending.get("path", "") or "").strip()
+    if direct_raw:
+        direct = Path(direct_raw)
+        if direct.exists() and is_allowed_source_path(direct):
+            return direct
+
+    doc_id = normalize_component(pending.get("doc_id") or token)
+    tenant_ctx = _effective_tenant(
+        tenant_id, pending.get("tenant_id", ""), pending.get("tenant", "")
+    )
+    latest_path = db_latest_path_for_doc(doc_id, tenant_id=tenant_ctx) if doc_id else ""
+
+    if latest_path:
+        candidate = Path(latest_path)
+        if candidate.exists() and is_allowed_source_path(candidate):
+            return candidate
+
+    return None
+
+
+def db_latest_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
+    """Return latest file_path for a given doc_id (sha256 bytes), or ''."""
+    return _db_latest_version_path_for_doc(doc_id, tenant_id=tenant_id)
 
 
 def db_path_for_doc(doc_id: str, tenant_id: str = "") -> str:

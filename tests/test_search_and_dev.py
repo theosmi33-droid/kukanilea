@@ -34,6 +34,18 @@ def test_search_fs_fallback(tmp_path):
     agent = SearchAgent(core)
     ctx = AgentContext(tenant_id="KUKANILEA", user="dev", role="ADMIN")
     results, _ = agent.search("rechnung", ctx, limit=5)
+    assert results == []
+
+
+def test_search_fs_fallback_opt_in_via_dev_flag(tmp_path, monkeypatch):
+    tenant_dir = tmp_path / "KUKANILEA" / "1234_kunde"
+    tenant_dir.mkdir(parents=True, exist_ok=True)
+    (tenant_dir / "rechnung_1234.pdf").write_text("test")
+    monkeypatch.setenv("KUKANILEA_ENABLE_FS_SCAN_FALLBACK", "1")
+    core = DummyCore(tmp_path)
+    agent = SearchAgent(core)
+    ctx = AgentContext(tenant_id="KUKANILEA", user="dev", role="ADMIN")
+    results, _ = agent.search("rechnung", ctx, limit=5)
     assert results
     assert results[0].get("token")
 

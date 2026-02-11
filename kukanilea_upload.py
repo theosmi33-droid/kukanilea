@@ -66,10 +66,12 @@ read_pending = _core_get("read_pending")
 write_pending = _core_get("write_pending")
 delete_pending = _core_get("delete_pending")
 list_pending = _core_get("list_pending")
+resolve_source_path = _core_get("resolve_source_path")
 write_done = _core_get("write_done")
 read_done = _core_get("read_done")
 process_with_answers = _core_get("process_with_answers")
 normalize_component = _core_get("normalize_component")
+is_allowed_source_path = _core_get("is_allowed_source_path")
 
 find_existing_customer_folders = _core_get("find_existing_customer_folders")
 parse_folder_fields = _core_get("parse_folder_fields")
@@ -255,6 +257,11 @@ def _allowed_roots() -> List[Path]:
 
 
 def _is_allowed_path(fp: Path) -> bool:
+    if callable(is_allowed_source_path):
+        try:
+            return bool(is_allowed_source_path(Path(fp)))
+        except Exception:
+            return False
     try:
         rp = fp.resolve()
         for root in _allowed_roots():
@@ -275,6 +282,22 @@ def _render_base(content: str, active_tab: str = "upload"):
         roles=", ".join(_current_roles()) or "-",
         active_tab=active_tab,
     )
+
+
+def error_envelope(
+    code: str, http_status: int = 400, meta: dict | None = None, request_id: str = ""
+):
+    payload = {"ok": False, "error": code}
+    if meta is not None:
+        payload["meta"] = meta
+    rid = request_id or (request.headers.get("X-Request-Id") or "").strip()
+    if rid:
+        payload["request_id"] = rid
+    return jsonify(payload), http_status
+
+
+def _error_envelope(code: str, status: int = 400, meta: dict | None = None):
+    return error_envelope(code, http_status=status, meta=meta)
 
 
 def _card_error(msg: str) -> str:
@@ -1209,10 +1232,10 @@ def logout():
 @APP.route("/api/progress/<token>")
 def api_progress(token):
     if not _logged_in():
-        return jsonify(error="unauthorized"), 401
+        return _error_envelope("unauthorized", 401)
     p = read_pending(token)
     if not p:
-        return jsonify(error="not_found"), 404
+        return _error_envelope("not_found", 404)
     return jsonify(
         status=p.get("status", ""),
         progress=float(p.get("progress", 0.0) or 0.0),
@@ -1224,25 +1247,71 @@ def api_progress(token):
 @APP.route("/api/reextract/<token>", methods=["POST"])
 def api_reextract(token):
     if not _logged_in():
-        return jsonify(error="unauthorized"), 401
+        return _error_envelope("unauthorized", 401)
     p = read_pending(token)
     if not p:
-        return jsonify(error="not_found"), 404
+        return _error_envelope("not_found", 404)
 
-    src = Path(p.get("path", ""))
-    if not src.exists():
-        return jsonify(error="file_missing"), 404
+    tenant_id = _norm_tenant(str(p.get("tenant_id") or p.get("tenant") or ""))
+    doc_id = str(p.get("doc_id") or token)
+    tried_path = str(p.get("path", "") or "")
+
+    if callable(resolve_source_path):
+        src = resolve_source_path(token, p, tenant_id=tenant_id)
+    else:
+        fallback = Path(tried_path) if tried_path else None
+        src = (
+            fallback
+            if fallback and fallback.exists() and _is_allowed_path(fallback)
+            else None
+        )
+
+    if src is None:
+        meta = {
+            "token": token,
+            "doc_id": doc_id,
+            "tried_path": tried_path,
+            "hint": "Source file not found under allowlisted roots; check versions.file_path or re-upload.",
+        }
+        _audit(
+            "reextract_failed",
+            target=token,
+            meta={**meta, "old_token": token, "reason": "source_not_found"},
+        )
+        return _error_envelope("source_not_found", 404, meta=meta)
 
     try:
         delete_pending(token)
     except Exception:
         pass
 
-    new_token = analyze_to_pending(src)
+    try:
+        new_token = analyze_to_pending(src)
+    except Exception as e:
+        _audit(
+            "reextract_failed",
+            target=token,
+            meta={
+                "old_token": token,
+                "doc_id": doc_id,
+                "resolved_path": str(src),
+                "reason": "analyze_start_failed",
+                "detail": str(e),
+            },
+        )
+        return _error_envelope("analyze_start_failed", 500)
+
     _audit(
-        "reextract", target=str(src), meta={"old_token": token, "new_token": new_token}
+        "reextract_ok",
+        target=str(src),
+        meta={
+            "old_token": token,
+            "new_token": new_token,
+            "doc_id": doc_id,
+            "resolved_path": str(src),
+        },
     )
-    return jsonify(token=new_token)
+    return jsonify(token=new_token, old_token=token)
 
 
 @APP.route("/api/index_fullscan", methods=["POST"])
