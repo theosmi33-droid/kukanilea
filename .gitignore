@@ -29,3 +29,6 @@ instance/*.db-shm
 *.db-shm
 nousage/
 reports/cleanup/*
+
+# local reports
+reports/zip_sync/*
