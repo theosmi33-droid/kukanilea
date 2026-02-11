@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
-from __future__ import annotations
+# -*- coding: utf-8 -*-
 
-import os
+from kukanilea_app import create_app
 
-from waitress import serve
+# Erzeuge die App-Instanz einmal und exportiere sie:
+app = create_app()
 
-from app import create_app
-
-
-def main() -> None:
-    app = create_app()
-    port = int(os.environ.get("PORT", str(app.config.get("PORT", 5051))))
-    serve(app, host="127.0.0.1", port=port)
-
-
+# Wenn dieser File direkt ausgeführt wird,
+# starte den Waitress-Server.
 if __name__ == "__main__":
-    main()
+    from waitress import serve
+    serve(app, host="127.0.0.1", port=5051)
