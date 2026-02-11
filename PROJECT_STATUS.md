@@ -46,3 +46,5 @@
    - Rebuild index → status updates.
    - Repair drift scan → status updates.
    - Test LLM → returns provider name and intent.
+
+- Cleanup-sync + MVP packaging hardening: pytest ZIP fallback without git, setuptools-based editable install, and fresh release verification flow documented in local reports.
