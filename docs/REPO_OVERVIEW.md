@@ -6,6 +6,7 @@ Quellen: `README.md`, `docs/ARCHITECTURE.md`, `PROJECT_STATUS.md`.
 
 ## Start / Betrieb
 - Haupt-Entry-Point: `python kukanilea_app.py` (delegiert auf `create_app()` in `app/__init__.py`).
+- Flask-CLI (Factory): `flask --app app run --port 5051`.
 - Alternative UIs/APIs im Repo:
   - `kukanilea_api.py` (minimal API/UI)
   - `kukanilea_upload.py` (Upload/Review UI)
@@ -52,9 +53,9 @@ Vollständige, aus dem Code extrahierte Liste liegt unter:
 ## Bekannte Punkte (aus Code/Tests)
 - OCR-Fallback hängt von lokal installierten System-Tools ab (README-Hinweis).
 - FS-Search-Fallback ist absichtlich standardmäßig deaktiviert und nur per DEV-Flag aktivierbar.
-- In den Tests gibt es derzeit Deprecation-Warnings (`datetime.utcnow()`), ohne Test-Fail.
+
 
 ## Nächste sichere Verbesserungen
-- Deprecation-Fix für UTC-Zeitverwendung in Agent-Scoring.
+
 - Weitere Bereinigung historischer, aber getrackter Legacy-Dateien nur nach expliziter Freigabe.
 - Env-Variablen-Dokumentation als stabile Tabelle in `docs/` verstetigen.
