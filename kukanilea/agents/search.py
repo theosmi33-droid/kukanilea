@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -56,7 +56,9 @@ def _score_hit(query: str, hit: Dict[str, Any]) -> float:
     if doc_date:
         parsed = _parse_doc_date(doc_date)
         if parsed:
-            days = (datetime.utcnow() - parsed).days
+            parsed = parsed.replace(tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            days = (now_utc - parsed).days
             if days <= 90:
                 score += 1.2
             elif days <= 365:
