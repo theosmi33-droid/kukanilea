@@ -3,7 +3,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-CONFLICT_MARKERS = ("<<<<<<< ", "=======", ">>>>>>> ")
 EXCLUDE_DIRS = {
     ".git",
     ".venv",
@@ -61,7 +60,11 @@ def _scan_text_files_for_markers(root: Path) -> list[str]:
         except OSError:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if line.startswith(CONFLICT_MARKERS):
+            if (
+                line.startswith("<<<<<<< ")
+                or line.startswith(">>>>>>> ")
+                or line == "======="
+            ):
                 hits.append(f"{rel.as_posix()}:{lineno}:{line}")
     return hits
 
