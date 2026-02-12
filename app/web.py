@@ -29,6 +29,7 @@ Notes:
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib
 import importlib.util
 import os
@@ -52,6 +53,9 @@ from flask import (
 
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
+from app.agents.retrieval_fts import upsert_external_fact
+from app.ai.knowledge import store_entity
+from app.ai.predictions import daily_report, predict_budget
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
@@ -156,6 +160,8 @@ time_entry_list = _core_get("time_entries_list")
 time_entry_update = _core_get("time_entry_update")
 time_entry_approve = _core_get("time_entry_approve")
 time_entries_export_csv = _core_get("time_entries_export_csv")
+time_entries_summary_by_task = _core_get("time_entries_summary_by_task")
+time_entries_summary_by_project = _core_get("time_entries_summary_by_project")
 
 # Guard minimum contract
 _missing = []
@@ -908,6 +914,8 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       <div class="mt-3 space-y-2">
         <label class="text-xs muted">Projekt</label>
         <select id="timeProject" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"></select>
+        <label class="text-xs muted">Task-ID (optional)</label>
+        <input id="timeTaskId" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. 42" />
         <label class="text-xs muted">Notiz</label>
         <input id="timeNote" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Baustelle Prüfen" />
         <div class="flex gap-2 pt-2">
@@ -922,6 +930,10 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       <div class="mt-3 space-y-2">
         <input id="projectName" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Projektname" />
         <textarea id="projectDesc" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" rows="3" placeholder="Beschreibung (optional)"></textarea>
+        <div class="grid grid-cols-2 gap-2">
+          <input id="projectBudgetHours" type="number" min="0" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Budget h" />
+          <input id="projectBudgetCost" type="number" min="0" step="0.01" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Budget €" />
+        </div>
         <button id="projectCreate" class="px-4 py-2 text-sm btn-outline w-full">Anlegen</button>
         <div id="projectStatus" class="muted text-xs pt-1"></div>
       </div>
@@ -944,6 +956,11 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       <div id="weekSummary" class="grid md:grid-cols-2 gap-3 mt-4"></div>
     </div>
     <div class="card p-4">
+      <div class="text-lg font-semibold">Budget-Fortschritt</div>
+      <div class="muted text-xs">Warnung ab 80% Verbrauch.</div>
+      <div id="projectBudget" class="mt-3 text-sm muted">Kein Projekt ausgewählt.</div>
+    </div>
+    <div class="card p-4">
       <div class="text-lg font-semibold">Einträge</div>
       <div class="muted text-xs">Klick auf „Bearbeiten“ für Korrekturen.</div>
       <div id="entryList" class="mt-4 space-y-3"></div>
@@ -955,15 +972,19 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   const role = "{{role}}";
   const timeProject = document.getElementById("timeProject");
   const timeNote = document.getElementById("timeNote");
+  const timeTaskId = document.getElementById("timeTaskId");
   const timeStart = document.getElementById("timeStart");
   const timeStop = document.getElementById("timeStop");
   const timeStatus = document.getElementById("timeStatus");
   const projectName = document.getElementById("projectName");
   const projectDesc = document.getElementById("projectDesc");
+  const projectBudgetHours = document.getElementById("projectBudgetHours");
+  const projectBudgetCost = document.getElementById("projectBudgetCost");
   const projectCreate = document.getElementById("projectCreate");
   const projectStatus = document.getElementById("projectStatus");
   const weekDate = document.getElementById("weekDate");
   const weekSummary = document.getElementById("weekSummary");
+  const projectBudget = document.getElementById("projectBudget");
   const entryList = document.getElementById("entryList");
   const exportWeek = document.getElementById("exportWeek");
 
@@ -971,6 +992,47 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     return `${h}h ${m}m`;
+  }
+
+  function toast(level, msg){
+    if(window.showToast){
+      window.showToast(level, msg);
+      return;
+    }
+    if(level === "error") alert(msg);
+  }
+
+  function renderBudget(summary){
+    if(!projectBudget) return;
+    if(!summary || !summary.project_id){
+      projectBudget.innerHTML = "<div class='muted text-sm'>Kein Projekt ausgewählt.</div>";
+      return;
+    }
+    const hPct = Math.max(0, Math.min(100, Number(summary.progress_hours_pct || 0)));
+    const cPct = Math.max(0, Math.min(100, Number(summary.progress_cost_pct || 0)));
+    const warn = summary.warning ? "<div class='text-amber-300 text-xs mt-2'>⚠ Budget >80% erreicht</div>" : "";
+    projectBudget.innerHTML = `
+      <div class="text-sm font-semibold mb-2">${summary.project_name || "Projekt"}</div>
+      <div class="muted text-xs">Stunden: ${summary.spent_hours || 0} / ${summary.budget_hours || 0}</div>
+      <div class="w-full bg-slate-800 rounded-full h-2 mt-1"><div class="h-2 rounded-full" style="width:${hPct}%; background:${hPct >= 80 ? '#f59e0b' : 'var(--accent-500)'}"></div></div>
+      <div class="muted text-xs mt-2">Kosten: €${summary.spent_cost || 0} / €${summary.budget_cost || 0}</div>
+      <div class="w-full bg-slate-800 rounded-full h-2 mt-1"><div class="h-2 rounded-full" style="width:${cPct}%; background:${cPct >= 80 ? '#f59e0b' : 'var(--accent-500)'}"></div></div>
+      ${warn}`;
+  }
+
+  async function loadProjectBudget(){
+    const pid = parseInt(timeProject.value || "0", 10);
+    if(!pid){
+      renderBudget(null);
+      return;
+    }
+    const res = await fetch(`/api/time/project/${pid}`, {credentials:"same-origin"});
+    const data = await res.json();
+    if(!res.ok){
+      renderBudget(null);
+      return;
+    }
+    renderBudget(data.summary || null);
   }
 
   function setStatus(msg, isError){
@@ -1052,15 +1114,18 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
 
   async function startTimer(){
     setStatus("Starte…", false);
-    const payload = {project_id: timeProject.value || null, note: timeNote.value || ""};
+    const payload = {project_id: timeProject.value || null, task_id: timeTaskId.value || null, note: timeNote.value || ""};
     const res = await fetch("/api/time/start", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
     const data = await res.json();
     if(!res.ok){
       setStatus(data.error?.message || "Fehler beim Start.", true);
+      toast("error", data.error?.message || "Fehler beim Start.");
       return;
     }
+    toast("success", "Timer gestartet.");
     timeNote.value = "";
     await loadEntries();
+    await loadProjectBudget();
   }
 
   async function stopTimer(){
@@ -1069,24 +1134,32 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     const data = await res.json();
     if(!res.ok){
       setStatus(data.error?.message || "Fehler beim Stoppen.", true);
+      toast("error", data.error?.message || "Fehler beim Stoppen.");
       return;
     }
+    toast("success", "Timer gestoppt.");
     await loadEntries();
+    await loadProjectBudget();
   }
 
   async function createProject(){
     projectStatus.textContent = "Speichern…";
-    const payload = {name: projectName.value || "", description: projectDesc.value || ""};
+    const payload = {name: projectName.value || "", description: projectDesc.value || "", budget_hours: parseInt(projectBudgetHours?.value || "0", 10) || 0, budget_cost: parseFloat(projectBudgetCost?.value || "0") || 0};
     const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
     const data = await res.json();
     if(!res.ok){
       projectStatus.textContent = data.error?.message || "Fehler beim Anlegen.";
+      toast("error", projectStatus.textContent);
       return;
     }
     projectName.value = "";
     projectDesc.value = "";
+    if(projectBudgetHours) projectBudgetHours.value = "";
+    if(projectBudgetCost) projectBudgetCost.value = "";
     projectStatus.textContent = "Projekt angelegt.";
+    toast("success", "Projekt angelegt.");
     await loadProjects();
+    await loadProjectBudget();
   }
 
   entryList.addEventListener("click", async (e) => {
@@ -1119,10 +1192,11 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   timeStart.addEventListener("click", startTimer);
   timeStop.addEventListener("click", stopTimer);
   projectCreate.addEventListener("click", createProject);
+  timeProject.addEventListener("change", loadProjectBudget);
 
   const today = new Date().toISOString().slice(0, 10);
   weekDate.value = today;
-  loadProjects().then(loadEntries);
+  loadProjects().then(loadEntries).then(loadProjectBudget);
 })();
 </script>
 """
@@ -1697,16 +1771,33 @@ def api_time_projects_create():
     payload = request.get_json(silent=True) or {}
     name = (payload.get("name") or "").strip()
     description = (payload.get("description") or "").strip()
+    budget_hours = int(payload.get("budget_hours") or 0)
+    budget_cost = float(payload.get("budget_cost") or 0.0)
     try:
         project = time_project_create(  # type: ignore
             tenant_id=current_tenant(),
             name=name,
             description=description,
+            budget_hours=budget_hours,
+            budget_cost=budget_cost,
             created_by=current_user() or "",
         )
     except ValueError as exc:
         return json_error(str(exc), "Projekt konnte nicht angelegt werden.", status=400)
     _rag_enqueue("time_project", int(project.get("id") or 0), "upsert")
+    try:
+        store_entity(
+            "project",
+            int(project.get("id") or 0),
+            f"{project.get('name','')} {project.get('description','')}",
+            {
+                "tenant_id": current_tenant(),
+                "budget_hours": int(project.get("budget_hours") or 0),
+                "budget_cost": float(project.get("budget_cost") or 0.0),
+            },
+        )
+    except Exception:
+        pass
     return jsonify(ok=True, project=project)
 
 
@@ -1720,12 +1811,15 @@ def api_time_start():
         )
     payload = request.get_json(silent=True) or {}
     project_id = payload.get("project_id")
+    task_id = payload.get("task_id")
     note = (payload.get("note") or "").strip()
     try:
         entry = time_entry_start(  # type: ignore
             tenant_id=current_tenant(),
             user=current_user() or "",
+            user_id=None,
             project_id=int(project_id) if project_id else None,
+            task_id=int(task_id) if task_id else None,
             note=note,
         )
     except ValueError as exc:
@@ -1754,6 +1848,59 @@ def api_time_stop():
         return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
     _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
+
+
+@bp.get("/api/time/task/<int:task_id>")
+@login_required
+def api_time_task(task_id: int):
+    if not callable(time_entries_summary_by_task):
+        return json_error(
+            "feature_unavailable", "Task-Zeitsummen sind nicht verfügbar.", status=501
+        )
+    try:
+        summary = time_entries_summary_by_task(
+            tenant_id=current_tenant(), task_id=int(task_id)
+        )  # type: ignore
+    except ValueError as exc:
+        return json_error(
+            str(exc), "Task-Summe konnte nicht geladen werden.", status=400
+        )
+    return jsonify(ok=True, summary=summary)
+
+
+@bp.post("/api/ai/daily-report")
+@login_required
+@require_role("DEV")
+def api_ai_daily_report():
+    try:
+        result = daily_report(tenant_id=current_tenant())
+    except Exception as exc:
+        return json_error(
+            "ai_report_failed", f"AI Report fehlgeschlagen: {exc}", status=500
+        )
+    return jsonify(ok=True, result=result)
+
+
+@bp.get("/api/time/project/<int:project_id>")
+@login_required
+def api_time_project_summary(project_id: int):
+    if not callable(time_entries_summary_by_project):
+        return json_error(
+            "feature_unavailable", "Projekt-Summen sind nicht verfügbar.", status=501
+        )
+    try:
+        summary = time_entries_summary_by_project(
+            tenant_id=current_tenant(), project_id=int(project_id)
+        )  # type: ignore
+    except ValueError as exc:
+        return json_error(
+            str(exc), "Projekt-Summe konnte nicht geladen werden.", status=400
+        )
+    try:
+        pred = predict_budget(int(project_id), tenant_id=current_tenant())
+    except Exception:
+        pred = None
+    return jsonify(ok=True, summary=summary, prediction=pred)
 
 
 @bp.get("/api/time/entries")
@@ -1806,6 +1953,8 @@ def api_time_entry_edit():
             project_id=(
                 int(payload.get("project_id")) if payload.get("project_id") else None
             ),
+            task_id=(int(payload.get("task_id")) if payload.get("task_id") else None),
+            user_id=(int(payload.get("user_id")) if payload.get("user_id") else None),
             start_at=(payload.get("start_at") or None),
             end_at=(payload.get("end_at") or None),
             note=payload.get("note"),
@@ -2615,6 +2764,42 @@ def review(token: str):
                             write_done(
                                 token, {"final_path": str(final_path), **answers}
                             )
+                            try:
+                                pk_like = int(
+                                    hashlib.sha256(token.encode("utf-8")).hexdigest()[
+                                        :12
+                                    ],
+                                    16,
+                                )
+                                fact_text = (
+                                    normalize_component(p.get("extracted_text") or "")
+                                    or f"{answers['doctype']} {Path(str(final_path)).name} KDNR {answers['kdnr']}"
+                                )
+                                upsert_external_fact(
+                                    "doc",
+                                    pk_like,
+                                    fact_text[:6000],
+                                    {
+                                        "path": str(final_path),
+                                        "doctype": answers["doctype"],
+                                        "kdnr": answers["kdnr"],
+                                        "token": token,
+                                    },
+                                )
+                                store_entity(
+                                    "document",
+                                    pk_like,
+                                    fact_text[:6000],
+                                    {
+                                        "tenant_id": current_tenant(),
+                                        "path": str(final_path),
+                                        "doctype": answers["doctype"],
+                                        "kdnr": answers["kdnr"],
+                                        "project_id": answers.get("kdnr", ""),
+                                    },
+                                )
+                            except Exception:
+                                pass
                             delete_pending(token)
                             return redirect(url_for("web.done_view", token=token))
                         except Exception as e:
@@ -2722,6 +2907,7 @@ def assistant():
 
 
 @bp.route("/tasks")
+@login_required
 def tasks():
     available = callable(task_list)
     if not available:
@@ -2731,13 +2917,143 @@ def tasks():
         </div>"""
         return _render_base(html, active_tab="tasks")
     try:
-        items = task_list(status="OPEN", limit=100)  # type: ignore
+        items = task_list(tenant=current_tenant(), status="OPEN", limit=200)  # type: ignore
     except Exception:
         items = []
-    html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
+    rows = []
+    for t in items:
+        tid = int(t.get("id") or 0)
+        rows.append(
+            f"<a class='block rounded-xl border border-slate-800 hover:border-slate-600 p-3' href='/tasks/{tid}'>"
+            f"<div class='text-sm font-semibold'>#{tid} {normalize_component(t.get('title') or '')}</div>"
+            f"<div class='muted text-xs'>Severity: {normalize_component(t.get('severity') or '')} · {normalize_component(t.get('task_type') or '')}</div>"
+            "</a>"
+        )
+    html = f"""<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
       <div class='text-lg font-semibold'>Tasks</div>
-      <div class='muted text-xs mt-1'>Offen: {n}</div>
-    </div>""".format(n=len(items))
+      <div class='muted text-xs mt-1'>Offen: {len(items)}</div>
+      <div class='mt-4 space-y-2'>{''.join(rows) or "<div class='muted text-sm'>Keine offenen Tasks.</div>"}</div>
+    </div>"""
+    return _render_base(html, active_tab="tasks")
+
+
+@bp.route("/tasks/<int:task_id>")
+@login_required
+def task_detail(task_id: int):
+    if not callable(task_list):
+        return _render_base(
+            _card("error", "Tasks sind nicht verfügbar."), active_tab="tasks"
+        )
+    try:
+        items = task_list(tenant=current_tenant(), status="OPEN", limit=500)  # type: ignore
+    except Exception:
+        items = []
+    task = next((t for t in items if int(t.get("id") or 0) == int(task_id)), None)
+    if not task:
+        return _render_base(_card("error", "Task nicht gefunden."), active_tab="tasks")
+
+    html = render_template_string(
+        """
+<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
+  <div class='text-lg font-semibold'>Task #{{task.id}} · {{task.title}}</div>
+  <div class='muted text-xs mt-1'>{{task.severity}} · {{task.task_type}}</div>
+  <div class='text-sm mt-3 whitespace-pre-wrap'>{{task.details}}</div>
+  <div class='mt-4 grid md:grid-cols-2 gap-3'>
+    <div>
+      <label class='muted text-xs'>Projekt-ID (optional)</label>
+      <input id='taskProjectId' class='w-full rounded-xl border p-2 input' placeholder='z.B. 1'>
+    </div>
+    <div>
+      <label class='muted text-xs'>Notiz</label>
+      <input id='taskTimeNote' class='w-full rounded-xl border p-2 input' placeholder='Arbeitszeit erfassen'>
+    </div>
+  </div>
+  <div class='mt-3 flex gap-2'>
+    <button id='taskTimerStart' class='rounded-xl px-4 py-2 font-semibold btn-primary'>Timer starten</button>
+    <button id='taskTimerStop' class='rounded-xl px-4 py-2 font-semibold btn-outline'>Timer stoppen</button>
+    <a class='rounded-xl px-4 py-2 font-semibold btn-outline' href='/tasks'>Zurück</a>
+  </div>
+  <div id='taskTimerMsg' class='muted text-xs mt-2'>Bereit.</div>
+  <div class='mt-4 rounded-xl border border-slate-800 p-3'>
+    <div class='text-sm font-semibold'>Gebuchte Zeit</div>
+    <div id='taskBooked' class='muted text-sm mt-1'>Lade…</div>
+  </div>
+</div>
+<script>
+(function(){
+  const taskId = {{task.id}};
+  const msg = document.getElementById('taskTimerMsg');
+  const booked = document.getElementById('taskBooked');
+  const projectId = document.getElementById('taskProjectId');
+  const note = document.getElementById('taskTimeNote');
+  const toast = (lvl, txt) => { if(window.showToast){ window.showToast(lvl, txt); } };
+
+  function setMsg(t, err){
+    msg.textContent = t;
+    msg.style.color = err ? '#f87171' : '';
+  }
+
+  async function refresh(){
+    const r = await fetch(`/api/time/task/${taskId}`, {credentials:'same-origin'});
+    const j = await r.json();
+    if(!r.ok){ booked.textContent = j.error?.message || 'Nicht verfügbar'; return; }
+    const s = j.summary || {};
+    booked.textContent = `${s.total_hours || 0}h (${s.total_seconds || 0}s) in ${s.total_entries || 0} Einträgen`;
+  }
+
+  async function start(){
+    setMsg('Starte Timer…', false);
+    const body = {
+      task_id: taskId,
+      project_id: projectId.value || null,
+      note: note.value || ''
+    };
+    const r = await fetch('/api/time/start', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if(!r.ok){
+      const m = j.error?.message || 'Start fehlgeschlagen';
+      setMsg(m, true);
+      toast('error', m);
+      return;
+    }
+    setMsg('Timer läuft.', false);
+    toast('success', 'Timer gestartet');
+    refresh();
+  }
+
+  async function stop(){
+    setMsg('Stoppe Timer…', false);
+    const r = await fetch('/api/time/stop', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({})
+    });
+    const j = await r.json();
+    if(!r.ok){
+      const m = j.error?.message || 'Stop fehlgeschlagen';
+      setMsg(m, true);
+      toast('error', m);
+      return;
+    }
+    setMsg('Timer gestoppt.', false);
+    toast('success', 'Timer gestoppt');
+    refresh();
+  }
+
+  document.getElementById('taskTimerStart').addEventListener('click', start);
+  document.getElementById('taskTimerStop').addEventListener('click', stop);
+  refresh();
+})();
+</script>
+        """,
+        task=task,
+    )
     return _render_base(html, active_tab="tasks")
 
 

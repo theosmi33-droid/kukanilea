@@ -10,3 +10,7 @@ cryptography
 pyinstaller
 dmgbuild
 pip-audit
+chromadb
+ollama
+sentence-transformers
+apscheduler

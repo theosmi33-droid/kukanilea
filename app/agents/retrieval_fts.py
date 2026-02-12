@@ -416,3 +416,29 @@ def search(query: str, limit: int = 6) -> List[Dict[str, Any]]:
         return out
     finally:
         con.close()
+
+
+def upsert_external_fact(
+    kind: str, pk: int, content: str, meta: Dict[str, Any]
+) -> None:
+    """Upsert an external fact (e.g. archived document) into retrieval index."""
+    if not kind or int(pk) <= 0:
+        return
+    ensure_schema()
+    con = _connect(get_index_db_path())
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        _bootstrap_if_needed(con)
+        safe_meta = dict(meta or {})
+        safe_meta.setdefault("kind", str(kind))
+        safe_meta.setdefault("pk", int(pk))
+        _upsert_fact(
+            con,
+            kind=str(kind),
+            pk=int(pk),
+            content=str(content or "").strip() or f"{kind} #{int(pk)}",
+            meta=safe_meta,
+        )
+        con.commit()
+    finally:
+        con.close()
