@@ -50,6 +50,8 @@ from flask import (
     url_for,
 )
 
+from app.agents.orchestrator import answer as agent_answer
+from app.agents.retrieval_fts import enqueue as rag_enqueue
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
@@ -412,6 +414,13 @@ def _wizard_get(p: dict) -> dict:
 def _wizard_save(token: str, p: dict, w: dict) -> None:
     p["wizard"] = w
     write_pending(token, p)
+
+
+def _rag_enqueue(kind: str, pk: int, op: str) -> None:
+    try:
+        rag_enqueue(kind, int(pk), op)
+    except Exception:
+        pass
 
 
 def _card(kind: str, msg: str) -> str:
@@ -1546,44 +1555,22 @@ def _mock_generate(prompt: str) -> str:
 @bp.route("/api/chat", methods=["POST"])
 @login_required
 def api_chat():
-    """
-    JSON in:
-      { "q": "...", "kdnr": "1234" (optional), "token": "..." (optional) }
-
-    JSON out:
-      { ok: true, message: "...", results: [...], actions: [...], debug: {...} }
-    """
     payload = request.get_json(silent=True) or {}
-    q = (payload.get("q") or "").strip()
-    kdnr = (payload.get("kdnr") or "").strip()
-    token = (payload.get("token") or "").strip()
+    msg = (
+        (payload.get("msg") if isinstance(payload, dict) else None)
+        or (payload.get("q") if isinstance(payload, dict) else None)
+        or request.form.get("msg")
+        or request.form.get("q")
+        or ""
+    ).strip()
 
-    if not q:
+    if not msg:
         return json_error("empty_query", "Leer.", status=400)
 
-    user = current_user() or "dev"
-    role = current_role()
-    context = AgentContext(
-        tenant_id=current_tenant(),
-        user=str(user),
-        role=str(role),
-        kdnr=kdnr,
-        token=token,
-    )
-    result = ORCHESTRATOR.handle(q, context)
-    payload_out = {
-        "ok": result.ok,
-        "message": result.text,
-        "suggestions": result.suggestions or [],
-        "results": (
-            result.data.get("results", []) if isinstance(result.data, dict) else []
-        ),
-        "actions": result.actions,
-        "error": result.error,
-    }
-    if current_role() == "DEV":
-        payload_out["debug"] = {"intent": result.intent, "data": result.data}
-    return jsonify(payload_out)
+    response = agent_answer(msg)
+    if request.headers.get("HX-Request"):
+        return f"<div class='text-sm'>{response.get('text','')}</div>"
+    return jsonify(response)
 
 
 @bp.post("/api/search")
@@ -1719,6 +1706,7 @@ def api_time_projects_create():
         )
     except ValueError as exc:
         return json_error(str(exc), "Projekt konnte nicht angelegt werden.", status=400)
+    _rag_enqueue("time_project", int(project.get("id") or 0), "upsert")
     return jsonify(ok=True, project=project)
 
 
@@ -1742,6 +1730,7 @@ def api_time_start():
         )
     except ValueError as exc:
         return json_error(str(exc), "Timer konnte nicht gestartet werden.", status=400)
+    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
 
 
@@ -1763,6 +1752,7 @@ def api_time_stop():
         )
     except ValueError as exc:
         return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
+    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
 
 
@@ -1825,6 +1815,7 @@ def api_time_entry_edit():
         return json_error(
             str(exc), "Eintrag konnte nicht aktualisiert werden.", status=400
         )
+    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
 
 
@@ -1850,6 +1841,7 @@ def api_time_entry_approve():
         return json_error(
             str(exc), "Eintrag konnte nicht freigegeben werden.", status=400
         )
+    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
 
 
