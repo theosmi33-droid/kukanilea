@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Optional, Type
 
 from pydantic import BaseModel, Field, ValidationError
 
+from app.ai.knowledge import store_entity
 from app.config import Config
 
 from . import retrieval_fts
@@ -62,6 +63,19 @@ def _create_task_handler(
         )
     )
     retrieval_fts.enqueue("task", task_id, "upsert")
+    try:
+        store_entity(
+            "task",
+            task_id,
+            f"{args.title} {args.details}",
+            {
+                "tenant_id": tenant_id,
+                "severity": args.severity,
+                "task_type": args.task_type,
+            },
+        )
+    except Exception:
+        pass
     return {"task_id": task_id}
 
 

@@ -4,6 +4,7 @@ import os
 
 from flask import Flask, request
 
+from .ai import init_ai
 from .auth import init_auth
 from .config import Config
 from .db import AuthDB
@@ -84,4 +85,8 @@ def create_app() -> Flask:
                 web.core.index_warmup(tenant_id=app.config.get("TENANT_DEFAULT", ""))
         except Exception:
             pass
+    try:
+        init_ai(app)
+    except Exception:
+        pass
     return app

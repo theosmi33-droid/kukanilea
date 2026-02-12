@@ -598,6 +598,8 @@ def db_init() -> None:
                   name TEXT NOT NULL,
                   description TEXT,
                   status TEXT NOT NULL DEFAULT 'ACTIVE',
+                  budget_hours INTEGER NOT NULL DEFAULT 0,
+                  budget_cost REAL NOT NULL DEFAULT 0,
                   created_by TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
@@ -614,17 +616,23 @@ def db_init() -> None:
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   tenant_id TEXT NOT NULL,
                   project_id INTEGER,
+                  task_id INTEGER,
+                  user_id INTEGER,
                   user TEXT NOT NULL,
                   start_at TEXT NOT NULL,
                   end_at TEXT,
+                  start_time TEXT,
+                  end_time TEXT,
                   duration_seconds INTEGER,
+                  duration INTEGER,
                   note TEXT,
                   approval_status TEXT NOT NULL DEFAULT 'PENDING',
                   approved_by TEXT,
                   approved_at TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL,
-                  FOREIGN KEY(project_id) REFERENCES time_projects(id) ON DELETE SET NULL
+                  FOREIGN KEY(project_id) REFERENCES time_projects(id) ON DELETE SET NULL,
+                  FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE SET NULL
                 );
                 """
             )
@@ -639,6 +647,47 @@ def db_init() -> None:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_time_entries_running
                 ON time_entries(tenant_id, user)
                 WHERE end_at IS NULL;
+                """
+            )
+            _ensure_column(
+                con, "time_projects", "budget_hours", "INTEGER NOT NULL DEFAULT 0"
+            )
+            _ensure_column(
+                con, "time_projects", "budget_cost", "REAL NOT NULL DEFAULT 0"
+            )
+            _ensure_column(con, "time_entries", "task_id", "INTEGER")
+            _ensure_column(con, "time_entries", "user_id", "INTEGER")
+            _ensure_column(con, "time_entries", "start_time", "TEXT")
+            _ensure_column(con, "time_entries", "end_time", "TEXT")
+            _ensure_column(con, "time_entries", "duration", "INTEGER")
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_predictions(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT,
+                  project_id INTEGER NOT NULL,
+                  predicted_hours REAL,
+                  predicted_cost REAL,
+                  deviation_ratio REAL,
+                  llm_summary TEXT,
+                  meta_json TEXT,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_insights(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT,
+                  project_id INTEGER,
+                  insight_type TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  message TEXT NOT NULL,
+                  meta_json TEXT,
+                  created_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -1076,12 +1125,16 @@ def time_project_create(
     tenant_id: str,
     name: str,
     description: str = "",
+    budget_hours: int = 0,
+    budget_cost: float = 0.0,
     created_by: str = "",
 ) -> Dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     name = normalize_component(name)
     description = (description or "").strip()
     created_by = normalize_component(created_by).lower()
+    budget_hours = max(0, int(budget_hours or 0))
+    budget_cost = max(0.0, float(budget_cost or 0.0))
     if not name:
         raise ValueError("project_name_required")
 
@@ -1092,10 +1145,23 @@ def time_project_create(
         try:
             cur = con.execute(
                 """
-                INSERT INTO time_projects(tenant_id, name, description, status, created_by, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?)
+                INSERT INTO time_projects(
+                    tenant_id, name, description, status, budget_hours, budget_cost,
+                    created_by, created_at, updated_at
+                )
+                VALUES (?,?,?,?,?,?,?,?,?)
                 """,
-                (tenant_id, name, description, "ACTIVE", created_by, now, now),
+                (
+                    tenant_id,
+                    name,
+                    description,
+                    "ACTIVE",
+                    budget_hours,
+                    budget_cost,
+                    created_by,
+                    now,
+                    now,
+                ),
             )
             con.commit()
             project_id = int(cur.lastrowid or 0)
@@ -1106,7 +1172,7 @@ def time_project_create(
         role="SYSTEM",
         action="TIME_PROJECT_CREATE",
         target=str(project_id),
-        meta={"name": name},
+        meta={"name": name, "budget_hours": budget_hours, "budget_cost": budget_cost},
         tenant_id=tenant_id,
     )
     return {
@@ -1115,6 +1181,8 @@ def time_project_create(
         "name": name,
         "description": description,
         "status": "ACTIVE",
+        "budget_hours": budget_hours,
+        "budget_cost": budget_cost,
         "created_by": created_by,
         "created_at": now,
         "updated_at": now,
@@ -1154,11 +1222,25 @@ def _time_project_lookup(
     return dict(row) if row else None
 
 
+def _task_lookup(
+    con: sqlite3.Connection, tenant_id: str, task_id: Optional[int]
+) -> Optional[dict]:
+    if task_id is None:
+        return None
+    row = con.execute(
+        "SELECT * FROM tasks WHERE id=? AND LOWER(tenant)=LOWER(?)",
+        (int(task_id), tenant_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def time_entry_start(
     *,
     tenant_id: str,
     user: str,
     project_id: Optional[int] = None,
+    task_id: Optional[int] = None,
+    user_id: Optional[int] = None,
     note: str = "",
     started_at: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1177,6 +1259,8 @@ def time_entry_start(
                 con, tenant_id, project_id
             ):
                 raise ValueError("project_not_found")
+            if task_id is not None and not _task_lookup(con, tenant_id, task_id):
+                raise ValueError("task_not_found")
             row = con.execute(
                 "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL",
                 (tenant_id, user),
@@ -1186,16 +1270,23 @@ def time_entry_start(
             cur = con.execute(
                 """
                 INSERT INTO time_entries(
-                    tenant_id, project_id, user, start_at, end_at, duration_seconds, note,
+                    tenant_id, project_id, task_id, user_id, user,
+                    start_at, end_at, start_time, end_time,
+                    duration_seconds, duration, note,
                     approval_status, created_at, updated_at
                 )
-                VALUES (?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     tenant_id,
                     project_id,
+                    task_id,
+                    user_id,
                     user,
                     now,
+                    None,
+                    now,
+                    None,
                     None,
                     None,
                     note,
@@ -1213,7 +1304,7 @@ def time_entry_start(
         role="OPERATOR",
         action="TIME_ENTRY_START",
         target=str(entry_id),
-        meta={"project_id": project_id or ""},
+        meta={"project_id": project_id or "", "task_id": task_id or ""},
         tenant_id=tenant_id,
     )
     return time_entry_get(tenant_id=tenant_id, entry_id=entry_id) or {}
@@ -1226,9 +1317,10 @@ def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]
         try:
             row = con.execute(
                 """
-                SELECT te.*, tp.name AS project_name
+                SELECT te.*, tp.name AS project_name, t.title AS task_title
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
+                LEFT JOIN tasks t ON t.id = te.task_id
                 WHERE te.tenant_id=? AND te.id=?
                 """,
                 (tenant_id, int(entry_id)),
@@ -1244,6 +1336,9 @@ def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]
                 entry["duration_seconds"] = _duration_seconds(
                     entry["start_at"], _now_iso()
                 )
+            entry["start_time"] = entry.get("start_time") or entry.get("start_at")
+            entry["end_time"] = entry.get("end_time") or entry.get("end_at")
+            entry["duration"] = entry.get("duration") or entry.get("duration_seconds")
             return entry
         finally:
             con.close()
@@ -1290,10 +1385,18 @@ def time_entry_stop(
             con.execute(
                 """
                 UPDATE time_entries
-                SET end_at=?, duration_seconds=?, updated_at=?
+                SET end_at=?, end_time=?, duration_seconds=?, duration=?, updated_at=?
                 WHERE id=? AND tenant_id=?
                 """,
-                (end_ts, duration, _now_iso(), int(row["id"]), tenant_id),
+                (
+                    end_ts,
+                    end_ts,
+                    duration,
+                    duration,
+                    _now_iso(),
+                    int(row["id"]),
+                    tenant_id,
+                ),
             )
             con.commit()
             stopped_id = int(row["id"])
@@ -1315,6 +1418,8 @@ def time_entry_update(
     tenant_id: str,
     entry_id: int,
     project_id: Optional[int] = None,
+    task_id: Optional[int] = None,
+    user_id: Optional[int] = None,
     start_at: Optional[str] = None,
     end_at: Optional[str] = None,
     note: Optional[str] = None,
@@ -1336,6 +1441,8 @@ def time_entry_update(
                 con, tenant_id, project_id
             ):
                 raise ValueError("project_not_found")
+            if task_id is not None and not _task_lookup(con, tenant_id, task_id):
+                raise ValueError("task_not_found")
             start_val = start_at or row["start_at"]
             end_val = end_at if end_at is not None else row["end_at"]
             duration_val = None
@@ -1346,13 +1453,21 @@ def time_entry_update(
             con.execute(
                 """
                 UPDATE time_entries
-                SET project_id=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
+                SET project_id=?, task_id=?, user_id=?,
+                    start_at=?, start_time=?,
+                    end_at=?, end_time=?,
+                    duration_seconds=?, duration=?, note=?, updated_at=?
                 WHERE id=? AND tenant_id=?
                 """,
                 (
                     project_id if project_id is not None else row["project_id"],
+                    task_id if task_id is not None else row["task_id"],
+                    user_id if user_id is not None else row["user_id"],
+                    start_val,
                     start_val,
                     end_val,
+                    end_val,
+                    duration_val,
                     duration_val,
                     note if note is not None else row["note"],
                     _now_iso(),
@@ -1368,7 +1483,11 @@ def time_entry_update(
         role="OPERATOR",
         action="TIME_ENTRY_EDIT",
         target=str(entry_id),
-        meta={"project_id": project_id or "", "note_changed": note is not None},
+        meta={
+            "project_id": project_id or "",
+            "task_id": task_id or "",
+            "note_changed": note is not None,
+        },
         tenant_id=tenant_id,
     )
     return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
@@ -1443,9 +1562,10 @@ def time_entries_list(
         try:
             rows = con.execute(
                 f"""
-                SELECT te.*, tp.name AS project_name
+                SELECT te.*, tp.name AS project_name, t.title AS task_title
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
+                LEFT JOIN tasks t ON t.id = te.task_id
                 WHERE {where_sql}
                 ORDER BY te.start_at DESC
                 LIMIT ?
@@ -1463,7 +1583,159 @@ def time_entries_list(
                     entry["duration_seconds"] = _duration_seconds(
                         entry["start_at"], now
                     )
+                entry["start_time"] = entry.get("start_time") or entry.get("start_at")
+                entry["end_time"] = entry.get("end_time") or entry.get("end_at")
+                entry["duration"] = entry.get("duration") or entry.get(
+                    "duration_seconds"
+                )
             return entries
+        finally:
+            con.close()
+
+
+def time_entries_summary_by_task(*, tenant_id: str, task_id: int) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                """
+                SELECT COALESCE(SUM(COALESCE(duration_seconds, duration, 0)), 0) AS total_seconds,
+                       COUNT(*) AS total_entries
+                FROM time_entries
+                WHERE tenant_id=? AND task_id=?
+                """,
+                (tenant_id, int(task_id)),
+            ).fetchone()
+            total_seconds = int((row["total_seconds"] if row else 0) or 0)
+            total_entries = int((row["total_entries"] if row else 0) or 0)
+            return {
+                "tenant_id": tenant_id,
+                "task_id": int(task_id),
+                "total_entries": total_entries,
+                "total_seconds": total_seconds,
+                "total_hours": round(total_seconds / 3600.0, 2),
+            }
+        finally:
+            con.close()
+
+
+def time_entries_summary_by_project(
+    *, tenant_id: str, project_id: int
+) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                """
+                SELECT p.id, p.name, p.budget_hours, p.budget_cost,
+                       COALESCE(SUM(COALESCE(te.duration_seconds, te.duration, 0)), 0) AS total_seconds
+                FROM time_projects p
+                LEFT JOIN time_entries te ON te.project_id = p.id AND te.tenant_id = p.tenant_id
+                WHERE p.tenant_id=? AND p.id=?
+                GROUP BY p.id, p.name, p.budget_hours, p.budget_cost
+                """,
+                (tenant_id, int(project_id)),
+            ).fetchone()
+            if not row:
+                raise ValueError("project_not_found")
+            total_seconds = int(row["total_seconds"] or 0)
+            total_hours = round(total_seconds / 3600.0, 2)
+            budget_hours = int(row["budget_hours"] or 0)
+            budget_cost = float(row["budget_cost"] or 0.0)
+            pct_hours = (
+                min(100.0, (total_hours / budget_hours) * 100.0)
+                if budget_hours > 0
+                else 0.0
+            )
+            pct_cost = pct_hours if budget_cost > 0 else 0.0
+            return {
+                "tenant_id": tenant_id,
+                "project_id": int(project_id),
+                "project_name": str(row["name"] or ""),
+                "budget_hours": budget_hours,
+                "budget_cost": budget_cost,
+                "spent_hours": total_hours,
+                "spent_cost": round((total_hours / budget_hours) * budget_cost, 2)
+                if budget_hours > 0
+                else 0.0,
+                "progress_hours_pct": round(pct_hours, 2),
+                "progress_cost_pct": round(pct_cost, 2),
+                "warning": bool(pct_hours >= 80.0 or pct_cost >= 80.0),
+            }
+        finally:
+            con.close()
+
+
+def ai_prediction_add(
+    *,
+    tenant_id: str,
+    project_id: int,
+    predicted_hours: float,
+    predicted_cost: float,
+    deviation_ratio: float,
+    llm_summary: str,
+    meta_json: str,
+) -> int:
+    tenant_id = _time_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            cur = con.execute(
+                """
+                INSERT INTO ai_predictions(
+                  tenant_id, project_id, predicted_hours, predicted_cost,
+                  deviation_ratio, llm_summary, meta_json, created_at
+                ) VALUES (?,?,?,?,?,?,?,?)
+                """,
+                (
+                    tenant_id,
+                    int(project_id),
+                    float(predicted_hours or 0.0),
+                    float(predicted_cost or 0.0),
+                    float(deviation_ratio or 0.0),
+                    llm_summary or "",
+                    meta_json or "{}",
+                    _now_iso(),
+                ),
+            )
+            con.commit()
+            return int(cur.lastrowid or 0)
+        finally:
+            con.close()
+
+
+def ai_insight_add(
+    *,
+    tenant_id: str,
+    project_id: Optional[int],
+    insight_type: str,
+    title: str,
+    message: str,
+    meta_json: str,
+) -> int:
+    tenant_id = _time_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            cur = con.execute(
+                """
+                INSERT INTO ai_insights(tenant_id, project_id, insight_type, title, message, meta_json, created_at)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    tenant_id,
+                    int(project_id) if project_id is not None else None,
+                    normalize_component(insight_type) or "info",
+                    title or "Insight",
+                    message or "",
+                    meta_json or "{}",
+                    _now_iso(),
+                ),
+            )
+            con.commit()
+            return int(cur.lastrowid or 0)
         finally:
             con.close()
 
