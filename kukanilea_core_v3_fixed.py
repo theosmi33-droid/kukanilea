@@ -693,6 +693,63 @@ def db_init() -> None:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS events(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ts TEXT NOT NULL,
+                  event_type TEXT NOT NULL,
+                  entity_type TEXT NOT NULL,
+                  entity_id INTEGER NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  prev_hash TEXT NOT NULL,
+                  hash TEXT NOT NULL UNIQUE
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id, id DESC);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ontology_types(
+                  type_name TEXT PRIMARY KEY,
+                  table_name TEXT NOT NULL,
+                  pk_field TEXT NOT NULL DEFAULT 'id',
+                  title_field TEXT,
+                  description_field TEXT,
+                  created_at TEXT
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS derived_active_timers(
+                  user_id INTEGER PRIMARY KEY,
+                  task_id INTEGER NOT NULL,
+                  start_time TEXT NOT NULL,
+                  last_event_id INTEGER
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS derived_budget_progress(
+                  project_id INTEGER PRIMARY KEY,
+                  total_hours REAL,
+                  total_cost REAL,
+                  budget_hours REAL,
+                  budget_cost REAL,
+                  hours_percent REAL,
+                  cost_percent REAL,
+                  last_event_id INTEGER
+                );
+                """
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS review_locks(
                   token TEXT PRIMARY KEY,
                   tenant TEXT NOT NULL,
