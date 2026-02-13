@@ -1,12 +1,12 @@
 {
   "meta": {
-    "created_at_utc": "2026-02-13T13:11:44+00:00",
-    "git_commit": "232f238",
+    "created_at_utc": "2026-02-13T20:22:03+00:00",
+    "git_commit": "ad30e4d",
     "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
     "python_version": "3.14.2 (main, Jan 21 2026, 12:57:48) [Clang 17.0.0 (clang-1700.6.3.2)]"
   },
   "metrics": {
-    "event_verify_chain_synth_2000": 0.004658959005610086,
-    "recompute_task_duration_synth": 0.006068874994525686
+    "event_verify_chain_synth_2000": 0.004500541996094398,
+    "recompute_task_duration_synth": 0.005665999997290783
   }
 }
