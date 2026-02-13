@@ -23,7 +23,7 @@ def _wire_runtime_env(app: Flask) -> None:
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__, template_folder="../templates", static_folder="../static")
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)

@@ -1,0 +1,54 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold">CRM · Deals Pipeline</h1>
+    <a class="btn-outline px-3 py-2 text-sm" href="/crm/customers">Kunden</a>
+  </div>
+
+  {% if read_only %}{% include 'crm/partials/read_only_banner.html' %}{% endif %}
+
+  <div class="card p-4 space-y-3">
+    <form id="dealSearch" hx-get="/crm/_deals_pipeline" hx-target="#pipelineWrap" hx-swap="innerHTML" class="grid gap-2 md:grid-cols-3">
+      <input class="input px-3 py-2 text-sm" type="text" name="q" value="{{ q }}" placeholder="Suche Deal/Kunde">
+      <select class="input px-3 py-2 text-sm" name="stage">
+        <option value="">Alle Stages</option>
+        {% for st in stages %}<option value="{{ st }}">{{ st }}</option>{% endfor %}
+      </select>
+      <button class="btn-outline px-3 py-2 text-sm" type="submit">Filtern</button>
+    </form>
+
+    <form id="dealCreateForm" class="grid gap-2 md:grid-cols-6">
+      <input class="input px-3 py-2 text-sm md:col-span-2" name="customer_id" placeholder="customer_id" {% if read_only %}disabled{% endif %} required>
+      <input class="input px-3 py-2 text-sm md:col-span-2" name="title" placeholder="Deal Titel" {% if read_only %}disabled{% endif %} required>
+      <select class="input px-3 py-2 text-sm" name="stage" {% if read_only %}disabled{% endif %}>
+        {% for st in stages %}<option value="{{ st }}">{{ st }}</option>{% endfor %}
+      </select>
+      <input class="input px-3 py-2 text-sm" name="value_cents" type="number" min="0" placeholder="Wert (cents)" {% if read_only %}disabled{% endif %}>
+      <button class="btn-primary px-3 py-2 text-sm md:col-span-6" type="submit" {% if read_only %}disabled{% endif %}>Deal anlegen</button>
+    </form>
+  </div>
+
+  <div id="pipelineWrap">{% include 'crm/partials/deals_pipeline.html' %}</div>
+</div>
+
+<script>
+(function(){
+  const form = document.getElementById('dealCreateForm');
+  if (!form) return;
+  form.addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    const body = Object.fromEntries(new FormData(form).entries());
+    const res = await fetch('/api/deals', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(res.ok){
+      form.reset();
+      document.getElementById('dealSearch')?.dispatchEvent(new Event('submit', {cancelable:true,bubbles:true}));
+    } else {
+      const j = await res.json().catch(()=>({}));
+      alert((j.error && j.error.message) || 'Fehler beim Anlegen');
+    }
+  });
+})();
+</script>
