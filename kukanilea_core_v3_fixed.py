@@ -31,12 +31,14 @@ import sqlite3
 import threading
 import time
 import unicodedata
+import uuid
 import zipfile
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from difflib import SequenceMatcher
 from email import policy
 from email.parser import BytesParser
+from email.utils import getaddresses, parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -532,6 +534,8 @@ def _column_exists(con: sqlite3.Connection, table: str, column: str) -> bool:
 def _ensure_column(
     con: sqlite3.Connection, table: str, column: str, col_type: str
 ) -> None:
+    if not _table_exists(con, table):
+        return
     if not _column_exists(con, table, column):
         con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
@@ -685,6 +689,8 @@ def db_init() -> None:
             _ensure_column(con, "time_entries", "start_time", "TEXT")
             _ensure_column(con, "time_entries", "end_time", "TEXT")
             _ensure_column(con, "time_entries", "duration", "INTEGER")
+            _ensure_column(con, "tasks", "project_id", "INTEGER")
+            _ensure_column(con, "deals", "project_id", "INTEGER")
 
             con.execute(
                 """
@@ -751,6 +757,135 @@ def db_init() -> None:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status, fetched_at DESC);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS customers(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  vat_id TEXT,
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS contacts(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  customer_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  email TEXT,
+                  phone TEXT,
+                  role TEXT,
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(customer_id) REFERENCES customers(id)
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_contacts_tenant_customer ON contacts(tenant_id, customer_id);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS deals(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  customer_id TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  stage TEXT NOT NULL,
+                  project_id INTEGER,
+                  value_cents INTEGER,
+                  currency TEXT DEFAULT 'EUR',
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(customer_id) REFERENCES customers(id)
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_deals_tenant_stage ON deals(tenant_id, stage);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS quotes(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  customer_id TEXT NOT NULL,
+                  deal_id TEXT,
+                  status TEXT NOT NULL,
+                  currency TEXT NOT NULL DEFAULT 'EUR',
+                  subtotal_cents INTEGER NOT NULL DEFAULT 0,
+                  tax_cents INTEGER NOT NULL DEFAULT 0,
+                  total_cents INTEGER NOT NULL DEFAULT 0,
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(customer_id) REFERENCES customers(id),
+                  FOREIGN KEY(deal_id) REFERENCES deals(id)
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quotes_tenant_customer ON quotes(tenant_id, customer_id);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS quote_items(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  quote_id TEXT NOT NULL,
+                  description TEXT NOT NULL,
+                  qty REAL NOT NULL DEFAULT 1,
+                  unit_price_cents INTEGER NOT NULL DEFAULT 0,
+                  line_total_cents INTEGER NOT NULL DEFAULT 0,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(quote_id) REFERENCES quotes(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quote_items_tenant_quote ON quote_items(tenant_id, quote_id);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS emails_cache(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  customer_id TEXT,
+                  contact_id TEXT,
+                  message_id TEXT,
+                  from_addr TEXT,
+                  to_addrs TEXT,
+                  subject TEXT,
+                  received_at TEXT,
+                  body_text TEXT,
+                  raw_eml BLOB NOT NULL,
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(customer_id) REFERENCES customers(id),
+                  FOREIGN KEY(contact_id) REFERENCES contacts(id)
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emails_tenant_received ON emails_cache(tenant_id, received_at DESC);"
             )
 
             con.execute(
@@ -4249,6 +4384,840 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     )
 
     return folder, target, created_new_object
+
+
+def _crm_tenant(tenant_id: str) -> str:
+    return (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
+
+
+def _crm_new_id() -> str:
+    return uuid.uuid4().hex
+
+
+def _crm_event_id(entity_id: str) -> int:
+    h = hashlib.sha256((entity_id or "").encode("utf-8")).hexdigest()[:15]
+    return max(1, int(h, 16))
+
+
+def _row_dict(row: sqlite3.Row | None) -> Dict[str, Any]:
+    return dict(row) if row else {}
+
+
+def _crm_require_customer(
+    con: sqlite3.Connection, tenant_id: str, customer_id: str
+) -> None:
+    row = con.execute(
+        "SELECT id FROM customers WHERE id=? AND tenant_id=?",
+        (customer_id, tenant_id),
+    ).fetchone()
+    if not row:
+        raise ValueError("customer_not_found")
+
+
+def _crm_require_contact(
+    con: sqlite3.Connection, tenant_id: str, contact_id: str
+) -> None:
+    row = con.execute(
+        "SELECT id FROM contacts WHERE id=? AND tenant_id=?",
+        (contact_id, tenant_id),
+    ).fetchone()
+    if not row:
+        raise ValueError("contact_not_found")
+
+
+def _crm_require_deal(
+    con: sqlite3.Connection, tenant_id: str, deal_id: str
+) -> Dict[str, Any]:
+    row = con.execute(
+        "SELECT * FROM deals WHERE id=? AND tenant_id=?",
+        (deal_id, tenant_id),
+    ).fetchone()
+    if not row:
+        raise ValueError("deal_not_found")
+    return dict(row)
+
+
+def _crm_quote_items(
+    con: sqlite3.Connection, tenant_id: str, quote_id: str
+) -> List[Dict[str, Any]]:
+    rows = con.execute(
+        """
+        SELECT id, quote_id, description, qty, unit_price_cents, line_total_cents, created_at, updated_at
+        FROM quote_items
+        WHERE tenant_id=? AND quote_id=?
+        ORDER BY created_at, id
+        """,
+        (tenant_id, quote_id),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def customers_create(
+    tenant_id: str,
+    name: str,
+    vat_id: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> str:
+    tenant_id = _crm_tenant(tenant_id)
+    name = normalize_component(name)
+    if not name:
+        raise ValueError("name_required")
+    customer_id = _crm_new_id()
+    now = _now_iso()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            con.execute(
+                """
+                INSERT INTO customers(id, tenant_id, name, vat_id, notes, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    customer_id,
+                    tenant_id,
+                    name,
+                    normalize_component(vat_id),
+                    normalize_component(notes),
+                    now,
+                    now,
+                ),
+            )
+            event_append(
+                event_type="crm_customer",
+                entity_type="customer",
+                entity_id=_crm_event_id(customer_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "customer",
+                    "entity_id": customer_id,
+                    "action": "created",
+                    "name": name,
+                },
+                con=con,
+            )
+            con.commit()
+            return customer_id
+        finally:
+            con.close()
+
+
+def customers_get(tenant_id: str, customer_id: str) -> Dict[str, Any]:
+    tenant_id = _crm_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                "SELECT * FROM customers WHERE tenant_id=? AND id=?",
+                (tenant_id, customer_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("customer_not_found")
+            return dict(row)
+        finally:
+            con.close()
+
+
+def customers_list(
+    tenant_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    query: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    tenant_id = _crm_tenant(tenant_id)
+    limit = max(1, min(int(limit), 500))
+    offset = max(0, int(offset))
+    q = normalize_component(query)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if q:
+                rows = con.execute(
+                    """
+                    SELECT * FROM customers
+                    WHERE tenant_id=? AND (LOWER(name) LIKE LOWER(?) OR LOWER(COALESCE(vat_id,'')) LIKE LOWER(?))
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (tenant_id, f"%{q}%", f"%{q}%", limit, offset),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    """
+                    SELECT * FROM customers
+                    WHERE tenant_id=?
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (tenant_id, limit, offset),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+
+def customers_update(
+    tenant_id: str,
+    customer_id: str,
+    *,
+    name: Optional[str] = None,
+    vat_id: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id = _crm_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                "SELECT * FROM customers WHERE id=? AND tenant_id=?",
+                (customer_id, tenant_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("customer_not_found")
+            new_name = (
+                normalize_component(name)
+                if name is not None
+                else str(row["name"] or "")
+            )
+            if not new_name:
+                raise ValueError("name_required")
+            new_vat = (
+                normalize_component(vat_id)
+                if vat_id is not None
+                else str(row["vat_id"] or "")
+            )
+            new_notes = (
+                normalize_component(notes)
+                if notes is not None
+                else str(row["notes"] or "")
+            )
+            con.execute(
+                """
+                UPDATE customers
+                SET name=?, vat_id=?, notes=?, updated_at=?
+                WHERE id=? AND tenant_id=?
+                """,
+                (new_name, new_vat, new_notes, _now_iso(), customer_id, tenant_id),
+            )
+            event_append(
+                event_type="crm_customer",
+                entity_type="customer",
+                entity_id=_crm_event_id(customer_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "customer",
+                    "entity_id": customer_id,
+                    "action": "updated",
+                    "name": new_name,
+                },
+                con=con,
+            )
+            out = con.execute(
+                "SELECT * FROM customers WHERE id=? AND tenant_id=?",
+                (customer_id, tenant_id),
+            ).fetchone()
+            con.commit()
+            return dict(out) if out else {}
+        finally:
+            con.close()
+
+
+def contacts_create(
+    tenant_id: str,
+    customer_id: str,
+    name: str,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    role: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> str:
+    tenant_id = _crm_tenant(tenant_id)
+    name = normalize_component(name)
+    if not name:
+        raise ValueError("name_required")
+    contact_id = _crm_new_id()
+    now = _now_iso()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            _crm_require_customer(con, tenant_id, customer_id)
+            con.execute(
+                """
+                INSERT INTO contacts(id, tenant_id, customer_id, name, email, phone, role, notes, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    contact_id,
+                    tenant_id,
+                    customer_id,
+                    name,
+                    normalize_component(email),
+                    normalize_component(phone),
+                    normalize_component(role),
+                    normalize_component(notes),
+                    now,
+                    now,
+                ),
+            )
+            event_append(
+                event_type="crm_contact",
+                entity_type="contact",
+                entity_id=_crm_event_id(contact_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "contact",
+                    "entity_id": contact_id,
+                    "action": "created",
+                    "customer_id": customer_id,
+                },
+                con=con,
+            )
+            con.commit()
+            return contact_id
+        finally:
+            con.close()
+
+
+def contacts_list_by_customer(tenant_id: str, customer_id: str) -> List[Dict[str, Any]]:
+    tenant_id = _crm_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            _crm_require_customer(con, tenant_id, customer_id)
+            rows = con.execute(
+                """
+                SELECT * FROM contacts
+                WHERE tenant_id=? AND customer_id=?
+                ORDER BY name, created_at
+                """,
+                (tenant_id, customer_id),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+
+def deals_create(
+    tenant_id: str,
+    customer_id: str,
+    title: str,
+    stage: str = "lead",
+    value_cents: Optional[int] = None,
+    currency: str = "EUR",
+    notes: Optional[str] = None,
+    project_id: Optional[int] = None,
+) -> str:
+    tenant_id = _crm_tenant(tenant_id)
+    title = normalize_component(title)
+    stage = normalize_component(stage).lower() or "lead"
+    if stage not in {"lead", "qualified", "proposal", "won", "lost"}:
+        raise ValueError("invalid_stage")
+    if not title:
+        raise ValueError("title_required")
+    deal_id = _crm_new_id()
+    now = _now_iso()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            _crm_require_customer(con, tenant_id, customer_id)
+            con.execute(
+                """
+                INSERT INTO deals(id, tenant_id, customer_id, title, stage, project_id, value_cents, currency, notes, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    deal_id,
+                    tenant_id,
+                    customer_id,
+                    title,
+                    stage,
+                    int(project_id) if project_id is not None else None,
+                    int(value_cents) if value_cents is not None else None,
+                    normalize_component(currency) or "EUR",
+                    normalize_component(notes),
+                    now,
+                    now,
+                ),
+            )
+            event_append(
+                event_type="crm_deal",
+                entity_type="deal",
+                entity_id=_crm_event_id(deal_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "deal",
+                    "entity_id": deal_id,
+                    "action": "created",
+                    "customer_id": customer_id,
+                    "stage": stage,
+                },
+                con=con,
+            )
+            con.commit()
+            return deal_id
+        finally:
+            con.close()
+
+
+def deals_update_stage(tenant_id: str, deal_id: str, stage: str) -> Dict[str, Any]:
+    tenant_id = _crm_tenant(tenant_id)
+    stage = normalize_component(stage).lower()
+    if stage not in {"lead", "qualified", "proposal", "won", "lost"}:
+        raise ValueError("invalid_stage")
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = _crm_require_deal(con, tenant_id, deal_id)
+            con.execute(
+                "UPDATE deals SET stage=?, updated_at=? WHERE id=? AND tenant_id=?",
+                (stage, _now_iso(), deal_id, tenant_id),
+            )
+            event_append(
+                event_type="crm_deal",
+                entity_type="deal",
+                entity_id=_crm_event_id(deal_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "deal",
+                    "entity_id": deal_id,
+                    "action": "updated",
+                    "before_stage": row.get("stage"),
+                    "stage": stage,
+                },
+                con=con,
+            )
+            out = con.execute(
+                "SELECT * FROM deals WHERE id=? AND tenant_id=?",
+                (deal_id, tenant_id),
+            ).fetchone()
+            con.commit()
+            return dict(out) if out else {}
+        finally:
+            con.close()
+
+
+def deals_list(
+    tenant_id: str,
+    stage: Optional[str] = None,
+    customer_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    tenant_id = _crm_tenant(tenant_id)
+    clauses = ["tenant_id=?"]
+    params: List[Any] = [tenant_id]
+    st = normalize_component(stage).lower()
+    if st:
+        clauses.append("stage=?")
+        params.append(st)
+    cid = normalize_component(customer_id)
+    if cid:
+        clauses.append("customer_id=?")
+        params.append(cid)
+    where_sql = " AND ".join(clauses)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            rows = con.execute(
+                f"SELECT * FROM deals WHERE {where_sql} ORDER BY updated_at DESC, id DESC",
+                tuple(params),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+
+def quotes_create(
+    tenant_id: str,
+    customer_id: str,
+    deal_id: Optional[str] = None,
+    currency: str = "EUR",
+    notes: Optional[str] = None,
+) -> str:
+    tenant_id = _crm_tenant(tenant_id)
+    quote_id = _crm_new_id()
+    now = _now_iso()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            _crm_require_customer(con, tenant_id, customer_id)
+            if deal_id:
+                _crm_require_deal(con, tenant_id, deal_id)
+            con.execute(
+                """
+                INSERT INTO quotes(
+                  id, tenant_id, customer_id, deal_id, status, currency,
+                  subtotal_cents, tax_cents, total_cents, notes, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    quote_id,
+                    tenant_id,
+                    customer_id,
+                    deal_id,
+                    "draft",
+                    normalize_component(currency) or "EUR",
+                    0,
+                    0,
+                    0,
+                    normalize_component(notes),
+                    now,
+                    now,
+                ),
+            )
+            event_append(
+                event_type="crm_quote",
+                entity_type="quote",
+                entity_id=_crm_event_id(quote_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "quote",
+                    "entity_id": quote_id,
+                    "action": "created",
+                    "customer_id": customer_id,
+                    "deal_id": deal_id,
+                },
+                con=con,
+            )
+            con.commit()
+            return quote_id
+        finally:
+            con.close()
+
+
+def quotes_add_item(
+    tenant_id: str,
+    quote_id: str,
+    description: str,
+    qty: float,
+    unit_price_cents: int,
+) -> Dict[str, Any]:
+    tenant_id = _crm_tenant(tenant_id)
+    description = normalize_component(description)
+    if not description:
+        raise ValueError("description_required")
+    qty_val = float(qty)
+    if qty_val <= 0:
+        raise ValueError("qty_invalid")
+    unit_val = max(0, int(unit_price_cents))
+    line_total = int(round(qty_val * unit_val))
+    item_id = _crm_new_id()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            qrow = con.execute(
+                "SELECT id FROM quotes WHERE id=? AND tenant_id=?",
+                (quote_id, tenant_id),
+            ).fetchone()
+            if not qrow:
+                raise ValueError("quote_not_found")
+            now = _now_iso()
+            con.execute(
+                """
+                INSERT INTO quote_items(id, tenant_id, quote_id, description, qty, unit_price_cents, line_total_cents, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    item_id,
+                    tenant_id,
+                    quote_id,
+                    description,
+                    qty_val,
+                    unit_val,
+                    line_total,
+                    now,
+                    now,
+                ),
+            )
+            event_append(
+                event_type="crm_quote_item",
+                entity_type="quote_item",
+                entity_id=_crm_event_id(item_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "quote_item",
+                    "entity_id": item_id,
+                    "action": "created",
+                    "quote_id": quote_id,
+                    "line_total_cents": line_total,
+                },
+                con=con,
+            )
+            con.commit()
+        finally:
+            con.close()
+    return quotes_recalculate_totals(tenant_id, quote_id)
+
+
+def quotes_recalculate_totals(
+    tenant_id: str,
+    quote_id: str,
+    tax_rate: Optional[float] = None,
+) -> Dict[str, Any]:
+    tenant_id = _crm_tenant(tenant_id)
+    rate = float(tax_rate) if tax_rate is not None else None
+    with _DB_LOCK:
+        con = _db()
+        try:
+            qrow = con.execute(
+                "SELECT * FROM quotes WHERE id=? AND tenant_id=?",
+                (quote_id, tenant_id),
+            ).fetchone()
+            if not qrow:
+                raise ValueError("quote_not_found")
+            subtotal_row = con.execute(
+                "SELECT COALESCE(SUM(line_total_cents),0) AS subtotal FROM quote_items WHERE tenant_id=? AND quote_id=?",
+                (tenant_id, quote_id),
+            ).fetchone()
+            subtotal = int((subtotal_row["subtotal"] if subtotal_row else 0) or 0)
+            if rate is None:
+                tax = int(qrow["tax_cents"] or 0)
+                if tax < 0:
+                    tax = 0
+            else:
+                tax = int(round(subtotal * max(0.0, rate)))
+            total = subtotal + tax
+            con.execute(
+                """
+                UPDATE quotes
+                SET subtotal_cents=?, tax_cents=?, total_cents=?, updated_at=?
+                WHERE id=? AND tenant_id=?
+                """,
+                (subtotal, tax, total, _now_iso(), quote_id, tenant_id),
+            )
+            event_append(
+                event_type="crm_quote",
+                entity_type="quote",
+                entity_id=_crm_event_id(quote_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "quote",
+                    "entity_id": quote_id,
+                    "action": "updated",
+                    "subtotal_cents": subtotal,
+                    "tax_cents": tax,
+                    "total_cents": total,
+                },
+                con=con,
+            )
+            q = con.execute(
+                "SELECT * FROM quotes WHERE id=? AND tenant_id=?",
+                (quote_id, tenant_id),
+            ).fetchone()
+            items = _crm_quote_items(con, tenant_id, quote_id)
+            con.commit()
+            out = dict(q) if q else {}
+            out["items"] = items
+            return out
+        finally:
+            con.close()
+
+
+def quotes_get(tenant_id: str, quote_id: str) -> Dict[str, Any]:
+    tenant_id = _crm_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            q = con.execute(
+                "SELECT * FROM quotes WHERE id=? AND tenant_id=?",
+                (quote_id, tenant_id),
+            ).fetchone()
+            if not q:
+                raise ValueError("quote_not_found")
+            out = dict(q)
+            out["items"] = _crm_quote_items(con, tenant_id, quote_id)
+            return out
+        finally:
+            con.close()
+
+
+def quotes_create_from_deal(tenant_id: str, deal_id: str) -> Dict[str, Any]:
+    tenant_id = _crm_tenant(tenant_id)
+    with _DB_LOCK:
+        con = _db()
+        try:
+            deal = _crm_require_deal(con, tenant_id, deal_id)
+        finally:
+            con.close()
+
+    quote_id = quotes_create(
+        tenant_id=tenant_id,
+        customer_id=str(deal.get("customer_id") or ""),
+        deal_id=deal_id,
+        currency=str(deal.get("currency") or "EUR"),
+        notes="Automatisch aus Deal erstellt",
+    )
+
+    project_id = int(deal.get("project_id") or 0)
+    if project_id > 0:
+        summary = time_entries_summary_by_project(
+            tenant_id=tenant_id,
+            project_id=project_id,
+        )
+        spent_hours = float(summary.get("spent_hours") or 0.0)
+        if spent_hours > 0:
+            default_hour_rate = 9000
+            if deal.get("value_cents"):
+                try:
+                    deal_value = int(deal.get("value_cents") or 0)
+                    estimated_hours = spent_hours if spent_hours > 0 else 1.0
+                    default_hour_rate = max(
+                        100, int(round(deal_value / estimated_hours))
+                    )
+                except Exception:
+                    default_hour_rate = 9000
+            quotes_add_item(
+                tenant_id=tenant_id,
+                quote_id=quote_id,
+                description="Arbeitsstunden",
+                qty=spent_hours,
+                unit_price_cents=default_hour_rate,
+            )
+        else:
+            quotes_recalculate_totals(tenant_id, quote_id)
+            customers_update_note = "Automatisch erstellt; keine Zeitdaten gefunden."
+            with _DB_LOCK:
+                con = _db()
+                try:
+                    con.execute(
+                        "UPDATE quotes SET notes=?, updated_at=? WHERE id=? AND tenant_id=?",
+                        (customers_update_note, _now_iso(), quote_id, tenant_id),
+                    )
+                    con.commit()
+                finally:
+                    con.close()
+    else:
+        with _DB_LOCK:
+            con = _db()
+            try:
+                con.execute(
+                    "UPDATE quotes SET notes=?, updated_at=? WHERE id=? AND tenant_id=?",
+                    (
+                        "Automatisch erstellt; kein Projekt am Deal verknüpft.",
+                        _now_iso(),
+                        quote_id,
+                        tenant_id,
+                    ),
+                )
+                con.commit()
+            finally:
+                con.close()
+
+    return quotes_get(tenant_id, quote_id)
+
+
+def emails_import_eml(
+    tenant_id: str,
+    eml_bytes: bytes,
+    customer_id: Optional[str] = None,
+    contact_id: Optional[str] = None,
+    source_notes: Optional[str] = None,
+) -> str:
+    tenant_id = _crm_tenant(tenant_id)
+    if not isinstance(eml_bytes, (bytes, bytearray)) or not eml_bytes:
+        raise ValueError("eml_required")
+
+    now = _now_iso()
+    email_id = _crm_new_id()
+    msg_id = ""
+    from_addr = ""
+    to_addrs = ""
+    subject = ""
+    received_at = now
+    body_text = ""
+    notes = normalize_component(source_notes)
+
+    try:
+        parsed = BytesParser(policy=policy.default).parsebytes(bytes(eml_bytes))
+        msg_id = normalize_component(parsed.get("Message-ID") or "")
+        from_parsed = getaddresses([parsed.get("From") or ""])
+        from_addr = normalize_component(from_parsed[0][1] if from_parsed else "")
+        to_parsed = getaddresses(parsed.get_all("To", []))
+        to_addrs = ", ".join(a for _, a in to_parsed if a)
+        subject = normalize_component(parsed.get("Subject") or "")
+
+        dt_hdr = parsed.get("Date")
+        if dt_hdr:
+            try:
+                dt = parsedate_to_datetime(dt_hdr)
+                if dt is not None:
+                    received_at = dt.isoformat(timespec="seconds")
+            except Exception:
+                pass
+
+        if parsed.is_multipart():
+            for part in parsed.walk():
+                if part.get_content_type() == "text/plain":
+                    try:
+                        body_text = part.get_content()
+                    except Exception:
+                        body_text = ""
+                    if body_text:
+                        break
+        else:
+            if parsed.get_content_type() == "text/plain":
+                try:
+                    body_text = parsed.get_content()
+                except Exception:
+                    body_text = ""
+
+        if body_text and ("\x00" in body_text or any(ord(ch) < 9 for ch in body_text)):
+            notes = f"{notes}; invalid_plain_text" if notes else "invalid_plain_text"
+            body_text = ""
+    except Exception as exc:
+        err = f"parse_error: {exc}"
+        notes = f"{notes}; {err}" if notes else err
+        body_text = ""
+
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if customer_id:
+                _crm_require_customer(con, tenant_id, customer_id)
+            if contact_id:
+                _crm_require_contact(con, tenant_id, contact_id)
+            con.execute(
+                """
+                INSERT INTO emails_cache(
+                  id, tenant_id, customer_id, contact_id, message_id,
+                  from_addr, to_addrs, subject, received_at, body_text,
+                  raw_eml, notes, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    email_id,
+                    tenant_id,
+                    customer_id,
+                    contact_id,
+                    msg_id,
+                    from_addr,
+                    to_addrs,
+                    subject,
+                    received_at,
+                    body_text,
+                    sqlite3.Binary(bytes(eml_bytes)),
+                    notes,
+                    now,
+                ),
+            )
+            event_append(
+                event_type="crm_email",
+                entity_type="email",
+                entity_id=_crm_event_id(email_id),
+                payload={
+                    "tenant_id": tenant_id,
+                    "entity_type": "email",
+                    "entity_id": email_id,
+                    "action": "imported",
+                    "subject": subject,
+                    "customer_id": customer_id,
+                    "contact_id": contact_id,
+                },
+                con=con,
+            )
+            con.commit()
+            return email_id
+        finally:
+            con.close()
 
 
 # ============================================================
