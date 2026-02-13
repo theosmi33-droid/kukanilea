@@ -127,13 +127,18 @@ def event_append(
             db.close()
 
 
-def event_verify_chain() -> Tuple[bool, Optional[int], Optional[str]]:
-    ensure_eventlog_schema()
-    con = _connect()
+def event_verify_chain(
+    *, con: sqlite3.Connection | None = None
+) -> Tuple[bool, Optional[int], Optional[str]]:
+    if con is None:
+        ensure_eventlog_schema()
+    owns_connection = con is None
+    db = con or _connect()
     try:
-        rows = con.execute("SELECT * FROM events ORDER BY id ASC").fetchall()
+        rows = db.execute("SELECT * FROM events ORDER BY id ASC").fetchall()
     finally:
-        con.close()
+        if owns_connection:
+            db.close()
 
     prev = GENESIS_HASH
     for row in rows:

@@ -775,6 +775,25 @@ def db_init() -> None:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS benchmarks(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ts TEXT NOT NULL,
+                  metric TEXT NOT NULL,
+                  scope_type TEXT NOT NULL,
+                  scope_id INTEGER,
+                  n INTEGER NOT NULL,
+                  p50 REAL NOT NULL,
+                  p75 REAL NOT NULL,
+                  p90 REAL NOT NULL,
+                  min REAL,
+                  max REAL,
+                  last_event_id INTEGER
+                );
+                """
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS review_locks(
                   token TEXT PRIMARY KEY,
                   tenant TEXT NOT NULL,
