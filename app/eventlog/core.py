@@ -90,8 +90,11 @@ def event_append(
     entity_type: str,
     entity_id: int,
     payload: Dict[str, Any],
+    *,
+    con: sqlite3.Connection | None = None,
 ) -> int:
-    ensure_eventlog_schema()
+    if con is None:
+        ensure_eventlog_schema()
     ev_type = (event_type or "").strip()
     ent_type = (entity_type or "").strip()
     ent_id = int(entity_id)
@@ -101,23 +104,27 @@ def event_append(
     ts = _now_iso()
     payload_json = _stable_payload_json(payload)
 
-    con = _connect()
+    owns_connection = con is None
+    db = con or _connect()
     try:
-        con.execute("BEGIN IMMEDIATE")
-        row = con.execute("SELECT hash FROM events ORDER BY id DESC LIMIT 1").fetchone()
+        if owns_connection:
+            db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT hash FROM events ORDER BY id DESC LIMIT 1").fetchone()
         prev = str(row["hash"]) if row else GENESIS_HASH
         hsh = event_hash(prev, ts, ev_type, ent_type, ent_id, payload_json)
-        cur = con.execute(
+        cur = db.execute(
             """
             INSERT INTO events(ts, event_type, entity_type, entity_id, payload_json, prev_hash, hash)
             VALUES (?,?,?,?,?,?,?)
             """,
             (ts, ev_type, ent_type, ent_id, payload_json, prev, hsh),
         )
-        con.commit()
+        if owns_connection:
+            db.commit()
         return int(cur.lastrowid or 0)
     finally:
-        con.close()
+        if owns_connection:
+            db.close()
 
 
 def event_verify_chain() -> Tuple[bool, Optional[int], Optional[str]]:
