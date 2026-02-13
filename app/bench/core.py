@@ -95,7 +95,9 @@ def recompute_task_duration_benchmarks(
         _ensure_benchmarks_table(db)
 
         durations: list[float] = []
-        if _table_exists(db, "time_entries") and _column_exists(db, "time_entries", "duration"):
+        if _table_exists(db, "time_entries") and _column_exists(
+            db, "time_entries", "duration"
+        ):
             rows = db.execute(
                 "SELECT duration FROM time_entries WHERE duration IS NOT NULL AND duration > 0"
             ).fetchall()

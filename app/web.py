@@ -1643,7 +1643,7 @@ def api_chat():
 
     response = agent_answer(msg)
     if request.headers.get("HX-Request"):
-        return f"<div class='text-sm'>{response.get('text','')}</div>"
+        return f"<div class='text-sm'>{response.get('text', '')}</div>"
     return jsonify(response)
 
 
@@ -1789,7 +1789,7 @@ def api_time_projects_create():
         store_entity(
             "project",
             int(project.get("id") or 0),
-            f"{project.get('name','')} {project.get('description','')}",
+            f"{project.get('name', '')} {project.get('description', '')}",
             {
                 "tenant_id": current_tenant(),
                 "budget_hours": int(project.get("budget_hours") or 0),
@@ -2932,7 +2932,7 @@ def tasks():
     html = f"""<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
       <div class='text-lg font-semibold'>Tasks</div>
       <div class='muted text-xs mt-1'>Offen: {len(items)}</div>
-      <div class='mt-4 space-y-2'>{''.join(rows) or "<div class='muted text-sm'>Keine offenen Tasks.</div>"}</div>
+      <div class='mt-4 space-y-2'>{"".join(rows) or "<div class='muted text-sm'>Keine offenen Tasks.</div>"}</div>
     </div>"""
     return _render_base(html, active_tab="tasks")
 

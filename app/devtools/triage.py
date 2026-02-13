@@ -69,11 +69,19 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     mode.add_argument("--fast", action="store_true", help="Run targeted fast tests")
     mode.add_argument("--full", action="store_true", help="Run full test suite")
     parser.add_argument("--bench", action="store_true", help="Run benchmark checks")
-    parser.add_argument("--write-baseline", action="store_true", help="Write benchmark baseline")
+    parser.add_argument(
+        "--write-baseline", action="store_true", help="Write benchmark baseline"
+    )
     parser.add_argument("--max-regression-pct", type=float, default=30.0)
 
-    parser.add_argument("--strict", action="store_true", help="Fail on missing optional tools")
-    parser.add_argument("--require-baseline", action="store_true", help="Require benchmark baseline when --bench")
+    parser.add_argument(
+        "--strict", action="store_true", help="Fail on missing optional tools"
+    )
+    parser.add_argument(
+        "--require-baseline",
+        action="store_true",
+        help="Require benchmark baseline when --bench",
+    )
     parser.add_argument(
         "--ci",
         action="store_true",
@@ -191,13 +199,20 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
             },
             "metrics": metrics,
         }
-        baseline_file.write_text(json.dumps(baseline_payload, indent=2, sort_keys=True) + "\n")
+        baseline_file.write_text(
+            json.dumps(baseline_payload, indent=2, sort_keys=True) + "\n"
+        )
         step_extra["baseline_written"] = True
         return _record_step(
             steps,
             name="bench",
             ok=True,
-            result={"ok": True, "secs": time.perf_counter() - started, "stdout": "", "stderr": ""},
+            result={
+                "ok": True,
+                "secs": time.perf_counter() - started,
+                "stdout": "",
+                "stderr": "",
+            },
             extra=step_extra,
         )
 
@@ -208,7 +223,12 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
             name="bench",
             ok=not required,
             reason="baseline missing",
-            result={"ok": not required, "secs": time.perf_counter() - started, "stdout": "", "stderr": ""},
+            result={
+                "ok": not required,
+                "secs": time.perf_counter() - started,
+                "stdout": "",
+                "stderr": "",
+            },
             extra={**step_extra, "skipped_compare": True},
         )
 
@@ -221,7 +241,12 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
             name="bench",
             ok=False,
             reason=f"baseline_parse_failed: {exc}",
-            result={"ok": False, "secs": time.perf_counter() - started, "stdout": "", "stderr": str(exc)},
+            result={
+                "ok": False,
+                "secs": time.perf_counter() - started,
+                "stdout": "",
+                "stderr": str(exc),
+            },
             extra=step_extra,
         )
 
@@ -248,7 +273,12 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
         name="bench",
         ok=ok,
         reason="" if ok else "benchmark regression detected",
-        result={"ok": ok, "secs": time.perf_counter() - started, "stdout": "", "stderr": ""},
+        result={
+            "ok": ok,
+            "secs": time.perf_counter() - started,
+            "stdout": "",
+            "stderr": "",
+        },
         extra={**step_extra, "regressions": regressions},
     )
 
@@ -316,7 +346,9 @@ def main(argv: list[str] | None = None) -> int:
                 name="ruff",
                 ok=not strict_ruff,
                 skipped=not strict_ruff,
-                reason="ruff required in strict/ci" if strict_ruff else "ruff not installed",
+                reason="ruff required in strict/ci"
+                if strict_ruff
+                else "ruff not installed",
             ):
                 exit_code = 2
                 return exit_code
@@ -332,8 +364,10 @@ def main(argv: list[str] | None = None) -> int:
                 result={
                     "ok": ok,
                     "secs": time.perf_counter() - started,
-                    "stdout": (check.get("stdout", "") or "") + (fmt.get("stdout", "") or ""),
-                    "stderr": (check.get("stderr", "") or "") + (fmt.get("stderr", "") or ""),
+                    "stdout": (check.get("stdout", "") or "")
+                    + (fmt.get("stdout", "") or ""),
+                    "stderr": (check.get("stderr", "") or "")
+                    + (fmt.get("stderr", "") or ""),
                 },
                 extra={"check": check, "format": fmt},
             ):
