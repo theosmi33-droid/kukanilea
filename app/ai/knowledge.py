@@ -11,18 +11,43 @@ from flask import current_app, has_app_context
 
 from app.config import Config
 
-try:
-    import chromadb
-except Exception:  # pragma: no cover - optional runtime dependency
-    chromadb = None  # type: ignore
-
-try:
-    import ollama
-except Exception:  # pragma: no cover - optional runtime dependency
-    ollama = None  # type: ignore
+# compatibility sentinels for tests that monkeypatch module attributes
+chromadb = None  # compatibility for tests
+ollama = None  # compatibility for tests
 
 _LOCK = threading.Lock()
 _COLLECTION_NAME = "kukanilea_entities"
+
+
+def _is_ai_enabled() -> bool:
+    try:
+        from app.ai import is_enabled
+
+        return bool(is_enabled())
+    except Exception:
+        return False
+
+
+def _get_chromadb():
+    if not _is_ai_enabled():
+        return None
+    try:
+        import chromadb  # type: ignore
+
+        return chromadb
+    except Exception:
+        return None
+
+
+def _get_ollama():
+    if not _is_ai_enabled():
+        return None
+    try:
+        import ollama  # type: ignore
+
+        return ollama
+    except Exception:
+        return None
 
 
 def _user_data_root() -> Path:
@@ -67,13 +92,14 @@ def init_chroma() -> None:
 
     Falls Chroma nicht importierbar ist, wird ein SQLite-Fallback vorbereitet.
     """
-    if chromadb is None:
+    chromadb_mod = _get_chromadb()
+    if chromadb_mod is None:
         con = _fallback_connect()
         con.close()
         return
 
     with _LOCK:
-        client = chromadb.PersistentClient(path=str(_chroma_dir()))
+        client = chromadb_mod.PersistentClient(path=str(_chroma_dir()))
         client.get_or_create_collection(name=_COLLECTION_NAME)
 
 
@@ -95,14 +121,15 @@ def embed_text(text: str) -> List[float]:
     if not txt:
         return _stable_embedding("", dim=64)
 
-    if ollama is not None:
+    ollama_mod = _get_ollama()
+    if ollama_mod is not None:
         model = "nomic-embed-text"
         if has_app_context():
             model = str(current_app.config.get("OLLAMA_EMBED_MODEL", model))
         try:
             # Python ollama package may expose embed() or embeddings().
-            if hasattr(ollama, "embed"):
-                out = ollama.embed(model=model, input=txt)
+            if hasattr(ollama_mod, "embed"):
+                out = ollama_mod.embed(model=model, input=txt)
                 vectors = out.get("embeddings") or out.get("embedding") or []
                 if (
                     isinstance(vectors, list)
@@ -116,8 +143,8 @@ def embed_text(text: str) -> List[float]:
                     and isinstance(vectors[0], (int, float))
                 ):
                     return [float(x) for x in vectors]
-            if hasattr(ollama, "embeddings"):
-                out = ollama.embeddings(model=model, prompt=txt)
+            if hasattr(ollama_mod, "embeddings"):
+                out = ollama_mod.embeddings(model=model, prompt=txt)
                 vec = out.get("embedding") or []
                 if isinstance(vec, list) and vec:
                     return [float(x) for x in vec]
@@ -128,9 +155,10 @@ def embed_text(text: str) -> List[float]:
 
 
 def _chroma_collection():
-    if chromadb is None:
+    chromadb_mod = _get_chromadb()
+    if chromadb_mod is None:
         return None
-    client = chromadb.PersistentClient(path=str(_chroma_dir()))
+    client = chromadb_mod.PersistentClient(path=str(_chroma_dir()))
     return client.get_or_create_collection(name=_COLLECTION_NAME)
 
 
@@ -153,7 +181,7 @@ def store_entity(
     meta.setdefault("entity_type", entity_type)
     meta.setdefault("entity_id", int(entity_id))
 
-    if chromadb is not None:
+    if _get_chromadb() is not None:
         try:
             col = _chroma_collection()
             if col is not None:
@@ -197,7 +225,7 @@ def find_similar(query: str, n: int = 5) -> List[Dict[str, Any]]:
 
     limit = max(1, min(int(n), 50))
 
-    if chromadb is not None:
+    if _get_chromadb() is not None:
         try:
             col = _chroma_collection()
             if col is not None:

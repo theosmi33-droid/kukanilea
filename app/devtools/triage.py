@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -17,8 +18,9 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def run_cmd(args: list[str], timeout: float | None = None) -> dict[str, Any]:
-    """Run subprocess command without shell and capture outputs."""
+def run_cmd(
+    args: list[str], timeout: float | None = None, env: dict[str, str] | None = None
+) -> dict[str, Any]:
     started = time.perf_counter()
     try:
         completed = subprocess.run(
@@ -27,6 +29,7 @@ def run_cmd(args: list[str], timeout: float | None = None) -> dict[str, Any]:
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
         return {
             "ok": completed.returncode == 0,
@@ -45,6 +48,39 @@ def run_cmd(args: list[str], timeout: float | None = None) -> dict[str, Any]:
             "secs": time.perf_counter() - started,
             "timeout": True,
         }
+
+
+def _run_cmd_compat(
+    args: list[str], timeout: float | None = None, env: dict[str, str] | None = None
+) -> dict[str, Any]:
+    try:
+        return run_cmd(args, timeout=timeout, env=env)
+    except TypeError:
+        # backward compatibility for tests monkeypatching run_cmd(args, timeout)
+        return run_cmd(args, timeout=timeout)
+
+
+def run_cmd_with_warning_detection(
+    args: list[str],
+    timeout: float | None = None,
+    env: dict[str, str] | None = None,
+    ignore_regexes: list[str] | None = None,
+) -> dict[str, Any]:
+    result = _run_cmd_compat(args, timeout=timeout, env=env)
+    ignore_regexes = ignore_regexes or []
+    combined = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
+    pattern = re.compile(
+        r"(DeprecationWarning|UserWarning|RuntimeWarning|FutureWarning|ResourceWarning|Warning:\s)",
+        re.IGNORECASE,
+    )
+    warning_lines = [line for line in combined.splitlines() if pattern.search(line)]
+    for raw in ignore_regexes:
+        ig = re.compile(raw, re.IGNORECASE)
+        warning_lines = [line for line in warning_lines if not ig.search(line)]
+
+    result["warning_count"] = len(warning_lines)
+    result["warning_lines"] = warning_lines[:10]
+    return result
 
 
 def _baseline_path() -> Path:
@@ -68,6 +104,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--fast", action="store_true", help="Run targeted fast tests")
     mode.add_argument("--full", action="store_true", help="Run full test suite")
+
     parser.add_argument("--bench", action="store_true", help="Run benchmark checks")
     parser.add_argument(
         "--write-baseline", action="store_true", help="Write benchmark baseline"
@@ -85,13 +122,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--ci",
         action="store_true",
-        help="Enable CI mode (= --strict --full --bench --require-baseline)",
+        help="CI mode (= --strict --full --bench --require-baseline)",
     )
     parser.add_argument("--json-out", default="triage_report.json")
+
     parser.add_argument("--bench-factor", type=float, default=1.30)
     parser.add_argument("--bench-runs", type=int, default=5)
     parser.add_argument("--bench-warmup", type=int, default=1)
     parser.add_argument("--bench-time-budget", type=float, default=20.0)
+
+    parser.add_argument("--health", action="store_true", help="Run health checks")
+    parser.add_argument("--health-mode", choices=["ci", "runtime"], default="ci")
+    parser.add_argument("--health-json")
+
+    parser.add_argument(
+        "--fail-on-warnings",
+        action="store_true",
+        help="Fail when warnings are detected",
+    )
+    parser.add_argument("--ignore-warning-regex", action="append", default=[])
+
     return parser.parse_args(argv)
 
 
@@ -102,6 +152,8 @@ def _normalize_modes(args: argparse.Namespace, argv: list[str] | None) -> None:
         args.fast = False
         args.bench = True
         args.require_baseline = True
+        args.health = True
+        args.fail_on_warnings = True
 
     arglist = argv or []
     if "--bench-factor" not in arglist and args.max_regression_pct != 30.0:
@@ -128,6 +180,8 @@ def _record_step(
         "stdout": str(result.get("stdout", "") or ""),
         "stderr": str(result.get("stderr", "") or ""),
         "reason": reason,
+        "warning_count": int(result.get("warning_count", 0) or 0),
+        "warning_lines": list(result.get("warning_lines", []) or []),
     }
     if extra:
         entry.update(extra)
@@ -141,6 +195,36 @@ def _load_baseline_metrics(raw: Any) -> dict[str, float]:
             return {k: float(v) for k, v in raw["metrics"].items()}
         return {k: float(v) for k, v in raw.items() if isinstance(v, (int, float))}
     return {}
+
+
+def _make_env(args: argparse.Namespace) -> dict[str, str]:
+    env = os.environ.copy()
+    if args.ci and "PYTHONWARNINGS" not in env:
+        env["PYTHONWARNINGS"] = "default"
+    return env
+
+
+def _run_step_command(
+    steps: list[dict[str, Any]],
+    *,
+    name: str,
+    cmd: list[str],
+    args: argparse.Namespace,
+    env: dict[str, str],
+    timeout: float | None = None,
+) -> bool:
+    result = run_cmd_with_warning_detection(
+        cmd,
+        timeout=timeout,
+        env=env,
+        ignore_regexes=list(args.ignore_warning_regex or []),
+    )
+    ok = bool(result.get("ok"))
+    reason = ""
+    if args.fail_on_warnings and int(result.get("warning_count", 0) or 0) > 0:
+        ok = False
+        reason = "warnings detected"
+    return _record_step(steps, name=name, ok=ok, result=result, reason=reason)
 
 
 def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bool:
@@ -169,13 +253,13 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
             name="bench",
             ok=False,
             reason=f"benchmark_failed: {exc}",
-            extra={"metrics": metrics},
             result={
                 "ok": False,
                 "secs": time.perf_counter() - started,
                 "stdout": "",
                 "stderr": str(exc),
             },
+            extra={"metrics": metrics},
         )
 
     baseline_file = _baseline_path()
@@ -190,7 +274,7 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
 
     if args.write_baseline:
         baseline_file.parent.mkdir(parents=True, exist_ok=True)
-        baseline_payload = {
+        payload = {
             "meta": {
                 "created_at_utc": _utcnow_iso(),
                 "python_version": sys.version,
@@ -199,10 +283,7 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
             },
             "metrics": metrics,
         }
-        baseline_file.write_text(
-            json.dumps(baseline_payload, indent=2, sort_keys=True) + "\n"
-        )
-        step_extra["baseline_written"] = True
+        baseline_file.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return _record_step(
             steps,
             name="bench",
@@ -213,7 +294,7 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
                 "stdout": "",
                 "stderr": "",
             },
-            extra=step_extra,
+            extra={**step_extra, "baseline_written": True},
         )
 
     if not baseline_file.exists():
@@ -250,7 +331,7 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
             extra=step_extra,
         )
 
-    regressions: list[dict[str, Any]] = []
+    regressions = []
     factor = float(args.bench_factor)
     for metric, current in metrics.items():
         base = baseline_metrics.get(metric)
@@ -267,14 +348,13 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
                 }
             )
 
-    ok = len(regressions) == 0
     return _record_step(
         steps,
         name="bench",
-        ok=ok,
-        reason="" if ok else "benchmark regression detected",
+        ok=len(regressions) == 0,
+        reason="" if not regressions else "benchmark regression detected",
         result={
-            "ok": ok,
+            "ok": len(regressions) == 0,
             "secs": time.perf_counter() - started,
             "stdout": "",
             "stderr": "",
@@ -283,9 +363,39 @@ def _run_bench_step(args: argparse.Namespace, steps: list[dict[str, Any]]) -> bo
     )
 
 
+def _run_health_step(
+    args: argparse.Namespace, steps: list[dict[str, Any]], env: dict[str, str]
+) -> bool:
+    if not (args.health or args.ci):
+        return _record_step(
+            steps,
+            name="health",
+            ok=True,
+            skipped=True,
+            reason="health disabled",
+        )
+
+    cmd = [sys.executable, "-m", "app.health", "--mode", args.health_mode]
+    if args.health_json:
+        cmd.extend(["--json", args.health_json])
+
+    result = run_cmd_with_warning_detection(
+        cmd,
+        env=env,
+        ignore_regexes=list(args.ignore_warning_regex or []),
+    )
+    ok = bool(result.get("ok"))
+    reason = ""
+    if args.fail_on_warnings and int(result.get("warning_count", 0) or 0) > 0:
+        ok = False
+        reason = "warnings detected"
+    return _record_step(steps, name="health", ok=ok, result=result, reason=reason)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     _normalize_modes(args, argv)
+    env = _make_env(args)
 
     report: dict[str, Any] = {
         "created_at_utc": _utcnow_iso(),
@@ -296,8 +406,8 @@ def main(argv: list[str] | None = None) -> int:
         "steps": [],
         "overall_ok": False,
     }
-    report_path = Path(args.json_out)
 
+    report_path = Path(args.json_out)
     exit_code = 0
     try:
         steps: list[dict[str, Any]] = report["steps"]
@@ -313,28 +423,44 @@ def main(argv: list[str] | None = None) -> int:
             exit_code = 2
             return exit_code
 
-        compile_result = run_cmd([sys.executable, "-m", "compileall", "-q", "."])
-        if not _record_step(steps, name="compileall", result=compile_result):
+        if not _run_step_command(
+            steps,
+            name="compileall",
+            cmd=[sys.executable, "-m", "compileall", "-q", "."],
+            args=args,
+            env=env,
+        ):
             exit_code = 2
             return exit_code
 
-        smoke_result = run_cmd([sys.executable, "-m", "app.smoke"])
-        if not _record_step(steps, name="smoke", result=smoke_result):
+        if not _run_step_command(
+            steps,
+            name="smoke",
+            cmd=[sys.executable, "-m", "app.smoke"],
+            args=args,
+            env=env,
+        ):
             exit_code = 2
             return exit_code
 
-        if args.full:
-            pytest_cmd = ["pytest", "-q"]
-        else:
-            pytest_cmd = [
+        pytest_cmd = (
+            ["pytest", "-q"]
+            if args.full
+            else [
                 "pytest",
                 "-q",
                 "tests/test_eventlog.py",
                 "tests/test_time_tracking.py",
                 "tests/test_benchmarks.py",
             ]
-        pytest_result = run_cmd(pytest_cmd)
-        if not _record_step(steps, name="pytest", result=pytest_result):
+        )
+        if not _run_step_command(
+            steps,
+            name="pytest",
+            cmd=pytest_cmd,
+            args=args,
+            env=env,
+        ):
             exit_code = 2
             return exit_code
 
@@ -353,21 +479,39 @@ def main(argv: list[str] | None = None) -> int:
                 exit_code = 2
                 return exit_code
         else:
-            started = time.perf_counter()
-            check = run_cmd([ruff_path, "check", ".", "--fix"])
-            fmt = run_cmd([ruff_path, "format", "."])
-            ok = bool(check["ok"] and fmt["ok"])
+            check = run_cmd_with_warning_detection(
+                [ruff_path, "check", ".", "--fix"],
+                env=env,
+                ignore_regexes=args.ignore_warning_regex,
+            )
+            fmt = run_cmd_with_warning_detection(
+                [ruff_path, "format", "."],
+                env=env,
+                ignore_regexes=args.ignore_warning_regex,
+            )
+            warning_count = int(check.get("warning_count", 0)) + int(
+                fmt.get("warning_count", 0)
+            )
+            warning_lines = list(check.get("warning_lines", [])) + list(
+                fmt.get("warning_lines", [])
+            )
+            ok = bool(check.get("ok") and fmt.get("ok"))
+            reason = ""
+            if args.fail_on_warnings and warning_count > 0:
+                ok = False
+                reason = "warnings detected"
             if not _record_step(
                 steps,
                 name="ruff",
                 ok=ok,
+                reason=reason,
                 result={
                     "ok": ok,
-                    "secs": time.perf_counter() - started,
-                    "stdout": (check.get("stdout", "") or "")
-                    + (fmt.get("stdout", "") or ""),
-                    "stderr": (check.get("stderr", "") or "")
-                    + (fmt.get("stderr", "") or ""),
+                    "secs": float(check.get("secs", 0.0)) + float(fmt.get("secs", 0.0)),
+                    "stdout": f"{check.get('stdout', '')}{fmt.get('stdout', '')}",
+                    "stderr": f"{check.get('stderr', '')}{fmt.get('stderr', '')}",
+                    "warning_count": warning_count,
+                    "warning_lines": warning_lines[:10],
                 },
                 extra={"check": check, "format": fmt},
             ):
@@ -378,11 +522,15 @@ def main(argv: list[str] | None = None) -> int:
             exit_code = 2
             return exit_code
 
+        if not _run_health_step(args, steps, env):
+            exit_code = 2
+            return exit_code
+
         exit_code = 0
         return exit_code
     finally:
         report["overall_ok"] = exit_code == 0 and all(
-            bool(step.get("ok")) for step in report.get("steps", [])
+            bool(s.get("ok")) for s in report.get("steps", [])
         )
         report["exit_code"] = exit_code
         _write_report(report_path, report)
