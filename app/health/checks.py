@@ -13,7 +13,9 @@ ALL_CHECKS = [
     "check_ai_gate_smoke",
     "check_bench_baseline",
     "check_config_load",
+    "check_crm_tables",
     "check_db_access",
+    "check_email_import_limits",
     "check_eventlog_chain",
     "check_python_env",
     "check_skills_registry",
@@ -227,6 +229,143 @@ def check_eventlog_chain(runner) -> CheckResult:
         prev = str(row["hash"])
 
     return CheckResult(name="check_eventlog_chain", ok=True, severity="ok")
+
+
+def check_crm_tables(runner) -> CheckResult:
+    try:
+        from app.config import Config
+
+        if runner.mode == "ci":
+            import kukanilea_core_v3_fixed as core
+
+            with tempfile.TemporaryDirectory(prefix="kuka_health_crm_") as tmp:
+                old_db = core.DB_PATH
+                old_base = core.BASE_PATH
+                old_eingang = core.EINGANG
+                old_pending = core.PENDING_DIR
+                old_done = core.DONE_DIR
+                try:
+                    t = Path(tmp)
+                    core.DB_PATH = t / "core.db"
+                    core.BASE_PATH = t / "base"
+                    core.EINGANG = t / "eingang"
+                    core.PENDING_DIR = t / "pending"
+                    core.DONE_DIR = t / "done"
+                    core.db_init()
+                    con = sqlite3.connect(str(core.DB_PATH))
+                    con.row_factory = sqlite3.Row
+                    try:
+                        must_tables = {
+                            "customers",
+                            "contacts",
+                            "deals",
+                            "quotes",
+                            "quote_items",
+                            "emails_cache",
+                        }
+                        rows = con.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'"
+                        ).fetchall()
+                        got = {str(r[0]) for r in rows}
+                        miss = sorted(must_tables - got)
+                        if miss:
+                            return CheckResult(
+                                name="check_crm_tables",
+                                ok=False,
+                                severity="fail",
+                                reason=f"missing tables: {miss}",
+                            )
+                    finally:
+                        con.close()
+                finally:
+                    core.DB_PATH = old_db
+                    core.BASE_PATH = old_base
+                    core.EINGANG = old_eingang
+                    core.PENDING_DIR = old_pending
+                    core.DONE_DIR = old_done
+            return CheckResult(name="check_crm_tables", ok=True, severity="ok")
+
+        db_path = Path(Config.CORE_DB)
+        if not db_path.exists():
+            return CheckResult(
+                name="check_crm_tables",
+                ok=False,
+                severity="warn",
+                reason="CORE_DB missing",
+                remediation="Run app once to initialize DB.",
+            )
+        uri = f"file:{db_path}?mode=ro"
+        con = sqlite3.connect(uri, uri=True)
+        con.row_factory = sqlite3.Row
+        try:
+            must_tables = {
+                "customers",
+                "contacts",
+                "deals",
+                "quotes",
+                "quote_items",
+                "emails_cache",
+            }
+            rows = con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+            got = {str(r[0]) for r in rows}
+            miss = sorted(must_tables - got)
+            if miss:
+                return CheckResult(
+                    name="check_crm_tables",
+                    ok=False,
+                    severity="fail",
+                    reason=f"missing tables: {miss}",
+                )
+            return CheckResult(name="check_crm_tables", ok=True, severity="ok")
+        finally:
+            con.close()
+    except Exception as exc:
+        return CheckResult(
+            name="check_crm_tables",
+            ok=False,
+            severity="fail",
+            reason=f"crm table check failed: {exc}",
+        )
+
+
+def check_email_import_limits(runner) -> CheckResult:
+    del runner
+    try:
+        from app.config import Config
+
+        limit = int(getattr(Config, "MAX_EML_BYTES", 0) or 0)
+        if limit <= 0:
+            return CheckResult(
+                name="check_email_import_limits",
+                ok=False,
+                severity="fail",
+                reason="MAX_EML_BYTES must be > 0",
+                remediation="Set KUKA_MAX_EML_BYTES to a sane value, e.g. 10485760.",
+            )
+        if limit > 50 * 1024 * 1024:
+            return CheckResult(
+                name="check_email_import_limits",
+                ok=False,
+                severity="warn",
+                reason="MAX_EML_BYTES unusually high",
+                remediation="Consider lowering KUKA_MAX_EML_BYTES for safety.",
+                details={"max_eml_bytes": limit},
+            )
+        return CheckResult(
+            name="check_email_import_limits",
+            ok=True,
+            severity="ok",
+            details={"max_eml_bytes": limit},
+        )
+    except Exception as exc:
+        return CheckResult(
+            name="check_email_import_limits",
+            ok=False,
+            severity="fail",
+            reason=f"config error: {exc}",
+        )
 
 
 def check_skills_registry(runner) -> CheckResult:

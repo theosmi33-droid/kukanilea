@@ -2032,6 +2032,50 @@ def api_time_export():
     return response
 
 
+def _crm_error_response(
+    exc: Exception, default_message: str, *, not_found: bool = False
+):
+    code = str(exc)
+    status = 400
+    message = default_message
+    if code == "not_found":
+        status = 404
+        code = "not_found"
+        message = "Ressource nicht gefunden."
+    elif code == "db_locked":
+        status = 503
+        code = "db_locked"
+        message = "Datenbank ist gesperrt. Bitte erneut versuchen."
+    elif code == "duplicate":
+        status = 409
+        code = "duplicate"
+        message = "Doppelter Eintrag im Tenant."
+    elif code == "read_only":
+        status = 403
+        code = "read_only"
+    elif code in {
+        "validation_error",
+        "file_required",
+        "invalid_file_type",
+        "empty_file",
+    }:
+        status = 400
+    elif not_found:
+        status = 404
+        code = "not_found"
+    else:
+        code = "validation_error"
+    return json_error(code, message, status=status)
+
+
+def _validate_iso(value: str) -> bool:
+    try:
+        datetime.fromisoformat(value)
+        return True
+    except Exception:
+        return False
+
+
 @bp.get("/api/customers")
 @login_required
 def api_customers_list():
@@ -2060,7 +2104,7 @@ def api_customers_create():
         )
         item = customers_get(current_tenant(), cid)  # type: ignore
     except ValueError as exc:
-        return json_error(str(exc), "Kunde konnte nicht angelegt werden.", status=400)
+        return _crm_error_response(exc, "Kunde konnte nicht angelegt werden.")
     return jsonify(ok=True, customer=item)
 
 
@@ -2072,7 +2116,7 @@ def api_customers_get(customer_id: str):
     try:
         item = customers_get(current_tenant(), customer_id)  # type: ignore
     except ValueError as exc:
-        return json_error(str(exc), "Kunde nicht gefunden.", status=404)
+        return _crm_error_response(exc, "Kunde nicht gefunden.", not_found=True)
     return jsonify(ok=True, customer=item)
 
 
@@ -2092,9 +2136,7 @@ def api_customers_update(customer_id: str):
             notes=payload.get("notes"),
         )
     except ValueError as exc:
-        return json_error(
-            str(exc), "Kunde konnte nicht aktualisiert werden.", status=400
-        )
+        return _crm_error_response(exc, "Kunde konnte nicht aktualisiert werden.")
     return jsonify(ok=True, customer=item)
 
 
@@ -2106,8 +2148,8 @@ def api_contacts_list(customer_id: str):
     try:
         items = contacts_list_by_customer(current_tenant(), customer_id)  # type: ignore
     except ValueError as exc:
-        return json_error(
-            str(exc), "Kontakte konnten nicht geladen werden.", status=404
+        return _crm_error_response(
+            exc, "Kontakte konnten nicht geladen werden.", not_found=True
         )
     return jsonify(ok=True, contacts=items)
 
@@ -2130,7 +2172,7 @@ def api_contacts_create():
             notes=payload.get("notes"),
         )
     except ValueError as exc:
-        return json_error(str(exc), "Kontakt konnte nicht angelegt werden.", status=400)
+        return _crm_error_response(exc, "Kontakt konnte nicht angelegt werden.")
     return jsonify(ok=True, contact_id=cid)
 
 
@@ -2152,21 +2194,44 @@ def api_deals_create():
     if not callable(deals_create):
         return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
     payload = request.get_json(silent=True) or {}
+    stage = (payload.get("stage") or "lead").strip().lower()
+    allowed_stage = {"lead", "qualified", "proposal", "negotiation", "won", "lost"}
+    if stage not in allowed_stage:
+        return json_error("validation_error", "Ungültiger Deal-Status.", status=400)
+    probability = payload.get("probability")
+    if probability is not None:
+        try:
+            prob_val = int(probability)
+        except Exception:
+            return json_error(
+                "validation_error", "Probability muss 0..100 sein.", status=400
+            )
+        if prob_val < 0 or prob_val > 100:
+            return json_error(
+                "validation_error", "Probability muss 0..100 sein.", status=400
+            )
+    expected_close = (payload.get("expected_close_date") or "").strip()
+    if expected_close and not _validate_iso(expected_close):
+        return json_error(
+            "validation_error", "expected_close_date muss ISO sein.", status=400
+        )
     try:
         did = deals_create(  # type: ignore
             tenant_id=current_tenant(),
             customer_id=payload.get("customer_id") or "",
             title=payload.get("title") or "",
-            stage=payload.get("stage") or "lead",
+            stage=stage,
             value_cents=payload.get("value_cents"),
             currency=payload.get("currency") or "EUR",
             notes=payload.get("notes"),
             project_id=(
                 int(payload.get("project_id")) if payload.get("project_id") else None
             ),
+            probability=(int(probability) if probability is not None else None),
+            expected_close_date=(expected_close or None),
         )
     except ValueError as exc:
-        return json_error(str(exc), "Deal konnte nicht angelegt werden.", status=400)
+        return _crm_error_response(exc, "Deal konnte nicht angelegt werden.")
     return jsonify(ok=True, deal_id=did)
 
 
@@ -2177,13 +2242,13 @@ def api_deals_stage(deal_id: str):
     if not callable(deals_update_stage):
         return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
     payload = request.get_json(silent=True) or {}
-    stage = payload.get("stage")
+    stage = (payload.get("stage") or "").strip().lower()
+    if stage not in {"lead", "qualified", "proposal", "negotiation", "won", "lost"}:
+        return json_error("validation_error", "Ungültiger Deal-Status.", status=400)
     try:
-        item = deals_update_stage(current_tenant(), deal_id, stage or "")  # type: ignore
+        item = deals_update_stage(current_tenant(), deal_id, stage)  # type: ignore
     except ValueError as exc:
-        return json_error(
-            str(exc), "Deal-Status konnte nicht aktualisiert werden.", status=400
-        )
+        return _crm_error_response(exc, "Deal-Status konnte nicht aktualisiert werden.")
     return jsonify(ok=True, deal=item)
 
 
@@ -2196,7 +2261,7 @@ def api_quote_from_deal(deal_id: str):
     try:
         quote = quotes_create_from_deal(current_tenant(), deal_id)  # type: ignore
     except ValueError as exc:
-        return json_error(str(exc), "Angebot konnte nicht erstellt werden.", status=400)
+        return _crm_error_response(exc, "Angebot konnte nicht erstellt werden.")
     return jsonify(ok=True, quote=quote)
 
 
@@ -2208,7 +2273,7 @@ def api_quote_get(quote_id: str):
     try:
         quote = quotes_get(current_tenant(), quote_id)  # type: ignore
     except ValueError as exc:
-        return json_error(str(exc), "Angebot nicht gefunden.", status=404)
+        return _crm_error_response(exc, "Angebot nicht gefunden.", not_found=True)
     return jsonify(ok=True, quote=quote)
 
 
@@ -2228,9 +2293,7 @@ def api_quote_add_item(quote_id: str):
             unit_price_cents=int(payload.get("unit_price_cents") or 0),
         )
     except ValueError as exc:
-        return json_error(
-            str(exc), "Position konnte nicht angelegt werden.", status=400
-        )
+        return _crm_error_response(exc, "Position konnte nicht angelegt werden.")
     return jsonify(ok=True, quote=quote)
 
 
@@ -2244,15 +2307,22 @@ def api_emails_import():
         )
     f = request.files.get("file")
     if f is None:
-        return json_error("file_required", "Bitte .eml-Datei hochladen.", status=400)
+        return json_error("validation_error", "Bitte .eml-Datei hochladen.", status=400)
     filename = (f.filename or "").lower()
     if not filename.endswith(".eml"):
         return json_error(
-            "invalid_file_type", "Nur .eml-Dateien sind erlaubt.", status=400
+            "validation_error", "Nur .eml-Dateien sind erlaubt.", status=400
         )
-    raw = f.read() or b""
+
+    max_bytes = int(current_app.config.get("MAX_EML_BYTES", 10 * 1024 * 1024))
+    raw = f.read(max_bytes + 1) or b""
     if not raw:
-        return json_error("empty_file", "Datei ist leer.", status=400)
+        return json_error("validation_error", "Datei ist leer.", status=400)
+    if len(raw) > max_bytes:
+        return json_error(
+            "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
+        )
+
     try:
         email_id = emails_import_eml(  # type: ignore
             tenant_id=current_tenant(),
@@ -2262,9 +2332,7 @@ def api_emails_import():
             source_notes=(request.form.get("notes") or None),
         )
     except ValueError as exc:
-        return json_error(
-            str(exc), "E-Mail konnte nicht importiert werden.", status=400
-        )
+        return _crm_error_response(exc, "E-Mail konnte nicht importiert werden.")
     return jsonify(ok=True, email_id=email_id)
 
 

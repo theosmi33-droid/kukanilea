@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging as py_logging
 import os
 
-from flask import Flask, request
+from flask import Flask, g, request
+from werkzeug.exceptions import HTTPException
 
 from .ai import init_ai
 from .auth import init_auth
@@ -75,6 +77,26 @@ def create_app() -> Flask:
             "trial_active": bool(app.config.get("TRIAL", False)),
             "trial_days_left": int(app.config.get("TRIAL_DAYS_LEFT", 0)),
         }
+
+    logger = py_logging.getLogger("kukanilea")
+
+    @app.errorhandler(Exception)
+    def _handle_unexpected_error(exc):
+        if isinstance(exc, HTTPException):
+            return exc
+        logger.exception(
+            "unhandled_exception tenant_id=%s request_id=%s",
+            getattr(g, "tenant_id", "-"),
+            getattr(g, "request_id", "-"),
+        )
+        return json_error(
+            "internal_error",
+            "Interner Fehler.",
+            status=500,
+            details={
+                "tenant_id": getattr(g, "tenant_id", ""),
+            },
+        )
 
     app.register_blueprint(web.bp)
     app.register_blueprint(api.bp)

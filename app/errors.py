@@ -18,6 +18,7 @@ def error_envelope(
     }
     request_id = getattr(g, "request_id", None)
     if request_id:
+        payload["error"]["request_id"] = request_id
         payload["error"]["details"].setdefault("request_id", request_id)
     return payload
 

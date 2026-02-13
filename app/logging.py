@@ -36,7 +36,7 @@ def init_request_logging(app) -> None:
 
     @app.before_request
     def _assign_request_id():
-        rid = request.headers.get("X-Request-Id") or str(uuid.uuid4())
+        rid = request.headers.get("X-Request-Id") or uuid.uuid4().hex
         g.request_id = rid
 
     @app.after_request

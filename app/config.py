@@ -20,6 +20,7 @@ class Config:
     PORT = int(_env("PORT", "5051"))
     SECRET_KEY = _env("KUKANILEA_SECRET", "kukanilea-dev-secret-change-me")
     MAX_CONTENT_LENGTH = int(_env("KUKANILEA_MAX_UPLOAD", str(25 * 1024 * 1024)))
+    MAX_EML_BYTES = int(_env("KUKA_MAX_EML_BYTES", str(10 * 1024 * 1024)))
 
     USER_DATA_ROOT = Path(
         _env(
