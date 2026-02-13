@@ -35,8 +35,11 @@ def _get_chromadb():
         import chromadb  # type: ignore
 
         return chromadb
-    except Exception:
-        return None
+    except Exception as exc:
+        raise RuntimeError(
+            "AI is enabled but chromadb is unavailable. Install with: "
+            "pip install chromadb sentence-transformers ollama"
+        ) from exc
 
 
 def _get_ollama():
@@ -46,8 +49,11 @@ def _get_ollama():
         import ollama  # type: ignore
 
         return ollama
-    except Exception:
-        return None
+    except Exception as exc:
+        raise RuntimeError(
+            "AI is enabled but ollama is unavailable. Install with: "
+            "pip install chromadb sentence-transformers ollama"
+        ) from exc
 
 
 def _user_data_root() -> Path:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 from typing import Optional
 
@@ -7,10 +8,30 @@ from flask import Flask
 
 _SCHEDULER = None
 _TRUTHY = {"1", "true", "yes", "on"}
+_REQUIRED_AI_PACKAGES = ("chromadb", "sentence_transformers", "ollama")
 
 
 def is_enabled() -> bool:
     return str(os.environ.get("KUKA_AI_ENABLE", "")).strip().lower() in _TRUTHY
+
+
+def missing_ai_dependencies() -> list[str]:
+    missing: list[str] = []
+    for pkg in _REQUIRED_AI_PACKAGES:
+        if importlib.util.find_spec(pkg) is None:
+            missing.append(pkg)
+    return missing
+
+
+def ensure_ai_dependencies() -> None:
+    missing = missing_ai_dependencies()
+    if not missing:
+        return
+    hint = "pip install chromadb sentence-transformers ollama"
+    raise RuntimeError(
+        "AI is enabled (KUKA_AI_ENABLE=1) but missing optional dependencies: "
+        f"{', '.join(missing)}. Install with: {hint}"
+    )
 
 
 def init_ai(app: Optional[Flask] = None) -> None:
@@ -20,6 +41,8 @@ def init_ai(app: Optional[Flask] = None) -> None:
     """
     if not is_enabled():
         return
+
+    ensure_ai_dependencies()
 
     from .knowledge import init_chroma
 

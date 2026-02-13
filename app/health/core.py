@@ -24,28 +24,30 @@ class HealthRunner:
     def run(self) -> HealthReport:
         results: list[CheckResult] = []
         overall_ok = True
-        for check_func in self.checks:
+
+        ordered_checks = sorted(self.checks, key=lambda fn: getattr(fn, "__name__", ""))
+        for check_func in ordered_checks:
             start = time.monotonic()
             try:
                 result = check_func(self)
             except Exception as exc:
                 duration = time.monotonic() - start
                 result = CheckResult(
-                    name=check_func.__name__,
+                    name=getattr(check_func, "__name__", "check"),
                     ok=False,
                     severity="fail",
                     reason=f"Exception: {type(exc).__name__}: {exc}",
-                    duration_s=duration,
+                    duration_s=round(duration, 3),
                 )
             else:
                 duration = time.monotonic() - start
-                result.duration_s = duration
+                result.duration_s = round(duration, 3)
                 if duration > self.timeout_s:
                     result.ok = False
                     result.severity = "fail" if self.strict else "warn"
                     prefix = (result.reason + "; ") if result.reason else ""
-                    result.reason = f"{prefix}timeout after {duration:.2f}s"
-                    result.details["timeout_s"] = self.timeout_s
+                    result.reason = f"{prefix}timeout"
+                    result.details["timeout_s"] = round(self.timeout_s, 3)
 
             results.append(result)
             if not result.ok:

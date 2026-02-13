@@ -4,9 +4,48 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 from app.health import checks
 from app.health.core import HealthRunner
+
+
+def _sanitize(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _sanitize(v) for k, v in sorted(value.items(), key=lambda kv: kv[0])}
+    if isinstance(value, list):
+        return [_sanitize(v) for v in value]
+    if isinstance(value, str):
+        s = value.replace(str(Path.home()), "<home>")
+        for marker in ["/tmp/", "/var/folders/", "\\Temp\\", "\\tmp\\"]:
+            if marker in s:
+                idx = s.find(marker)
+                return s[:idx] + "<tmp>"
+        return s
+    if isinstance(value, float):
+        return round(value, 3)
+    return value
+
+
+def report_to_jsonable(report) -> dict[str, Any]:
+    data = {
+        "ts": report.ts.isoformat(),
+        "mode": report.mode,
+        "ok": report.ok,
+        "checks": [
+            {
+                "name": c.name,
+                "ok": c.ok,
+                "severity": c.severity,
+                "reason": c.reason,
+                "remediation": c.remediation,
+                "details": c.details,
+                "duration_s": round(float(c.duration_s), 3),
+            }
+            for c in sorted(report.checks, key=lambda item: item.name)
+        ],
+    }
+    return _sanitize(data)
 
 
 def main() -> int:
@@ -33,23 +72,7 @@ def main() -> int:
         if chk.remediation:
             print(f"    remediation: {chk.remediation}")
 
-    data = {
-        "ts": report.ts.isoformat(),
-        "mode": report.mode,
-        "ok": report.ok,
-        "checks": [
-            {
-                "name": c.name,
-                "ok": c.ok,
-                "severity": c.severity,
-                "reason": c.reason,
-                "remediation": c.remediation,
-                "details": c.details,
-                "duration_s": c.duration_s,
-            }
-            for c in report.checks
-        ],
-    }
+    data = report_to_jsonable(report)
 
     if args.json_out:
         path = Path(args.json_out)
