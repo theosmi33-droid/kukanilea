@@ -87,5 +87,7 @@ def test_json_report_written_on_failure(tmp_path: Path, monkeypatch) -> None:
     assert report_path.exists()
     report = json.loads(report_path.read_text())
     assert report["overall_ok"] is False
-    compile_step = next(step for step in report["steps"] if step["name"] == "compileall")
+    compile_step = next(
+        step for step in report["steps"] if step["name"] == "compileall"
+    )
     assert compile_step["ok"] is False

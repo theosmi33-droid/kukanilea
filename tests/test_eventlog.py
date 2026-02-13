@@ -4,8 +4,8 @@ import json
 import sqlite3
 from pathlib import Path
 
-from app.eventlog import core as ev
 import kukanilea_core_v3_fixed as core
+from app.eventlog import core as ev
 
 
 def _set_db(tmp_path: Path, monkeypatch) -> Path:
@@ -147,7 +147,9 @@ def test_timer_stop_event_written_duration_matches_db_and_chain_ok(
     assert ok is True and bad_id is None and reason is None
 
 
-def test_time_entry_edit_event_contains_before_after(tmp_path: Path, monkeypatch) -> None:
+def test_time_entry_edit_event_contains_before_after(
+    tmp_path: Path, monkeypatch
+) -> None:
     db = _init_core(tmp_path, monkeypatch)
     project = core.time_project_create(tenant_id="TENANT1", name="P1", created_by="dev")
     entry = core.time_entry_start(

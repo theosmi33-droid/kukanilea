@@ -121,7 +121,8 @@ def bench_recompute_benchmarks_synth(
                 duration = rng.randint(30, 14_400)
                 entries.append((entry_id, task_id, duration))
             con.executemany(
-                "INSERT INTO time_entries(id, task_id, duration) VALUES (?,?,?)", entries
+                "INSERT INTO time_entries(id, task_id, duration) VALUES (?,?,?)",
+                entries,
             )
             con.execute(
                 "INSERT INTO events(id, ts, event_type, entity_type, entity_id, payload_json, prev_hash, hash) VALUES (1,'2026-01-01T00:00:00+00:00','seed','bench',1,'{}','0','h')"
