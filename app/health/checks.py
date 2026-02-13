@@ -10,22 +10,45 @@ from pathlib import Path
 from app.health.model import CheckResult
 
 ALL_CHECKS = [
-    "check_python_env",
+    "check_ai_gate_smoke",
+    "check_bench_baseline",
     "check_config_load",
     "check_db_access",
     "check_eventlog_chain",
+    "check_python_env",
     "check_skills_registry",
-    "check_bench_baseline",
     "check_web_routes_smoke",
-    "check_ai_gate_smoke",
 ]
+
+_HEAVY_PREFIXES = (
+    "chromadb",
+    "sentence_transformers",
+    "torch",
+    "transformers",
+    "tokenizers",
+    "onnxruntime",
+    "hnswlib",
+    "numpy",
+    "ollama",
+)
+
+
+def _mask_path(value: str) -> str:
+    s = str(value)
+    s = s.replace(str(Path.home()), "<home>")
+    for marker in ["/tmp/", "/var/folders/", "\\Temp\\", "\\tmp\\"]:
+        if marker in s:
+            idx = s.find(marker)
+            return s[:idx] + "<tmp>"
+    return s
 
 
 def check_python_env(runner) -> CheckResult:
+    del runner
     details = {
         "version": sys.version,
         "platform": sys.platform,
-        "executable": sys.executable,
+        "executable": _mask_path(sys.executable),
     }
     return CheckResult(name="check_python_env", ok=True, severity="ok", details=details)
 
@@ -38,7 +61,7 @@ def check_config_load(runner) -> CheckResult:
         paths = {}
         for attr in ["CORE_DB", "USER_DATA_ROOT", "AUTH_DB"]:
             if hasattr(config.Config, attr):
-                paths[attr] = str(getattr(config.Config, attr))
+                paths[attr] = _mask_path(getattr(config.Config, attr))
         return CheckResult(
             name="check_config_load", ok=True, severity="ok", details={"paths": paths}
         )
@@ -48,7 +71,7 @@ def check_config_load(runner) -> CheckResult:
             ok=False,
             severity="fail",
             reason=f"Could not load config: {exc}",
-            remediation="Check app/config.py and required settings.",
+            remediation="Set required environment and validate app/config.py imports.",
         )
 
 
@@ -92,10 +115,11 @@ def check_db_access(runner) -> CheckResult:
                 name="check_db_access",
                 ok=False,
                 severity="warn",
-                reason=f"CORE_DB not found at {db_path}",
+                reason=f"CORE_DB not found at {_mask_path(db_path)}",
                 remediation="Fresh install: run app once to initialize DB.",
             )
-        con = sqlite3.connect(str(db_path))
+        uri = f"file:{db_path}?mode=ro"
+        con = sqlite3.connect(uri, uri=True)
         try:
             con.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
         finally:
@@ -107,12 +131,12 @@ def check_db_access(runner) -> CheckResult:
             ok=False,
             severity="fail",
             reason=f"Could not open DB: {exc}",
-            remediation="Check file permissions and DB integrity.",
+            remediation="Check permissions and DB integrity.",
         )
 
 
 def check_eventlog_chain(runner) -> CheckResult:
-    from app.eventlog.core import event_append, event_verify_chain
+    from app.eventlog.core import event_append, event_hash
 
     if runner.mode == "ci":
         with tempfile.TemporaryDirectory(prefix="kuka_health_events_") as tmp:
@@ -137,38 +161,72 @@ def check_eventlog_chain(runner) -> CheckResult:
                 event_append("test_a", "test", 1, {"dummy": 1}, con=con)
                 event_append("test_b", "test", 2, {"dummy": 2}, con=con)
                 con.commit()
-                ok, first_bad, reason = event_verify_chain(con=con)
+                rows = con.execute("SELECT * FROM events ORDER BY id ASC").fetchall()
             finally:
                 con.close()
-        if not ok:
-            return CheckResult(
-                name="check_eventlog_chain",
-                ok=False,
-                severity="fail",
-                reason=f"Chain broken (first bad: {first_bad})",
-                details={"first_bad": first_bad, "reason": reason},
-            )
-        return CheckResult(name="check_eventlog_chain", ok=True, severity="ok")
+    else:
+        try:
+            from app.config import Config
 
-    try:
-        ok, first_bad, reason = event_verify_chain()
-        if not ok:
+            db_path = Path(Config.CORE_DB)
+            if not db_path.exists():
+                return CheckResult(
+                    name="check_eventlog_chain",
+                    ok=False,
+                    severity="warn",
+                    reason="events DB missing",
+                    remediation="Run app once to initialize DB.",
+                )
+            uri = f"file:{db_path}?mode=ro"
+            con = sqlite3.connect(uri, uri=True)
+            con.row_factory = sqlite3.Row
+            try:
+                rows = con.execute(
+                    "SELECT * FROM events ORDER BY id ASC LIMIT ?",
+                    (max(1, int(runner.eventlog_limit)),),
+                ).fetchall()
+            finally:
+                con.close()
+        except Exception as exc:
+            return CheckResult(
+                name="check_eventlog_chain",
+                ok=False,
+                severity="warn",
+                reason=f"Could not verify chain: {exc}",
+                remediation="DB may be empty/uninitialized.",
+            )
+
+    prev = "0" * 64
+    for row in rows:
+        rid = int(row["id"])
+        prev_hash = str(row["prev_hash"] or "")
+        if prev_hash != prev:
             return CheckResult(
                 name="check_eventlog_chain",
                 ok=False,
                 severity="fail",
-                reason=f"Chain broken (first bad: {first_bad})",
-                details={"first_bad": first_bad, "reason": reason},
+                reason=f"Chain broken (first bad: {rid})",
+                details={"first_bad": rid, "reason": "prev_hash_mismatch"},
             )
-        return CheckResult(name="check_eventlog_chain", ok=True, severity="ok")
-    except Exception as exc:
-        return CheckResult(
-            name="check_eventlog_chain",
-            ok=False,
-            severity="warn",
-            reason=f"Could not verify chain: {exc}",
-            remediation="DB may be empty/uninitialized.",
+        calc = event_hash(
+            prev_hash,
+            str(row["ts"] or ""),
+            str(row["event_type"] or ""),
+            str(row["entity_type"] or ""),
+            int(row["entity_id"] or 0),
+            str(row["payload_json"] or ""),
         )
+        if calc != str(row["hash"] or ""):
+            return CheckResult(
+                name="check_eventlog_chain",
+                ok=False,
+                severity="fail",
+                reason=f"Chain broken (first bad: {rid})",
+                details={"first_bad": rid, "reason": "hash_mismatch"},
+            )
+        prev = str(row["hash"])
+
+    return CheckResult(name="check_eventlog_chain", ok=True, severity="ok")
 
 
 def check_skills_registry(runner) -> CheckResult:
@@ -190,7 +248,7 @@ def check_skills_registry(runner) -> CheckResult:
         cache = root / "cache"
         quarantine = root / "quarantine"
         active = root / "active"
-        missing = [str(p) for p in [cache, quarantine, active] if not p.exists()]
+        missing = [_mask_path(p) for p in [cache, quarantine, active] if not p.exists()]
         if missing:
             return CheckResult(
                 name="check_skills_registry",
@@ -296,22 +354,22 @@ def check_ai_gate_smoke(runner) -> CheckResult:
             details={"note": "KUKA_AI_ENABLE set, skip negative gate"},
         )
 
-    for mod in ["chromadb", "sentence_transformers", "ollama"]:
-        sys.modules.pop(mod, None)
+    before = {m for m in sys.modules if m.startswith(_HEAVY_PREFIXES)}
+    for mod in list(before):
+        if mod.startswith(("chromadb", "sentence_transformers", "ollama")):
+            sys.modules.pop(mod, None)
 
     import app.ai  # noqa: F401
+    import app.ai.knowledge  # noqa: F401
 
-    loaded = [
-        mod
-        for mod in ["chromadb", "sentence_transformers", "ollama"]
-        if mod in sys.modules
-    ]
-    if loaded:
+    after = {m for m in sys.modules if m.startswith(_HEAVY_PREFIXES)}
+    leaked = sorted(after - before)
+    if leaked:
         return CheckResult(
             name="check_ai_gate_smoke",
             ok=False,
             severity="fail",
-            reason=f"Unexpected imports: {loaded}",
+            reason=f"Unexpected imports: {leaked}",
             remediation="Use lazy imports behind KUKA_AI_ENABLE gate.",
         )
     return CheckResult(name="check_ai_gate_smoke", ok=True, severity="ok")

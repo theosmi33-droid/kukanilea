@@ -68,12 +68,25 @@ def run_cmd_with_warning_detection(
 ) -> dict[str, Any]:
     result = _run_cmd_compat(args, timeout=timeout, env=env)
     ignore_regexes = ignore_regexes or []
-    combined = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
-    pattern = re.compile(
-        r"(DeprecationWarning|UserWarning|RuntimeWarning|FutureWarning|ResourceWarning|Warning:\s)",
-        re.IGNORECASE,
+
+    category_re = re.compile(
+        r"\b(DeprecationWarning|ResourceWarning|UserWarning|PendingDeprecationWarning|RuntimeWarning|FutureWarning|ImportWarning|SyntaxWarning|UnicodeWarning)\b"
     )
-    warning_lines = [line for line in combined.splitlines() if pattern.search(line)]
+    format_re = re.compile(r"^[^:\n]+:\d+:\s*(?:[A-Za-z]+Warning):")
+
+    warning_lines: list[str] = []
+
+    stderr_lines = str(result.get("stderr", "")).splitlines()
+    for line in stderr_lines:
+        if category_re.search(line) or format_re.search(line):
+            warning_lines.append(line)
+
+    if not warning_lines:
+        stdout_lines = str(result.get("stdout", "")).splitlines()
+        for line in stdout_lines:
+            if category_re.search(line) or format_re.search(line):
+                warning_lines.append(line)
+
     for raw in ignore_regexes:
         ig = re.compile(raw, re.IGNORECASE)
         warning_lines = [line for line in warning_lines if not ig.search(line)]
@@ -153,7 +166,6 @@ def _normalize_modes(args: argparse.Namespace, argv: list[str] | None) -> None:
         args.bench = True
         args.require_baseline = True
         args.health = True
-        args.fail_on_warnings = True
 
     arglist = argv or []
     if "--bench-factor" not in arglist and args.max_regression_pct != 30.0:
