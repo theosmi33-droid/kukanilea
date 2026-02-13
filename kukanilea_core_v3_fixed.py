@@ -736,6 +736,25 @@ def db_init() -> None:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS skills(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  cache_key TEXT NOT NULL UNIQUE,
+                  name TEXT NOT NULL,
+                  source_url TEXT NOT NULL,
+                  ref TEXT NOT NULL,
+                  resolved_commit TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  fetched_at TEXT NOT NULL,
+                  manifest_json TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status, fetched_at DESC);"
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS ontology_types(
                   type_name TEXT PRIMARY KEY,
                   table_name TEXT NOT NULL,
@@ -1374,7 +1393,9 @@ def time_project_update_budget(
         finally:
             con.close()
 
-    summary = time_entries_summary_by_project(tenant_id=tenant_id, project_id=project_id)
+    summary = time_entries_summary_by_project(
+        tenant_id=tenant_id, project_id=project_id
+    )
     summary["updated_budget_hours"] = new_hours
     summary["updated_budget_cost"] = new_cost
     return summary
@@ -1596,7 +1617,9 @@ def time_entry_stop(
                 """,
                 (stopped_id, tenant_id),
             ).fetchone()
-            actor_user_id = int(post["user_id"]) if post and post["user_id"] is not None else None
+            actor_user_id = (
+                int(post["user_id"]) if post and post["user_id"] is not None else None
+            )
             event_append(
                 event_type="timer_stopped",
                 entity_type="time_entry",
@@ -1697,7 +1720,9 @@ def time_entry_update(
                 (int(entry_id), tenant_id),
             ).fetchone()
             after = dict(after_row) if after_row else {}
-            actor_user_id = int(after.get("user_id")) if after.get("user_id") is not None else None
+            actor_user_id = (
+                int(after.get("user_id")) if after.get("user_id") is not None else None
+            )
             event_append(
                 event_type="time_entry_edited",
                 entity_type="time_entry",
