@@ -113,3 +113,28 @@ def test_recompute_inserts_rows_global_and_project(tmp_path: Path) -> None:
         assert float(p102["p50"]) == 30.0
     finally:
         con.close()
+
+
+def test_run_benchmark_suite_uses_median_and_budget(monkeypatch) -> None:
+    from app.bench import benchmarks
+
+    monkeypatch.setattr(
+        benchmarks,
+        "bench_event_verify_chain_synth",
+        lambda n_events=2000: 1.0,
+    )
+
+    values = iter([8.0, 2.0, 4.0, 6.0, 10.0, 12.0])
+
+    def fake_recompute(n_entries=5000, n_projects=20, n_tasks=200):
+        del n_entries, n_projects, n_tasks
+        return float(next(values))
+
+    monkeypatch.setattr(benchmarks, "bench_recompute_benchmarks_synth", fake_recompute)
+
+    ticks = iter([0.0, 0.5])
+    monkeypatch.setattr(benchmarks.time, "perf_counter", lambda: float(next(ticks)))
+
+    result = benchmarks.run_benchmark_suite(runs=3, warmup=1, time_budget_secs=1.0)
+    assert result["event_verify_chain_synth_2000"] == 1.0
+    assert result["recompute_task_duration_synth"] == 4.0

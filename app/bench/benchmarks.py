@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import random
 import sqlite3
+import statistics
 import tempfile
 import time
 from pathlib import Path
+from typing import Callable
 
 from app.bench.core import recompute_task_duration_benchmarks
 from app.eventlog.core import event_append, event_verify_chain
@@ -136,9 +138,38 @@ def bench_recompute_benchmarks_synth(
             con.close()
 
 
-def run_all() -> dict[str, float]:
-    """Run all synthetic benchmark probes."""
-    return {
-        "event_verify_chain_synth_2000": bench_event_verify_chain_synth(2000),
-        "recompute_task_duration_synth": bench_recompute_benchmarks_synth(),
+def run_many(fn: Callable[[], float], runs: int, warmup: int) -> float:
+    """Run benchmark function multiple times and return median measured time."""
+    runs = max(1, int(runs))
+    warmup = max(0, int(warmup))
+    for _ in range(warmup):
+        fn()
+    samples = [fn() for _ in range(runs)]
+    return float(statistics.median(samples))
+
+
+def run_benchmark_suite(
+    runs: int = 5,
+    warmup: int = 1,
+    time_budget_secs: float = 20.0,
+) -> dict[str, float]:
+    """Run robust synth benchmarks and return median timings."""
+    budget = float(time_budget_secs)
+    started = time.perf_counter()
+    out = {
+        "event_verify_chain_synth_2000": run_many(
+            lambda: bench_event_verify_chain_synth(2000), runs=runs, warmup=warmup
+        ),
+        "recompute_task_duration_synth": run_many(
+            bench_recompute_benchmarks_synth, runs=runs, warmup=warmup
+        ),
     }
+    elapsed = time.perf_counter() - started
+    if elapsed > budget:
+        raise RuntimeError("benchmark time budget exceeded")
+    return out
+
+
+def run_all() -> dict[str, float]:
+    """Backward-compatible alias to the robust suite."""
+    return run_benchmark_suite()
