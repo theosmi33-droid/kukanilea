@@ -33,11 +33,14 @@ import time
 import unicodedata
 import zipfile
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from difflib import SequenceMatcher
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from app.eventlog.core import event_append
 
 # Optional libs
 try:
@@ -214,6 +217,28 @@ def normalize_component(s: Any) -> str:
     s = unicodedata.normalize("NFKC", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+def _to_jsonable(x: Any) -> Any:
+    if isinstance(x, dict):
+        return {str(k): _to_jsonable(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple, set)):
+        return [_to_jsonable(v) for v in x]
+    if isinstance(x, (datetime, date)):
+        return x.isoformat()
+    if isinstance(x, Decimal):
+        return float(x)
+    if isinstance(x, Path):
+        return str(x)
+    if isinstance(x, bytes):
+        return base64.b64encode(x).decode("ascii")
+    if x is None or isinstance(x, (str, int, float, bool)):
+        return x
+    return str(x)
+
+
+def _payload(**kwargs: Any) -> Dict[str, Any]:
+    return {k: _to_jsonable(v) for k, v in kwargs.items()}
 
 
 def _norm_for_match(s: Any) -> str:
@@ -687,6 +712,63 @@ def db_init() -> None:
                   message TEXT NOT NULL,
                   meta_json TEXT,
                   created_at TEXT NOT NULL
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS events(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ts TEXT NOT NULL,
+                  event_type TEXT NOT NULL,
+                  entity_type TEXT NOT NULL,
+                  entity_id INTEGER NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  prev_hash TEXT NOT NULL,
+                  hash TEXT NOT NULL UNIQUE
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id, id DESC);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ontology_types(
+                  type_name TEXT PRIMARY KEY,
+                  table_name TEXT NOT NULL,
+                  pk_field TEXT NOT NULL DEFAULT 'id',
+                  title_field TEXT,
+                  description_field TEXT,
+                  created_at TEXT
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS derived_active_timers(
+                  user_id INTEGER PRIMARY KEY,
+                  task_id INTEGER NOT NULL,
+                  start_time TEXT NOT NULL,
+                  last_event_id INTEGER
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS derived_budget_progress(
+                  project_id INTEGER PRIMARY KEY,
+                  total_hours REAL,
+                  total_cost REAL,
+                  budget_hours REAL,
+                  budget_cost REAL,
+                  hours_percent REAL,
+                  cost_percent REAL,
+                  last_event_id INTEGER
                 );
                 """
             )
@@ -1210,6 +1292,75 @@ def time_project_list(
             con.close()
 
 
+def time_project_update_budget(
+    *,
+    tenant_id: str,
+    project_id: int,
+    budget_hours: Optional[int] = None,
+    budget_cost: Optional[float] = None,
+    user_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    project_id = int(project_id)
+    user_id_norm = int(user_id) if user_id is not None else None
+
+    with _DB_LOCK:
+        con = _db()
+        try:
+            row = con.execute(
+                "SELECT id, budget_hours, budget_cost FROM time_projects WHERE id=? AND tenant_id=?",
+                (project_id, tenant_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("project_not_found")
+            before = {
+                "budget_hours": int(row["budget_hours"] or 0),
+                "budget_cost": float(row["budget_cost"] or 0.0),
+            }
+            new_hours = (
+                max(0, int(budget_hours))
+                if budget_hours is not None
+                else before["budget_hours"]
+            )
+            new_cost = (
+                max(0.0, float(budget_cost))
+                if budget_cost is not None
+                else before["budget_cost"]
+            )
+            con.execute(
+                """
+                UPDATE time_projects
+                SET budget_hours=?, budget_cost=?, updated_at=?
+                WHERE id=? AND tenant_id=?
+                """,
+                (new_hours, new_cost, _now_iso(), project_id, tenant_id),
+            )
+            event_append(
+                event_type="project_budget_updated",
+                entity_type="project",
+                entity_id=project_id,
+                payload={
+                    "schema_version": 1,
+                    "source": "core/project_budget_update",
+                    "actor_user_id": user_id_norm,
+                    "data": _payload(
+                        before=before,
+                        after={"budget_hours": new_hours, "budget_cost": new_cost},
+                        user_id=user_id_norm,
+                    ),
+                },
+                con=con,
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    summary = time_entries_summary_by_project(tenant_id=tenant_id, project_id=project_id)
+    summary["updated_budget_hours"] = new_hours
+    summary["updated_budget_cost"] = new_cost
+    return summary
+
+
 def _time_project_lookup(
     con: sqlite3.Connection, tenant_id: str, project_id: Optional[int]
 ) -> Optional[dict]:
@@ -1252,6 +1403,7 @@ def time_entry_start(
 
     now = started_at or _now_iso()
     entry_id = 0
+    user_id_norm = int(user_id) if user_id is not None else None
     with _DB_LOCK:
         con = _db()
         try:
@@ -1281,7 +1433,7 @@ def time_entry_start(
                     tenant_id,
                     project_id,
                     task_id,
-                    user_id,
+                    user_id_norm,
                     user,
                     now,
                     None,
@@ -1295,8 +1447,26 @@ def time_entry_start(
                     now,
                 ),
             )
-            con.commit()
             entry_id = int(cur.lastrowid or 0)
+            event_append(
+                event_type="timer_started",
+                entity_type="time_entry",
+                entity_id=entry_id,
+                payload={
+                    "schema_version": 1,
+                    "source": "core/timer_start",
+                    "actor_user_id": user_id_norm,
+                    "data": _payload(
+                        user_id=user_id_norm,
+                        task_id=task_id,
+                        start_time=now,
+                        end_time=None,
+                        duration=None,
+                    ),
+                },
+                con=con,
+            )
+            con.commit()
         finally:
             con.close()
     audit_log(
@@ -1363,7 +1533,7 @@ def time_entry_stop(
             if entry_id is None:
                 row = con.execute(
                     """
-                    SELECT id, start_at FROM time_entries
+                    SELECT id, user_id, task_id, start_at FROM time_entries
                     WHERE tenant_id=? AND user=? AND end_at IS NULL
                     """,
                     (tenant_id, user),
@@ -1371,7 +1541,7 @@ def time_entry_stop(
             else:
                 row = con.execute(
                     """
-                    SELECT id, start_at FROM time_entries
+                    SELECT id, user_id, task_id, start_at FROM time_entries
                     WHERE tenant_id=? AND user=? AND id=?
                     """,
                     (tenant_id, user, int(entry_id)),
@@ -1398,8 +1568,35 @@ def time_entry_stop(
                     tenant_id,
                 ),
             )
-            con.commit()
             stopped_id = int(row["id"])
+            post = con.execute(
+                """
+                SELECT id, user_id, task_id, start_at, end_at, duration_seconds, duration
+                FROM time_entries
+                WHERE id=? AND tenant_id=?
+                """,
+                (stopped_id, tenant_id),
+            ).fetchone()
+            actor_user_id = int(post["user_id"]) if post and post["user_id"] is not None else None
+            event_append(
+                event_type="timer_stopped",
+                entity_type="time_entry",
+                entity_id=stopped_id,
+                payload={
+                    "schema_version": 1,
+                    "source": "core/timer_stop",
+                    "actor_user_id": actor_user_id,
+                    "data": _payload(
+                        user_id=actor_user_id,
+                        task_id=post["task_id"] if post else row["task_id"],
+                        start_time=post["start_at"] if post else start_at,
+                        end_time=post["end_at"] if post else end_ts,
+                        duration=post["duration"] if post else duration,
+                    ),
+                },
+                con=con,
+            )
+            con.commit()
         finally:
             con.close()
     audit_log(
@@ -1437,6 +1634,7 @@ def time_entry_update(
             ).fetchone()
             if not row:
                 raise ValueError("entry_not_found")
+            before = dict(row)
             if project_id is not None and not _time_project_lookup(
                 con, tenant_id, project_id
             ):
@@ -1474,6 +1672,24 @@ def time_entry_update(
                     int(entry_id),
                     tenant_id,
                 ),
+            )
+            after_row = con.execute(
+                "SELECT * FROM time_entries WHERE id=? AND tenant_id=?",
+                (int(entry_id), tenant_id),
+            ).fetchone()
+            after = dict(after_row) if after_row else {}
+            actor_user_id = int(after.get("user_id")) if after.get("user_id") is not None else None
+            event_append(
+                event_type="time_entry_edited",
+                entity_type="time_entry",
+                entity_id=int(entry_id),
+                payload={
+                    "schema_version": 1,
+                    "source": "core/time_entry_update",
+                    "actor_user_id": actor_user_id,
+                    "data": _payload(before=before, after=after),
+                },
+                con=con,
             )
             con.commit()
         finally:
