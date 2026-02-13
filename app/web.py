@@ -163,6 +163,20 @@ time_entries_export_csv = _core_get("time_entries_export_csv")
 time_entries_summary_by_task = _core_get("time_entries_summary_by_task")
 time_entries_summary_by_project = _core_get("time_entries_summary_by_project")
 
+customers_create = _core_get("customers_create")
+customers_get = _core_get("customers_get")
+customers_list = _core_get("customers_list")
+customers_update = _core_get("customers_update")
+contacts_create = _core_get("contacts_create")
+contacts_list_by_customer = _core_get("contacts_list_by_customer")
+deals_create = _core_get("deals_create")
+deals_update_stage = _core_get("deals_update_stage")
+deals_list = _core_get("deals_list")
+quotes_create_from_deal = _core_get("quotes_create_from_deal")
+quotes_get = _core_get("quotes_get")
+quotes_add_item = _core_get("quotes_add_item")
+emails_import_eml = _core_get("emails_import_eml")
+
 # Guard minimum contract
 _missing = []
 if EINGANG is None:
@@ -2016,6 +2030,242 @@ def api_time_export():
     response = current_app.response_class(csv_payload, mimetype="text/csv")
     response.headers["Content-Disposition"] = "attachment; filename=time_entries.csv"
     return response
+
+
+@bp.get("/api/customers")
+@login_required
+def api_customers_list():
+    if not callable(customers_list):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    limit = int(request.args.get("limit") or 100)
+    offset = int(request.args.get("offset") or 0)
+    query = (request.args.get("query") or "").strip() or None
+    items = customers_list(current_tenant(), limit=limit, offset=offset, query=query)  # type: ignore
+    return jsonify(ok=True, customers=items)
+
+
+@bp.post("/api/customers")
+@login_required
+@require_role("OPERATOR")
+def api_customers_create():
+    if not callable(customers_create):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    try:
+        cid = customers_create(  # type: ignore
+            tenant_id=current_tenant(),
+            name=payload.get("name") or "",
+            vat_id=payload.get("vat_id"),
+            notes=payload.get("notes"),
+        )
+        item = customers_get(current_tenant(), cid)  # type: ignore
+    except ValueError as exc:
+        return json_error(str(exc), "Kunde konnte nicht angelegt werden.", status=400)
+    return jsonify(ok=True, customer=item)
+
+
+@bp.get("/api/customers/<customer_id>")
+@login_required
+def api_customers_get(customer_id: str):
+    if not callable(customers_get):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    try:
+        item = customers_get(current_tenant(), customer_id)  # type: ignore
+    except ValueError as exc:
+        return json_error(str(exc), "Kunde nicht gefunden.", status=404)
+    return jsonify(ok=True, customer=item)
+
+
+@bp.put("/api/customers/<customer_id>")
+@login_required
+@require_role("OPERATOR")
+def api_customers_update(customer_id: str):
+    if not callable(customers_update):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    try:
+        item = customers_update(  # type: ignore
+            current_tenant(),
+            customer_id,
+            name=payload.get("name"),
+            vat_id=payload.get("vat_id"),
+            notes=payload.get("notes"),
+        )
+    except ValueError as exc:
+        return json_error(
+            str(exc), "Kunde konnte nicht aktualisiert werden.", status=400
+        )
+    return jsonify(ok=True, customer=item)
+
+
+@bp.get("/api/customers/<customer_id>/contacts")
+@login_required
+def api_contacts_list(customer_id: str):
+    if not callable(contacts_list_by_customer):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    try:
+        items = contacts_list_by_customer(current_tenant(), customer_id)  # type: ignore
+    except ValueError as exc:
+        return json_error(
+            str(exc), "Kontakte konnten nicht geladen werden.", status=404
+        )
+    return jsonify(ok=True, contacts=items)
+
+
+@bp.post("/api/contacts")
+@login_required
+@require_role("OPERATOR")
+def api_contacts_create():
+    if not callable(contacts_create):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    try:
+        cid = contacts_create(  # type: ignore
+            tenant_id=current_tenant(),
+            customer_id=payload.get("customer_id") or "",
+            name=payload.get("name") or "",
+            email=payload.get("email"),
+            phone=payload.get("phone"),
+            role=payload.get("role"),
+            notes=payload.get("notes"),
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Kontakt konnte nicht angelegt werden.", status=400)
+    return jsonify(ok=True, contact_id=cid)
+
+
+@bp.get("/api/deals")
+@login_required
+def api_deals_list():
+    if not callable(deals_list):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    stage = (request.args.get("stage") or "").strip() or None
+    customer_id = (request.args.get("customer_id") or "").strip() or None
+    items = deals_list(current_tenant(), stage=stage, customer_id=customer_id)  # type: ignore
+    return jsonify(ok=True, deals=items)
+
+
+@bp.post("/api/deals")
+@login_required
+@require_role("OPERATOR")
+def api_deals_create():
+    if not callable(deals_create):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    try:
+        did = deals_create(  # type: ignore
+            tenant_id=current_tenant(),
+            customer_id=payload.get("customer_id") or "",
+            title=payload.get("title") or "",
+            stage=payload.get("stage") or "lead",
+            value_cents=payload.get("value_cents"),
+            currency=payload.get("currency") or "EUR",
+            notes=payload.get("notes"),
+            project_id=(
+                int(payload.get("project_id")) if payload.get("project_id") else None
+            ),
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Deal konnte nicht angelegt werden.", status=400)
+    return jsonify(ok=True, deal_id=did)
+
+
+@bp.put("/api/deals/<deal_id>/stage")
+@login_required
+@require_role("OPERATOR")
+def api_deals_stage(deal_id: str):
+    if not callable(deals_update_stage):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    stage = payload.get("stage")
+    try:
+        item = deals_update_stage(current_tenant(), deal_id, stage or "")  # type: ignore
+    except ValueError as exc:
+        return json_error(
+            str(exc), "Deal-Status konnte nicht aktualisiert werden.", status=400
+        )
+    return jsonify(ok=True, deal=item)
+
+
+@bp.post("/api/quotes/from-deal/<deal_id>")
+@login_required
+@require_role("OPERATOR")
+def api_quote_from_deal(deal_id: str):
+    if not callable(quotes_create_from_deal):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    try:
+        quote = quotes_create_from_deal(current_tenant(), deal_id)  # type: ignore
+    except ValueError as exc:
+        return json_error(str(exc), "Angebot konnte nicht erstellt werden.", status=400)
+    return jsonify(ok=True, quote=quote)
+
+
+@bp.get("/api/quotes/<quote_id>")
+@login_required
+def api_quote_get(quote_id: str):
+    if not callable(quotes_get):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    try:
+        quote = quotes_get(current_tenant(), quote_id)  # type: ignore
+    except ValueError as exc:
+        return json_error(str(exc), "Angebot nicht gefunden.", status=404)
+    return jsonify(ok=True, quote=quote)
+
+
+@bp.post("/api/quotes/<quote_id>/items")
+@login_required
+@require_role("OPERATOR")
+def api_quote_add_item(quote_id: str):
+    if not callable(quotes_add_item):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    payload = request.get_json(silent=True) or {}
+    try:
+        quote = quotes_add_item(  # type: ignore
+            tenant_id=current_tenant(),
+            quote_id=quote_id,
+            description=payload.get("description") or "",
+            qty=float(payload.get("qty") or 0),
+            unit_price_cents=int(payload.get("unit_price_cents") or 0),
+        )
+    except ValueError as exc:
+        return json_error(
+            str(exc), "Position konnte nicht angelegt werden.", status=400
+        )
+    return jsonify(ok=True, quote=quote)
+
+
+@bp.post("/api/emails/import")
+@login_required
+@require_role("OPERATOR")
+def api_emails_import():
+    if not callable(emails_import_eml):
+        return json_error(
+            "feature_unavailable", "E-Mail-Import ist nicht verfügbar.", status=501
+        )
+    f = request.files.get("file")
+    if f is None:
+        return json_error("file_required", "Bitte .eml-Datei hochladen.", status=400)
+    filename = (f.filename or "").lower()
+    if not filename.endswith(".eml"):
+        return json_error(
+            "invalid_file_type", "Nur .eml-Dateien sind erlaubt.", status=400
+        )
+    raw = f.read() or b""
+    if not raw:
+        return json_error("empty_file", "Datei ist leer.", status=400)
+    try:
+        email_id = emails_import_eml(  # type: ignore
+            tenant_id=current_tenant(),
+            eml_bytes=raw,
+            customer_id=(request.form.get("customer_id") or None),
+            contact_id=(request.form.get("contact_id") or None),
+            source_notes=(request.form.get("notes") or None),
+        )
+    except ValueError as exc:
+        return json_error(
+            str(exc), "E-Mail konnte nicht importiert werden.", status=400
+        )
+    return jsonify(ok=True, email_id=email_id)
 
 
 # ==============================
