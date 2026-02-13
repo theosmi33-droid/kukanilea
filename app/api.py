@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from flask import Blueprint, current_app, jsonify
+
+from app.health import checks as health_checks
+from app.health.core import HealthRunner
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -40,4 +45,36 @@ def health():
         tenant_id=tenant_id,
         profile=profile or None,
         db_path=db_path,
+    )
+
+
+@bp.get("/health/live")
+def health_live():
+    return jsonify(ok=True, ts=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+
+
+@bp.get("/health/ready")
+def health_ready():
+    runner = HealthRunner(
+        mode="runtime", strict=False, eventlog_limit=100, timeout_s=1.5
+    )
+    runner.checks = [getattr(health_checks, name) for name in health_checks.ALL_CHECKS]
+    report = runner.run()
+    checks = [
+        {
+            "name": c.name,
+            "ok": bool(c.ok),
+            "severity": c.severity,
+            "reason": c.reason or "",
+        }
+        for c in report.checks
+    ]
+    status = 200 if report.ok else 503
+    return (
+        jsonify(
+            ok=bool(report.ok),
+            ts=report.ts.isoformat(timespec="seconds"),
+            checks=checks,
+        ),
+        status,
     )

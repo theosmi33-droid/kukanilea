@@ -34,7 +34,7 @@ import unicodedata
 import uuid
 import zipfile
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from difflib import SequenceMatcher
 from email import policy
 from email.parser import BytesParser
@@ -510,11 +510,15 @@ _FTS5_AVAILABLE: Optional[bool] = None
 
 
 def _db() -> sqlite3.Connection:
-    con = sqlite3.connect(str(DB_PATH))
+    con = sqlite3.connect(str(DB_PATH), timeout=5.0)
     con.row_factory = sqlite3.Row
-    con.execute("PRAGMA journal_mode=WAL;")
-    con.execute("PRAGMA synchronous=NORMAL;")
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+    except Exception:
+        pass
     con.execute("PRAGMA foreign_keys=ON;")
+    con.execute("PRAGMA busy_timeout=5000;")
     return con
 
 
@@ -886,6 +890,32 @@ def db_init() -> None:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_emails_tenant_received ON emails_cache(tenant_id, received_at DESC);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_deals_tenant_customer ON deals(tenant_id, customer_id);"
+            )
+
+            _ensure_column(con, "deals", "probability", "INTEGER")
+            _ensure_column(con, "deals", "expected_close_date", "TEXT")
+            _ensure_column(con, "quotes", "quote_number", "TEXT")
+            _ensure_column(
+                con, "quotes", "tax_amount_cents", "INTEGER NOT NULL DEFAULT 0"
+            )
+            _ensure_column(con, "emails_cache", "attachments_json", "TEXT")
+
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_emails_cache_tenant_message
+                ON emails_cache(tenant_id, message_id)
+                WHERE message_id IS NOT NULL AND message_id != '';
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_quotes_tenant_quote_number
+                ON quotes(tenant_id, quote_number)
+                WHERE quote_number IS NOT NULL AND quote_number != '';
+                """
             )
 
             con.execute(
@@ -4401,41 +4431,116 @@ def _crm_event_id(entity_id: str) -> int:
     return max(1, int(h, 16))
 
 
-def _row_dict(row: sqlite3.Row | None) -> Dict[str, Any]:
-    return dict(row) if row else {}
+def _is_locked_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "database is locked" in msg or "database is busy" in msg
+
+
+def _run_write_txn(fn):
+    backoff = [0.05, 0.1, 0.2, 0.4, 0.8]
+    for idx, wait in enumerate(backoff, start=1):
+        should_retry = False
+        with _DB_LOCK:
+            con = _db()
+            try:
+                con.execute("BEGIN IMMEDIATE")
+                result = fn(con)
+                con.commit()
+                return result
+            except sqlite3.OperationalError as exc:
+                try:
+                    con.rollback()
+                except Exception:
+                    pass
+                if _is_locked_error(exc):
+                    if idx < len(backoff):
+                        should_retry = True
+                    else:
+                        raise ValueError("db_locked")
+                else:
+                    raise
+            except Exception:
+                try:
+                    con.rollback()
+                except Exception:
+                    pass
+                raise
+            finally:
+                con.close()
+        if should_retry:
+            time.sleep(wait)
+            continue
+    raise ValueError("db_locked")
+
+
+def _parse_money_to_cents(
+    value: Any, *, field: str, allow_none: bool = False
+) -> Optional[int]:
+    if value is None or value == "":
+        if allow_none:
+            return None
+        return 0
+    if isinstance(value, bool):
+        raise ValueError(f"{field}_invalid")
+    try:
+        dec = Decimal(str(value).strip())
+        dec = dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except Exception:
+        raise ValueError(f"{field}_invalid")
+    return int(dec * 100)
+
+
+def _cents_from_legacy(
+    cents_value: Any, legacy_value: Any, *, nullable: bool = False
+) -> Optional[int]:
+    if cents_value is not None:
+        try:
+            cents_int = int(cents_value)
+            if cents_int > 0:
+                return cents_int
+            if cents_int == 0 and not nullable:
+                return 0
+        except Exception:
+            pass
+    if legacy_value is None or str(legacy_value).strip() == "":
+        return None if nullable else 0
+    try:
+        return _parse_money_to_cents(legacy_value, field="legacy", allow_none=nullable)
+    except Exception:
+        return None if nullable else 0
 
 
 def _crm_require_customer(
     con: sqlite3.Connection, tenant_id: str, customer_id: str
 ) -> None:
     row = con.execute(
-        "SELECT id FROM customers WHERE id=? AND tenant_id=?",
-        (customer_id, tenant_id),
+        "SELECT id FROM customers WHERE tenant_id=? AND id=?",
+        (tenant_id, customer_id),
     ).fetchone()
     if not row:
-        raise ValueError("customer_not_found")
+        raise ValueError("not_found")
 
 
 def _crm_require_contact(
     con: sqlite3.Connection, tenant_id: str, contact_id: str
 ) -> None:
     row = con.execute(
-        "SELECT id FROM contacts WHERE id=? AND tenant_id=?",
-        (contact_id, tenant_id),
+        "SELECT id FROM contacts WHERE tenant_id=? AND id=?",
+        (tenant_id, contact_id),
     ).fetchone()
     if not row:
-        raise ValueError("contact_not_found")
+        raise ValueError("not_found")
 
 
 def _crm_require_deal(
     con: sqlite3.Connection, tenant_id: str, deal_id: str
 ) -> Dict[str, Any]:
     row = con.execute(
-        "SELECT * FROM deals WHERE id=? AND tenant_id=?",
-        (deal_id, tenant_id),
+        "SELECT * FROM deals WHERE tenant_id=? AND id=?",
+        (tenant_id, deal_id),
     ).fetchone()
     if not row:
-        raise ValueError("deal_not_found")
+        raise ValueError("not_found")
     return dict(row)
 
 
@@ -4459,48 +4564,51 @@ def customers_create(
     name: str,
     vat_id: Optional[str] = None,
     notes: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
-    name = normalize_component(name)
-    if not name:
-        raise ValueError("name_required")
+    customer_name = normalize_component(name)
+    if not customer_name:
+        raise ValueError("validation_error")
+
     customer_id = _crm_new_id()
     now = _now_iso()
-    with _DB_LOCK:
-        con = _db()
-        try:
-            con.execute(
-                """
-                INSERT INTO customers(id, tenant_id, name, vat_id, notes, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?)
-                """,
-                (
-                    customer_id,
-                    tenant_id,
-                    name,
-                    normalize_component(vat_id),
-                    normalize_component(notes),
-                    now,
-                    now,
-                ),
-            )
-            event_append(
-                event_type="crm_customer",
-                entity_type="customer",
-                entity_id=_crm_event_id(customer_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "customer",
-                    "entity_id": customer_id,
-                    "action": "created",
-                    "name": name,
-                },
-                con=con,
-            )
-            con.commit()
-            return customer_id
-        finally:
-            con.close()
+
+    def _tx(con: sqlite3.Connection) -> str:
+        con.execute(
+            """
+            INSERT INTO customers(id, tenant_id, name, vat_id, notes, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (
+                customer_id,
+                tenant_id,
+                customer_name,
+                normalize_component(vat_id),
+                normalize_component(notes),
+                now,
+                now,
+            ),
+        )
+        event_append(
+            event_type="crm_customer",
+            entity_type="customer",
+            entity_id=_crm_event_id(customer_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/customers_create",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "customer",
+                "entity_id": customer_id,
+                "action": "created",
+                "data": {"name": customer_name},
+            },
+            con=con,
+        )
+        return customer_id
+
+    return _run_write_txn(_tx)
 
 
 def customers_get(tenant_id: str, customer_id: str) -> Dict[str, Any]:
@@ -4513,7 +4621,7 @@ def customers_get(tenant_id: str, customer_id: str) -> Dict[str, Any]:
                 (tenant_id, customer_id),
             ).fetchone()
             if not row:
-                raise ValueError("customer_not_found")
+                raise ValueError("not_found")
             return dict(row)
         finally:
             con.close()
@@ -4526,9 +4634,10 @@ def customers_list(
     query: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     tenant_id = _crm_tenant(tenant_id)
-    limit = max(1, min(int(limit), 500))
-    offset = max(0, int(offset))
+    lim = max(1, min(int(limit), 500))
+    off = max(0, int(offset))
     q = normalize_component(query)
+
     with _DB_LOCK:
         con = _db()
         try:
@@ -4540,7 +4649,7 @@ def customers_list(
                     ORDER BY updated_at DESC, id DESC
                     LIMIT ? OFFSET ?
                     """,
-                    (tenant_id, f"%{q}%", f"%{q}%", limit, offset),
+                    (tenant_id, f"%{q}%", f"%{q}%", lim, off),
                 ).fetchall()
             else:
                 rows = con.execute(
@@ -4550,7 +4659,7 @@ def customers_list(
                     ORDER BY updated_at DESC, id DESC
                     LIMIT ? OFFSET ?
                     """,
-                    (tenant_id, limit, offset),
+                    (tenant_id, lim, off),
                 ).fetchall()
             return [dict(r) for r in rows]
         finally:
@@ -4564,63 +4673,61 @@ def customers_update(
     name: Optional[str] = None,
     vat_id: Optional[str] = None,
     notes: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
-    with _DB_LOCK:
-        con = _db()
-        try:
-            row = con.execute(
-                "SELECT * FROM customers WHERE id=? AND tenant_id=?",
-                (customer_id, tenant_id),
-            ).fetchone()
-            if not row:
-                raise ValueError("customer_not_found")
-            new_name = (
-                normalize_component(name)
-                if name is not None
-                else str(row["name"] or "")
-            )
-            if not new_name:
-                raise ValueError("name_required")
-            new_vat = (
-                normalize_component(vat_id)
-                if vat_id is not None
-                else str(row["vat_id"] or "")
-            )
-            new_notes = (
-                normalize_component(notes)
-                if notes is not None
-                else str(row["notes"] or "")
-            )
-            con.execute(
-                """
-                UPDATE customers
-                SET name=?, vat_id=?, notes=?, updated_at=?
-                WHERE id=? AND tenant_id=?
-                """,
-                (new_name, new_vat, new_notes, _now_iso(), customer_id, tenant_id),
-            )
-            event_append(
-                event_type="crm_customer",
-                entity_type="customer",
-                entity_id=_crm_event_id(customer_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "customer",
-                    "entity_id": customer_id,
-                    "action": "updated",
-                    "name": new_name,
-                },
-                con=con,
-            )
-            out = con.execute(
-                "SELECT * FROM customers WHERE id=? AND tenant_id=?",
-                (customer_id, tenant_id),
-            ).fetchone()
-            con.commit()
-            return dict(out) if out else {}
-        finally:
-            con.close()
+
+    def _tx(con: sqlite3.Connection) -> Dict[str, Any]:
+        row = con.execute(
+            "SELECT * FROM customers WHERE tenant_id=? AND id=?",
+            (tenant_id, customer_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("not_found")
+        new_name = (
+            normalize_component(name) if name is not None else str(row["name"] or "")
+        )
+        if not new_name:
+            raise ValueError("validation_error")
+        new_vat = (
+            normalize_component(vat_id)
+            if vat_id is not None
+            else str(row["vat_id"] or "")
+        )
+        new_notes = (
+            normalize_component(notes) if notes is not None else str(row["notes"] or "")
+        )
+        con.execute(
+            """
+            UPDATE customers
+            SET name=?, vat_id=?, notes=?, updated_at=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (new_name, new_vat, new_notes, _now_iso(), tenant_id, customer_id),
+        )
+        event_append(
+            event_type="crm_customer",
+            entity_type="customer",
+            entity_id=_crm_event_id(customer_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/customers_update",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "customer",
+                "entity_id": customer_id,
+                "action": "updated",
+                "data": {"name": new_name},
+            },
+            con=con,
+        )
+        out = con.execute(
+            "SELECT * FROM customers WHERE tenant_id=? AND id=?",
+            (tenant_id, customer_id),
+        ).fetchone()
+        return dict(out) if out else {}
+
+    return _run_write_txn(_tx)
 
 
 def contacts_create(
@@ -4631,52 +4738,54 @@ def contacts_create(
     phone: Optional[str] = None,
     role: Optional[str] = None,
     notes: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
-    name = normalize_component(name)
-    if not name:
-        raise ValueError("name_required")
+    contact_name = normalize_component(name)
+    if not contact_name:
+        raise ValueError("validation_error")
     contact_id = _crm_new_id()
     now = _now_iso()
-    with _DB_LOCK:
-        con = _db()
-        try:
-            _crm_require_customer(con, tenant_id, customer_id)
-            con.execute(
-                """
-                INSERT INTO contacts(id, tenant_id, customer_id, name, email, phone, role, notes, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    contact_id,
-                    tenant_id,
-                    customer_id,
-                    name,
-                    normalize_component(email),
-                    normalize_component(phone),
-                    normalize_component(role),
-                    normalize_component(notes),
-                    now,
-                    now,
-                ),
-            )
-            event_append(
-                event_type="crm_contact",
-                entity_type="contact",
-                entity_id=_crm_event_id(contact_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "contact",
-                    "entity_id": contact_id,
-                    "action": "created",
-                    "customer_id": customer_id,
-                },
-                con=con,
-            )
-            con.commit()
-            return contact_id
-        finally:
-            con.close()
+
+    def _tx(con: sqlite3.Connection) -> str:
+        _crm_require_customer(con, tenant_id, customer_id)
+        con.execute(
+            """
+            INSERT INTO contacts(id, tenant_id, customer_id, name, email, phone, role, notes, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                contact_id,
+                tenant_id,
+                customer_id,
+                contact_name,
+                normalize_component(email),
+                normalize_component(phone),
+                normalize_component(role),
+                normalize_component(notes),
+                now,
+                now,
+            ),
+        )
+        event_append(
+            event_type="crm_contact",
+            entity_type="contact",
+            entity_id=_crm_event_id(contact_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/contacts_create",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "contact",
+                "entity_id": contact_id,
+                "action": "created",
+                "data": {"customer_id": customer_id},
+            },
+            con=con,
+        )
+        return contact_id
+
+    return _run_write_txn(_tx)
 
 
 def contacts_list_by_customer(tenant_id: str, customer_id: str) -> List[Dict[str, Any]]:
@@ -4707,94 +4816,130 @@ def deals_create(
     currency: str = "EUR",
     notes: Optional[str] = None,
     project_id: Optional[int] = None,
+    probability: Optional[int] = None,
+    expected_close_date: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
-    title = normalize_component(title)
-    stage = normalize_component(stage).lower() or "lead"
-    if stage not in {"lead", "qualified", "proposal", "won", "lost"}:
-        raise ValueError("invalid_stage")
-    if not title:
-        raise ValueError("title_required")
+    title_norm = normalize_component(title)
+    stage_norm = normalize_component(stage).lower() or "lead"
+    if stage_norm not in {
+        "lead",
+        "qualified",
+        "proposal",
+        "negotiation",
+        "won",
+        "lost",
+    }:
+        raise ValueError("validation_error")
+    if not title_norm:
+        raise ValueError("validation_error")
+    if probability is not None and (int(probability) < 0 or int(probability) > 100):
+        raise ValueError("validation_error")
+    if expected_close_date:
+        try:
+            datetime.fromisoformat(str(expected_close_date))
+        except Exception:
+            raise ValueError("validation_error")
+
     deal_id = _crm_new_id()
     now = _now_iso()
-    with _DB_LOCK:
-        con = _db()
-        try:
-            _crm_require_customer(con, tenant_id, customer_id)
-            con.execute(
-                """
-                INSERT INTO deals(id, tenant_id, customer_id, title, stage, project_id, value_cents, currency, notes, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    deal_id,
-                    tenant_id,
-                    customer_id,
-                    title,
-                    stage,
-                    int(project_id) if project_id is not None else None,
-                    int(value_cents) if value_cents is not None else None,
-                    normalize_component(currency) or "EUR",
-                    normalize_component(notes),
-                    now,
-                    now,
-                ),
-            )
-            event_append(
-                event_type="crm_deal",
-                entity_type="deal",
-                entity_id=_crm_event_id(deal_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "deal",
-                    "entity_id": deal_id,
-                    "action": "created",
-                    "customer_id": customer_id,
-                    "stage": stage,
-                },
-                con=con,
-            )
-            con.commit()
-            return deal_id
-        finally:
-            con.close()
+    cents = _cents_from_legacy(value_cents, None, nullable=True)
+
+    def _tx(con: sqlite3.Connection) -> str:
+        _crm_require_customer(con, tenant_id, customer_id)
+        con.execute(
+            """
+            INSERT INTO deals(
+              id, tenant_id, customer_id, title, stage, project_id,
+              value_cents, currency, notes, probability, expected_close_date,
+              created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                deal_id,
+                tenant_id,
+                customer_id,
+                title_norm,
+                stage_norm,
+                int(project_id) if project_id is not None else None,
+                cents,
+                normalize_component(currency) or "EUR",
+                normalize_component(notes),
+                int(probability) if probability is not None else None,
+                str(expected_close_date) if expected_close_date else None,
+                now,
+                now,
+            ),
+        )
+        event_append(
+            event_type="crm_deal",
+            entity_type="deal",
+            entity_id=_crm_event_id(deal_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/deals_create",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "deal",
+                "entity_id": deal_id,
+                "action": "created",
+                "data": {"customer_id": customer_id, "stage": stage_norm},
+            },
+            con=con,
+        )
+        return deal_id
+
+    return _run_write_txn(_tx)
 
 
-def deals_update_stage(tenant_id: str, deal_id: str, stage: str) -> Dict[str, Any]:
+def deals_update_stage(
+    tenant_id: str,
+    deal_id: str,
+    stage: str,
+    actor_user_id: Optional[int] = None,
+) -> Dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
-    stage = normalize_component(stage).lower()
-    if stage not in {"lead", "qualified", "proposal", "won", "lost"}:
-        raise ValueError("invalid_stage")
-    with _DB_LOCK:
-        con = _db()
-        try:
-            row = _crm_require_deal(con, tenant_id, deal_id)
-            con.execute(
-                "UPDATE deals SET stage=?, updated_at=? WHERE id=? AND tenant_id=?",
-                (stage, _now_iso(), deal_id, tenant_id),
-            )
-            event_append(
-                event_type="crm_deal",
-                entity_type="deal",
-                entity_id=_crm_event_id(deal_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "deal",
-                    "entity_id": deal_id,
-                    "action": "updated",
-                    "before_stage": row.get("stage"),
-                    "stage": stage,
-                },
-                con=con,
-            )
-            out = con.execute(
-                "SELECT * FROM deals WHERE id=? AND tenant_id=?",
-                (deal_id, tenant_id),
-            ).fetchone()
-            con.commit()
-            return dict(out) if out else {}
-        finally:
-            con.close()
+    stage_norm = normalize_component(stage).lower()
+    if stage_norm not in {
+        "lead",
+        "qualified",
+        "proposal",
+        "negotiation",
+        "won",
+        "lost",
+    }:
+        raise ValueError("validation_error")
+
+    def _tx(con: sqlite3.Connection) -> Dict[str, Any]:
+        deal = _crm_require_deal(con, tenant_id, deal_id)
+        con.execute(
+            "UPDATE deals SET stage=?, updated_at=? WHERE tenant_id=? AND id=?",
+            (stage_norm, _now_iso(), tenant_id, deal_id),
+        )
+        event_append(
+            event_type="crm_deal",
+            entity_type="deal",
+            entity_id=_crm_event_id(deal_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/deals_update_stage",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "deal",
+                "entity_id": deal_id,
+                "action": "updated",
+                "data": {"before_stage": deal.get("stage"), "stage": stage_norm},
+            },
+            con=con,
+        )
+        out = con.execute(
+            "SELECT * FROM deals WHERE tenant_id=? AND id=?",
+            (tenant_id, deal_id),
+        ).fetchone()
+        return dict(out) if out else {}
+
+    return _run_write_txn(_tx)
 
 
 def deals_list(
@@ -4814,6 +4959,7 @@ def deals_list(
         clauses.append("customer_id=?")
         params.append(cid)
     where_sql = " AND ".join(clauses)
+
     with _DB_LOCK:
         con = _db()
         try:
@@ -4821,9 +4967,23 @@ def deals_list(
                 f"SELECT * FROM deals WHERE {where_sql} ORDER BY updated_at DESC, id DESC",
                 tuple(params),
             ).fetchall()
-            return [dict(r) for r in rows]
+            out = [dict(r) for r in rows]
+            for item in out:
+                item["value_cents"] = _cents_from_legacy(
+                    item.get("value_cents"), None, nullable=True
+                )
+            return out
         finally:
             con.close()
+
+
+def _next_quote_number(con: sqlite3.Connection, tenant_id: str) -> str:
+    row = con.execute(
+        "SELECT COUNT(*) AS cnt FROM quotes WHERE tenant_id=?",
+        (tenant_id,),
+    ).fetchone()
+    nxt = int((row["cnt"] if row else 0) or 0) + 1
+    return f"Q-{nxt:06d}"
 
 
 def quotes_create(
@@ -4832,22 +4992,27 @@ def quotes_create(
     deal_id: Optional[str] = None,
     currency: str = "EUR",
     notes: Optional[str] = None,
+    quote_number: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
     quote_id = _crm_new_id()
     now = _now_iso()
-    with _DB_LOCK:
-        con = _db()
+
+    def _tx(con: sqlite3.Connection) -> str:
+        _crm_require_customer(con, tenant_id, customer_id)
+        if deal_id:
+            _crm_require_deal(con, tenant_id, deal_id)
+        quote_no = normalize_component(quote_number) or _next_quote_number(
+            con, tenant_id
+        )
         try:
-            _crm_require_customer(con, tenant_id, customer_id)
-            if deal_id:
-                _crm_require_deal(con, tenant_id, deal_id)
             con.execute(
                 """
                 INSERT INTO quotes(
                   id, tenant_id, customer_id, deal_id, status, currency,
-                  subtotal_cents, tax_cents, total_cents, notes, created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                  quote_number, subtotal_cents, tax_cents, tax_amount_cents, total_cents, notes, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     quote_id,
@@ -4856,6 +5021,8 @@ def quotes_create(
                     deal_id,
                     "draft",
                     normalize_component(currency) or "EUR",
+                    quote_no,
+                    0,
                     0,
                     0,
                     0,
@@ -4864,24 +5031,36 @@ def quotes_create(
                     now,
                 ),
             )
-            event_append(
-                event_type="crm_quote",
-                entity_type="quote",
-                entity_id=_crm_event_id(quote_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "quote",
-                    "entity_id": quote_id,
-                    "action": "created",
+        except sqlite3.IntegrityError as exc:
+            if (
+                "idx_quotes_tenant_quote_number" in str(exc)
+                or "UNIQUE" in str(exc).upper()
+            ):
+                raise ValueError("duplicate")
+            raise
+        event_append(
+            event_type="crm_quote",
+            entity_type="quote",
+            entity_id=_crm_event_id(quote_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/quotes_create",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "quote",
+                "entity_id": quote_id,
+                "action": "created",
+                "data": {
                     "customer_id": customer_id,
                     "deal_id": deal_id,
+                    "quote_number": quote_no,
                 },
-                con=con,
-            )
-            con.commit()
-            return quote_id
-        finally:
-            con.close()
+            },
+            con=con,
+        )
+        return quote_id
+
+    return _run_write_txn(_tx)
 
 
 def quotes_add_item(
@@ -4890,126 +5069,216 @@ def quotes_add_item(
     description: str,
     qty: float,
     unit_price_cents: int,
+    actor_user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
-    description = normalize_component(description)
-    if not description:
-        raise ValueError("description_required")
-    qty_val = float(qty)
+    description_norm = normalize_component(description)
+    if not description_norm:
+        raise ValueError("validation_error")
+    try:
+        qty_val = Decimal(str(qty))
+    except Exception:
+        raise ValueError("validation_error")
     if qty_val <= 0:
-        raise ValueError("qty_invalid")
-    unit_val = max(0, int(unit_price_cents))
-    line_total = int(round(qty_val * unit_val))
+        raise ValueError("validation_error")
+    unit_val = int(unit_price_cents)
+    if unit_val < 0:
+        raise ValueError("validation_error")
+    line_total = int(
+        (qty_val * Decimal(unit_val)).to_integral_value(rounding=ROUND_HALF_UP)
+    )
     item_id = _crm_new_id()
-    with _DB_LOCK:
-        con = _db()
-        try:
-            qrow = con.execute(
-                "SELECT id FROM quotes WHERE id=? AND tenant_id=?",
-                (quote_id, tenant_id),
-            ).fetchone()
-            if not qrow:
-                raise ValueError("quote_not_found")
-            now = _now_iso()
-            con.execute(
-                """
-                INSERT INTO quote_items(id, tenant_id, quote_id, description, qty, unit_price_cents, line_total_cents, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    item_id,
-                    tenant_id,
-                    quote_id,
-                    description,
-                    qty_val,
-                    unit_val,
-                    line_total,
-                    now,
-                    now,
-                ),
+
+    def _tx(con: sqlite3.Connection) -> Dict[str, Any]:
+        qrow = con.execute(
+            "SELECT id FROM quotes WHERE tenant_id=? AND id=?",
+            (tenant_id, quote_id),
+        ).fetchone()
+        if not qrow:
+            raise ValueError("not_found")
+        now = _now_iso()
+        con.execute(
+            """
+            INSERT INTO quote_items(id, tenant_id, quote_id, description, qty, unit_price_cents, line_total_cents, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                item_id,
+                tenant_id,
+                quote_id,
+                description_norm,
+                float(qty_val),
+                unit_val,
+                line_total,
+                now,
+                now,
+            ),
+        )
+        event_append(
+            event_type="crm_quote_item",
+            entity_type="quote_item",
+            entity_id=_crm_event_id(item_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/quotes_add_item",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "quote_item",
+                "entity_id": item_id,
+                "action": "created",
+                "data": {"quote_id": quote_id, "line_total_cents": line_total},
+            },
+            con=con,
+        )
+
+        subtotal_row = con.execute(
+            "SELECT COALESCE(SUM(line_total_cents),0) AS subtotal FROM quote_items WHERE tenant_id=? AND quote_id=?",
+            (tenant_id, quote_id),
+        ).fetchone()
+        subtotal = int((subtotal_row["subtotal"] if subtotal_row else 0) or 0)
+        qrow = con.execute(
+            "SELECT tax_amount_cents, tax_cents FROM quotes WHERE tenant_id=? AND id=?",
+            (tenant_id, quote_id),
+        ).fetchone()
+        existing_tax = 0
+        if qrow is not None:
+            existing_tax = int(
+                _cents_from_legacy(
+                    qrow["tax_amount_cents"]
+                    if "tax_amount_cents" in qrow.keys()
+                    else None,
+                    qrow["tax_cents"] if "tax_cents" in qrow.keys() else None,
+                    nullable=False,
+                )
+                or 0
             )
-            event_append(
-                event_type="crm_quote_item",
-                entity_type="quote_item",
-                entity_id=_crm_event_id(item_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "quote_item",
-                    "entity_id": item_id,
-                    "action": "created",
-                    "quote_id": quote_id,
-                    "line_total_cents": line_total,
+        total = subtotal + max(0, existing_tax)
+        con.execute(
+            """
+            UPDATE quotes
+            SET subtotal_cents=?, tax_cents=?, tax_amount_cents=?, total_cents=?, updated_at=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (
+                subtotal,
+                existing_tax,
+                existing_tax,
+                total,
+                _now_iso(),
+                tenant_id,
+                quote_id,
+            ),
+        )
+        event_append(
+            event_type="crm_quote",
+            entity_type="quote",
+            entity_id=_crm_event_id(quote_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/quotes_add_item",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "quote",
+                "entity_id": quote_id,
+                "action": "updated",
+                "data": {
+                    "subtotal_cents": subtotal,
+                    "tax_amount_cents": existing_tax,
+                    "total_cents": total,
                 },
-                con=con,
-            )
-            con.commit()
-        finally:
-            con.close()
-    return quotes_recalculate_totals(tenant_id, quote_id)
+            },
+            con=con,
+        )
+        q = con.execute(
+            "SELECT * FROM quotes WHERE tenant_id=? AND id=?",
+            (tenant_id, quote_id),
+        ).fetchone()
+        out = dict(q) if q else {}
+        out["items"] = _crm_quote_items(con, tenant_id, quote_id)
+        return out
+
+    return _run_write_txn(_tx)
 
 
 def quotes_recalculate_totals(
     tenant_id: str,
     quote_id: str,
     tax_rate: Optional[float] = None,
+    actor_user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
-    rate = float(tax_rate) if tax_rate is not None else None
-    with _DB_LOCK:
-        con = _db()
-        try:
-            qrow = con.execute(
-                "SELECT * FROM quotes WHERE id=? AND tenant_id=?",
-                (quote_id, tenant_id),
-            ).fetchone()
-            if not qrow:
-                raise ValueError("quote_not_found")
-            subtotal_row = con.execute(
-                "SELECT COALESCE(SUM(line_total_cents),0) AS subtotal FROM quote_items WHERE tenant_id=? AND quote_id=?",
-                (tenant_id, quote_id),
-            ).fetchone()
-            subtotal = int((subtotal_row["subtotal"] if subtotal_row else 0) or 0)
-            if rate is None:
-                tax = int(qrow["tax_cents"] or 0)
-                if tax < 0:
-                    tax = 0
-            else:
-                tax = int(round(subtotal * max(0.0, rate)))
-            total = subtotal + tax
-            con.execute(
-                """
-                UPDATE quotes
-                SET subtotal_cents=?, tax_cents=?, total_cents=?, updated_at=?
-                WHERE id=? AND tenant_id=?
-                """,
-                (subtotal, tax, total, _now_iso(), quote_id, tenant_id),
+
+    def _tx(con: sqlite3.Connection) -> Dict[str, Any]:
+        qrow = con.execute(
+            "SELECT * FROM quotes WHERE tenant_id=? AND id=?",
+            (tenant_id, quote_id),
+        ).fetchone()
+        if not qrow:
+            raise ValueError("not_found")
+
+        subtotal_row = con.execute(
+            "SELECT COALESCE(SUM(line_total_cents),0) AS subtotal FROM quote_items WHERE tenant_id=? AND quote_id=?",
+            (tenant_id, quote_id),
+        ).fetchone()
+        subtotal = int((subtotal_row["subtotal"] if subtotal_row else 0) or 0)
+        if tax_rate is None:
+            existing_tax = _cents_from_legacy(
+                qrow["tax_amount_cents"] if "tax_amount_cents" in qrow.keys() else None,
+                qrow["tax_cents"] if "tax_cents" in qrow.keys() else None,
+                nullable=False,
             )
-            event_append(
-                event_type="crm_quote",
-                entity_type="quote",
-                entity_id=_crm_event_id(quote_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "quote",
-                    "entity_id": quote_id,
-                    "action": "updated",
+            tax_amount = max(0, int(existing_tax or 0))
+        else:
+            try:
+                rate = Decimal(str(tax_rate))
+            except Exception:
+                raise ValueError("validation_error")
+            if rate < 0:
+                raise ValueError("validation_error")
+            tax_amount = int(
+                (Decimal(subtotal) * rate).to_integral_value(rounding=ROUND_HALF_UP)
+            )
+        total = subtotal + tax_amount
+
+        con.execute(
+            """
+            UPDATE quotes
+            SET subtotal_cents=?, tax_cents=?, tax_amount_cents=?, total_cents=?, updated_at=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (subtotal, tax_amount, tax_amount, total, _now_iso(), tenant_id, quote_id),
+        )
+
+        event_append(
+            event_type="crm_quote",
+            entity_type="quote",
+            entity_id=_crm_event_id(quote_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/quotes_recalculate_totals",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "quote",
+                "entity_id": quote_id,
+                "action": "updated",
+                "data": {
                     "subtotal_cents": subtotal,
-                    "tax_cents": tax,
+                    "tax_amount_cents": tax_amount,
                     "total_cents": total,
                 },
-                con=con,
-            )
-            q = con.execute(
-                "SELECT * FROM quotes WHERE id=? AND tenant_id=?",
-                (quote_id, tenant_id),
-            ).fetchone()
-            items = _crm_quote_items(con, tenant_id, quote_id)
-            con.commit()
-            out = dict(q) if q else {}
-            out["items"] = items
-            return out
-        finally:
-            con.close()
+            },
+            con=con,
+        )
+
+        q = con.execute(
+            "SELECT * FROM quotes WHERE tenant_id=? AND id=?",
+            (tenant_id, quote_id),
+        ).fetchone()
+        out = dict(q) if q else {}
+        out["items"] = _crm_quote_items(con, tenant_id, quote_id)
+        return out
+
+    return _run_write_txn(_tx)
 
 
 def quotes_get(tenant_id: str, quote_id: str) -> Dict[str, Any]:
@@ -5017,20 +5286,33 @@ def quotes_get(tenant_id: str, quote_id: str) -> Dict[str, Any]:
     with _DB_LOCK:
         con = _db()
         try:
-            q = con.execute(
-                "SELECT * FROM quotes WHERE id=? AND tenant_id=?",
-                (quote_id, tenant_id),
+            row = con.execute(
+                "SELECT * FROM quotes WHERE tenant_id=? AND id=?",
+                (tenant_id, quote_id),
             ).fetchone()
-            if not q:
-                raise ValueError("quote_not_found")
-            out = dict(q)
+            if not row:
+                raise ValueError("not_found")
+            out = dict(row)
+            out["subtotal_cents"] = _cents_from_legacy(
+                out.get("subtotal_cents"), None, nullable=False
+            )
+            out["tax_amount_cents"] = _cents_from_legacy(
+                out.get("tax_amount_cents"), out.get("tax_cents"), nullable=False
+            )
+            out["total_cents"] = _cents_from_legacy(
+                out.get("total_cents"), None, nullable=False
+            )
             out["items"] = _crm_quote_items(con, tenant_id, quote_id)
             return out
         finally:
             con.close()
 
 
-def quotes_create_from_deal(tenant_id: str, deal_id: str) -> Dict[str, Any]:
+def quotes_create_from_deal(
+    tenant_id: str,
+    deal_id: str,
+    actor_user_id: Optional[int] = None,
+) -> Dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -5045,13 +5327,13 @@ def quotes_create_from_deal(tenant_id: str, deal_id: str) -> Dict[str, Any]:
         deal_id=deal_id,
         currency=str(deal.get("currency") or "EUR"),
         notes="Automatisch aus Deal erstellt",
+        actor_user_id=actor_user_id,
     )
 
     project_id = int(deal.get("project_id") or 0)
     if project_id > 0:
         summary = time_entries_summary_by_project(
-            tenant_id=tenant_id,
-            project_id=project_id,
+            tenant_id=tenant_id, project_id=project_id
         )
         spent_hours = float(summary.get("spent_hours") or 0.0)
         if spent_hours > 0:
@@ -5071,36 +5353,70 @@ def quotes_create_from_deal(tenant_id: str, deal_id: str) -> Dict[str, Any]:
                 description="Arbeitsstunden",
                 qty=spent_hours,
                 unit_price_cents=default_hour_rate,
+                actor_user_id=actor_user_id,
             )
         else:
-            quotes_recalculate_totals(tenant_id, quote_id)
-            customers_update_note = "Automatisch erstellt; keine Zeitdaten gefunden."
-            with _DB_LOCK:
-                con = _db()
-                try:
-                    con.execute(
-                        "UPDATE quotes SET notes=?, updated_at=? WHERE id=? AND tenant_id=?",
-                        (customers_update_note, _now_iso(), quote_id, tenant_id),
-                    )
-                    con.commit()
-                finally:
-                    con.close()
-    else:
-        with _DB_LOCK:
-            con = _db()
-            try:
+
+            def _tx_note(con: sqlite3.Connection) -> None:
                 con.execute(
-                    "UPDATE quotes SET notes=?, updated_at=? WHERE id=? AND tenant_id=?",
+                    "UPDATE quotes SET notes=?, updated_at=? WHERE tenant_id=? AND id=?",
                     (
-                        "Automatisch erstellt; kein Projekt am Deal verknüpft.",
+                        "Automatisch erstellt; keine Zeitdaten gefunden.",
                         _now_iso(),
-                        quote_id,
                         tenant_id,
+                        quote_id,
                     ),
                 )
-                con.commit()
-            finally:
-                con.close()
+                event_append(
+                    event_type="crm_quote",
+                    entity_type="quote",
+                    entity_id=_crm_event_id(quote_id),
+                    payload={
+                        "schema_version": 1,
+                        "source": "core/quotes_create_from_deal",
+                        "actor_user_id": actor_user_id,
+                        "tenant_id": tenant_id,
+                        "entity_type": "quote",
+                        "entity_id": quote_id,
+                        "action": "updated",
+                        "data": {"note": "no_time_data"},
+                    },
+                    con=con,
+                )
+                return None
+
+            _run_write_txn(_tx_note)
+    else:
+
+        def _tx_note2(con: sqlite3.Connection) -> None:
+            con.execute(
+                "UPDATE quotes SET notes=?, updated_at=? WHERE tenant_id=? AND id=?",
+                (
+                    "Automatisch erstellt; kein Projekt am Deal verknüpft.",
+                    _now_iso(),
+                    tenant_id,
+                    quote_id,
+                ),
+            )
+            event_append(
+                event_type="crm_quote",
+                entity_type="quote",
+                entity_id=_crm_event_id(quote_id),
+                payload={
+                    "schema_version": 1,
+                    "source": "core/quotes_create_from_deal",
+                    "actor_user_id": actor_user_id,
+                    "tenant_id": tenant_id,
+                    "entity_type": "quote",
+                    "entity_id": quote_id,
+                    "action": "updated",
+                    "data": {"note": "no_project_link"},
+                },
+                con=con,
+            )
+            return None
+
+        _run_write_txn(_tx_note2)
 
     return quotes_get(tenant_id, quote_id)
 
@@ -5111,13 +5427,14 @@ def emails_import_eml(
     customer_id: Optional[str] = None,
     contact_id: Optional[str] = None,
     source_notes: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
     if not isinstance(eml_bytes, (bytes, bytearray)) or not eml_bytes:
-        raise ValueError("eml_required")
+        raise ValueError("validation_error")
 
-    now = _now_iso()
     email_id = _crm_new_id()
+    now = _now_iso()
     msg_id = ""
     from_addr = ""
     to_addrs = ""
@@ -5125,17 +5442,18 @@ def emails_import_eml(
     received_at = now
     body_text = ""
     notes = normalize_component(source_notes)
+    attachment_meta: list[dict[str, Any]] = []
 
     try:
-        parsed = BytesParser(policy=policy.default).parsebytes(bytes(eml_bytes))
-        msg_id = normalize_component(parsed.get("Message-ID") or "")
-        from_parsed = getaddresses([parsed.get("From") or ""])
+        msg = BytesParser(policy=policy.default).parsebytes(bytes(eml_bytes))
+        msg_id = normalize_component(msg.get("Message-ID") or "")
+        from_parsed = getaddresses([msg.get("From") or ""])
         from_addr = normalize_component(from_parsed[0][1] if from_parsed else "")
-        to_parsed = getaddresses(parsed.get_all("To", []))
+        to_parsed = getaddresses(msg.get_all("To", []))
         to_addrs = ", ".join(a for _, a in to_parsed if a)
-        subject = normalize_component(parsed.get("Subject") or "")
+        subject = normalize_component(msg.get("Subject") or "")
 
-        dt_hdr = parsed.get("Date")
+        dt_hdr = msg.get("Date")
         if dt_hdr:
             try:
                 dt = parsedate_to_datetime(dt_hdr)
@@ -5144,44 +5462,54 @@ def emails_import_eml(
             except Exception:
                 pass
 
-        if parsed.is_multipart():
-            for part in parsed.walk():
-                if part.get_content_type() == "text/plain":
+        if msg.is_multipart():
+            for part in msg.walk():
+                filename = part.get_filename()
+                if filename:
+                    payload = part.get_payload(decode=True) or b""
+                    attachment_meta.append(
+                        {
+                            "filename": normalize_component(filename),
+                            "size": len(payload),
+                        }
+                    )
+                if part.get_content_type() == "text/plain" and not body_text:
                     try:
                         body_text = part.get_content()
                     except Exception:
                         body_text = ""
-                    if body_text:
-                        break
         else:
-            if parsed.get_content_type() == "text/plain":
+            if msg.get_content_type() == "text/plain":
                 try:
-                    body_text = parsed.get_content()
+                    body_text = msg.get_content()
                 except Exception:
                     body_text = ""
+
+        if body_text and len(body_text) > 20000:
+            body_text = body_text[:20000] + "\n[truncated]"
 
         if body_text and ("\x00" in body_text or any(ord(ch) < 9 for ch in body_text)):
             notes = f"{notes}; invalid_plain_text" if notes else "invalid_plain_text"
             body_text = ""
+
     except Exception as exc:
         err = f"parse_error: {exc}"
         notes = f"{notes}; {err}" if notes else err
         body_text = ""
 
-    with _DB_LOCK:
-        con = _db()
+    def _tx(con: sqlite3.Connection) -> str:
+        if customer_id:
+            _crm_require_customer(con, tenant_id, customer_id)
+        if contact_id:
+            _crm_require_contact(con, tenant_id, contact_id)
         try:
-            if customer_id:
-                _crm_require_customer(con, tenant_id, customer_id)
-            if contact_id:
-                _crm_require_contact(con, tenant_id, contact_id)
             con.execute(
                 """
                 INSERT INTO emails_cache(
                   id, tenant_id, customer_id, contact_id, message_id,
                   from_addr, to_addrs, subject, received_at, body_text,
-                  raw_eml, notes, created_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                  raw_eml, notes, attachments_json, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     email_id,
@@ -5194,30 +5522,46 @@ def emails_import_eml(
                     subject,
                     received_at,
                     body_text,
-                    sqlite3.Binary(bytes(eml_bytes)),
+                    sqlite3.Binary(bytes(eml_bytes[:65536])),
                     notes,
+                    json.dumps(attachment_meta, ensure_ascii=False, sort_keys=True),
                     now,
                 ),
             )
-            event_append(
-                event_type="crm_email",
-                entity_type="email",
-                entity_id=_crm_event_id(email_id),
-                payload={
-                    "tenant_id": tenant_id,
-                    "entity_type": "email",
-                    "entity_id": email_id,
-                    "action": "imported",
+        except sqlite3.IntegrityError as exc:
+            if (
+                "idx_emails_cache_tenant_message" in str(exc)
+                or "UNIQUE" in str(exc).upper()
+            ):
+                raise ValueError("duplicate")
+            raise
+
+        event_append(
+            event_type="crm_email",
+            entity_type="email",
+            entity_id=_crm_event_id(email_id),
+            payload={
+                "schema_version": 1,
+                "source": "core/emails_import_eml",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "entity_type": "email",
+                "entity_id": email_id,
+                "action": "imported",
+                "data": {
+                    "message_id": msg_id,
                     "subject": subject,
-                    "customer_id": customer_id,
-                    "contact_id": contact_id,
+                    "from_addr": from_addr,
+                    "received_at": received_at,
+                    "raw_size": len(eml_bytes),
+                    "attachments": attachment_meta,
                 },
-                con=con,
-            )
-            con.commit()
-            return email_id
-        finally:
-            con.close()
+            },
+            con=con,
+        )
+        return email_id
+
+    return _run_write_txn(_tx)
 
 
 # ============================================================
