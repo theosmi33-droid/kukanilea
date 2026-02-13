@@ -1,0 +1,13 @@
+<div class="card p-4">
+  <h3 class="font-semibold mb-2">Kontakte</h3>
+  <ul class="space-y-2 text-sm">
+    {% for c in contacts %}
+    <li class="border rounded-lg px-3 py-2" style="border-color:var(--border)">
+      <div class="font-medium">{{ c.name }}</div>
+      <div class="muted">{{ c.email or '-' }} · {{ c.phone or '-' }}</div>
+    </li>
+    {% else %}
+    <li class="muted">Keine Kontakte.</li>
+    {% endfor %}
+  </ul>
+</div>

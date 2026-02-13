@@ -1,0 +1,50 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold">CRM · E-Mail Import (.eml)</h1>
+    <a class="btn-outline px-3 py-2 text-sm" href="/crm/customers">Kunden</a>
+  </div>
+
+  {% if read_only %}{% include 'crm/partials/read_only_banner.html' %}{% endif %}
+
+  <div class="card p-4 space-y-2">
+    <div class="text-sm muted">Maximale Dateigröße: {{ (max_eml_bytes // (1024*1024)) }} MB</div>
+    <form action="/api/emails/import" method="post" enctype="multipart/form-data" class="grid gap-2 md:grid-cols-4">
+      <input class="input px-3 py-2 text-sm" type="file" name="file" accept=".eml" {% if read_only %}disabled{% endif %} required>
+      <input class="input px-3 py-2 text-sm" type="text" name="customer_id" placeholder="customer_id (optional)" {% if read_only %}disabled{% endif %}>
+      <input class="input px-3 py-2 text-sm" type="text" name="contact_id" placeholder="contact_id (optional)" {% if read_only %}disabled{% endif %}>
+      <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Importieren</button>
+    </form>
+  </div>
+
+  <div class="card overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b" style="border-color:var(--border)">
+          <th class="text-left px-3 py-2">Von</th>
+          <th class="text-left px-3 py-2">Betreff</th>
+          <th class="text-left px-3 py-2">Empfangen</th>
+          <th class="text-left px-3 py-2">Preview</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in emails %}
+        <tr class="border-b" style="border-color:var(--border)">
+          <td class="px-3 py-2">{{ e.from_addr or '-' }}</td>
+          <td class="px-3 py-2">{{ e.subject or '(ohne Betreff)' }}</td>
+          <td class="px-3 py-2">{{ e.received_at or '-' }}</td>
+          <td class="px-3 py-2 text-xs">{{ e.body_preview or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td class="px-3 py-3 muted" colspan="4">Keine E-Mails.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="flex items-center justify-between px-3 py-2 text-xs muted">
+      <div>Gesamt: {{ total }} · Seite {{ page }}</div>
+      <div class="flex gap-2">
+        {% if page > 1 %}<a class="btn-outline px-2 py-1" href="/crm/emails/import?page={{ page-1 }}&page_size={{ page_size }}">Zurück</a>{% endif %}
+        {% if (page*page_size) < total %}<a class="btn-outline px-2 py-1" href="/crm/emails/import?page={{ page+1 }}&page_size={{ page_size }}">Weiter</a>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>

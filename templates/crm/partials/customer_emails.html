@@ -1,0 +1,14 @@
+<div class="card p-4">
+  <h3 class="font-semibold mb-2">E-Mails ({{ total }})</h3>
+  <ul class="space-y-2 text-sm">
+    {% for e in emails %}
+    <li class="border rounded-lg px-3 py-2" style="border-color:var(--border)">
+      <div class="font-medium">{{ e.subject or '(ohne Betreff)' }}</div>
+      <div class="muted">Von: {{ e.from_addr or '-' }} · {{ e.received_at or '-' }}</div>
+      <div class="text-xs mt-1">{{ e.body_preview or '' }}</div>
+    </li>
+    {% else %}
+    <li class="muted">Keine E-Mails.</li>
+    {% endfor %}
+  </ul>
+</div>

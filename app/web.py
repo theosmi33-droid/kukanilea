@@ -34,10 +34,11 @@ import importlib
 import importlib.util
 import os
 import re
+import sqlite3
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 from flask import (
     Blueprint,
@@ -45,6 +46,7 @@ from flask import (
     current_app,
     jsonify,
     redirect,
+    render_template,
     render_template_string,
     request,
     send_file,
@@ -497,12 +499,201 @@ def _time_range_params(range_name: str, date_value: str) -> tuple[str, str]:
     return start_at, end_at
 
 
+def _clamp_page_size(raw: str | None, *, default: int = 25, max_size: int = 100) -> int:
+    try:
+        size = int(raw or default)
+    except Exception:
+        size = default
+    return max(1, min(size, max_size))
+
+
+def _clamp_page(raw: str | None, *, default: int = 1) -> int:
+    try:
+        page = int(raw or default)
+    except Exception:
+        page = default
+    return max(1, page)
+
+
+def _format_cents(value: int | None, currency: str = "EUR") -> str:
+    cents = int(value or 0)
+    sign = "-" if cents < 0 else ""
+    cents_abs = abs(cents)
+    amount = f"{cents_abs // 100}.{cents_abs % 100:02d}"
+    symbol = (
+        "€" if (currency or "EUR").upper() == "EUR" else (currency or "EUR").upper()
+    )
+    return f"{sign}{symbol}{amount}"
+
+
+def _is_htmx() -> bool:
+    return bool(request.headers.get("HX-Request"))
+
+
+def _crm_db_rows(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+    con = sqlite3.connect(str(getattr(core, "DB_PATH")))
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        con.close()
+
+
+def _crm_customer_get(tenant_id: str, customer_id: str) -> dict[str, Any] | None:
+    rows = _crm_db_rows(
+        """
+        SELECT id, tenant_id, name, vat_id, notes, created_at, updated_at
+        FROM customers
+        WHERE tenant_id=? AND id=?
+        LIMIT 1
+        """,
+        (tenant_id, customer_id),
+    )
+    return rows[0] if rows else None
+
+
+def _crm_deals_list(
+    tenant_id: str,
+    *,
+    stage: str | None = None,
+    query: str | None = None,
+    customer_id: str | None = None,
+) -> list[dict[str, Any]]:
+    clauses = ["d.tenant_id=?"]
+    params: list[Any] = [tenant_id]
+    if stage:
+        clauses.append("LOWER(d.stage)=LOWER(?)")
+        params.append(stage)
+    if customer_id:
+        clauses.append("d.customer_id=?")
+        params.append(customer_id)
+    q = (query or "").strip()
+    if q:
+        clauses.append(
+            "(LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(c.name,'')) LIKE LOWER(?))"
+        )
+        params.extend([f"%{q}%", f"%{q}%"])
+    where_sql = " AND ".join(clauses)
+    rows = _crm_db_rows(
+        f"""
+        SELECT d.id, d.customer_id, d.title, d.stage, d.value_cents, d.currency,
+               d.probability, d.expected_close_date, d.updated_at,
+               c.name AS customer_name
+        FROM deals d
+        LEFT JOIN customers c ON c.id=d.customer_id AND c.tenant_id=d.tenant_id
+        WHERE {where_sql}
+        ORDER BY d.updated_at DESC, d.id DESC
+        """,
+        tuple(params),
+    )
+    for row in rows:
+        row["value_text"] = _format_cents(
+            row.get("value_cents"), row.get("currency") or "EUR"
+        )
+    return rows
+
+
+def _crm_quotes_list(
+    tenant_id: str,
+    *,
+    status: str | None = None,
+    query: str | None = None,
+    customer_id: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[dict[str, Any]], int]:
+    clauses = ["q.tenant_id=?"]
+    params: list[Any] = [tenant_id]
+    if status:
+        clauses.append("LOWER(q.status)=LOWER(?)")
+        params.append(status)
+    if customer_id:
+        clauses.append("q.customer_id=?")
+        params.append(customer_id)
+    qtext = (query or "").strip()
+    if qtext:
+        clauses.append(
+            "(LOWER(COALESCE(q.quote_number,'')) LIKE LOWER(?) OR LOWER(COALESCE(c.name,'')) LIKE LOWER(?))"
+        )
+        params.extend([f"%{qtext}%", f"%{qtext}%"])
+    where_sql = " AND ".join(clauses)
+    count_rows = _crm_db_rows(
+        f"SELECT COUNT(*) AS c FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id AND c.tenant_id=q.tenant_id WHERE {where_sql}",
+        tuple(params),
+    )
+    total = int((count_rows[0].get("c") if count_rows else 0) or 0)
+    offset = (page - 1) * page_size
+    rows = _crm_db_rows(
+        f"""
+        SELECT q.id, q.quote_number, q.customer_id, q.deal_id, q.status, q.currency,
+               q.subtotal_cents, q.tax_amount_cents, q.total_cents, q.created_at, q.updated_at,
+               c.name AS customer_name
+        FROM quotes q
+        LEFT JOIN customers c ON c.id=q.customer_id AND c.tenant_id=q.tenant_id
+        WHERE {where_sql}
+        ORDER BY q.created_at DESC, q.id DESC
+        LIMIT ? OFFSET ?
+        """,
+        tuple(params + [page_size, offset]),
+    )
+    for row in rows:
+        row["total_text"] = _format_cents(
+            row.get("total_cents"), row.get("currency") or "EUR"
+        )
+    return rows, total
+
+
+def _crm_emails_list(
+    tenant_id: str,
+    *,
+    customer_id: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[dict[str, Any]], int]:
+    clauses = ["tenant_id=?"]
+    params: list[Any] = [tenant_id]
+    if customer_id:
+        clauses.append("customer_id=?")
+        params.append(customer_id)
+    where_sql = " AND ".join(clauses)
+    count_rows = _crm_db_rows(
+        f"SELECT COUNT(*) AS c FROM emails_cache WHERE {where_sql}",
+        tuple(params),
+    )
+    total = int((count_rows[0].get("c") if count_rows else 0) or 0)
+    offset = (page - 1) * page_size
+    rows = _crm_db_rows(
+        f"""
+        SELECT id, customer_id, contact_id, from_addr, to_addrs, subject, received_at,
+               SUBSTR(COALESCE(body_text,''),1,160) AS body_preview,
+               created_at
+        FROM emails_cache
+        WHERE {where_sql}
+        ORDER BY received_at DESC, created_at DESC, id DESC
+        LIMIT ? OFFSET ?
+        """,
+        tuple(params + [page_size, offset]),
+    )
+    return rows, total
+
+
+def _crm_contacts_list(tenant_id: str, customer_id: str) -> list[dict[str, Any]]:
+    if callable(contacts_list_by_customer):
+        try:
+            return contacts_list_by_customer(tenant_id, customer_id)  # type: ignore
+        except Exception:
+            return []
+    return []
+
+
 # -------- UI Templates ----------
 HTML_BASE = r"""<!doctype html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/app.webmanifest">
 <title>KUKANILEA Systems</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -581,6 +772,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
       <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
       <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
+      <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers">📈 CRM</a>
       {% if roles in ['DEV', 'ADMIN'] %}
       <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
       {% endif %}
@@ -600,6 +792,8 @@ HTML_BASE = r"""<!doctype html>
         <span class="badge">Role: {{roles}}</span>
         <span class="badge">Tenant: {{tenant}}</span>
         <span class="badge">Profile: {{ profile.name }}</span>
+        <span class="badge">Live: <span id="healthLive">...</span></span>
+        <span class="badge">Ready: <span id="healthReady">...</span></span>
         {% if user and user != '-' %}
         <a class="px-3 py-2 text-sm btn-outline" href="/logout">Logout</a>
         {% endif %}
@@ -693,6 +887,32 @@ HTML_BASE = r"""<!doctype html>
 })();
 </script>
 
+<script>
+(function(){
+  async function updateHealth(){
+    try{
+      const l = await fetch('/api/health/live', {headers:{'Accept':'application/json'}});
+      document.getElementById('healthLive').textContent = l.ok ? 'OK' : 'DOWN';
+    }catch(_){
+      document.getElementById('healthLive').textContent = 'DOWN';
+    }
+    try{
+      const r = await fetch('/api/health/ready', {headers:{'Accept':'application/json'}});
+      document.getElementById('healthReady').textContent = r.ok ? 'OK' : 'NOT READY';
+    }catch(_){
+      document.getElementById('healthReady').textContent = 'NOT READY';
+    }
+  }
+  updateHealth();
+  setInterval(updateHealth, 30000);
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('/sw.js').catch(function(){});
+    });
+  }
+})();
+</script>
 </body>
 </html>"""
 
@@ -1525,6 +1745,8 @@ def _guard_login():
         "/auth/google/callback",
         "/api/health",
         "/api/ping",
+        "/app.webmanifest",
+        "/sw.js",
     ]:
         return None
     if not current_user():
@@ -2334,6 +2556,331 @@ def api_emails_import():
     except ValueError as exc:
         return _crm_error_response(exc, "E-Mail konnte nicht importiert werden.")
     return jsonify(ok=True, email_id=email_id)
+
+
+@bp.get("/crm/customers")
+@login_required
+def crm_customers_page():
+    tenant_id = current_tenant()
+    q = (request.args.get("q") or "").strip()
+    sort = (request.args.get("sort") or "name").strip().lower()
+    if sort not in {"name", "since", "updated"}:
+        sort = "name"
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    offset = (page - 1) * page_size
+    rows = (
+        customers_list(tenant_id, limit=page_size, offset=offset, query=q)
+        if callable(customers_list)
+        else []
+    )  # type: ignore
+    if sort == "name":
+        rows = sorted(
+            rows, key=lambda r: ((r.get("name") or "").lower(), str(r.get("id") or ""))
+        )
+    elif sort == "since":
+        rows = sorted(
+            rows,
+            key=lambda r: (str(r.get("created_at") or ""), str(r.get("id") or "")),
+            reverse=True,
+        )
+    else:
+        rows = sorted(
+            rows,
+            key=lambda r: (str(r.get("updated_at") or ""), str(r.get("id") or "")),
+            reverse=True,
+        )
+    has_more = len(rows) == page_size
+    content = render_template(
+        "crm/customers.html",
+        customers=rows,
+        q=q,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+        has_more=has_more,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="crm")
+
+
+@bp.get("/crm/_customers_table")
+@login_required
+def crm_customers_table_partial():
+    tenant_id = current_tenant()
+    q = (request.args.get("q") or "").strip()
+    sort = (request.args.get("sort") or "name").strip().lower()
+    if sort not in {"name", "since", "updated"}:
+        sort = "name"
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    offset = (page - 1) * page_size
+    rows = (
+        customers_list(tenant_id, limit=page_size, offset=offset, query=q)
+        if callable(customers_list)
+        else []
+    )  # type: ignore
+    if sort == "name":
+        rows = sorted(
+            rows, key=lambda r: ((r.get("name") or "").lower(), str(r.get("id") or ""))
+        )
+    elif sort == "since":
+        rows = sorted(
+            rows,
+            key=lambda r: (str(r.get("created_at") or ""), str(r.get("id") or "")),
+            reverse=True,
+        )
+    else:
+        rows = sorted(
+            rows,
+            key=lambda r: (str(r.get("updated_at") or ""), str(r.get("id") or "")),
+            reverse=True,
+        )
+    return render_template(
+        "crm/partials/customers_table.html",
+        customers=rows,
+        q=q,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+        has_more=(len(rows) == page_size),
+    )
+
+
+@bp.get("/crm/customers/<customer_id>")
+@login_required
+def crm_customer_detail(customer_id: str):
+    tenant_id = current_tenant()
+    customer = _crm_customer_get(tenant_id, customer_id)
+    if not customer:
+        return json_error("not_found", "Kunde nicht gefunden.", status=404)
+    active_tab = (request.args.get("tab") or "contacts").strip().lower()
+    if active_tab not in {"contacts", "deals", "quotes", "emails"}:
+        active_tab = "contacts"
+    content = render_template(
+        "crm/customer_detail.html",
+        customer=customer,
+        active_subtab=active_tab,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="crm")
+
+
+@bp.get("/crm/_customer_contacts/<customer_id>")
+@login_required
+def crm_customer_contacts_partial(customer_id: str):
+    tenant_id = current_tenant()
+    contacts = _crm_contacts_list(tenant_id, customer_id)
+    return render_template("crm/partials/customer_contacts.html", contacts=contacts)
+
+
+@bp.get("/crm/_customer_deals/<customer_id>")
+@login_required
+def crm_customer_deals_partial(customer_id: str):
+    tenant_id = current_tenant()
+    deals = _crm_deals_list(tenant_id, customer_id=customer_id)
+    return render_template("crm/partials/customer_deals.html", deals=deals)
+
+
+@bp.get("/crm/_customer_quotes/<customer_id>")
+@login_required
+def crm_customer_quotes_partial(customer_id: str):
+    tenant_id = current_tenant()
+    rows, total = _crm_quotes_list(
+        tenant_id, customer_id=customer_id, page=1, page_size=100
+    )
+    return render_template(
+        "crm/partials/customer_quotes.html", quotes=rows, total=total
+    )
+
+
+@bp.get("/crm/_customer_emails/<customer_id>")
+@login_required
+def crm_customer_emails_partial(customer_id: str):
+    tenant_id = current_tenant()
+    rows, total = _crm_emails_list(
+        tenant_id, customer_id=customer_id, page=1, page_size=100
+    )
+    return render_template(
+        "crm/partials/customer_emails.html", emails=rows, total=total
+    )
+
+
+@bp.get("/crm/deals")
+@login_required
+def crm_deals_page():
+    tenant_id = current_tenant()
+    q = (request.args.get("q") or "").strip()
+    stages = ["lead", "qualified", "proposal", "negotiation", "won", "lost"]
+    grouped = {
+        stage: _crm_deals_list(tenant_id, stage=stage, query=q) for stage in stages
+    }
+    content = render_template(
+        "crm/deals.html",
+        grouped=grouped,
+        stages=stages,
+        q=q,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="crm")
+
+
+@bp.get("/crm/_deals_pipeline")
+@login_required
+def crm_deals_pipeline_partial():
+    tenant_id = current_tenant()
+    q = (request.args.get("q") or "").strip()
+    stage_filter = (request.args.get("stage") or "").strip().lower()
+    stages = ["lead", "qualified", "proposal", "negotiation", "won", "lost"]
+    if stage_filter and stage_filter in stages:
+        grouped = {
+            stage_filter: _crm_deals_list(tenant_id, stage=stage_filter, query=q)
+        }
+    else:
+        grouped = {
+            stage: _crm_deals_list(tenant_id, stage=stage, query=q) for stage in stages
+        }
+    return render_template(
+        "crm/partials/deals_pipeline.html",
+        grouped=grouped,
+        stages=stages,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+
+
+@bp.get("/crm/quotes")
+@login_required
+def crm_quotes_page():
+    tenant_id = current_tenant()
+    q = (request.args.get("q") or "").strip()
+    status = (request.args.get("status") or "").strip().lower() or None
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    rows, total = _crm_quotes_list(
+        tenant_id, status=status, query=q, page=page, page_size=page_size
+    )
+    content = render_template(
+        "crm/quotes.html",
+        quotes=rows,
+        total=total,
+        page=page,
+        page_size=page_size,
+        q=q,
+        status=status or "",
+    )
+    return _render_base(content, active_tab="crm")
+
+
+@bp.get("/crm/_quotes_table")
+@login_required
+def crm_quotes_table_partial():
+    tenant_id = current_tenant()
+    q = (request.args.get("q") or "").strip()
+    status = (request.args.get("status") or "").strip().lower() or None
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    rows, total = _crm_quotes_list(
+        tenant_id, status=status, query=q, page=page, page_size=page_size
+    )
+    return render_template(
+        "crm/partials/quotes_table.html",
+        quotes=rows,
+        total=total,
+        page=page,
+        page_size=page_size,
+        q=q,
+        status=status or "",
+    )
+
+
+@bp.get("/crm/quotes/<quote_id>")
+@login_required
+def crm_quote_detail(quote_id: str):
+    if not callable(quotes_get):
+        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
+    try:
+        quote = quotes_get(current_tenant(), quote_id)  # type: ignore
+    except Exception:
+        return json_error("not_found", "Angebot nicht gefunden.", status=404)
+    for item in quote.get("items", []):
+        item["unit_price_text"] = _format_cents(
+            item.get("unit_price_cents"), quote.get("currency") or "EUR"
+        )
+        item["line_total_text"] = _format_cents(
+            item.get("line_total_cents"), quote.get("currency") or "EUR"
+        )
+    quote["subtotal_text"] = _format_cents(
+        quote.get("subtotal_cents"), quote.get("currency") or "EUR"
+    )
+    quote["tax_text"] = _format_cents(
+        quote.get("tax_amount_cents") or quote.get("tax_cents"),
+        quote.get("currency") or "EUR",
+    )
+    quote["total_text"] = _format_cents(
+        quote.get("total_cents"), quote.get("currency") or "EUR"
+    )
+    content = render_template(
+        "crm/quote_detail.html",
+        quote=quote,
+        quote_items=quote.get("items", []),
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="crm")
+
+
+@bp.get("/crm/emails/import")
+@login_required
+def crm_emails_import_page():
+    tenant_id = current_tenant()
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    emails, total = _crm_emails_list(tenant_id, page=page, page_size=page_size)
+    content = render_template(
+        "crm/emails_import.html",
+        emails=emails,
+        total=total,
+        page=page,
+        page_size=page_size,
+        max_eml_bytes=int(current_app.config.get("MAX_EML_BYTES", 10 * 1024 * 1024)),
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="crm")
+
+
+@bp.get("/app.webmanifest")
+def pwa_manifest():
+    payload = {
+        "name": "KUKANILEA CRM",
+        "short_name": "KUKANILEA",
+        "start_url": "/crm/customers",
+        "display": "standalone",
+        "background_color": "#0b1220",
+        "theme_color": "#4f46e5",
+        "icons": [
+            {
+                "src": "/static/icons/pwa-icon.svg",
+                "sizes": "any",
+                "type": "image/svg+xml",
+                "purpose": "any",
+            }
+        ],
+    }
+    res = jsonify(payload)
+    res.headers["Content-Type"] = "application/manifest+json"
+    return res
+
+
+@bp.get("/sw.js")
+def pwa_service_worker():
+    body = """const CACHE='kukanilea-crm-v1';
+const ASSETS=['/','/crm/customers','/crm/deals','/crm/quotes','/crm/emails/import','/app.webmanifest','/static/icons/pwa-icon.svg'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
+self.addEventListener('fetch',e=>{const req=e.request; if(req.method!=='GET'){return;} const isHtml=req.headers.get('accept')&&req.headers.get('accept').includes('text/html'); if(isHtml){e.respondWith(fetch(req).then(r=>{const copy=r.clone(); caches.open(CACHE).then(c=>c.put(req,copy)); return r;}).catch(()=>caches.match(req).then(r=>r||caches.match('/crm/customers')))); return;} e.respondWith(caches.match(req).then(r=>r||fetch(req).then(resp=>{const copy=resp.clone(); caches.open(CACHE).then(c=>c.put(req,copy)); return resp;})));});
+"""
+    resp = current_app.response_class(body, mimetype="application/javascript")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 # ==============================

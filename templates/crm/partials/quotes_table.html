@@ -1,0 +1,35 @@
+<div id="quotesTable" class="card overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b" style="border-color:var(--border)">
+        <th class="text-left px-3 py-2">Quote</th>
+        <th class="text-left px-3 py-2">Kunde</th>
+        <th class="text-left px-3 py-2">Status</th>
+        <th class="text-left px-3 py-2">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for qrow in quotes %}
+      <tr class="border-b" style="border-color:var(--border)">
+        <td class="px-3 py-2"><a class="underline" href="/crm/quotes/{{ qrow.id }}">{{ qrow.quote_number or qrow.id }}</a></td>
+        <td class="px-3 py-2">{{ qrow.customer_name or qrow.customer_id }}</td>
+        <td class="px-3 py-2">{{ qrow.status }}</td>
+        <td class="px-3 py-2">{{ qrow.total_text }}</td>
+      </tr>
+      {% else %}
+      <tr><td class="px-3 py-3 muted" colspan="4">Keine Angebote.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="flex items-center justify-between px-3 py-2 text-xs muted">
+    <div>Gesamt: {{ total }} · Seite {{ page }}</div>
+    <div class="flex gap-2">
+      {% if page > 1 %}
+      <button class="btn-outline px-2 py-1" hx-get="/crm/_quotes_table?q={{ q|urlencode }}&status={{ status }}&page={{ page-1 }}&page_size={{ page_size }}" hx-target="#quotesTable" hx-swap="outerHTML">Zurück</button>
+      {% endif %}
+      {% if (page*page_size) < total %}
+      <button class="btn-outline px-2 py-1" hx-get="/crm/_quotes_table?q={{ q|urlencode }}&status={{ status }}&page={{ page+1 }}&page_size={{ page_size }}" hx-target="#quotesTable" hx-swap="outerHTML">Weiter</button>
+      {% endif %}
+    </div>
+  </div>
+</div>

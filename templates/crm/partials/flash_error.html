@@ -1,0 +1,5 @@
+<div class="rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm">
+  <div class="font-semibold">{{ message or 'Fehler' }}</div>
+  {% if code %}<div class="text-xs opacity-80">Code: {{ code }}</div>{% endif %}
+  {% if request_id %}<div class="text-xs opacity-80">Request-ID: {{ request_id }}</div>{% endif %}
+</div>

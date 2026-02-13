@@ -1,0 +1,35 @@
+<div id="customersTable" class="card overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b" style="border-color:var(--border)">
+        <th class="text-left px-3 py-2">Name</th>
+        <th class="text-left px-3 py-2">USt-ID</th>
+        <th class="text-left px-3 py-2">Aktualisiert</th>
+        <th class="text-left px-3 py-2">Aktion</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in customers %}
+      <tr class="border-b" style="border-color:var(--border)">
+        <td class="px-3 py-2">{{ c.name }}</td>
+        <td class="px-3 py-2">{{ c.vat_id or '-' }}</td>
+        <td class="px-3 py-2">{{ c.updated_at or '-' }}</td>
+        <td class="px-3 py-2"><a class="underline" href="/crm/customers/{{ c.id }}">Öffnen</a></td>
+      </tr>
+      {% else %}
+      <tr><td class="px-3 py-3 muted" colspan="4">Keine Kunden gefunden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="flex items-center justify-between px-3 py-2 text-xs muted">
+    <div>Seite {{ page }}</div>
+    <div class="flex gap-2">
+      {% if page > 1 %}
+      <button class="btn-outline px-2 py-1" hx-get="/crm/_customers_table?q={{ q|urlencode }}&sort={{ sort }}&page={{ page-1 }}&page_size={{ page_size }}" hx-target="#customersTable" hx-swap="outerHTML">Zurück</button>
+      {% endif %}
+      {% if has_more %}
+      <button class="btn-outline px-2 py-1" hx-get="/crm/_customers_table?q={{ q|urlencode }}&sort={{ sort }}&page={{ page+1 }}&page_size={{ page_size }}" hx-target="#customersTable" hx-swap="outerHTML">Weiter</button>
+      {% endif %}
+    </div>
+  </div>
+</div>
