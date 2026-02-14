@@ -1,0 +1,16 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold">Daily Insights</h1>
+    <a class="btn-outline px-3 py-2 text-sm" href="/automation/rules">Automation</a>
+  </div>
+
+  <div class="card p-4 space-y-2 text-sm">
+    <div><strong>Day:</strong> {{ data.day }}</div>
+    <div><strong>Generated at:</strong> {{ data.generated_at }}</div>
+    <div><strong>Cached:</strong> {{ 'yes' if data.cached else 'no' }}</div>
+  </div>
+
+  <div class="card p-4 overflow-x-auto">
+    <pre>{{ data.payload | tojson(indent=2) }}</pre>
+  </div>
+</div>

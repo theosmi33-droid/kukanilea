@@ -1,0 +1,27 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold">Automation Regel · {{ rule.name }}</h1>
+    <a class="btn-outline px-3 py-2 text-sm" href="/automation/rules">Zurück</a>
+  </div>
+
+  <div class="card p-4 space-y-2 text-sm">
+    <div><strong>ID:</strong> {{ rule.id }}</div>
+    <div><strong>Scope:</strong> {{ rule.scope }}</div>
+    <div><strong>Condition:</strong> {{ rule.condition_kind }}</div>
+    <div><strong>Enabled:</strong> {{ 'yes' if rule.enabled else 'no' }}</div>
+    <div><strong>Updated:</strong> {{ rule.updated_at }}</div>
+    <div><strong>Last error:</strong> {{ rule.last_error or '-' }}</div>
+    <pre class="rounded bg-zinc-900/70 p-3 overflow-x-auto">{{ rule.condition_json }}</pre>
+    <pre class="rounded bg-zinc-900/70 p-3 overflow-x-auto">{{ rule.action_list_json }}</pre>
+
+    <div class="flex gap-2">
+      <form method="post" action="/automation/rules/{{ rule.id }}/toggle">
+        <input type="hidden" name="enabled" value="{{ 0 if rule.enabled else 1 }}">
+        <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>{{ 'Disable' if rule.enabled else 'Enable' }}</button>
+      </form>
+      <form method="post" action="/automation/rules/{{ rule.id }}/delete">
+        <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Disable rule</button>
+      </form>
+    </div>
+  </div>
+</div>

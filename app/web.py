@@ -59,6 +59,15 @@ from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.retrieval_fts import upsert_external_fact
 from app.ai.knowledge import store_entity
 from app.ai.predictions import daily_report, predict_budget
+from app.automation import (
+    automation_rule_create,
+    automation_rule_disable,
+    automation_rule_get,
+    automation_rule_list,
+    automation_rule_toggle,
+    automation_run_now,
+    get_or_build_daily_insights,
+)
 from app.lead_intake import (
     appointment_request_to_ics,
     appointment_requests_create,
@@ -793,6 +802,8 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
       <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers">📈 CRM</a>
       <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
+      <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation/rules">⚙️ Automation</a>
+      <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily">📊 Insights</a>
       {% if roles in ['DEV', 'ADMIN'] %}
       <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
       {% endif %}
@@ -3453,6 +3464,244 @@ def api_appointment_request_ics(req_id: str):
 @login_required
 def appointment_request_ics_alias(req_id: str):
     return api_appointment_request_ics(req_id)
+
+
+def _automation_error(code: str, message: str, status: int = 400):
+    rid = getattr(g, "request_id", "")
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": {
+                    "code": code,
+                    "message": message,
+                    "details": {},
+                    "request_id": rid,
+                },
+            }
+        ),
+        status,
+    )
+
+
+def _automation_read_only_response(api: bool = True):
+    rid = getattr(g, "request_id", "")
+    if api:
+        return jsonify({"ok": False, "error_code": "read_only", "request_id": rid}), 403
+    return (
+        render_template(
+            "lead_intake/partials/_error.html",
+            message="Read-only mode aktiv. Schreibaktionen sind deaktiviert.",
+            request_id=rid,
+        ),
+        403,
+    )
+
+
+def _automation_guard(api: bool = True):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _automation_read_only_response(api=api)
+    return None
+
+
+@bp.get("/automation/rules")
+@login_required
+@require_role("OPERATOR")
+def automation_rules_page():
+    rows = automation_rule_list(current_tenant())
+    content = render_template(
+        "automation/rules.html",
+        rules=rows,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="automation")
+
+
+@bp.get("/automation/rules/new")
+@login_required
+@require_role("OPERATOR")
+def automation_rule_new_page():
+    content = render_template(
+        "automation/rule_new.html",
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="automation")
+
+
+@bp.post("/automation/rules/create")
+@login_required
+@require_role("OPERATOR")
+def automation_rule_create_action():
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    try:
+        rule_id = automation_rule_create(
+            tenant_id=current_tenant(),
+            name=str(payload.get("name") or ""),
+            scope=str(payload.get("scope") or "leads"),
+            condition_kind=str(payload.get("condition_kind") or ""),
+            condition_json=str(payload.get("condition_json") or "{}"),
+            action_list_json=str(payload.get("action_list_json") or "[]"),
+            created_by=current_user() or "system",
+        )
+    except PermissionError:
+        return _automation_read_only_response(api=not _is_htmx())
+    except ValueError as exc:
+        code = str(exc)
+        if code == "db_locked":
+            return _automation_error("db_locked", "Datenbank gesperrt.", 503)
+        return _automation_error("validation_error", "Regel ungültig.", 400)
+    if _is_htmx():
+        return redirect(url_for("web.automation_rule_detail_page", rule_id=rule_id))
+    return jsonify({"ok": True, "rule_id": rule_id})
+
+
+@bp.get("/automation/rules/<rule_id>")
+@login_required
+@require_role("OPERATOR")
+def automation_rule_detail_page(rule_id: str):
+    row = automation_rule_get(current_tenant(), rule_id)
+    if not row:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    content = render_template(
+        "automation/rule_detail.html",
+        rule=row,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="automation")
+
+
+@bp.post("/automation/rules/<rule_id>/toggle")
+@login_required
+@require_role("OPERATOR")
+def automation_rule_toggle_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    enabled = str(payload.get("enabled") or "1").strip().lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    try:
+        automation_rule_toggle(
+            current_tenant(), rule_id, enabled, current_user() or "system"
+        )
+    except PermissionError:
+        return _automation_read_only_response(api=not _is_htmx())
+    except ValueError:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    if _is_htmx():
+        return redirect(url_for("web.automation_rule_detail_page", rule_id=rule_id))
+    return jsonify({"ok": True})
+
+
+@bp.post("/automation/rules/<rule_id>/delete")
+@login_required
+@require_role("OPERATOR")
+def automation_rule_delete_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    try:
+        automation_rule_disable(current_tenant(), rule_id, current_user() or "system")
+    except PermissionError:
+        return _automation_read_only_response(api=not _is_htmx())
+    except ValueError:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    if _is_htmx():
+        return redirect(url_for("web.automation_rules_page"))
+    return jsonify({"ok": True})
+
+
+@bp.post("/automation/run-now")
+@login_required
+@require_role("OPERATOR")
+def automation_run_now_action():
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    max_actions = int(payload.get("max_actions") or 50)
+    try:
+        run_id = automation_run_now(
+            current_tenant(), current_user() or "system", max_actions=max_actions
+        )
+    except PermissionError:
+        return _automation_read_only_response(api=not _is_htmx())
+    except ValueError as exc:
+        code = str(exc)
+        if code == "db_locked":
+            return _automation_error("db_locked", "Datenbank gesperrt.", 503)
+        return _automation_error(
+            "validation_error", "Automation-Run fehlgeschlagen.", 400
+        )
+    if _is_htmx():
+        return redirect(url_for("web.automation_rules_page"))
+    return jsonify({"ok": True, "run_id": run_id})
+
+
+@bp.get("/insights/daily")
+@login_required
+@require_role("OPERATOR")
+def insights_daily_page():
+    day = (request.args.get("day") or "").strip() or None
+    data = get_or_build_daily_insights(current_tenant(), day)
+    content = render_template("automation/insights_daily.html", data=data)
+    return _render_base(content, active_tab="insights")
+
+
+@bp.get("/api/automation/rules")
+@login_required
+@require_role("OPERATOR")
+def api_automation_rules():
+    return jsonify({"ok": True, "items": automation_rule_list(current_tenant())})
+
+
+@bp.post("/api/automation/run-now")
+@login_required
+@require_role("OPERATOR")
+def api_automation_run_now():
+    guarded = _automation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        run_id = automation_run_now(
+            current_tenant(),
+            current_user() or "system",
+            max_actions=int(payload.get("max_actions") or 50),
+        )
+    except PermissionError:
+        return _automation_read_only_response(api=True)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "db_locked":
+            return _automation_error("db_locked", "Datenbank gesperrt.", 503)
+        return _automation_error(
+            "validation_error", "Automation-Run fehlgeschlagen.", 400
+        )
+    return jsonify({"ok": True, "run_id": run_id})
+
+
+@bp.get("/api/insights/daily")
+@login_required
+@require_role("OPERATOR")
+def api_insights_daily():
+    day = (request.args.get("day") or "").strip() or None
+    return jsonify(
+        {"ok": True, "item": get_or_build_daily_insights(current_tenant(), day)}
+    )
 
 
 @bp.get("/crm/customers")
