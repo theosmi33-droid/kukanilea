@@ -78,6 +78,8 @@ from app.entity_links import (
     list_links_for_entity,
 )
 from app.entity_links.display import entity_display_title
+from app.event_id_map import entity_id_int
+from app.eventlog.core import event_append
 from app.knowledge import (
     knowledge_email_ingest_eml,
     knowledge_email_sources_list,
@@ -2658,6 +2660,92 @@ def _lead_api_error(code: str, message: str, status: int = 400):
     )
 
 
+_LEAD_COLLISION_ROUTE_KEYS = {
+    "lead_claim",
+    "lead_claim_force",
+    "lead_claim_release",
+    "lead_screen_accept",
+    "lead_screen_ignore",
+    "lead_priority",
+    "lead_assign",
+}
+
+_LEAD_COLLISION_ENDPOINT_KEYS = {
+    "web.leads_claim_action": "lead_claim",
+    "web.leads_claim_force_action": "lead_claim_force",
+    "web.leads_claim_release_action": "lead_claim_release",
+    "web.leads_screen_accept_action": "lead_screen_accept",
+    "web.leads_screen_ignore_action": "lead_screen_ignore",
+    "web.leads_priority_action": "lead_priority",
+    "web.leads_assign_action": "lead_assign",
+    "web.api_leads_claim": "lead_claim",
+    "web.api_leads_release_claim": "lead_claim_release",
+    "web.api_leads_screen_accept": "lead_screen_accept",
+    "web.api_leads_screen_ignore": "lead_screen_ignore",
+    "web.api_leads_priority": "lead_priority",
+    "web.api_leads_assign": "lead_assign",
+}
+
+
+def _lead_collision_route_key(route_key: str | None = None) -> str:
+    candidate = str(route_key or "").strip().lower()
+    if not candidate:
+        endpoint = str(getattr(request, "endpoint", "") or "")
+        candidate = _LEAD_COLLISION_ENDPOINT_KEYS.get(endpoint, "")
+    if candidate in _LEAD_COLLISION_ROUTE_KEYS:
+        return candidate
+    return "lead_claim"
+
+
+def _lead_user_agent_hash() -> str:
+    ua = str(request.headers.get("User-Agent") or "").strip()
+    if not ua:
+        return ""
+    if len(ua) > 160:
+        ua = ua[:160]
+    return hashlib.sha256(ua.encode("utf-8")).hexdigest()
+
+
+def _emit_lead_claim_collision(
+    details: dict[str, Any] | None,
+    *,
+    route_key: str | None = None,
+) -> None:
+    d = details or {}
+    lead_id = str(d.get("lead_id") or "").strip()
+    if not lead_id:
+        return
+    claimed_by = str(d.get("claimed_by") or "").strip()
+    try:
+        with core._DB_LOCK:  # type: ignore[attr-defined]
+            con = core._db()  # type: ignore[attr-defined]
+            try:
+                event_append(
+                    event_type="lead_claim_collision",
+                    entity_type="lead",
+                    entity_id=entity_id_int(lead_id),
+                    payload={
+                        "schema_version": 1,
+                        "source": "web/lead_claim_guard",
+                        "actor_user_id": current_user() or None,
+                        "tenant_id": current_tenant(),
+                        "data": {
+                            "lead_id": lead_id,
+                            "claimed_by_user_id": claimed_by,
+                            "route_key": _lead_collision_route_key(route_key),
+                            "ua_hash": _lead_user_agent_hash(),
+                        },
+                    },
+                    con=con,
+                )
+                con.commit()
+            finally:
+                con.close()
+    except Exception:
+        # collision metrics are best-effort and must not break response flow
+        return
+
+
 def _lead_claim_conflict_message(details: dict[str, Any] | None) -> str:
     d = details or {}
     by = str(d.get("claimed_by") or "jemand")
@@ -2672,10 +2760,12 @@ def _lead_claim_error_response(
     api: bool,
     fallback_message: str,
     status: int = 409,
+    route_key: str | None = None,
 ):
     code = str(exc)
     details = getattr(exc, "details", {}) if hasattr(exc, "details") else {}
     if code == "lead_claimed":
+        _emit_lead_claim_collision(details, route_key=route_key)
         msg = _lead_claim_conflict_message(details)
         if api:
             return _lead_api_error("lead_claimed", msg, status)
