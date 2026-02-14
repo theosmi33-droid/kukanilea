@@ -68,6 +68,16 @@ from app.automation import (
     automation_run_now,
     get_or_build_daily_insights,
 )
+from app.entity_links import (
+    create_link as entity_link_create,
+)
+from app.entity_links import (
+    delete_link as entity_link_delete,
+)
+from app.entity_links import (
+    list_links_for_entity,
+)
+from app.entity_links.display import entity_display_title
 from app.knowledge import (
     knowledge_email_ingest_eml,
     knowledge_email_sources_list,
@@ -2838,6 +2848,8 @@ def lead_detail_page(lead_id: str):
         claim=claim,
         current_user_id=current_user() or "",
         read_only=bool(current_app.config.get("READ_ONLY", False)),
+        link_entity_type="lead",
+        link_entity_id=lead_id,
     )
     return _render_base(content, active_tab="leads")
 
@@ -4091,6 +4103,136 @@ def api_insights_daily():
     )
 
 
+def _entity_links_error(code: str, message: str, status: int = 400):
+    if request.is_json or request.path.startswith("/api/"):
+        return json_error(code, message, status=status)
+    return (
+        render_template(
+            "entity_links/partials/_errors.html",
+            message=message,
+            code=code,
+            request_id=getattr(g, "request_id", ""),
+        ),
+        status,
+    )
+
+
+@bp.get("/entity-links/<entity_type>/<entity_id>")
+@login_required
+def entity_links_partial(entity_type: str, entity_id: str):
+    link_type = (request.args.get("link_type") or "").strip().lower() or None
+    try:
+        links = list_links_for_entity(
+            current_tenant(),
+            entity_type,
+            entity_id,
+            link_type=link_type,
+            limit=min(int(request.args.get("limit") or 25), 25),
+            offset=max(int(request.args.get("offset") or 0), 0),
+        )
+    except ValueError:
+        return _entity_links_error("validation_error", "Ungültige Link-Parameter.", 400)
+
+    rendered_links: list[dict[str, Any]] = []
+    with core._DB_LOCK:  # type: ignore[attr-defined]
+        con = core._db()  # type: ignore[attr-defined]
+        try:
+            for row in links[:25]:
+                display = entity_display_title(
+                    con,
+                    current_tenant(),
+                    str(row.get("other_type") or ""),
+                    str(row.get("other_id") or ""),
+                )
+                rendered_links.append({**row, "display": display})
+        finally:
+            con.close()
+
+    return render_template(
+        "entity_links/partials/_links_list.html",
+        links=rendered_links,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+
+
+@bp.post("/entity-links/create")
+@login_required
+@require_role("OPERATOR")
+def entity_links_create_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _entity_links_error("read_only", "Read-only mode aktiv.", 403)
+
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    left_type = (payload.get("left_type") if payload else "") or ""
+    left_id = (payload.get("left_id") if payload else "") or ""
+    right_type = (payload.get("right_type") if payload else "") or ""
+    right_id = (payload.get("right_id") if payload else "") or ""
+    link_type = (payload.get("link_type") if payload else "") or "related"
+
+    try:
+        entity_link_create(
+            current_tenant(),
+            left_type,
+            left_id,
+            right_type,
+            right_id,
+            link_type,
+            actor_user_id=current_user() or None,
+        )
+    except PermissionError:
+        return _entity_links_error("read_only", "Read-only mode aktiv.", 403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "duplicate":
+            return _entity_links_error("duplicate", "Link existiert bereits.", 409)
+        if code == "entity_not_found":
+            return _entity_links_error(
+                "entity_not_found", "Entität nicht gefunden.", 404
+            )
+        if code == "db_locked":
+            return _entity_links_error("db_locked", "Datenbank gesperrt.", 503)
+        return _entity_links_error("validation_error", "Ungültige Link-Daten.", 400)
+
+    context_type = (payload.get("context_entity_type") if payload else "") or left_type
+    context_id = (payload.get("context_entity_id") if payload else "") or left_id
+
+    if _is_htmx():
+        return entity_links_partial(str(context_type), str(context_id))
+    return jsonify({"ok": True})
+
+
+@bp.post("/entity-links/<link_id>/delete")
+@login_required
+@require_role("OPERATOR")
+def entity_links_delete_action(link_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _entity_links_error("read_only", "Read-only mode aktiv.", 403)
+
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    context_type = (payload.get("context_entity_type") if payload else "") or ""
+    context_id = (payload.get("context_entity_id") if payload else "") or ""
+
+    try:
+        entity_link_delete(
+            current_tenant(), link_id, actor_user_id=current_user() or None
+        )
+    except PermissionError:
+        return _entity_links_error("read_only", "Read-only mode aktiv.", 403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _entity_links_error("not_found", "Link nicht gefunden.", 404)
+        if code == "db_locked":
+            return _entity_links_error("db_locked", "Datenbank gesperrt.", 503)
+        return _entity_links_error("validation_error", "Löschen fehlgeschlagen.", 400)
+
+    if _is_htmx() and context_type and context_id:
+        return entity_links_partial(str(context_type), str(context_id))
+    return jsonify({"ok": True})
+
+
 def _knowledge_error(code: str, message: str, status: int = 400):
     if request.is_json or request.path.startswith("/api/"):
         return json_error(code, message, status=status)
@@ -4189,6 +4331,9 @@ def knowledge_notes_page():
     notes = knowledge_notes_list(
         tenant_id, owner_user_id=owner, limit=page_size, offset=offset
     )
+    selected_note_id = (request.args.get("note_id") or "").strip()
+    if not selected_note_id and notes:
+        selected_note_id = str(notes[0].get("chunk_id") or "")
     content = render_template(
         "knowledge/notes_list.html",
         notes=notes,
@@ -4196,6 +4341,7 @@ def knowledge_notes_page():
         page_size=page_size,
         has_more=(len(notes) == page_size),
         read_only=bool(current_app.config.get("READ_ONLY", False)),
+        selected_note_id=selected_note_id,
     )
     return _render_base(content, active_tab="knowledge")
 
@@ -4833,6 +4979,8 @@ def crm_quote_detail(quote_id: str):
         quote=quote,
         quote_items=quote.get("items", []),
         read_only=bool(current_app.config.get("READ_ONLY", False)),
+        link_entity_type="quote",
+        link_entity_id=quote_id,
     )
     return _render_base(content, active_tab="crm")
 
@@ -5851,6 +5999,10 @@ def task_detail(task_id: int):
   <div class='mt-4 rounded-xl border border-slate-800 p-3'>
     <div class='text-sm font-semibold'>Gebuchte Zeit</div>
     <div id='taskBooked' class='muted text-sm mt-1'>Lade…</div>
+  </div>
+  <div class='mt-4 rounded-xl border border-slate-800 p-3'>
+    <div class='text-sm font-semibold mb-2'>Verknüpfungen</div>
+    <div id='taskEntityLinks' hx-get='/entity-links/task/{{task.id}}' hx-trigger='load' hx-swap='innerHTML'></div>
   </div>
 </div>
 <script>

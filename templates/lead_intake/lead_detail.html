@@ -30,9 +30,24 @@
     {% include 'lead_intake/partials/_gatekeeper.html' %}
   {% endif %}
 
-  <div class="card p-4">
-    <h2 class="font-semibold mb-2">Claim</h2>
-    <div id="leadClaimWrap" hx-get="/leads/_claim/{{ lead.id }}" hx-trigger="load" hx-swap="innerHTML"></div>
+  <div class="card p-4 space-y-3">
+    <h2 class="font-semibold">Claim</h2>
+    <div
+      id="leadClaimWrap"
+      hx-get="/leads/_claim/{{ lead.id }}"
+      hx-trigger="load"
+      hx-swap="innerHTML"
+    ></div>
+  </div>
+
+  <div class="card p-4 space-y-3">
+    <h2 class="font-semibold">Verknüpfungen</h2>
+    <div
+      id="leadEntityLinks"
+      hx-get="/entity-links/{{ link_entity_type }}/{{ link_entity_id }}"
+      hx-trigger="load"
+      hx-swap="innerHTML"
+    ></div>
   </div>
 
   <div class="grid gap-4 md:grid-cols-2">

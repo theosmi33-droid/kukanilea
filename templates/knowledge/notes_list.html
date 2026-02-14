@@ -42,4 +42,24 @@
       </div>
     </div>
   </div>
+
+  <div class="card p-4 space-y-3">
+    <h2 class="font-semibold">Verknüpfungen (Knowledge Note)</h2>
+    {% if notes %}
+    <form class="flex items-center gap-2" method="get" action="/knowledge/notes">
+      <label class="text-sm">Notiz:</label>
+      <select class="input px-2 py-1 text-sm" name="note_id">
+        {% for n in notes %}
+        <option value="{{ n.chunk_id }}" {% if n.chunk_id == selected_note_id %}selected{% endif %}>{{ (n.title or n.chunk_id) }}</option>
+        {% endfor %}
+      </select>
+      <input type="hidden" name="page" value="{{ page }}">
+      <input type="hidden" name="page_size" value="{{ page_size }}">
+      <button class="btn-outline px-2 py-1 text-sm" type="submit">Laden</button>
+    </form>
+    <div id="knowledgeEntityLinks" hx-get="/entity-links/knowledge_chunk/{{ selected_note_id }}" hx-trigger="load" hx-swap="innerHTML"></div>
+    {% else %}
+    <div class="muted text-sm">Keine Notizen vorhanden.</div>
+    {% endif %}
+  </div>
 </div>
