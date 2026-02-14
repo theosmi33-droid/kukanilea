@@ -39,3 +39,9 @@ Falls Inkonsistenzen auftreten:
 
 ## Read-only
 Bei `READ_ONLY=true` sind alle Mutationen blockiert (Core + Route).
+
+## ICS Source v0
+- Upload route: `/knowledge/ics/upload`
+- Policy gate: `allow_calendar=1` and `allow_customer_pii=1` required
+- Ingest scope: VEVENT `DTSTART/DTEND/SUMMARY/LOCATION` only
+- Ignored: ATTACH/RRULE and attendee/contact-like fields

@@ -706,6 +706,44 @@ def _init_knowledge_tables(con: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_keil_tenant_created ON knowledge_email_ingest_log(tenant_id, created_at DESC);"
     )
 
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS knowledge_ics_sources (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          content_sha256 TEXT NOT NULL,
+          filename TEXT,
+          event_count INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(tenant_id, content_sha256)
+        );
+        """
+    )
+
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS knowledge_ics_ingest_log (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          ics_source_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          reason_code TEXT,
+          created_at TEXT NOT NULL
+        );
+        """
+    )
+
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kis_tenant_created ON knowledge_ics_sources(tenant_id, created_at DESC);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kis_tenant_sha ON knowledge_ics_sources(tenant_id, content_sha256);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kiil_tenant_created ON knowledge_ics_ingest_log(tenant_id, created_at DESC);"
+    )
+
 
 def db_init() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
