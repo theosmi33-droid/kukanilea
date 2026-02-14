@@ -69,6 +69,8 @@ from app.automation import (
     get_or_build_daily_insights,
 )
 from app.knowledge import (
+    knowledge_email_ingest_eml,
+    knowledge_email_sources_list,
     knowledge_note_create,
     knowledge_note_delete,
     knowledge_note_update,
@@ -3940,6 +3942,139 @@ def knowledge_settings_page():
         read_only=bool(current_app.config.get("READ_ONLY", False)),
     )
     return _render_base(content, active_tab="knowledge")
+
+
+@bp.post("/knowledge/settings/email/toggle")
+@login_required
+@require_role("OPERATOR")
+def knowledge_settings_email_toggle_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    enabled = str((payload.get("enabled") if payload else "")).strip().lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    try:
+        policy = knowledge_policy_update(
+            current_tenant(),
+            actor_user_id=current_user() or "",
+            allow_email=enabled,
+        )
+    except PermissionError:
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError:
+        return _knowledge_error(
+            "validation_error", "Ungültige Policy-Konfiguration.", status=400
+        )
+
+    if _is_htmx():
+        return render_template(
+            "knowledge/partials/_errors.html",
+            message=(
+                "E-Mail Quelle aktiviert." if enabled else "E-Mail Quelle deaktiviert."
+            ),
+            kind="ok",
+        )
+    return jsonify({"ok": True, "policy": policy})
+
+
+@bp.get("/knowledge/email/upload")
+@login_required
+def knowledge_email_upload_page():
+    policy = knowledge_policy_get(current_tenant())
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    rows, total = knowledge_email_sources_list(
+        current_tenant(), page=page, page_size=page_size
+    )
+    content = render_template(
+        "knowledge/email_upload.html",
+        policy=policy,
+        emails=rows,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(len(rows) == page_size),
+        max_eml_bytes=int(
+            current_app.config.get("KNOWLEDGE_EMAIL_MAX_BYTES", 2 * 1024 * 1024)
+        ),
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.post("/knowledge/email/upload")
+@login_required
+@require_role("OPERATOR")
+def knowledge_email_upload_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+
+    policy = knowledge_policy_get(current_tenant())
+    if not int(policy.get("allow_email", 0)):
+        return _knowledge_error(
+            "policy_blocked", "E-Mail Quelle ist deaktiviert.", status=403
+        )
+
+    f = request.files.get("file")
+    if f is None:
+        return _knowledge_error(
+            "file_required", "Bitte .eml-Datei hochladen.", status=400
+        )
+    filename = (f.filename or "").strip().lower()
+    if not filename.endswith(".eml"):
+        return _knowledge_error(
+            "invalid_file_type", "Nur .eml-Dateien sind erlaubt.", status=400
+        )
+
+    max_bytes = int(
+        current_app.config.get("KNOWLEDGE_EMAIL_MAX_BYTES", 2 * 1024 * 1024)
+    )
+    raw = f.read(max_bytes + 1) or b""
+    if not raw:
+        return _knowledge_error("empty_file", "Datei ist leer.", status=400)
+    if len(raw) > max_bytes:
+        return _knowledge_error(
+            "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
+        )
+
+    try:
+        result = knowledge_email_ingest_eml(
+            tenant_id=current_tenant(),
+            actor_user_id=current_user() or None,
+            eml_bytes=raw,
+            filename_hint=(f.filename or ""),
+        )
+    except PermissionError:
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "policy_blocked":
+            return _knowledge_error(
+                "policy_blocked", "E-Mail Quelle ist deaktiviert.", status=403
+            )
+        if code == "payload_too_large":
+            return _knowledge_error(
+                "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
+            )
+        if code == "parse_error":
+            return _knowledge_error(
+                "parse_error", "EML konnte nicht verarbeitet werden.", status=400
+            )
+        if code == "db_locked":
+            return _knowledge_error("db_locked", "Datenbank ist gesperrt.", status=503)
+        return _knowledge_error(
+            "validation_error", "Upload fehlgeschlagen.", status=400
+        )
+
+    if _is_htmx():
+        return render_template(
+            "knowledge/partials/_email_ingest_result.html", result=result
+        )
+    return jsonify({"ok": True, "result": result})
 
 
 @bp.post("/knowledge/settings/save")

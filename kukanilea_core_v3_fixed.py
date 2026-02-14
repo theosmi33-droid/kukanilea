@@ -639,6 +639,46 @@ def _init_knowledge_tables(con: sqlite3.Connection) -> None:
     con.execute(
         "CREATE INDEX IF NOT EXISTS idx_kpolicy_updated ON knowledge_source_policies(updated_at);"
     )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS knowledge_email_sources (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          content_sha256 TEXT NOT NULL,
+          received_at TEXT,
+          subject_redacted TEXT,
+          from_domain TEXT,
+          to_domains_json TEXT,
+          has_attachments INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(tenant_id, content_sha256)
+        );
+        """
+    )
+
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS knowledge_email_ingest_log (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          email_source_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          reason_code TEXT,
+          created_at TEXT NOT NULL
+        );
+        """
+    )
+
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kes_tenant_created ON knowledge_email_sources(tenant_id, created_at DESC);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kes_tenant_sha ON knowledge_email_sources(tenant_id, content_sha256);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_keil_tenant_created ON knowledge_email_ingest_log(tenant_id, created_at DESC);"
+    )
 
 
 def db_init() -> None:

@@ -8,6 +8,16 @@
   <div class="card p-3 text-sm" style="border-color:#f59e0b">Read-only mode aktiv. Schreibaktionen sind deaktiviert.</div>
   {% endif %}
 
+  <div class="card p-4 space-y-2">
+    <div class="font-semibold">E-Mail Quelle (v0)</div>
+    <div class="text-sm muted">Default ist AUS. E-Mail kann personenbezogene Daten enthalten. Inhalte werden redigiert, trotzdem nur explizit freigeben.</div>
+    <form method="post" action="/knowledge/settings/email/toggle" class="flex items-center gap-3">
+      <input type="hidden" name="enabled" value="{% if policy.allow_email %}0{% else %}1{% endif %}">
+      <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>{% if policy.allow_email %}E-Mail deaktivieren{% else %}E-Mail aktivieren{% endif %}</button>
+      <span class="text-xs muted">Aktuell: {% if policy.allow_email %}aktiv{% else %}deaktiviert{% endif %}</span>
+    </form>
+  </div>
+
   <form class="card p-4 space-y-3" method="post" action="/knowledge/settings/save">
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_manual" value="1" {% if policy.allow_manual %}checked{% endif %} {% if read_only %}disabled{% endif %}>Manual erlauben</label>
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_tasks" value="1" {% if policy.allow_tasks %}checked{% endif %} {% if read_only %}disabled{% endif %}>Tasks erlauben</label>

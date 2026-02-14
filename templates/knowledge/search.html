@@ -1,7 +1,10 @@
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <h1 class="text-xl font-semibold">Knowledge</h1>
-    <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/knowledge/notes">Meine Notizen</a>
+    <div class="flex gap-2">
+      <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/knowledge/notes">Meine Notizen</a>
+      <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/knowledge/email/upload">E-Mail Upload</a>
+    </div>
   </div>
 
   {% if read_only %}
