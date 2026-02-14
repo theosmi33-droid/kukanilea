@@ -84,6 +84,11 @@ from app.lead_intake import (
     appointment_requests_create,
     appointment_requests_update_status,
     call_logs_create,
+    lead_claim,
+    lead_claim_get,
+    lead_claims_auto_expire,
+    lead_claims_for_leads,
+    lead_release_claim,
     lead_timeline,
     leads_add_note,
     leads_assign,
@@ -97,6 +102,7 @@ from app.lead_intake import (
     leads_set_priority,
     leads_update_status,
 )
+from app.lead_intake.core import ConflictError
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
@@ -2642,6 +2648,74 @@ def _lead_api_error(code: str, message: str, status: int = 400):
     )
 
 
+def _lead_claim_conflict_message(details: dict[str, Any] | None) -> str:
+    d = details or {}
+    by = str(d.get("claimed_by") or "jemand")
+    until = str(d.get("claimed_until") or "")
+    suffix = f" bis {until}" if until else ""
+    return f"Lead ist derzeit von {by} geclaimt{suffix}."
+
+
+def _lead_claim_error_response(
+    exc: Exception,
+    *,
+    api: bool,
+    fallback_message: str,
+    status: int = 409,
+):
+    code = str(exc)
+    details = getattr(exc, "details", {}) if hasattr(exc, "details") else {}
+    if code == "lead_claimed":
+        msg = _lead_claim_conflict_message(details)
+        if api:
+            return _lead_api_error("lead_claimed", msg, status)
+        return (
+            render_template(
+                "lead_intake/partials/_claim_error.html",
+                message=msg,
+                request_id=getattr(g, "request_id", ""),
+            ),
+            status,
+        )
+    if code == "not_owner":
+        msg = "Nur der Claim-Owner kann diese Aktion ausführen."
+        if api:
+            return _lead_api_error("not_owner", msg, status)
+        return (
+            render_template(
+                "lead_intake/partials/_claim_error.html",
+                message=msg,
+                request_id=getattr(g, "request_id", ""),
+            ),
+            status,
+        )
+    if api:
+        return _lead_api_error("validation_error", fallback_message, 400)
+    return (
+        render_template(
+            "lead_intake/partials/_claim_error.html",
+            message=fallback_message,
+            request_id=getattr(g, "request_id", ""),
+        ),
+        400,
+    )
+
+
+def _decorate_leads_with_claims(
+    tenant_id: str, leads: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    ids = [str(r.get("id") or "") for r in leads if str(r.get("id") or "")]
+    claim_map = lead_claims_for_leads(tenant_id, ids) if ids else {}
+    out: list[dict[str, Any]] = []
+    for row in leads:
+        rid = str(row.get("id") or "")
+        claim = claim_map.get(rid) if claim_map else None
+        next_row = dict(row)
+        next_row["claim"] = claim
+        out.append(next_row)
+    return out
+
+
 def _lead_tab_filters(tab: str, user_id: str) -> dict[str, Any]:
     t = (tab or "all").strip().lower()
     if t == "screening":
@@ -2692,7 +2766,7 @@ def _lead_rows_for_request(
         "has_more": len(rows) == page_size,
         "tab": tab,
     }
-    return rows, meta
+    return _decorate_leads_with_claims(tenant_id, rows), meta
 
 
 @bp.get("/leads/inbox")
@@ -2756,10 +2830,13 @@ def lead_detail_page(lead_id: str):
     if not lead:
         return _lead_api_error("not_found", "Lead nicht gefunden.", status=404)
     timeline = lead_timeline(tenant_id, lead_id, limit=100)
+    claim = lead_claim_get(tenant_id, lead_id)
     content = render_template(
         "lead_intake/lead_detail.html",
         lead=lead,
         timeline=timeline,
+        claim=claim,
+        current_user_id=current_user() or "",
         read_only=bool(current_app.config.get("READ_ONLY", False)),
     )
     return _render_base(content, active_tab="leads")
@@ -2815,6 +2892,30 @@ def lead_status_partial(lead_id: str):
             },
         )
     return render_template("lead_intake/partials/_status.html", lead=lead)
+
+
+@bp.get("/leads/_claim/<lead_id>")
+@login_required
+def lead_claim_partial(lead_id: str):
+    tenant_id = current_tenant()
+    lead = leads_get(tenant_id, lead_id)
+    if not lead:
+        return (
+            render_template(
+                "lead_intake/partials/_claim_error.html",
+                message="Lead nicht gefunden.",
+                request_id=getattr(g, "request_id", ""),
+            ),
+            404,
+        )
+    claim = lead_claim_get(tenant_id, lead_id)
+    return render_template(
+        "lead_intake/partials/_claim_panel.html",
+        lead=lead,
+        claim=claim,
+        current_user_id=current_user() or "",
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
 
 
 def _lead_payload() -> dict[str, Any]:
@@ -2898,6 +2999,137 @@ def leads_status_action(lead_id: str):
     return jsonify({"ok": True})
 
 
+@bp.post("/leads/<lead_id>/claim")
+@login_required
+@require_role("OPERATOR")
+def leads_claim_action(lead_id: str):
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = _lead_payload()
+    ttl_seconds = payload.get("ttl_seconds") or request.args.get("ttl_seconds") or 900
+    try:
+        lead_claim(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or "",
+            ttl_seconds=int(ttl_seconds),
+            force=False,
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=not _is_htmx(),
+            fallback_message="Lead kann nicht geclaimt werden.",
+            status=409,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Claim fehlgeschlagen.", 400)
+    if _is_htmx():
+        return lead_claim_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/<lead_id>/claim/force")
+@login_required
+@require_role("OPERATOR")
+def leads_claim_force_action(lead_id: str):
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = _lead_payload()
+    ttl_seconds = payload.get("ttl_seconds") or request.args.get("ttl_seconds") or 900
+    try:
+        lead_claim(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or "",
+            ttl_seconds=int(ttl_seconds),
+            force=True,
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=not _is_htmx(),
+            fallback_message="Force-Claim fehlgeschlagen.",
+            status=409,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Force-Claim fehlgeschlagen.", 400)
+    if _is_htmx():
+        return lead_claim_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/<lead_id>/release")
+@login_required
+@require_role("OPERATOR")
+def leads_claim_release_action(lead_id: str):
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    try:
+        lead_release_claim(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or "",
+            reason="manual",
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=not _is_htmx(),
+            fallback_message="Claim kann nicht freigegeben werden.",
+            status=409,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Claim nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Claim-Release fehlgeschlagen.", 400)
+    if _is_htmx():
+        return lead_claim_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/claims/expire-now")
+@login_required
+@require_role("OPERATOR")
+def leads_claims_expire_now_action():
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = _lead_payload()
+    try:
+        count = lead_claims_auto_expire(
+            current_tenant(),
+            max_actions=int(payload.get("max_actions") or 200),
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Expire fehlgeschlagen.", 400)
+    if _is_htmx():
+        return redirect(url_for("web.leads_inbox_page"))
+    if request.is_json or request.path.startswith("/api/"):
+        return jsonify({"ok": True, "expired": count})
+    return redirect(url_for("web.leads_inbox_page"))
+
+
 @bp.post("/leads/<lead_id>/screen/accept")
 @login_required
 @require_role("OPERATOR")
@@ -2908,6 +3140,13 @@ def leads_screen_accept_action(lead_id: str):
     try:
         leads_screen_accept(
             current_tenant(), lead_id, actor_user_id=current_user() or None
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=not _is_htmx(),
+            fallback_message="Aktion fehlgeschlagen.",
+            status=409,
         )
     except ValueError as exc:
         code = str(exc)
@@ -2935,6 +3174,13 @@ def leads_screen_ignore_action(lead_id: str):
             lead_id,
             actor_user_id=current_user() or None,
             reason=payload.get("reason") or None,
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=not _is_htmx(),
+            fallback_message="Aktion fehlgeschlagen.",
+            status=409,
         )
     except ValueError as exc:
         code = str(exc)
@@ -2970,6 +3216,13 @@ def leads_priority_action(lead_id: str):
             pinned,
             actor_user_id=current_user() or None,
         )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=not _is_htmx(),
+            fallback_message="Ungültige Priorität.",
+            status=409,
+        )
     except ValueError as exc:
         code = str(exc)
         if code == "not_found":
@@ -2997,6 +3250,13 @@ def leads_assign_action(lead_id: str):
             payload.get("assigned_to") or None,
             payload.get("response_due") or None,
             actor_user_id=current_user() or None,
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=not _is_htmx(),
+            fallback_message="Ungültige Zuweisung.",
+            status=409,
         )
     except ValueError as exc:
         code = str(exc)
@@ -3196,6 +3456,93 @@ def api_leads_get(lead_id: str):
     return jsonify({"ok": True, "item": row})
 
 
+@bp.post("/api/leads/<lead_id>/claim")
+@login_required
+@require_role("OPERATOR")
+def api_leads_claim(lead_id: str):
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        claim = lead_claim(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or "",
+            ttl_seconds=int(payload.get("ttl_seconds") or 900),
+            force=bool(payload.get("force", False)),
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=True,
+            fallback_message="Claim fehlgeschlagen.",
+            status=409,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Claim fehlgeschlagen.", 400)
+    return jsonify({"ok": True, "claim": claim})
+
+
+@bp.post("/api/leads/<lead_id>/release")
+@login_required
+@require_role("OPERATOR")
+def api_leads_release_claim(lead_id: str):
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        lead_release_claim(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or "",
+            reason=str(payload.get("reason") or "manual"),
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=True,
+            fallback_message="Claim-Release fehlgeschlagen.",
+            status=409,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Claim nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Claim-Release fehlgeschlagen.", 400)
+    return jsonify({"ok": True})
+
+
+@bp.post("/api/leads/claims/expire-now")
+@login_required
+@require_role("OPERATOR")
+def api_leads_claims_expire_now():
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        count = lead_claims_auto_expire(
+            current_tenant(),
+            max_actions=int(payload.get("max_actions") or 200),
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Expire fehlgeschlagen.", 400)
+    return jsonify({"ok": True, "expired": count})
+
+
 @bp.put("/api/leads/<lead_id>/status")
 @login_required
 @require_role("OPERATOR")
@@ -3234,6 +3581,13 @@ def api_leads_screen_accept(lead_id: str):
         leads_screen_accept(
             current_tenant(), lead_id, actor_user_id=current_user() or None
         )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=True,
+            fallback_message="Aktion fehlgeschlagen.",
+            status=409,
+        )
     except ValueError as exc:
         code = str(exc)
         if code == "not_found":
@@ -3258,6 +3612,13 @@ def api_leads_screen_ignore(lead_id: str):
             lead_id,
             actor_user_id=current_user() or None,
             reason=payload.get("reason") or None,
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=True,
+            fallback_message="Aktion fehlgeschlagen.",
+            status=409,
         )
     except ValueError as exc:
         code = str(exc)
@@ -3285,6 +3646,13 @@ def api_leads_priority(lead_id: str):
             int(payload.get("pinned") or 0),
             actor_user_id=current_user() or None,
         )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=True,
+            fallback_message="Ungültige Priorität.",
+            status=409,
+        )
     except ValueError as exc:
         code = str(exc)
         if code == "not_found":
@@ -3310,6 +3678,13 @@ def api_leads_assign(lead_id: str):
             payload.get("assigned_to") or None,
             payload.get("response_due") or None,
             actor_user_id=current_user() or None,
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=True,
+            fallback_message="Ungültige Zuweisung.",
+            status=409,
         )
     except ValueError as exc:
         code = str(exc)

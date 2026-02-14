@@ -1,0 +1,30 @@
+<div class="space-y-3">
+  {% set can_release = claim and claim.active and claim.claimed_by == current_user_id %}
+  {% set locked_by_other = claim and claim.active and claim.claimed_by != current_user_id %}
+
+  <div class="text-sm">
+    {% if claim and claim.active %}
+      <span class="inline-flex rounded-full border border-amber-500/40 px-2 py-0.5 text-xs">Geclaimt von {{ claim.claimed_by }} bis {{ claim.claimed_until }}</span>
+    {% elif claim and claim.expired %}
+      <span class="inline-flex rounded-full border border-zinc-500/40 px-2 py-0.5 text-xs">Claim abgelaufen</span>
+    {% else %}
+      <span class="inline-flex rounded-full border border-emerald-500/40 px-2 py-0.5 text-xs">Frei</span>
+    {% endif %}
+  </div>
+
+  <div class="flex flex-wrap gap-2">
+    <form hx-post="/leads/{{ lead.id }}/claim" hx-target="#leadClaimWrap" hx-swap="innerHTML" method="post">
+      <input type="hidden" name="ttl_seconds" value="900">
+      <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only or (claim and claim.active and claim.claimed_by == current_user_id) %}disabled{% endif %}>Claim</button>
+    </form>
+
+    <form hx-post="/leads/{{ lead.id }}/release" hx-target="#leadClaimWrap" hx-swap="innerHTML" method="post">
+      <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only or not can_release %}disabled{% endif %}>Release</button>
+    </form>
+
+    <form hx-post="/leads/{{ lead.id }}/claim/force" hx-target="#leadClaimWrap" hx-swap="innerHTML" method="post">
+      <input type="hidden" name="ttl_seconds" value="900">
+      <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only or not locked_by_other %}disabled{% endif %}>Force Claim</button>
+    </form>
+  </div>
+</div>
