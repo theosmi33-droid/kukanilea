@@ -1125,6 +1125,87 @@ def db_init() -> None:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS automation_rules(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+                  name TEXT NOT NULL,
+                  scope TEXT NOT NULL,
+                  condition_kind TEXT NOT NULL,
+                  condition_json TEXT NOT NULL,
+                  action_list_json TEXT NOT NULL,
+                  created_by TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  last_error TEXT,
+                  last_error_at TEXT
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS automation_runs(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  triggered_by TEXT NOT NULL,
+                  started_at TEXT NOT NULL,
+                  finished_at TEXT,
+                  status TEXT NOT NULL DEFAULT 'running',
+                  max_actions INTEGER NOT NULL,
+                  actions_executed INTEGER NOT NULL DEFAULT 0,
+                  aborted_reason TEXT,
+                  warnings_json TEXT
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS automation_run_actions(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  run_id TEXT NOT NULL,
+                  rule_id TEXT NOT NULL,
+                  target_entity_type TEXT NOT NULL,
+                  target_entity_id_int INTEGER NOT NULL,
+                  action_kind TEXT NOT NULL,
+                  action_hash TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  error TEXT,
+                  created_at TEXT NOT NULL,
+                  UNIQUE(tenant_id, run_id, rule_id, target_entity_type, target_entity_id_int, action_kind, action_hash)
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_insights_cache(
+                  tenant_id TEXT NOT NULL,
+                  day TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  generated_at TEXT NOT NULL,
+                  PRIMARY KEY (tenant_id, day)
+                );
+                """
+            )
+
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_automation_rules_tenant_enabled ON automation_rules(tenant_id, enabled, updated_at);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_automation_runs_tenant_started ON automation_runs(tenant_id, started_at DESC);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_automation_run_actions_tenant_run ON automation_run_actions(tenant_id, run_id, created_at);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_daily_insights_cache_day ON daily_insights_cache(day);"
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS ontology_types(
                   type_name TEXT PRIMARY KEY,
                   table_name TEXT NOT NULL,
