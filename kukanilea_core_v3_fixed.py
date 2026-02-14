@@ -743,6 +743,9 @@ def db_init() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id, id DESC);"
             )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_entity_created ON events(entity_type, entity_id, ts DESC);"
+            )
 
             con.execute(
                 """
@@ -916,6 +919,74 @@ def db_init() -> None:
                 ON quotes(tenant_id, quote_number)
                 WHERE quote_number IS NOT NULL AND quote_number != '';
                 """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS leads(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'new'
+                    CHECK(status IN ('new','contacted','qualified','lost','won')),
+                  source TEXT NOT NULL
+                    CHECK(source IN ('call','email','webform','manual')),
+                  customer_id TEXT,
+                  contact_name TEXT,
+                  contact_email TEXT,
+                  contact_phone TEXT,
+                  subject TEXT,
+                  message TEXT,
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(customer_id) REFERENCES customers(id)
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS call_logs(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  lead_id TEXT,
+                  caller_name TEXT,
+                  caller_phone TEXT,
+                  direction TEXT NOT NULL CHECK(direction IN ('inbound','outbound')),
+                  duration_seconds INTEGER,
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(lead_id) REFERENCES leads(id)
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS appointment_requests(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  lead_id TEXT NOT NULL,
+                  requested_date TEXT,
+                  status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending','accepted','declined','rescheduled')),
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(lead_id) REFERENCES leads(id)
+                );
+                """
+            )
+
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leads_tenant_status_created ON leads(tenant_id, status, created_at);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leads_tenant_created ON leads(tenant_id, created_at);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_call_logs_tenant_lead_created ON call_logs(tenant_id, lead_id, created_at);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_appt_tenant_lead_updated ON appointment_requests(tenant_id, lead_id, updated_at);"
             )
 
             con.execute(
