@@ -77,6 +77,7 @@ from app.entity_links import (
 from app.entity_links import (
     list_links_for_entity,
 )
+from app.entity_links.display import entity_display_title
 from app.knowledge import (
     knowledge_email_ingest_eml,
     knowledge_email_sources_list,
@@ -3751,14 +3752,30 @@ def entity_links_partial(entity_type: str, entity_id: str):
             entity_type,
             entity_id,
             link_type=link_type,
-            limit=min(int(request.args.get("limit") or 50), 100),
+            limit=min(int(request.args.get("limit") or 25), 25),
             offset=max(int(request.args.get("offset") or 0), 0),
         )
     except ValueError:
         return _entity_links_error("validation_error", "Ungültige Link-Parameter.", 400)
+
+    rendered_links: list[dict[str, Any]] = []
+    with core._DB_LOCK:  # type: ignore[attr-defined]
+        con = core._db()  # type: ignore[attr-defined]
+        try:
+            for row in links[:25]:
+                display = entity_display_title(
+                    con,
+                    current_tenant(),
+                    str(row.get("other_type") or ""),
+                    str(row.get("other_id") or ""),
+                )
+                rendered_links.append({**row, "display": display})
+        finally:
+            con.close()
+
     return render_template(
         "entity_links/partials/_links_list.html",
-        links=links,
+        links=rendered_links,
         entity_type=entity_type,
         entity_id=entity_id,
         read_only=bool(current_app.config.get("READ_ONLY", False)),
@@ -4587,6 +4604,8 @@ def crm_quote_detail(quote_id: str):
         quote=quote,
         quote_items=quote.get("items", []),
         read_only=bool(current_app.config.get("READ_ONLY", False)),
+        link_entity_type="quote",
+        link_entity_id=quote_id,
     )
     return _render_base(content, active_tab="crm")
 
@@ -5605,6 +5624,10 @@ def task_detail(task_id: int):
   <div class='mt-4 rounded-xl border border-slate-800 p-3'>
     <div class='text-sm font-semibold'>Gebuchte Zeit</div>
     <div id='taskBooked' class='muted text-sm mt-1'>Lade…</div>
+  </div>
+  <div class='mt-4 rounded-xl border border-slate-800 p-3'>
+    <div class='text-sm font-semibold mb-2'>Verknüpfungen</div>
+    <div id='taskEntityLinks' hx-get='/entity-links/task/{{task.id}}' hx-trigger='load' hx-swap='innerHTML'></div>
   </div>
 </div>
 <script>

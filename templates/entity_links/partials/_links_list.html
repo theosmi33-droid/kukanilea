@@ -6,7 +6,7 @@
       <thead>
         <tr class="border-b" style="border-color:var(--border)">
           <th class="text-left px-3 py-2">Typ</th>
-          <th class="text-left px-3 py-2">ID</th>
+          <th class="text-left px-3 py-2">Titel</th>
           <th class="text-left px-3 py-2">Link-Typ</th>
           <th class="text-left px-3 py-2">Zeit</th>
           <th class="text-left px-3 py-2">Aktion</th>
@@ -14,9 +14,19 @@
       </thead>
       <tbody>
         {% for row in links %}
+        {% set d = row.display or {} %}
         <tr class="border-b" style="border-color:var(--border)">
-          <td class="px-3 py-2">{{ row.other_type }}</td>
-          <td class="px-3 py-2">{{ row.other_id[:8] if row.other_id else '-' }}</td>
+          <td class="px-3 py-2">
+            <span class="inline-flex items-center rounded border px-2 py-0.5 text-xs" style="border-color:var(--border)">{{ d.type or row.other_type }}</span>
+          </td>
+          <td class="px-3 py-2">
+            {% if d.href %}
+              <a class="font-medium hover:underline" href="{{ d.href }}">{{ d.title or '(unbekannt)' }}</a>
+            {% else %}
+              <span class="font-medium">{{ d.title or '(unbekannt)' }}</span>
+            {% endif %}
+            <div class="muted text-xs">{{ d.subtitle or (d.id[:8] if d.id else (row.other_id[:8] if row.other_id else '-')) }}</div>
+          </td>
           <td class="px-3 py-2">{{ row.link_type }}</td>
           <td class="px-3 py-2">{{ row.created_at }}</td>
           <td class="px-3 py-2">
