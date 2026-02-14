@@ -1,0 +1,24 @@
+<div class="card overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b" style="border-color:var(--border)">
+        <th class="text-left px-3 py-2">Titel</th>
+        <th class="text-left px-3 py-2">Quelle</th>
+        <th class="text-left px-3 py-2">Snippet</th>
+        <th class="text-left px-3 py-2">Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in results %}
+      <tr class="border-b" style="border-color:var(--border)">
+        <td class="px-3 py-2">{{ row.title or '-' }}</td>
+        <td class="px-3 py-2">{{ row.source_type or '-' }}</td>
+        <td class="px-3 py-2">{{ row.snippet or '' }}</td>
+        <td class="px-3 py-2">{{ row.score if row.score is not none else 0.0 }}</td>
+      </tr>
+      {% else %}
+      <tr><td class="px-3 py-3 muted" colspan="4">Keine Treffer.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,32 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold">Knowledge</h1>
+    <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/knowledge/notes">Meine Notizen</a>
+  </div>
+
+  {% if read_only %}
+  <div class="card p-3 text-sm" style="border-color:#f59e0b">Read-only mode aktiv. Schreibaktionen sind deaktiviert.</div>
+  {% endif %}
+
+  <form class="card p-4 grid gap-2 md:grid-cols-5" hx-get="/knowledge/_results" hx-target="#kbResults" hx-swap="innerHTML">
+    <input class="input px-3 py-2 text-sm md:col-span-2" type="text" name="q" value="{{ q }}" placeholder="Suche in Knowledge" maxlength="256" required>
+    <select class="input px-3 py-2 text-sm" name="source_type">
+      <option value="" {% if not source_type %}selected{% endif %}>Alle Quellen</option>
+      <option value="manual" {% if source_type=='manual' %}selected{% endif %}>Manual</option>
+      <option value="task" {% if source_type=='task' %}selected{% endif %}>Task</option>
+      <option value="project" {% if source_type=='project' %}selected{% endif %}>Project</option>
+      <option value="document" {% if source_type=='document' %}selected{% endif %}>Document</option>
+      <option value="lead" {% if source_type=='lead' %}selected{% endif %}>Lead</option>
+      <option value="email" {% if source_type=='email' %}selected{% endif %}>Email</option>
+      <option value="calendar" {% if source_type=='calendar' %}selected{% endif %}>Calendar</option>
+    </select>
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="owner_only" value="1" {% if owner_only %}checked{% endif %}>Nur meine Inhalte</label>
+    <button class="btn-primary px-3 py-2 text-sm" type="submit">Suchen</button>
+  </form>
+
+  <div id="kbResults">
+    {% include 'knowledge/partials/_results.html' %}
+  </div>
+</div>
+
+

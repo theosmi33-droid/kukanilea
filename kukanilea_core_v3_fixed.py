@@ -563,6 +563,84 @@ def _has_fts5(con: sqlite3.Connection) -> bool:
     return bool(_FTS5_AVAILABLE)
 
 
+def _init_knowledge_tables(con: sqlite3.Connection) -> None:
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS knowledge_chunks (
+          id INTEGER PRIMARY KEY,
+          chunk_id TEXT NOT NULL,
+          tenant_id TEXT NOT NULL,
+          owner_user_id TEXT,
+          source_type TEXT NOT NULL,
+          source_ref TEXT NOT NULL,
+          title TEXT,
+          body TEXT NOT NULL,
+          tags TEXT,
+          content_hash TEXT NOT NULL,
+          is_redacted INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(tenant_id, chunk_id),
+          UNIQUE(tenant_id, source_type, source_ref, content_hash)
+        );
+        """
+    )
+
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS knowledge_source_policies (
+          tenant_id TEXT PRIMARY KEY,
+          allow_manual INTEGER NOT NULL DEFAULT 1,
+          allow_tasks INTEGER NOT NULL DEFAULT 1,
+          allow_projects INTEGER NOT NULL DEFAULT 1,
+          allow_documents INTEGER NOT NULL DEFAULT 0,
+          allow_leads INTEGER NOT NULL DEFAULT 0,
+          allow_email INTEGER NOT NULL DEFAULT 0,
+          allow_calendar INTEGER NOT NULL DEFAULT 0,
+          allow_customer_pii INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL
+        );
+        """
+    )
+
+    if _has_fts5(con):
+        con.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+              title,
+              body,
+              tags,
+              content='knowledge_chunks',
+              content_rowid='id'
+            );
+            """
+        )
+    else:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_fts_fallback (
+              rowid INTEGER PRIMARY KEY,
+              title TEXT,
+              body TEXT,
+              tags TEXT
+            );
+            """
+        )
+
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kchunks_tenant_updated ON knowledge_chunks(tenant_id, updated_at DESC);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kchunks_tenant_source ON knowledge_chunks(tenant_id, source_type, source_ref);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kchunks_tenant_owner ON knowledge_chunks(tenant_id, owner_user_id, updated_at DESC);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kpolicy_updated ON knowledge_source_policies(updated_at);"
+    )
+
+
 def db_init() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _DB_LOCK:
@@ -1359,6 +1437,8 @@ def db_init() -> None:
                     );
                     """
                 )
+
+            _init_knowledge_tables(con)
 
             row = con.execute("PRAGMA user_version").fetchone()
             cur_ver = int(row[0] if row else 0)
