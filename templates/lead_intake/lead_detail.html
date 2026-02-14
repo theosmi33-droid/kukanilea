@@ -23,6 +23,11 @@
     {% include 'lead_intake/partials/_gatekeeper.html' %}
   {% endif %}
 
+  <div class="card p-4 space-y-3">
+    <h2 class="font-semibold">Verknüpfungen</h2>
+    <div id="leadEntityLinks" hx-get="/entity-links/{{ link_entity_type }}/{{ link_entity_id }}" hx-trigger="load" hx-swap="innerHTML"></div>
+  </div>
+
   <div class="grid gap-4 md:grid-cols-2">
     <div class="card p-4 space-y-3">
       <h2 class="font-semibold">Aktionen</h2>
