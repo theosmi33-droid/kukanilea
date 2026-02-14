@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import sqlite3
 from pathlib import Path
@@ -53,7 +54,12 @@ def _new_lead(client) -> str:
 def test_collision_event_emitted_on_claim_guard_block(tmp_path: Path) -> None:
     _init_core(tmp_path)
     app = create_app()
-    app.config.update(TESTING=True, SECRET_KEY="test", READ_ONLY=False)
+    app.config.update(
+        TESTING=True,
+        SECRET_KEY="test",
+        ANONYMIZATION_KEY="collision-key",
+        READ_ONLY=False,
+    )
 
     c1 = app.test_client()
     c2 = app.test_client()
@@ -93,7 +99,10 @@ def test_collision_event_emitted_on_claim_guard_block(tmp_path: Path) -> None:
     assert data.get("lead_id") == lead_id
     assert data.get("route_key") == "lead_priority"
     assert data.get("claimed_by_user_id") == "alice"
-    assert data.get("ua_hash") == hashlib.sha256(ua.encode("utf-8")).hexdigest()
+    assert (
+        data.get("ua_hash")
+        == hmac.new(b"collision-key", ua.encode("utf-8"), hashlib.sha256).hexdigest()
+    )
 
     encoded = json.dumps(payload, sort_keys=True)
     assert ua not in encoded
