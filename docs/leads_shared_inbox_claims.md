@@ -13,7 +13,7 @@ Die Shared-Inbox-Mechanik ergänzt Leads um exklusives `Claim`/`Release` mit TTL
 
 - Tenant-sicher: alle Claim-Reads/Writes sind `tenant_id`-gebunden.
 - READ_ONLY: alle mutierenden Claim-Endpunkte liefern `403 read_only`.
-- Collision-Guard: mutierende Lead-Aktionen (`priority`, `assign`, `screen accept/ignore`) blocken bei aktivem Fremd-Claim (`409 lead_claimed`).
+- Collision-Guard: mutierende Lead-Aktionen laufen zentral über den Guard-Decorator und blocken bei aktivem Fremd-Claim (`403 lead_claimed`).
 
 ## Endpunkte
 
