@@ -52,7 +52,14 @@
 
   <div class="grid gap-4 md:grid-cols-2">
     <div class="card p-4 space-y-3">
-      <h2 class="font-semibold">Aktionen</h2>
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="font-semibold">Aktionen</h2>
+        {% if read_only or locked_by_other %}
+        <span class="btn-outline px-3 py-2 text-xs opacity-60 cursor-not-allowed">In Deal umwandeln</span>
+        {% else %}
+        <a class="btn-outline px-3 py-2 text-xs" href="/leads/{{ lead.id }}/convert">In Deal umwandeln</a>
+        {% endif %}
+      </div>
 
       <form method="post" action="/leads/{{ lead.id }}/status" class="grid gap-2">
         <select class="input px-3 py-2 text-sm" name="status" {% if read_only or locked_by_other %}disabled{% endif %}>

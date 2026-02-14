@@ -100,6 +100,7 @@ from app.lead_intake import (
     lead_claim_get,
     lead_claims_auto_expire,
     lead_claims_for_leads,
+    lead_convert_to_deal_quote,
     lead_release_claim,
     lead_timeline,
     leads_add_note,
@@ -2670,6 +2671,7 @@ _LEAD_COLLISION_ROUTE_KEYS = {
     "lead_screen_ignore",
     "lead_priority",
     "lead_assign",
+    "lead_convert",
 }
 
 _LEAD_COLLISION_ENDPOINT_KEYS = {
@@ -2686,6 +2688,8 @@ _LEAD_COLLISION_ENDPOINT_KEYS = {
     "web.api_leads_screen_ignore": "lead_screen_ignore",
     "web.api_leads_priority": "lead_priority",
     "web.api_leads_assign": "lead_assign",
+    "web.leads_convert_action": "lead_convert",
+    "web.api_leads_convert": "lead_convert",
 }
 
 
@@ -2943,6 +2947,24 @@ def lead_detail_page(lead_id: str):
     return _render_base(content, active_tab="leads")
 
 
+@bp.get("/leads/<lead_id>/convert")
+@login_required
+def lead_convert_page(lead_id: str):
+    tenant_id = current_tenant()
+    lead = leads_get(tenant_id, lead_id)
+    if not lead:
+        return _lead_api_error("not_found", "Lead nicht gefunden.", status=404)
+    claim = lead_claim_get(tenant_id, lead_id)
+    content = render_template(
+        "lead_intake/lead_convert_confirm.html",
+        lead=lead,
+        claim=claim,
+        current_user_id=current_user() or "",
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="leads")
+
+
 @bp.get("/leads/_table")
 @login_required
 def leads_table_partial():
@@ -3099,6 +3121,65 @@ def leads_status_action(lead_id: str):
     if _is_htmx():
         return lead_status_partial(lead_id)
     return jsonify({"ok": True})
+
+
+@bp.post("/leads/<lead_id>/convert")
+@login_required
+@require_role("OPERATOR")
+@require_lead_access("leads_convert")
+def leads_convert_action(lead_id: str):
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = _lead_payload()
+    mapping = {
+        "deal_title": payload.get("deal_title") or "",
+        "customer_name": payload.get("customer_name") or "",
+        "use_subject_title": str(payload.get("use_subject_title") or "").strip().lower()
+        in {"1", "true", "on", "yes"},
+        "use_contact_name": str(payload.get("use_contact_name") or "").strip().lower()
+        in {"1", "true", "on", "yes"},
+    }
+    try:
+        out = lead_convert_to_deal_quote(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or None,
+            mapping=mapping,
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=not _is_htmx(),
+            fallback_message="Konvertierung fehlgeschlagen.",
+            status=409,
+            route_key="lead_convert",
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_mutation_guard(api=not _is_htmx())
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        if _is_htmx():
+            return (
+                render_template(
+                    "lead_intake/partials/_claim_error.html",
+                    message="Konvertierung fehlgeschlagen.",
+                    request_id=getattr(g, "request_id", ""),
+                ),
+                400,
+            )
+        return _lead_api_error("validation_error", "Konvertierung fehlgeschlagen.", 400)
+
+    quote_id = str(out.get("quote_id") or "")
+    if _is_htmx() or not request.is_json:
+        if quote_id:
+            return redirect(url_for("web.crm_quote_detail", quote_id=quote_id))
+        return redirect(url_for("web.lead_detail_page", lead_id=lead_id))
+    return jsonify({"ok": True, **out})
 
 
 @bp.post("/leads/<lead_id>/claim")
@@ -3563,6 +3644,48 @@ def api_leads_get(lead_id: str):
     if not row:
         return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
     return jsonify({"ok": True, "item": row})
+
+
+@bp.post("/api/leads/<lead_id>/convert")
+@login_required
+@require_role("OPERATOR")
+@require_lead_access("leads_convert")
+def api_leads_convert(lead_id: str):
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    mapping = {
+        "deal_title": payload.get("deal_title") or "",
+        "customer_name": payload.get("customer_name") or "",
+        "use_subject_title": bool(payload.get("use_subject_title", False)),
+        "use_contact_name": bool(payload.get("use_contact_name", False)),
+    }
+    try:
+        out = lead_convert_to_deal_quote(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or None,
+            mapping=mapping,
+        )
+    except ConflictError as exc:
+        return _lead_claim_error_response(
+            exc,
+            api=True,
+            fallback_message="Konvertierung fehlgeschlagen.",
+            status=409,
+            route_key="lead_convert",
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response(api=True)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Konvertierung fehlgeschlagen.", 400)
+    return jsonify({"ok": True, **out})
 
 
 @bp.post("/api/leads/<lead_id>/claim")
