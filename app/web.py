@@ -59,6 +59,15 @@ from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.retrieval_fts import upsert_external_fact
 from app.ai.knowledge import store_entity
 from app.ai.predictions import daily_report, predict_budget
+from app.knowledge import (
+    knowledge_note_create,
+    knowledge_note_delete,
+    knowledge_note_update,
+    knowledge_notes_list,
+    knowledge_policy_get,
+    knowledge_policy_update,
+    knowledge_search,
+)
 from app.lead_intake import (
     appointment_request_to_ics,
     appointment_requests_create,
@@ -793,6 +802,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
       <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers">📈 CRM</a>
       <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
+      <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">📚 Knowledge</a>
       {% if roles in ['DEV', 'ADMIN'] %}
       <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
       {% endif %}
@@ -3453,6 +3463,352 @@ def api_appointment_request_ics(req_id: str):
 @login_required
 def appointment_request_ics_alias(req_id: str):
     return api_appointment_request_ics(req_id)
+
+
+def _knowledge_error(code: str, message: str, status: int = 400):
+    if request.is_json or request.path.startswith("/api/"):
+        return json_error(code, message, status=status)
+    return _render_base(
+        f'<div class="card p-4"><h2 class="text-lg font-semibold">Knowledge</h2><p class="muted mt-2">{message}</p></div>',
+        active_tab="knowledge",
+    ), status
+
+
+@bp.get("/knowledge")
+@login_required
+def knowledge_search_page():
+    tenant_id = current_tenant()
+    q = (request.args.get("q") or "").strip()
+    source_type = (request.args.get("source_type") or "").strip().lower() or None
+    owner_only = (request.args.get("owner_only") or "").strip() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    limit = _clamp_page_size(request.args.get("limit"), default=10)
+    if limit > 25:
+        limit = 25
+
+    results: list[dict[str, Any]] = []
+    if q:
+        try:
+            results = knowledge_search(
+                tenant_id=tenant_id,
+                query=q,
+                owner_user_id=(current_user() if owner_only else None),
+                source_type=source_type,
+                limit=limit,
+            )
+        except ValueError:
+            results = []
+
+    content = render_template(
+        "knowledge/search.html",
+        q=q,
+        source_type=source_type or "",
+        owner_only=owner_only,
+        results=results,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.get("/knowledge/_results")
+@login_required
+def knowledge_results_partial():
+    tenant_id = current_tenant()
+    q = (request.args.get("q") or "").strip()
+    source_type = (request.args.get("source_type") or "").strip().lower() or None
+    owner_only = (request.args.get("owner_only") or "").strip() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    limit = _clamp_page_size(request.args.get("limit"), default=10)
+    if limit > 25:
+        limit = 25
+
+    results: list[dict[str, Any]] = []
+    if q:
+        try:
+            results = knowledge_search(
+                tenant_id=tenant_id,
+                query=q,
+                owner_user_id=(current_user() if owner_only else None),
+                source_type=source_type,
+                limit=limit,
+            )
+        except ValueError:
+            results = []
+
+    return render_template("knowledge/partials/_results.html", results=results)
+
+
+@bp.get("/knowledge/notes")
+@login_required
+def knowledge_notes_page():
+    tenant_id = current_tenant()
+    owner = current_user() or ""
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    if page_size > 25:
+        page_size = 25
+    offset = (page - 1) * page_size
+
+    notes = knowledge_notes_list(
+        tenant_id, owner_user_id=owner, limit=page_size, offset=offset
+    )
+    content = render_template(
+        "knowledge/notes_list.html",
+        notes=notes,
+        page=page,
+        page_size=page_size,
+        has_more=(len(notes) == page_size),
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.get("/knowledge/notes/new")
+@login_required
+def knowledge_new_note_page():
+    content = render_template(
+        "knowledge/note_form.html",
+        mode="create",
+        note={},
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.post("/knowledge/notes/create")
+@login_required
+@require_role("OPERATOR")
+def knowledge_create_note_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    try:
+        note = knowledge_note_create(
+            tenant_id=current_tenant(),
+            owner_user_id=current_user() or "",
+            title=(payload.get("title") if payload else "") or "",
+            body=(payload.get("body") if payload else "") or "",
+            tags=(payload.get("tags") if payload else "") or None,
+        )
+    except PermissionError:
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "policy_blocked":
+            return _knowledge_error(
+                "policy_blocked", "Quelle laut Policy deaktiviert.", status=403
+            )
+        return _knowledge_error(
+            "validation_error", "Notiz konnte nicht gespeichert werden.", status=400
+        )
+    if _is_htmx():
+        return redirect(url_for("web.knowledge_notes_page"))
+    return jsonify({"ok": True, "note": note})
+
+
+@bp.post("/knowledge/notes/<chunk_id>/edit")
+@login_required
+@require_role("OPERATOR")
+def knowledge_edit_note_action(chunk_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    try:
+        note = knowledge_note_update(
+            tenant_id=current_tenant(),
+            chunk_id=chunk_id,
+            owner_user_id=current_user() or "",
+            title=(payload.get("title") if payload else "") or "",
+            body=(payload.get("body") if payload else "") or "",
+            tags=(payload.get("tags") if payload else "") or None,
+        )
+    except PermissionError:
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _knowledge_error("not_found", "Notiz nicht gefunden.", status=404)
+        if code == "forbidden":
+            return _knowledge_error(
+                "forbidden", "Keine Berechtigung für diese Notiz.", status=403
+            )
+        return _knowledge_error(
+            "validation_error", "Notiz konnte nicht aktualisiert werden.", status=400
+        )
+    if _is_htmx():
+        return redirect(url_for("web.knowledge_notes_page"))
+    return jsonify({"ok": True, "note": note})
+
+
+@bp.post("/knowledge/notes/<chunk_id>/delete")
+@login_required
+@require_role("OPERATOR")
+def knowledge_delete_note_action(chunk_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    try:
+        knowledge_note_delete(
+            tenant_id=current_tenant(),
+            chunk_id=chunk_id,
+            owner_user_id=current_user() or "",
+        )
+    except PermissionError:
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _knowledge_error("not_found", "Notiz nicht gefunden.", status=404)
+        if code == "forbidden":
+            return _knowledge_error(
+                "forbidden", "Keine Berechtigung für diese Notiz.", status=403
+            )
+        return _knowledge_error(
+            "validation_error", "Notiz konnte nicht gelöscht werden.", status=400
+        )
+    if _is_htmx():
+        return redirect(url_for("web.knowledge_notes_page"))
+    return jsonify({"ok": True})
+
+
+@bp.get("/knowledge/settings")
+@login_required
+def knowledge_settings_page():
+    policy = knowledge_policy_get(current_tenant())
+    content = render_template(
+        "knowledge/settings.html",
+        policy=policy,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.post("/knowledge/settings/save")
+@login_required
+@require_role("OPERATOR")
+def knowledge_settings_save_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    flag_keys = [
+        "allow_manual",
+        "allow_tasks",
+        "allow_projects",
+        "allow_documents",
+        "allow_leads",
+        "allow_email",
+        "allow_calendar",
+        "allow_customer_pii",
+    ]
+    flags: dict[str, bool] = {}
+    for key in flag_keys:
+        val = payload.get(key) if payload else None
+        flags[key] = str(val).strip().lower() in {"1", "true", "on", "yes"}
+
+    try:
+        policy = knowledge_policy_update(
+            current_tenant(),
+            actor_user_id=current_user() or "",
+            **flags,
+        )
+    except PermissionError:
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "validation_error":
+            return _knowledge_error(
+                "validation_error", "Ungültige Policy-Konfiguration.", status=400
+            )
+        return _knowledge_error(
+            "validation_error", "Policy konnte nicht gespeichert werden.", status=400
+        )
+
+    if _is_htmx():
+        return render_template(
+            "knowledge/partials/_errors.html",
+            message="Einstellungen gespeichert.",
+            kind="ok",
+        )
+    return jsonify({"ok": True, "policy": policy})
+
+
+@bp.get("/api/knowledge/search")
+@login_required
+def api_knowledge_search():
+    q = (request.args.get("q") or "").strip()
+    source_type = (request.args.get("source_type") or "").strip().lower() or None
+    owner_only = (request.args.get("owner_only") or "").strip() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    limit = _clamp_page_size(request.args.get("limit"), default=10)
+    if limit > 25:
+        limit = 25
+    try:
+        rows = knowledge_search(
+            tenant_id=current_tenant(),
+            query=q,
+            owner_user_id=(current_user() if owner_only else None),
+            source_type=source_type,
+            limit=limit,
+        )
+    except ValueError:
+        return json_error("validation_error", "Ungültige Suchanfrage.", status=400)
+    return jsonify({"ok": True, "items": rows})
+
+
+@bp.get("/api/knowledge/notes")
+@login_required
+def api_knowledge_notes_list():
+    limit = _clamp_page_size(request.args.get("limit"), default=25)
+    if limit > 25:
+        limit = 25
+    offset = max(0, int(request.args.get("offset") or 0))
+    notes = knowledge_notes_list(
+        tenant_id=current_tenant(),
+        owner_user_id=current_user() or "",
+        limit=limit,
+        offset=offset,
+    )
+    return jsonify({"ok": True, "items": notes})
+
+
+@bp.post("/api/knowledge/notes")
+@login_required
+@require_role("OPERATOR")
+def api_knowledge_notes_create():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return json_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) or {}
+    try:
+        note = knowledge_note_create(
+            tenant_id=current_tenant(),
+            owner_user_id=current_user() or "",
+            title=(payload.get("title") or ""),
+            body=(payload.get("body") or ""),
+            tags=(payload.get("tags") or None),
+        )
+    except PermissionError:
+        return json_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "policy_blocked":
+            return json_error(
+                "policy_blocked", "Quelle laut Policy deaktiviert.", status=403
+            )
+        return json_error(
+            "validation_error", "Notiz konnte nicht gespeichert werden.", status=400
+        )
+    return jsonify({"ok": True, "note": note})
 
 
 @bp.get("/crm/customers")
