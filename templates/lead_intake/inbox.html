@@ -1,0 +1,36 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold">Leads Inbox</h1>
+    <a class="btn-outline px-3 py-2 text-sm" href="/leads/new">Neuer Lead</a>
+  </div>
+
+  {% if read_only %}
+  <div class="rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm">
+    Read-only mode aktiv. Schreibaktionen sind deaktiviert.
+  </div>
+  {% endif %}
+
+  <div class="card p-4 space-y-3">
+    <form class="grid gap-2 md:grid-cols-6" hx-get="/leads/_table" hx-target="#leadsTable" hx-swap="outerHTML">
+      <input class="input px-3 py-2 text-sm md:col-span-2" type="text" name="q" value="{{ q }}" placeholder="Suche Betreff / Name">
+      <select class="input px-3 py-2 text-sm" name="status">
+        <option value="">Status: alle</option>
+        {% for s in ['new','contacted','qualified','lost','won'] %}
+        <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <select class="input px-3 py-2 text-sm" name="source">
+        <option value="">Quelle: alle</option>
+        {% for s in ['call','email','webform','manual'] %}
+        <option value="{{ s }}" {% if source==s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <input type="hidden" name="page" value="{{ page }}">
+      <input type="hidden" name="page_size" value="{{ page_size }}">
+      <button class="btn-outline px-3 py-2 text-sm" type="submit">Filtern</button>
+      <a class="btn-outline px-3 py-2 text-sm" href="/leads/inbox">Reset</a>
+    </form>
+  </div>
+
+  {% include 'lead_intake/partials/_table.html' %}
+</div>

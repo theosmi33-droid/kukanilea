@@ -1,0 +1,38 @@
+<div id="leadsTable" class="card p-0 overflow-x-auto">
+  <table class="min-w-full text-sm">
+    <thead>
+      <tr class="text-left border-b border-zinc-700/40">
+        <th class="p-3">Erstellt</th>
+        <th class="p-3">Status</th>
+        <th class="p-3">Quelle</th>
+        <th class="p-3">Betreff</th>
+        <th class="p-3">Kontakt</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lead in leads %}
+      <tr class="border-b border-zinc-700/20 hover:bg-zinc-800/30">
+        <td class="p-3 whitespace-nowrap">{{ lead.created_at }}</td>
+        <td class="p-3">{{ lead.status }}</td>
+        <td class="p-3">{{ lead.source }}</td>
+        <td class="p-3"><a class="underline" href="/leads/{{ lead.id }}">{{ lead.subject or lead.id }}</a></td>
+        <td class="p-3">{{ lead.contact_name or '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td class="p-3 opacity-70" colspan="5">Keine Leads gefunden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="flex justify-between items-center p-3 text-xs opacity-80">
+    <span>Seite {{ page }}</span>
+    <div class="flex gap-2">
+      {% if page > 1 %}
+      <a class="btn-outline px-2 py-1" hx-get="/leads/_table?q={{ q|urlencode }}&status={{ status|urlencode }}&source={{ source|urlencode }}&page={{ page - 1 }}&page_size={{ page_size }}" hx-target="#leadsTable" hx-swap="outerHTML">Zurück</a>
+      {% endif %}
+      {% if has_more %}
+      <a class="btn-outline px-2 py-1" hx-get="/leads/_table?q={{ q|urlencode }}&status={{ status|urlencode }}&source={{ source|urlencode }}&page={{ page + 1 }}&page_size={{ page_size }}" hx-target="#leadsTable" hx-swap="outerHTML">Weiter</a>
+      {% endif %}
+    </div>
+  </div>
+</div>

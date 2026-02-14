@@ -44,6 +44,7 @@ from flask import (
     Blueprint,
     abort,
     current_app,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -58,6 +59,18 @@ from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.retrieval_fts import upsert_external_fact
 from app.ai.knowledge import store_entity
 from app.ai.predictions import daily_report, predict_budget
+from app.lead_intake import (
+    appointment_request_to_ics,
+    appointment_requests_create,
+    appointment_requests_update_status,
+    call_logs_create,
+    lead_timeline,
+    leads_add_note,
+    leads_create,
+    leads_get,
+    leads_list,
+    leads_update_status,
+)
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
@@ -773,6 +786,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
       <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
       <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers">📈 CRM</a>
+      <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
       {% if roles in ['DEV', 'ADMIN'] %}
       <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
       {% endif %}
@@ -2556,6 +2570,544 @@ def api_emails_import():
     except ValueError as exc:
         return _crm_error_response(exc, "E-Mail konnte nicht importiert werden.")
     return jsonify(ok=True, email_id=email_id)
+
+
+def _lead_read_only_response():
+    rid = getattr(g, "request_id", "")
+    return (
+        jsonify({"ok": False, "error_code": "read_only", "request_id": rid}),
+        403,
+    )
+
+
+def _lead_mutation_guard():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _lead_read_only_response()
+    return None
+
+
+def _lead_api_error(code: str, message: str, status: int = 400):
+    rid = getattr(g, "request_id", "")
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": {
+                    "code": code,
+                    "message": message,
+                    "details": {},
+                    "request_id": rid,
+                },
+            }
+        ),
+        status,
+    )
+
+
+@bp.get("/leads/inbox")
+@login_required
+def leads_inbox_page():
+    tenant_id = current_tenant()
+    status = (request.args.get("status") or "").strip().lower() or None
+    source = (request.args.get("source") or "").strip().lower() or None
+    q = (request.args.get("q") or "").strip() or None
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    offset = (page - 1) * page_size
+    try:
+        leads = leads_list(
+            tenant_id,
+            status=status,
+            source=source,
+            q=q,
+            limit=page_size,
+            offset=offset,
+        )
+    except ValueError:
+        leads = []
+    content = render_template(
+        "lead_intake/inbox.html",
+        leads=leads,
+        status=status or "",
+        source=source or "",
+        q=q or "",
+        page=page,
+        page_size=page_size,
+        has_more=(len(leads) == page_size),
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="leads")
+
+
+@bp.get("/leads/new")
+@login_required
+def leads_new_page():
+    content = render_template(
+        "lead_intake/lead_form.html",
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="leads")
+
+
+@bp.get("/leads/<lead_id>")
+@login_required
+def lead_detail_page(lead_id: str):
+    tenant_id = current_tenant()
+    lead = leads_get(tenant_id, lead_id)
+    if not lead:
+        return _lead_api_error("not_found", "Lead nicht gefunden.", status=404)
+    content = render_template(
+        "lead_intake/lead_detail.html",
+        lead=lead,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="leads")
+
+
+@bp.get("/leads/_table")
+@login_required
+def leads_table_partial():
+    tenant_id = current_tenant()
+    status = (request.args.get("status") or "").strip().lower() or None
+    source = (request.args.get("source") or "").strip().lower() or None
+    q = (request.args.get("q") or "").strip() or None
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    offset = (page - 1) * page_size
+    try:
+        leads = leads_list(
+            tenant_id,
+            status=status,
+            source=source,
+            q=q,
+            limit=page_size,
+            offset=offset,
+        )
+    except ValueError:
+        leads = []
+    return render_template(
+        "lead_intake/partials/_table.html",
+        leads=leads,
+        status=status or "",
+        source=source or "",
+        q=q or "",
+        page=page,
+        page_size=page_size,
+        has_more=(len(leads) == page_size),
+    )
+
+
+@bp.get("/leads/_timeline/<lead_id>")
+@login_required
+def lead_timeline_partial(lead_id: str):
+    tenant_id = current_tenant()
+    timeline = lead_timeline(tenant_id, lead_id, limit=100)
+    return render_template("lead_intake/partials/_timeline.html", timeline=timeline)
+
+
+@bp.get("/leads/_status/<lead_id>")
+@login_required
+def lead_status_partial(lead_id: str):
+    tenant_id = current_tenant()
+    lead = leads_get(tenant_id, lead_id)
+    if not lead:
+        return render_template(
+            "lead_intake/partials/_status.html",
+            lead={"id": lead_id, "status": "unknown"},
+        )
+    return render_template("lead_intake/partials/_status.html", lead=lead)
+
+
+@bp.post("/leads")
+@login_required
+@require_role("OPERATOR")
+def leads_create_action():
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    try:
+        lead_id = leads_create(
+            tenant_id=current_tenant(),
+            source=(payload.get("source") or "manual"),
+            contact_name=(payload.get("contact_name") or ""),
+            contact_email=(payload.get("contact_email") or ""),
+            contact_phone=(payload.get("contact_phone") or ""),
+            subject=(payload.get("subject") or ""),
+            message=(payload.get("message") or ""),
+            customer_id=(payload.get("customer_id") or None),
+            notes=(payload.get("notes") or None),
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Kunde nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Lead-Daten.", 400)
+
+    if _is_htmx():
+        return redirect(url_for("web.lead_detail_page", lead_id=lead_id))
+    return jsonify({"ok": True, "lead_id": lead_id})
+
+
+@bp.post("/leads/<lead_id>/status")
+@login_required
+@require_role("OPERATOR")
+def leads_status_action(lead_id: str):
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    try:
+        leads_update_status(
+            current_tenant(),
+            lead_id,
+            payload.get("status") or "",
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültiger Status.", 400)
+
+    if _is_htmx():
+        return lead_status_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/<lead_id>/note")
+@login_required
+@require_role("OPERATOR")
+def leads_note_action(lead_id: str):
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    try:
+        leads_add_note(
+            current_tenant(),
+            lead_id,
+            payload.get("note_text") or payload.get("note") or "",
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Notiz.", 400)
+
+    if _is_htmx():
+        return lead_timeline_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/<lead_id>/call-log")
+@login_required
+@require_role("OPERATOR")
+def leads_call_log_action(lead_id: str):
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    try:
+        call_id = call_logs_create(
+            current_tenant(),
+            lead_id,
+            payload.get("caller_name") or "",
+            payload.get("caller_phone") or "",
+            payload.get("direction") or "inbound",
+            int(payload.get("duration_seconds"))
+            if payload.get("duration_seconds")
+            else None,
+            payload.get("notes"),
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Call-Log Daten.", 400)
+
+    if _is_htmx():
+        return lead_timeline_partial(lead_id)
+    return jsonify({"ok": True, "call_log_id": call_id})
+
+
+@bp.post("/leads/<lead_id>/appointment")
+@login_required
+@require_role("OPERATOR")
+def leads_appointment_action(lead_id: str):
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    try:
+        req_id = appointment_requests_create(
+            current_tenant(),
+            lead_id,
+            payload.get("requested_date") or None,
+            payload.get("notes") or None,
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Termin-Anfrage.", 400)
+
+    if _is_htmx():
+        return lead_timeline_partial(lead_id)
+    return jsonify({"ok": True, "appointment_request_id": req_id})
+
+
+@bp.get("/api/leads")
+@login_required
+def api_leads_list():
+    try:
+        rows = leads_list(
+            current_tenant(),
+            status=(request.args.get("status") or None),
+            source=(request.args.get("source") or None),
+            q=(request.args.get("q") or None),
+            limit=min(int(request.args.get("limit") or 50), 200),
+            offset=max(int(request.args.get("offset") or 0), 0),
+        )
+    except ValueError:
+        return _lead_api_error("validation_error", "Ungültige Filter.", 400)
+    return jsonify({"ok": True, "items": rows})
+
+
+@bp.post("/api/leads")
+@login_required
+@require_role("OPERATOR")
+def api_leads_create():
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        lead_id = leads_create(
+            tenant_id=current_tenant(),
+            source=(payload.get("source") or "manual"),
+            contact_name=(payload.get("contact_name") or ""),
+            contact_email=(payload.get("contact_email") or ""),
+            contact_phone=(payload.get("contact_phone") or ""),
+            subject=(payload.get("subject") or ""),
+            message=(payload.get("message") or ""),
+            customer_id=(payload.get("customer_id") or None),
+            notes=(payload.get("notes") or None),
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Kunde nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Lead-Daten.", 400)
+    return jsonify({"ok": True, "lead_id": lead_id})
+
+
+@bp.get("/api/leads/<lead_id>")
+@login_required
+def api_leads_get(lead_id: str):
+    row = leads_get(current_tenant(), lead_id)
+    if not row:
+        return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+    return jsonify({"ok": True, "item": row})
+
+
+@bp.put("/api/leads/<lead_id>/status")
+@login_required
+@require_role("OPERATOR")
+def api_leads_status(lead_id: str):
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        leads_update_status(
+            current_tenant(),
+            lead_id,
+            payload.get("status") or "",
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültiger Status.", 400)
+    return jsonify({"ok": True})
+
+
+@bp.post("/api/leads/<lead_id>/note")
+@login_required
+@require_role("OPERATOR")
+def api_leads_note(lead_id: str):
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        leads_add_note(
+            current_tenant(),
+            lead_id,
+            payload.get("note_text") or payload.get("note") or "",
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Notiz.", 400)
+    return jsonify({"ok": True})
+
+
+@bp.post("/api/call-logs")
+@login_required
+@require_role("OPERATOR")
+def api_call_logs_create():
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        call_id = call_logs_create(
+            current_tenant(),
+            payload.get("lead_id") or None,
+            payload.get("caller_name") or "",
+            payload.get("caller_phone") or "",
+            payload.get("direction") or "inbound",
+            int(payload.get("duration_seconds"))
+            if payload.get("duration_seconds")
+            else None,
+            payload.get("notes"),
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Call-Log Daten.", 400)
+    return jsonify({"ok": True, "call_log_id": call_id})
+
+
+@bp.post("/api/appointment-requests")
+@login_required
+@require_role("OPERATOR")
+def api_appointment_requests_create():
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        req_id = appointment_requests_create(
+            current_tenant(),
+            payload.get("lead_id") or "",
+            payload.get("requested_date") or None,
+            payload.get("notes") or None,
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Termin-Anfrage.", 400)
+    return jsonify({"ok": True, "appointment_request_id": req_id})
+
+
+@bp.put("/api/appointment-requests/<req_id>/status")
+@login_required
+@require_role("OPERATOR")
+def api_appointment_requests_status(req_id: str):
+    guarded = _lead_mutation_guard()
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        appointment_requests_update_status(
+            current_tenant(),
+            req_id,
+            payload.get("status") or "",
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "read_only":
+            return _lead_read_only_response()
+        if code == "not_found":
+            return _lead_api_error("not_found", "Termin-Anfrage nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültiger Termin-Status.", 400)
+    return jsonify({"ok": True})
+
+
+@bp.get("/api/appointment-requests/<req_id>/ics")
+@login_required
+def api_appointment_request_ics(req_id: str):
+    try:
+        ics, fname = appointment_request_to_ics(current_tenant(), req_id)
+    except ValueError:
+        return _lead_api_error("not_found", "Termin-Anfrage nicht gefunden.", 404)
+    resp = current_app.response_class(ics, mimetype="text/calendar; charset=utf-8")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return resp
+
+
+@bp.get("/appointments/<req_id>/ics")
+@login_required
+def appointment_request_ics_alias(req_id: str):
+    return api_appointment_request_ics(req_id)
 
 
 @bp.get("/crm/customers")
