@@ -10,6 +10,13 @@
   </div>
   {% endif %}
 
+  {% set locked_by_other = claim and claim.active and claim.claimed_by != current_user_id %}
+  {% if locked_by_other %}
+  <div class="rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm">
+    Dieser Lead ist aktuell von {{ claim.claimed_by }} geclaimt bis {{ claim.claimed_until }}.
+  </div>
+  {% endif %}
+
   <div class="card p-4 grid gap-2 md:grid-cols-2 text-sm">
     <div><span class="opacity-70">Status:</span> <span id="leadStatusWrap" hx-get="/leads/_status/{{ lead.id }}" hx-trigger="load" hx-swap="innerHTML"></span></div>
     <div><span class="opacity-70">Quelle:</span> {{ lead.source }}</div>
@@ -24,8 +31,23 @@
   {% endif %}
 
   <div class="card p-4 space-y-3">
+    <h2 class="font-semibold">Claim</h2>
+    <div
+      id="leadClaimWrap"
+      hx-get="/leads/_claim/{{ lead.id }}"
+      hx-trigger="load"
+      hx-swap="innerHTML"
+    ></div>
+  </div>
+
+  <div class="card p-4 space-y-3">
     <h2 class="font-semibold">Verknüpfungen</h2>
-    <div id="leadEntityLinks" hx-get="/entity-links/{{ link_entity_type }}/{{ link_entity_id }}" hx-trigger="load" hx-swap="innerHTML"></div>
+    <div
+      id="leadEntityLinks"
+      hx-get="/entity-links/{{ link_entity_type }}/{{ link_entity_id }}"
+      hx-trigger="load"
+      hx-swap="innerHTML"
+    ></div>
   </div>
 
   <div class="grid gap-4 md:grid-cols-2">
@@ -33,52 +55,52 @@
       <h2 class="font-semibold">Aktionen</h2>
 
       <form method="post" action="/leads/{{ lead.id }}/status" class="grid gap-2">
-        <select class="input px-3 py-2 text-sm" name="status" {% if read_only %}disabled{% endif %}>
+        <select class="input px-3 py-2 text-sm" name="status" {% if read_only or locked_by_other %}disabled{% endif %}>
           {% for s in ['new','screening','contacted','qualified','lost','won','ignored'] %}
           <option value="{{ s }}" {% if lead.status==s %}selected{% endif %}>{{ s }}</option>
           {% endfor %}
         </select>
-        <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Status speichern</button>
+        <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only or locked_by_other %}disabled{% endif %}>Status speichern</button>
       </form>
 
       <form method="post" action="/leads/{{ lead.id }}/priority" class="grid gap-2 md:grid-cols-2">
-        <select class="input px-3 py-2 text-sm" name="priority" {% if read_only %}disabled{% endif %}>
+        <select class="input px-3 py-2 text-sm" name="priority" {% if read_only or locked_by_other %}disabled{% endif %}>
           <option value="normal" {% if lead.priority=='normal' %}selected{% endif %}>normal</option>
           <option value="high" {% if lead.priority=='high' %}selected{% endif %}>high</option>
         </select>
         <label class="text-xs flex items-center gap-2">
-          <input type="checkbox" name="pinned" value="1" {% if lead.pinned %}checked{% endif %} {% if read_only %}disabled{% endif %}> pinned
+          <input type="checkbox" name="pinned" value="1" {% if lead.pinned %}checked{% endif %} {% if read_only or locked_by_other %}disabled{% endif %}> pinned
         </label>
-        <button class="btn-outline px-3 py-2 text-sm md:col-span-2" type="submit" {% if read_only %}disabled{% endif %}>Priorität speichern</button>
+        <button class="btn-outline px-3 py-2 text-sm md:col-span-2" type="submit" {% if read_only or locked_by_other %}disabled{% endif %}>Priorität speichern</button>
       </form>
 
       <form method="post" action="/leads/{{ lead.id }}/assign" class="grid gap-2 md:grid-cols-2">
-        <input class="input px-3 py-2 text-sm" type="text" name="assigned_to" value="{{ lead.assigned_to or '' }}" placeholder="Owner" {% if read_only %}disabled{% endif %}>
-        <input class="input px-3 py-2 text-sm" type="text" name="response_due" value="{{ lead.response_due or '' }}" placeholder="ISO due" {% if read_only %}disabled{% endif %}>
-        <button class="btn-outline px-3 py-2 text-sm md:col-span-2" type="submit" {% if read_only %}disabled{% endif %}>Zuweisung speichern</button>
+        <input class="input px-3 py-2 text-sm" type="text" name="assigned_to" value="{{ lead.assigned_to or '' }}" placeholder="Owner" {% if read_only or locked_by_other %}disabled{% endif %}>
+        <input class="input px-3 py-2 text-sm" type="text" name="response_due" value="{{ lead.response_due or '' }}" placeholder="ISO due" {% if read_only or locked_by_other %}disabled{% endif %}>
+        <button class="btn-outline px-3 py-2 text-sm md:col-span-2" type="submit" {% if read_only or locked_by_other %}disabled{% endif %}>Zuweisung speichern</button>
       </form>
 
       <form method="post" action="/leads/{{ lead.id }}/note" class="grid gap-2">
-        <textarea class="input px-3 py-2 text-sm" rows="3" name="note_text" placeholder="Neue Notiz" {% if read_only %}disabled{% endif %}></textarea>
-        <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Notiz hinzufügen</button>
+        <textarea class="input px-3 py-2 text-sm" rows="3" name="note_text" placeholder="Neue Notiz" {% if read_only or locked_by_other %}disabled{% endif %}></textarea>
+        <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only or locked_by_other %}disabled{% endif %}>Notiz hinzufügen</button>
       </form>
 
       <form method="post" action="/leads/{{ lead.id }}/call-log" class="grid gap-2 md:grid-cols-2">
-        <input class="input px-3 py-2 text-sm" type="text" name="caller_name" placeholder="Anrufer" {% if read_only %}disabled{% endif %}>
-        <input class="input px-3 py-2 text-sm" type="text" name="caller_phone" placeholder="Telefon" {% if read_only %}disabled{% endif %}>
-        <select class="input px-3 py-2 text-sm" name="direction" {% if read_only %}disabled{% endif %}>
+        <input class="input px-3 py-2 text-sm" type="text" name="caller_name" placeholder="Anrufer" {% if read_only or locked_by_other %}disabled{% endif %}>
+        <input class="input px-3 py-2 text-sm" type="text" name="caller_phone" placeholder="Telefon" {% if read_only or locked_by_other %}disabled{% endif %}>
+        <select class="input px-3 py-2 text-sm" name="direction" {% if read_only or locked_by_other %}disabled{% endif %}>
           <option value="inbound">inbound</option>
           <option value="outbound">outbound</option>
         </select>
-        <input class="input px-3 py-2 text-sm" type="number" min="0" name="duration_seconds" placeholder="Dauer (s)" {% if read_only %}disabled{% endif %}>
-        <textarea class="input px-3 py-2 text-sm md:col-span-2" rows="2" name="notes" placeholder="Notiz" {% if read_only %}disabled{% endif %}></textarea>
-        <button class="btn-outline px-3 py-2 text-sm md:col-span-2" type="submit" {% if read_only %}disabled{% endif %}>Call-Log speichern</button>
+        <input class="input px-3 py-2 text-sm" type="number" min="0" name="duration_seconds" placeholder="Dauer (s)" {% if read_only or locked_by_other %}disabled{% endif %}>
+        <textarea class="input px-3 py-2 text-sm md:col-span-2" rows="2" name="notes" placeholder="Notiz" {% if read_only or locked_by_other %}disabled{% endif %}></textarea>
+        <button class="btn-outline px-3 py-2 text-sm md:col-span-2" type="submit" {% if read_only or locked_by_other %}disabled{% endif %}>Call-Log speichern</button>
       </form>
 
       <form method="post" action="/leads/{{ lead.id }}/appointment" class="grid gap-2">
-        <input class="input px-3 py-2 text-sm" type="text" name="requested_date" placeholder="ISO-Datum" {% if read_only %}disabled{% endif %}>
-        <textarea class="input px-3 py-2 text-sm" rows="2" name="notes" placeholder="Termin-Notiz" {% if read_only %}disabled{% endif %}></textarea>
-        <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Termin anlegen</button>
+        <input class="input px-3 py-2 text-sm" type="text" name="requested_date" placeholder="ISO-Datum" {% if read_only or locked_by_other %}disabled{% endif %}>
+        <textarea class="input px-3 py-2 text-sm" rows="2" name="notes" placeholder="Termin-Notiz" {% if read_only or locked_by_other %}disabled{% endif %}></textarea>
+        <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only or locked_by_other %}disabled{% endif %}>Termin anlegen</button>
       </form>
     </div>
 

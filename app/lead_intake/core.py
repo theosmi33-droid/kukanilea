@@ -30,6 +30,16 @@ MAX_BLOCKED_REASON = 200
 MAX_BLOCKLIST_REASON = 2000
 MAX_ASSIGNED_TO = 128
 MAX_BLOCK_VALUE = 320
+MAX_CLAIM_TTL_SECONDS = 28800
+MIN_CLAIM_TTL_SECONDS = 60
+DEFAULT_CLAIM_TTL_SECONDS = 900
+
+
+class ConflictError(ValueError):
+    def __init__(self, code: str, *, details: dict[str, Any] | None = None):
+        super().__init__(code)
+        self.code = code
+        self.details = details or {}
 
 
 def _tenant(tenant_id: str) -> str:
@@ -124,6 +134,139 @@ def _parse_response_due(value: str | None) -> str | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.isoformat(timespec="seconds")
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value))
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _clamp_claim_ttl(ttl_seconds: int | None) -> int:
+    ttl = int(ttl_seconds or DEFAULT_CLAIM_TTL_SECONDS)
+    return max(MIN_CLAIM_TTL_SECONDS, min(ttl, MAX_CLAIM_TTL_SECONDS))
+
+
+def _lead_exists(con: sqlite3.Connection, tenant_id: str, lead_id: str) -> bool:
+    row = con.execute(
+        "SELECT id FROM leads WHERE tenant_id=? AND id=? LIMIT 1",
+        (tenant_id, lead_id),
+    ).fetchone()
+    return bool(row)
+
+
+def _claim_row(con: sqlite3.Connection, tenant_id: str, lead_id: str):
+    return con.execute(
+        "SELECT id, tenant_id, lead_id, claimed_by, claimed_at, claimed_until, released_at, release_reason, created_at, updated_at "
+        "FROM lead_claims WHERE tenant_id=? AND lead_id=? LIMIT 1",
+        (tenant_id, lead_id),
+    ).fetchone()
+
+
+def _claim_is_active(row: dict[str, Any], now_dt: datetime) -> bool:
+    if row.get("released_at"):
+        return False
+    until_dt = _parse_iso(str(row.get("claimed_until") or ""))
+    return bool(until_dt and until_dt > now_dt)
+
+
+def _claim_is_expired(row: dict[str, Any], now_dt: datetime) -> bool:
+    if row.get("released_at"):
+        return False
+    until_dt = _parse_iso(str(row.get("claimed_until") or ""))
+    return bool(until_dt and until_dt <= now_dt)
+
+
+def _claim_details(row: dict[str, Any], now_dt: datetime) -> dict[str, Any]:
+    return {
+        "id": str(row.get("id") or ""),
+        "tenant_id": str(row.get("tenant_id") or ""),
+        "lead_id": str(row.get("lead_id") or ""),
+        "claimed_by": str(row.get("claimed_by") or ""),
+        "claimed_at": str(row.get("claimed_at") or ""),
+        "claimed_until": str(row.get("claimed_until") or ""),
+        "released_at": str(row.get("released_at") or "") or None,
+        "release_reason": str(row.get("release_reason") or "") or None,
+        "active": _claim_is_active(row, now_dt),
+        "expired": _claim_is_expired(row, now_dt),
+    }
+
+
+def _expire_claim_row(
+    con: sqlite3.Connection,
+    tenant_id: str,
+    row: dict[str, Any],
+    *,
+    now_iso: str,
+    actor_user_id: str | None = None,
+) -> None:
+    if row.get("released_at"):
+        return
+    claim_id = str(row.get("id") or "")
+    lead_id = str(row.get("lead_id") or "")
+    if not claim_id or not lead_id:
+        return
+    con.execute(
+        "UPDATE lead_claims SET released_at=?, release_reason='expired', updated_at=? WHERE tenant_id=? AND id=? AND released_at IS NULL",
+        (now_iso, now_iso, tenant_id, claim_id),
+    )
+    event_append(
+        event_type="lead_claim_expired",
+        entity_type="lead",
+        entity_id=entity_id_int(lead_id),
+        payload={
+            "schema_version": 1,
+            "source": "lead_intake/lead_claims_auto_expire",
+            "actor_user_id": actor_user_id,
+            "tenant_id": tenant_id,
+            "data": {
+                "lead_id": lead_id,
+                "claimed_by": str(row.get("claimed_by") or ""),
+                "claimed_until": str(row.get("claimed_until") or ""),
+            },
+        },
+        con=con,
+    )
+
+
+def _lead_require_claim_or_free_tx(
+    con: sqlite3.Connection,
+    tenant_id: str,
+    lead_id: str,
+    actor_user_id: str | None,
+) -> None:
+    now_iso = _now_iso()
+    now_dt = _parse_iso(now_iso) or datetime.now(timezone.utc)
+    row_any = _claim_row(con, tenant_id, lead_id)
+    if not row_any:
+        return
+    row = dict(row_any)
+    if _claim_is_expired(row, now_dt):
+        _expire_claim_row(
+            con,
+            tenant_id,
+            row,
+            now_iso=now_iso,
+            actor_user_id=actor_user_id,
+        )
+        return
+    if _claim_is_active(row, now_dt) and str(row.get("claimed_by") or "") != str(
+        actor_user_id or ""
+    ):
+        raise ConflictError(
+            "lead_claimed",
+            details={
+                "lead_id": lead_id,
+                "claimed_by": str(row.get("claimed_by") or ""),
+                "claimed_until": str(row.get("claimed_until") or ""),
+            },
+        )
 
 
 def _find_customer_for_contact(
@@ -325,6 +468,279 @@ def leads_get(tenant_id: str, lead_id: str) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
+def lead_claim_get(tenant_id: str, lead_id: str) -> dict[str, Any] | None:
+    t = _tenant(tenant_id)
+    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+        con = legacy_core._db()  # type: ignore[attr-defined]
+        try:
+            row = _claim_row(con, t, lead_id)
+            if not row:
+                return None
+            now_dt = _parse_iso(_now_iso()) or datetime.now(timezone.utc)
+            return _claim_details(dict(row), now_dt)
+        finally:
+            con.close()
+
+
+def lead_claims_for_leads(
+    tenant_id: str, lead_ids: list[str]
+) -> dict[str, dict[str, Any] | None]:
+    t = _tenant(tenant_id)
+    ids = [str(x or "").strip() for x in lead_ids if str(x or "").strip()]
+    if not ids:
+        return {}
+    uniq_ids: list[str] = list(dict.fromkeys(ids))
+    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+        con = legacy_core._db()  # type: ignore[attr-defined]
+        try:
+            now_dt = _parse_iso(_now_iso()) or datetime.now(timezone.utc)
+            out: dict[str, dict[str, Any] | None] = {}
+            for lead_id in uniq_ids:
+                row = _claim_row(con, t, lead_id)
+                out[lead_id] = _claim_details(dict(row), now_dt) if row else None
+            return out
+        finally:
+            con.close()
+
+
+def lead_claim(
+    tenant_id: str,
+    lead_id: str,
+    actor_user_id: str,
+    ttl_seconds: int = DEFAULT_CLAIM_TTL_SECONDS,
+    force: bool = False,
+) -> dict[str, Any]:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    actor = _validate_len(actor_user_id, MAX_ASSIGNED_TO)
+    if not actor:
+        raise ValueError("validation_error")
+    ttl = _clamp_claim_ttl(ttl_seconds)
+
+    def _tx(con: sqlite3.Connection) -> dict[str, Any]:
+        if not _lead_exists(con, t, lead_id):
+            raise ValueError("not_found")
+        now_iso = _now_iso()
+        now_dt = _parse_iso(now_iso) or datetime.now(timezone.utc)
+
+        existing_any = _claim_row(con, t, lead_id)
+        if existing_any:
+            existing = dict(existing_any)
+            if _claim_is_expired(existing, now_dt):
+                _expire_claim_row(
+                    con,
+                    t,
+                    existing,
+                    now_iso=now_iso,
+                    actor_user_id=actor,
+                )
+                existing = dict(_claim_row(con, t, lead_id) or {})
+
+            if (
+                existing
+                and _claim_is_active(existing, now_dt)
+                and str(existing.get("claimed_by") or "") != actor
+            ):
+                if not force:
+                    raise ConflictError(
+                        "lead_claimed",
+                        details={
+                            "lead_id": lead_id,
+                            "claimed_by": str(existing.get("claimed_by") or ""),
+                            "claimed_until": str(existing.get("claimed_until") or ""),
+                        },
+                    )
+                con.execute(
+                    "UPDATE lead_claims SET released_at=?, release_reason='reclaimed', updated_at=? WHERE tenant_id=? AND lead_id=? AND released_at IS NULL",
+                    (now_iso, now_iso, t, lead_id),
+                )
+                event_append(
+                    event_type="lead_claim_reclaimed",
+                    entity_type="lead",
+                    entity_id=entity_id_int(lead_id),
+                    payload={
+                        "schema_version": 1,
+                        "source": "lead_intake/lead_claim",
+                        "actor_user_id": actor,
+                        "tenant_id": t,
+                        "data": {
+                            "lead_id": lead_id,
+                            "prev_claimed_by": str(existing.get("claimed_by") or ""),
+                        },
+                    },
+                    con=con,
+                )
+
+        claim_until = (
+            (now_dt + timedelta(seconds=ttl))
+            .astimezone(timezone.utc)
+            .isoformat(timespec="seconds")
+        )
+        existing_final = _claim_row(con, t, lead_id)
+        if existing_final:
+            claim_id = str(existing_final["id"])
+            con.execute(
+                "UPDATE lead_claims SET claimed_by=?, claimed_at=?, claimed_until=?, released_at=NULL, release_reason=NULL, updated_at=? WHERE tenant_id=? AND lead_id=?",
+                (actor, now_iso, claim_until, now_iso, t, lead_id),
+            )
+        else:
+            claim_id = _new_id()
+            con.execute(
+                "INSERT INTO lead_claims(id, tenant_id, lead_id, claimed_by, claimed_at, claimed_until, released_at, release_reason, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    claim_id,
+                    t,
+                    lead_id,
+                    actor,
+                    now_iso,
+                    claim_until,
+                    None,
+                    None,
+                    now_iso,
+                    now_iso,
+                ),
+            )
+
+        event_append(
+            event_type="lead_claimed",
+            entity_type="lead",
+            entity_id=entity_id_int(lead_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/lead_claim",
+                "actor_user_id": actor,
+                "tenant_id": t,
+                "data": {
+                    "lead_id": lead_id,
+                    "claimed_by": actor,
+                    "claimed_until": claim_until,
+                    "ttl_seconds": ttl,
+                    "force": bool(force),
+                },
+            },
+            con=con,
+        )
+
+        row = _claim_row(con, t, lead_id)
+        payload = (
+            _claim_details(dict(row), _parse_iso(now_iso) or now_dt)
+            if row
+            else {
+                "id": claim_id,
+                "tenant_id": t,
+                "lead_id": lead_id,
+                "claimed_by": actor,
+                "claimed_at": now_iso,
+                "claimed_until": claim_until,
+                "released_at": None,
+                "release_reason": None,
+                "active": True,
+                "expired": False,
+            }
+        )
+        return payload
+
+    return _run_write_txn(_tx)
+
+
+def lead_release_claim(
+    tenant_id: str,
+    lead_id: str,
+    actor_user_id: str,
+    reason: str = "manual",
+) -> None:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    actor = _validate_len(actor_user_id, MAX_ASSIGNED_TO)
+    reason_norm = _validate_len(reason, 40) or "manual"
+
+    def _tx(con: sqlite3.Connection) -> None:
+        row_any = _claim_row(con, t, lead_id)
+        if not row_any:
+            raise ValueError("not_found")
+        row = dict(row_any)
+        if row.get("released_at"):
+            raise ConflictError("not_owner")
+        if str(row.get("claimed_by") or "") != actor:
+            raise ConflictError(
+                "not_owner",
+                details={
+                    "lead_id": lead_id,
+                    "claimed_by": str(row.get("claimed_by") or ""),
+                },
+            )
+        now_iso = _now_iso()
+        con.execute(
+            "UPDATE lead_claims SET released_at=?, release_reason=?, updated_at=? WHERE tenant_id=? AND lead_id=? AND released_at IS NULL",
+            (now_iso, reason_norm, now_iso, t, lead_id),
+        )
+        event_append(
+            event_type="lead_claim_released",
+            entity_type="lead",
+            entity_id=entity_id_int(lead_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/lead_release_claim",
+                "actor_user_id": actor,
+                "tenant_id": t,
+                "data": {
+                    "lead_id": lead_id,
+                    "claimed_by": actor,
+                    "reason": reason_norm,
+                },
+            },
+            con=con,
+        )
+
+    _run_write_txn(_tx)
+
+
+def lead_claims_auto_expire(
+    tenant_id: str,
+    max_actions: int = 200,
+    actor_user_id: str | None = None,
+) -> int:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    lim = max(1, min(int(max_actions), 1000))
+
+    def _tx(con: sqlite3.Connection) -> int:
+        now_iso = _now_iso()
+        rows = con.execute(
+            "SELECT id, tenant_id, lead_id, claimed_by, claimed_at, claimed_until, released_at, release_reason, created_at, updated_at FROM lead_claims WHERE tenant_id=? AND released_at IS NULL AND datetime(claimed_until) < datetime(?) ORDER BY claimed_until ASC LIMIT ?",
+            (t, now_iso, lim),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            _expire_claim_row(
+                con,
+                t,
+                dict(row),
+                now_iso=now_iso,
+                actor_user_id=actor_user_id,
+            )
+            count += 1
+        return count
+
+    return int(_run_write_txn(_tx) or 0)
+
+
+def lead_require_claim_or_free(
+    tenant_id: str,
+    lead_id: str,
+    actor_user_id: str | None,
+) -> None:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+
+    def _tx(con: sqlite3.Connection) -> None:
+        if not _lead_exists(con, t, lead_id):
+            raise ValueError("not_found")
+        _lead_require_claim_or_free_tx(con, t, lead_id, actor_user_id)
+
+    _run_write_txn(_tx)
+
+
 def leads_list(
     tenant_id: str,
     status: str | None = None,
@@ -519,6 +935,7 @@ def leads_screen_accept(
         ).fetchone()
         if not row:
             raise ValueError("not_found")
+        _lead_require_claim_or_free_tx(con, t, lead_id, actor_user_id)
         now = _now_iso()
         con.execute(
             """
@@ -566,6 +983,7 @@ def leads_screen_ignore(
         ).fetchone()
         if not row:
             raise ValueError("not_found")
+        _lead_require_claim_or_free_tx(con, t, lead_id, actor_user_id)
         now = _now_iso()
         blocked = reason_norm or "screening:ignored"
         con.execute(
@@ -690,6 +1108,7 @@ def leads_set_priority(
         ).fetchone()
         if not row:
             raise ValueError("not_found")
+        _lead_require_claim_or_free_tx(con, t, lead_id, actor_user_id)
         con.execute(
             "UPDATE leads SET priority=?, pinned=?, updated_at=? WHERE tenant_id=? AND id=?",
             (priority_norm, int(pinned), _now_iso(), t, lead_id),
@@ -736,6 +1155,7 @@ def leads_assign(
         ).fetchone()
         if not row:
             raise ValueError("not_found")
+        _lead_require_claim_or_free_tx(con, t, lead_id, actor_user_id)
         con.execute(
             "UPDATE leads SET assigned_to=?, response_due=?, updated_at=? WHERE tenant_id=? AND id=?",
             (assigned_norm or None, due_norm, _now_iso(), t, lead_id),

@@ -1148,6 +1148,24 @@ def db_init() -> None:
                 """
             )
 
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lead_claims(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  lead_id TEXT NOT NULL,
+                  claimed_by TEXT NOT NULL,
+                  claimed_at TEXT NOT NULL,
+                  claimed_until TEXT NOT NULL,
+                  released_at TEXT,
+                  release_reason TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  UNIQUE(tenant_id, lead_id)
+                );
+                """
+            )
+
             _add_column_if_missing(
                 con, "leads", "priority", "TEXT NOT NULL DEFAULT 'normal'"
             )
@@ -1184,6 +1202,15 @@ def db_init() -> None:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_blocklist_tenant_kind_value ON lead_blocklist(tenant_id, kind, value);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_lead_claims_tenant_lead ON lead_claims(tenant_id, lead_id);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_lead_claims_tenant_user ON lead_claims(tenant_id, claimed_by, claimed_until);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_lead_claims_tenant_until ON lead_claims(tenant_id, claimed_until);"
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_events_entity_created ON events(entity_type, entity_id, ts DESC);"
