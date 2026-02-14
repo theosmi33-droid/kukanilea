@@ -563,6 +563,32 @@ def _has_fts5(con: sqlite3.Connection) -> bool:
     return bool(_FTS5_AVAILABLE)
 
 
+def _init_entity_link_tables(con: sqlite3.Connection) -> None:
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS entity_links (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          a_type TEXT NOT NULL,
+          a_id TEXT NOT NULL,
+          b_type TEXT NOT NULL,
+          b_id TEXT NOT NULL,
+          link_type TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          CHECK (NOT (a_type = b_type AND a_id = b_id)),
+          UNIQUE(tenant_id, a_type, a_id, b_type, b_id, link_type)
+        );
+        """
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_entity_links_tenant_a ON entity_links(tenant_id, a_type, a_id, created_at DESC);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_entity_links_tenant_b ON entity_links(tenant_id, b_type, b_id, created_at DESC);"
+    )
+
+
 def _init_knowledge_tables(con: sqlite3.Connection) -> None:
     con.execute(
         """
@@ -1478,6 +1504,7 @@ def db_init() -> None:
                     """
                 )
 
+            _init_entity_link_tables(con)
             _init_knowledge_tables(con)
 
             row = con.execute("PRAGMA user_version").fetchone()
