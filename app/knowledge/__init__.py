@@ -16,4 +16,11 @@ __all__ = [
     "knowledge_note_delete",
     "knowledge_notes_list",
     "knowledge_search",
+    "knowledge_email_ingest_eml",
+    "knowledge_email_sources_list",
 ]
+
+from .email_source import (
+    knowledge_email_ingest_eml,
+    knowledge_email_sources_list,
+)
