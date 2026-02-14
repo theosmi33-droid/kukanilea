@@ -1,5 +1,5 @@
 <div class="space-y-4">
-  <div class="flex items-center justify-between">
+  <div class="flex items-center justify-between gap-3">
     <h1 class="text-xl font-semibold">Leads Inbox</h1>
     <a class="btn-outline px-3 py-2 text-sm" href="/leads/new">Neuer Lead</a>
   </div>
@@ -10,12 +10,22 @@
   </div>
   {% endif %}
 
+  <div class="card p-3 flex flex-wrap gap-2 text-xs">
+    <a class="btn-outline px-2 py-1 {% if tab=='screening' %}ring-1 ring-cyan-400/60{% endif %}" href="/leads/inbox?tab=screening">Screening ({{ counts.screening }})</a>
+    <a class="btn-outline px-2 py-1 {% if tab=='priority' %}ring-1 ring-cyan-400/60{% endif %}" href="/leads/inbox?tab=priority">Priority ({{ counts.priority }})</a>
+    <a class="btn-outline px-2 py-1 {% if tab=='assigned' %}ring-1 ring-cyan-400/60{% endif %}" href="/leads/inbox?tab=assigned">Assigned ({{ counts.assigned }})</a>
+    <a class="btn-outline px-2 py-1 {% if tab=='due_today' %}ring-1 ring-cyan-400/60{% endif %}" href="/leads/inbox?tab=due_today">Due today ({{ counts.due_today }})</a>
+    <a class="btn-outline px-2 py-1 {% if tab=='overdue' %}ring-1 ring-cyan-400/60{% endif %}" href="/leads/inbox?tab=overdue">Overdue ({{ counts.overdue }})</a>
+    <a class="btn-outline px-2 py-1 {% if tab=='blocked' %}ring-1 ring-cyan-400/60{% endif %}" href="/leads/inbox?tab=blocked">Blocked ({{ counts.blocked }})</a>
+    <a class="btn-outline px-2 py-1 {% if tab=='all' %}ring-1 ring-cyan-400/60{% endif %}" href="/leads/inbox?tab=all">All ({{ counts.all }})</a>
+  </div>
+
   <div class="card p-4 space-y-3">
-    <form class="grid gap-2 md:grid-cols-6" hx-get="/leads/_table" hx-target="#leadsTable" hx-swap="outerHTML">
+    <form class="grid gap-2 md:grid-cols-7" hx-get="/leads/_table" hx-target="#leadsTable" hx-swap="outerHTML">
       <input class="input px-3 py-2 text-sm md:col-span-2" type="text" name="q" value="{{ q }}" placeholder="Suche Betreff / Name">
       <select class="input px-3 py-2 text-sm" name="status">
         <option value="">Status: alle</option>
-        {% for s in ['new','contacted','qualified','lost','won'] %}
+        {% for s in ['new','screening','contacted','qualified','lost','won','ignored'] %}
         <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>
@@ -25,10 +35,22 @@
         <option value="{{ s }}" {% if source==s %}selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>
+      <input type="hidden" name="tab" value="{{ tab }}">
       <input type="hidden" name="page" value="{{ page }}">
       <input type="hidden" name="page_size" value="{{ page_size }}">
       <button class="btn-outline px-3 py-2 text-sm" type="submit">Filtern</button>
-      <a class="btn-outline px-3 py-2 text-sm" href="/leads/inbox">Reset</a>
+      <a class="btn-outline px-3 py-2 text-sm" href="/leads/inbox?tab={{ tab }}">Reset</a>
+    </form>
+
+    <form class="grid gap-2 md:grid-cols-4" hx-post="/leads/blocklist/add?tab={{ tab }}" hx-target="#leadsTable" hx-swap="outerHTML">
+      <select class="input px-3 py-2 text-sm" name="kind" {% if read_only %}disabled{% endif %}>
+        <option value="email">Block email</option>
+        <option value="domain">Block domain</option>
+        <option value="phone">Block phone</option>
+      </select>
+      <input class="input px-3 py-2 text-sm" name="value" placeholder="Wert" {% if read_only %}disabled{% endif %}>
+      <input class="input px-3 py-2 text-sm" name="reason" placeholder="Grund (optional)" {% if read_only %}disabled{% endif %}>
+      <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Blocklist hinzufügen</button>
     </form>
   </div>
 

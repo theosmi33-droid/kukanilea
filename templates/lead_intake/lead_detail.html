@@ -10,23 +10,47 @@
   </div>
   {% endif %}
 
-  <div class="card p-4 grid gap-2 md:grid-cols-3 text-sm">
+  <div class="card p-4 grid gap-2 md:grid-cols-2 text-sm">
     <div><span class="opacity-70">Status:</span> <span id="leadStatusWrap" hx-get="/leads/_status/{{ lead.id }}" hx-trigger="load" hx-swap="innerHTML"></span></div>
     <div><span class="opacity-70">Quelle:</span> {{ lead.source }}</div>
+    <div><span class="opacity-70">Betreff:</span> {{ lead.subject or '-' }}</div>
     <div><span class="opacity-70">Kontakt:</span> {{ lead.contact_name or '-' }}</div>
-    <div class="md:col-span-3"><span class="opacity-70">Betreff:</span> {{ lead.subject or '-' }}</div>
+    <div><span class="opacity-70">Blocked:</span> {{ lead.blocked_reason or '-' }}</div>
+    <div><span class="opacity-70">Screened at:</span> {{ lead.screened_at or '-' }}</div>
   </div>
+
+  {% if lead.status == 'screening' %}
+    {% include 'lead_intake/partials/_gatekeeper.html' %}
+  {% endif %}
 
   <div class="grid gap-4 md:grid-cols-2">
     <div class="card p-4 space-y-3">
       <h2 class="font-semibold">Aktionen</h2>
+
       <form method="post" action="/leads/{{ lead.id }}/status" class="grid gap-2">
         <select class="input px-3 py-2 text-sm" name="status" {% if read_only %}disabled{% endif %}>
-          {% for s in ['new','contacted','qualified','lost','won'] %}
+          {% for s in ['new','screening','contacted','qualified','lost','won','ignored'] %}
           <option value="{{ s }}" {% if lead.status==s %}selected{% endif %}>{{ s }}</option>
           {% endfor %}
         </select>
         <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Status speichern</button>
+      </form>
+
+      <form method="post" action="/leads/{{ lead.id }}/priority" class="grid gap-2 md:grid-cols-2">
+        <select class="input px-3 py-2 text-sm" name="priority" {% if read_only %}disabled{% endif %}>
+          <option value="normal" {% if lead.priority=='normal' %}selected{% endif %}>normal</option>
+          <option value="high" {% if lead.priority=='high' %}selected{% endif %}>high</option>
+        </select>
+        <label class="text-xs flex items-center gap-2">
+          <input type="checkbox" name="pinned" value="1" {% if lead.pinned %}checked{% endif %} {% if read_only %}disabled{% endif %}> pinned
+        </label>
+        <button class="btn-outline px-3 py-2 text-sm md:col-span-2" type="submit" {% if read_only %}disabled{% endif %}>Priorität speichern</button>
+      </form>
+
+      <form method="post" action="/leads/{{ lead.id }}/assign" class="grid gap-2 md:grid-cols-2">
+        <input class="input px-3 py-2 text-sm" type="text" name="assigned_to" value="{{ lead.assigned_to or '' }}" placeholder="Owner" {% if read_only %}disabled{% endif %}>
+        <input class="input px-3 py-2 text-sm" type="text" name="response_due" value="{{ lead.response_due or '' }}" placeholder="ISO due" {% if read_only %}disabled{% endif %}>
+        <button class="btn-outline px-3 py-2 text-sm md:col-span-2" type="submit" {% if read_only %}disabled{% endif %}>Zuweisung speichern</button>
       </form>
 
       <form method="post" action="/leads/{{ lead.id }}/note" class="grid gap-2">
@@ -47,12 +71,14 @@
       </form>
 
       <form method="post" action="/leads/{{ lead.id }}/appointment" class="grid gap-2">
-        <input class="input px-3 py-2 text-sm" type="text" name="requested_date" placeholder="ISO-Datum, z.B. 2026-02-14T10:00:00+00:00" {% if read_only %}disabled{% endif %}>
+        <input class="input px-3 py-2 text-sm" type="text" name="requested_date" placeholder="ISO-Datum" {% if read_only %}disabled{% endif %}>
         <textarea class="input px-3 py-2 text-sm" rows="2" name="notes" placeholder="Termin-Notiz" {% if read_only %}disabled{% endif %}></textarea>
         <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Termin anlegen</button>
       </form>
     </div>
 
-    <div id="leadTimeline" class="space-y-3" hx-get="/leads/_timeline/{{ lead.id }}" hx-trigger="load" hx-swap="innerHTML"></div>
+    <div id="leadTimeline" class="space-y-3">
+      {% include 'lead_intake/partials/_timeline.html' %}
+    </div>
   </div>
 </div>

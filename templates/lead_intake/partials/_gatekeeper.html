@@ -1,0 +1,25 @@
+<div class="card p-4 space-y-3">
+  <h2 class="font-semibold">Gatekeeper</h2>
+  <p class="text-xs opacity-80">Unbekannte Leads zuerst screenen, dann freigeben oder ignorieren.</p>
+
+  <div class="grid gap-2 md:grid-cols-2">
+    <form hx-post="/leads/{{ lead.id }}/screen/accept" hx-target="#leadStatusWrap" hx-swap="innerHTML">
+      <button class="btn-primary px-3 py-2 text-sm w-full" type="submit" {% if read_only %}disabled{% endif %}>Screening akzeptieren</button>
+    </form>
+    <form hx-post="/leads/{{ lead.id }}/screen/ignore" hx-target="#leadStatusWrap" hx-swap="innerHTML">
+      <input class="input px-3 py-2 text-sm mb-2 w-full" type="text" name="reason" placeholder="Grund (optional)" {% if read_only %}disabled{% endif %}>
+      <button class="btn-outline px-3 py-2 text-sm w-full" type="submit" {% if read_only %}disabled{% endif %}>Ignorieren</button>
+    </form>
+  </div>
+
+  <form hx-post="/leads/blocklist/add" hx-target="#leadStatusWrap" hx-swap="none" class="grid gap-2 md:grid-cols-3">
+    <select class="input px-3 py-2 text-sm" name="kind" {% if read_only %}disabled{% endif %}>
+      <option value="email">email</option>
+      <option value="domain">domain</option>
+      <option value="phone">phone</option>
+    </select>
+    <input class="input px-3 py-2 text-sm" name="value" placeholder="Wert blockieren" {% if read_only %}disabled{% endif %}>
+    <input class="input px-3 py-2 text-sm" name="reason" placeholder="Grund" {% if read_only %}disabled{% endif %}>
+    <button class="btn-outline px-3 py-2 text-sm md:col-span-3" type="submit" {% if read_only %}disabled{% endif %}>Zur Blocklist hinzufügen</button>
+  </form>
+</div>

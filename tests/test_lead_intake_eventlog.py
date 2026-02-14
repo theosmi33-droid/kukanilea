@@ -12,13 +12,17 @@ from app.lead_intake.core import (
     appointment_requests_update_status,
     call_logs_create,
     leads_add_note,
+    leads_block_sender,
     leads_create,
+    leads_set_priority,
     leads_update_status,
 )
 
 PII_KEYS = {
     "contact_email",
     "contact_phone",
+    "contact_name",
+    "subject",
     "message",
     "notes",
     "caller_phone",
@@ -61,7 +65,33 @@ def test_entity_id_int_is_deterministic() -> None:
     assert entity_id_int("abc") != entity_id_int("abd")
 
 
-def test_each_mutation_writes_exactly_one_event_and_no_pii(tmp_path: Path) -> None:
+def test_blocked_lead_creates_lead_blocked_event(tmp_path: Path) -> None:
+    _init_core(tmp_path)
+    leads_block_sender("TENANT_A", "email", "spam@example.com", "dev")
+    lead_id = leads_create(
+        tenant_id="TENANT_A",
+        source="email",
+        contact_name="Spam",
+        contact_email="spam@example.com",
+        contact_phone="",
+        subject="Offer",
+        message="spam",
+    )
+
+    con = sqlite3.connect(str(core.DB_PATH))
+    con.row_factory = sqlite3.Row
+    try:
+        lead = con.execute("SELECT status FROM leads WHERE id=?", (lead_id,)).fetchone()
+        assert lead and lead["status"] == "ignored"
+        ev = con.execute(
+            "SELECT event_type, payload_json FROM events WHERE event_type='lead_blocked' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert ev is not None
+    finally:
+        con.close()
+
+
+def test_each_mutation_writes_event_and_payload_has_no_pii(tmp_path: Path) -> None:
     _init_core(tmp_path)
     lead_id = leads_create(
         tenant_id="TENANT_A",
@@ -76,6 +106,10 @@ def test_each_mutation_writes_exactly_one_event_and_no_pii(tmp_path: Path) -> No
 
     before = _event_count()
     leads_update_status("TENANT_A", lead_id, "contacted")
+    assert _event_count() == before + 1
+
+    before = _event_count()
+    leads_set_priority("TENANT_A", lead_id, "high", 1, "dev")
     assert _event_count() == before + 1
 
     before = _event_count()

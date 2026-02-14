@@ -544,6 +544,12 @@ def _ensure_column(
         con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
 
+def _add_column_if_missing(
+    con: sqlite3.Connection, table: str, col_name: str, col_def_sql: str
+) -> None:
+    _ensure_column(con, table, col_name, col_def_sql)
+
+
 def _has_fts5(con: sqlite3.Connection) -> bool:
     global _FTS5_AVAILABLE
     if _FTS5_AVAILABLE is not None:
@@ -906,6 +912,13 @@ def db_init() -> None:
             )
             _ensure_column(con, "emails_cache", "attachments_json", "TEXT")
 
+            _ensure_column(con, "leads", "priority", "TEXT NOT NULL DEFAULT 'normal'")
+            _ensure_column(con, "leads", "pinned", "INTEGER NOT NULL DEFAULT 0")
+            _ensure_column(con, "leads", "assigned_to", "TEXT")
+            _ensure_column(con, "leads", "response_due", "TEXT")
+            _ensure_column(con, "leads", "screened_at", "TEXT")
+            _ensure_column(con, "leads", "blocked_reason", "TEXT")
+
             con.execute(
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_emails_cache_tenant_message
@@ -927,7 +940,7 @@ def db_init() -> None:
                   id TEXT PRIMARY KEY,
                   tenant_id TEXT NOT NULL,
                   status TEXT NOT NULL DEFAULT 'new'
-                    CHECK(status IN ('new','contacted','qualified','lost','won')),
+                    CHECK(status IN ('new','contacted','qualified','lost','won','screening','ignored')),
                   source TEXT NOT NULL
                     CHECK(source IN ('call','email','webform','manual')),
                   customer_id TEXT,
@@ -977,6 +990,30 @@ def db_init() -> None:
             )
 
             con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lead_blocklist(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  kind TEXT NOT NULL,
+                  value TEXT NOT NULL,
+                  reason TEXT,
+                  created_at TEXT NOT NULL,
+                  created_by TEXT,
+                  UNIQUE(tenant_id, kind, value)
+                );
+                """
+            )
+
+            _add_column_if_missing(
+                con, "leads", "priority", "TEXT NOT NULL DEFAULT 'normal'"
+            )
+            _add_column_if_missing(con, "leads", "pinned", "INTEGER NOT NULL DEFAULT 0")
+            _add_column_if_missing(con, "leads", "assigned_to", "TEXT")
+            _add_column_if_missing(con, "leads", "response_due", "TEXT")
+            _add_column_if_missing(con, "leads", "screened_at", "TEXT")
+            _add_column_if_missing(con, "leads", "blocked_reason", "TEXT")
+
+            con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_leads_tenant_status_created ON leads(tenant_id, status, created_at);"
             )
             con.execute(
@@ -987,6 +1024,25 @@ def db_init() -> None:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_appt_tenant_lead_updated ON appointment_requests(tenant_id, lead_id, updated_at);"
+            )
+
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leads_tenant_status_due ON leads(tenant_id, status, response_due);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leads_tenant_priority_created ON leads(tenant_id, priority, created_at DESC);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leads_tenant_pinned_created ON leads(tenant_id, pinned, created_at DESC);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leads_tenant_assigned_due ON leads(tenant_id, assigned_to, response_due);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blocklist_tenant_kind_value ON lead_blocklist(tenant_id, kind, value);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_entity_created ON events(entity_type, entity_id, ts DESC);"
             )
 
             con.execute(
