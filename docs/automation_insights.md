@@ -46,3 +46,16 @@ Actions:
 ## Insights
 `/insights/daily` erzeugt beim ersten Aufruf die Tagesmetriken und cached sie in `daily_insights_cache`.
 Es gibt keinen Background-Job in v1.
+
+Zusätzliche Shared-Inbox-Metriken:
+- `unclaimed_leads_count`
+- `claims_expiring_soon_count` (<= 30 Minuten)
+- `overdue_leads_by_owner` (Top 5)
+- `claim_collisions_count` (letzte 24h)
+
+Claim-Kollisionen werden als Event `lead_claim_collision` geloggt (PII-frei):
+- `tenant_id`
+- `lead_id`
+- `claimed_by_user_id`
+- `route_key`
+- `ua_hash` (SHA-256 des gekürzten User-Agent)
