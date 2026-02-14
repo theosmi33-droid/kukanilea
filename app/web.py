@@ -115,6 +115,7 @@ from app.lead_intake import (
     leads_update_status,
 )
 from app.lead_intake.core import ConflictError
+from app.security_ua_hash import ua_hmac_sha256_hex
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
@@ -2698,12 +2699,9 @@ def _lead_collision_route_key(route_key: str | None = None) -> str:
 
 
 def _lead_user_agent_hash() -> str:
-    ua = str(request.headers.get("User-Agent") or "").strip()
-    if not ua:
-        return ""
-    if len(ua) > 160:
-        ua = ua[:160]
-    return hashlib.sha256(ua.encode("utf-8")).hexdigest()
+    ua = str(request.headers.get("User-Agent") or "")
+    hashed = ua_hmac_sha256_hex(ua)
+    return str(hashed or "")
 
 
 def _emit_lead_claim_collision(

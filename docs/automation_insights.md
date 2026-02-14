@@ -58,4 +58,11 @@ Claim-Kollisionen werden als Event `lead_claim_collision` geloggt (PII-frei):
 - `lead_id`
 - `claimed_by_user_id`
 - `route_key`
-- `ua_hash` (SHA-256 des gekürzten User-Agent)
+- `ua_hash` (HMAC-SHA256 über User-Agent, kein Raw-UA)
+
+Schlüsselableitung für `ua_hash`:
+1. `ANONYMIZATION_KEY` (App-Config)
+2. `KUKANILEA_ANONYMIZATION_KEY` (Umgebung)
+3. Fallback `SECRET_KEY` (App-Config)
+
+Wenn kein Schlüssel vorhanden ist, wird `ua_hash` als leerer String gesetzt (best-effort Telemetrie).
