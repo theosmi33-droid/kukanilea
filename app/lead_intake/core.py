@@ -19,11 +19,13 @@ CALL_DIRECTIONS = {"inbound", "outbound"}
 APPOINTMENT_STATUSES = {"pending", "accepted", "declined", "rescheduled"}
 BLOCKLIST_KINDS = {"email", "domain", "phone"}
 LEAD_PRIORITIES = {"normal", "high"}
+ENTITY_LINK_TYPES = {"related", "converted_from", "references", "attachment"}
 
 MAX_CONTACT_NAME = 200
 MAX_CONTACT_EMAIL = 320
 MAX_CONTACT_PHONE = 32
 MAX_SUBJECT = 500
+MAX_DEAL_TITLE = 200
 MAX_MESSAGE = 20000
 MAX_NOTES = 20000
 MAX_BLOCKED_REASON = 200
@@ -151,6 +153,100 @@ def _parse_iso(value: str | None) -> datetime | None:
 def _clamp_claim_ttl(ttl_seconds: int | None) -> int:
     ttl = int(ttl_seconds or DEFAULT_CLAIM_TTL_SECONDS)
     return max(MIN_CLAIM_TTL_SECONDS, min(ttl, MAX_CLAIM_TTL_SECONDS))
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _canonical_pair(
+    left_type: str, left_id: str, right_type: str, right_id: str
+) -> tuple[str, str, str, str]:
+    left = (left_type, left_id)
+    right = (right_type, right_id)
+    if left <= right:
+        return left_type, left_id, right_type, right_id
+    return right_type, right_id, left_type, left_id
+
+
+def _next_quote_number(con: sqlite3.Connection, tenant_id: str) -> str:
+    helper = getattr(legacy_core, "_next_quote_number", None)
+    if callable(helper):
+        return str(helper(con, tenant_id))
+    row = con.execute(
+        "SELECT COUNT(*) AS cnt FROM quotes WHERE tenant_id=?",
+        (tenant_id,),
+    ).fetchone()
+    next_idx = int((row["cnt"] if row else 0) or 0) + 1
+    return f"Q-{next_idx:06d}"
+
+
+def _insert_entity_link(
+    con: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    left_type: str,
+    left_id: str,
+    right_type: str,
+    right_id: str,
+    link_type: str,
+    actor_user_id: str | None,
+    source: str,
+) -> str:
+    link_kind = legacy_core.normalize_component(link_type).lower()
+    if link_kind not in ENTITY_LINK_TYPES:
+        raise ValueError("validation_error")
+    a_type, a_id, b_type, b_id = _canonical_pair(
+        left_type, left_id, right_type, right_id
+    )
+    link_id = _new_id()
+    now = _now_iso()
+    try:
+        con.execute(
+            """
+            INSERT INTO entity_links(
+              id, tenant_id, a_type, a_id, b_type, b_id, link_type, created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (link_id, tenant_id, a_type, a_id, b_type, b_id, link_kind, now, now),
+        )
+    except sqlite3.IntegrityError as exc:
+        if "unique" not in str(exc).lower():
+            raise
+        row = con.execute(
+            """
+            SELECT id
+            FROM entity_links
+            WHERE tenant_id=? AND a_type=? AND a_id=? AND b_type=? AND b_id=? AND link_type=?
+            LIMIT 1
+            """,
+            (tenant_id, a_type, a_id, b_type, b_id, link_kind),
+        ).fetchone()
+        return str(row["id"] if row else "")
+
+    event_append(
+        event_type="entity_link_created",
+        entity_type="entity_link",
+        entity_id=entity_id_int(link_id),
+        payload={
+            "schema_version": 1,
+            "source": source,
+            "actor_user_id": actor_user_id,
+            "tenant_id": tenant_id,
+            "data": {
+                "link_id": link_id,
+                "a_type": a_type,
+                "a_id": a_id,
+                "b_type": b_type,
+                "b_id": b_id,
+                "link_type": link_kind,
+            },
+        },
+        con=con,
+    )
+    return link_id
 
 
 def _lead_exists(con: sqlite3.Connection, tenant_id: str, lead_id: str) -> bool:
@@ -1537,6 +1633,224 @@ def lead_timeline(tenant_id: str, lead_id: str, limit: int = 100) -> dict[str, A
         "call_logs": [dict(r) for r in calls],
         "appointment_requests": [dict(r) for r in appts],
     }
+
+
+def lead_convert_to_deal_quote(
+    tenant_id: str,
+    lead_id: str,
+    actor_user_id: str | None,
+    mapping: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    data = mapping if isinstance(mapping, dict) else {}
+    title_override = _validate_len(str(data.get("deal_title") or ""), MAX_DEAL_TITLE)
+    customer_name_override = _validate_len(
+        str(data.get("customer_name") or ""), MAX_CONTACT_NAME
+    )
+    use_subject_title = _as_bool(data.get("use_subject_title"))
+    use_contact_name = _as_bool(data.get("use_contact_name"))
+
+    def _tx(con: sqlite3.Connection) -> dict[str, Any]:
+        row = con.execute(
+            """
+            SELECT id, status, customer_id, subject, contact_name
+            FROM leads
+            WHERE tenant_id=? AND id=?
+            LIMIT 1
+            """,
+            (t, lead_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("not_found")
+
+        _lead_require_claim_or_free_tx(con, t, lead_id, actor_user_id)
+
+        now = _now_iso()
+        prev_status = str(row["status"] or "")
+        lead_subject = _validate_len(str(row["subject"] or ""), MAX_DEAL_TITLE)
+        lead_contact_name = _validate_len(
+            str(row["contact_name"] or ""), MAX_CONTACT_NAME
+        )
+
+        customer_id = str(row["customer_id"] or "")
+        customer_created = False
+        if not customer_id:
+            customer_id = _new_id()
+            customer_name = (
+                customer_name_override
+                or (lead_contact_name if use_contact_name else "")
+                or f"Lead {lead_id[:8]}"
+            )
+            customer_name = _validate_len(customer_name, MAX_CONTACT_NAME)
+            con.execute(
+                """
+                INSERT INTO customers(
+                  id, tenant_id, name, vat_id, notes, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    customer_id,
+                    t,
+                    customer_name,
+                    None,
+                    "lead_conversion_v0",
+                    now,
+                    now,
+                ),
+            )
+            customer_created = True
+            event_append(
+                event_type="crm_customer",
+                entity_type="customer",
+                entity_id=entity_id_int(customer_id),
+                payload={
+                    "schema_version": 1,
+                    "source": "lead_intake/lead_convert_to_deal_quote",
+                    "actor_user_id": actor_user_id,
+                    "tenant_id": t,
+                    "data": {"customer_id": customer_id, "lead_id": lead_id},
+                },
+                con=con,
+            )
+
+        deal_title = title_override or (lead_subject if use_subject_title else "")
+        if not deal_title:
+            deal_title = f"Lead {lead_id[:8]}"
+
+        deal_id = _new_id()
+        con.execute(
+            """
+            INSERT INTO deals(
+              id, tenant_id, customer_id, title, stage, project_id,
+              value_cents, currency, notes, probability, expected_close_date,
+              created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                deal_id,
+                t,
+                customer_id,
+                _validate_len(deal_title, MAX_DEAL_TITLE),
+                "proposal",
+                None,
+                None,
+                "EUR",
+                "lead_conversion_v0",
+                None,
+                None,
+                now,
+                now,
+            ),
+        )
+
+        quote_id = _new_id()
+        quote_number = _next_quote_number(con, t)
+        con.execute(
+            """
+            INSERT INTO quotes(
+              id, tenant_id, customer_id, deal_id, status, currency,
+              quote_number, subtotal_cents, tax_cents, tax_amount_cents, total_cents, notes, created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                quote_id,
+                t,
+                customer_id,
+                deal_id,
+                "draft",
+                "EUR",
+                quote_number,
+                0,
+                0,
+                0,
+                0,
+                "lead_conversion_v0",
+                now,
+                now,
+            ),
+        )
+
+        con.execute(
+            "UPDATE leads SET customer_id=?, status='qualified', updated_at=? WHERE tenant_id=? AND id=?",
+            (customer_id, now, t, lead_id),
+        )
+
+        _insert_entity_link(
+            con,
+            tenant_id=t,
+            left_type="deal",
+            left_id=deal_id,
+            right_type="lead",
+            right_id=lead_id,
+            link_type="converted_from",
+            actor_user_id=actor_user_id,
+            source="lead_intake/lead_convert_to_deal_quote",
+        )
+        _insert_entity_link(
+            con,
+            tenant_id=t,
+            left_type="quote",
+            left_id=quote_id,
+            right_type="lead",
+            right_id=lead_id,
+            link_type="converted_from",
+            actor_user_id=actor_user_id,
+            source="lead_intake/lead_convert_to_deal_quote",
+        )
+
+        event_append(
+            event_type="deal_created_from_lead",
+            entity_type="deal",
+            entity_id=entity_id_int(deal_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/lead_convert_to_deal_quote",
+                "actor_user_id": actor_user_id,
+                "tenant_id": t,
+                "data": {
+                    "lead_id": lead_id,
+                    "deal_id": deal_id,
+                    "quote_id": quote_id,
+                    "customer_id": customer_id,
+                    "customer_created": customer_created,
+                    "use_subject_title": use_subject_title,
+                    "use_contact_name": use_contact_name,
+                },
+            },
+            con=con,
+        )
+        event_append(
+            event_type="lead_converted",
+            entity_type="lead",
+            entity_id=entity_id_int(lead_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/lead_convert_to_deal_quote",
+                "actor_user_id": actor_user_id,
+                "tenant_id": t,
+                "data": {
+                    "lead_id": lead_id,
+                    "deal_id": deal_id,
+                    "quote_id": quote_id,
+                    "customer_id": customer_id,
+                    "status_from": prev_status,
+                    "status_to": "qualified",
+                },
+            },
+            con=con,
+        )
+
+        return {
+            "lead_id": lead_id,
+            "deal_id": deal_id,
+            "quote_id": quote_id,
+            "customer_id": customer_id,
+            "customer_created": customer_created,
+            "status": "qualified",
+        }
+
+    return _run_write_txn(_tx)
 
 
 def _ics_safe_text(value: str, max_len: int = 180) -> str:

@@ -24,7 +24,7 @@ Die Lead Intake Inbox erfasst eingehende Anfragen offline-first und tenant-siche
   - `GET /leads/new`
   - `GET /leads/<id>`
   - Partials: `/leads/_table`, `/leads/_timeline/<lead_id>`, `/leads/_status/<lead_id>`
-  - Actions: `/leads/<id>/screen/accept`, `/leads/<id>/screen/ignore`, `/leads/<id>/priority`, `/leads/<id>/assign`, `/leads/blocklist/add`
+  - Actions: `/leads/<id>/screen/accept`, `/leads/<id>/screen/ignore`, `/leads/<id>/priority`, `/leads/<id>/assign`, `/leads/blocklist/add`, `/leads/<id>/convert`
 - JSON API:
   - `GET /api/leads`
   - `POST /api/leads`
@@ -36,6 +36,7 @@ Die Lead Intake Inbox erfasst eingehende Anfragen offline-first und tenant-siche
   - `PUT /api/leads/<id>/assign`
   - `POST /api/leads/blocklist`
   - `POST /api/leads/<id>/note`
+  - `POST /api/leads/<id>/convert`
   - `POST /api/call-logs`
   - `POST /api/appointment-requests`
   - `PUT /api/appointment-requests/<id>/status`
@@ -48,3 +49,9 @@ Erlaubt sind technische Metadaten (IDs, Status, Quelle, Priorität, Due/Owner-Pr
 ## READ_ONLY
 Bei `READ_ONLY=true` blockieren mutierende Routen mit `403` und `error_code=read_only`.
 Die UI zeigt Banner und deaktivierte Controls.
+
+## Lead Conversion v0
+- Confirm-first Flow über `GET /leads/<id>/convert` und `POST /leads/<id>/convert`.
+- Standardmäßig keine stille Übernahme von Lead-Inhalten in Deal/Quote.
+- Erstellung setzt `entity_links` mit `link_type=converted_from` (Deal↔Lead, Quote↔Lead).
+- Events `lead_converted` und `deal_created_from_lead` bleiben PII-frei (nur IDs/Flags).

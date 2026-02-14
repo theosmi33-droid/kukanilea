@@ -21,6 +21,7 @@ ALLOWED_ROUTE_KEYS = {
     "leads_note_add",
     "leads_call_log_create",
     "leads_appointment_create",
+    "leads_convert",
 }
 
 
