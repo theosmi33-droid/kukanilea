@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -20,23 +23,10 @@ jobs:
       - run: pytest -q
       - name: Security regression subset
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import subprocess
-          import sys
-
-          tests = sorted(Path("tests").glob("test_*.py"))
-          hits = [
-              str(t)
-              for t in tests
-              if any(k in t.stem for k in ("security_imports", "pii_redaction", "tenant_isolation"))
-          ]
-          if not hits:
-              print("No matching security subset tests found; skipping.")
-              raise SystemExit(0)
-          cmd = [sys.executable, "-m", "pytest", "-q", "-k", "security_imports or pii_redaction or tenant_isolation"]
-          raise SystemExit(subprocess.call(cmd))
-          PY
+          pytest -q \
+            tests/test_security_templates_no_safe.py \
+            tests/test_security_forbidden_imports.py \
+            tests/test_security_eventlog_payload_keys.py
       - run: >
           python -m app.devtools.triage --ci --fail-on-warnings
           --ignore-warning-regex "(?i)(swig|deprecation|userwarning|resourcewarning|warning:)"
