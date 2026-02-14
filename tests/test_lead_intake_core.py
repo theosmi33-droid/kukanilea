@@ -10,9 +10,14 @@ from app.lead_intake.core import (
     appointment_requests_update_status,
     call_logs_create,
     leads_add_note,
+    leads_assign,
+    leads_block_sender,
     leads_create,
     leads_get,
     leads_list,
+    leads_screen_accept,
+    leads_screen_ignore,
+    leads_set_priority,
     leads_update_status,
 )
 
@@ -35,7 +40,7 @@ def _event_count() -> int:
         con.close()
 
 
-def test_lead_intake_core_crud_and_tenant_scoping(tmp_path: Path) -> None:
+def test_lead_intake_core_v2_flows(tmp_path: Path) -> None:
     _init_core(tmp_path)
 
     lead_id = leads_create(
@@ -43,14 +48,35 @@ def test_lead_intake_core_crud_and_tenant_scoping(tmp_path: Path) -> None:
         source="manual",
         contact_name="Max",
         contact_email="max@example.com",
-        contact_phone="123",
+        contact_phone="+49123",
         subject="Neue Anfrage",
         message="Bitte Angebot",
     )
-    assert leads_get("TENANT_A", lead_id)
+    lead = leads_get("TENANT_A", lead_id)
+    assert lead
+    assert lead["status"] == "screening"
     assert leads_get("TENANT_B", lead_id) is None
 
-    rows = leads_list("TENANT_A", q="Neue", limit=20, offset=0)
+    before = _event_count()
+    leads_screen_accept("TENANT_A", lead_id, actor_user_id="dev")
+    assert _event_count() == before + 1
+    assert leads_get("TENANT_A", lead_id)["status"] == "new"
+
+    before = _event_count()
+    leads_set_priority("TENANT_A", lead_id, "high", 1, actor_user_id="dev")
+    assert _event_count() == before + 1
+
+    before = _event_count()
+    leads_assign(
+        "TENANT_A",
+        lead_id,
+        assigned_to="dev",
+        response_due="2026-03-01T10:00:00+00:00",
+        actor_user_id="dev",
+    )
+    assert _event_count() == before + 1
+
+    rows = leads_list("TENANT_A", priority_only=True, limit=20, offset=0)
     assert any(r["id"] == lead_id for r in rows)
 
     before = _event_count()
@@ -66,7 +92,7 @@ def test_lead_intake_core_crud_and_tenant_scoping(tmp_path: Path) -> None:
         "TENANT_A",
         lead_id,
         "Max",
-        "123",
+        "+49123",
         "inbound",
         120,
         "Telefonat",
@@ -90,3 +116,38 @@ def test_lead_intake_core_crud_and_tenant_scoping(tmp_path: Path) -> None:
     assert _event_count() == before + 1
     req2 = appointment_requests_get("TENANT_A", req_id)
     assert req2 and req2["status"] == "accepted"
+
+
+def test_blocklist_forces_ignored_status(tmp_path: Path) -> None:
+    _init_core(tmp_path)
+
+    leads_block_sender("TENANT_A", "email", "spam@example.com", "dev", "spam")
+    blocked = leads_create(
+        tenant_id="TENANT_A",
+        source="email",
+        contact_name="Spammer",
+        contact_email="spam@example.com",
+        contact_phone="",
+        subject="Buy now",
+        message="promo",
+    )
+    row = leads_get("TENANT_A", blocked)
+    assert row
+    assert row["status"] == "ignored"
+    assert str(row["blocked_reason"] or "").startswith("blocklist:")
+
+
+def test_screen_ignore_sets_ignored(tmp_path: Path) -> None:
+    _init_core(tmp_path)
+    lead_id = leads_create(
+        tenant_id="TENANT_A",
+        source="webform",
+        contact_name="X",
+        contact_email="x@example.com",
+        contact_phone="",
+        subject="Test",
+        message="M",
+    )
+    leads_screen_ignore("TENANT_A", lead_id, actor_user_id="dev", reason="irrelevant")
+    row = leads_get("TENANT_A", lead_id)
+    assert row and row["status"] == "ignored"

@@ -66,9 +66,15 @@ from app.lead_intake import (
     call_logs_create,
     lead_timeline,
     leads_add_note,
+    leads_assign,
+    leads_block_sender,
     leads_create,
     leads_get,
+    leads_inbox_counts,
     leads_list,
+    leads_screen_accept,
+    leads_screen_ignore,
+    leads_set_priority,
     leads_update_status,
 )
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
@@ -2572,17 +2578,26 @@ def api_emails_import():
     return jsonify(ok=True, email_id=email_id)
 
 
-def _lead_read_only_response():
+def _lead_read_only_response(api: bool = True):
     rid = getattr(g, "request_id", "")
+    if api:
+        return (
+            jsonify({"ok": False, "error_code": "read_only", "request_id": rid}),
+            403,
+        )
     return (
-        jsonify({"ok": False, "error_code": "read_only", "request_id": rid}),
+        render_template(
+            "lead_intake/partials/_error.html",
+            message="Read-only mode aktiv. Schreibaktionen sind deaktiviert.",
+            request_id=rid,
+        ),
         403,
     )
 
 
-def _lead_mutation_guard():
+def _lead_mutation_guard(api: bool = True):
     if bool(current_app.config.get("READ_ONLY", False)):
-        return _lead_read_only_response()
+        return _lead_read_only_response(api=api)
     return None
 
 
@@ -2604,37 +2619,98 @@ def _lead_api_error(code: str, message: str, status: int = 400):
     )
 
 
-@bp.get("/leads/inbox")
-@login_required
-def leads_inbox_page():
-    tenant_id = current_tenant()
+def _lead_tab_filters(tab: str, user_id: str) -> dict[str, Any]:
+    t = (tab or "all").strip().lower()
+    if t == "screening":
+        return {"status": "screening"}
+    if t == "priority":
+        return {"priority_only": True}
+    if t == "assigned":
+        return {"assigned_to": user_id}
+    if t == "due_today":
+        return {"due_mode": "today"}
+    if t == "overdue":
+        return {"due_mode": "overdue"}
+    if t == "blocked":
+        return {"blocked_only": True}
+    return {}
+
+
+def _lead_rows_for_request(
+    tenant_id: str, tab: str, user_id: str
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     status = (request.args.get("status") or "").strip().lower() or None
     source = (request.args.get("source") or "").strip().lower() or None
     q = (request.args.get("q") or "").strip() or None
     page = _clamp_page(request.args.get("page"))
     page_size = _clamp_page_size(request.args.get("page_size"), default=25)
     offset = (page - 1) * page_size
+
+    kwargs = _lead_tab_filters(tab, user_id)
+    rows = leads_list(
+        tenant_id,
+        status=status,
+        source=source,
+        q=q,
+        limit=page_size,
+        offset=offset,
+        priority_only=bool(kwargs.get("priority_only", False)),
+        pinned_only=bool(kwargs.get("pinned_only", False)),
+        assigned_to=kwargs.get("assigned_to"),
+        due_mode=kwargs.get("due_mode"),
+        blocked_only=bool(kwargs.get("blocked_only", False)),
+    )
+    meta = {
+        "status": status or "",
+        "source": source or "",
+        "q": q or "",
+        "page": page,
+        "page_size": page_size,
+        "has_more": len(rows) == page_size,
+        "tab": tab,
+    }
+    return rows, meta
+
+
+@bp.get("/leads/inbox")
+@login_required
+def leads_inbox_page():
+    tenant_id = current_tenant()
+    tab = (request.args.get("tab") or "screening").strip().lower()
+    if tab not in {
+        "screening",
+        "priority",
+        "assigned",
+        "due_today",
+        "overdue",
+        "blocked",
+        "all",
+    }:
+        tab = "screening"
+    user_id = current_user() or ""
     try:
-        leads = leads_list(
-            tenant_id,
-            status=status,
-            source=source,
-            q=q,
-            limit=page_size,
-            offset=offset,
-        )
+        leads, meta = _lead_rows_for_request(tenant_id, tab, user_id)
     except ValueError:
-        leads = []
+        leads, meta = (
+            [],
+            {
+                "status": "",
+                "source": "",
+                "q": "",
+                "page": 1,
+                "page_size": 25,
+                "has_more": False,
+                "tab": tab,
+            },
+        )
+
+    counts = leads_inbox_counts(tenant_id, user_id)
     content = render_template(
         "lead_intake/inbox.html",
         leads=leads,
-        status=status or "",
-        source=source or "",
-        q=q or "",
-        page=page,
-        page_size=page_size,
-        has_more=(len(leads) == page_size),
+        counts=counts,
         read_only=bool(current_app.config.get("READ_ONLY", False)),
+        **meta,
     )
     return _render_base(content, active_tab="leads")
 
@@ -2656,9 +2732,11 @@ def lead_detail_page(lead_id: str):
     lead = leads_get(tenant_id, lead_id)
     if not lead:
         return _lead_api_error("not_found", "Lead nicht gefunden.", status=404)
+    timeline = lead_timeline(tenant_id, lead_id, limit=100)
     content = render_template(
         "lead_intake/lead_detail.html",
         lead=lead,
+        timeline=timeline,
         read_only=bool(current_app.config.get("READ_ONLY", False)),
     )
     return _render_base(content, active_tab="leads")
@@ -2668,33 +2746,24 @@ def lead_detail_page(lead_id: str):
 @login_required
 def leads_table_partial():
     tenant_id = current_tenant()
-    status = (request.args.get("status") or "").strip().lower() or None
-    source = (request.args.get("source") or "").strip().lower() or None
-    q = (request.args.get("q") or "").strip() or None
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    offset = (page - 1) * page_size
+    tab = (request.args.get("tab") or "screening").strip().lower()
+    user_id = current_user() or ""
     try:
-        leads = leads_list(
-            tenant_id,
-            status=status,
-            source=source,
-            q=q,
-            limit=page_size,
-            offset=offset,
-        )
+        leads, meta = _lead_rows_for_request(tenant_id, tab, user_id)
     except ValueError:
-        leads = []
-    return render_template(
-        "lead_intake/partials/_table.html",
-        leads=leads,
-        status=status or "",
-        source=source or "",
-        q=q or "",
-        page=page,
-        page_size=page_size,
-        has_more=(len(leads) == page_size),
-    )
+        leads, meta = (
+            [],
+            {
+                "status": "",
+                "source": "",
+                "q": "",
+                "page": 1,
+                "page_size": 25,
+                "has_more": False,
+                "tab": tab,
+            },
+        )
+    return render_template("lead_intake/partials/_table.html", leads=leads, **meta)
 
 
 @bp.get("/leads/_timeline/<lead_id>")
@@ -2713,21 +2782,32 @@ def lead_status_partial(lead_id: str):
     if not lead:
         return render_template(
             "lead_intake/partials/_status.html",
-            lead={"id": lead_id, "status": "unknown"},
+            lead={
+                "id": lead_id,
+                "status": "unknown",
+                "priority": "normal",
+                "pinned": 0,
+                "assigned_to": None,
+                "response_due": None,
+            },
         )
     return render_template("lead_intake/partials/_status.html", lead=lead)
+
+
+def _lead_payload() -> dict[str, Any]:
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+    return {k: v for k, v in request.form.items()}
 
 
 @bp.post("/leads")
 @login_required
 @require_role("OPERATOR")
 def leads_create_action():
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
         return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
+    payload = _lead_payload()
     try:
         lead_id = leads_create(
             tenant_id=current_tenant(),
@@ -2744,11 +2824,20 @@ def leads_create_action():
     except ValueError as exc:
         code = str(exc)
         if code == "read_only":
-            return _lead_read_only_response()
+            return _lead_mutation_guard(api=not _is_htmx())
         if code == "not_found":
             return _lead_api_error("not_found", "Kunde nicht gefunden.", 404)
         if code == "db_locked":
             return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        if _is_htmx():
+            return (
+                render_template(
+                    "lead_intake/partials/_error.html",
+                    message="Ungültige Lead-Daten.",
+                    request_id=getattr(g, "request_id", ""),
+                ),
+                400,
+            )
         return _lead_api_error("validation_error", "Ungültige Lead-Daten.", 400)
 
     if _is_htmx():
@@ -2760,12 +2849,10 @@ def leads_create_action():
 @login_required
 @require_role("OPERATOR")
 def leads_status_action(lead_id: str):
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
         return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
+    payload = _lead_payload()
     try:
         leads_update_status(
             current_tenant(),
@@ -2776,7 +2863,7 @@ def leads_status_action(lead_id: str):
     except ValueError as exc:
         code = str(exc)
         if code == "read_only":
-            return _lead_read_only_response()
+            return _lead_mutation_guard(api=not _is_htmx())
         if code == "not_found":
             return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
         if code == "db_locked":
@@ -2788,16 +2875,155 @@ def leads_status_action(lead_id: str):
     return jsonify({"ok": True})
 
 
+@bp.post("/leads/<lead_id>/screen/accept")
+@login_required
+@require_role("OPERATOR")
+def leads_screen_accept_action(lead_id: str):
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    try:
+        leads_screen_accept(
+            current_tenant(), lead_id, actor_user_id=current_user() or None
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Aktion fehlgeschlagen.", 400)
+    if _is_htmx():
+        return lead_status_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/<lead_id>/screen/ignore")
+@login_required
+@require_role("OPERATOR")
+def leads_screen_ignore_action(lead_id: str):
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = _lead_payload()
+    try:
+        leads_screen_ignore(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or None,
+            reason=payload.get("reason") or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Aktion fehlgeschlagen.", 400)
+    if _is_htmx():
+        return lead_status_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/<lead_id>/priority")
+@login_required
+@require_role("OPERATOR")
+def leads_priority_action(lead_id: str):
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = _lead_payload()
+    pinned = (
+        1
+        if str(payload.get("pinned") or "0").strip().lower()
+        in {"1", "true", "on", "yes"}
+        else 0
+    )
+    try:
+        leads_set_priority(
+            current_tenant(),
+            lead_id,
+            payload.get("priority") or "normal",
+            pinned,
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Priorität.", 400)
+    if _is_htmx():
+        return lead_status_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/<lead_id>/assign")
+@login_required
+@require_role("OPERATOR")
+def leads_assign_action(lead_id: str):
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = _lead_payload()
+    try:
+        leads_assign(
+            current_tenant(),
+            lead_id,
+            payload.get("assigned_to") or None,
+            payload.get("response_due") or None,
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Zuweisung.", 400)
+    if _is_htmx():
+        return lead_status_partial(lead_id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/leads/blocklist/add")
+@login_required
+@require_role("OPERATOR")
+def leads_blocklist_add_action():
+    guarded = _lead_mutation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = _lead_payload()
+    try:
+        leads_block_sender(
+            current_tenant(),
+            payload.get("kind") or "",
+            payload.get("value") or "",
+            actor_user_id=current_user() or None,
+            reason=payload.get("reason") or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültiger Blocklist-Eintrag.", 400)
+    if _is_htmx():
+        tenant_id = current_tenant()
+        tab = (request.args.get("tab") or "screening").strip().lower()
+        leads, meta = _lead_rows_for_request(tenant_id, tab, current_user() or "")
+        return render_template("lead_intake/partials/_table.html", leads=leads, **meta)
+    return jsonify({"ok": True})
+
+
 @bp.post("/leads/<lead_id>/note")
 @login_required
 @require_role("OPERATOR")
 def leads_note_action(lead_id: str):
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
         return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
+    payload = _lead_payload()
     try:
         leads_add_note(
             current_tenant(),
@@ -2807,8 +3033,6 @@ def leads_note_action(lead_id: str):
         )
     except ValueError as exc:
         code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response()
         if code == "not_found":
             return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
         if code == "db_locked":
@@ -2824,12 +3048,10 @@ def leads_note_action(lead_id: str):
 @login_required
 @require_role("OPERATOR")
 def leads_call_log_action(lead_id: str):
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
         return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
+    payload = _lead_payload()
     try:
         call_id = call_logs_create(
             current_tenant(),
@@ -2845,8 +3067,6 @@ def leads_call_log_action(lead_id: str):
         )
     except ValueError as exc:
         code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response()
         if code == "not_found":
             return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
         if code == "db_locked":
@@ -2862,12 +3082,10 @@ def leads_call_log_action(lead_id: str):
 @login_required
 @require_role("OPERATOR")
 def leads_appointment_action(lead_id: str):
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
         return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
+    payload = _lead_payload()
     try:
         req_id = appointment_requests_create(
             current_tenant(),
@@ -2878,8 +3096,6 @@ def leads_appointment_action(lead_id: str):
         )
     except ValueError as exc:
         code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response()
         if code == "not_found":
             return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
         if code == "db_locked":
@@ -2895,6 +3111,8 @@ def leads_appointment_action(lead_id: str):
 @login_required
 def api_leads_list():
     try:
+        tab = (request.args.get("tab") or "all").strip().lower()
+        filters = _lead_tab_filters(tab, current_user() or "")
         rows = leads_list(
             current_tenant(),
             status=(request.args.get("status") or None),
@@ -2902,6 +3120,11 @@ def api_leads_list():
             q=(request.args.get("q") or None),
             limit=min(int(request.args.get("limit") or 50), 200),
             offset=max(int(request.args.get("offset") or 0), 0),
+            priority_only=bool(filters.get("priority_only", False)),
+            pinned_only=bool(filters.get("pinned_only", False)),
+            assigned_to=filters.get("assigned_to"),
+            due_mode=filters.get("due_mode"),
+            blocked_only=bool(filters.get("blocked_only", False)),
         )
     except ValueError:
         return _lead_api_error("validation_error", "Ungültige Filter.", 400)
@@ -2912,7 +3135,7 @@ def api_leads_list():
 @login_required
 @require_role("OPERATOR")
 def api_leads_create():
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
         return guarded
     payload = request.get_json(silent=True) or {}
@@ -2932,7 +3155,7 @@ def api_leads_create():
     except ValueError as exc:
         code = str(exc)
         if code == "read_only":
-            return _lead_read_only_response()
+            return _lead_read_only_response(api=True)
         if code == "not_found":
             return _lead_api_error("not_found", "Kunde nicht gefunden.", 404)
         if code == "db_locked":
@@ -2954,7 +3177,7 @@ def api_leads_get(lead_id: str):
 @login_required
 @require_role("OPERATOR")
 def api_leads_status(lead_id: str):
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
         return guarded
     payload = request.get_json(silent=True) or {}
@@ -2968,7 +3191,7 @@ def api_leads_status(lead_id: str):
     except ValueError as exc:
         code = str(exc)
         if code == "read_only":
-            return _lead_read_only_response()
+            return _lead_read_only_response(api=True)
         if code == "not_found":
             return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
         if code == "db_locked":
@@ -2977,11 +3200,133 @@ def api_leads_status(lead_id: str):
     return jsonify({"ok": True})
 
 
+@bp.post("/api/leads/<lead_id>/screen/accept")
+@login_required
+@require_role("OPERATOR")
+def api_leads_screen_accept(lead_id: str):
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    try:
+        leads_screen_accept(
+            current_tenant(), lead_id, actor_user_id=current_user() or None
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Aktion fehlgeschlagen.", 400)
+    return jsonify({"ok": True})
+
+
+@bp.post("/api/leads/<lead_id>/screen/ignore")
+@login_required
+@require_role("OPERATOR")
+def api_leads_screen_ignore(lead_id: str):
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        leads_screen_ignore(
+            current_tenant(),
+            lead_id,
+            actor_user_id=current_user() or None,
+            reason=payload.get("reason") or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Aktion fehlgeschlagen.", 400)
+    return jsonify({"ok": True})
+
+
+@bp.put("/api/leads/<lead_id>/priority")
+@login_required
+@require_role("OPERATOR")
+def api_leads_priority(lead_id: str):
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        leads_set_priority(
+            current_tenant(),
+            lead_id,
+            payload.get("priority") or "normal",
+            int(payload.get("pinned") or 0),
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Priorität.", 400)
+    return jsonify({"ok": True})
+
+
+@bp.put("/api/leads/<lead_id>/assign")
+@login_required
+@require_role("OPERATOR")
+def api_leads_assign(lead_id: str):
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        leads_assign(
+            current_tenant(),
+            lead_id,
+            payload.get("assigned_to") or None,
+            payload.get("response_due") or None,
+            actor_user_id=current_user() or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültige Zuweisung.", 400)
+    return jsonify({"ok": True})
+
+
+@bp.post("/api/leads/blocklist")
+@login_required
+@require_role("OPERATOR")
+def api_leads_blocklist_add():
+    guarded = _lead_mutation_guard(api=True)
+    if guarded is not None:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    try:
+        block_id = leads_block_sender(
+            current_tenant(),
+            payload.get("kind") or "",
+            payload.get("value") or "",
+            actor_user_id=current_user() or None,
+            reason=payload.get("reason") or None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "db_locked":
+            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
+        return _lead_api_error("validation_error", "Ungültiger Blocklist-Eintrag.", 400)
+    return jsonify({"ok": True, "block_id": block_id})
+
+
 @bp.post("/api/leads/<lead_id>/note")
 @login_required
 @require_role("OPERATOR")
 def api_leads_note(lead_id: str):
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
         return guarded
     payload = request.get_json(silent=True) or {}
@@ -2995,7 +3340,7 @@ def api_leads_note(lead_id: str):
     except ValueError as exc:
         code = str(exc)
         if code == "read_only":
-            return _lead_read_only_response()
+            return _lead_read_only_response(api=True)
         if code == "not_found":
             return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
         if code == "db_locked":
@@ -3008,7 +3353,7 @@ def api_leads_note(lead_id: str):
 @login_required
 @require_role("OPERATOR")
 def api_call_logs_create():
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
         return guarded
     payload = request.get_json(silent=True) or {}
@@ -3028,7 +3373,7 @@ def api_call_logs_create():
     except ValueError as exc:
         code = str(exc)
         if code == "read_only":
-            return _lead_read_only_response()
+            return _lead_read_only_response(api=True)
         if code == "not_found":
             return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
         if code == "db_locked":
@@ -3041,7 +3386,7 @@ def api_call_logs_create():
 @login_required
 @require_role("OPERATOR")
 def api_appointment_requests_create():
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
         return guarded
     payload = request.get_json(silent=True) or {}
@@ -3056,7 +3401,7 @@ def api_appointment_requests_create():
     except ValueError as exc:
         code = str(exc)
         if code == "read_only":
-            return _lead_read_only_response()
+            return _lead_read_only_response(api=True)
         if code == "not_found":
             return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
         if code == "db_locked":
@@ -3069,7 +3414,7 @@ def api_appointment_requests_create():
 @login_required
 @require_role("OPERATOR")
 def api_appointment_requests_status(req_id: str):
-    guarded = _lead_mutation_guard()
+    guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
         return guarded
     payload = request.get_json(silent=True) or {}
@@ -3083,7 +3428,7 @@ def api_appointment_requests_status(req_id: str):
     except ValueError as exc:
         code = str(exc)
         if code == "read_only":
-            return _lead_read_only_response()
+            return _lead_read_only_response(api=True)
         if code == "not_found":
             return _lead_api_error("not_found", "Termin-Anfrage nicht gefunden.", 404)
         if code == "db_locked":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -12,10 +13,23 @@ import kukanilea_core_v3_fixed as legacy_core
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 
-LEAD_STATUSES = {"new", "contacted", "qualified", "lost", "won"}
+LEAD_STATUSES = {"new", "contacted", "qualified", "lost", "won", "screening", "ignored"}
 LEAD_SOURCES = {"call", "email", "webform", "manual"}
 CALL_DIRECTIONS = {"inbound", "outbound"}
 APPOINTMENT_STATUSES = {"pending", "accepted", "declined", "rescheduled"}
+BLOCKLIST_KINDS = {"email", "domain", "phone"}
+LEAD_PRIORITIES = {"normal", "high"}
+
+MAX_CONTACT_NAME = 200
+MAX_CONTACT_EMAIL = 320
+MAX_CONTACT_PHONE = 32
+MAX_SUBJECT = 500
+MAX_MESSAGE = 20000
+MAX_NOTES = 20000
+MAX_BLOCKED_REASON = 200
+MAX_BLOCKLIST_REASON = 2000
+MAX_ASSIGNED_TO = 128
+MAX_BLOCK_VALUE = 320
 
 
 def _tenant(tenant_id: str) -> str:
@@ -58,6 +72,122 @@ def _read_rows(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
             con.close()
 
 
+def _validate_len(
+    value: str | None, max_len: int, code: str = "validation_error"
+) -> str:
+    v = (value or "").strip()
+    if len(v) > max_len:
+        raise ValueError(code)
+    return v
+
+
+def normalize_email(value: str | None) -> str | None:
+    v = (value or "").strip().lower()
+    if not v:
+        return None
+    if len(v) > MAX_CONTACT_EMAIL or "@" not in v or " " in v:
+        raise ValueError("validation_error")
+    local, domain = v.rsplit("@", 1)
+    if not local or not domain or "." not in domain:
+        raise ValueError("validation_error")
+    return v
+
+
+def extract_domain(email: str | None) -> str | None:
+    if not email or "@" not in email:
+        return None
+    return email.rsplit("@", 1)[1].strip().lower() or None
+
+
+def normalize_phone(value: str | None) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    plus = raw.startswith("+")
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if not digits:
+        raise ValueError("validation_error")
+    normalized = f"+{digits}" if plus else digits
+    if len(normalized) > MAX_CONTACT_PHONE:
+        raise ValueError("validation_error")
+    return normalized
+
+
+def _parse_response_due(value: str | None) -> str | None:
+    v = (value or "").strip()
+    if not v:
+        return None
+    try:
+        dt = datetime.fromisoformat(v)
+    except Exception:
+        raise ValueError("validation_error")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat(timespec="seconds")
+
+
+def _find_customer_for_contact(
+    con: sqlite3.Connection,
+    tenant_id: str,
+    email: str | None,
+    phone: str | None,
+) -> str | None:
+    if email:
+        row = con.execute(
+            """
+            SELECT customer_id
+            FROM contacts
+            WHERE tenant_id=? AND LOWER(COALESCE(email,''))=LOWER(?)
+              AND customer_id IS NOT NULL
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (tenant_id, email),
+        ).fetchone()
+        if row and row["customer_id"]:
+            return str(row["customer_id"])
+    if phone:
+        row = con.execute(
+            """
+            SELECT customer_id
+            FROM contacts
+            WHERE tenant_id=?
+              AND REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?
+              AND customer_id IS NOT NULL
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (tenant_id, f"%{phone.replace('+', '')}"),
+        ).fetchone()
+        if row and row["customer_id"]:
+            return str(row["customer_id"])
+    return None
+
+
+def _blocklist_match(
+    con: sqlite3.Connection,
+    tenant_id: str,
+    email: str | None,
+    phone: str | None,
+) -> str | None:
+    candidates: list[tuple[str, str]] = []
+    if email:
+        candidates.append(("email", email))
+        domain = extract_domain(email)
+        if domain:
+            candidates.append(("domain", domain))
+    if phone:
+        candidates.append(("phone", phone))
+    for kind, value in candidates:
+        row = con.execute(
+            "SELECT 1 FROM lead_blocklist WHERE tenant_id=? AND kind=? AND value=? LIMIT 1",
+            (tenant_id, kind, value),
+        ).fetchone()
+        if row:
+            return kind
+    return None
+
+
 def leads_create(
     tenant_id: str,
     source: str,
@@ -75,44 +205,93 @@ def leads_create(
     src = legacy_core.normalize_component(source).lower()
     if src not in LEAD_SOURCES:
         raise ValueError("validation_error")
+
+    name_norm = _validate_len(contact_name, MAX_CONTACT_NAME)
+    email_norm = normalize_email(contact_email)
+    phone_norm = normalize_phone(contact_phone)
+    subject_norm = _validate_len(subject, MAX_SUBJECT)
+    message_norm = _validate_len(message, MAX_MESSAGE)
+    notes_norm = _validate_len(notes, MAX_NOTES)
+
     lead_id = _new_id()
     now = _now_iso()
 
     def _tx(con: sqlite3.Connection) -> str:
-        if customer_id:
+        customer_ref = customer_id
+        if customer_ref:
             row = con.execute(
                 "SELECT id FROM customers WHERE tenant_id=? AND id=?",
-                (t, customer_id),
+                (t, customer_ref),
             ).fetchone()
             if not row:
                 raise ValueError("not_found")
+
+        matched_kind = _blocklist_match(con, t, email_norm, phone_norm)
+        blocked_reason = None
+        if matched_kind:
+            status = "ignored"
+            blocked_reason = f"blocklist:{matched_kind}"
+        else:
+            if not customer_ref:
+                customer_ref = _find_customer_for_contact(
+                    con, t, email_norm, phone_norm
+                )
+            status = "new" if customer_ref else "screening"
 
         con.execute(
             """
             INSERT INTO leads(
               id, tenant_id, status, source, customer_id,
               contact_name, contact_email, contact_phone,
-              subject, message, notes, created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+              subject, message, notes, priority, pinned,
+              assigned_to, response_due, screened_at, blocked_reason,
+              created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 lead_id,
                 t,
-                "new",
+                status,
                 src,
-                customer_id,
-                legacy_core.normalize_component(contact_name),
-                legacy_core.normalize_component(contact_email),
-                legacy_core.normalize_component(contact_phone),
-                legacy_core.normalize_component(subject),
-                (message or "").strip(),
-                (notes or "").strip(),
+                customer_ref,
+                name_norm,
+                email_norm,
+                phone_norm,
+                subject_norm,
+                message_norm,
+                notes_norm,
+                "normal",
+                0,
+                None,
+                None,
+                now if status != "screening" else None,
+                blocked_reason,
                 now,
                 now,
             ),
         )
+
+        if matched_kind:
+            event_type = "lead_blocked"
+            data = {
+                "lead_id": lead_id,
+                "status": status,
+                "source": src,
+                "customer_id": customer_ref,
+                "kind": matched_kind,
+                "reason": blocked_reason,
+            }
+        else:
+            event_type = "lead_created"
+            data = {
+                "lead_id": lead_id,
+                "status": status,
+                "source": src,
+                "customer_id": customer_ref,
+            }
+
         event_append(
-            event_type="lead_created",
+            event_type=event_type,
             entity_type="lead",
             entity_id=entity_id_int(lead_id),
             payload={
@@ -120,12 +299,7 @@ def leads_create(
                 "source": "lead_intake/leads_create",
                 "actor_user_id": actor_user_id,
                 "tenant_id": t,
-                "data": {
-                    "lead_id": lead_id,
-                    "status": "new",
-                    "source": src,
-                    "customer_id": customer_id,
-                },
+                "data": data,
             },
             con=con,
         )
@@ -139,7 +313,9 @@ def leads_get(tenant_id: str, lead_id: str) -> dict[str, Any] | None:
     rows = _read_rows(
         """
         SELECT id, tenant_id, status, source, customer_id, contact_name, contact_email,
-               contact_phone, subject, message, notes, created_at, updated_at
+               contact_phone, subject, message, notes, priority, pinned,
+               assigned_to, response_due, screened_at, blocked_reason,
+               created_at, updated_at
         FROM leads
         WHERE tenant_id=? AND id=?
         LIMIT 1
@@ -156,6 +332,12 @@ def leads_list(
     q: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    *,
+    priority_only: bool = False,
+    pinned_only: bool = False,
+    assigned_to: str | None = None,
+    due_mode: str | None = None,
+    blocked_only: bool = False,
 ) -> list[dict[str, Any]]:
     t = _tenant(tenant_id)
     lim = max(1, min(int(limit), 200))
@@ -177,6 +359,30 @@ def leads_list(
         clauses.append("source=?")
         params.append(src)
 
+    if priority_only:
+        clauses.append("(priority='high' OR pinned=1)")
+
+    if pinned_only:
+        clauses.append("pinned=1")
+
+    assigned_norm = _validate_len(assigned_to, MAX_ASSIGNED_TO) if assigned_to else ""
+    if assigned_norm:
+        clauses.append("assigned_to=?")
+        params.append(assigned_norm)
+
+    due = (due_mode or "").strip().lower()
+    if due == "today":
+        clauses.append("date(response_due)=date('now')")
+    elif due == "overdue":
+        clauses.append(
+            "response_due IS NOT NULL AND datetime(response_due) < datetime('now')"
+        )
+    elif due:
+        raise ValueError("validation_error")
+
+    if blocked_only:
+        clauses.append("(status='ignored' OR blocked_reason IS NOT NULL)")
+
     qq = legacy_core.normalize_component(q)
     if qq:
         clauses.append(
@@ -189,14 +395,67 @@ def leads_list(
         f"""
         SELECT id, tenant_id, status, source, customer_id, contact_name,
                contact_email, contact_phone, subject, message, notes,
-               created_at, updated_at
+               priority, pinned, assigned_to, response_due, screened_at,
+               blocked_reason, created_at, updated_at
         FROM leads
         WHERE {where_sql}
-        ORDER BY created_at DESC, id DESC
+        ORDER BY
+          pinned DESC,
+          CASE priority WHEN 'high' THEN 1 ELSE 0 END DESC,
+          CASE WHEN response_due IS NULL THEN 1 ELSE 0 END ASC,
+          response_due ASC,
+          created_at DESC,
+          id DESC
         LIMIT ? OFFSET ?
         """,
         tuple(params + [lim, off]),
     )
+
+
+def leads_inbox_counts(
+    tenant_id: str, assigned_to: str | None = None
+) -> dict[str, int]:
+    t = _tenant(tenant_id)
+    assignee = _validate_len(assigned_to, MAX_ASSIGNED_TO) if assigned_to else ""
+    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+        con = legacy_core._db()  # type: ignore[attr-defined]
+        try:
+            row = con.execute(
+                """
+                SELECT
+                  COUNT(*) AS all_count,
+                  SUM(CASE WHEN status='screening' THEN 1 ELSE 0 END) AS screening_count,
+                  SUM(CASE WHEN priority='high' OR pinned=1 THEN 1 ELSE 0 END) AS priority_count,
+                  SUM(CASE WHEN assigned_to=? THEN 1 ELSE 0 END) AS assigned_count,
+                  SUM(CASE WHEN response_due IS NOT NULL AND date(response_due)=date('now') THEN 1 ELSE 0 END) AS due_today_count,
+                  SUM(CASE WHEN response_due IS NOT NULL AND datetime(response_due) < datetime('now') THEN 1 ELSE 0 END) AS overdue_count,
+                  SUM(CASE WHEN status='ignored' OR blocked_reason IS NOT NULL THEN 1 ELSE 0 END) AS blocked_count
+                FROM leads
+                WHERE tenant_id=?
+                """,
+                (assignee, t),
+            ).fetchone()
+            if not row:
+                return {
+                    "all": 0,
+                    "screening": 0,
+                    "priority": 0,
+                    "assigned": 0,
+                    "due_today": 0,
+                    "overdue": 0,
+                    "blocked": 0,
+                }
+            return {
+                "all": int(row["all_count"] or 0),
+                "screening": int(row["screening_count"] or 0),
+                "priority": int(row["priority_count"] or 0),
+                "assigned": int(row["assigned_count"] or 0),
+                "due_today": int(row["due_today_count"] or 0),
+                "overdue": int(row["overdue_count"] or 0),
+                "blocked": int(row["blocked_count"] or 0),
+            }
+        finally:
+            con.close()
 
 
 def leads_update_status(
@@ -247,6 +506,263 @@ def leads_update_status(
     _run_write_txn(_tx)
 
 
+def leads_screen_accept(
+    tenant_id: str, lead_id: str, actor_user_id: str | None = None
+) -> None:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+
+    def _tx(con: sqlite3.Connection) -> None:
+        row = con.execute(
+            "SELECT status FROM leads WHERE tenant_id=? AND id=?",
+            (t, lead_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("not_found")
+        now = _now_iso()
+        con.execute(
+            """
+            UPDATE leads
+            SET status='new', screened_at=?, blocked_reason=NULL, updated_at=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (now, now, t, lead_id),
+        )
+        event_append(
+            event_type="lead_screen_accepted",
+            entity_type="lead",
+            entity_id=entity_id_int(lead_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/leads_screen_accept",
+                "actor_user_id": actor_user_id,
+                "tenant_id": t,
+                "data": {
+                    "lead_id": lead_id,
+                    "prev_status": str(row["status"] or ""),
+                    "status": "new",
+                },
+            },
+            con=con,
+        )
+
+    _run_write_txn(_tx)
+
+
+def leads_screen_ignore(
+    tenant_id: str,
+    lead_id: str,
+    actor_user_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    reason_norm = _validate_len(reason, MAX_BLOCKED_REASON)
+
+    def _tx(con: sqlite3.Connection) -> None:
+        row = con.execute(
+            "SELECT status FROM leads WHERE tenant_id=? AND id=?",
+            (t, lead_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("not_found")
+        now = _now_iso()
+        blocked = reason_norm or "screening:ignored"
+        con.execute(
+            """
+            UPDATE leads
+            SET status='ignored', blocked_reason=?, screened_at=COALESCE(screened_at,?), updated_at=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (blocked, now, now, t, lead_id),
+        )
+        event_append(
+            event_type="lead_screen_ignored",
+            entity_type="lead",
+            entity_id=entity_id_int(lead_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/leads_screen_ignore",
+                "actor_user_id": actor_user_id,
+                "tenant_id": t,
+                "data": {
+                    "lead_id": lead_id,
+                    "prev_status": str(row["status"] or ""),
+                    "status": "ignored",
+                    "reason": "manual",
+                },
+            },
+            con=con,
+        )
+
+    _run_write_txn(_tx)
+
+
+def leads_block_sender(
+    tenant_id: str,
+    kind: str,
+    value: str,
+    actor_user_id: str | None,
+    reason: str | None = None,
+) -> str:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    kind_norm = legacy_core.normalize_component(kind).lower()
+    if kind_norm not in BLOCKLIST_KINDS:
+        raise ValueError("validation_error")
+
+    if kind_norm in {"email", "domain"}:
+        if kind_norm == "email":
+            norm_value = normalize_email(value)
+        else:
+            norm_value = (value or "").strip().lower()
+            if not norm_value or " " in norm_value or len(norm_value) > MAX_BLOCK_VALUE:
+                raise ValueError("validation_error")
+    else:
+        norm_value = normalize_phone(value)
+
+    if not norm_value:
+        raise ValueError("validation_error")
+
+    reason_norm = _validate_len(reason, MAX_BLOCKLIST_REASON)
+
+    block_id = _new_id()
+
+    def _tx(con: sqlite3.Connection) -> str:
+        now = _now_iso()
+        con.execute(
+            """
+            INSERT OR IGNORE INTO lead_blocklist(id, tenant_id, kind, value, reason, created_at, created_by)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (
+                block_id,
+                t,
+                kind_norm,
+                norm_value,
+                reason_norm or None,
+                now,
+                actor_user_id,
+            ),
+        )
+        row = con.execute(
+            "SELECT id FROM lead_blocklist WHERE tenant_id=? AND kind=? AND value=? LIMIT 1",
+            (t, kind_norm, norm_value),
+        ).fetchone()
+        out_id = str(row["id"] if row else block_id)
+        event_append(
+            event_type="lead_blocklist_added",
+            entity_type="lead",
+            entity_id=entity_id_int(out_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/leads_block_sender",
+                "actor_user_id": actor_user_id,
+                "tenant_id": t,
+                "data": {"kind": kind_norm, "value_present": True},
+            },
+            con=con,
+        )
+        return out_id
+
+    return _run_write_txn(_tx)
+
+
+def leads_set_priority(
+    tenant_id: str,
+    lead_id: str,
+    priority: str,
+    pinned: int,
+    actor_user_id: str | None,
+) -> None:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    priority_norm = legacy_core.normalize_component(priority).lower()
+    if priority_norm not in LEAD_PRIORITIES:
+        raise ValueError("validation_error")
+    if int(pinned) not in {0, 1}:
+        raise ValueError("validation_error")
+
+    def _tx(con: sqlite3.Connection) -> None:
+        row = con.execute(
+            "SELECT priority, pinned FROM leads WHERE tenant_id=? AND id=?",
+            (t, lead_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("not_found")
+        con.execute(
+            "UPDATE leads SET priority=?, pinned=?, updated_at=? WHERE tenant_id=? AND id=?",
+            (priority_norm, int(pinned), _now_iso(), t, lead_id),
+        )
+        event_append(
+            event_type="lead_priority_changed",
+            entity_type="lead",
+            entity_id=entity_id_int(lead_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/leads_set_priority",
+                "actor_user_id": actor_user_id,
+                "tenant_id": t,
+                "data": {
+                    "lead_id": lead_id,
+                    "prev_priority": str(row["priority"] or "normal"),
+                    "priority": priority_norm,
+                    "prev_pinned": int(row["pinned"] or 0),
+                    "pinned": int(pinned),
+                },
+            },
+            con=con,
+        )
+
+    _run_write_txn(_tx)
+
+
+def leads_assign(
+    tenant_id: str,
+    lead_id: str,
+    assigned_to: str | None,
+    response_due: str | None,
+    actor_user_id: str | None,
+) -> None:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    assigned_norm = _validate_len(assigned_to, MAX_ASSIGNED_TO)
+    due_norm = _parse_response_due(response_due)
+
+    def _tx(con: sqlite3.Connection) -> None:
+        row = con.execute(
+            "SELECT assigned_to, response_due FROM leads WHERE tenant_id=? AND id=?",
+            (t, lead_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("not_found")
+        con.execute(
+            "UPDATE leads SET assigned_to=?, response_due=?, updated_at=? WHERE tenant_id=? AND id=?",
+            (assigned_norm or None, due_norm, _now_iso(), t, lead_id),
+        )
+        event_append(
+            event_type="lead_assigned",
+            entity_type="lead",
+            entity_id=entity_id_int(lead_id),
+            payload={
+                "schema_version": 1,
+                "source": "lead_intake/leads_assign",
+                "actor_user_id": actor_user_id,
+                "tenant_id": t,
+                "data": {
+                    "lead_id": lead_id,
+                    "assigned_to_present": bool(assigned_norm),
+                    "response_due_present": bool(due_norm),
+                    "prev_assigned_to_present": bool(row["assigned_to"]),
+                    "prev_response_due_present": bool(row["response_due"]),
+                },
+            },
+            con=con,
+        )
+
+    _run_write_txn(_tx)
+
+
 def leads_add_note(
     tenant_id: str,
     lead_id: str,
@@ -255,7 +771,7 @@ def leads_add_note(
 ) -> None:
     _ensure_writable()
     t = _tenant(tenant_id)
-    note = (note_text or "").strip()
+    note = _validate_len(note_text, MAX_NOTES)
     if not note:
         raise ValueError("validation_error")
 
@@ -268,6 +784,8 @@ def leads_add_note(
             raise ValueError("not_found")
         prev = (row["notes"] or "").strip()
         next_note = note if not prev else f"{prev}\n- {note}"
+        if len(next_note) > MAX_NOTES:
+            raise ValueError("validation_error")
         con.execute(
             "UPDATE leads SET notes=?, updated_at=? WHERE tenant_id=? AND id=?",
             (next_note, _now_iso(), t, lead_id),
@@ -305,7 +823,13 @@ def call_logs_create(
     dir_norm = legacy_core.normalize_component(direction).lower()
     if dir_norm not in CALL_DIRECTIONS:
         raise ValueError("validation_error")
+    name_norm = _validate_len(caller_name, MAX_CONTACT_NAME)
+    phone_norm = normalize_phone(caller_phone)
+    notes_norm = _validate_len(notes, MAX_NOTES)
     call_id = _new_id()
+
+    if duration_seconds is not None and int(duration_seconds) < 0:
+        raise ValueError("validation_error")
 
     def _tx(con: sqlite3.Connection) -> str:
         if lead_id:
@@ -326,11 +850,11 @@ def call_logs_create(
                 call_id,
                 t,
                 lead_id,
-                legacy_core.normalize_component(caller_name),
-                legacy_core.normalize_component(caller_phone),
+                name_norm,
+                phone_norm,
                 dir_norm,
                 int(duration_seconds) if duration_seconds is not None else None,
-                (notes or "").strip(),
+                notes_norm or None,
                 _now_iso(),
             ),
         )
@@ -392,11 +916,8 @@ def appointment_requests_create(
 ) -> str:
     _ensure_writable()
     t = _tenant(tenant_id)
-    if requested_date:
-        try:
-            datetime.fromisoformat(str(requested_date))
-        except Exception:
-            raise ValueError("validation_error")
+    due_norm = _parse_response_due(requested_date)
+    notes_norm = _validate_len(notes, MAX_NOTES)
     req_id = _new_id()
 
     def _tx(con: sqlite3.Connection) -> str:
@@ -417,9 +938,9 @@ def appointment_requests_create(
                 req_id,
                 t,
                 lead_id,
-                str(requested_date) if requested_date else None,
+                due_norm,
                 "pending",
-                (notes or "").strip(),
+                notes_norm or None,
                 now,
                 now,
             ),
@@ -437,6 +958,7 @@ def appointment_requests_create(
                     "appointment_request_id": req_id,
                     "lead_id": lead_id,
                     "status": "pending",
+                    "requested_date_present": bool(due_norm),
                 },
             },
             con=con,
@@ -542,6 +1064,7 @@ def appointment_requests_list(
 def lead_timeline(tenant_id: str, lead_id: str, limit: int = 100) -> dict[str, Any]:
     t = _tenant(tenant_id)
     lim = max(1, min(int(limit), 500))
+    lead_event_id = entity_id_int(lead_id)
 
     with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
         con = legacy_core._db()  # type: ignore[attr-defined]
@@ -550,12 +1073,12 @@ def lead_timeline(tenant_id: str, lead_id: str, limit: int = 100) -> dict[str, A
                 """
                 SELECT id, ts, event_type, entity_type, entity_id, payload_json
                 FROM events
-                WHERE entity_id=?
-                  AND entity_type IN ('lead','call_log','appointment_request')
+                WHERE (entity_type='lead' AND entity_id=?)
+                   OR (entity_type IN ('call_log','appointment_request') AND payload_json LIKE ?)
                 ORDER BY ts DESC, id DESC
                 LIMIT ?
                 """,
-                (entity_id_int(lead_id), lim),
+                (lead_event_id, f'%"lead_id":"{lead_id}"%', lim),
             ).fetchall()
             calls = con.execute(
                 """
@@ -596,11 +1119,21 @@ def lead_timeline(tenant_id: str, lead_id: str, limit: int = 100) -> dict[str, A
     }
 
 
+def _ics_safe_text(value: str, max_len: int = 180) -> str:
+    text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", value or "")
+    text = text.replace("\r", " ").replace("\n", " ").strip()
+    text = re.sub(r"(?i)begin\s*:?[a-z]+", " ", text)
+    text = re.sub(r"(?i)end\s*:?[a-z]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:max_len]
+
+
 def appointment_request_to_ics(tenant_id: str, req_id: str) -> tuple[str, str]:
     item = appointment_requests_get(tenant_id, req_id)
     if not item:
         raise ValueError("not_found")
 
+    lead = leads_get(tenant_id, str(item.get("lead_id") or "")) or {}
     now = datetime.now(timezone.utc)
     dtstamp = now.strftime("%Y%m%dT%H%M%SZ")
     requested = item.get("requested_date")
@@ -617,14 +1150,17 @@ def appointment_request_to_ics(tenant_id: str, req_id: str) -> tuple[str, str]:
         fallback = now + timedelta(days=1)
         dtstart_line = f"DTSTART:{fallback.strftime('%Y%m%dT%H%M%SZ')}\\r\\n"
 
-    summary = f"Terminwunsch (Lead {str(item.get('lead_id') or '')[:8]})"
-    description = f"Lead-ID: {item.get('lead_id') or ''}"
+    summary_src = str(
+        lead.get("subject") or f"Lead {str(item.get('lead_id') or '')[:8]}"
+    )
+    summary = _ics_safe_text(f"Terminwunsch ({summary_src})")
+    description = _ics_safe_text(f"Lead-ID: {item.get('lead_id') or ''}", max_len=500)
     ics = (
         "BEGIN:VCALENDAR\\r\\n"
         "VERSION:2.0\\r\\n"
         "PRODID:-//KUKANILEA//Lead Intake//DE\\r\\n"
         "BEGIN:VEVENT\\r\\n"
-        f"UID:{req_id}@kukanilea.local\\r\\n"
+        f"UID:{_ics_safe_text(req_id, 80)}@kukanilea.local\\r\\n"
         f"DTSTAMP:{dtstamp}\\r\\n"
         f"{dtstart_line}"
         f"SUMMARY:{summary}\\r\\n"
