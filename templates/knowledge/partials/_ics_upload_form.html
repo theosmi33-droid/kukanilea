@@ -1,0 +1,5 @@
+<form class="card p-4 space-y-3" method="post" action="/knowledge/ics/upload" enctype="multipart/form-data" hx-post="/knowledge/ics/upload" hx-target="#icsUploadResult" hx-swap="innerHTML">
+  <div class="text-sm muted">Nur .ics-Dateien. Nur VEVENT-Metadaten werden ingestiert.</div>
+  <input class="input w-full px-3 py-2 text-sm" type="file" name="file" accept=".ics" {% if read_only or not policy.allow_calendar %}disabled{% endif %} required>
+  <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only or not policy.allow_calendar %}disabled{% endif %}>ICS ingestieren</button>
+</form>

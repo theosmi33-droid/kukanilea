@@ -83,6 +83,8 @@ from app.eventlog.core import event_append
 from app.knowledge import (
     knowledge_email_ingest_eml,
     knowledge_email_sources_list,
+    knowledge_ics_ingest,
+    knowledge_ics_sources_list,
     knowledge_note_create,
     knowledge_note_delete,
     knowledge_note_update,
@@ -4699,6 +4701,96 @@ def knowledge_email_upload_action():
     if _is_htmx():
         return render_template(
             "knowledge/partials/_email_ingest_result.html", result=result
+        )
+    return jsonify({"ok": True, "result": result})
+
+
+@bp.get("/knowledge/ics/upload")
+@login_required
+def knowledge_ics_upload_page():
+    policy = knowledge_policy_get(current_tenant())
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
+    rows, total = knowledge_ics_sources_list(
+        current_tenant(), page=page, page_size=page_size
+    )
+    content = render_template(
+        "knowledge/ics_upload.html",
+        policy=policy,
+        items=rows,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(len(rows) == page_size),
+        max_ics_bytes=int(
+            current_app.config.get("KNOWLEDGE_ICS_MAX_BYTES", 256 * 1024)
+        ),
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.post("/knowledge/ics/upload")
+@login_required
+@require_role("OPERATOR")
+def knowledge_ics_upload_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+
+    policy = knowledge_policy_get(current_tenant())
+    if not int(policy.get("allow_calendar", 0)):
+        return _knowledge_error(
+            "policy_blocked", "Kalender-Quelle ist deaktiviert.", status=403
+        )
+
+    f = request.files.get("file")
+    if f is None:
+        return _knowledge_error(
+            "file_required", "Bitte .ics-Datei hochladen.", status=400
+        )
+    filename = (f.filename or "").strip().lower()
+    if not filename.endswith(".ics"):
+        return _knowledge_error(
+            "invalid_file_type", "Nur .ics-Dateien sind erlaubt.", status=400
+        )
+
+    max_bytes = int(current_app.config.get("KNOWLEDGE_ICS_MAX_BYTES", 256 * 1024))
+    raw = f.read(max_bytes + 1) or b""
+    if not raw:
+        return _knowledge_error("empty_file", "Datei ist leer.", status=400)
+    if len(raw) > max_bytes:
+        return _knowledge_error(
+            "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
+        )
+
+    try:
+        result = knowledge_ics_ingest(
+            tenant_id=current_tenant(),
+            actor_user_id=current_user() or None,
+            ics_bytes=raw,
+            filename_hint=(f.filename or ""),
+        )
+    except PermissionError:
+        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "policy_blocked":
+            return _knowledge_error(
+                "policy_blocked", "Kalender-Quelle ist deaktiviert.", status=403
+            )
+        if code == "payload_too_large":
+            return _knowledge_error(
+                "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
+            )
+        if code == "db_locked":
+            return _knowledge_error("db_locked", "Datenbank ist gesperrt.", status=503)
+        return _knowledge_error(
+            "validation_error", "Upload fehlgeschlagen.", status=400
+        )
+
+    if _is_htmx():
+        return render_template(
+            "knowledge/partials/_ics_ingest_result.html", result=result
         )
     return jsonify({"ok": True, "result": result})
 

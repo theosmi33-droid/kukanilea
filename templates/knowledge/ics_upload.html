@@ -1,0 +1,60 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold">Knowledge · ICS Upload (.ics)</h1>
+    <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/knowledge">Zur Suche</a>
+  </div>
+
+  <div class="card p-3 text-sm">
+    Max Upload: {{ (max_ics_bytes // 1024) }} KB · Quelle: Calendar · Redaction aktiv
+  </div>
+
+  {% if read_only %}
+  <div class="card p-3 text-sm" style="border-color:#f59e0b">Read-only mode aktiv. Schreibaktionen sind deaktiviert.</div>
+  {% endif %}
+
+  {% if not policy.allow_calendar %}
+  <div class="card p-3 text-sm" style="border-color:#f59e0b">
+    Kalender-Quelle ist deaktiviert. Aktiviere sie zuerst unter <a class="underline" href="/knowledge/settings">Knowledge Settings</a>.
+  </div>
+  {% endif %}
+
+  {% include 'knowledge/partials/_ics_upload_form.html' %}
+
+  <div id="icsUploadResult"></div>
+
+  <div class="card overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b" style="border-color:var(--border)">
+          <th class="text-left px-3 py-2">Zeit</th>
+          <th class="text-left px-3 py-2">Datei</th>
+          <th class="text-left px-3 py-2">Events</th>
+          <th class="text-left px-3 py-2">SHA Prefix</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in items %}
+        <tr class="border-b" style="border-color:var(--border)">
+          <td class="px-3 py-2">{{ row.created_at or '-' }}</td>
+          <td class="px-3 py-2">{{ row.filename or 'upload.ics' }}</td>
+          <td class="px-3 py-2">{{ row.event_count or 0 }}</td>
+          <td class="px-3 py-2">{{ (row.content_sha256 or '')[:12] }}</td>
+        </tr>
+        {% else %}
+        <tr><td class="px-3 py-3 muted" colspan="4">Noch keine ICS-Dateien ingestiert.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="flex items-center justify-between px-3 py-2 text-xs muted">
+      <div>Seite {{ page }} · {{ total }} gesamt</div>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+        <a class="btn-outline px-2 py-1" href="/knowledge/ics/upload?page={{ page - 1 }}&page_size={{ page_size }}">Zurück</a>
+        {% endif %}
+        {% if has_more %}
+        <a class="btn-outline px-2 py-1" href="/knowledge/ics/upload?page={{ page + 1 }}&page_size={{ page_size }}">Weiter</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>

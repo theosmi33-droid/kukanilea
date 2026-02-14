@@ -18,9 +18,15 @@ __all__ = [
     "knowledge_search",
     "knowledge_email_ingest_eml",
     "knowledge_email_sources_list",
+    "knowledge_ics_ingest",
+    "knowledge_ics_sources_list",
 ]
 
 from .email_source import (
     knowledge_email_ingest_eml,
     knowledge_email_sources_list,
+)
+from .ics_source import (
+    knowledge_ics_ingest,
+    knowledge_ics_sources_list,
 )

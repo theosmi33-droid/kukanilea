@@ -18,6 +18,12 @@
     </form>
   </div>
 
+  <div class="card p-4 space-y-2">
+    <div class="font-semibold">Kalender-Quelle (ICS v0)</div>
+    <div class="text-sm muted">Default ist AUS. Nur VEVENT-Metadaten (DTSTART/DTEND/SUMMARY/LOCATION) werden ingestiert. ATTACH/RRULE werden ignoriert.</div>
+    <div class="text-xs muted">Aktuell: {% if policy.allow_calendar %}aktiv{% else %}deaktiviert{% endif %}</div>
+  </div>
+
   <form class="card p-4 space-y-3" method="post" action="/knowledge/settings/save">
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_manual" value="1" {% if policy.allow_manual %}checked{% endif %} {% if read_only %}disabled{% endif %}>Manual erlauben</label>
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_tasks" value="1" {% if policy.allow_tasks %}checked{% endif %} {% if read_only %}disabled{% endif %}>Tasks erlauben</label>
