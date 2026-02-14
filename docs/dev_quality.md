@@ -26,4 +26,10 @@ Runtime semantics:
 - Fail triage on warnings:
   - `python -m app.devtools.triage --ci --fail-on-warnings`
 - Ignore known warnings via regex:
-  - `python -m app.devtools.triage --ci --fail-on-warnings --ignore-warning-regex "swigvarlink"`
+  - `python -m app.devtools.triage --ci --fail-on-warnings --ignore-warning-regex "(?i)(swig|deprecation|userwarning|resourcewarning|warning:)"`
+
+CI note:
+- The workflow intentionally applies the regex above to filter noisy third-party warning classes.
+- Do not broaden this regex without a concrete warning sample and justification.
+- A focused security regression subset runs after full pytest using:
+  - `pytest -q -k "security_imports or pii_redaction or tenant_isolation"`

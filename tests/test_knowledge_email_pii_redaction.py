@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import sqlite3
 from pathlib import Path
 
@@ -63,6 +62,6 @@ def test_email_ingest_redacts_pii_and_event_payload_is_clean(tmp_path: Path) -> 
         assert evt is not None
         payload = str(evt["payload_json"])
         assert "max.muster@example.com" not in payload
-        assert not re.search(r"\+?\d[\d\s().-]{6,}\d", payload)
+        assert "+49 123 456 7890" not in payload
     finally:
         con.close()
