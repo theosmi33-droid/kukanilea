@@ -63,22 +63,16 @@ def test_claim_and_collision_guard_routes(tmp_path: Path) -> None:
     r_priority = c2.put(
         f"/api/leads/{lead_id}/priority", json={"priority": "high", "pinned": 1}
     )
-    assert r_priority.status_code == 409
-    assert ((r_priority.get_json() or {}).get("error") or {}).get(
-        "code"
-    ) == "lead_claimed"
+    assert r_priority.status_code == 403
+    assert (r_priority.get_json() or {}).get("error") == "lead_claimed"
 
     r_assign = c2.put(f"/api/leads/{lead_id}/assign", json={"assigned_to": "bob"})
-    assert r_assign.status_code == 409
-    assert ((r_assign.get_json() or {}).get("error") or {}).get(
-        "code"
-    ) == "lead_claimed"
+    assert r_assign.status_code == 403
+    assert (r_assign.get_json() or {}).get("error") == "lead_claimed"
 
     r_screen = c2.post(f"/api/leads/{lead_id}/screen/accept", json={})
-    assert r_screen.status_code == 409
-    assert ((r_screen.get_json() or {}).get("error") or {}).get(
-        "code"
-    ) == "lead_claimed"
+    assert r_screen.status_code == 403
+    assert (r_screen.get_json() or {}).get("error") == "lead_claimed"
 
     r_release_fail = c2.post(f"/api/leads/{lead_id}/release", json={})
     assert r_release_fail.status_code == 409

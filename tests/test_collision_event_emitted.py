@@ -77,8 +77,8 @@ def test_collision_event_emitted_on_claim_guard_block(tmp_path: Path) -> None:
         json={"priority": "high", "pinned": 1},
         headers={"User-Agent": ua},
     )
-    assert blocked.status_code == 409
-    assert ((blocked.get_json() or {}).get("error") or {}).get("code") == "lead_claimed"
+    assert blocked.status_code == 403
+    assert (blocked.get_json() or {}).get("error") == "lead_claimed"
 
     con = sqlite3.connect(str(core.DB_PATH))
     con.row_factory = sqlite3.Row
@@ -97,7 +97,7 @@ def test_collision_event_emitted_on_claim_guard_block(tmp_path: Path) -> None:
     data = payload.get("data") or {}
 
     assert data.get("lead_id") == lead_id
-    assert data.get("route_key") == "lead_priority"
+    assert data.get("route_key") == "leads_priority"
     assert data.get("claimed_by_user_id") == "alice"
     assert (
         data.get("ua_hash")

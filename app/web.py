@@ -115,6 +115,7 @@ from app.lead_intake import (
     leads_update_status,
 )
 from app.lead_intake.core import ConflictError
+from app.lead_intake.guard import require_lead_access
 from app.security_ua_hash import ua_hmac_sha256_hex
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
@@ -3072,6 +3073,7 @@ def leads_create_action():
 @bp.post("/leads/<lead_id>/status")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_status")
 def leads_status_action(lead_id: str):
     guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
@@ -3233,6 +3235,7 @@ def leads_claims_expire_now_action():
 @bp.post("/leads/<lead_id>/screen/accept")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_screen_accept")
 def leads_screen_accept_action(lead_id: str):
     guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
@@ -3263,6 +3266,7 @@ def leads_screen_accept_action(lead_id: str):
 @bp.post("/leads/<lead_id>/screen/ignore")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_screen_ignore")
 def leads_screen_ignore_action(lead_id: str):
     guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
@@ -3297,6 +3301,7 @@ def leads_screen_ignore_action(lead_id: str):
 @bp.post("/leads/<lead_id>/priority")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_priority")
 def leads_priority_action(lead_id: str):
     guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
@@ -3338,6 +3343,7 @@ def leads_priority_action(lead_id: str):
 @bp.post("/leads/<lead_id>/assign")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_assign")
 def leads_assign_action(lead_id: str):
     guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
@@ -3402,6 +3408,7 @@ def leads_blocklist_add_action():
 @bp.post("/leads/<lead_id>/note")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_note_add")
 def leads_note_action(lead_id: str):
     guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
@@ -3430,6 +3437,7 @@ def leads_note_action(lead_id: str):
 @bp.post("/leads/<lead_id>/call-log")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_call_log_create")
 def leads_call_log_action(lead_id: str):
     guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
@@ -3464,6 +3472,7 @@ def leads_call_log_action(lead_id: str):
 @bp.post("/leads/<lead_id>/appointment")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_appointment_create")
 def leads_appointment_action(lead_id: str):
     guarded = _lead_mutation_guard(api=not _is_htmx())
     if guarded is not None:
@@ -3646,6 +3655,7 @@ def api_leads_claims_expire_now():
 @bp.put("/api/leads/<lead_id>/status")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_status")
 def api_leads_status(lead_id: str):
     guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
@@ -3673,6 +3683,7 @@ def api_leads_status(lead_id: str):
 @bp.post("/api/leads/<lead_id>/screen/accept")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_screen_accept")
 def api_leads_screen_accept(lead_id: str):
     guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
@@ -3701,6 +3712,7 @@ def api_leads_screen_accept(lead_id: str):
 @bp.post("/api/leads/<lead_id>/screen/ignore")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_screen_ignore")
 def api_leads_screen_ignore(lead_id: str):
     guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
@@ -3733,6 +3745,7 @@ def api_leads_screen_ignore(lead_id: str):
 @bp.put("/api/leads/<lead_id>/priority")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_priority")
 def api_leads_priority(lead_id: str):
     guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
@@ -3766,6 +3779,7 @@ def api_leads_priority(lead_id: str):
 @bp.put("/api/leads/<lead_id>/assign")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_assign")
 def api_leads_assign(lead_id: str):
     guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
@@ -3823,6 +3837,7 @@ def api_leads_blocklist_add():
 @bp.post("/api/leads/<lead_id>/note")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_note_add")
 def api_leads_note(lead_id: str):
     guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
@@ -3850,6 +3865,7 @@ def api_leads_note(lead_id: str):
 @bp.post("/api/call-logs")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_call_log_create", lead_id_kw="lead_id")
 def api_call_logs_create():
     guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
@@ -3883,6 +3899,7 @@ def api_call_logs_create():
 @bp.post("/api/appointment-requests")
 @login_required
 @require_role("OPERATOR")
+@require_lead_access("leads_appointment_create", lead_id_kw="lead_id")
 def api_appointment_requests_create():
     guarded = _lead_mutation_guard(api=True)
     if guarded is not None:
