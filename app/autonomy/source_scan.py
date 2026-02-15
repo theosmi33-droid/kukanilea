@@ -1247,6 +1247,23 @@ def scan_sources_once(
                 except Exception:
                     # Autotagging ist best effort; Ingest bleibt erfolgreich.
                     pass
+                if source_kind == "document":
+                    try:
+                        from app.autonomy.ocr import (
+                            is_supported_image_path,
+                            submit_ocr_for_source_file,
+                        )
+
+                        if is_supported_image_path(path):
+                            submit_ocr_for_source_file(
+                                tenant_id=tenant,
+                                actor_user_id=actor_user_id,
+                                source_file_id=str(source_file["id"]),
+                                abs_path=path,
+                            )
+                    except Exception:
+                        # OCR ist optional und darf den erfolgreichen Ingest nicht kippen.
+                        pass
 
             _record_outcome(
                 tenant_id=tenant,

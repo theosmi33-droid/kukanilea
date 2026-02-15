@@ -48,3 +48,4 @@ def test_knowledge_tables_exist_and_default_policy_created(tmp_path: Path) -> No
     assert policy["tenant_id"] == "TENANT_A"
     assert int(policy["allow_manual"]) == 1
     assert int(policy["allow_email"]) == 0
+    assert int(policy["allow_ocr"]) == 0

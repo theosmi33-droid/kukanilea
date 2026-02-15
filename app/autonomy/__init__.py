@@ -16,6 +16,14 @@ from .maintenance import (
     scan_history_list,
     verify_backup,
 )
+from .ocr import (
+    is_supported_image_path,
+    ocr_allowed,
+    ocr_stats_24h,
+    recent_ocr_jobs,
+    resolve_tesseract_bin,
+    submit_ocr_for_source_file,
+)
 from .source_scan import (
     ConfigError,
     hmac_path_hash,
@@ -44,4 +52,10 @@ __all__ = [
     "scan_history_list",
     "run_smoke_test",
     "get_health_overview",
+    "ocr_allowed",
+    "resolve_tesseract_bin",
+    "submit_ocr_for_source_file",
+    "is_supported_image_path",
+    "recent_ocr_jobs",
+    "ocr_stats_24h",
 ]

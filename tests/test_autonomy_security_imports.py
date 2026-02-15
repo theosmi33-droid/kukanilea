@@ -4,8 +4,6 @@ import re
 from pathlib import Path
 
 FORBIDDEN_PATTERNS = [
-    r"^\s*import\s+subprocess\b",
-    r"^\s*from\s+subprocess\b",
     r"^\s*import\s+socket\b",
     r"^\s*from\s+socket\b",
     r"^\s*import\s+requests\b",
@@ -23,6 +21,11 @@ FORBIDDEN_PATTERNS = [
     r"\bexec\(",
 ]
 
+FORBIDDEN_SUBPROCESS_PATTERNS = [
+    r"^\s*import\s+subprocess\b",
+    r"^\s*from\s+subprocess\b",
+]
+
 
 def test_autonomy_sources_do_not_use_forbidden_exec_or_network_imports() -> None:
     roots = [
@@ -35,7 +38,10 @@ def test_autonomy_sources_do_not_use_forbidden_exec_or_network_imports() -> None
         assert py_files
         for py in py_files:
             content = py.read_text(encoding="utf-8")
-            for pat in FORBIDDEN_PATTERNS:
+            patterns = list(FORBIDDEN_PATTERNS)
+            if py.name != "ocr.py":
+                patterns.extend(FORBIDDEN_SUBPROCESS_PATTERNS)
+            for pat in patterns:
                 assert not re.search(pat, content, flags=re.MULTILINE), (
                     f"{pat} found in {py.name}"
                 )

@@ -623,10 +623,14 @@ def _init_knowledge_tables(con: sqlite3.Connection) -> None:
           allow_leads INTEGER NOT NULL DEFAULT 0,
           allow_email INTEGER NOT NULL DEFAULT 0,
           allow_calendar INTEGER NOT NULL DEFAULT 0,
+          allow_ocr INTEGER NOT NULL DEFAULT 0,
           allow_customer_pii INTEGER NOT NULL DEFAULT 0,
           updated_at TEXT NOT NULL
         );
         """
+    )
+    _add_column_if_missing(
+        con, "knowledge_source_policies", "allow_ocr", "INTEGER NOT NULL DEFAULT 0"
     )
 
     if _has_fts5(con):
@@ -812,6 +816,7 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
     _add_column_if_missing(con, "source_files", "sha256", "TEXT")
     _add_column_if_missing(con, "source_files", "size_bytes", "INTEGER")
     _add_column_if_missing(con, "source_files", "knowledge_chunk_id", "TEXT")
+    _add_column_if_missing(con, "source_files", "ocr_knowledge_chunk_id", "TEXT")
 
     _add_column_if_missing(con, "knowledge_chunks", "doctype_token", "TEXT")
     _add_column_if_missing(con, "knowledge_chunks", "correspondent_token", "TEXT")
@@ -871,6 +876,26 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
     )
     con.execute(
         "CREATE INDEX IF NOT EXISTS idx_scan_history_tenant_start ON autonomy_scan_history(tenant_id, started_at DESC);"
+    )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS autonomy_ocr_jobs (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          source_file_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          started_at TEXT,
+          finished_at TEXT,
+          duration_ms INTEGER DEFAULT 0,
+          bytes_in INTEGER DEFAULT 0,
+          chars_out INTEGER DEFAULT 0,
+          error_code TEXT,
+          created_at TEXT NOT NULL
+        );
+        """
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_autonomy_ocr_jobs_tenant_status ON autonomy_ocr_jobs(tenant_id, status, created_at DESC);"
     )
 
     con.execute(

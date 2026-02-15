@@ -4352,9 +4352,11 @@ def _autonomy_guard(api: bool = True):
 @require_role("OPERATOR")
 def autonomy_health_page():
     data = get_health_overview(current_tenant(), history_limit=25)
+    policy = knowledge_policy_get(current_tenant())
     content = render_template(
         "autonomy/health.html",
         data=data,
+        ocr_enabled=bool(int(policy.get("allow_ocr", 0))),
         read_only=bool(current_app.config.get("READ_ONLY", False)),
     )
     return _render_base(content, active_tab="autonomy")
@@ -5541,6 +5543,7 @@ def knowledge_settings_save_action():
         "allow_leads",
         "allow_email",
         "allow_calendar",
+        "allow_ocr",
         "allow_customer_pii",
     ]
     flags: dict[str, bool] = {}

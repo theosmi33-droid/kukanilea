@@ -37,6 +37,7 @@ def test_autonomy_health_page_and_actions(tmp_path: Path, monkeypatch) -> None:
     page = client.get("/autonomy/health")
     assert page.status_code == 200
     assert b"Autonomy Health" in page.data
+    assert b"OCR Jobs" in page.data
 
     backup_resp = client.post("/autonomy/health/backup")
     assert backup_resp.status_code in {302, 200}

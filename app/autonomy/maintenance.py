@@ -683,6 +683,33 @@ def get_health_overview(tenant_id: str, history_limit: int = 20) -> dict[str, An
         (tenant, day_ago),
     )
     ingest_counts = {str(r["action"]): int(r["c"]) for r in ingest_24h}
+    ocr_jobs = _read_rows(
+        """
+        SELECT id, source_file_id, status, started_at, finished_at, duration_ms,
+               bytes_in, chars_out, error_code, created_at
+        FROM autonomy_ocr_jobs
+        WHERE tenant_id=?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 10
+        """,
+        (tenant,),
+    )
+    ocr_24h_rows = _read_rows(
+        """
+        SELECT status, COUNT(*) AS c
+        FROM autonomy_ocr_jobs
+        WHERE tenant_id=? AND created_at>=?
+        GROUP BY status
+        ORDER BY status ASC
+        """,
+        (tenant, day_ago),
+    )
+    ocr_24h = {"done": 0, "failed": 0, "skipped": 0, "processing": 0, "pending": 0}
+    for row in ocr_24h_rows:
+        status = str(row["status"] or "")
+        if status in ocr_24h:
+            ocr_24h[status] = int(row["c"] or 0)
+    ocr_24h["total"] = sum(ocr_24h.values())
     return {
         "tenant_id": tenant,
         "status": status,
@@ -690,5 +717,7 @@ def get_health_overview(tenant_id: str, history_limit: int = 20) -> dict[str, An
         "latest_scan": latest_scan,
         "scan_history": history,
         "ingest_24h": ingest_counts,
+        "ocr_jobs": ocr_jobs,
+        "ocr_24h": ocr_24h,
         "generated_at": _now_iso(),
     }

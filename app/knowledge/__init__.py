@@ -6,6 +6,7 @@ from .core import (
     knowledge_notes_list,
     knowledge_policy_get,
     knowledge_policy_update,
+    knowledge_redact_text,
     knowledge_search,
 )
 
@@ -13,6 +14,7 @@ __all__ = [
     "knowledge_policy_get",
     "knowledge_policy_update",
     "knowledge_document_ingest",
+    "knowledge_redact_text",
     "knowledge_note_create",
     "knowledge_note_update",
     "knowledge_note_delete",
