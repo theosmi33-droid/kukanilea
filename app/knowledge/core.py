@@ -21,7 +21,16 @@ MAX_TAGS = 300
 MAX_SOURCE_REF = 200
 MAX_RESULTS = 25
 
-SOURCE_TYPES = {"manual", "task", "project", "document", "email", "calendar", "lead"}
+SOURCE_TYPES = {
+    "manual",
+    "task",
+    "project",
+    "document",
+    "email",
+    "calendar",
+    "lead",
+    "ocr",
+}
 
 EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b")
 PHONE_RE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
@@ -79,6 +88,13 @@ def _redact(text: str) -> str:
     return out
 
 
+def knowledge_redact_text(text: str | None, max_len: int = MAX_BODY) -> str:
+    value = (text or "").replace("\x00", " ")
+    if len(value) > max_len:
+        value = value[:max_len]
+    return _redact(value)
+
+
 def _content_hash(body: str) -> str:
     return sha256(body.encode("utf-8")).hexdigest()
 
@@ -131,6 +147,7 @@ def _policy_defaults() -> dict[str, Any]:
         "allow_leads": 0,
         "allow_email": 0,
         "allow_calendar": 0,
+        "allow_ocr": 0,
         "allow_customer_pii": 0,
     }
 
@@ -143,7 +160,7 @@ def knowledge_policy_get(tenant_id: str) -> dict[str, Any]:
         row = con.execute(
             """
             SELECT tenant_id, allow_manual, allow_tasks, allow_projects, allow_documents,
-                   allow_leads, allow_email, allow_calendar, allow_customer_pii, updated_at
+                   allow_leads, allow_email, allow_calendar, allow_ocr, allow_customer_pii, updated_at
             FROM knowledge_source_policies
             WHERE tenant_id=?
             LIMIT 1
@@ -157,8 +174,8 @@ def knowledge_policy_get(tenant_id: str) -> dict[str, Any]:
             """
             INSERT INTO knowledge_source_policies(
               tenant_id, allow_manual, allow_tasks, allow_projects, allow_documents,
-              allow_leads, allow_email, allow_calendar, allow_customer_pii, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+              allow_leads, allow_email, allow_calendar, allow_ocr, allow_customer_pii, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 t,
@@ -169,6 +186,7 @@ def knowledge_policy_get(tenant_id: str) -> dict[str, Any]:
                 defaults["allow_leads"],
                 defaults["allow_email"],
                 defaults["allow_calendar"],
+                defaults["allow_ocr"],
                 defaults["allow_customer_pii"],
                 now,
             ),
@@ -194,6 +212,7 @@ def knowledge_policy_update(
         "allow_leads",
         "allow_email",
         "allow_calendar",
+        "allow_ocr",
         "allow_customer_pii",
     }
     patch = {k: int(bool(flags[k])) for k in flags if k in allowed_keys}
@@ -219,7 +238,7 @@ def knowledge_policy_update(
             """
             UPDATE knowledge_source_policies
             SET allow_manual=?, allow_tasks=?, allow_projects=?, allow_documents=?,
-                allow_leads=?, allow_email=?, allow_calendar=?, allow_customer_pii=?, updated_at=?
+                allow_leads=?, allow_email=?, allow_calendar=?, allow_ocr=?, allow_customer_pii=?, updated_at=?
             WHERE tenant_id=?
             """,
             (
@@ -230,6 +249,7 @@ def knowledge_policy_update(
                 int(merged["allow_leads"]),
                 int(merged["allow_email"]),
                 int(merged["allow_calendar"]),
+                int(merged["allow_ocr"]),
                 int(merged["allow_customer_pii"]),
                 _now_iso(),
                 t,
@@ -255,6 +275,7 @@ def knowledge_policy_update(
                     "allow_leads": int(merged["allow_leads"]),
                     "allow_email": int(merged["allow_email"]),
                     "allow_calendar": int(merged["allow_calendar"]),
+                    "allow_ocr": int(merged["allow_ocr"]),
                     "allow_customer_pii": int(merged["allow_customer_pii"]),
                 },
             },
@@ -281,6 +302,8 @@ def _policy_allows(policy: dict[str, Any], source_type: str) -> bool:
         return bool(int(policy.get("allow_email", 0)))
     if st == "calendar":
         return bool(int(policy.get("allow_calendar", 0)))
+    if st == "ocr":
+        return bool(int(policy.get("allow_ocr", 0)))
     return False
 
 

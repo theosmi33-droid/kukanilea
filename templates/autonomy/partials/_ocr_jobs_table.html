@@ -1,0 +1,31 @@
+<div class="card overflow-hidden">
+  <div class="px-3 py-2 text-sm font-semibold border-b" style="border-color:var(--border)">
+    OCR Jobs (zuletzt 10)
+  </div>
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b" style="border-color:var(--border)">
+        <th class="text-left px-3 py-2">Zeit</th>
+        <th class="text-left px-3 py-2">Status</th>
+        <th class="text-left px-3 py-2">Bytes</th>
+        <th class="text-left px-3 py-2">Chars</th>
+        <th class="text-left px-3 py-2">Dauer (ms)</th>
+        <th class="text-left px-3 py-2">Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.ocr_jobs %}
+      <tr class="border-b" style="border-color:var(--border)">
+        <td class="px-3 py-2">{{ row.created_at }}</td>
+        <td class="px-3 py-2">{{ row.status }}</td>
+        <td class="px-3 py-2">{{ row.bytes_in or 0 }}</td>
+        <td class="px-3 py-2">{{ row.chars_out or 0 }}</td>
+        <td class="px-3 py-2">{{ row.duration_ms or 0 }}</td>
+        <td class="px-3 py-2">{{ row.error_code or '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td class="px-3 py-3 muted" colspan="6">Keine OCR-Jobs vorhanden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

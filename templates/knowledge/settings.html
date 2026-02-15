@@ -24,6 +24,12 @@
     <div class="text-xs muted">Aktuell: {% if policy.allow_calendar %}aktiv{% else %}deaktiviert{% endif %}</div>
   </div>
 
+  <div class="card p-4 space-y-2">
+    <div class="font-semibold">OCR Quelle (Tesseract v0)</div>
+    <div class="text-sm muted">Default ist AUS. OCR verarbeitet nur Bilddateien (jpg/jpeg/png/tiff), PDFs bleiben in v0 ausgeschlossen. OCR-Text wird vor Speicherung redigiert.</div>
+    <div class="text-xs muted">Aktuell: {% if policy.allow_ocr %}aktiv{% else %}deaktiviert{% endif %}</div>
+  </div>
+
   <form class="card p-4 space-y-3" method="post" action="/knowledge/settings/save">
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_manual" value="1" {% if policy.allow_manual %}checked{% endif %} {% if read_only %}disabled{% endif %}>Manual erlauben</label>
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_tasks" value="1" {% if policy.allow_tasks %}checked{% endif %} {% if read_only %}disabled{% endif %}>Tasks erlauben</label>
@@ -32,6 +38,7 @@
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_leads" value="1" {% if policy.allow_leads %}checked{% endif %} {% if read_only %}disabled{% endif %}>Leads erlauben</label>
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_email" value="1" {% if policy.allow_email %}checked{% endif %} {% if read_only %}disabled{% endif %}>E-Mail erlauben</label>
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_calendar" value="1" {% if policy.allow_calendar %}checked{% endif %} {% if read_only %}disabled{% endif %}>Kalender erlauben</label>
+    <label class="flex items-center gap-2"><input type="checkbox" name="allow_ocr" value="1" {% if policy.allow_ocr %}checked{% endif %} {% if read_only %}disabled{% endif %}>OCR erlauben</label>
     <label class="flex items-center gap-2"><input type="checkbox" name="allow_customer_pii" value="1" {% if policy.allow_customer_pii %}checked{% endif %} {% if read_only %}disabled{% endif %}>PII-Nutzung erlauben</label>
     <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Speichern</button>
   </form>
