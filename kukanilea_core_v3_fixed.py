@@ -745,6 +745,62 @@ def _init_knowledge_tables(con: sqlite3.Connection) -> None:
     )
 
 
+def _init_autonomy_tables(con: sqlite3.Connection) -> None:
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS source_watch_config (
+          tenant_id TEXT PRIMARY KEY,
+          documents_inbox_dir TEXT,
+          email_inbox_dir TEXT,
+          calendar_inbox_dir TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          max_bytes_per_file INTEGER NOT NULL DEFAULT 262144,
+          max_files_per_scan INTEGER NOT NULL DEFAULT 200,
+          updated_at TEXT NOT NULL
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS source_files (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          source_kind TEXT NOT NULL,
+          path_hash TEXT NOT NULL,
+          fingerprint TEXT NOT NULL,
+          status TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL,
+          first_seen_at TEXT NOT NULL,
+          last_ingested_at TEXT,
+          last_error_code TEXT,
+          UNIQUE(tenant_id, source_kind, path_hash)
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS source_ingest_log (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          source_kind TEXT NOT NULL,
+          path_hash TEXT NOT NULL,
+          action TEXT NOT NULL,
+          detail_code TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        """
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_source_files_tenant_kind_status ON source_files(tenant_id, source_kind, status);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_source_files_tenant_seen ON source_files(tenant_id, last_seen_at);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_source_ingest_log_tenant_time ON source_ingest_log(tenant_id, created_at);"
+    )
+
+
 def db_init() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _DB_LOCK:
@@ -1571,6 +1627,7 @@ def db_init() -> None:
 
             _init_entity_link_tables(con)
             _init_knowledge_tables(con)
+            _init_autonomy_tables(con)
 
             row = con.execute("PRAGMA user_version").fetchone()
             cur_ver = int(row[0] if row else 0)
