@@ -552,6 +552,111 @@ def knowledge_note_delete(tenant_id: str, chunk_id: str, owner_user_id: str) -> 
     _run_write_txn(_tx)
 
 
+def knowledge_document_ingest(
+    tenant_id: str,
+    actor_user_id: str | None,
+    source_ref: str,
+    title: str,
+    body: str,
+    tags: str | None = None,
+) -> dict[str, Any]:
+    _ensure_writable()
+    t = _tenant(tenant_id)
+    policy = knowledge_policy_get(t)
+    _ensure_source_allowed(policy, "document")
+
+    source_ref_n = _norm(source_ref, MAX_SOURCE_REF)
+    title_n = _redact(_norm(title, MAX_TITLE))
+    body_n = _redact(_norm(body, MAX_BODY))
+    tags_n = _redact(_norm(tags, MAX_TAGS))
+    if not body_n:
+        raise ValueError("redacted_empty")
+
+    chunk_id = _new_chunk_id()
+    now = _now_iso()
+    c_hash = _content_hash(body_n)
+    ref_hash = sha256(source_ref_n.encode("utf-8")).hexdigest()[:16]
+
+    def _tx(con: sqlite3.Connection) -> dict[str, Any]:
+        try:
+            cur = con.execute(
+                """
+                INSERT INTO knowledge_chunks(
+                  chunk_id, tenant_id, owner_user_id, source_type, source_ref,
+                  title, body, tags, content_hash, is_redacted, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    chunk_id,
+                    t,
+                    actor_user_id or None,
+                    "document",
+                    source_ref_n,
+                    title_n,
+                    body_n,
+                    tags_n,
+                    c_hash,
+                    1,
+                    now,
+                    now,
+                ),
+            )
+            row_id = int(cur.lastrowid or 0)
+            dedup = False
+        except sqlite3.IntegrityError as exc:
+            if "unique" not in str(exc).lower():
+                raise
+            row = con.execute(
+                """
+                SELECT id, chunk_id, tenant_id, owner_user_id, source_type, source_ref,
+                       title, body, tags, is_redacted, created_at, updated_at
+                FROM knowledge_chunks
+                WHERE tenant_id=? AND source_type='document' AND source_ref=? AND content_hash=?
+                LIMIT 1
+                """,
+                (t, source_ref_n, c_hash),
+            ).fetchone()
+            if not row:
+                raise
+            return {**dict(row), "dedup": True}
+
+        _fts_upsert(con, row_id, title_n, body_n, tags_n)
+        event_append(
+            event_type="knowledge_document_ingested",
+            entity_type="knowledge_chunk",
+            entity_id=row_id,
+            payload={
+                "schema_version": 1,
+                "source": "knowledge/document_ingest",
+                "actor_user_id": actor_user_id,
+                "tenant_id": t,
+                "data": {
+                    "chunk_id": chunk_id,
+                    "source_type": "document",
+                    "source_ref_hash": ref_hash,
+                    "dedup": dedup,
+                },
+            },
+            con=con,
+        )
+        return {
+            "chunk_id": chunk_id,
+            "tenant_id": t,
+            "owner_user_id": actor_user_id,
+            "source_type": "document",
+            "source_ref": source_ref_n,
+            "title": title_n,
+            "body": body_n,
+            "tags": tags_n,
+            "is_redacted": 1,
+            "created_at": now,
+            "updated_at": now,
+            "dedup": False,
+        }
+
+    return _run_write_txn(_tx)
+
+
 def knowledge_notes_list(
     tenant_id: str,
     owner_user_id: str | None,
