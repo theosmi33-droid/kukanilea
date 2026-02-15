@@ -68,6 +68,12 @@ from app.automation import (
     automation_run_now,
     get_or_build_daily_insights,
 )
+from app.autonomy import (
+    get_health_overview,
+    rotate_logs,
+    run_backup,
+    run_smoke_test,
+)
 from app.entity_links import (
     create_link as entity_link_create,
 )
@@ -847,6 +853,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
       <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">📚 Knowledge</a>
       <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation/rules">⚙️ Automation</a>
+      <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health">🩺 Autonomy Health</a>
       <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily">📊 Insights</a>
       {% if roles in ['DEV', 'ADMIN'] %}
       <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
@@ -4297,6 +4304,106 @@ def insights_daily_page():
     data = get_or_build_daily_insights(current_tenant(), day)
     content = render_template("automation/insights_daily.html", data=data)
     return _render_base(content, active_tab="insights")
+
+
+def _autonomy_error(code: str, message: str, status: int = 400):
+    if request.is_json or request.path.startswith("/api/"):
+        return json_error(code, message, status=status)
+    if _is_htmx():
+        return (
+            render_template(
+                "autonomy/partials/_errors.html",
+                message=message,
+                kind="error",
+            ),
+            status,
+        )
+    return (
+        _render_base(
+            f'<div class="card p-4"><h2 class="text-lg font-semibold">Autonomy Health</h2><p class="muted mt-2">{message}</p></div>',
+            active_tab="autonomy",
+        ),
+        status,
+    )
+
+
+def _autonomy_guard(api: bool = True):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        if api:
+            return json_error("read_only", "Read-only mode aktiv.", status=403)
+        return (
+            render_template(
+                "autonomy/partials/_errors.html",
+                message="Read-only mode aktiv.",
+                kind="error",
+            ),
+            403,
+        )
+    return None
+
+
+@bp.get("/autonomy/health")
+@login_required
+@require_role("OPERATOR")
+def autonomy_health_page():
+    data = get_health_overview(current_tenant(), history_limit=25)
+    content = render_template(
+        "autonomy/health.html",
+        data=data,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="autonomy")
+
+
+@bp.post("/autonomy/health/backup")
+@login_required
+@require_role("OPERATOR")
+def autonomy_health_backup_action():
+    guarded = _autonomy_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    result = run_backup(current_tenant(), actor_user_id=current_user() or None)
+    if not bool(result.get("ok")):
+        return _autonomy_error(
+            "maintenance_error",
+            "Backup konnte nicht erstellt werden.",
+            status=500,
+        )
+    if request.is_json:
+        return jsonify({"ok": True, "result": result})
+    return redirect(url_for("web.autonomy_health_page"))
+
+
+@bp.post("/autonomy/health/rotate-logs")
+@login_required
+@require_role("OPERATOR")
+def autonomy_health_rotate_logs_action():
+    guarded = _autonomy_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    result = rotate_logs(current_tenant(), actor_user_id=current_user() or None)
+    if not bool(result.get("ok")):
+        return _autonomy_error(
+            "maintenance_error",
+            "Log-Rotation fehlgeschlagen.",
+            status=500,
+        )
+    if request.is_json:
+        return jsonify({"ok": True, "result": result})
+    return redirect(url_for("web.autonomy_health_page"))
+
+
+@bp.post("/autonomy/health/smoke-test")
+@login_required
+@require_role("OPERATOR")
+def autonomy_health_smoke_test_action():
+    guarded = _autonomy_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    result = run_smoke_test(current_tenant(), actor_user_id=current_user() or None)
+    if request.is_json:
+        return jsonify({"ok": bool(result.get("ok")), "result": result})
+    return redirect(url_for("web.autonomy_health_page"))
 
 
 @bp.get("/api/automation/rules")

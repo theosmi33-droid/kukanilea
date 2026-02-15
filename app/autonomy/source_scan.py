@@ -784,15 +784,18 @@ def scan_sources_once(
 ) -> dict[str, Any]:
     tenant = _tenant(tenant_id)
     budget = max(100, min(int(budget_ms), 30_000))
+    started_iso = _now_iso()
     started = time.monotonic()
 
     summary: dict[str, Any] = {
         "tenant_id": tenant,
+        "started_at": started_iso,
         "ok": True,
         "scanned": 0,
         "discovered": 0,
         "ingested_ok": 0,
         "failed": 0,
+        "skipped_dedup": 0,
         "skipped_policy": 0,
         "skipped_limits": 0,
         "skipped_read_only": 0,
@@ -802,6 +805,27 @@ def scan_sources_once(
         "budget_exhausted": False,
         "max_files_reached": False,
     }
+
+    def _record_history(status: str, error_summary: str = "") -> None:
+        try:
+            from app.autonomy.maintenance import record_scan_run
+
+            record_scan_run(
+                tenant,
+                {
+                    "started_at": started_iso,
+                    "finished_at": _now_iso(),
+                    "status": status,
+                    "files_scanned": int(summary.get("scanned") or 0),
+                    "files_ingested": int(summary.get("ingested_ok") or 0),
+                    "files_skipped_dedup": int(summary.get("skipped_dedup") or 0),
+                    "files_skipped_exclude": int(summary.get("skipped_exclude") or 0),
+                    "files_failed": int(summary.get("failed") or 0),
+                    "error_summary": error_summary,
+                },
+            )
+        except Exception:
+            return
 
     if _is_read_only():
         summary["ok"] = True
@@ -814,6 +838,7 @@ def scan_sources_once(
     if int(cfg.get("enabled") or 0) != 1:
         summary["reason"] = "disabled"
         summary["duration_ms"] = int(round((time.monotonic() - started) * 1000))
+        _record_history("aborted", "disabled")
         return summary
 
     max_files = max(
@@ -822,125 +847,143 @@ def scan_sources_once(
     exclude_globs = load_exclude_globs(cfg.get("exclude_globs"))
     candidates = _collect_candidates(cfg)
 
-    for source_kind, path, rel_path in candidates:
-        if summary["scanned"] >= max_files:
-            summary["max_files_reached"] = True
-            break
-        elapsed_ms = int((time.monotonic() - started) * 1000)
-        if elapsed_ms > budget:
-            summary["budget_exhausted"] = True
-            break
+    try:
+        for source_kind, path, rel_path in candidates:
+            if summary["scanned"] >= max_files:
+                summary["max_files_reached"] = True
+                break
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            if elapsed_ms > budget:
+                summary["budget_exhausted"] = True
+                break
 
-        summary["scanned"] += 1
-        try:
-            st = path.stat()
-        except Exception:
-            summary["failed"] += 1
-            summary["ok"] = False
-            continue
+            summary["scanned"] += 1
+            try:
+                st = path.stat()
+            except Exception:
+                summary["failed"] += 1
+                summary["ok"] = False
+                continue
 
-        path_hash = hmac_path_hash(str(path))
-        fingerprint = _fingerprint(path, st)
-        metadata = extract_filename_metadata(rel_path)
-        metadata_json = _metadata_json(metadata)
-        source_file = _touch_source_file(
-            tenant,
-            source_kind,
-            path_hash,
-            fingerprint,
-            metadata_json,
-        )
-        if source_file["is_new"]:
-            summary["discovered"] += 1
-
-        if _is_excluded(rel_path, exclude_globs):
-            _record_outcome(
-                tenant_id=tenant,
-                source_file_id=str(source_file["id"]),
-                source_kind=source_kind,
-                path_hash=path_hash,
-                action="skipped_exclude",
-                detail_code="exclude",
-                actor_user_id=actor_user_id,
-            )
-            summary["skipped_exclude"] += 1
-            continue
-
-        if not source_file["changed"] and str(source_file.get("status")) == "ingested":
-            summary["skipped_unchanged"] += 1
-            continue
-
-        max_bytes = _kind_limit(source_kind, cfg)
-        if int(st.st_size) > max_bytes:
-            _record_outcome(
-                tenant_id=tenant,
-                source_file_id=str(source_file["id"]),
-                source_kind=source_kind,
-                path_hash=path_hash,
-                action="skipped_limits",
-                detail_code="oversize",
-                actor_user_id=actor_user_id,
-            )
-            summary["skipped_limits"] += 1
-            continue
-
-        try:
-            data = path.read_bytes()
-        except Exception:
-            _record_outcome(
-                tenant_id=tenant,
-                source_file_id=str(source_file["id"]),
-                source_kind=source_kind,
-                path_hash=path_hash,
-                action="ingest_failed",
-                detail_code="read_error",
-                actor_user_id=actor_user_id,
-            )
-            summary["failed"] += 1
-            summary["ok"] = False
-            continue
-
-        action = "ingest_ok"
-        detail_code = "ok"
-        try:
-            ingest_one(
+            path_hash = hmac_path_hash(str(path))
+            fingerprint = _fingerprint(path, st)
+            metadata = extract_filename_metadata(rel_path)
+            metadata_json = _metadata_json(metadata)
+            source_file = _touch_source_file(
                 tenant,
                 source_kind,
-                data,
-                metadata_min={
-                    "path": str(path),
-                    "path_hash": path_hash,
-                    "file_name": path.name,
-                    "rel_path": rel_path,
-                },
+                path_hash,
+                fingerprint,
+                metadata_json,
+            )
+            if source_file["is_new"]:
+                summary["discovered"] += 1
+
+            if _is_excluded(rel_path, exclude_globs):
+                _record_outcome(
+                    tenant_id=tenant,
+                    source_file_id=str(source_file["id"]),
+                    source_kind=source_kind,
+                    path_hash=path_hash,
+                    action="skipped_exclude",
+                    detail_code="exclude",
+                    actor_user_id=actor_user_id,
+                )
+                summary["skipped_exclude"] += 1
+                continue
+
+            if (
+                not source_file["changed"]
+                and str(source_file.get("status")) == "ingested"
+            ):
+                summary["skipped_unchanged"] += 1
+                continue
+
+            max_bytes = _kind_limit(source_kind, cfg)
+            if int(st.st_size) > max_bytes:
+                _record_outcome(
+                    tenant_id=tenant,
+                    source_file_id=str(source_file["id"]),
+                    source_kind=source_kind,
+                    path_hash=path_hash,
+                    action="skipped_limits",
+                    detail_code="oversize",
+                    actor_user_id=actor_user_id,
+                )
+                summary["skipped_limits"] += 1
+                continue
+
+            try:
+                data = path.read_bytes()
+            except Exception:
+                _record_outcome(
+                    tenant_id=tenant,
+                    source_file_id=str(source_file["id"]),
+                    source_kind=source_kind,
+                    path_hash=path_hash,
+                    action="ingest_failed",
+                    detail_code="read_error",
+                    actor_user_id=actor_user_id,
+                )
+                summary["failed"] += 1
+                summary["ok"] = False
+                continue
+
+            action = "ingest_ok"
+            detail_code = "ok"
+            try:
+                ingest_one(
+                    tenant,
+                    source_kind,
+                    data,
+                    metadata_min={
+                        "path": str(path),
+                        "path_hash": path_hash,
+                        "file_name": path.name,
+                        "rel_path": rel_path,
+                    },
+                    actor_user_id=actor_user_id,
+                )
+            except Exception as exc:
+                action, detail_code = _classify_exc(exc)
+
+            _record_outcome(
+                tenant_id=tenant,
+                source_file_id=str(source_file["id"]),
+                source_kind=source_kind,
+                path_hash=path_hash,
+                action=action,
+                detail_code=detail_code,
                 actor_user_id=actor_user_id,
             )
-        except Exception as exc:
-            action, detail_code = _classify_exc(exc)
 
-        _record_outcome(
-            tenant_id=tenant,
-            source_file_id=str(source_file["id"]),
-            source_kind=source_kind,
-            path_hash=path_hash,
-            action=action,
-            detail_code=detail_code,
-            actor_user_id=actor_user_id,
-        )
-
-        if action == "ingest_ok":
-            summary["ingested_ok"] += 1
-        elif action == "skipped_policy":
-            summary["skipped_policy"] += 1
-        elif action == "skipped_limits":
-            summary["skipped_limits"] += 1
-        elif action == "skipped_read_only":
-            summary["skipped_read_only"] += 1
-        elif action.startswith("skipped"):
-            summary["skipped_unknown"] += 1
-        else:
-            summary["failed"] += 1
-            summary["ok"] = False
+            if action == "ingest_ok":
+                summary["ingested_ok"] += 1
+            elif action == "skipped_policy":
+                summary["skipped_policy"] += 1
+            elif action == "skipped_limits":
+                summary["skipped_limits"] += 1
+            elif action == "skipped_read_only":
+                summary["skipped_read_only"] += 1
+            elif action.startswith("skipped"):
+                summary["skipped_unknown"] += 1
+            else:
+                summary["failed"] += 1
+                summary["ok"] = False
+    except Exception as exc:
+        summary["ok"] = False
+        summary["failed"] = int(summary.get("failed") or 0) + 1
+        summary["reason"] = "error"
+        summary["error_code"] = type(exc).__name__
+        summary["duration_ms"] = int(round((time.monotonic() - started) * 1000))
+        _record_history("error", type(exc).__name__)
+        return summary
 
     summary["duration_ms"] = int(round((time.monotonic() - started) * 1000))
+    status = "ok"
+    if summary.get("max_files_reached") or summary.get("budget_exhausted"):
+        status = "aborted"
+    if not summary.get("ok"):
+        status = "error"
+    _record_history(status, str(summary.get("reason") or ""))
     return summary

@@ -1,0 +1,25 @@
+<div class="space-y-4">
+  {% if read_only %}
+  <div class="rounded-xl border px-3 py-2 text-sm" style="border-color:#f59e0b;background:#fffbeb;color:#92400e;">
+    Read-only mode: Maintenance-Aktionen sind deaktiviert.
+  </div>
+  {% endif %}
+
+  <div class="flex items-center justify-between gap-2">
+    <h1 class="text-xl font-bold">Autonomy Health</h1>
+    <div class="flex items-center gap-2">
+      <form method="post" action="/autonomy/health/backup">
+        <button class="btn-outline rounded-xl px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Backup jetzt</button>
+      </form>
+      <form method="post" action="/autonomy/health/rotate-logs">
+        <button class="btn-outline rounded-xl px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Logs rotieren</button>
+      </form>
+      <form method="post" action="/autonomy/health/smoke-test">
+        <button class="btn-outline rounded-xl px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Smoke-Test</button>
+      </form>
+    </div>
+  </div>
+
+  {% include "autonomy/partials/_health_status.html" %}
+  {% include "autonomy/partials/_scan_history_table.html" %}
+</div>

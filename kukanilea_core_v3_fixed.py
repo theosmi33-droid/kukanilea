@@ -803,6 +803,42 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
     )
     _add_column_if_missing(con, "source_watch_config", "exclude_globs", "TEXT")
     _add_column_if_missing(con, "source_files", "metadata_json", "TEXT")
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS autonomy_maintenance_status (
+          tenant_id TEXT PRIMARY KEY,
+          last_backup_at TEXT,
+          last_backup_size_bytes INTEGER,
+          last_backup_verified INTEGER,
+          last_log_rotation_at TEXT,
+          last_smoke_test_at TEXT,
+          last_smoke_test_result TEXT,
+          config_json TEXT,
+          updated_at TEXT NOT NULL
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS autonomy_scan_history (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          finished_at TEXT,
+          status TEXT NOT NULL,
+          files_scanned INTEGER DEFAULT 0,
+          files_ingested INTEGER DEFAULT 0,
+          files_skipped_dedup INTEGER DEFAULT 0,
+          files_skipped_exclude INTEGER DEFAULT 0,
+          files_failed INTEGER DEFAULT 0,
+          error_summary TEXT,
+          created_at TEXT NOT NULL
+        );
+        """
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_scan_history_tenant_start ON autonomy_scan_history(tenant_id, started_at DESC);"
+    )
 
     con.execute(
         """
