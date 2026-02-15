@@ -120,6 +120,15 @@ from app.lead_intake import (
 from app.lead_intake.core import ConflictError
 from app.lead_intake.guard import require_lead_access
 from app.security_ua_hash import ua_hmac_sha256_hex
+from app.tags import (
+    tag_assign,
+    tag_create,
+    tag_delete,
+    tag_list,
+    tag_unassign,
+    tag_update,
+    tags_for_entities,
+)
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
@@ -4475,6 +4484,27 @@ def _knowledge_error(code: str, message: str, status: int = 400):
     )
 
 
+def _tags_error(code: str, message: str, status: int = 400):
+    if request.is_json or request.path.startswith("/api/"):
+        return json_error(code, message, status=status)
+    if _is_htmx():
+        return (
+            render_template(
+                "tags/partials/_errors.html",
+                message=message,
+                kind="error",
+            ),
+            status,
+        )
+    return (
+        _render_base(
+            f'<div class="card p-4"><h2 class="text-lg font-semibold">Tags</h2><p class="muted mt-2">{message}</p></div>',
+            active_tab="knowledge",
+        ),
+        status,
+    )
+
+
 @bp.get("/knowledge")
 @login_required
 def knowledge_search_page():
@@ -4504,12 +4534,20 @@ def knowledge_search_page():
         except ValueError:
             results = []
 
+    all_tags = tag_list(tenant_id, limit=200, offset=0, include_usage=False)
+    chunk_ids = [str(r.get("chunk_id") or "") for r in results if r.get("chunk_id")]
+    entity_tags = (
+        tags_for_entities(tenant_id, "knowledge_chunk", chunk_ids) if chunk_ids else {}
+    )
+
     content = render_template(
         "knowledge/search.html",
         q=q,
         source_type=source_type or "",
         owner_only=owner_only,
         results=results,
+        tags_by_entity=entity_tags,
+        all_tags=all_tags,
         read_only=bool(current_app.config.get("READ_ONLY", False)),
     )
     return _render_base(content, active_tab="knowledge")
@@ -4544,7 +4582,202 @@ def knowledge_results_partial():
         except ValueError:
             results = []
 
-    return render_template("knowledge/partials/_results.html", results=results)
+    all_tags = tag_list(tenant_id, limit=200, offset=0, include_usage=False)
+    chunk_ids = [str(r.get("chunk_id") or "") for r in results if r.get("chunk_id")]
+    entity_tags = (
+        tags_for_entities(tenant_id, "knowledge_chunk", chunk_ids) if chunk_ids else {}
+    )
+
+    return render_template(
+        "knowledge/partials/_results.html",
+        results=results,
+        tags_by_entity=entity_tags,
+        all_tags=all_tags,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+
+
+@bp.get("/tags")
+@login_required
+def tags_page():
+    page = _clamp_page(request.args.get("page"))
+    page_size = _clamp_page_size(request.args.get("page_size"), default=50)
+    if page_size > 200:
+        page_size = 200
+    offset = (page - 1) * page_size
+    rows = tag_list(
+        current_tenant(),
+        limit=page_size,
+        offset=offset,
+        include_usage=True,
+    )
+    content = render_template(
+        "tags/list.html",
+        tags=rows,
+        page=page,
+        page_size=page_size,
+        has_more=(len(rows) == page_size),
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.post("/tags/create")
+@login_required
+@require_role("OPERATOR")
+def tags_create_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    try:
+        row = tag_create(
+            current_tenant(),
+            name=((payload.get("name") if payload else "") or ""),
+            color=((payload.get("color") if payload else "") or None),
+            actor_user_id=current_user() or None,
+        )
+    except PermissionError:
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "duplicate":
+            return _tags_error("duplicate", "Tag existiert bereits.", status=409)
+        if code == "limit_exceeded":
+            return _tags_error("limit_exceeded", "Tag-Limit erreicht.", status=400)
+        return _tags_error("validation_error", "Tag konnte nicht erstellt werden.", 400)
+
+    if _is_htmx():
+        return render_template("tags/partials/_tag_row.html", tag=row)
+    if not request.is_json:
+        return redirect(url_for("web.tags_page"))
+    return jsonify({"ok": True, "tag": row})
+
+
+@bp.post("/tags/<tag_id>/update")
+@login_required
+@require_role("OPERATOR")
+def tags_update_action(tag_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    try:
+        row = tag_update(
+            current_tenant(),
+            tag_id=tag_id,
+            name=(payload.get("name") if payload and "name" in payload else None),
+            color=(payload.get("color") if payload and "color" in payload else None),
+            actor_user_id=current_user() or None,
+        )
+    except PermissionError:
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _tags_error("not_found", "Tag nicht gefunden.", status=404)
+        if code == "duplicate":
+            return _tags_error("duplicate", "Tag existiert bereits.", status=409)
+        return _tags_error(
+            "validation_error", "Tag konnte nicht aktualisiert werden.", 400
+        )
+
+    if _is_htmx():
+        return render_template("tags/partials/_tag_row.html", tag=row)
+    if not request.is_json:
+        return redirect(url_for("web.tags_page"))
+    return jsonify({"ok": True, "tag": row})
+
+
+@bp.post("/tags/<tag_id>/delete")
+@login_required
+@require_role("OPERATOR")
+def tags_delete_action(tag_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    try:
+        tag_delete(current_tenant(), tag_id, actor_user_id=current_user() or None)
+    except PermissionError:
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _tags_error("not_found", "Tag nicht gefunden.", status=404)
+        return _tags_error("validation_error", "Tag konnte nicht gelöscht werden.", 400)
+
+    if _is_htmx():
+        return ""
+    if not request.is_json:
+        return redirect(url_for("web.tags_page"))
+    return jsonify({"ok": True})
+
+
+@bp.post("/tags/assign")
+@login_required
+@require_role("OPERATOR")
+def tags_assign_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    try:
+        row = tag_assign(
+            current_tenant(),
+            entity_type=((payload.get("entity_type") if payload else "") or ""),
+            entity_id=((payload.get("entity_id") if payload else "") or ""),
+            tag_id=((payload.get("tag_id") if payload else "") or ""),
+            actor_user_id=current_user() or None,
+        )
+    except PermissionError:
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "duplicate":
+            return _tags_error("duplicate", "Tag bereits zugeordnet.", status=409)
+        if code == "not_found":
+            return _tags_error("not_found", "Tag nicht gefunden.", status=404)
+        if code == "limit_exceeded":
+            return _tags_error(
+                "limit_exceeded", "Zu viele Tags für dieses Objekt.", 400
+            )
+        return _tags_error(
+            "validation_error", "Tag konnte nicht zugeordnet werden.", 400
+        )
+
+    next_url = (payload.get("next") if payload else "") or ""
+    if next_url and not str(next_url).startswith("/"):
+        next_url = ""
+    if next_url and not request.is_json:
+        return redirect(str(next_url))
+    return jsonify({"ok": True, "assignment": row})
+
+
+@bp.post("/tags/unassign")
+@login_required
+@require_role("OPERATOR")
+def tags_unassign_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    try:
+        tag_unassign(
+            current_tenant(),
+            entity_type=((payload.get("entity_type") if payload else "") or ""),
+            entity_id=((payload.get("entity_id") if payload else "") or ""),
+            tag_id=((payload.get("tag_id") if payload else "") or ""),
+            actor_user_id=current_user() or None,
+        )
+    except PermissionError:
+        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _tags_error("not_found", "Zuordnung nicht gefunden.", status=404)
+        return _tags_error("validation_error", "Tag konnte nicht entfernt werden.", 400)
+
+    next_url = (payload.get("next") if payload else "") or ""
+    if next_url and not str(next_url).startswith("/"):
+        next_url = ""
+    if next_url and not request.is_json:
+        return redirect(str(next_url))
+    return jsonify({"ok": True})
 
 
 @bp.get("/knowledge/notes")

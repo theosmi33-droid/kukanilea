@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -34,6 +36,26 @@ DEFAULT_BUDGET_MS = 1500
 MAX_FILES_HARD = 2_000
 MAX_BYTES_HARD = 20 * 1024 * 1024
 MAX_DIR_LEN = 1024
+MAX_EXCLUDE_PATTERNS = 50
+MAX_EXCLUDE_PATTERN_LEN = 128
+MAX_METADATA_JSON_BYTES = 1024
+
+DEFAULT_EXCLUDE_GLOBS = [
+    "**/.git/**",
+    "**/__pycache__/**",
+    "**/*.tmp",
+    "**/*.part",
+    "**/*.swp",
+    "**/.DS_Store",
+]
+
+DOCTYPE_KEYWORDS = {
+    "invoice": ("rechnung", "invoice"),
+    "offer": ("angebot", "quote", "offer"),
+    "reminder": ("mahnung", "reminder"),
+    "contract": ("vertrag", "contract"),
+    "report": ("bericht", "report"),
+}
 
 
 class ConfigError(RuntimeError):
@@ -89,12 +111,51 @@ def _clean_dir(value: str | None) -> str | None:
     return v
 
 
+def _clean_pattern(pattern: str) -> str:
+    text = str(pattern or "").replace("\x00", "").replace("\r", "").replace("\n", "")
+    text = text.strip()
+    if not text:
+        raise ValueError("validation_error")
+    if len(text) > MAX_EXCLUDE_PATTERN_LEN:
+        raise ValueError("validation_error")
+    return text
+
+
+def _serialize_exclude_globs(patterns: list[str]) -> str:
+    cleaned: list[str] = []
+    for raw in patterns:
+        cleaned.append(_clean_pattern(raw))
+    dedup = sorted(set(cleaned))[:MAX_EXCLUDE_PATTERNS]
+    return json.dumps(dedup, separators=(",", ":"), ensure_ascii=False)
+
+
+def load_exclude_globs(raw: Any) -> list[str]:
+    if not raw:
+        return list(DEFAULT_EXCLUDE_GLOBS)
+    try:
+        data = json.loads(str(raw))
+    except Exception:
+        return list(DEFAULT_EXCLUDE_GLOBS)
+    if not isinstance(data, list):
+        return list(DEFAULT_EXCLUDE_GLOBS)
+    out: list[str] = []
+    for item in data[:MAX_EXCLUDE_PATTERNS]:
+        if not isinstance(item, str):
+            return list(DEFAULT_EXCLUDE_GLOBS)
+        try:
+            out.append(_clean_pattern(item))
+        except ValueError:
+            return list(DEFAULT_EXCLUDE_GLOBS)
+    return out or list(DEFAULT_EXCLUDE_GLOBS)
+
+
 def _config_defaults(tenant_id: str) -> dict[str, Any]:
     return {
         "tenant_id": tenant_id,
         "documents_inbox_dir": None,
         "email_inbox_dir": None,
         "calendar_inbox_dir": None,
+        "exclude_globs": json.dumps(DEFAULT_EXCLUDE_GLOBS, separators=(",", ":")),
         "enabled": 1,
         "max_bytes_per_file": DEFAULT_MAX_BYTES,
         "max_files_per_scan": DEFAULT_MAX_FILES,
@@ -109,7 +170,7 @@ def source_watch_config_get(
     row = _read_row(
         """
         SELECT tenant_id, documents_inbox_dir, email_inbox_dir, calendar_inbox_dir,
-               enabled, max_bytes_per_file, max_files_per_scan, updated_at
+               exclude_globs, enabled, max_bytes_per_file, max_files_per_scan, updated_at
         FROM source_watch_config
         WHERE tenant_id=?
         LIMIT 1
@@ -127,14 +188,15 @@ def source_watch_config_get(
             """
             INSERT OR IGNORE INTO source_watch_config(
               tenant_id, documents_inbox_dir, email_inbox_dir, calendar_inbox_dir,
-              enabled, max_bytes_per_file, max_files_per_scan, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?)
+              exclude_globs, enabled, max_bytes_per_file, max_files_per_scan, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?)
             """,
             (
                 tenant,
                 defaults["documents_inbox_dir"],
                 defaults["email_inbox_dir"],
                 defaults["calendar_inbox_dir"],
+                defaults["exclude_globs"],
                 int(defaults["enabled"]),
                 int(defaults["max_bytes_per_file"]),
                 int(defaults["max_files_per_scan"]),
@@ -144,7 +206,7 @@ def source_watch_config_get(
         row2 = con.execute(
             """
             SELECT tenant_id, documents_inbox_dir, email_inbox_dir, calendar_inbox_dir,
-                   enabled, max_bytes_per_file, max_files_per_scan, updated_at
+                   exclude_globs, enabled, max_bytes_per_file, max_files_per_scan, updated_at
             FROM source_watch_config
             WHERE tenant_id=?
             LIMIT 1
@@ -162,6 +224,7 @@ def source_watch_config_update(
     documents_inbox_dir: str | None = None,
     email_inbox_dir: str | None = None,
     calendar_inbox_dir: str | None = None,
+    exclude_globs: list[str] | None = None,
     enabled: bool | None = None,
     max_bytes_per_file: int | None = None,
     max_files_per_scan: int | None = None,
@@ -179,6 +242,8 @@ def source_watch_config_update(
         next_row["email_inbox_dir"] = _clean_dir(email_inbox_dir)
     if calendar_inbox_dir is not None:
         next_row["calendar_inbox_dir"] = _clean_dir(calendar_inbox_dir)
+    if exclude_globs is not None:
+        next_row["exclude_globs"] = _serialize_exclude_globs(exclude_globs)
     if enabled is not None:
         next_row["enabled"] = 1 if bool(enabled) else 0
     if max_bytes_per_file is not None:
@@ -194,14 +259,16 @@ def source_watch_config_update(
             """
             INSERT OR REPLACE INTO source_watch_config(
               tenant_id, documents_inbox_dir, email_inbox_dir, calendar_inbox_dir,
-              enabled, max_bytes_per_file, max_files_per_scan, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?)
+              exclude_globs, enabled, max_bytes_per_file, max_files_per_scan, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?)
             """,
             (
                 tenant,
                 next_row.get("documents_inbox_dir"),
                 next_row.get("email_inbox_dir"),
                 next_row.get("calendar_inbox_dir"),
+                next_row.get("exclude_globs")
+                or json.dumps(DEFAULT_EXCLUDE_GLOBS, separators=(",", ":")),
                 int(next_row.get("enabled", 1)),
                 int(next_row.get("max_bytes_per_file", DEFAULT_MAX_BYTES)),
                 int(next_row.get("max_files_per_scan", DEFAULT_MAX_FILES)),
@@ -211,7 +278,7 @@ def source_watch_config_update(
         row = con.execute(
             """
             SELECT tenant_id, documents_inbox_dir, email_inbox_dir, calendar_inbox_dir,
-                   enabled, max_bytes_per_file, max_files_per_scan, updated_at
+                   exclude_globs, enabled, max_bytes_per_file, max_files_per_scan, updated_at
             FROM source_watch_config
             WHERE tenant_id=?
             LIMIT 1
@@ -302,6 +369,119 @@ def _fingerprint(path: Path, st: os.stat_result) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _parse_date_token(token: str) -> str | None:
+    token = token.strip()
+    patterns = [
+        (r"^\d{4}-\d{2}-\d{2}$", "%Y-%m-%d"),
+        (r"^\d{8}$", "%Y%m%d"),
+        (r"^\d{2}-\d{2}-\d{4}$", "%d-%m-%Y"),
+        (r"^\d{2}\.\d{2}\.\d{4}$", "%d.%m.%Y"),
+    ]
+    for pattern, fmt in patterns:
+        if re.match(pattern, token):
+            try:
+                dt = datetime.strptime(token, fmt)
+                return dt.strftime("%Y-%m-%d")
+            except Exception:
+                return None
+    return None
+
+
+def _extract_date_iso(name: str) -> str | None:
+    candidates = re.findall(
+        r"\d{4}-\d{2}-\d{2}|\d{8}|\d{2}-\d{2}-\d{4}|\d{2}\.\d{2}\.\d{4}", name
+    )
+    if not candidates:
+        return None
+    first = _parse_date_token(candidates[0])
+    if not first:
+        return None
+    for c in candidates[1:]:
+        parsed = _parse_date_token(c)
+        if parsed and parsed != first:
+            return None
+    return first
+
+
+def _extract_doctype(stem: str) -> str:
+    lower = stem.casefold()
+    for doctype, keywords in DOCTYPE_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in lower:
+                return doctype
+    return "other"
+
+
+def _extract_customer_token(text: str) -> str | None:
+    match = re.search(
+        r"(?:^|[^A-Z0-9])(KD|KUNDE|CUST)[-_]?(\d{2,10})(?:$|[^A-Z0-9])",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    prefix = str(match.group(1) or "").upper()
+    digits = str(match.group(2) or "")
+    if not digits:
+        return None
+    return f"{prefix}-{digits}"
+
+
+def extract_filename_metadata(rel_path_posix: str) -> dict[str, Any]:
+    rel = str(rel_path_posix or "").replace("\\", "/").lstrip("/")
+    filename = Path(rel).name
+    stem = Path(filename).stem
+    combined = f"{rel} {stem}".strip()
+
+    metadata: dict[str, Any] = {
+        "doctype": _extract_doctype(stem),
+    }
+    hints: list[str] = []
+
+    date_iso = _extract_date_iso(combined)
+    if date_iso:
+        metadata["date_iso"] = date_iso
+        hints.append("has_date")
+
+    token = _extract_customer_token(combined)
+    if token:
+        metadata["customer_token"] = token
+        hints.append("has_customer_token")
+
+    if metadata.get("doctype") != "other":
+        hints.append("has_doctype")
+
+    if hints:
+        metadata["hints"] = hints[:5]
+    return metadata
+
+
+def _metadata_json(metadata: dict[str, Any]) -> str:
+    candidate = dict(metadata)
+    data = json.dumps(candidate, separators=(",", ":"), sort_keys=True)
+    while len(data.encode("utf-8")) > MAX_METADATA_JSON_BYTES:
+        if "hints" in candidate:
+            candidate.pop("hints", None)
+        elif "customer_token" in candidate:
+            candidate.pop("customer_token", None)
+        elif "date_iso" in candidate:
+            candidate.pop("date_iso", None)
+        else:
+            return "{}"
+        data = json.dumps(candidate, separators=(",", ":"), sort_keys=True)
+    return data
+
+
+def _is_excluded(rel_path_posix: str, patterns: list[str]) -> bool:
+    rel = str(rel_path_posix or "").replace("\\", "/").lstrip("/")
+    rel_path = Path(rel)
+    rel_prefixed = Path(f"root/{rel}")
+    for pattern in patterns:
+        if rel_path.match(pattern) or rel_prefixed.match(pattern):
+            return True
+    return False
+
+
 def _doc_limit(cfg: dict[str, Any]) -> int:
     env_val = os.environ.get("KUKANILEA_AUTONOMY_DOC_MAX_BYTES", "")
     try:
@@ -326,6 +506,7 @@ def _touch_source_file(
     source_kind: str,
     path_hash: str,
     fingerprint: str,
+    metadata_json: str,
 ) -> dict[str, Any]:
     now = _now_iso()
 
@@ -345,8 +526,8 @@ def _touch_source_file(
                 """
                 INSERT INTO source_files(
                   id, tenant_id, source_kind, path_hash, fingerprint, status,
-                  last_seen_at, first_seen_at, last_ingested_at, last_error_code
-                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                  metadata_json, last_seen_at, first_seen_at, last_ingested_at, last_error_code
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     source_file_id,
@@ -355,6 +536,7 @@ def _touch_source_file(
                     path_hash,
                     fingerprint,
                     "new",
+                    metadata_json,
                     now,
                     now,
                     None,
@@ -377,10 +559,18 @@ def _touch_source_file(
         con.execute(
             """
             UPDATE source_files
-            SET fingerprint=?, status=?, last_seen_at=?
+            SET fingerprint=?, status=?, metadata_json=?, last_seen_at=?
             WHERE tenant_id=? AND source_kind=? AND path_hash=?
             """,
-            (fingerprint, next_status, now, tenant_id, source_kind, path_hash),
+            (
+                fingerprint,
+                next_status,
+                metadata_json,
+                now,
+                tenant_id,
+                source_kind,
+                path_hash,
+            ),
         )
         return {
             "id": source_file_id,
@@ -548,8 +738,14 @@ def _classify_exc(exc: Exception) -> tuple[str, str]:
     return "ingest_failed", "ingest_exception"
 
 
-def _collect_candidates(cfg: dict[str, Any]) -> list[tuple[str, Path]]:
-    out: list[tuple[str, Path]] = []
+def _collect_candidates(cfg: dict[str, Any]) -> list[tuple[str, Path, str]]:
+    out: list[tuple[str, Path, str]] = []
+
+    def _rel_posix(root: Path, fp: Path) -> str:
+        try:
+            return fp.relative_to(root).as_posix()
+        except Exception:
+            return fp.name
 
     docs_dir = _clean_dir(cfg.get("documents_inbox_dir"))
     email_dir = _clean_dir(cfg.get("email_inbox_dir"))
@@ -559,25 +755,25 @@ def _collect_candidates(cfg: dict[str, Any]) -> list[tuple[str, Path]]:
         root = Path(docs_dir)
         for fp in _iter_files(root):
             if fp.suffix.lower() in DOCUMENT_EXTS:
-                out.append(("document", fp))
+                out.append(("document", fp, _rel_posix(root, fp)))
 
     if email_dir:
         root = Path(email_dir)
         files = _maildir_files(root) if _looks_maildir(root) else _iter_files(root)
         for fp in files:
             if _looks_maildir(root) or fp.suffix.lower() in EMAIL_EXTS:
-                out.append(("email", fp))
+                out.append(("email", fp, _rel_posix(root, fp)))
 
     if cal_dir:
         root = Path(cal_dir)
         for fp in _iter_files(root):
             if fp.suffix.lower() in CALENDAR_EXTS:
-                out.append(("calendar", fp))
+                out.append(("calendar", fp, _rel_posix(root, fp)))
 
-    dedup: dict[tuple[str, str], tuple[str, Path]] = {}
-    for kind, path in out:
+    dedup: dict[tuple[str, str], tuple[str, Path, str]] = {}
+    for kind, path, rel in out:
         key = (kind, _normalize_path(str(path)))
-        dedup[key] = (kind, path)
+        dedup[key] = (kind, path, rel)
     return [dedup[k] for k in sorted(dedup.keys(), key=lambda x: (x[0], x[1]))]
 
 
@@ -600,6 +796,7 @@ def scan_sources_once(
         "skipped_policy": 0,
         "skipped_limits": 0,
         "skipped_read_only": 0,
+        "skipped_exclude": 0,
         "skipped_unknown": 0,
         "skipped_unchanged": 0,
         "budget_exhausted": False,
@@ -622,9 +819,10 @@ def scan_sources_once(
     max_files = max(
         1, min(int(cfg.get("max_files_per_scan") or DEFAULT_MAX_FILES), MAX_FILES_HARD)
     )
+    exclude_globs = load_exclude_globs(cfg.get("exclude_globs"))
     candidates = _collect_candidates(cfg)
 
-    for source_kind, path in candidates:
+    for source_kind, path, rel_path in candidates:
         if summary["scanned"] >= max_files:
             summary["max_files_reached"] = True
             break
@@ -643,9 +841,30 @@ def scan_sources_once(
 
         path_hash = hmac_path_hash(str(path))
         fingerprint = _fingerprint(path, st)
-        source_file = _touch_source_file(tenant, source_kind, path_hash, fingerprint)
+        metadata = extract_filename_metadata(rel_path)
+        metadata_json = _metadata_json(metadata)
+        source_file = _touch_source_file(
+            tenant,
+            source_kind,
+            path_hash,
+            fingerprint,
+            metadata_json,
+        )
         if source_file["is_new"]:
             summary["discovered"] += 1
+
+        if _is_excluded(rel_path, exclude_globs):
+            _record_outcome(
+                tenant_id=tenant,
+                source_file_id=str(source_file["id"]),
+                source_kind=source_kind,
+                path_hash=path_hash,
+                action="skipped_exclude",
+                detail_code="exclude",
+                actor_user_id=actor_user_id,
+            )
+            summary["skipped_exclude"] += 1
+            continue
 
         if not source_file["changed"] and str(source_file.get("status")) == "ingested":
             summary["skipped_unchanged"] += 1
@@ -692,6 +911,7 @@ def scan_sources_once(
                     "path": str(path),
                     "path_hash": path_hash,
                     "file_name": path.name,
+                    "rel_path": rel_path,
                 },
                 actor_user_id=actor_user_id,
             )
