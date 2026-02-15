@@ -25,11 +25,17 @@ FORBIDDEN_PATTERNS = [
 
 
 def test_autonomy_sources_do_not_use_forbidden_exec_or_network_imports() -> None:
-    root = Path(__file__).resolve().parents[1] / "app" / "autonomy"
-    assert root.exists()
-    for py in sorted(root.glob("*.py")):
-        content = py.read_text(encoding="utf-8")
-        for pat in FORBIDDEN_PATTERNS:
-            assert not re.search(pat, content, flags=re.MULTILINE), (
-                f"{pat} found in {py.name}"
-            )
+    roots = [
+        Path(__file__).resolve().parents[1] / "app" / "autonomy",
+        Path(__file__).resolve().parents[1] / "app" / "tags",
+    ]
+    for root in roots:
+        assert root.exists()
+        py_files = sorted(root.glob("*.py"))
+        assert py_files
+        for py in py_files:
+            content = py.read_text(encoding="utf-8")
+            for pat in FORBIDDEN_PATTERNS:
+                assert not re.search(pat, content, flags=re.MULTILINE), (
+                    f"{pat} found in {py.name}"
+                )

@@ -753,6 +753,7 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
           documents_inbox_dir TEXT,
           email_inbox_dir TEXT,
           calendar_inbox_dir TEXT,
+          exclude_globs TEXT,
           enabled INTEGER NOT NULL DEFAULT 1,
           max_bytes_per_file INTEGER NOT NULL DEFAULT 262144,
           max_files_per_scan INTEGER NOT NULL DEFAULT 200,
@@ -768,6 +769,7 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
           source_kind TEXT NOT NULL,
           path_hash TEXT NOT NULL,
           fingerprint TEXT NOT NULL,
+          metadata_json TEXT,
           status TEXT NOT NULL,
           last_seen_at TEXT NOT NULL,
           first_seen_at TEXT NOT NULL,
@@ -798,6 +800,46 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
     )
     con.execute(
         "CREATE INDEX IF NOT EXISTS idx_source_ingest_log_tenant_time ON source_ingest_log(tenant_id, created_at);"
+    )
+    _add_column_if_missing(con, "source_watch_config", "exclude_globs", "TEXT")
+    _add_column_if_missing(con, "source_files", "metadata_json", "TEXT")
+
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tags (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          name_norm TEXT NOT NULL,
+          color TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(tenant_id, name_norm)
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tag_assignments (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          tag_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+          UNIQUE(tenant_id, entity_type, entity_id, tag_id)
+        );
+        """
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tags_tenant_name_norm ON tags(tenant_id, name_norm);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tag_assignments_tenant_entity ON tag_assignments(tenant_id, entity_type, entity_id);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tag_assignments_tenant_tag ON tag_assignments(tenant_id, tag_id);"
     )
 
 
