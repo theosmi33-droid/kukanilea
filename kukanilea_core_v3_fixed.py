@@ -767,6 +767,7 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
           id TEXT PRIMARY KEY,
           tenant_id TEXT NOT NULL,
           source_kind TEXT NOT NULL,
+          basename TEXT,
           path_hash TEXT NOT NULL,
           fingerprint TEXT NOT NULL,
           metadata_json TEXT,
@@ -803,6 +804,37 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
     )
     _add_column_if_missing(con, "source_watch_config", "exclude_globs", "TEXT")
     _add_column_if_missing(con, "source_files", "metadata_json", "TEXT")
+    _add_column_if_missing(con, "source_files", "basename", "TEXT")
+    _add_column_if_missing(con, "source_files", "duplicate_of_file_id", "TEXT")
+    _add_column_if_missing(con, "source_files", "doctype_token", "TEXT")
+    _add_column_if_missing(con, "source_files", "correspondent_token", "TEXT")
+    _add_column_if_missing(con, "source_files", "autotag_applied_at", "TEXT")
+    _add_column_if_missing(con, "source_files", "sha256", "TEXT")
+    _add_column_if_missing(con, "source_files", "size_bytes", "INTEGER")
+    _add_column_if_missing(con, "source_files", "knowledge_chunk_id", "TEXT")
+
+    _add_column_if_missing(con, "knowledge_chunks", "doctype_token", "TEXT")
+    _add_column_if_missing(con, "knowledge_chunks", "correspondent_token", "TEXT")
+
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS auto_tagging_rules (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          priority INTEGER NOT NULL DEFAULT 0,
+          condition_json TEXT NOT NULL,
+          action_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(tenant_id, name)
+        );
+        """
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_autotag_rules_tenant_enabled_prio ON auto_tagging_rules(tenant_id, enabled, priority);"
+    )
 
     con.execute(
         """
