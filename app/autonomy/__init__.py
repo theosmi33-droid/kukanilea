@@ -1,3 +1,11 @@
+from .autotag import (
+    autotag_apply_for_source_file,
+    autotag_rule_create,
+    autotag_rule_delete,
+    autotag_rule_toggle,
+    autotag_rule_update,
+    autotag_rules_list,
+)
 from .maintenance import (
     get_health_overview,
     record_scan_run,
@@ -18,6 +26,12 @@ from .source_scan import (
 
 __all__ = [
     "ConfigError",
+    "autotag_rule_create",
+    "autotag_rule_update",
+    "autotag_rule_toggle",
+    "autotag_rule_delete",
+    "autotag_rules_list",
+    "autotag_apply_for_source_file",
     "hmac_path_hash",
     "scan_sources_once",
     "source_watch_config_get",

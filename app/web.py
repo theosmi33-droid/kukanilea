@@ -32,6 +32,7 @@ import base64
 import hashlib
 import importlib
 import importlib.util
+import json
 import os
 import re
 import sqlite3
@@ -69,6 +70,10 @@ from app.automation import (
     get_or_build_daily_insights,
 )
 from app.autonomy import (
+    autotag_rule_create,
+    autotag_rule_delete,
+    autotag_rule_toggle,
+    autotag_rules_list,
     get_health_overview,
     rotate_logs,
     run_backup,
@@ -4612,6 +4617,135 @@ def _tags_error(code: str, message: str, status: int = 400):
     )
 
 
+def _autotag_error(code: str, message: str, status: int = 400):
+    if request.is_json or request.path.startswith("/api/"):
+        return json_error(code, message, status=status)
+    if _is_htmx():
+        return (
+            render_template(
+                "autonomy/partials/_errors.html",
+                message=message,
+                kind="error",
+            ),
+            status,
+        )
+    return (
+        _render_base(
+            f'<div class="card p-4"><h2 class="text-lg font-semibold">Auto-Tagging</h2><p class="muted mt-2">{message}</p></div>',
+            active_tab="knowledge",
+        ),
+        status,
+    )
+
+
+def _build_autotag_form_payload(
+    form,
+) -> tuple[str, int, dict[str, Any], list[dict[str, Any]]]:
+    def _values(key: str) -> list[str]:
+        if hasattr(form, "getlist"):
+            return [str(v or "") for v in form.getlist(key)]
+        raw = form.get(key) if isinstance(form, dict) else None
+        if raw is None:
+            return []
+        if isinstance(raw, list):
+            return [str(v or "") for v in raw]
+        return [str(raw)]
+
+    name = str((form.get("name") or "")).strip()
+    try:
+        priority = int(form.get("priority") or 0)
+    except Exception as exc:
+        raise ValueError("validation_error") from exc
+    priority = max(-100, min(priority, 100))
+
+    conds: list[dict[str, Any]] = []
+    filename_glob = str(form.get("filename_glob") or "").strip()
+    if filename_glob:
+        conds.append({"type": "filename_glob", "pattern": filename_glob})
+
+    ext_in = [
+        str(v or "").strip().lower() for v in _values("ext_in") if str(v or "").strip()
+    ]
+    if ext_in:
+        conds.append({"type": "ext_in", "values": ext_in[:10]})
+
+    doctype_token = str(form.get("doctype_token") or "").strip().lower()
+    if doctype_token:
+        conds.append(
+            {
+                "type": "meta_token_in",
+                "key": "doctype",
+                "values": [doctype_token],
+            }
+        )
+
+    if not conds:
+        raise ValueError("validation_error")
+    if len(conds) == 1:
+        condition_obj: dict[str, Any] = conds[0]
+    else:
+        condition_obj = {"all": conds}
+
+    actions: list[dict[str, Any]] = []
+    tag_names = [
+        str(v or "").strip() for v in _values("add_tag") if str(v or "").strip()
+    ]
+    for tag_name in tag_names[:3]:
+        actions.append({"type": "add_tag", "tag_name": tag_name})
+
+    set_doctype_token = str(form.get("set_doctype_token") or "").strip().lower()
+    if set_doctype_token:
+        actions.append({"type": "set_doctype", "token": set_doctype_token})
+
+    set_correspondent_token = (
+        str(form.get("set_correspondent_token") or "").strip().lower()
+    )
+    if set_correspondent_token:
+        actions.append({"type": "set_correspondent", "token": set_correspondent_token})
+
+    if not actions:
+        raise ValueError("validation_error")
+    return name, priority, condition_obj, actions
+
+
+def _autotag_rule_summary(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    cond_types: list[str] = []
+    action_types: list[str] = []
+    try:
+        cond = json.loads(str(item.get("condition_json") or "{}"))
+        acts = json.loads(str(item.get("action_json") or "[]"))
+
+        def _walk_cond(node: Any) -> None:
+            if not isinstance(node, dict):
+                return
+            if "all" in node and isinstance(node["all"], list):
+                for c in node["all"]:
+                    _walk_cond(c)
+                return
+            if "any" in node and isinstance(node["any"], list):
+                for c in node["any"]:
+                    _walk_cond(c)
+                return
+            ctype = str(node.get("type") or "")
+            if ctype:
+                cond_types.append(ctype)
+
+        _walk_cond(cond)
+        if isinstance(acts, list):
+            for action in acts:
+                if isinstance(action, dict):
+                    atype = str(action.get("type") or "")
+                    if atype:
+                        action_types.append(atype)
+    except Exception:
+        pass
+
+    item["condition_types"] = sorted(set(cond_types))
+    item["action_types"] = sorted(set(action_types))
+    return item
+
+
 @bp.get("/knowledge")
 @login_required
 def knowledge_search_page():
@@ -4885,6 +5019,140 @@ def tags_unassign_action():
     if next_url and not request.is_json:
         return redirect(str(next_url))
     return jsonify({"ok": True})
+
+
+@bp.get("/autonomy/autotag/rules")
+@login_required
+@require_role("OPERATOR")
+def autotag_rules_page():
+    tenant_id = current_tenant()
+    rules = [_autotag_rule_summary(r) for r in autotag_rules_list(tenant_id)]
+    all_tags = tag_list(tenant_id, limit=500, offset=0, include_usage=False)
+    content = render_template(
+        "autonomy/autotag_rules.html",
+        rules=rules,
+        all_tags=all_tags,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.get("/autonomy/autotag/rules/new")
+@login_required
+@require_role("OPERATOR")
+def autotag_rule_new_page():
+    tenant_id = current_tenant()
+    all_tags = tag_list(tenant_id, limit=500, offset=0, include_usage=False)
+    content = render_template(
+        "autonomy/autotag_rule_form.html",
+        all_tags=all_tags,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+        defaults={"priority": 0, "enabled": True},
+    )
+    return _render_base(content, active_tab="knowledge")
+
+
+@bp.post("/autonomy/autotag/rules/create")
+@login_required
+@require_role("OPERATOR")
+def autotag_rule_create_action():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    try:
+        name, priority, condition_obj, actions = _build_autotag_form_payload(payload)
+        enabled = str(payload.get("enabled") or "1").strip().lower() not in {
+            "0",
+            "false",
+            "off",
+            "no",
+        }
+        row = autotag_rule_create(
+            current_tenant(),
+            name=name,
+            priority=priority,
+            condition_obj=condition_obj,
+            action_list=actions,
+            actor_user_id=current_user() or None,
+            enabled=enabled,
+        )
+    except PermissionError:
+        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "duplicate":
+            return _autotag_error(
+                "duplicate", "Regelname existiert bereits.", status=409
+            )
+        if code == "limit_exceeded":
+            return _autotag_error("limit_exceeded", "Regellimit erreicht.", status=400)
+        return _autotag_error(
+            "validation_error", "Regel konnte nicht erstellt werden.", status=400
+        )
+
+    if request.is_json:
+        return jsonify({"ok": True, "rule": _autotag_rule_summary(row)})
+    return redirect(url_for("web.autotag_rules_page"))
+
+
+@bp.post("/autonomy/autotag/rules/<rule_id>/toggle")
+@login_required
+@require_role("OPERATOR")
+def autotag_rule_toggle_action(rule_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    enabled_raw = str(payload.get("enabled") or "").strip().lower()
+    enabled = enabled_raw in {"1", "true", "on", "yes"}
+    try:
+        row = autotag_rule_toggle(
+            current_tenant(),
+            rule_id,
+            enabled=enabled,
+            actor_user_id=current_user() or None,
+        )
+    except PermissionError:
+        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _autotag_error("not_found", "Regel nicht gefunden.", status=404)
+        return _autotag_error(
+            "validation_error", "Regel konnte nicht umgeschaltet werden.", status=400
+        )
+
+    if request.is_json:
+        return jsonify({"ok": True, "rule": _autotag_rule_summary(row)})
+    return redirect(url_for("web.autotag_rules_page"))
+
+
+@bp.post("/autonomy/autotag/rules/<rule_id>/delete")
+@login_required
+@require_role("OPERATOR")
+def autotag_rule_delete_action(rule_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
+    try:
+        autotag_rule_delete(
+            current_tenant(), rule_id, actor_user_id=current_user() or None
+        )
+    except PermissionError:
+        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return _autotag_error("not_found", "Regel nicht gefunden.", status=404)
+        return _autotag_error(
+            "validation_error", "Regel konnte nicht gelöscht werden.", status=400
+        )
+
+    if request.is_json:
+        return jsonify({"ok": True})
+    return redirect(url_for("web.autotag_rules_page"))
 
 
 @bp.get("/knowledge/notes")

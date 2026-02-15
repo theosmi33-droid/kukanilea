@@ -56,6 +56,7 @@ DOCTYPE_KEYWORDS = {
     "contract": ("vertrag", "contract"),
     "report": ("bericht", "report"),
 }
+TOKEN_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 
 
 class ConfigError(RuntimeError):
@@ -472,6 +473,21 @@ def _metadata_json(metadata: dict[str, Any]) -> str:
     return data
 
 
+def _sanitize_token_soft(value: str | None) -> str | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+    raw = raw.replace(" ", "-")
+    raw = re.sub(r"[^a-z0-9_-]", "", raw)
+    if not raw:
+        return None
+    if len(raw) > 32:
+        raw = raw[:32]
+    if TOKEN_RE.match(raw):
+        return raw
+    return None
+
+
 def _is_excluded(rel_path_posix: str, patterns: list[str]) -> bool:
     rel = str(rel_path_posix or "").replace("\\", "/").lstrip("/")
     rel_path = Path(rel)
@@ -504,6 +520,7 @@ def _kind_limit(kind: str, cfg: dict[str, Any]) -> int:
 def _touch_source_file(
     tenant_id: str,
     source_kind: str,
+    basename: str,
     path_hash: str,
     fingerprint: str,
     metadata_json: str,
@@ -525,14 +542,15 @@ def _touch_source_file(
             con.execute(
                 """
                 INSERT INTO source_files(
-                  id, tenant_id, source_kind, path_hash, fingerprint, status,
+                  id, tenant_id, source_kind, basename, path_hash, fingerprint, status,
                   metadata_json, last_seen_at, first_seen_at, last_ingested_at, last_error_code
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     source_file_id,
                     tenant_id,
                     source_kind,
+                    basename,
                     path_hash,
                     fingerprint,
                     "new",
@@ -559,10 +577,11 @@ def _touch_source_file(
         con.execute(
             """
             UPDATE source_files
-            SET fingerprint=?, status=?, metadata_json=?, last_seen_at=?
+            SET basename=?, fingerprint=?, status=?, metadata_json=?, last_seen_at=?
             WHERE tenant_id=? AND source_kind=? AND path_hash=?
             """,
             (
+                basename,
                 fingerprint,
                 next_status,
                 metadata_json,
@@ -657,6 +676,217 @@ def _record_outcome(
             },
             con=con,
         )
+
+    _run_write_txn(_tx)
+
+
+def _set_source_file_content_meta(
+    *,
+    tenant_id: str,
+    source_file_id: str,
+    sha256_hex: str,
+    size_bytes: int,
+    doctype_token: str | None,
+    correspondent_token: str | None,
+) -> None:
+    def _tx(con: sqlite3.Connection) -> None:
+        con.execute(
+            """
+            UPDATE source_files
+            SET sha256=?, size_bytes=?, doctype_token=COALESCE(doctype_token, ?),
+                correspondent_token=COALESCE(correspondent_token, ?)
+            WHERE tenant_id=? AND id=?
+            """,
+            (
+                sha256_hex,
+                int(size_bytes),
+                doctype_token,
+                correspondent_token,
+                tenant_id,
+                source_file_id,
+            ),
+        )
+
+    _run_write_txn(_tx)
+
+
+def _find_canonical_duplicate(
+    tenant_id: str,
+    source_file_id: str,
+    sha256_hex: str,
+    size_bytes: int,
+) -> dict[str, Any] | None:
+    rows = _read_rows(
+        """
+        SELECT id, knowledge_chunk_id
+        FROM source_files
+        WHERE tenant_id=?
+          AND id<>?
+          AND sha256=?
+          AND size_bytes=?
+          AND knowledge_chunk_id IS NOT NULL
+          AND duplicate_of_file_id IS NULL
+        ORDER BY first_seen_at ASC, id ASC
+        LIMIT 1
+        """,
+        (tenant_id, source_file_id, sha256_hex, int(size_bytes)),
+    )
+    return rows[0] if rows else None
+
+
+def _mark_deduped(
+    *,
+    tenant_id: str,
+    source_file_id: str,
+    canonical_file_id: str,
+    canonical_chunk_id: str | None,
+    source_kind: str,
+    path_hash: str,
+    doctype_token: str | None,
+    correspondent_token: str | None,
+    actor_user_id: str | None,
+) -> None:
+    now = _now_iso()
+
+    def _tx(con: sqlite3.Connection) -> None:
+        con.execute(
+            """
+            UPDATE source_files
+            SET duplicate_of_file_id=?, status='skipped', last_error_code='dedupe_skip',
+                last_seen_at=?, knowledge_chunk_id=COALESCE(knowledge_chunk_id, ?),
+                doctype_token=COALESCE(doctype_token, ?),
+                correspondent_token=COALESCE(correspondent_token, ?)
+            WHERE tenant_id=? AND id=?
+            """,
+            (
+                canonical_file_id,
+                now,
+                canonical_chunk_id,
+                doctype_token,
+                correspondent_token,
+                tenant_id,
+                source_file_id,
+            ),
+        )
+        con.execute(
+            """
+            INSERT INTO source_ingest_log(
+              id, tenant_id, source_kind, path_hash, action, detail_code, created_at
+            ) VALUES (?,?,?,?,?,?,?)
+            """,
+            (
+                _new_id(),
+                tenant_id,
+                source_kind,
+                path_hash,
+                "skipped_dedupe",
+                "dedupe_skip",
+                now,
+            ),
+        )
+        event_append(
+            event_type="source_file_deduped",
+            entity_type="source_file",
+            entity_id=entity_id_int(source_file_id),
+            payload={
+                "schema_version": 1,
+                "source": "autonomy/source_scan",
+                "actor_user_id": actor_user_id,
+                "tenant_id": tenant_id,
+                "data": {
+                    "source_file_id": source_file_id,
+                    "duplicate_of_file_id": canonical_file_id,
+                    "path_hash": path_hash,
+                    "source_kind": source_kind,
+                },
+            },
+            con=con,
+        )
+
+    _run_write_txn(_tx)
+
+
+def _resolve_chunk_id_for_ingest(
+    tenant_id: str,
+    source_kind: str,
+    path_hash: str,
+    ingest_result: dict[str, Any],
+) -> str | None:
+    if source_kind == "document":
+        chunk = str(ingest_result.get("chunk_id") or "")
+        return chunk or None
+
+    source_id = str(ingest_result.get("source_id") or "")
+    if not source_id:
+        return None
+    source_ref = ""
+    if source_kind == "email":
+        source_ref = f"email:{source_id}"
+    elif source_kind == "calendar":
+        source_ref = f"calendar:{source_id}"
+    elif source_kind == "document":
+        source_ref = f"document:{path_hash}"
+    if not source_ref:
+        return None
+
+    rows = _read_rows(
+        """
+        SELECT chunk_id
+        FROM knowledge_chunks
+        WHERE tenant_id=? AND source_ref=?
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+        """,
+        (tenant_id, source_ref),
+    )
+    if not rows:
+        return None
+    value = str(rows[0].get("chunk_id") or "")
+    return value or None
+
+
+def _set_chunk_link(
+    *,
+    tenant_id: str,
+    source_file_id: str,
+    chunk_id: str | None,
+    doctype_token: str | None,
+    correspondent_token: str | None,
+) -> None:
+    def _tx(con: sqlite3.Connection) -> None:
+        con.execute(
+            """
+            UPDATE source_files
+            SET knowledge_chunk_id=COALESCE(knowledge_chunk_id, ?),
+                doctype_token=COALESCE(doctype_token, ?),
+                correspondent_token=COALESCE(correspondent_token, ?)
+            WHERE tenant_id=? AND id=?
+            """,
+            (
+                chunk_id,
+                doctype_token,
+                correspondent_token,
+                tenant_id,
+                source_file_id,
+            ),
+        )
+        if chunk_id:
+            con.execute(
+                """
+                UPDATE knowledge_chunks
+                SET doctype_token=COALESCE(doctype_token, ?),
+                    correspondent_token=COALESCE(correspondent_token, ?),
+                    updated_at=?
+                WHERE tenant_id=? AND chunk_id=?
+                """,
+                (
+                    doctype_token,
+                    correspondent_token,
+                    _now_iso(),
+                    tenant_id,
+                    chunk_id,
+                ),
+            )
 
     _run_write_txn(_tx)
 
@@ -796,6 +1026,7 @@ def scan_sources_once(
         "ingested_ok": 0,
         "failed": 0,
         "skipped_dedup": 0,
+        "skipped_dedupe": 0,
         "skipped_policy": 0,
         "skipped_limits": 0,
         "skipped_read_only": 0,
@@ -872,6 +1103,7 @@ def scan_sources_once(
             source_file = _touch_source_file(
                 tenant,
                 source_kind,
+                path.name,
                 path_hash,
                 fingerprint,
                 metadata_json,
@@ -929,10 +1161,52 @@ def scan_sources_once(
                 summary["ok"] = False
                 continue
 
+            size_bytes = int(len(data))
+            sha256_hex = hashlib.sha256(data).hexdigest()
+            doctype_token = _sanitize_token_soft(str(metadata.get("doctype") or ""))
+            correspondent_token = _sanitize_token_soft(
+                str(metadata.get("customer_token") or "")
+            )
+            _set_source_file_content_meta(
+                tenant_id=tenant,
+                source_file_id=str(source_file["id"]),
+                sha256_hex=sha256_hex,
+                size_bytes=size_bytes,
+                doctype_token=doctype_token,
+                correspondent_token=correspondent_token,
+            )
+
+            duplicate = _find_canonical_duplicate(
+                tenant_id=tenant,
+                source_file_id=str(source_file["id"]),
+                sha256_hex=sha256_hex,
+                size_bytes=size_bytes,
+            )
+            if duplicate:
+                _mark_deduped(
+                    tenant_id=tenant,
+                    source_file_id=str(source_file["id"]),
+                    canonical_file_id=str(duplicate["id"]),
+                    canonical_chunk_id=(
+                        str(duplicate["knowledge_chunk_id"])
+                        if duplicate.get("knowledge_chunk_id")
+                        else None
+                    ),
+                    source_kind=source_kind,
+                    path_hash=path_hash,
+                    doctype_token=doctype_token,
+                    correspondent_token=correspondent_token,
+                    actor_user_id=actor_user_id,
+                )
+                summary["skipped_dedup"] += 1
+                summary["skipped_dedupe"] += 1
+                continue
+
             action = "ingest_ok"
             detail_code = "ok"
+            ingest_result: dict[str, Any] = {}
             try:
-                ingest_one(
+                ingest_result = ingest_one(
                     tenant,
                     source_kind,
                     data,
@@ -946,6 +1220,33 @@ def scan_sources_once(
                 )
             except Exception as exc:
                 action, detail_code = _classify_exc(exc)
+
+            if action == "ingest_ok":
+                chunk_id = _resolve_chunk_id_for_ingest(
+                    tenant_id=tenant,
+                    source_kind=source_kind,
+                    path_hash=path_hash,
+                    ingest_result=ingest_result,
+                )
+                _set_chunk_link(
+                    tenant_id=tenant,
+                    source_file_id=str(source_file["id"]),
+                    chunk_id=chunk_id,
+                    doctype_token=doctype_token,
+                    correspondent_token=correspondent_token,
+                )
+                try:
+                    from app.autonomy.autotag import autotag_apply_for_source_file
+
+                    autotag_apply_for_source_file(
+                        tenant_id=tenant,
+                        source_file_id=str(source_file["id"]),
+                        actor_user_id=actor_user_id,
+                        route_key="source_scan",
+                    )
+                except Exception:
+                    # Autotagging ist best effort; Ingest bleibt erfolgreich.
+                    pass
 
             _record_outcome(
                 tenant_id=tenant,
