@@ -1,46 +1,48 @@
-# Devtools — Tesseract Probe
+# Devtools — Tesseract Probe v2
 
 ## Zweck
-`app/devtools/tesseract_probe.py` liefert eine deterministische Preflight-Diagnose fuer OCR:
+`app/devtools/tesseract_probe.py` liefert eine robuste, deterministische Diagnose fuer OCR-Preflight:
 - Binary-Aufloesung (`tesseract`)
-- Tessdata-Aufloesung (Prefix/Verzeichnis)
-- Verfuegbare Sprachen via `--list-langs`
-- Konsistente Reason-Codes + Next-Actions
+- Tessdata-Kandidaten (inkl. Prefix-Normalisierung)
+- Sprachliste via `--list-langs`
+- stabile Reason-Codes + Next-Actions
 
-## Ablauf (Kurz)
-1. Binary aufloesen (projektinterne Resolver-Logik, dann PATH-Fallback).
-2. Tessdata-Kandidaten in stabiler Reihenfolge pruefen.
-3. `tesseract --list-langs` ausfuehren (optional mit `--tessdata-dir`).
-4. Sprache waehlen:
-   - explizit `--lang`, falls vorhanden
-   - sonst bevorzugt `eng`
-   - sonst erster nicht-`osd` Eintrag
-5. Fehler klassifizieren:
-   - `tesseract_missing`
-   - `tessdata_missing`
-   - `language_missing`
-   - `tesseract_failed`
+## Reason-Codes
+- `ok`
+- `ok_with_warnings`
+- `tesseract_missing`
+- `tessdata_missing`
+- `language_missing`
+- `tesseract_failed`
+
+## Verhalten
+1. Binary wird aufgeloest (projektinterner Resolver, dann PATH-Fallback).
+2. Tessdata-Kandidaten werden in stabiler Reihenfolge gebaut:
+   - CLI (`--tessdata-dir`)
+   - `TESSDATA_PREFIX`
+   - Bin-heuristiken + Systempfade
+3. Probe laeuft ueber `tesseract --list-langs`.
+4. Parsing ist warning-tolerant:
+   - Wenn `stdout` gueltige Sprachen enthaelt, bleibt Probe nutzbar
+   - `stderr`-Warnungen fuehren zu `ok_with_warnings` statt Hartabbruch
+5. Sprachwahl:
+   - explizit requested language
+   - sonst `eng`
+   - sonst erster nicht-`osd`
 
 ## Sanitizing
-- `stderr_tail` wird bereinigt:
+- `warnings` und `stderr_tail` werden PII-/Pfad-sicher bereinigt:
+  - bekannte Marker -> `<redacted>`
   - absolute Pfade -> `<path>`
-  - bekannte Testmarker -> `<redacted>`
-- Ziel: keine PII und keine lokalen User-Pfade in CLI-Ausgabe.
+  - harte Laengenlimits
 
-## CLI Nutzung
+## CLI-Beispiele
 ```bash
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --json
-```
-
-Mit explizitem Tessdata/Lang:
-```bash
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tessdata-dir /path/to/tessdata --lang eng --json
+python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --strict --json
 ```
 
-## Output-Hinweise
-- `tessdata_dir` / `tessdata_prefix_used`: sanitisiert
-- `tesseract_langs`: deterministische Liste
-- `tesseract_lang_used` / `lang_used`: effective language
-- `tesseract_probe_reason` / `probe_reason`: Diagnose-Code
-- `next_actions`: konkrete naechste Schritte fuer Operator
-
+## Referenzen
+- [Tesseract Manpage (Debian)](https://manpages.debian.org/buster/tesseract-ocr/tesseract.1.en.html)
+- [Tesseract Command-Line Usage](https://github.com/tesseract-ocr/tesseract/wiki/Command-Line-Usage)

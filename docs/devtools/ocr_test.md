@@ -27,6 +27,7 @@ Nur Tesseract-Diagnostik (ohne OCR-Run):
 ```bash
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --json
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tessdata-dir /path/to/tessdata --lang eng --json
+python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --strict --json
 ```
 
 OCR-Policy nur in der Sandbox aktivieren und direkt E2E testen:
@@ -40,6 +41,8 @@ Deterministischer Smoke mit Watch-Config-Seeding + optionalem Direkt-Submit:
 ```bash
 python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json --timeout 30 --seed-watch-config-in-sandbox
 python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json --timeout 30 --direct-submit-in-sandbox
+python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json --timeout 30 --strict
+python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json --timeout 30 --no-retry
 ```
 
 Ohne Sandbox (schreibt Jobs in die echte DB, nur fuer bewusstes Debugging):
@@ -71,8 +74,10 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `tessdata_dir`, `tessdata_source`
 - `tessdata_prefix_used`
 - `tesseract_langs`, `tesseract_lang_used`
+- `tesseract_warnings`
 - `tesseract_probe_reason`, `tesseract_probe_next_actions`, `tesseract_stderr_tail`
 - `lang_used`, `probe_reason`, `probe_next_actions`, `stderr_tail`
+- `strict_mode`, `retry_enabled`, `tesseract_retry_used`, `lang_fallback_used`, `tessdata_fallback_used`
 - `sandbox_db_path` (nur gesetzt, wenn Sandbox aktiv und `--keep-artifacts` genutzt wird)
 - `watch_config_seeded`, `watch_config_existed`
 - `inbox_dir_used`, `scanner_discovered_files`
@@ -150,6 +155,12 @@ Erwartung nach Aktivierung:
 - `language_missing`
   - Gewuenschte Sprache mit `--lang` pruefen.
   - Fehlende Sprachdaten installieren oder auf verfuegbare Sprache wechseln.
+- `ok_with_warnings`
+  - OCR-Umgebung funktioniert, aber mit Warnungen (z. B. fehlende optionale Sprachdaten).
+  - Fuer harte CI/Smoke-Laeufe `--strict` verwenden.
+- `tesseract_warning`
+  - `--strict` hat `ok_with_warnings` als Fehler behandelt.
+  - Warnungen beheben oder Strict-Mode fuer lokale Diagnose deaktivieren.
 - `tesseract_failed`
   - `--show-tesseract` laufen lassen und `tesseract_stderr_tail` auswerten.
 - `read_only`
@@ -170,3 +181,9 @@ Erwartung nach Aktivierung:
 Hinweis:
 - Fuer reproduzierbare Diagnostik wird `--tessdata-dir` bevorzugt statt implizitem `TESSDATA_PREFIX`.
 - Detaillierte Probe-Logik: `docs/devtools/tesseract_probe.md`.
+
+Manuelle Triage:
+```bash
+tesseract --version
+tesseract --list-langs --tessdata-dir <dir>
+```

@@ -123,3 +123,121 @@ def test_ocr_subprocess_contract_and_redaction(tmp_path: Path, monkeypatch) -> N
         assert "[redacted-email]" in body
     finally:
         con.close()
+
+
+def test_ocr_subprocess_uses_tessdata_override(tmp_path: Path, monkeypatch) -> None:
+    _init_core(tmp_path)
+    knowledge_policy_update("TENANT_A", actor_user_id="dev", allow_ocr=True)
+    source_file_id = "sf3"
+    _insert_source_file("TENANT_A", source_file_id, "override.png")
+    image_path = tmp_path / "override.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")
+
+    captured: dict[str, object] = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "OCR TEXT"
+        stderr = ""
+
+    def _fake_run(cmd, **kwargs):
+        captured["cmd"] = list(cmd)
+        captured["kwargs"] = kwargs
+        return _Proc()
+
+    monkeypatch.setattr(
+        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
+    )
+    monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
+
+    app = Flask(__name__)
+    app.config.update(
+        SECRET_KEY="test",
+        AUTONOMY_OCR_TIMEOUT_SEC=8,
+        AUTONOMY_OCR_MAX_CHARS=200_000,
+        AUTONOMY_OCR_LANG="eng",
+    )
+    with app.app_context():
+        result = submit_ocr_for_source_file(
+            tenant_id="TENANT_A",
+            actor_user_id="dev",
+            source_file_id=source_file_id,
+            abs_path=image_path,
+            lang_override="deu",
+            tessdata_dir="/opt/homebrew/share",
+        )
+
+    assert result["ok"] is True
+    cmd = captured["cmd"]
+    assert "--tessdata-dir" in cmd
+    assert cmd[cmd.index("--tessdata-dir") + 1] == "/opt/homebrew/share"
+    assert "-l" in cmd
+    assert cmd[cmd.index("-l") + 1] == "deu"
+    kwargs = captured["kwargs"]
+    assert kwargs["env"]["TESSDATA_PREFIX"] == "/opt/homebrew/share"
+
+
+def test_run_tesseract_retry_guard(tmp_path: Path, monkeypatch) -> None:
+    image_path = tmp_path / "retry.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")
+
+    class _ProcFail:
+        returncode = 1
+        stdout = ""
+        stderr = "Failed loading language 'eng'"
+
+    class _ProcOk:
+        returncode = 0
+        stdout = "TEXT"
+        stderr = ""
+
+    calls: list[list[str]] = []
+    seq = [_ProcFail(), _ProcOk()]
+
+    def _fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return seq.pop(0)
+
+    monkeypatch.setattr(
+        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
+    )
+    monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
+    import app.devtools.tesseract_probe as probe_mod
+
+    monkeypatch.setattr(
+        probe_mod,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": True,
+            "reason": "ok",
+            "langs": ["deu", "eng"],
+            "lang_selected": "deu",
+            "tessdata_prefix": "/usr/share",
+        },
+    )
+
+    text, error, _truncated, _stderr = ocr_mod._run_tesseract(
+        image_path,
+        lang="eng",
+        timeout_sec=2,
+        max_chars=1024,
+        tessdata_dir=None,
+        allow_retry=True,
+    )
+    assert error is None
+    assert text == "TEXT"
+    assert len(calls) == 2
+
+    calls.clear()
+    seq[:] = [_ProcFail()]
+    text2, error2, _truncated2, _stderr2 = ocr_mod._run_tesseract(
+        image_path,
+        lang="eng",
+        timeout_sec=2,
+        max_chars=1024,
+        tessdata_dir=None,
+        allow_retry=False,
+    )
+    assert text2 is None
+    assert error2 == "language_missing"
+    assert len(calls) == 1

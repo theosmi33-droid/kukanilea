@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import base64
+import binascii
 import contextlib
 import os
 import re
 import shutil
 import sqlite3
+import struct
 import tempfile
 import time
 import uuid
+import zlib
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -28,7 +30,12 @@ from app.devtools.tesseract_probe import probe_tesseract
 
 TEST_EMAIL_PATTERN = "pilot+test@example.com"
 TEST_PHONE_PATTERN = "+49 151 12345678"
-TEST_IMAGE_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y8Y3f8AAAAASUVORK5CYII="
+TEST_IMAGE_TEXT_LINES = (
+    "OCR SMOKE TEST 0123456789",
+    "ABCXYZ OCR TEST",
+)
+MIN_TEST_IMAGE_BYTES = 10 * 1024
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 ENV_DB_KEYS = (
     "KUKANILEA_CORE_DB",
     "KUKANILEA_AUTH_DB",
@@ -274,9 +281,96 @@ def _preflight_status(tenant_id: str) -> dict[str, Any]:
     }
 
 
+GLYPH_5X7: dict[str, tuple[str, ...]] = {
+    " ": ("00000",) * 7,
+    "0": ("01110", "10001", "10011", "10101", "11001", "10001", "01110"),
+    "1": ("00100", "01100", "00100", "00100", "00100", "00100", "01110"),
+    "2": ("01110", "10001", "00001", "00010", "00100", "01000", "11111"),
+    "3": ("11110", "00001", "00001", "01110", "00001", "00001", "11110"),
+    "4": ("00010", "00110", "01010", "10010", "11111", "00010", "00010"),
+    "5": ("11111", "10000", "10000", "11110", "00001", "00001", "11110"),
+    "6": ("01110", "10000", "10000", "11110", "10001", "10001", "01110"),
+    "7": ("11111", "00001", "00010", "00100", "01000", "01000", "01000"),
+    "8": ("01110", "10001", "10001", "01110", "10001", "10001", "01110"),
+    "9": ("01110", "10001", "10001", "01111", "00001", "00001", "01110"),
+    "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "B": ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
+    "C": ("01110", "10001", "10000", "10000", "10000", "10001", "01110"),
+    "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
+    "K": ("10001", "10010", "10100", "11000", "10100", "10010", "10001"),
+    "M": ("10001", "11011", "10101", "10101", "10001", "10001", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
+    "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
+    "S": ("01111", "10000", "10000", "01110", "00001", "00001", "11110"),
+    "T": ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
+    "X": ("10001", "10001", "01010", "00100", "01010", "10001", "10001"),
+    "Y": ("10001", "10001", "01010", "00100", "00100", "00100", "00100"),
+    "Z": ("11111", "00001", "00010", "00100", "01000", "10000", "11111"),
+}
+
+
+def _png_chunk(tag: bytes, payload: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(payload))
+        + tag
+        + payload
+        + struct.pack(">I", binascii.crc32(tag + payload) & 0xFFFFFFFF)
+    )
+
+
+def _build_test_png_bytes() -> bytes:
+    width = 1200
+    height = 320
+    pixels = bytearray(width * height)
+    for y in range(height):
+        for x in range(width):
+            pixels[y * width + x] = 230 + ((x * 17 + y * 31 + (x * y) % 97) % 25)
+
+    scale = 8
+    x0 = 40
+    y0 = 50
+    line_gap = 26
+    for line_idx, line in enumerate(TEST_IMAGE_TEXT_LINES):
+        line_upper = str(line).upper()
+        y_base = y0 + line_idx * (7 * scale + line_gap)
+        x = x0
+        for char in line_upper:
+            glyph = GLYPH_5X7.get(char, GLYPH_5X7[" "])
+            for gy, row in enumerate(glyph):
+                for gx, bit in enumerate(row):
+                    if bit != "1":
+                        continue
+                    px_start = x + gx * scale
+                    py_start = y_base + gy * scale
+                    for dy in range(scale):
+                        py = py_start + dy
+                        if py < 0 or py >= height:
+                            continue
+                        row_start = py * width
+                        for dx in range(scale):
+                            px = px_start + dx
+                            if 0 <= px < width:
+                                pixels[row_start + px] = 0
+            x += (5 * scale) + 4
+
+    raw = bytearray()
+    for y in range(height):
+        raw.append(0)
+        start = y * width
+        raw.extend(pixels[start : start + width])
+    compressed = zlib.compress(bytes(raw), level=9)
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return (
+        PNG_SIGNATURE
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", compressed)
+        + _png_chunk(b"IEND", b"")
+    )
+
+
 def _write_test_image(target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(base64.b64decode(TEST_IMAGE_PNG_B64))
+    target.write_bytes(_build_test_png_bytes())
 
 
 def _query_latest_ocr_job(
@@ -368,6 +462,7 @@ def _execute_test_round(
     direct_submit_in_sandbox: bool = False,
     tesseract_lang: str | None = None,
     tesseract_tessdata_dir: str | None = None,
+    retry_enabled: bool = True,
 ) -> dict[str, Any]:
     from app.autonomy.ocr import submit_ocr_for_source_file
     from app.autonomy.source_scan import (
@@ -395,6 +490,39 @@ def _execute_test_round(
     basename = f"OCR_Test_2026-02-16_KD-9999_{uuid.uuid4().hex[:8]}.png"
     sample_path = artifacts_root / "sample_input.png"
     _write_test_image(sample_path)
+    sample_bytes = sample_path.read_bytes()
+    if not sample_bytes.startswith(PNG_SIGNATURE):
+        return {
+            "job_status": None,
+            "job_error_code": None,
+            "duration_ms": None,
+            "chars_out": None,
+            "truncated": False,
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "inbox_dir_used": _sanitize_path_for_output(documents_inbox),
+            "scanner_discovered_files": 0,
+            "direct_submit_used": False,
+            "source_lookup_reason": None,
+            "source_files_columns": None,
+            "round_reason": "test_image_invalid",
+        }
+    if len(sample_bytes) < MIN_TEST_IMAGE_BYTES:
+        return {
+            "job_status": None,
+            "job_error_code": None,
+            "duration_ms": None,
+            "chars_out": None,
+            "truncated": False,
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "inbox_dir_used": _sanitize_path_for_output(documents_inbox),
+            "scanner_discovered_files": 0,
+            "direct_submit_used": False,
+            "source_lookup_reason": None,
+            "source_files_columns": None,
+            "round_reason": "input_too_small",
+        }
     target_path = documents_inbox / basename
     shutil.copy2(sample_path, target_path)
 
@@ -434,6 +562,7 @@ def _execute_test_round(
                         abs_path=target_path,
                         lang_override=tesseract_lang,
                         tessdata_dir=tesseract_tessdata_dir,
+                        allow_retry=retry_enabled,
                     )
                     direct_submit_used = True
                 except Exception:
@@ -471,6 +600,7 @@ def _execute_test_round(
             "direct_submit_used": direct_submit_used,
             "source_lookup_reason": source_lookup_reason,
             "source_files_columns": source_columns,
+            "round_reason": None,
         }
     finally:
         with contextlib.suppress(Exception):
@@ -491,6 +621,8 @@ def _build_message(result: dict[str, Any]) -> str:
         return "Requested OCR language is unavailable."
     if reason == "tesseract_failed":
         return "Tesseract execution failed."
+    if reason == "tesseract_warning":
+        return "Tesseract reported warnings and strict mode is enabled."
     if reason == "read_only":
         return "READ_ONLY active; skipping ingest/job run."
     if reason == "pii_leak":
@@ -513,6 +645,10 @@ def _build_message(result: dict[str, Any]) -> str:
         return "OCR command failed for the test image."
     if reason == "timeout":
         return "OCR run timed out."
+    if reason == "input_too_small":
+        return "Embedded OCR smoke image is unexpectedly small."
+    if reason == "test_image_invalid":
+        return "Embedded OCR smoke image is invalid."
     return "OCR test failed."
 
 
@@ -538,6 +674,10 @@ def _next_actions_for_reason(reason: str | None) -> list[str]:
         "tesseract_failed": [
             "Verify tesseract binary execution and local language data installation.",
             "Re-run with --show-tesseract for sanitized stderr diagnostics.",
+        ],
+        "tesseract_warning": [
+            "Tesseract emitted warnings; verify tessdata and language packs.",
+            "Disable strict mode or fix warnings, then re-run OCR smoke.",
         ],
         "read_only": [
             "Disable READ_ONLY for dev testing or run without --enable-policy-in-sandbox.",
@@ -579,6 +719,14 @@ def _next_actions_for_reason(reason: str | None) -> list[str]:
             "Verify local tesseract language data and binary execution for image OCR.",
             "Retry with --direct-submit-in-sandbox and inspect job_error_code.",
         ],
+        "input_too_small": [
+            "Regenerate the embedded OCR smoke image; current sample is too small.",
+            "Run tests to ensure image generation and sanity checks are in sync.",
+        ],
+        "test_image_invalid": [
+            "Regenerate the embedded OCR smoke image; PNG signature check failed.",
+            "Verify image creation path before scanner execution.",
+        ],
         "pii_leak": [
             "Stop: redaction regression suspected.",
             "Check OCR redaction pipeline and eventlog filters; do not proceed to pilot.",
@@ -602,6 +750,8 @@ def run_ocr_test(
     direct_submit_in_sandbox: bool = False,
     tessdata_dir: str | None = None,
     lang: str | None = None,
+    strict: bool = False,
+    retry_enabled: bool = True,
 ) -> dict[str, Any]:
     tenant = str(tenant_id or "").strip() or "default"
     sandbox_like = bool(sandbox or db_path_override is not None)
@@ -620,6 +770,7 @@ def run_ocr_test(
         "tessdata_source": None,
         "tesseract_langs": [],
         "tesseract_lang_used": None,
+        "tesseract_warnings": [],
         "tesseract_probe_reason": None,
         "tesseract_probe_next_actions": [],
         "tesseract_stderr_tail": None,
@@ -629,6 +780,11 @@ def run_ocr_test(
         "probe_reason": None,
         "probe_next_actions": [],
         "stderr_tail": None,
+        "strict_mode": bool(strict),
+        "retry_enabled": bool(retry_enabled),
+        "tesseract_retry_used": False,
+        "lang_fallback_used": False,
+        "tessdata_fallback_used": False,
         "read_only": False,
         "job_status": None,
         "job_error_code": None,
@@ -676,15 +832,27 @@ def run_ocr_test(
                 tessdata_dir=tessdata_dir,
                 preferred_langs=preferred_langs,
             )
-            result["tesseract_found"] = bool(probe.get("bin_path"))
+            result["tesseract_found"] = bool(
+                probe.get("tesseract_found") or probe.get("bin_path")
+            )
             result["tessdata_dir"] = (
-                _sanitize_path_for_output(probe.get("tessdata_dir")) or None
+                _sanitize_path_for_output(
+                    probe.get("tessdata_prefix")
+                    or probe.get("tessdata_dir_used")
+                    or probe.get("tessdata_dir")
+                )
+                or None
             )
             result["tessdata_source"] = str(probe.get("tessdata_source") or "") or None
             result["tesseract_langs"] = [
                 str(item) for item in list(probe.get("langs") or [])
             ]
-            result["tesseract_lang_used"] = str(probe.get("lang_used") or "") or None
+            result["tesseract_lang_used"] = (
+                str(probe.get("lang_selected") or probe.get("lang_used") or "") or None
+            )
+            result["tesseract_warnings"] = [
+                str(item) for item in list(probe.get("warnings") or [])
+            ]
             result["tesseract_probe_reason"] = str(probe.get("reason") or "") or None
             result["tesseract_probe_next_actions"] = [
                 str(item) for item in list(probe.get("next_actions") or [])
@@ -748,6 +916,11 @@ def run_ocr_test(
                         str(result.get("reason") or "")
                     )
                 return result
+            if bool(strict) and result["tesseract_probe_reason"] == "ok_with_warnings":
+                result["reason"] = "tesseract_warning"
+                result["message"] = _build_message(result)
+                result["next_actions"] = _next_actions_for_reason("tesseract_warning")
+                return result
             if not result["policy_enabled"]:
                 result["reason"] = "policy_denied"
                 result["message"] = _build_message(result)
@@ -810,14 +983,29 @@ def run_ocr_test(
                     ),
                     tesseract_lang=result.get("tesseract_lang_used"),
                     tesseract_tessdata_dir=(
-                        str(probe.get("tessdata_dir") or "") or None
+                        str(
+                            probe.get("tessdata_prefix")
+                            or probe.get("tessdata_dir_used")
+                            or probe.get("tessdata_dir")
+                            or ""
+                        )
+                        or None
                     ),
+                    retry_enabled=bool(retry_enabled),
                 )
             finally:
                 if ctx.get("work_dir") is None and not keep_artifacts:
                     shutil.rmtree(artifacts_root, ignore_errors=True)
 
             result.update(round_result)
+            if round_result.get("round_reason"):
+                result["reason"] = str(round_result.get("round_reason") or "failed")
+                result["ok"] = False
+                result["message"] = _build_message(result)
+                result["next_actions"] = _next_actions_for_reason(
+                    str(result.get("reason") or "")
+                )
+                return result
 
             pii_hit = bool(
                 result["pii_found_knowledge"] or result["pii_found_eventlog"]

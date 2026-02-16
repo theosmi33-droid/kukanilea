@@ -270,6 +270,8 @@ def _run_tesseract(
     timeout_sec: int,
     max_chars: int,
     tessdata_dir: str | None = None,
+    *,
+    allow_retry: bool = True,
 ) -> tuple[str | None, str | None, int, str | None]:
     from app.devtools.tesseract_probe import probe_tesseract
 
@@ -301,8 +303,10 @@ def _run_tesseract(
         lang_code: str, tess_dir: str | None
     ) -> tuple[str | None, str | None, int, str | None]:
         cmd = [str(binary), str(image_path), "stdout", "-l", lang_code]
+        env_copy = dict(os.environ)
         if tess_dir:
             cmd.extend(["--tessdata-dir", str(tess_dir)])
+            env_copy["TESSDATA_PREFIX"] = str(tess_dir)
         try:
             proc = subprocess.run(  # noqa: S603
                 cmd,
@@ -312,6 +316,7 @@ def _run_tesseract(
                 check=False,
                 shell=False,
                 stdin=subprocess.DEVNULL,
+                env=env_copy,
             )
         except subprocess.TimeoutExpired:
             return None, "timeout", 0, "timeout"
@@ -328,15 +333,31 @@ def _run_tesseract(
         return output, None, truncated, None
 
     text_out, error_code, truncated, stderr_tail = _run_once(lang, tessdata_dir)
-    if error_code in {"tessdata_missing", "language_missing"}:
+    if allow_retry and error_code in {"tessdata_missing", "language_missing"}:
         probe = probe_tesseract(
             bin_path=str(binary),
             tessdata_dir=tessdata_dir,
             preferred_langs=[lang],
             timeout_s=min(max(1, int(timeout_sec)), 5),
         )
-        retry_lang = str(probe.get("lang_used") or "").strip()
-        retry_tess = str(probe.get("tessdata_dir") or "").strip() or None
+        retry_lang = str(
+            probe.get("lang_selected") or probe.get("lang_used") or ""
+        ).strip()
+        retry_tess = (
+            str(
+                probe.get("tessdata_prefix")
+                or probe.get("tessdata_dir_used")
+                or probe.get("tessdata_dir")
+                or ""
+            ).strip()
+            or None
+        )
+        if not retry_lang and str(probe.get("reason") or "") == "language_missing":
+            for candidate in list(probe.get("langs") or []):
+                token = str(candidate).strip().lower()
+                if token and token != "osd":
+                    retry_lang = token
+                    break
         if retry_lang and (retry_lang != lang or retry_tess != tessdata_dir):
             retry_text, retry_error, retry_truncated, retry_stderr = _run_once(
                 retry_lang,
@@ -457,6 +478,7 @@ def submit_ocr_for_source_file(
     *,
     lang_override: str | None = None,
     tessdata_dir: str | None = None,
+    allow_retry: bool = True,
 ) -> dict[str, Any]:
     if _is_read_only():
         raise PermissionError("read_only")
@@ -641,6 +663,7 @@ def submit_ocr_for_source_file(
         timeout_sec=timeout_sec,
         max_chars=max_chars,
         tessdata_dir=tessdata_dir,
+        allow_retry=allow_retry,
     )
     duration_ms = int(round((time.monotonic() - started) * 1000))
     if error_code:

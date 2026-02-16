@@ -20,6 +20,8 @@ def _reason_message(reason: str | None) -> str:
         return "Requested OCR language is unavailable."
     if key == "tesseract_failed":
         return "Tesseract execution failed."
+    if key == "tesseract_warning":
+        return "Tesseract reported warnings and strict mode rejected the run."
     if key == "read_only":
         return "READ_ONLY active; skipping ingest/job run."
     if key == "pii_leak":
@@ -40,6 +42,10 @@ def _reason_message(reason: str | None) -> str:
         return "OCR command failed for the test image."
     if key == "timeout":
         return "OCR run timed out."
+    if key == "input_too_small":
+        return "Embedded OCR smoke image is unexpectedly small."
+    if key == "test_image_invalid":
+        return "Embedded OCR smoke image is invalid."
     if key == "job_not_found":
         return "No OCR job was detected within timeout."
     if key == "invalid_args":
@@ -112,6 +118,7 @@ def _policy_view_payload(
         "tessdata_source": None,
         "tesseract_langs": [],
         "tesseract_lang_used": None,
+        "tesseract_warnings": [],
         "tesseract_probe_reason": None,
         "tesseract_probe_next_actions": [],
         "tesseract_stderr_tail": None,
@@ -120,6 +127,11 @@ def _policy_view_payload(
         "probe_reason": None,
         "probe_next_actions": [],
         "stderr_tail": None,
+        "strict_mode": False,
+        "retry_enabled": True,
+        "tesseract_retry_used": False,
+        "lang_fallback_used": False,
+        "tessdata_fallback_used": False,
         "read_only": False,
         "job_status": None,
         "job_error_code": None,
@@ -158,12 +170,18 @@ def _human_report(result: dict) -> str:
         f"tessdata_source: {result.get('tessdata_source') or '-'}",
         f"tesseract_langs: {result.get('tesseract_langs') or '-'}",
         f"tesseract_lang_used: {result.get('tesseract_lang_used') or '-'}",
+        f"tesseract_warnings: {result.get('tesseract_warnings') or '-'}",
         f"tesseract_probe_reason: {result.get('tesseract_probe_reason') or '-'}",
         f"tesseract_stderr_tail: {result.get('tesseract_stderr_tail') or '-'}",
         f"tessdata_prefix_used: {result.get('tessdata_prefix_used') or '-'}",
         f"lang_used: {result.get('lang_used') or '-'}",
         f"probe_reason: {result.get('probe_reason') or '-'}",
         f"stderr_tail: {result.get('stderr_tail') or '-'}",
+        f"strict_mode: {bool(result.get('strict_mode'))}",
+        f"retry_enabled: {bool(result.get('retry_enabled'))}",
+        f"tesseract_retry_used: {bool(result.get('tesseract_retry_used'))}",
+        f"lang_fallback_used: {bool(result.get('lang_fallback_used'))}",
+        f"tessdata_fallback_used: {bool(result.get('tessdata_fallback_used'))}",
         f"read_only: {bool(result.get('read_only'))}",
         f"job_status: {result.get('job_status') or '-'}",
         f"job_error_code: {result.get('job_error_code') or '-'}",
@@ -193,6 +211,8 @@ def main() -> int:
     parser.add_argument("--show-tesseract", action="store_true")
     parser.add_argument("--enable-policy-in-sandbox", action="store_true")
     parser.add_argument("--no-sandbox", action="store_true")
+    parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--no-retry", action="store_true")
     parser.add_argument("--tessdata-dir")
     parser.add_argument("--lang")
     parser.add_argument(
@@ -253,15 +273,28 @@ def main() -> int:
             result["ok"] = bool(probe.get("ok"))
             result["reason"] = str(probe.get("reason") or "") or None
             result["message"] = _reason_message(result["reason"])
-            result["tesseract_found"] = bool(probe.get("bin_path"))
+            result["tesseract_found"] = bool(
+                probe.get("tesseract_found") or probe.get("bin_path")
+            )
             result["tessdata_dir"] = _sanitize_path(
-                str(probe.get("tessdata_dir") or "") or None
+                str(
+                    probe.get("tessdata_prefix")
+                    or probe.get("tessdata_dir_used")
+                    or probe.get("tessdata_dir")
+                    or ""
+                )
+                or None
             )
             result["tessdata_source"] = str(probe.get("tessdata_source") or "") or None
             result["tesseract_langs"] = [
                 str(item) for item in list(probe.get("langs") or [])
             ]
-            result["tesseract_lang_used"] = str(probe.get("lang_used") or "") or None
+            result["tesseract_lang_used"] = (
+                str(probe.get("lang_selected") or probe.get("lang_used") or "") or None
+            )
+            result["tesseract_warnings"] = [
+                str(item) for item in list(probe.get("warnings") or [])
+            ]
             result["tesseract_probe_reason"] = str(probe.get("reason") or "") or None
             result["tesseract_probe_next_actions"] = list(
                 probe.get("next_actions") or []
@@ -274,6 +307,15 @@ def main() -> int:
             result["probe_reason"] = result["tesseract_probe_reason"]
             result["probe_next_actions"] = list(result["tesseract_probe_next_actions"])
             result["stderr_tail"] = result["tesseract_stderr_tail"]
+            result["strict_mode"] = bool(args.strict)
+            result["retry_enabled"] = not bool(args.no_retry)
+            if bool(args.strict) and result["reason"] == "ok_with_warnings":
+                result["ok"] = False
+                result["reason"] = "tesseract_warning"
+                result["message"] = _reason_message(result["reason"])
+                result["next_actions"] = [
+                    "Warnings were treated as fatal because --strict is enabled."
+                ]
             if not result["next_actions"]:
                 result["next_actions"] = list(probe.get("next_actions") or [])
         elif args.show_policy:
@@ -303,6 +345,8 @@ def main() -> int:
                     direct_submit_in_sandbox=False,
                     tessdata_dir=str(args.tessdata_dir or "").strip() or None,
                     lang=(preferred_langs[0] if preferred_langs else None),
+                    strict=bool(args.strict),
+                    retry_enabled=not bool(args.no_retry),
                 )
                 _merge_policy_fields(
                     result,
@@ -335,6 +379,8 @@ def main() -> int:
                     direct_submit_in_sandbox=bool(args.direct_submit_in_sandbox),
                     tessdata_dir=str(args.tessdata_dir or "").strip() or None,
                     lang=(preferred_langs[0] if preferred_langs else None),
+                    strict=bool(args.strict),
+                    retry_enabled=not bool(args.no_retry),
                 )
                 result["sandbox"] = True
                 result["sandbox_db_path"] = (

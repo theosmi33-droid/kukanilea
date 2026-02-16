@@ -42,11 +42,16 @@ def _default_probe(monkeypatch):
         lambda **_kwargs: {
             "ok": True,
             "reason": None,
+            "tesseract_found": True,
             "bin_path": "/usr/bin/tesseract",
-            "tessdata_dir": "/usr/share/tessdata",
+            "tessdata_prefix": "/usr/share",
+            "tessdata_dir_used": "/usr/share",
+            "tessdata_dir": "/usr/share",
             "tessdata_source": "heuristic",
             "langs": ["eng", "deu"],
+            "lang_selected": "eng",
             "lang_used": "eng",
+            "warnings": [],
             "stderr_tail": None,
             "next_actions": [],
         },
@@ -109,6 +114,43 @@ def test_run_ocr_test_probe_failure_tessdata(monkeypatch) -> None:
     assert result["reason"] == "tessdata_missing"
     assert result["tesseract_probe_reason"] == "tessdata_missing"
     assert result["next_actions"]
+
+
+def test_run_ocr_test_strict_rejects_probe_warnings(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": True,
+            "tesseract_found": True,
+            "read_only": False,
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": True,
+            "reason": "ok_with_warnings",
+            "tesseract_found": True,
+            "bin_path": "/usr/bin/tesseract",
+            "tessdata_prefix": "/usr/share",
+            "tessdata_dir_used": "/usr/share",
+            "tessdata_source": "heuristic",
+            "langs": ["deu", "osd"],
+            "lang_selected": "deu",
+            "warnings": ["Error opening data file <path>/eng.traineddata"],
+            "stderr_tail": "Error opening data file <path>/eng.traineddata",
+            "next_actions": ["warning"],
+        },
+    )
+    result = ocr_test.run_ocr_test("TENANT_A", sandbox=False, strict=True)
+    assert result["ok"] is False
+    assert result["reason"] == "tesseract_warning"
 
 
 def test_run_ocr_test_tesseract_missing(monkeypatch) -> None:
@@ -405,6 +447,7 @@ def test_run_ocr_test_passes_direct_submit_only_when_requested(monkeypatch) -> N
 
     def _round(*_args, **kwargs):
         captured["direct_submit_in_sandbox"] = kwargs.get("direct_submit_in_sandbox")
+        captured["retry_enabled"] = kwargs.get("retry_enabled")
         return {
             "job_status": "done",
             "job_error_code": None,
@@ -427,10 +470,12 @@ def test_run_ocr_test_passes_direct_submit_only_when_requested(monkeypatch) -> N
         db_path_override=Path("/tmp/core.sqlite3"),
         seed_watch_config_in_sandbox=True,
         direct_submit_in_sandbox=True,
+        retry_enabled=False,
     )
     assert result["ok"] is True
     assert result["watch_config_seeded"] is True
     assert captured["direct_submit_in_sandbox"] is True
+    assert captured["retry_enabled"] is False
 
 
 def test_run_ocr_test_read_only_blocks_seed_and_direct_submit(monkeypatch) -> None:
