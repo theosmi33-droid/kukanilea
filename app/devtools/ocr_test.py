@@ -623,6 +623,12 @@ def run_ocr_test(
         "tesseract_probe_reason": None,
         "tesseract_probe_next_actions": [],
         "tesseract_stderr_tail": None,
+        # Aliases kept for operator-facing schema compatibility.
+        "tessdata_prefix_used": None,
+        "lang_used": None,
+        "probe_reason": None,
+        "probe_next_actions": [],
+        "stderr_tail": None,
         "read_only": False,
         "job_status": None,
         "job_error_code": None,
@@ -686,6 +692,11 @@ def run_ocr_test(
             result["tesseract_stderr_tail"] = (
                 str(probe.get("stderr_tail") or "") or None
             )
+            result["tessdata_prefix_used"] = result["tessdata_dir"]
+            result["lang_used"] = result["tesseract_lang_used"]
+            result["probe_reason"] = result["tesseract_probe_reason"]
+            result["probe_next_actions"] = list(result["tesseract_probe_next_actions"])
+            result["stderr_tail"] = result["tesseract_stderr_tail"]
 
             policy_status = get_policy_status(tenant, db_path=core_db_path)
             if bool(policy_status.get("ok")):

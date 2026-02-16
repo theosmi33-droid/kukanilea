@@ -115,6 +115,11 @@ def _policy_view_payload(
         "tesseract_probe_reason": None,
         "tesseract_probe_next_actions": [],
         "tesseract_stderr_tail": None,
+        "tessdata_prefix_used": None,
+        "lang_used": None,
+        "probe_reason": None,
+        "probe_next_actions": [],
+        "stderr_tail": None,
         "read_only": False,
         "job_status": None,
         "job_error_code": None,
@@ -155,6 +160,10 @@ def _human_report(result: dict) -> str:
         f"tesseract_lang_used: {result.get('tesseract_lang_used') or '-'}",
         f"tesseract_probe_reason: {result.get('tesseract_probe_reason') or '-'}",
         f"tesseract_stderr_tail: {result.get('tesseract_stderr_tail') or '-'}",
+        f"tessdata_prefix_used: {result.get('tessdata_prefix_used') or '-'}",
+        f"lang_used: {result.get('lang_used') or '-'}",
+        f"probe_reason: {result.get('probe_reason') or '-'}",
+        f"stderr_tail: {result.get('stderr_tail') or '-'}",
         f"read_only: {bool(result.get('read_only'))}",
         f"job_status: {result.get('job_status') or '-'}",
         f"job_error_code: {result.get('job_error_code') or '-'}",
@@ -260,6 +269,11 @@ def main() -> int:
             result["tesseract_stderr_tail"] = (
                 str(probe.get("stderr_tail") or "") or None
             )
+            result["tessdata_prefix_used"] = result["tessdata_dir"]
+            result["lang_used"] = result["tesseract_lang_used"]
+            result["probe_reason"] = result["tesseract_probe_reason"]
+            result["probe_next_actions"] = list(result["tesseract_probe_next_actions"])
+            result["stderr_tail"] = result["tesseract_stderr_tail"]
             if not result["next_actions"]:
                 result["next_actions"] = list(probe.get("next_actions") or [])
         elif args.show_policy:
@@ -361,6 +375,13 @@ def main() -> int:
     result["tessdata_dir"] = _sanitize_path(
         str(result.get("tessdata_dir") or "") or None
     )
+    result["tessdata_prefix_used"] = result.get("tessdata_dir")
+    result["lang_used"] = result.get("tesseract_lang_used")
+    result["probe_reason"] = result.get("tesseract_probe_reason")
+    result["probe_next_actions"] = list(
+        result.get("tesseract_probe_next_actions") or []
+    )
+    result["stderr_tail"] = result.get("tesseract_stderr_tail")
 
     if args.json:
         print(json.dumps(result, sort_keys=True))

@@ -69,8 +69,10 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `policy_reason`
 - `existing_columns`
 - `tessdata_dir`, `tessdata_source`
+- `tessdata_prefix_used`
 - `tesseract_langs`, `tesseract_lang_used`
 - `tesseract_probe_reason`, `tesseract_probe_next_actions`, `tesseract_stderr_tail`
+- `lang_used`, `probe_reason`, `probe_next_actions`, `stderr_tail`
 - `sandbox_db_path` (nur gesetzt, wenn Sandbox aktiv und `--keep-artifacts` genutzt wird)
 - `watch_config_seeded`, `watch_config_existed`
 - `inbox_dir_used`, `scanner_discovered_files`
@@ -167,3 +169,4 @@ Erwartung nach Aktivierung:
 
 Hinweis:
 - Fuer reproduzierbare Diagnostik wird `--tessdata-dir` bevorzugt statt implizitem `TESSDATA_PREFIX`.
+- Detaillierte Probe-Logik: `docs/devtools/tesseract_probe.md`.
