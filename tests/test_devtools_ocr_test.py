@@ -44,10 +44,13 @@ def _default_probe(monkeypatch):
             "reason": None,
             "tesseract_found": True,
             "bin_path": "/usr/bin/tesseract",
+            "tesseract_bin_used": "/usr/bin/tesseract",
+            "print_tessdata_dir": "/usr/share/tessdata",
             "tessdata_prefix": "/usr/share",
             "tessdata_dir_used": "/usr/share",
             "tessdata_dir": "/usr/share",
             "tessdata_source": "heuristic",
+            "tessdata_candidates": ["/usr/share"],
             "langs": ["eng", "deu"],
             "lang_selected": "eng",
             "lang_used": "eng",
@@ -151,6 +154,49 @@ def test_run_ocr_test_strict_rejects_probe_warnings(monkeypatch) -> None:
     result = ocr_test.run_ocr_test("TENANT_A", sandbox=False, strict=True)
     assert result["ok"] is False
     assert result["reason"] == "tesseract_warning"
+
+
+def test_run_ocr_test_passes_tesseract_bin_override(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": False,
+            "tesseract_found": False,
+            "read_only": False,
+        },
+    )
+
+    captured: dict[str, object] = {}
+
+    def _probe(**kwargs):
+        captured["bin_path"] = kwargs.get("bin_path")
+        return {
+            "ok": False,
+            "reason": "tesseract_missing",
+            "tesseract_found": False,
+            "bin_path": None,
+            "tessdata_dir": None,
+            "tessdata_source": None,
+            "langs": [],
+            "lang_used": None,
+            "stderr_tail": None,
+            "next_actions": ["Install tesseract and ensure it is on PATH."],
+        }
+
+    monkeypatch.setattr(ocr_test, "probe_tesseract", _probe)
+    result = ocr_test.run_ocr_test(
+        "TENANT_A",
+        sandbox=False,
+        tesseract_bin="/tmp/custom-tesseract",
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "tesseract_missing"
+    assert captured["bin_path"] == "/tmp/custom-tesseract"
 
 
 def test_run_ocr_test_tesseract_missing(monkeypatch) -> None:

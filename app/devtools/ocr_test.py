@@ -462,6 +462,7 @@ def _execute_test_round(
     direct_submit_in_sandbox: bool = False,
     tesseract_lang: str | None = None,
     tesseract_tessdata_dir: str | None = None,
+    tesseract_bin: str | None = None,
     retry_enabled: bool = True,
 ) -> dict[str, Any]:
     from app.autonomy.ocr import submit_ocr_for_source_file
@@ -562,6 +563,7 @@ def _execute_test_round(
                         abs_path=target_path,
                         lang_override=tesseract_lang,
                         tessdata_dir=tesseract_tessdata_dir,
+                        tesseract_bin_override=tesseract_bin,
                         allow_retry=retry_enabled,
                     )
                     direct_submit_used = True
@@ -662,6 +664,7 @@ def _next_actions_for_reason(reason: str | None) -> list[str]:
         "tesseract_missing": [
             "Install tesseract and ensure it is on PATH (e.g. /opt/homebrew/bin/tesseract).",
             "Re-run with --json and confirm tesseract_found=true.",
+            "If --tesseract-bin is used, ensure the path exists and is executable.",
         ],
         "tessdata_missing": [
             "Set --tessdata-dir explicitly and verify traineddata files exist.",
@@ -749,6 +752,7 @@ def run_ocr_test(
     seed_watch_config_in_sandbox: bool = False,
     direct_submit_in_sandbox: bool = False,
     tessdata_dir: str | None = None,
+    tesseract_bin: str | None = None,
     lang: str | None = None,
     strict: bool = False,
     retry_enabled: bool = True,
@@ -768,6 +772,9 @@ def run_ocr_test(
         "tesseract_found": False,
         "tessdata_dir": None,
         "tessdata_source": None,
+        "tessdata_candidates": [],
+        "print_tessdata_dir": None,
+        "tesseract_bin_used": None,
         "tesseract_langs": [],
         "tesseract_lang_used": None,
         "tesseract_warnings": [],
@@ -828,7 +835,7 @@ def run_ocr_test(
                 resolved_bin_str = None
             preferred_langs = [str(lang).strip()] if str(lang or "").strip() else None
             probe = probe_tesseract(
-                bin_path=resolved_bin_str,
+                bin_path=str(tesseract_bin or "").strip() or resolved_bin_str,
                 tessdata_dir=tessdata_dir,
                 preferred_langs=preferred_langs,
             )
@@ -844,6 +851,19 @@ def run_ocr_test(
                 or None
             )
             result["tessdata_source"] = str(probe.get("tessdata_source") or "") or None
+            result["tessdata_candidates"] = [
+                _sanitize_path_for_output(item)
+                for item in list(probe.get("tessdata_candidates") or [])
+            ]
+            result["print_tessdata_dir"] = (
+                _sanitize_path_for_output(probe.get("print_tessdata_dir")) or None
+            )
+            result["tesseract_bin_used"] = (
+                _sanitize_path_for_output(
+                    probe.get("tesseract_bin_used") or probe.get("bin_path")
+                )
+                or None
+            )
             result["tesseract_langs"] = [
                 str(item) for item in list(probe.get("langs") or [])
             ]
@@ -987,6 +1007,14 @@ def run_ocr_test(
                             probe.get("tessdata_prefix")
                             or probe.get("tessdata_dir_used")
                             or probe.get("tessdata_dir")
+                            or ""
+                        )
+                        or None
+                    ),
+                    tesseract_bin=(
+                        str(
+                            probe.get("tesseract_bin_used")
+                            or probe.get("bin_path")
                             or ""
                         )
                         or None

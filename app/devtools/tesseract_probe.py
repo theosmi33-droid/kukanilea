@@ -13,7 +13,7 @@ TEST_MARKERS = (
     "+49 151 12345678",
     "OCR_Test_2026-02-16_KD-9999",
 )
-LANG_TOKEN_RE = re.compile(r"^[a-z0-9_]+$")
+LANG_CODE_RE = re.compile(r"^(?=.{2,32}$)(?=.*[a-z])[a-z0-9_]+$")
 MISSING_DATA_RE = re.compile(
     r"(error opening data file|couldn.?t load any languages|read_params_file)",
     re.IGNORECASE,
@@ -25,6 +25,7 @@ SUSPICIOUS_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 HOME_DIR_RE = re.compile(r"/(?:Users|home)/[^\s\"']+")
+ABS_PATH_SPACE_RE = re.compile(r"/[^\n]+")
 
 
 def _sanitize_text(
@@ -46,6 +47,18 @@ def _sanitize_text(
         text = text.replace(str(known), "<path>")
     text = SUSPICIOUS_PATH_RE.sub("<path>", text)
     text = HOME_DIR_RE.sub("<path>", text)
+    text = ABS_PATH_SPACE_RE.sub(
+        lambda m: (
+            "<path>"
+            if (
+                "/tessdata" in m.group(0).casefold()
+                or ".traineddata" in m.group(0).casefold()
+                or "/tesseract" in m.group(0).casefold()
+            )
+            else m.group(0)
+        ),
+        text,
+    )
     lines = []
     for line in text.splitlines():
         cleaned = re.sub(r"\s+", " ", line).strip()
@@ -64,7 +77,7 @@ def _sanitize_text(
 def _resolve_bin(bin_path: str | None) -> Path | None:
     if bin_path:
         p = Path(str(bin_path)).expanduser()
-        if p.exists() and p.is_file():
+        if p.exists() and p.is_file() and os.access(p, os.X_OK):
             return p
         return None
     try:
@@ -79,9 +92,14 @@ def _resolve_bin(bin_path: str | None) -> Path | None:
     if not fallback:
         return None
     candidate = Path(fallback)
-    if candidate.exists() and candidate.is_file():
+    if candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK):
         return candidate
     return None
+
+
+def _is_lang_code(line: str) -> bool:
+    token = str(line or "").strip().casefold()
+    return bool(LANG_CODE_RE.match(token))
 
 
 def _normalize_prefix(raw_path: Path) -> Path:
@@ -111,6 +129,7 @@ def _candidate_tessdata_dirs(
     *,
     bin_resolved: Path | None,
     tessdata_dir: str | None,
+    print_tessdata_dir: str | None,
     env: dict[str, str],
 ) -> list[tuple[str, Path]]:
     candidates: list[tuple[str, Path]] = []
@@ -125,6 +144,9 @@ def _candidate_tessdata_dirs(
             return
         seen.add(key)
         candidates.append((source, Path(key)))
+
+    if print_tessdata_dir:
+        _add("print", print_tessdata_dir)
 
     if tessdata_dir:
         _add("cli", tessdata_dir)
@@ -149,6 +171,37 @@ def _candidate_tessdata_dirs(
     return candidates
 
 
+def _run_print_tessdata_dir(
+    *,
+    binary: Path,
+    env: dict[str, str],
+    timeout_s: int,
+) -> str | None:
+    cmd = [str(binary), "--print-tessdata-dir"]
+    try:
+        proc = subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=max(1, int(timeout_s)),
+            check=False,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            env=dict(env),
+        )
+    except Exception:
+        return None
+    if int(proc.returncode or 0) != 0:
+        return None
+    line = str(proc.stdout or "").strip().splitlines()
+    if not line:
+        return None
+    path = str(line[-1]).strip()
+    if not path:
+        return None
+    return path
+
+
 def parse_list_langs_output(stdout: str, stderr: str) -> dict[str, Any]:
     langs: list[str] = []
     for raw_line in str(stdout or "").splitlines():
@@ -161,7 +214,7 @@ def parse_list_langs_output(stdout: str, stderr: str) -> dict[str, Any]:
         if ":" in line and "languages" in folded:
             continue
         token = line.strip().casefold()
-        if LANG_TOKEN_RE.match(token):
+        if _is_lang_code(token):
             langs.append(token)
 
     warning_lines: list[str] = []
@@ -179,7 +232,7 @@ def parse_list_langs_output(stdout: str, stderr: str) -> dict[str, Any]:
         elif line:
             warning_lines.append(line)
 
-    langs_sorted = sorted(dict.fromkeys(langs))
+    langs_unique = list(dict.fromkeys(langs))
     sanitized_warnings = []
     for line in warning_lines:
         safe = _sanitize_text(line, max_lines=1, max_chars=240)
@@ -189,7 +242,7 @@ def parse_list_langs_output(stdout: str, stderr: str) -> dict[str, Any]:
     stderr_tail = _sanitize_text(stderr, max_lines=20, max_chars=1200) or ""
     has_warning = bool(sanitized_warnings or stderr_tail)
     return {
-        "langs": langs_sorted,
+        "langs": langs_unique,
         "warnings": sanitized_warnings,
         "stderr_tail": stderr_tail,
         "has_warning": has_warning,
@@ -204,7 +257,7 @@ def _pick_lang(
     if not langs:
         return None, False
 
-    normalized = sorted(dict.fromkeys([str(v).strip().casefold() for v in langs if v]))
+    normalized = list(dict.fromkeys([str(v).strip().casefold() for v in langs if v]))
     preferred = [
         str(v).strip().casefold() for v in (preferred_langs or []) if str(v).strip()
     ]
@@ -282,6 +335,8 @@ def probe_tesseract(
         "tesseract_found": False,
         "bin_path": None,
         "tesseract_bin": None,
+        "tesseract_bin_used": None,
+        "print_tessdata_dir": None,
         "tessdata_prefix": None,
         "tessdata_dir": None,
         "tessdata_dir_used": None,
@@ -306,11 +361,28 @@ def probe_tesseract(
     result["tesseract_found"] = True
     result["bin_path"] = str(binary)
     result["tesseract_bin"] = str(binary)
+    result["tesseract_bin_used"] = str(binary)
     preferred = preferred_langs if preferred_langs else list(DEFAULT_PREFERRED_LANGS)
+
+    print_tessdata_dir = _run_print_tessdata_dir(
+        binary=binary,
+        env=runtime_env,
+        timeout_s=min(max(1, int(timeout_s)), 5),
+    )
+    result["print_tessdata_dir"] = (
+        _sanitize_text(
+            print_tessdata_dir,
+            known_paths=[str(binary), str(Path.home())],
+            max_lines=1,
+            max_chars=256,
+        )
+        or None
+    )
 
     candidate_prefixes = _candidate_tessdata_dirs(
         bin_resolved=binary,
         tessdata_dir=tessdata_dir,
+        print_tessdata_dir=print_tessdata_dir,
         env=runtime_env,
     )
     valid_candidates: list[tuple[str, Path, Path]] = []
@@ -409,10 +481,28 @@ def probe_tesseract(
         result["stderr_tail"] = (
             _sanitize_text(last_stderr, known_paths=known_paths) or ""
         )
+        result["tessdata_candidates"] = [
+            _sanitize_text(item, known_paths=known_paths, max_lines=1, max_chars=256)
+            or ""
+            for item in list(result.get("tessdata_candidates") or [])
+        ]
+        result["tessdata_candidates"] = [
+            item for item in result["tessdata_candidates"] if item
+        ]
+        result["tesseract_bin_used"] = (
+            _sanitize_text(
+                str(binary), known_paths=[str(Path.home())], max_lines=1, max_chars=256
+            )
+            or None
+        )
         result["next_actions"] = _next_actions(reason, preferred_langs=preferred_langs)
         return result
 
-    langs = sorted(dict.fromkeys([str(v).strip().casefold() for v in success["langs"]]))
+    langs = list(
+        dict.fromkeys(
+            [str(v).strip().casefold() for v in success["langs"] if str(v).strip()]
+        )
+    )
     result["langs"] = langs
     result["warnings"] = list(success.get("warnings") or [])
     result["stderr_tail"] = str(success.get("stderr_tail") or "")
@@ -420,6 +510,19 @@ def probe_tesseract(
     result["tessdata_prefix"] = str(success.get("prefix") or "") or None
     result["tessdata_dir"] = str(success.get("prefix") or "") or None
     result["tessdata_dir_used"] = str(success.get("prefix") or "") or None
+    result["tessdata_candidates"] = [
+        _sanitize_text(item, known_paths=known_paths, max_lines=1, max_chars=256) or ""
+        for item in list(result.get("tessdata_candidates") or [])
+    ]
+    result["tessdata_candidates"] = [
+        item for item in result["tessdata_candidates"] if item
+    ]
+    result["tesseract_bin_used"] = (
+        _sanitize_text(
+            str(binary), known_paths=[str(Path.home())], max_lines=1, max_chars=256
+        )
+        or None
+    )
 
     selected_lang, allowed = _pick_lang(langs=langs, preferred_langs=preferred_langs)
     result["lang_selected"] = selected_lang

@@ -132,6 +132,9 @@ def test_ocr_subprocess_uses_tessdata_override(tmp_path: Path, monkeypatch) -> N
     _insert_source_file("TENANT_A", source_file_id, "override.png")
     image_path = tmp_path / "override.png"
     image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")
+    override_bin = tmp_path / "tesseract"
+    override_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    override_bin.chmod(0o755)
 
     captured: dict[str, object] = {}
 
@@ -165,10 +168,12 @@ def test_ocr_subprocess_uses_tessdata_override(tmp_path: Path, monkeypatch) -> N
             abs_path=image_path,
             lang_override="deu",
             tessdata_dir="/opt/homebrew/share",
+            tesseract_bin_override=str(override_bin),
         )
 
     assert result["ok"] is True
     cmd = captured["cmd"]
+    assert cmd[0] == str(override_bin)
     assert "--tessdata-dir" in cmd
     assert cmd[cmd.index("--tessdata-dir") + 1] == "/opt/homebrew/share"
     assert "-l" in cmd
