@@ -12,6 +12,12 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import kukanilea_core_v3_fixed as legacy_core
+from app.devtools.ocr_policy import get_policy_status
+from app.devtools.sandbox import (
+    cleanup_sandbox,
+    create_sandbox_copy,
+    resolve_core_db_path,
+)
 
 TEST_EMAIL_PATTERN = "pilot+test@example.com"
 TEST_PHONE_PATTERN = "+49 151 12345678"
@@ -61,18 +67,8 @@ def _detect_read_only() -> bool:
         return False
 
 
-def _copy_db_with_sidecars(src: Path, dst: Path) -> None:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    if src.exists():
-        shutil.copy2(src, dst)
-        for suffix in ("-wal", "-shm"):
-            extra_src = Path(str(src) + suffix)
-            extra_dst = Path(str(dst) + suffix)
-            if extra_src.exists():
-                shutil.copy2(extra_src, extra_dst)
-        return
-    con = sqlite3.connect(str(dst))
-    con.close()
+def detect_read_only() -> bool:
+    return _detect_read_only()
 
 
 def _restore_env(previous: dict[str, str | None]) -> None:
@@ -90,7 +86,8 @@ def _sandbox_context(
     keep_artifacts: bool,
 ) -> Iterator[dict[str, Any]]:
     if not sandbox:
-        core_db, auth_db = _resolve_config_db_paths()
+        core_db = resolve_core_db_path()
+        _core_db_unused, auth_db = _resolve_config_db_paths()
         yield {
             "sandbox": False,
             "core_db": core_db,
@@ -100,12 +97,13 @@ def _sandbox_context(
         }
         return
 
-    src_core_db, src_auth_db = _resolve_config_db_paths()
-    work_dir = Path(tempfile.mkdtemp(prefix="kukanilea-ocrtest-"))
-    sandbox_core_db = work_dir / "core.sqlite3"
+    sandbox_core_db, work_dir = create_sandbox_copy("devtools")
+    _core_db_unused, src_auth_db = _resolve_config_db_paths()
     sandbox_auth_db = work_dir / "auth.sqlite3"
-    _copy_db_with_sidecars(src_core_db, sandbox_core_db)
-    _copy_db_with_sidecars(src_auth_db, sandbox_auth_db)
+    if src_auth_db.exists():
+        shutil.copy2(src_auth_db, sandbox_auth_db)
+    else:
+        sqlite3.connect(str(sandbox_auth_db)).close()
 
     previous_env = {key: os.environ.get(key) for key in ENV_DB_KEYS}
     os.environ["KUKANILEA_CORE_DB"] = str(sandbox_core_db)
@@ -145,7 +143,49 @@ def _sandbox_context(
             setattr(cfg, "AUTH_DB", old_cfg_auth)
         _restore_env(previous_env)
         if not keep_artifacts:
-            shutil.rmtree(work_dir, ignore_errors=True)
+            cleanup_sandbox(work_dir)
+
+
+@contextlib.contextmanager
+def _db_override_context(db_path: Path) -> Iterator[dict[str, Any]]:
+    override_db = Path(str(db_path))
+    _core_db_unused, current_auth_db = _resolve_config_db_paths()
+    previous_env = {key: os.environ.get(key) for key in ENV_DB_KEYS}
+    os.environ["KUKANILEA_CORE_DB"] = str(override_db)
+    os.environ["DB_FILENAME"] = str(override_db)
+    os.environ["TOPHANDWERK_DB_FILENAME"] = str(override_db)
+    os.environ.setdefault("KUKANILEA_ANONYMIZATION_KEY", "devtools-ocr-test-key")
+
+    cfg = _resolve_config_object()
+    old_cfg_core = getattr(cfg, "CORE_DB", None)
+    old_cfg_auth = getattr(cfg, "AUTH_DB", None)
+    setattr(cfg, "CORE_DB", override_db)
+    setattr(cfg, "AUTH_DB", current_auth_db)
+
+    old_core_db_path = Path(str(legacy_core.DB_PATH))
+    try:
+        legacy_core.set_db_path(override_db)
+    except Exception:
+        legacy_core.DB_PATH = override_db
+
+    try:
+        yield {
+            "sandbox": False,
+            "core_db": override_db,
+            "auth_db": current_auth_db,
+            "work_dir": None,
+            "keep_artifacts": False,
+        }
+    finally:
+        try:
+            legacy_core.set_db_path(old_core_db_path)
+        except Exception:
+            legacy_core.DB_PATH = old_core_db_path
+        if old_cfg_core is not None:
+            setattr(cfg, "CORE_DB", old_cfg_core)
+        if old_cfg_auth is not None:
+            setattr(cfg, "AUTH_DB", old_cfg_auth)
+        _restore_env(previous_env)
 
 
 def _preflight_status(tenant_id: str) -> dict[str, Any]:
@@ -330,7 +370,58 @@ def _build_message(result: dict[str, Any]) -> str:
         return "PII leak detected in Knowledge or Eventlog."
     if reason == "job_not_found":
         return "No OCR job was detected within timeout."
+    if reason == "schema_unknown":
+        return "Policy schema is unknown. Inspect existing_columns."
+    if reason == "ambiguous_columns":
+        return "Multiple OCR policy columns detected; choose one explicitly."
+    if reason == "schema_unknown_insert":
+        return "Policy row insert failed due to unknown required columns."
+    if reason == "timeout":
+        return "OCR run timed out."
     return "OCR test failed."
+
+
+def _next_actions_for_reason(reason: str | None) -> list[str]:
+    key = str(reason or "")
+    mapping = {
+        "policy_denied": [
+            "Enable OCR policy for this tenant (use --enable-policy-in-sandbox or update knowledge_source_policies).",
+            "Verify tenant_id is correct.",
+        ],
+        "tesseract_missing": [
+            "Install tesseract and ensure it is on PATH (e.g. /opt/homebrew/bin/tesseract).",
+            "Re-run with --json and confirm tesseract_found=true.",
+        ],
+        "read_only": [
+            "Disable READ_ONLY for dev testing or run without --enable-policy-in-sandbox.",
+            "Re-run after changing READ_ONLY.",
+        ],
+        "schema_unknown": [
+            "Inspect table schema: knowledge_source_policies columns listed in existing_columns.",
+            "Update allowlist or schema handler accordingly.",
+        ],
+        "ambiguous_columns": [
+            "Use a single OCR policy column from the allowlist (allow_ocr/ocr_enabled/ocr_allowed).",
+            "Adjust schema handler to resolve ambiguity explicitly.",
+        ],
+        "schema_unknown_insert": [
+            "Inspect required columns for knowledge_source_policies in existing_columns.",
+            "Extend insert defaults for missing required fields before enabling policy.",
+        ],
+        "timeout": [
+            "Increase --timeout.",
+            "Check scanner paths / source_watch_config and that the inbox dir is writable.",
+        ],
+        "pii_leak": [
+            "Stop: redaction regression suspected.",
+            "Check OCR redaction pipeline and eventlog filters; do not proceed to pilot.",
+        ],
+    }
+    return list(mapping.get(key, []))
+
+
+def next_actions_for_reason(reason: str | None) -> list[str]:
+    return _next_actions_for_reason(reason)
 
 
 def run_ocr_test(
@@ -339,6 +430,7 @@ def run_ocr_test(
     timeout_s: int = 10,
     sandbox: bool = True,
     keep_artifacts: bool = False,
+    db_path_override: Path | None = None,
 ) -> dict[str, Any]:
     tenant = str(tenant_id or "").strip() or "default"
     result: dict[str, Any] = {
@@ -347,6 +439,10 @@ def run_ocr_test(
         "tenant_id": tenant,
         "sandbox": bool(sandbox),
         "policy_enabled": False,
+        "policy_enabled_base": None,
+        "policy_enabled_effective": None,
+        "policy_reason": None,
+        "existing_columns": None,
         "tesseract_found": False,
         "read_only": False,
         "job_status": None,
@@ -356,30 +452,75 @@ def run_ocr_test(
         "duration_ms": None,
         "chars_out": None,
         "truncated": False,
+        "sandbox_db_path": None,
+        "next_actions": [],
         "message": "",
     }
 
     try:
-        with _sandbox_context(
-            sandbox=bool(sandbox),
-            keep_artifacts=bool(keep_artifacts),
-        ) as ctx:
+        if db_path_override is not None:
+            cm = _db_override_context(Path(str(db_path_override)))
+        else:
+            cm = _sandbox_context(
+                sandbox=bool(sandbox),
+                keep_artifacts=bool(keep_artifacts),
+            )
+        with cm as ctx:
+            result["sandbox"] = bool(sandbox and db_path_override is None)
+            core_db_path = Path(str(ctx["core_db"]))
+            if result["sandbox"]:
+                result["sandbox_db_path"] = str(core_db_path)
+
+            policy_status = get_policy_status(tenant, db_path=core_db_path)
+            if bool(policy_status.get("ok")):
+                result["policy_enabled_effective"] = bool(
+                    policy_status.get("policy_enabled")
+                )
+                result["existing_columns"] = list(
+                    policy_status.get("existing_columns") or []
+                )
+            else:
+                result["policy_reason"] = str(
+                    policy_status.get("reason") or "schema_unknown"
+                )
+                result["existing_columns"] = list(
+                    policy_status.get("existing_columns") or []
+                )
+
             preflight = _preflight_status(tenant)
             result["policy_enabled"] = bool(preflight["policy_enabled"])
             result["tesseract_found"] = bool(preflight["tesseract_found"])
             result["read_only"] = bool(preflight["read_only"])
+            if result["policy_enabled_effective"] is None:
+                result["policy_enabled_effective"] = bool(result["policy_enabled"])
 
             if result["read_only"]:
                 result["reason"] = "read_only"
                 result["message"] = _build_message(result)
+                result["next_actions"] = _next_actions_for_reason(
+                    str(result.get("reason") or "")
+                )
+                return result
+            if result["policy_reason"]:
+                result["reason"] = str(result["policy_reason"])
+                result["message"] = _build_message(result)
+                result["next_actions"] = _next_actions_for_reason(
+                    str(result.get("reason") or "")
+                )
                 return result
             if not result["policy_enabled"]:
                 result["reason"] = "policy_denied"
                 result["message"] = _build_message(result)
+                result["next_actions"] = _next_actions_for_reason(
+                    str(result.get("reason") or "")
+                )
                 return result
             if not result["tesseract_found"]:
                 result["reason"] = "tesseract_missing"
                 result["message"] = _build_message(result)
+                result["next_actions"] = _next_actions_for_reason(
+                    str(result.get("reason") or "")
+                )
                 return result
 
             artifacts_root = Path(
@@ -392,7 +533,7 @@ def run_ocr_test(
                 round_result = _execute_test_round(
                     tenant,
                     max(1, int(timeout_s)),
-                    Path(str(ctx["core_db"])),
+                    core_db_path,
                     artifacts_root,
                 )
             finally:
@@ -419,6 +560,9 @@ def run_ocr_test(
                 result["reason"] = None
 
             result["message"] = _build_message(result)
+            result["next_actions"] = _next_actions_for_reason(
+                str(result.get("reason") or "")
+            )
             return result
     except Exception as exc:
         result["reason"] = "unexpected_error"
@@ -426,4 +570,7 @@ def run_ocr_test(
             f"OCR test failed with unexpected error: {type(exc).__name__}"
         )
         result["ok"] = False
+        result["next_actions"] = _next_actions_for_reason(
+            str(result.get("reason") or "")
+        )
         return result
