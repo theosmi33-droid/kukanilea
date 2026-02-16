@@ -7,12 +7,25 @@
 - Redaction/PII-Leak-Checks in Knowledge und Eventlog
 
 Der Test laeuft standardmaessig im Sandbox-Modus (temporare DB-Kopien).
+Sandbox bedeutet: Die echte Core-DB wird 1:1 kopiert, der Test laeuft nur auf der Kopie.
 
 ## Beispiele
 
 ```bash
 python -m app.devtools.cli_ocr_test --tenant dev
 python -m app.devtools.cli_ocr_test --tenant dev --json
+```
+
+Nur Policy lesen (kein OCR-Run):
+
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --show-policy --json
+```
+
+OCR-Policy nur in der Sandbox aktivieren und direkt E2E testen:
+
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json --timeout 30
 ```
 
 Ohne Sandbox (schreibt Jobs in die echte DB, nur fuer bewusstes Debugging):
@@ -36,6 +49,13 @@ python -m app.devtools.cli_ocr_test --tenant dev --keep-artifacts
 - keine PII-Patterns in Knowledge/Eventlog gefunden
 
 `ok=false` liefert einen stabilen `reason` (z. B. `policy_denied`, `tesseract_missing`, `read_only`, `pii_leak`).
+Zusaetzliche Felder fuer Operator-Diagnose:
+- `policy_enabled_base`
+- `policy_enabled_effective`
+- `policy_reason`
+- `existing_columns`
+- `sandbox_db_path` (nur gesetzt, wenn Sandbox aktiv und `--keep-artifacts` genutzt wird)
+- `next_actions`
 
 ## OCR fuer Tenant `dev` aktivieren (lokal)
 
@@ -72,9 +92,16 @@ ON CONFLICT(tenant_id) DO UPDATE SET
 SQL
 ```
 
+Alternative ohne echte DB-Mutation:
+
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json
+```
+
 READ_ONLY-Verhalten:
 - Wenn READ_ONLY aktiv ist, fuehrt das Tool nur Preflight aus und bricht mit `reason=read_only` ab.
 - In READ_ONLY werden keine Ingest-/OCR-Mutationen gestartet.
+- In READ_ONLY wird auch `--enable-policy-in-sandbox` verweigert (`reason=read_only`).
 
 Verifikation:
 
