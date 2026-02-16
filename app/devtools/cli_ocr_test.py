@@ -54,6 +54,8 @@ def _reason_message(reason: str | None) -> str:
         return "No OCR job was detected within timeout."
     if key == "invalid_args":
         return "Invalid CLI argument combination."
+    if key == "commit_guard_failed":
+        return "Real policy commit refused by guard."
     return "OCR test failed."
 
 
@@ -242,6 +244,7 @@ def main() -> int:
     parser.add_argument("--tenant", required=True)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--timeout", type=int, default=10)
+    parser.add_argument("--doctor", action="store_true")
     parser.add_argument("--show-policy", action="store_true")
     parser.add_argument("--show-tesseract", action="store_true")
     parser.add_argument("--enable-policy-in-sandbox", action="store_true")
@@ -269,10 +272,19 @@ def main() -> int:
     parser.set_defaults(seed_watch_config_in_sandbox=True)
     parser.add_argument("--direct-submit-in-sandbox", action="store_true")
     parser.add_argument("--keep-artifacts", action="store_true")
+    parser.add_argument("--commit-real-policy", action="store_true")
+    parser.add_argument("--yes-really-commit")
+    parser.add_argument("--report-json-path")
+    parser.add_argument("--report-text-path")
     args = parser.parse_args()
 
     try:
         # Lazy import keeps sandbox env wiring possible before heavy modules.
+        from app.devtools.ocr_doctor import (
+            format_doctor_report,
+            report_to_json,
+            run_ocr_doctor,
+        )
         from app.devtools.ocr_policy import (
             enable_ocr_policy_in_db,
             get_policy_status,
@@ -297,6 +309,59 @@ def main() -> int:
         )
         base_db = resolve_core_db_path()
         base_status = get_policy_status(tenant, db_path=base_db)
+
+        if args.doctor and (args.show_policy or args.show_tesseract):
+            result = _policy_view_payload(
+                tenant=tenant,
+                status=base_status,
+                next_actions=next_actions_for_reason("invalid_args"),
+            )
+            result["ok"] = False
+            result["reason"] = "invalid_args"
+            result["policy_reason"] = "invalid_args"
+            result["message"] = _reason_message("invalid_args")
+            if args.json:
+                print(json.dumps(result, sort_keys=True))
+            else:
+                print(_human_report(result))
+            return 1
+
+        if args.doctor:
+            report, doctor_exit = run_ocr_doctor(
+                tenant,
+                json_mode=bool(args.json),
+                strict=bool(args.strict),
+                timeout_s=timeout_s,
+                sandbox=not bool(args.no_sandbox),
+                enable_policy_in_sandbox=(
+                    bool(args.enable_policy_in_sandbox) or not bool(args.no_sandbox)
+                ),
+                seed_watch_config_in_sandbox=bool(args.seed_watch_config_in_sandbox),
+                direct_submit_in_sandbox=(
+                    bool(args.direct_submit_in_sandbox) or not bool(args.no_sandbox)
+                ),
+                no_retry=bool(args.no_retry),
+                tesseract_bin=tesseract_bin_override,
+                tessdata_dir=str(args.tessdata_dir or "").strip() or None,
+                lang=(preferred_langs[0] if preferred_langs else None),
+                commit_real_policy=bool(args.commit_real_policy),
+                yes_really_commit=str(args.yes_really_commit or "").strip() or None,
+            )
+            if str(args.report_json_path or "").strip():
+                Path(str(args.report_json_path)).write_text(
+                    report_to_json(report) + "\n",
+                    encoding="utf-8",
+                )
+            if str(args.report_text_path or "").strip():
+                Path(str(args.report_text_path)).write_text(
+                    format_doctor_report(report) + "\n",
+                    encoding="utf-8",
+                )
+            if args.json:
+                print(report_to_json(report))
+            else:
+                print(format_doctor_report(report))
+            return int(doctor_exit)
 
         if not _valid_tesseract_bin(tesseract_bin_override):
             result = _policy_view_payload(

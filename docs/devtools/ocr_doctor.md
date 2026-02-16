@@ -1,0 +1,61 @@
+# OCR Doctor (Operator/DevOps)
+
+`app.devtools.cli_ocr_test --doctor` ist der konsolidierte Operator-Check fuer OCR:
+
+- Policy-Status (Base-DB)
+- Tesseract-Probe (Version, Langs, Tessdata-Discovery)
+- Deterministischer Sandbox-E2E-Smoke (Policy + Watch-Config + optional Direct-Submit)
+- Optionale, explizit abgesicherte Real-DB-Policy-Aktivierung
+
+## Sicherheitsmodell
+
+- Standard: `sandbox=on` (keine Mutation in der echten DB)
+- Keine neuen Dependencies, kein Netzwerk
+- Tenant-gebunden (`--tenant` ist Pflicht)
+- READ_ONLY blockiert alle Mutationspfade
+- Ausgabe ist sanitisiert (keine absoluten User-Pfade, keine PII-Marker)
+
+## Exit-Codes
+
+- `0`: Erfolg
+- `2`: `ok_with_warnings` (nur ohne `--strict`)
+- `1`: alle Fehler (inkl. strict-warning, policy_denied, read_only)
+
+## Empfohlener Ablauf
+
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --doctor --json
+python -m app.devtools.cli_ocr_test --tenant dev --doctor --strict --json
+```
+
+Mit Report-Artefakten:
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor \
+  --json \
+  --report-json-path reports/ocr_doctor.json \
+  --report-text-path reports/ocr_doctor.txt
+```
+
+## Optional: reale Policy-Aktivierung (explizit)
+
+Dieser Pfad ist absichtlich stark abgesichert:
+
+- `--commit-real-policy`
+- `--yes-really-commit <TENANT_ID>` mit exakt gleicher Tenant-ID
+- READ_ONLY muss `false` sein
+
+Beispiel:
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor \
+  --commit-real-policy \
+  --yes-really-commit dev \
+  --json
+```
+
+Wenn Guard-Bedingungen nicht passen, endet der Lauf mit `reason=commit_guard_failed` oder `reason=read_only`.
