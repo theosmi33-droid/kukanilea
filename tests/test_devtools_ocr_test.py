@@ -844,7 +844,7 @@ def test_cli_enable_policy_in_sandbox_read_only_refused(
     exit_code = cli_ocr_test.main()
     out = capsys.readouterr().out.strip()
     payload = json.loads(out)
-    assert exit_code == 2
+    assert exit_code == 1
     assert payload["reason"] == "read_only"
     assert payload["ok"] is False
 
@@ -992,3 +992,120 @@ def test_cli_show_tesseract_json(monkeypatch, capsys, tmp_path: Path) -> None:
     assert payload["ok"] is True
     assert payload["tesseract_found"] is True
     assert payload["tessdata_dir"] == "<path>"
+
+
+def test_cli_show_tesseract_ok_with_warnings_exit_2(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    import app.autonomy.ocr as ocr_mod
+    import app.devtools.ocr_policy as policy_mod
+    import app.devtools.sandbox as sandbox_mod
+    import app.devtools.tesseract_probe as probe_mod
+
+    base_db = tmp_path / "base.sqlite3"
+    sqlite3.connect(str(base_db)).close()
+    monkeypatch.setattr(sandbox_mod, "resolve_core_db_path", lambda: base_db)
+    monkeypatch.setattr(
+        policy_mod,
+        "get_policy_status",
+        lambda _tenant_id, *, db_path: {
+            "ok": True,
+            "policy_enabled": True,
+            "ocr_column": "allow_ocr",
+            "row_present": True,
+            "existing_columns": ["tenant_id", "allow_ocr", "updated_at"],
+            "table": "knowledge_source_policies",
+        },
+    )
+    monkeypatch.setattr(
+        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": True,
+            "reason": "ok_with_warnings",
+            "bin_path": "/usr/bin/tesseract",
+            "tessdata_prefix": "/usr/share",
+            "tessdata_dir_used": "/usr/share",
+            "tessdata_source": "heuristic",
+            "langs": ["deu", "osd"],
+            "lang_selected": "deu",
+            "warnings": ["Error opening data file <path>/eng.traineddata"],
+            "stderr_tail": "Error opening data file <path>/eng.traineddata",
+            "next_actions": ["Install eng traineddata (recommended)."],
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["cli_ocr_test", "--tenant", "dev", "--show-tesseract", "--json"],
+    )
+    exit_code = cli_ocr_test.main()
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 2
+    assert payload["ok"] is True
+    assert payload["reason"] == "ok_with_warnings"
+
+
+def test_cli_show_tesseract_ok_with_warnings_strict_exit_1(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    import app.autonomy.ocr as ocr_mod
+    import app.devtools.ocr_policy as policy_mod
+    import app.devtools.sandbox as sandbox_mod
+    import app.devtools.tesseract_probe as probe_mod
+
+    base_db = tmp_path / "base.sqlite3"
+    sqlite3.connect(str(base_db)).close()
+    monkeypatch.setattr(sandbox_mod, "resolve_core_db_path", lambda: base_db)
+    monkeypatch.setattr(
+        policy_mod,
+        "get_policy_status",
+        lambda _tenant_id, *, db_path: {
+            "ok": True,
+            "policy_enabled": True,
+            "ocr_column": "allow_ocr",
+            "row_present": True,
+            "existing_columns": ["tenant_id", "allow_ocr", "updated_at"],
+            "table": "knowledge_source_policies",
+        },
+    )
+    monkeypatch.setattr(
+        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": True,
+            "reason": "ok_with_warnings",
+            "bin_path": "/usr/bin/tesseract",
+            "tessdata_prefix": "/usr/share",
+            "tessdata_dir_used": "/usr/share",
+            "tessdata_source": "heuristic",
+            "langs": ["deu", "osd"],
+            "lang_selected": "deu",
+            "warnings": ["Error opening data file <path>/eng.traineddata"],
+            "stderr_tail": "Error opening data file <path>/eng.traineddata",
+            "next_actions": ["Install eng traineddata (recommended)."],
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cli_ocr_test",
+            "--tenant",
+            "dev",
+            "--show-tesseract",
+            "--strict",
+            "--json",
+        ],
+    )
+    exit_code = cli_ocr_test.main()
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["reason"] == "tesseract_warning"

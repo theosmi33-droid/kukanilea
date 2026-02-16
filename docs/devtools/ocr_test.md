@@ -59,6 +59,12 @@ Artefakte im Sandbox-Lauf behalten:
 python -m app.devtools.cli_ocr_test --tenant dev --keep-artifacts
 ```
 
+## Exit-Codes (CI-stabil)
+
+- `0`: Erfolg (`ok=true`, ohne Warnungs-Eskalation)
+- `2`: `ok_with_warnings` (nur wenn **nicht** `--strict`)
+- `1`: alle Fehler (inkl. `--strict` bei Warnungen)
+
 ## Rueckgabe
 
 `ok=true` bedeutet:
