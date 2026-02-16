@@ -1,0 +1,49 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between gap-2">
+    <h1 class="text-xl font-bold">Conversations</h1>
+    <form class="flex items-center gap-2" method="get" action="/conversations">
+      <select class="input px-3 py-2 text-sm" name="channel">
+        <option value="" {% if not channel %}selected{% endif %}>Alle Kanäle</option>
+        <option value="email" {% if channel == 'email' %}selected{% endif %}>E-Mail</option>
+        <option value="chat" {% if channel == 'chat' %}selected{% endif %}>Chat</option>
+        <option value="phone" {% if channel == 'phone' %}selected{% endif %}>Telefon</option>
+      </select>
+      <input class="input w-24 px-3 py-2 text-sm" type="number" min="1" max="50" name="limit" value="{{ limit }}">
+      <button class="btn-outline rounded-xl px-3 py-2 text-sm" type="submit">Filter</button>
+    </form>
+  </div>
+
+  <div class="card overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b" style="border-color:var(--border)">
+          <th class="text-left px-3 py-2">Zeit</th>
+          <th class="text-left px-3 py-2">Kanal</th>
+          <th class="text-left px-3 py-2">Richtung</th>
+          <th class="text-left px-3 py-2">Betreff</th>
+          <th class="text-left px-3 py-2">Vorschau</th>
+          <th class="text-left px-3 py-2">Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in events %}
+        <tr class="border-b" style="border-color:var(--border)">
+          <td class="px-3 py-2">{{ row.occurred_at }}</td>
+          <td class="px-3 py-2">{{ row.channel }}</td>
+          <td class="px-3 py-2">{{ row.direction }}</td>
+          <td class="px-3 py-2">{{ row.preview_subject or '-' }}</td>
+          <td class="px-3 py-2">{{ row.preview_body or '-' }}</td>
+          <td class="px-3 py-2">
+            <a class="btn-outline inline-flex rounded-lg px-2 py-1 text-xs" href="/conversations/{{ row.id }}">Details</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="px-3 py-4 muted" colspan="6">Keine Conversations vorhanden.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+

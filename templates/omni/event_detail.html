@@ -1,0 +1,45 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between gap-2">
+    <h1 class="text-xl font-bold">Conversation Event</h1>
+    <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/conversations">Zurück</a>
+  </div>
+
+  <div class="card p-4 space-y-3 text-sm">
+    <div class="grid gap-2 md:grid-cols-2">
+      <div><span class="muted">ID:</span> {{ event.id }}</div>
+      <div><span class="muted">Tenant:</span> {{ event.tenant_id }}</div>
+      <div><span class="muted">Kanal:</span> {{ event.channel }}</div>
+      <div><span class="muted">Richtung:</span> {{ event.direction }}</div>
+      <div><span class="muted">Occurred At:</span> {{ event.occurred_at }}</div>
+      <div><span class="muted">Created At:</span> {{ event.created_at }}</div>
+      <div><span class="muted">Channel Ref:</span> {{ event.channel_ref or '-' }}</div>
+      <div><span class="muted">Audit Hash:</span> {{ event.audit_hash }}</div>
+    </div>
+  </div>
+
+  <div class="card p-4 space-y-3 text-sm">
+    <h2 class="font-semibold">Redacted Payload</h2>
+    <div class="grid gap-2 md:grid-cols-2">
+      <div><span class="muted">From Domain:</span> {{ event.payload.from_domain or '-' }}</div>
+      <div><span class="muted">To Domains:</span> {{ (event.payload.to_domains or [])|join(', ') or '-' }}</div>
+      <div><span class="muted">From Token:</span> {{ event.payload.from_token or '-' }}</div>
+      <div><span class="muted">To Tokens:</span> {{ (event.payload.to_tokens or [])|length }}</div>
+      <div><span class="muted">Body Truncated:</span> {{ event.payload.body_truncated }}</div>
+      <div><span class="muted">HTML Fallback:</span> {{ event.payload.used_html_fallback }}</div>
+    </div>
+    <div>
+      <div class="muted mb-1">Subject (redacted)</div>
+      <div class="rounded-lg border px-3 py-2" style="border-color:var(--border)">{{ event.payload.subject_redacted or '-' }}</div>
+    </div>
+    <div>
+      <div class="muted mb-1">Body (redacted)</div>
+      <div class="rounded-lg border px-3 py-2 whitespace-pre-wrap" style="border-color:var(--border)">{{ event.payload.body_redacted or '-' }}</div>
+    </div>
+  </div>
+
+  <div class="card p-4 text-sm">
+    <h2 class="font-semibold mb-2">Redaction Findings</h2>
+    <pre class="whitespace-pre-wrap">{{ event.findings }}</pre>
+  </div>
+</div>
+
