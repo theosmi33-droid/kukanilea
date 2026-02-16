@@ -28,6 +28,14 @@ python -m app.devtools.cli_ocr_test --tenant dev --doctor --json
 python -m app.devtools.cli_ocr_test --tenant dev --doctor --strict --json
 ```
 
+Readiness-Felder fuer OCR-v0 (introspektiv, ohne DB-Mutation):
+
+- `ocr_v0_present`
+- `ocr_v0_tables_present`
+- `ocr_v0_pipeline_callable`
+- `ocr_v0_missing_tables`
+- `ocr_v0_next_actions`
+
 Mit Report-Artefakten:
 
 ```bash

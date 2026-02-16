@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from hashlib import sha256
 from pathlib import Path
 
 import app.devtools.cli_ocr_test as cli_ocr_test
@@ -18,6 +19,12 @@ def _policy_ok(enabled: bool = True) -> dict[str, object]:
         "existing_columns": ["tenant_id", "allow_ocr", "updated_at"],
         "table": "knowledge_source_policies",
     }
+
+
+def _sha256_file(path: Path) -> str:
+    h = sha256()
+    h.update(path.read_bytes())
+    return h.hexdigest()
 
 
 def test_run_ocr_doctor_schema_and_exit_ok(monkeypatch, tmp_path: Path) -> None:
@@ -355,3 +362,33 @@ def test_cli_doctor_writes_reports(monkeypatch, capsys, tmp_path: Path) -> None:
     text = report_text.read_text(encoding="utf-8")
     assert "OCR Doctor Report" in text
     assert "{" not in text
+
+
+def test_ocr_v0_readiness_introspection_no_mutation(tmp_path: Path) -> None:
+    db_path = tmp_path / "core.sqlite3"
+    con = sqlite3.connect(str(db_path))
+    try:
+        con.execute(
+            "CREATE TABLE knowledge_source_policies(tenant_id TEXT PRIMARY KEY, allow_ocr INTEGER)"
+        )
+        con.execute(
+            "CREATE TABLE source_watch_config(tenant_id TEXT PRIMARY KEY, documents_inbox_dir TEXT)"
+        )
+        con.execute(
+            "CREATE TABLE source_files(id TEXT PRIMARY KEY, tenant_id TEXT, basename TEXT)"
+        )
+        con.execute(
+            "CREATE TABLE autonomy_ocr_jobs(id TEXT PRIMARY KEY, tenant_id TEXT, status TEXT)"
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    before = _sha256_file(db_path)
+    readiness = ocr_doctor._ocr_v0_readiness(db_path)  # noqa: SLF001
+    after = _sha256_file(db_path)
+
+    assert before == after
+    assert readiness["ocr_v0_tables_present"] is True
+    assert isinstance(readiness["ocr_v0_present"], bool)
+    assert isinstance(readiness["ocr_v0_pipeline_callable"], bool)
