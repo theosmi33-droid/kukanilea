@@ -135,6 +135,7 @@ def test_ocr_subprocess_uses_tessdata_override(tmp_path: Path, monkeypatch) -> N
     override_bin = tmp_path / "tesseract"
     override_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     override_bin.chmod(0o755)
+    monkeypatch.setenv("KUKANILEA_TESSERACT_ALLOWED_PREFIXES", str(tmp_path))
 
     captured: dict[str, object] = {}
 
@@ -316,3 +317,122 @@ def test_run_tesseract_config_file_missing_classification(
     assert text is None
     assert error == "config_file_missing"
     assert len(calls) == 1
+
+
+def test_classify_tesseract_path_allowlists_homebrew_on_darwin(monkeypatch) -> None:
+    candidate = Path("/opt/homebrew/bin/tesseract")
+    real = Path("/opt/homebrew/Cellar/tesseract/5.5.1/bin/tesseract")
+
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: str(self) in {str(candidate), str(real)},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda self: str(self) in {str(candidate), str(real)},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ocr_mod.os,
+        "access",
+        lambda path, _mode: str(path) in {str(candidate), str(real)},
+    )
+    monkeypatch.setattr(
+        ocr_mod.os.path,
+        "realpath",
+        lambda value: str(real) if str(value) == str(candidate) else str(value),
+    )
+
+    classified = ocr_mod.classify_tesseract_path(
+        str(candidate),
+        platform_name="darwin",
+        env={},
+    )
+    assert classified["reason"] == "ok"
+    assert classified["allowlisted"] is True
+
+
+def test_classify_tesseract_path_accepts_realpath_prefix_match(
+    monkeypatch,
+) -> None:
+    candidate = Path("/tmp/custom-link/tesseract")
+    real = Path("/opt/homebrew/Cellar/tesseract/5.5.1/bin/tesseract")
+
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: str(self) in {str(candidate), str(real)},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda self: str(self) in {str(candidate), str(real)},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ocr_mod.os,
+        "access",
+        lambda path, _mode: str(path) in {str(candidate), str(real)},
+    )
+    monkeypatch.setattr(
+        ocr_mod.os.path,
+        "realpath",
+        lambda value: str(real) if str(value) == str(candidate) else str(value),
+    )
+
+    classified = ocr_mod.classify_tesseract_path(
+        str(candidate),
+        platform_name="darwin",
+        env={},
+    )
+    assert classified["reason"] == "ok"
+    assert classified["allowlisted"] is True
+
+
+def test_classify_tesseract_path_reports_not_allowlisted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    custom_bin = tmp_path / "tesseract"
+    custom_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    custom_bin.chmod(0o755)
+
+    classified = ocr_mod.classify_tesseract_path(
+        str(custom_bin),
+        platform_name="darwin",
+        env={},
+    )
+    assert classified["exists"] is True
+    assert classified["executable"] is True
+    assert classified["allowlisted"] is False
+    assert classified["reason"] == "tesseract_not_allowlisted"
+
+
+def test_run_tesseract_override_not_allowlisted(tmp_path: Path, monkeypatch) -> None:
+    image_path = tmp_path / "input.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")
+    custom_bin = tmp_path / "tesseract"
+    custom_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    custom_bin.chmod(0o755)
+
+    monkeypatch.setattr(
+        ocr_mod.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must not invoke subprocess")
+        ),
+    )
+
+    text, error, _truncated, _stderr = ocr_mod._run_tesseract(
+        image_path,
+        lang="eng",
+        timeout_sec=2,
+        max_chars=1024,
+        tesseract_bin_override=str(custom_bin),
+        allow_retry=False,
+    )
+    assert text is None
+    assert error == "tesseract_not_allowlisted"

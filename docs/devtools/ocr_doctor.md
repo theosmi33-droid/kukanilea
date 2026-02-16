@@ -7,7 +7,7 @@
 - Deterministischer Sandbox-E2E-Smoke (Policy + Watch-Config + optional Direct-Submit)
 - Optionale, explizit abgesicherte Real-DB-Policy-Aktivierung
 - Operator-Bootstrap-Hinweise (`install_hints`, `config_hints`) fuer die
-  Faelle `tesseract_missing`, `tessdata_missing`, `language_missing`
+  Faelle `tesseract_missing`, `tesseract_not_allowlisted`, `tessdata_missing`, `language_missing`
 - Strukturierte Operator-Hints in `operator_hints` (OS, Probe-Zusammenfassung,
   sanitisiertes Hint-Set)
 

@@ -620,7 +620,9 @@ def _build_message(result: dict[str, Any]) -> str:
     if reason == "policy_denied":
         return "OCR policy is disabled for tenant."
     if reason == "tesseract_missing":
-        return "Tesseract binary not found or not allowlisted."
+        return "Tesseract binary not found."
+    if reason == "tesseract_not_allowlisted":
+        return "Tesseract binary is present but not allowlisted."
     if reason == "tessdata_missing":
         return "Tesseract data files were not found."
     if reason == "language_missing":
@@ -671,6 +673,11 @@ def _next_actions_for_reason(reason: str | None) -> list[str]:
             "Install tesseract and ensure it is on PATH (e.g. /opt/homebrew/bin/tesseract).",
             "Re-run with --json and confirm tesseract_found=true.",
             "If --tesseract-bin is used, ensure the path exists and is executable.",
+        ],
+        "tesseract_not_allowlisted": [
+            "Tesseract binary is executable but outside the runtime allowlist.",
+            "Use an allowlisted location or set KUKANILEA_TESSERACT_ALLOWED_PREFIXES to a safe prefix (never root).",
+            "Re-run with --show-tesseract and verify tesseract_allowlisted=true.",
         ],
         "tessdata_missing": [
             "Set --tessdata-dir explicitly and verify traineddata files exist.",
@@ -780,6 +787,9 @@ def run_ocr_test(
         "policy_reason": None,
         "existing_columns": None,
         "tesseract_found": False,
+        "tesseract_allowlisted": False,
+        "tesseract_allowlist_reason": None,
+        "tesseract_allowed_prefixes": [],
         "tesseract_version": None,
         "supports_print_tessdata_dir": False,
         "tessdata_dir": None,
@@ -866,6 +876,14 @@ def run_ocr_test(
             result["tesseract_version"] = (
                 str(probe.get("tesseract_version") or "") or None
             )
+            result["tesseract_allowlisted"] = bool(probe.get("tesseract_allowlisted"))
+            result["tesseract_allowlist_reason"] = (
+                str(probe.get("tesseract_allowlist_reason") or "") or None
+            )
+            result["tesseract_allowed_prefixes"] = [
+                _sanitize_path_for_output(item)
+                for item in list(probe.get("tesseract_allowed_prefixes") or [])
+            ]
             result["supports_print_tessdata_dir"] = bool(
                 probe.get("supports_print_tessdata_dir")
             )
@@ -942,6 +960,7 @@ def run_ocr_test(
                 return result
             if result["tesseract_probe_reason"] in {
                 "tesseract_missing",
+                "tesseract_not_allowlisted",
                 "tessdata_missing",
                 "language_missing",
                 "tesseract_failed",

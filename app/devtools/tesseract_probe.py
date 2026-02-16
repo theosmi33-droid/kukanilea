@@ -101,6 +101,42 @@ def _resolve_bin(bin_path: str | None) -> Path | None:
     return None
 
 
+def _classify_tesseract_path(
+    path: str | None,
+    *,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    if not str(path or "").strip():
+        return {
+            "exists": False,
+            "executable": False,
+            "allowlisted": False,
+            "reason": "tesseract_missing",
+            "allowlist_reason": "path_missing_or_not_executable",
+            "allowed_prefixes": [],
+        }
+    try:
+        from app.autonomy.ocr import classify_tesseract_path
+
+        return classify_tesseract_path(str(path), env=env)
+    except Exception:
+        p = Path(str(path)).expanduser()
+        exists = p.exists() and p.is_file()
+        executable = bool(exists and os.access(p, os.X_OK))
+        return {
+            "exists": bool(exists),
+            "executable": bool(executable),
+            "allowlisted": bool(executable),
+            "reason": "ok" if executable else "tesseract_missing",
+            "allowlist_reason": (
+                "fallback_unverified"
+                if executable
+                else "path_missing_or_not_executable"
+            ),
+            "allowed_prefixes": [],
+        }
+
+
 def _is_lang_code(line: str) -> bool:
     token = str(line or "").strip().casefold()
     return bool(LANG_CODE_RE.match(token))
@@ -354,6 +390,11 @@ def _next_actions(
             "Set TESSDATA_PREFIX to a prefix containing tessdata/.",
             "Verify with: tesseract --list-langs --tessdata-dir <dir>",
         ]
+    if reason == "tesseract_not_allowlisted":
+        return [
+            "Use an allowlisted tesseract location (e.g. /opt/homebrew, /usr/local/bin, /usr/bin).",
+            "Or add a safe prefix via KUKANILEA_TESSERACT_ALLOWED_PREFIXES (never filesystem root).",
+        ]
     if reason == "language_missing":
         wanted = ", ".join(preferred_langs or DEFAULT_PREFERRED_LANGS)
         return [
@@ -397,6 +438,9 @@ def probe_tesseract(
         "ok": False,
         "reason": None,
         "tesseract_found": False,
+        "tesseract_allowlisted": False,
+        "tesseract_allowlist_reason": None,
+        "tesseract_allowed_prefixes": [],
         "bin_path": None,
         "tesseract_bin": None,
         "tesseract_bin_used": None,
@@ -416,12 +460,50 @@ def probe_tesseract(
         "next_actions": [],
     }
 
+    resolved_candidate = (
+        str(bin_path).strip()
+        if str(bin_path or "").strip()
+        else (shutil.which("tesseract") or None)
+    )
+    classification = _classify_tesseract_path(resolved_candidate, env=runtime_env)
+    result["tesseract_allowlisted"] = bool(classification.get("allowlisted"))
+    result["tesseract_allowlist_reason"] = (
+        str(classification.get("allowlist_reason") or "") or None
+    )
+    result["tesseract_allowed_prefixes"] = [
+        str(item) for item in list(classification.get("allowed_prefixes") or [])
+    ]
+    result["tesseract_found"] = bool(
+        classification.get("exists") and classification.get("executable")
+    )
+
     binary = _resolve_bin(bin_path)
     if binary is None:
-        result["reason"] = "tesseract_missing"
+        result["reason"] = str(classification.get("reason") or "tesseract_missing")
         result["next_actions"] = _next_actions(
-            "tesseract_missing", preferred_langs=preferred_langs
+            str(result["reason"]), preferred_langs=preferred_langs
         )
+        return result
+
+    binary_classification = _classify_tesseract_path(str(binary), env=runtime_env)
+    result["tesseract_allowlisted"] = bool(binary_classification.get("allowlisted"))
+    result["tesseract_allowlist_reason"] = (
+        str(binary_classification.get("allowlist_reason") or "") or None
+    )
+    result["tesseract_allowed_prefixes"] = [
+        str(item) for item in list(binary_classification.get("allowed_prefixes") or [])
+    ]
+    result["tesseract_found"] = bool(
+        binary_classification.get("exists") and binary_classification.get("executable")
+    )
+    if str(binary_classification.get("reason") or "") == "tesseract_not_allowlisted":
+        result["reason"] = "tesseract_not_allowlisted"
+        result["next_actions"] = _next_actions(
+            "tesseract_not_allowlisted", preferred_langs=preferred_langs
+        )
+        result["bin_path"] = str(binary)
+        result["tesseract_bin"] = str(binary)
+        result["tesseract_bin_used"] = str(binary)
         return result
 
     result["tesseract_found"] = True

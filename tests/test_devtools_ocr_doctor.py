@@ -471,6 +471,56 @@ def test_run_ocr_doctor_hints_for_common_bootstrap_reasons(
     assert ABS_PATH_RE.search(serialized) is None
     assert WIN_ABS_RE.search(serialized) is None
 
+    monkeypatch.setattr(
+        ocr_doctor,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": False,
+            "reason": "tesseract_not_allowlisted",
+            "tesseract_found": True,
+            "tesseract_allowlisted": False,
+            "tesseract_allowlist_reason": "outside_allowed_prefixes",
+            "tesseract_allowed_prefixes": ["/opt/homebrew", "/usr/local/bin"],
+            "bin_path": "/tmp/tesseract",
+            "supports_print_tessdata_dir": False,
+            "langs": [],
+            "warnings": [],
+            "stderr_tail": None,
+            "next_actions": ["Use allowlisted prefix."],
+        },
+    )
+    monkeypatch.setattr(
+        ocr_doctor,
+        "run_ocr_test",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "reason": "tesseract_not_allowlisted",
+            "job_status": "failed",
+            "job_error_code": "tesseract_not_allowlisted",
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "next_actions": [],
+            "message": "allowlist mismatch",
+        },
+    )
+    report_not_allowlisted, exit_not_allowlisted = ocr_doctor.run_ocr_doctor(
+        "dev",
+        json_mode=True,
+        strict=False,
+        timeout_s=10,
+        sandbox=False,
+    )
+    assert exit_not_allowlisted == 1
+    assert report_not_allowlisted["reason"] == "tesseract_not_allowlisted"
+    assert report_not_allowlisted["tesseract_allowlisted"] is False
+    assert (
+        report_not_allowlisted["tesseract_allowlist_reason"]
+        == "outside_allowed_prefixes"
+    )
+    assert report_not_allowlisted["tesseract_allowed_prefixes"]
+    assert report_not_allowlisted["install_hints"]
+    assert report_not_allowlisted["config_hints"]
+
 
 def test_cli_doctor_write_proof_bundle_sanitized(
     monkeypatch, capsys, tmp_path: Path

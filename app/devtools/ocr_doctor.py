@@ -258,13 +258,18 @@ def _doctor_next_actions(reason: str | None, probe_actions: list[str]) -> list[s
 
 def _doctor_install_hints(reason: str | None) -> list[str]:
     key = str(reason or "")
-    if key != "tesseract_missing":
+    if key not in {"tesseract_missing", "tesseract_not_allowlisted"}:
         return []
     system = platform.system().casefold()
-    hints = [
-        "Validate installation with: tesseract --version",
-        "If PATH discovery fails, pass --tesseract-bin <binary> explicitly.",
-    ]
+    hints = ["Validate installation with: tesseract --version"]
+    if key == "tesseract_not_allowlisted":
+        hints.append(
+            "Use an allowlisted install prefix or set KUKANILEA_TESSERACT_ALLOWED_PREFIXES to a safe non-root prefix."
+        )
+    else:
+        hints.append(
+            "If PATH discovery fails, pass --tesseract-bin <binary> explicitly."
+        )
     if "darwin" in system:
         return [
             "Install Tesseract via Homebrew: brew install tesseract",
@@ -310,6 +315,11 @@ def _doctor_config_hints(
         return [
             "Use --tesseract-bin <binary> to point doctor/smoke to a known executable.",
         ]
+    if key == "tesseract_not_allowlisted":
+        return [
+            "Check runtime allowlist prefixes and keep them narrow (no filesystem root).",
+            "Set KUKANILEA_TESSERACT_ALLOWED_PREFIXES with a safe prefix (e.g. /opt/homebrew).",
+        ]
     return []
 
 
@@ -345,6 +355,9 @@ def format_doctor_report(report: dict[str, Any]) -> str:
         f"policy_enabled_effective: {report.get('policy_enabled_effective')}",
         f"policy_reason: {report.get('policy_reason') or '-'}",
         f"tesseract_probe_reason: {report.get('probe_reason') or '-'}",
+        f"tesseract_allowlisted: {bool(report.get('tesseract_allowlisted'))}",
+        f"tesseract_allowlist_reason: {report.get('tesseract_allowlist_reason') or '-'}",
+        f"tesseract_allowed_prefixes: {report.get('tesseract_allowed_prefixes') or '-'}",
         f"tesseract_version: {report.get('tesseract_version') or '-'}",
         f"lang_used: {report.get('lang_used') or '-'}",
         f"job_status: {report.get('job_status') or '-'}",
@@ -578,6 +591,12 @@ def run_ocr_doctor(
             str(item) for item in list(probe.get("next_actions") or [])
         ],
         "tesseract_found": bool(probe.get("tesseract_found") or probe.get("bin_path")),
+        "tesseract_allowlisted": bool(probe.get("tesseract_allowlisted")),
+        "tesseract_allowlist_reason": str(probe.get("tesseract_allowlist_reason") or "")
+        or None,
+        "tesseract_allowed_prefixes": [
+            str(item) for item in list(probe.get("tesseract_allowed_prefixes") or [])
+        ],
         "tesseract_bin_used": str(
             probe.get("tesseract_bin_used") or probe.get("bin_path") or ""
         ),
@@ -611,6 +630,13 @@ def run_ocr_doctor(
             "tesseract": {
                 "probe_reason": probe_reason,
                 "version": str(probe.get("tesseract_version") or "") or None,
+                "allowlisted": bool(probe.get("tesseract_allowlisted")),
+                "allowlist_reason": str(probe.get("tesseract_allowlist_reason") or "")
+                or None,
+                "allowed_prefixes": [
+                    str(item)
+                    for item in list(probe.get("tesseract_allowed_prefixes") or [])
+                ],
                 "supports_print_tessdata_dir": bool(
                     probe.get("supports_print_tessdata_dir")
                 ),

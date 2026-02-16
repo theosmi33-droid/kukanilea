@@ -13,12 +13,14 @@
 - `ok`
 - `ok_with_warnings`
 - `tesseract_missing`
+- `tesseract_not_allowlisted`
 - `tessdata_missing`
 - `language_missing`
 - `tesseract_failed`
 
 ## Verhalten
 1. Binary wird aufgeloest (projektinterner Resolver, dann PATH-Fallback).
+   - Runtime-Allowlist wird geprueft (inkl. Prefix-Matching auf Originalpfad + Realpath).
 2. Tessdata-Kandidaten werden in stabiler Reihenfolge gebaut:
    - `tesseract --print-tessdata-dir` (nur wenn Flag unterstuetzt ist)
    - CLI (`--tessdata-dir`)

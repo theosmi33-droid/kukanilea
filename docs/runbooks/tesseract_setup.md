@@ -5,6 +5,7 @@
 Dieses Runbook behebt die OCR-Doctor-Fehler:
 
 - `tesseract_missing`
+- `tesseract_not_allowlisted`
 - `tessdata_missing`
 - `language_missing`
 
@@ -27,6 +28,17 @@ Alternativ im Tool explizit setzen:
 ```bash
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tesseract-bin <binary> --json
 ```
+
+Wenn das Binary gefunden wird, aber `tesseract_not_allowlisted` gemeldet wird:
+
+- Installationspfad in einen erlaubten Prefix legen (z. B. `/opt/homebrew`, `/usr/local/bin`, `/usr/bin`)
+- Oder sichere Prefix-Erweiterung setzen:
+
+```bash
+export KUKANILEA_TESSERACT_ALLOWED_PREFIXES="/opt/homebrew:/usr/local/bin"
+```
+
+Wichtig: Niemals Root-Prefixe setzen (`/`, `C:\\`).
 
 ## 2) Sprachdaten pruefen
 
