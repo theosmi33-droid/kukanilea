@@ -8,21 +8,57 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_PREFERRED_LANGS = ["eng"]
-TEST_MARKERS = ("pilot+test@example.com", "+49 151 12345678")
-ABS_PATH_RE = re.compile(r"/[^\s\"']+")
+TEST_MARKERS = (
+    "pilot+test@example.com",
+    "+49 151 12345678",
+    "OCR_Test_2026-02-16_KD-9999",
+)
+LANG_TOKEN_RE = re.compile(r"^[a-z0-9_]+$")
+MISSING_DATA_RE = re.compile(
+    r"(error opening data file|couldn.?t load any languages|read_params_file)",
+    re.IGNORECASE,
+)
+MISSING_LANG_RE = re.compile(r"(failed loading language)", re.IGNORECASE)
+HEADER_RE = re.compile(r"^\s*list of available languages", re.IGNORECASE)
+SUSPICIOUS_PATH_RE = re.compile(
+    r"/[^\n]*(?:\.traineddata|/tessdata(?:/[^\n]*)?|/Tesseract[^\n]*)",
+    re.IGNORECASE,
+)
+HOME_DIR_RE = re.compile(r"/(?:Users|home)/[^\s\"']+")
 
 
-def _sanitize_text(raw: str | None) -> str | None:
+def _sanitize_text(
+    raw: str | None,
+    *,
+    known_paths: list[str] | None = None,
+    max_lines: int = 20,
+    max_chars: int = 1200,
+) -> str | None:
     if raw is None:
         return None
-    text = str(raw)
+    text = str(raw).replace("\x00", "")
     for marker in TEST_MARKERS:
         text = text.replace(marker, "<redacted>")
-    text = ABS_PATH_RE.sub("<path>", text)
-    text = text.replace("\x00", "").replace("\r", " ").replace("\n", " ").strip()
-    if len(text) > 400:
-        text = text[-400:]
-    return text or None
+    home = str(Path.home())
+    if home:
+        text = text.replace(home, "<path>")
+    for known in sorted([p for p in (known_paths or []) if p], key=len, reverse=True):
+        text = text.replace(str(known), "<path>")
+    text = SUSPICIOUS_PATH_RE.sub("<path>", text)
+    text = HOME_DIR_RE.sub("<path>", text)
+    lines = []
+    for line in text.splitlines():
+        cleaned = re.sub(r"\s+", " ", line).strip()
+        if cleaned:
+            lines.append(cleaned)
+    if not lines:
+        return None
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+    out = "\n".join(lines)
+    if len(out) > max_chars:
+        out = out[-max_chars:]
+    return out or None
 
 
 def _resolve_bin(bin_path: str | None) -> Path | None:
@@ -48,6 +84,29 @@ def _resolve_bin(bin_path: str | None) -> Path | None:
     return None
 
 
+def _normalize_prefix(raw_path: Path) -> Path:
+    candidate = raw_path.expanduser()
+    if candidate.name.casefold() == "tessdata":
+        return candidate.parent
+    return candidate
+
+
+def _traineddata_count(tessdata_dir: Path) -> int:
+    try:
+        return sum(1 for _ in tessdata_dir.glob("*.traineddata"))
+    except Exception:
+        return 0
+
+
+def _prefix_has_tessdata(prefix: Path) -> bool:
+    td = prefix / "tessdata"
+    return td.is_dir() and _traineddata_count(td) > 0
+
+
+def _prefix_direct_tessdata(prefix: Path) -> bool:
+    return prefix.is_dir() and _traineddata_count(prefix) > 0
+
+
 def _candidate_tessdata_dirs(
     *,
     bin_resolved: Path | None,
@@ -55,14 +114,16 @@ def _candidate_tessdata_dirs(
     env: dict[str, str],
 ) -> list[tuple[str, Path]]:
     candidates: list[tuple[str, Path]] = []
+    seen: set[str] = set()
 
-    def _add(source: str, raw_path: Path | str | None) -> None:
-        if raw_path is None:
+    def _add(source: str, raw: str | Path | None) -> None:
+        if raw is None:
             return
-        p = Path(str(raw_path)).expanduser()
-        key = str(p.resolve() if p.exists() else p)
-        if any(str(existing[1]) == key for existing in candidates):
+        normalized = _normalize_prefix(Path(str(raw)))
+        key = str(normalized.resolve() if normalized.exists() else normalized)
+        if key in seen:
             return
+        seen.add(key)
         candidates.append((source, Path(key)))
 
     if tessdata_dir:
@@ -70,69 +131,101 @@ def _candidate_tessdata_dirs(
 
     env_prefix = str(env.get("TESSDATA_PREFIX") or "").strip()
     if env_prefix:
-        prefix_path = Path(env_prefix).expanduser()
-        _add("env", prefix_path / "tessdata")
-        _add("env", prefix_path)
+        _add("env", env_prefix)
 
     if bin_resolved is not None:
         bin_parent = bin_resolved.parent
-        _add("heuristic", bin_parent / "../share/tessdata")
-        _add("heuristic", bin_parent / "../../share/tessdata")
+        _add("heuristic", bin_parent / "../share")
+        _add("heuristic", bin_parent / "../../share")
 
     for raw in (
-        "/opt/homebrew/share/tessdata",
-        "/usr/local/share/tessdata",
-        "/usr/share/tesseract-ocr/5/tessdata",
-        "/usr/share/tesseract-ocr/4.00/tessdata",
-        "/usr/share/tessdata",
+        "/opt/homebrew/share",
+        "/usr/local/share",
+        "/usr/share",
+        "/usr/share/tesseract-ocr/5",
+        "/usr/share/tesseract-ocr/4.00",
     ):
         _add("heuristic", raw)
     return candidates
 
 
-def _parse_langs(stdout: str) -> list[str]:
-    lines = [line.strip() for line in str(stdout or "").splitlines()]
+def parse_list_langs_output(stdout: str, stderr: str) -> dict[str, Any]:
     langs: list[str] = []
-    for line in lines:
+    for raw_line in str(stdout or "").splitlines():
+        line = str(raw_line or "").strip()
         if not line:
             continue
-        if "list of available languages" in line.casefold():
+        folded = line.casefold()
+        if HEADER_RE.match(line):
             continue
-        token = line.split()[0].strip()
-        if token and token not in langs:
+        if ":" in line and "languages" in folded:
+            continue
+        token = line.strip().casefold()
+        if LANG_TOKEN_RE.match(token):
             langs.append(token)
-    return langs
+
+    warning_lines: list[str] = []
+    for raw_line in str(stderr or "").splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        folded = line.casefold()
+        if (
+            "error opening data file" in folded
+            or "failed loading language" in folded
+            or "read_params_file" in folded
+        ):
+            warning_lines.append(line)
+        elif line:
+            warning_lines.append(line)
+
+    langs_sorted = sorted(dict.fromkeys(langs))
+    sanitized_warnings = []
+    for line in warning_lines:
+        safe = _sanitize_text(line, max_lines=1, max_chars=240)
+        if safe:
+            sanitized_warnings.append(safe)
+    sanitized_warnings = sanitized_warnings[:20]
+    stderr_tail = _sanitize_text(stderr, max_lines=20, max_chars=1200) or ""
+    has_warning = bool(sanitized_warnings or stderr_tail)
+    return {
+        "langs": langs_sorted,
+        "warnings": sanitized_warnings,
+        "stderr_tail": stderr_tail,
+        "has_warning": has_warning,
+    }
 
 
 def _pick_lang(
+    *,
     langs: list[str],
     preferred_langs: list[str] | None,
 ) -> tuple[str | None, bool]:
+    if not langs:
+        return None, False
+
+    normalized = sorted(dict.fromkeys([str(v).strip().casefold() for v in langs if v]))
     preferred = [
-        str(v).strip().lower() for v in (preferred_langs or []) if str(v).strip()
+        str(v).strip().casefold() for v in (preferred_langs or []) if str(v).strip()
     ]
-    explicit_preferred = preferred_langs is not None
-    if not preferred:
-        preferred = list(DEFAULT_PREFERRED_LANGS)
+    if preferred:
+        for want in preferred:
+            if want in normalized:
+                return want, True
+        return None, False
 
-    normalized = {item.lower(): item for item in langs}
-    for want in preferred:
-        if want in normalized:
-            return normalized[want], True
-
-    for lang in langs:
-        if str(lang).lower() != "osd":
-            return lang, not explicit_preferred
-
-    if langs and str(langs[0]).lower() == "osd":
-        if explicit_preferred and preferred == ["osd"]:
-            return "osd", True
-        return "osd", False
+    if "eng" in normalized:
+        return "eng", True
+    for lang in normalized:
+        if lang != "osd":
+            return lang, True
     return None, False
 
 
 def _next_actions(
-    reason: str | None, *, preferred_langs: list[str] | None
+    reason: str | None,
+    *,
+    preferred_langs: list[str] | None,
 ) -> list[str]:
     if reason == "tesseract_missing":
         return [
@@ -141,21 +234,35 @@ def _next_actions(
         ]
     if reason == "tessdata_missing":
         return [
-            "Set an explicit tessdata directory with --tessdata-dir.",
-            "Verify traineddata files are present for the selected language.",
+            "Set TESSDATA_PREFIX to a prefix containing tessdata/.",
+            "Verify with: tesseract --list-langs --tessdata-dir <dir>",
         ]
     if reason == "language_missing":
         wanted = ", ".join(preferred_langs or DEFAULT_PREFERRED_LANGS)
         return [
-            f"Requested language not available ({wanted}).",
-            "Install the missing language traineddata or choose an available language.",
+            f"Requested language is unavailable ({wanted}).",
+            "Install the language traineddata or use --lang with an available entry.",
+        ]
+    if reason == "ok_with_warnings":
+        return [
+            "Tesseract reported warnings; verify tessdata path and language packs.",
+            "Use --strict to treat warnings as failure in smoke runs.",
         ]
     if reason == "tesseract_failed":
         return [
-            "Check tesseract execution and permissions.",
-            "Re-run with --show-tesseract to inspect sanitized diagnostics.",
+            "Run with --show-tesseract and inspect sanitized stderr_tail.",
+            "Verify local tesseract invocation with explicit --tessdata-dir.",
         ]
     return []
+
+
+def _classify_no_langs(stderr_tail: str) -> str:
+    lower = str(stderr_tail or "").casefold()
+    if MISSING_DATA_RE.search(lower):
+        return "tessdata_missing"
+    if MISSING_LANG_RE.search(lower):
+        return "language_missing"
+    return "tesseract_failed"
 
 
 def probe_tesseract(
@@ -172,12 +279,19 @@ def probe_tesseract(
     result: dict[str, Any] = {
         "ok": False,
         "reason": None,
+        "tesseract_found": False,
         "bin_path": None,
+        "tesseract_bin": None,
+        "tessdata_prefix": None,
         "tessdata_dir": None,
+        "tessdata_dir_used": None,
         "tessdata_source": None,
+        "tessdata_candidates": [],
         "langs": [],
+        "lang_selected": None,
         "lang_used": None,
-        "stderr_tail": None,
+        "warnings": [],
+        "stderr_tail": "",
         "next_actions": [],
     }
 
@@ -189,24 +303,45 @@ def probe_tesseract(
         )
         return result
 
+    result["tesseract_found"] = True
     result["bin_path"] = str(binary)
-    attempts: list[tuple[str, Path | None]] = [("unknown", None)]
-    attempts.extend(
-        _candidate_tessdata_dirs(
-            bin_resolved=binary, tessdata_dir=tessdata_dir, env=runtime_env
-        )
+    result["tesseract_bin"] = str(binary)
+    preferred = preferred_langs if preferred_langs else list(DEFAULT_PREFERRED_LANGS)
+
+    candidate_prefixes = _candidate_tessdata_dirs(
+        bin_resolved=binary,
+        tessdata_dir=tessdata_dir,
+        env=runtime_env,
     )
+    valid_candidates: list[tuple[str, Path, Path]] = []
+    for source, prefix in candidate_prefixes:
+        cli_dir: Path | None = None
+        if _prefix_has_tessdata(prefix):
+            cli_dir = prefix / "tessdata"
+        elif _prefix_direct_tessdata(prefix):
+            cli_dir = prefix
+        if cli_dir is not None:
+            valid_candidates.append((source, prefix, cli_dir))
+    result["tessdata_candidates"] = [
+        str(prefix) for _src, prefix, _dir in valid_candidates
+    ]
 
-    last_error: str | None = None
-    last_stderr: str | None = None
-    selected_langs: list[str] = []
-    used_source: str | None = None
-    used_tessdata: Path | None = None
+    attempts: list[tuple[str, Path | None, Path | None]] = [("auto", None, None)]
+    attempts.extend(valid_candidates)
 
-    for source, candidate in attempts:
+    known_paths = [str(binary)] + [
+        str(prefix) for _src, prefix, _dir in valid_candidates
+    ]
+    success: dict[str, Any] | None = None
+    fallback_success: dict[str, Any] | None = None
+    last_stderr: str = ""
+    for source, prefix, cli_dir in attempts:
         cmd = [str(binary), "--list-langs"]
-        if candidate is not None:
-            cmd.extend(["--tessdata-dir", str(candidate)])
+        if cli_dir is not None:
+            cmd.extend(["--tessdata-dir", str(cli_dir)])
+        env_copy = dict(runtime_env)
+        if prefix is not None:
+            env_copy["TESSDATA_PREFIX"] = str(prefix)
         try:
             proc = subprocess.run(  # noqa: S603
                 cmd,
@@ -216,66 +351,101 @@ def probe_tesseract(
                 check=False,
                 shell=False,
                 stdin=subprocess.DEVNULL,
-                env=runtime_env,
+                env=env_copy,
             )
         except subprocess.TimeoutExpired:
-            last_error = "tesseract_failed"
             last_stderr = "timeout"
             continue
         except Exception as exc:
-            last_error = "tesseract_failed"
             last_stderr = type(exc).__name__
             continue
 
-        if int(proc.returncode or 0) != 0:
-            last_error = "tesseract_failed"
-            last_stderr = str(proc.stderr or proc.stdout or "")
+        parsed = parse_list_langs_output(str(proc.stdout or ""), str(proc.stderr or ""))
+        parsed["stderr_tail"] = (
+            _sanitize_text(
+                parsed.get("stderr_tail"),
+                known_paths=known_paths + [str(cli_dir)]
+                if cli_dir is not None
+                else known_paths,
+            )
+            or ""
+        )
+        parsed["warnings"] = [
+            _sanitize_text(item, known_paths=known_paths, max_lines=1, max_chars=240)
+            or ""
+            for item in list(parsed.get("warnings") or [])
+        ]
+        parsed["warnings"] = [item for item in parsed["warnings"] if item][:20]
+        parsed["source"] = source
+        parsed["prefix"] = str(prefix) if prefix is not None else None
+        parsed["dir"] = str(cli_dir) if cli_dir is not None else None
+        parsed["returncode"] = int(proc.returncode or 0)
+
+        langs = list(parsed.get("langs") or [])
+        if langs:
+            if fallback_success is None:
+                fallback_success = parsed
+            requested = [item.casefold() for item in preferred if item]
+            if requested and any(item in langs for item in requested):
+                success = parsed
+                break
+            if requested:
+                continue
+            success = parsed
+            break
+
+        last_stderr = str(parsed.get("stderr_tail") or "")
+        if int(proc.returncode or 0) == 0:
             continue
 
-        langs = _parse_langs(str(proc.stdout or ""))
-        if langs:
-            selected_langs = langs
-            used_source = source
-            used_tessdata = candidate
-            break
-        last_error = "tessdata_missing"
-        last_stderr = str(proc.stderr or proc.stdout or "")
+    if success is None:
+        success = fallback_success
 
-    result["langs"] = selected_langs
-    if not selected_langs:
-        result["reason"] = (
-            "tessdata_missing"
-            if last_error in (None, "tessdata_missing")
-            else "tesseract_failed"
+    if success is None:
+        reason = _classify_no_langs(last_stderr)
+        if reason == "tessdata_missing" and not valid_candidates:
+            reason = "tessdata_missing"
+        result["reason"] = reason
+        result["stderr_tail"] = (
+            _sanitize_text(last_stderr, known_paths=known_paths) or ""
         )
-        result["stderr_tail"] = _sanitize_text(last_stderr)
-        result["next_actions"] = _next_actions(
-            result["reason"], preferred_langs=preferred_langs
-        )
+        result["next_actions"] = _next_actions(reason, preferred_langs=preferred_langs)
         return result
 
-    result["tessdata_source"] = used_source or "unknown"
-    if used_tessdata is not None:
-        result["tessdata_dir"] = str(used_tessdata)
+    langs = sorted(dict.fromkeys([str(v).strip().casefold() for v in success["langs"]]))
+    result["langs"] = langs
+    result["warnings"] = list(success.get("warnings") or [])
+    result["stderr_tail"] = str(success.get("stderr_tail") or "")
+    result["tessdata_source"] = str(success.get("source") or "auto")
+    result["tessdata_prefix"] = str(success.get("prefix") or "") or None
+    result["tessdata_dir"] = str(success.get("prefix") or "") or None
+    result["tessdata_dir_used"] = str(success.get("prefix") or "") or None
 
-    lang_used, allowed = _pick_lang(selected_langs, preferred_langs)
-    result["lang_used"] = lang_used
-    if not lang_used:
+    selected_lang, allowed = _pick_lang(langs=langs, preferred_langs=preferred_langs)
+    result["lang_selected"] = selected_lang
+    result["lang_used"] = selected_lang
+    if not selected_lang or not allowed:
         result["reason"] = "language_missing"
         result["next_actions"] = _next_actions(
-            "language_missing", preferred_langs=preferred_langs
-        )
-        return result
-    if not allowed:
-        result["reason"] = "language_missing"
-        result["next_actions"] = _next_actions(
-            "language_missing", preferred_langs=preferred_langs
+            "language_missing",
+            preferred_langs=preferred_langs,
         )
         return result
 
-    if preferred_langs is None and str(lang_used).lower() != "eng":
-        result["next_actions"] = [
-            "Preferred language 'eng' is unavailable; using fallback language.",
-        ]
-    result["ok"] = True
+    if success.get("has_warning"):
+        result["reason"] = "ok_with_warnings"
+        result["ok"] = True
+        result["next_actions"] = _next_actions(
+            "ok_with_warnings",
+            preferred_langs=preferred_langs,
+        )
+    else:
+        result["reason"] = "ok"
+        result["ok"] = True
+        result["next_actions"] = []
+
+    if preferred_langs is None and selected_lang != "eng":
+        result["next_actions"].append(
+            "Preferred language 'eng' is unavailable; fallback language is used."
+        )
     return result
