@@ -19,6 +19,16 @@
   - verweigert Writes bei `read_only=True` mit `reason=read_only`.
   - nutzt nur die uebergebene DB-Datei (z. B. Sandbox-Kopie).
 
+- `ensure_watch_config_in_sandbox(tenant_id, sandbox_db_path=..., inbox_dir=...)`
+  - prueft `source_watch_config` per Laufzeit-Introspection.
+  - nutzt eine strikte Path-Spalten-Allowlist:
+    - `documents_inbox_dir`
+    - `inbox_dir`
+    - `watch_dir`
+    - `path`
+  - schreibt/aktualisiert nur in der uebergebenen Sandbox-DB.
+  - liefert deterministische Gruende wie `watch_config_table_missing` oder `schema_unknown`.
+
 ## Sicherheitsprinzip
 
 - Keine Schema-Ratespiele: Spalten werden immer zur Laufzeit introspektiert.

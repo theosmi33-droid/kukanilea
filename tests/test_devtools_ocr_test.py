@@ -256,6 +256,186 @@ def test_run_ocr_test_schema_unknown(monkeypatch) -> None:
     assert result["existing_columns"] == ["tenant_id", "updated_at"]
 
 
+def test_run_ocr_test_watch_config_seed_failure(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": True,
+            "tesseract_found": True,
+            "read_only": False,
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test, "create_temp_inbox_dir", lambda _root: Path("/tmp/inbox")
+    )
+    monkeypatch.setattr(ocr_test, "ensure_dir", lambda p: Path(str(p)))
+    monkeypatch.setattr(
+        ocr_test,
+        "ensure_watch_config_in_sandbox",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "reason": "watch_config_table_missing",
+            "table": "source_watch_config",
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_execute_test_round",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+    result = ocr_test.run_ocr_test(
+        "TENANT_A",
+        sandbox=False,
+        db_path_override=Path("/tmp/core.sqlite3"),
+        seed_watch_config_in_sandbox=True,
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "watch_config_table_missing"
+
+
+def test_run_ocr_test_passes_direct_submit_only_when_requested(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": True,
+            "tesseract_found": True,
+            "read_only": False,
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test, "create_temp_inbox_dir", lambda _root: Path("/tmp/inbox")
+    )
+    monkeypatch.setattr(ocr_test, "ensure_dir", lambda p: Path(str(p)))
+    monkeypatch.setattr(
+        ocr_test,
+        "ensure_watch_config_in_sandbox",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "seeded": True,
+            "existed_before": False,
+            "inbox_dir": "/tmp/inbox",
+            "used_column": "documents_inbox_dir",
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def _round(*_args, **kwargs):
+        captured["direct_submit_in_sandbox"] = kwargs.get("direct_submit_in_sandbox")
+        return {
+            "job_status": "done",
+            "job_error_code": None,
+            "duration_ms": 10,
+            "chars_out": 100,
+            "truncated": False,
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "inbox_dir_used": "/tmp/inbox",
+            "scanner_discovered_files": 1,
+            "direct_submit_used": True,
+            "source_lookup_reason": None,
+            "source_files_columns": ["id", "tenant_id", "path_hash", "basename"],
+        }
+
+    monkeypatch.setattr(ocr_test, "_execute_test_round", _round)
+    result = ocr_test.run_ocr_test(
+        "TENANT_A",
+        sandbox=False,
+        db_path_override=Path("/tmp/core.sqlite3"),
+        seed_watch_config_in_sandbox=True,
+        direct_submit_in_sandbox=True,
+    )
+    assert result["ok"] is True
+    assert result["watch_config_seeded"] is True
+    assert captured["direct_submit_in_sandbox"] is True
+
+
+def test_run_ocr_test_read_only_blocks_seed_and_direct_submit(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": True,
+            "tesseract_found": True,
+            "read_only": True,
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "ensure_watch_config_in_sandbox",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must not seed")
+        ),
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_execute_test_round",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+    result = ocr_test.run_ocr_test(
+        "TENANT_A",
+        sandbox=False,
+        db_path_override=Path("/tmp/core.sqlite3"),
+        seed_watch_config_in_sandbox=True,
+        direct_submit_in_sandbox=True,
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "read_only"
+
+
+def test_run_ocr_test_output_does_not_echo_test_pii(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": True,
+            "tesseract_found": True,
+            "read_only": False,
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_execute_test_round",
+        lambda *_args, **_kwargs: {
+            "job_status": "done",
+            "job_error_code": None,
+            "duration_ms": 20,
+            "chars_out": 120,
+            "truncated": False,
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "inbox_dir_used": "/tmp/inbox",
+            "scanner_discovered_files": 1,
+            "direct_submit_used": False,
+            "source_lookup_reason": None,
+            "source_files_columns": None,
+        },
+    )
+    result = ocr_test.run_ocr_test("TENANT_A", sandbox=False)
+    assert ocr_test.TEST_EMAIL_PATTERN not in str(result.get("message") or "")
+    assert ocr_test.TEST_PHONE_PATTERN not in str(result.get("message") or "")
+    for item in result.get("next_actions") or []:
+        assert ocr_test.TEST_EMAIL_PATTERN not in str(item)
+        assert ocr_test.TEST_PHONE_PATTERN not in str(item)
+
+
 def test_preflight_reports_tesseract_even_when_policy_denied(monkeypatch) -> None:
     import app.autonomy.ocr as autonomy_ocr
 
@@ -502,3 +682,96 @@ def test_cli_enable_policy_in_sandbox_read_only_refused(
     assert exit_code == 2
     assert payload["reason"] == "read_only"
     assert payload["ok"] is False
+
+
+def test_cli_passes_seed_and_direct_submit_flags(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    import app.devtools.ocr_policy as policy_mod
+    import app.devtools.sandbox as sandbox_mod
+
+    base_db = tmp_path / "base.sqlite3"
+    sandbox_dir = tmp_path / "sandbox-flags"
+    sandbox_dir.mkdir(parents=True, exist_ok=True)
+    sandbox_db = sandbox_dir / "core.sqlite3"
+    sqlite3.connect(str(base_db)).close()
+    sqlite3.connect(str(sandbox_db)).close()
+
+    monkeypatch.setattr(sandbox_mod, "resolve_core_db_path", lambda: base_db)
+    monkeypatch.setattr(
+        sandbox_mod,
+        "create_sandbox_copy",
+        lambda _tenant: (sandbox_db, sandbox_dir),
+    )
+    monkeypatch.setattr(sandbox_mod, "cleanup_sandbox", lambda _sandbox_dir: None)
+    monkeypatch.setattr(
+        policy_mod,
+        "get_policy_status",
+        lambda _tenant_id, *, db_path: {
+            "ok": True,
+            "policy_enabled": True,
+            "ocr_column": "allow_ocr",
+            "row_present": True,
+            "existing_columns": ["tenant_id", "allow_ocr", "updated_at"],
+            "table": "knowledge_source_policies",
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def _run(*_args, **kwargs):
+        captured["seed_watch_config_in_sandbox"] = kwargs.get(
+            "seed_watch_config_in_sandbox"
+        )
+        captured["direct_submit_in_sandbox"] = kwargs.get("direct_submit_in_sandbox")
+        return {
+            "ok": True,
+            "reason": None,
+            "tenant_id": "dev",
+            "sandbox": True,
+            "policy_enabled": True,
+            "policy_enabled_base": None,
+            "policy_enabled_effective": None,
+            "policy_reason": None,
+            "existing_columns": None,
+            "tesseract_found": True,
+            "read_only": False,
+            "job_status": "done",
+            "job_error_code": None,
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "duration_ms": 1,
+            "chars_out": 1,
+            "truncated": False,
+            "sandbox_db_path": None,
+            "watch_config_seeded": False,
+            "watch_config_existed": None,
+            "inbox_dir_used": "/tmp/inbox",
+            "scanner_discovered_files": 1,
+            "direct_submit_used": False,
+            "source_lookup_reason": None,
+            "source_files_columns": None,
+            "next_actions": [],
+            "message": "ok",
+        }
+
+    monkeypatch.setattr(ocr_test, "run_ocr_test", _run)
+    monkeypatch.setattr(ocr_test, "detect_read_only", lambda: False)
+    monkeypatch.setattr(ocr_test, "next_actions_for_reason", lambda _reason: [])
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cli_ocr_test",
+            "--tenant",
+            "dev",
+            "--json",
+            "--no-seed-watch-config-in-sandbox",
+            "--direct-submit-in-sandbox",
+        ],
+    )
+    exit_code = cli_ocr_test.main()
+    _ = capsys.readouterr().out.strip()
+    assert exit_code == 0
+    assert captured["seed_watch_config_in_sandbox"] is False
+    assert captured["direct_submit_in_sandbox"] is True

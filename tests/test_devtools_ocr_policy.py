@@ -3,8 +3,18 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from app.devtools.ocr_policy import enable_ocr_policy_in_db, get_policy_status
-from app.devtools.sandbox import cleanup_sandbox, create_sandbox_copy, file_sha256
+from app.devtools.ocr_policy import (
+    enable_ocr_policy_in_db,
+    ensure_watch_config_in_sandbox,
+    get_policy_status,
+)
+from app.devtools.sandbox import (
+    cleanup_sandbox,
+    create_sandbox_copy,
+    create_temp_inbox_dir,
+    ensure_dir,
+    file_sha256,
+)
 
 
 def _create_policy_table(db_path: Path, ddl: str) -> None:
@@ -149,3 +159,92 @@ def test_enable_in_sandbox_does_not_mutate_base_db(tmp_path: Path, monkeypatch) 
     ).fetchone()
     con2.close()
     assert int(row[0]) == 0
+
+
+def test_ensure_watch_config_in_sandbox_updates_existing_row(tmp_path: Path) -> None:
+    db_path = tmp_path / "core.sqlite3"
+    _create_policy_table(
+        db_path,
+        """
+        CREATE TABLE source_watch_config(
+          tenant_id TEXT PRIMARY KEY,
+          documents_inbox_dir TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          max_bytes_per_file INTEGER NOT NULL DEFAULT 262144,
+          max_files_per_scan INTEGER NOT NULL DEFAULT 200,
+          updated_at TEXT NOT NULL
+        );
+        """,
+    )
+    con = sqlite3.connect(str(db_path))
+    con.execute(
+        """
+        INSERT INTO source_watch_config(
+          tenant_id, documents_inbox_dir, enabled, max_bytes_per_file, max_files_per_scan, updated_at
+        ) VALUES (?,?,?,?,?,?)
+        """,
+        ("dev", "/tmp/old", 1, 262144, 200, "2026-02-16T00:00:00+00:00"),
+    )
+    con.commit()
+    con.close()
+
+    inbox = str(tmp_path / "inbox")
+    result = ensure_watch_config_in_sandbox(
+        "dev",
+        sandbox_db_path=db_path,
+        inbox_dir=inbox,
+    )
+    assert result["ok"] is True
+    assert result["seeded"] is False
+    assert result["used_column"] == "documents_inbox_dir"
+
+    con2 = sqlite3.connect(str(db_path))
+    row = con2.execute(
+        "SELECT documents_inbox_dir FROM source_watch_config WHERE tenant_id=?",
+        ("dev",),
+    ).fetchone()
+    con2.close()
+    assert str(row[0]) == inbox
+
+
+def test_ensure_watch_config_in_sandbox_missing_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "core.sqlite3"
+    sqlite3.connect(str(db_path)).close()
+    result = ensure_watch_config_in_sandbox(
+        "dev",
+        sandbox_db_path=db_path,
+        inbox_dir=str(tmp_path / "inbox"),
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "watch_config_table_missing"
+
+
+def test_ensure_watch_config_in_sandbox_unknown_path_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "core.sqlite3"
+    _create_policy_table(
+        db_path,
+        """
+        CREATE TABLE source_watch_config(
+          tenant_id TEXT PRIMARY KEY,
+          some_other_dir TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL
+        );
+        """,
+    )
+    result = ensure_watch_config_in_sandbox(
+        "dev",
+        sandbox_db_path=db_path,
+        inbox_dir=str(tmp_path / "inbox"),
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "schema_unknown"
+    assert "some_other_dir" in result["existing_columns"]
+
+
+def test_sandbox_temp_inbox_helpers(tmp_path: Path) -> None:
+    inbox = create_temp_inbox_dir(tmp_path)
+    assert inbox.exists()
+    assert inbox.is_dir()
+    ensured = ensure_dir(inbox)
+    assert ensured == inbox
