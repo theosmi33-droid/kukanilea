@@ -9,6 +9,35 @@
 Der Test laeuft standardmaessig im Sandbox-Modus (temporare DB-Kopien).
 Sandbox bedeutet: Die echte Core-DB wird 1:1 kopiert, der Test laeuft nur auf der Kopie.
 
+## Doctor (One-Command Operator Check)
+
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --doctor --json
+python -m app.devtools.cli_ocr_test --tenant dev --doctor --strict --json
+```
+
+Mit Report-Dateien:
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor \
+  --json \
+  --report-json-path reports/ocr_doctor.json \
+  --report-text-path reports/ocr_doctor.txt
+```
+
+Optionaler Real-DB-Commit (explizit abgesichert):
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor \
+  --commit-real-policy \
+  --yes-really-commit dev \
+  --json
+```
+
 ## Beispiele
 
 ```bash
