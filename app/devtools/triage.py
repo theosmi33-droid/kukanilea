@@ -455,6 +455,12 @@ def main(argv: list[str] | None = None) -> int:
             exit_code = 2
             return exit_code
 
+        # Run benchmarks before the full pytest/ruff passes to reduce thermal/noise
+        # drift on slower CI machines and keep regression checks deterministic.
+        if not _run_bench_step(args, steps):
+            exit_code = 2
+            return exit_code
+
         pytest_cmd = (
             ["pytest", "-q"]
             if args.full
@@ -529,10 +535,6 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 exit_code = 2
                 return exit_code
-
-        if not _run_bench_step(args, steps):
-            exit_code = 2
-            return exit_code
 
         if not _run_health_step(args, steps, env):
             exit_code = 2
