@@ -115,16 +115,39 @@ def resolve_tesseract_bin() -> Path | None:
     location = shutil.which("tesseract")
     if not location:
         return None
-    resolved = Path(location).resolve()
+    from_which = Path(location)
+    if not from_which.is_absolute():
+        return None
+
+    def _is_allowlisted(candidate: Path) -> bool:
+        for allowed_dir in TESSERACT_ALLOWED_DIRS:
+            try:
+                if candidate.is_relative_to(allowed_dir):
+                    return True
+            except AttributeError:
+                if str(candidate).startswith(str(allowed_dir) + os.sep):
+                    return True
+        return False
+
+    # Keep the original `which` location allowlisted even if it is a symlink into
+    # a versioned cellar path.
+    if _is_allowlisted(from_which):
+        return from_which
+
+    resolved = from_which.resolve()
     if not resolved.is_absolute():
         return None
-    for allowed_dir in TESSERACT_ALLOWED_DIRS:
-        try:
-            if resolved.is_relative_to(allowed_dir):
-                return resolved
-        except AttributeError:
-            if str(resolved).startswith(str(allowed_dir) + os.sep):
-                return resolved
+    if _is_allowlisted(resolved):
+        return resolved
+
+    # Homebrew resolves symlinks to /opt/homebrew/Cellar/...; allow that target.
+    cellar_root = Path("/opt/homebrew/Cellar")
+    try:
+        if resolved.is_relative_to(cellar_root):
+            return from_which
+    except AttributeError:
+        if str(resolved).startswith(str(cellar_root) + os.sep):
+            return from_which
     return None
 
 

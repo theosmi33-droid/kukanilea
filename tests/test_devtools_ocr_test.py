@@ -192,3 +192,20 @@ def test_run_ocr_test_sandbox_cleanup_on_exception(tmp_path: Path, monkeypatch) 
     assert result["ok"] is False
     assert result["reason"] == "unexpected_error"
     assert not sandbox_dir.exists()
+
+
+def test_preflight_reports_tesseract_even_when_policy_denied(monkeypatch) -> None:
+    import app.autonomy.ocr as autonomy_ocr
+
+    monkeypatch.setattr(autonomy_ocr, "ocr_allowed", lambda _tenant: False)
+    monkeypatch.setattr(
+        autonomy_ocr,
+        "resolve_tesseract_bin",
+        lambda: Path("/opt/homebrew/bin/tesseract"),
+    )
+    monkeypatch.setattr(ocr_test, "_detect_read_only", lambda: False)
+
+    result = ocr_test._preflight_status("dev")
+    assert result["policy_enabled"] is False
+    assert result["tesseract_found"] is True
+    assert result["read_only"] is False
