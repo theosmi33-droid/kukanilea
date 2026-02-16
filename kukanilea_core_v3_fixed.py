@@ -937,6 +937,39 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
     )
 
 
+def _init_conversation_tables(con: sqlite3.Connection) -> None:
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversation_events (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          channel TEXT NOT NULL CHECK(channel IN ('email','chat','phone')),
+          channel_ref TEXT,
+          channel_ref_norm TEXT,
+          direction TEXT NOT NULL CHECK(direction IN ('inbound','outbound')),
+          occurred_at TEXT NOT NULL,
+          redacted_payload_json TEXT NOT NULL,
+          redaction_findings_json TEXT,
+          audit_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_events_ref
+        ON conversation_events(tenant_id, channel, channel_ref_norm)
+        WHERE channel_ref_norm IS NOT NULL;
+        """
+    )
+    con.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_events_hash ON conversation_events(tenant_id, channel, audit_hash);"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_conversation_events_tenant_time ON conversation_events(tenant_id, occurred_at DESC);"
+    )
+
+
 def db_init() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _DB_LOCK:
@@ -1764,6 +1797,7 @@ def db_init() -> None:
             _init_entity_link_tables(con)
             _init_knowledge_tables(con)
             _init_autonomy_tables(con)
+            _init_conversation_tables(con)
 
             row = con.execute("PRAGMA user_version").fetchone()
             cur_ver = int(row[0] if row else 0)
