@@ -28,6 +28,13 @@ OCR-Policy nur in der Sandbox aktivieren und direkt E2E testen:
 python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json --timeout 30
 ```
 
+Deterministischer Smoke mit Watch-Config-Seeding + optionalem Direkt-Submit:
+
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json --timeout 30 --seed-watch-config-in-sandbox
+python -m app.devtools.cli_ocr_test --tenant dev --enable-policy-in-sandbox --json --timeout 30 --direct-submit-in-sandbox
+```
+
 Ohne Sandbox (schreibt Jobs in die echte DB, nur fuer bewusstes Debugging):
 
 ```bash
@@ -55,6 +62,9 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `policy_reason`
 - `existing_columns`
 - `sandbox_db_path` (nur gesetzt, wenn Sandbox aktiv und `--keep-artifacts` genutzt wird)
+- `watch_config_seeded`, `watch_config_existed`
+- `inbox_dir_used`, `scanner_discovered_files`
+- `direct_submit_used`
 - `next_actions`
 
 ## OCR fuer Tenant `dev` aktivieren (lokal)
@@ -113,3 +123,26 @@ Erwartung nach Aktivierung:
 - `policy_enabled: true`
 - `reason` ist nicht mehr `policy_denied`
 - bei verfuegbarem Tesseract wird `tesseract_found: true`
+
+## Troubleshooting (`reason` -> `next_actions`)
+
+- `policy_denied`
+  - OCR-Policy fuer Tenant aktivieren (`--enable-policy-in-sandbox`).
+  - Tenant-ID pruefen.
+- `tesseract_missing`
+  - Tesseract installieren und PATH pruefen.
+  - Erneut mit `--json` laufen lassen und `tesseract_found=true` verifizieren.
+- `read_only`
+  - READ_ONLY im Dev-Setup deaktivieren oder nur `--show-policy` nutzen.
+- `watch_config_table_missing`
+  - Autonomy-Tabellen initialisieren (`source_watch_config` fehlt).
+- `job_not_found`
+  - Mit `--seed-watch-config-in-sandbox` laufen lassen.
+  - Optional `--direct-submit-in-sandbox` aktivieren.
+- `source_files_table_missing` / `source_files_schema_unknown`
+  - Scanner-Schema pruefen (`source_files` + Spalten wie `path_hash`/`basename`).
+- `failed`
+  - Lokale Tesseract-Installation und Sprachdaten pruefen.
+  - Erneut mit `--direct-submit-in-sandbox` starten und `job_error_code` auswerten.
+- `pii_leak`
+  - Sofort stoppen; Redaction/Eventlog-Pfad regressionspruefen.

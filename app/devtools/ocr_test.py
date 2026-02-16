@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -12,10 +13,15 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import kukanilea_core_v3_fixed as legacy_core
-from app.devtools.ocr_policy import get_policy_status
+from app.devtools.ocr_policy import (
+    ensure_watch_config_in_sandbox,
+    get_policy_status,
+)
 from app.devtools.sandbox import (
     cleanup_sandbox,
     create_sandbox_copy,
+    create_temp_inbox_dir,
+    ensure_dir,
     resolve_core_db_path,
 )
 
@@ -29,6 +35,7 @@ ENV_DB_KEYS = (
     "TOPHANDWERK_DB_FILENAME",
     "KUKANILEA_ANONYMIZATION_KEY",
 )
+SAFE_PATH_RE = re.compile(r"[^\x20-\x7E]+")
 
 
 def _resolve_config_object() -> Any:
@@ -45,6 +52,69 @@ def _resolve_config_object() -> Any:
     if hasattr(config_module, "CORE_DB") and hasattr(config_module, "AUTH_DB"):
         return config_module
     raise RuntimeError("config_db_paths_missing")
+
+
+def _sanitize_path_for_output(path: Path | str | None) -> str:
+    text = (
+        str(path or "").replace("\x00", "").replace("\r", "").replace("\n", "").strip()
+    )
+    text = SAFE_PATH_RE.sub("_", text)
+    if len(text) > 256:
+        text = text[-256:]
+    return text
+
+
+def _table_columns(core_db_path: Path, table: str) -> list[str]:
+    con = sqlite3.connect(str(core_db_path))
+    try:
+        rows = con.execute(f"PRAGMA table_info({table})").fetchall()
+        return [str(row[1]) for row in rows]
+    finally:
+        con.close()
+
+
+def _lookup_source_file_id(
+    core_db_path: Path,
+    tenant_id: str,
+    *,
+    path_hash: str,
+    basename: str,
+) -> tuple[str | None, str | None, list[str]]:
+    columns = _table_columns(core_db_path, "source_files")
+    if not columns:
+        return None, "source_files_table_missing", []
+
+    con = sqlite3.connect(str(core_db_path))
+    con.row_factory = sqlite3.Row
+    try:
+        row = None
+        if "path_hash" in columns:
+            row = con.execute(
+                """
+                SELECT id
+                FROM source_files
+                WHERE tenant_id=? AND path_hash=?
+                ORDER BY last_seen_at DESC, id DESC
+                LIMIT 1
+                """,
+                (tenant_id, path_hash),
+            ).fetchone()
+        elif "basename" in columns:
+            row = con.execute(
+                """
+                SELECT id
+                FROM source_files
+                WHERE tenant_id=? AND basename=?
+                ORDER BY last_seen_at DESC, id DESC
+                LIMIT 1
+                """,
+                (tenant_id, basename),
+            ).fetchone()
+        else:
+            return None, "source_files_schema_unknown", columns
+        return (str(row["id"]), None, columns) if row else (None, None, columns)
+    finally:
+        con.close()
 
 
 def _resolve_config_db_paths() -> tuple[Path, Path]:
@@ -290,25 +360,32 @@ def _execute_test_round(
     timeout_s: int,
     core_db_path: Path,
     artifacts_root: Path,
+    *,
+    inbox_dir_override: Path | None = None,
+    direct_submit_in_sandbox: bool = False,
 ) -> dict[str, Any]:
+    from app.autonomy.ocr import submit_ocr_for_source_file
     from app.autonomy.source_scan import (
+        hmac_path_hash,
         scan_sources_once,
         source_watch_config_get,
         source_watch_config_update,
     )
 
-    cfg = source_watch_config_get(tenant_id, create_if_missing=True)
-    documents_inbox_raw = str(cfg.get("documents_inbox_dir") or "").strip()
-    if not documents_inbox_raw:
-        documents_inbox = artifacts_root / "documents_inbox"
-        source_watch_config_update(
-            tenant_id,
-            documents_inbox_dir=str(documents_inbox),
-            enabled=True,
-        )
+    if inbox_dir_override is not None:
+        documents_inbox = ensure_dir(Path(str(inbox_dir_override)))
     else:
-        documents_inbox = Path(documents_inbox_raw)
-    documents_inbox.mkdir(parents=True, exist_ok=True)
+        cfg = source_watch_config_get(tenant_id, create_if_missing=True)
+        documents_inbox_raw = str(cfg.get("documents_inbox_dir") or "").strip()
+        if not documents_inbox_raw:
+            documents_inbox = ensure_dir(artifacts_root / "documents_inbox")
+            source_watch_config_update(
+                tenant_id,
+                documents_inbox_dir=str(documents_inbox),
+                enabled=True,
+            )
+        else:
+            documents_inbox = ensure_dir(Path(documents_inbox_raw))
 
     basename = f"OCR_Test_2026-02-16_KD-9999_{uuid.uuid4().hex[:8]}.png"
     sample_path = artifacts_root / "sample_input.png"
@@ -317,11 +394,12 @@ def _execute_test_round(
     shutil.copy2(sample_path, target_path)
 
     try:
-        scan_sources_once(
+        scan_summary = scan_sources_once(
             tenant_id,
             actor_user_id="devtools_ocr_test",
             budget_ms=max(1000, int(timeout_s * 1000)),
         )
+        scanner_discovered_files = int(scan_summary.get("discovered") or 0)
         deadline = time.monotonic() + max(1, timeout_s)
         latest_job: dict[str, Any] | None = None
         while time.monotonic() <= deadline:
@@ -329,6 +407,37 @@ def _execute_test_round(
             if latest_job:
                 break
             time.sleep(0.25)
+
+        direct_submit_used = False
+        source_lookup_reason: str | None = None
+        source_columns: list[str] | None = None
+        if latest_job is None and bool(direct_submit_in_sandbox):
+            source_file_id, source_lookup_reason, source_columns = (
+                _lookup_source_file_id(
+                    core_db_path,
+                    tenant_id,
+                    path_hash=hmac_path_hash(str(target_path)),
+                    basename=basename,
+                )
+            )
+            if source_file_id:
+                try:
+                    submit_ocr_for_source_file(
+                        tenant_id,
+                        actor_user_id="devtools_ocr_test",
+                        source_file_id=source_file_id,
+                        abs_path=target_path,
+                    )
+                    direct_submit_used = True
+                except Exception:
+                    source_lookup_reason = "direct_submit_failed"
+
+            deadline = time.monotonic() + max(1, timeout_s)
+            while time.monotonic() <= deadline:
+                latest_job = _query_latest_ocr_job(core_db_path, tenant_id, basename)
+                if latest_job:
+                    break
+                time.sleep(0.25)
 
         pii_patterns = [TEST_EMAIL_PATTERN, TEST_PHONE_PATTERN]
         pii_found_knowledge = (
@@ -350,6 +459,11 @@ def _execute_test_round(
             "truncated": False,
             "pii_found_knowledge": pii_found_knowledge,
             "pii_found_eventlog": pii_found_eventlog,
+            "inbox_dir_used": _sanitize_path_for_output(documents_inbox),
+            "scanner_discovered_files": scanner_discovered_files,
+            "direct_submit_used": direct_submit_used,
+            "source_lookup_reason": source_lookup_reason,
+            "source_files_columns": source_columns,
         }
     finally:
         with contextlib.suppress(Exception):
@@ -376,6 +490,14 @@ def _build_message(result: dict[str, Any]) -> str:
         return "Multiple OCR policy columns detected; choose one explicitly."
     if reason == "schema_unknown_insert":
         return "Policy row insert failed due to unknown required columns."
+    if reason == "watch_config_table_missing":
+        return "Watch configuration table is missing in the selected database."
+    if reason == "source_files_table_missing":
+        return "Source files table is missing in the selected database."
+    if reason == "source_files_schema_unknown":
+        return "Source files lookup schema is unknown."
+    if reason == "failed":
+        return "OCR command failed for the test image."
     if reason == "timeout":
         return "OCR run timed out."
     return "OCR test failed."
@@ -408,9 +530,29 @@ def _next_actions_for_reason(reason: str | None) -> list[str]:
             "Inspect required columns for knowledge_source_policies in existing_columns.",
             "Extend insert defaults for missing required fields before enabling policy.",
         ],
+        "watch_config_table_missing": [
+            "Initialize autonomy tables so source_watch_config exists.",
+            "Re-run with --show-policy to verify schema and then retry OCR smoke.",
+        ],
+        "source_files_table_missing": [
+            "Initialize autonomy scanner tables before OCR smoke.",
+            "Re-run scanner once and retry with --direct-submit-in-sandbox if needed.",
+        ],
+        "source_files_schema_unknown": [
+            "Inspect source_files schema and ensure path_hash or basename column exists.",
+            "Update lookup handler for current schema.",
+        ],
         "timeout": [
             "Increase --timeout.",
             "Check scanner paths / source_watch_config and that the inbox dir is writable.",
+        ],
+        "job_not_found": [
+            "Use --seed-watch-config-in-sandbox so the scanner sees a deterministic inbox.",
+            "Retry with --direct-submit-in-sandbox to trigger OCR directly after scan.",
+        ],
+        "failed": [
+            "Verify local tesseract language data and binary execution for image OCR.",
+            "Retry with --direct-submit-in-sandbox and inspect job_error_code.",
         ],
         "pii_leak": [
             "Stop: redaction regression suspected.",
@@ -431,8 +573,11 @@ def run_ocr_test(
     sandbox: bool = True,
     keep_artifacts: bool = False,
     db_path_override: Path | None = None,
+    seed_watch_config_in_sandbox: bool = False,
+    direct_submit_in_sandbox: bool = False,
 ) -> dict[str, Any]:
     tenant = str(tenant_id or "").strip() or "default"
+    sandbox_like = bool(sandbox or db_path_override is not None)
     result: dict[str, Any] = {
         "ok": False,
         "reason": None,
@@ -453,6 +598,13 @@ def run_ocr_test(
         "chars_out": None,
         "truncated": False,
         "sandbox_db_path": None,
+        "watch_config_seeded": False,
+        "watch_config_existed": None,
+        "inbox_dir_used": None,
+        "scanner_discovered_files": 0,
+        "direct_submit_used": False,
+        "source_lookup_reason": None,
+        "source_files_columns": None,
         "next_actions": [],
         "message": "",
     }
@@ -523,6 +675,35 @@ def run_ocr_test(
                 )
                 return result
 
+            inbox_dir_override: Path | None = None
+            if bool(seed_watch_config_in_sandbox) and sandbox_like:
+                sandbox_root = Path(str(ctx.get("work_dir") or core_db_path.parent))
+                inbox_dir = create_temp_inbox_dir(sandbox_root)
+                ensure_dir(inbox_dir)
+                watch_seed = ensure_watch_config_in_sandbox(
+                    tenant,
+                    sandbox_db_path=core_db_path,
+                    inbox_dir=str(inbox_dir),
+                )
+                result["inbox_dir_used"] = _sanitize_path_for_output(inbox_dir)
+                if not bool(watch_seed.get("ok")):
+                    result["reason"] = str(
+                        watch_seed.get("reason") or "watch_config_table_missing"
+                    )
+                    result["existing_columns"] = list(
+                        watch_seed.get("existing_columns")
+                        or result.get("existing_columns")
+                        or []
+                    )
+                    result["message"] = _build_message(result)
+                    result["next_actions"] = _next_actions_for_reason(
+                        str(result.get("reason") or "")
+                    )
+                    return result
+                result["watch_config_seeded"] = bool(watch_seed.get("seeded"))
+                result["watch_config_existed"] = bool(watch_seed.get("existed_before"))
+                inbox_dir_override = inbox_dir
+
             artifacts_root = Path(
                 str(
                     ctx.get("work_dir")
@@ -535,6 +716,10 @@ def run_ocr_test(
                     max(1, int(timeout_s)),
                     core_db_path,
                     artifacts_root,
+                    inbox_dir_override=inbox_dir_override,
+                    direct_submit_in_sandbox=bool(
+                        direct_submit_in_sandbox and sandbox_like
+                    ),
                 )
             finally:
                 if ctx.get("work_dir") is None and not keep_artifacts:
@@ -549,7 +734,14 @@ def run_ocr_test(
                 result["reason"] = "pii_leak"
                 result["ok"] = False
             elif not result["job_status"]:
-                result["reason"] = "job_not_found"
+                lookup_reason = str(result.get("source_lookup_reason") or "")
+                if lookup_reason in {
+                    "source_files_table_missing",
+                    "source_files_schema_unknown",
+                }:
+                    result["reason"] = lookup_reason
+                else:
+                    result["reason"] = "job_not_found"
                 result["ok"] = False
             elif str(result["job_status"]).lower() != "done":
                 code = str(result["job_error_code"] or "job_failed")

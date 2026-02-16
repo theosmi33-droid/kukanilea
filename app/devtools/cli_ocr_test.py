@@ -24,6 +24,14 @@ def _reason_message(reason: str | None) -> str:
         return "Multiple OCR policy columns detected; choose one explicitly."
     if key == "schema_unknown_insert":
         return "Policy row insert failed due to unknown required columns."
+    if key == "watch_config_table_missing":
+        return "Watch configuration table is missing in the selected database."
+    if key == "source_files_table_missing":
+        return "Source files table is missing in the selected database."
+    if key == "source_files_schema_unknown":
+        return "Source files lookup schema is unknown."
+    if key == "failed":
+        return "OCR command failed for the test image."
     if key == "timeout":
         return "OCR run timed out."
     if key == "job_not_found":
@@ -94,6 +102,13 @@ def _policy_view_payload(
         "chars_out": None,
         "truncated": False,
         "sandbox_db_path": None,
+        "watch_config_seeded": False,
+        "watch_config_existed": None,
+        "inbox_dir_used": None,
+        "scanner_discovered_files": 0,
+        "direct_submit_used": False,
+        "source_lookup_reason": None,
+        "source_files_columns": None,
         "next_actions": next_actions,
         "message": _reason_message(reason),
     }
@@ -118,6 +133,11 @@ def _human_report(result: dict) -> str:
         f"duration_ms: {result.get('duration_ms') if result.get('duration_ms') is not None else '-'}",
         f"chars_out: {result.get('chars_out') if result.get('chars_out') is not None else '-'}",
         f"truncated: {bool(result.get('truncated'))}",
+        f"watch_config_seeded: {bool(result.get('watch_config_seeded'))}",
+        f"watch_config_existed: {result.get('watch_config_existed')}",
+        f"inbox_dir_used: {result.get('inbox_dir_used') or '-'}",
+        f"scanner_discovered_files: {result.get('scanner_discovered_files')}",
+        f"direct_submit_used: {bool(result.get('direct_submit_used'))}",
         f"pii_found_knowledge: {bool(result.get('pii_found_knowledge'))}",
         f"pii_found_eventlog: {bool(result.get('pii_found_eventlog'))}",
         f"sandbox_db_path: {result.get('sandbox_db_path') or '-'}",
@@ -135,6 +155,18 @@ def main() -> int:
     parser.add_argument("--show-policy", action="store_true")
     parser.add_argument("--enable-policy-in-sandbox", action="store_true")
     parser.add_argument("--no-sandbox", action="store_true")
+    parser.add_argument(
+        "--seed-watch-config-in-sandbox",
+        dest="seed_watch_config_in_sandbox",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--no-seed-watch-config-in-sandbox",
+        dest="seed_watch_config_in_sandbox",
+        action="store_false",
+    )
+    parser.set_defaults(seed_watch_config_in_sandbox=True)
+    parser.add_argument("--direct-submit-in-sandbox", action="store_true")
     parser.add_argument("--keep-artifacts", action="store_true")
     args = parser.parse_args()
 
@@ -183,6 +215,8 @@ def main() -> int:
                     timeout_s=timeout_s,
                     sandbox=False,
                     keep_artifacts=bool(args.keep_artifacts),
+                    seed_watch_config_in_sandbox=False,
+                    direct_submit_in_sandbox=False,
                 )
                 _merge_policy_fields(
                     result,
@@ -209,6 +243,10 @@ def main() -> int:
                     sandbox=False,
                     keep_artifacts=bool(args.keep_artifacts),
                     db_path_override=Path(str(sandbox_db)),
+                    seed_watch_config_in_sandbox=bool(
+                        args.seed_watch_config_in_sandbox
+                    ),
+                    direct_submit_in_sandbox=bool(args.direct_submit_in_sandbox),
                 )
                 result["sandbox"] = True
                 result["sandbox_db_path"] = (

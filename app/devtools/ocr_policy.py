@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 ALLOWED_OCR_COLUMNS = {"allow_ocr", "ocr_enabled", "ocr_allowed"}
+PATH_COLUMNS = {"documents_inbox_dir", "inbox_dir", "watch_dir", "path"}
 
 _DEFAULT_INSERT_VALUES = {
     "allow_manual": 1,
@@ -16,6 +17,11 @@ _DEFAULT_INSERT_VALUES = {
     "allow_email": 0,
     "allow_calendar": 0,
     "allow_customer_pii": 0,
+}
+_DEFAULT_WATCH_INSERT_VALUES = {
+    "enabled": 1,
+    "max_bytes_per_file": 262_144,
+    "max_files_per_scan": 200,
 }
 
 
@@ -38,6 +44,14 @@ def _table_info(con: sqlite3.Connection, table: str) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def _table_exists(con: sqlite3.Connection, table: str) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (table,),
+    ).fetchone()
+    return row is not None
 
 
 def get_policy_status(tenant_id: str, *, db_path: Path) -> dict[str, Any]:
@@ -193,6 +207,129 @@ def enable_ocr_policy_in_db(
             "ocr_column": ocr_col,
             "changed": True,
             "row_present": False,
+            "existing_columns": existing_columns,
+        }
+    finally:
+        con.close()
+
+
+def ensure_watch_config_in_sandbox(
+    tenant_id: str,
+    *,
+    sandbox_db_path: Path,
+    inbox_dir: str,
+) -> dict[str, Any]:
+    tenant = str(tenant_id or "").strip() or "default"
+    inbox_value = (
+        str(inbox_dir or "")
+        .replace("\x00", "")
+        .replace("\r", "")
+        .replace("\n", "")
+        .strip()
+    )
+    con = sqlite3.connect(str(sandbox_db_path))
+    con.row_factory = sqlite3.Row
+    try:
+        if not _table_exists(con, "source_watch_config"):
+            return {
+                "ok": False,
+                "reason": "watch_config_table_missing",
+                "table": "source_watch_config",
+            }
+
+        columns_meta = _table_info(con, "source_watch_config")
+        existing_columns = [str(c["name"]) for c in columns_meta]
+        candidates = [
+            c
+            for c in ("documents_inbox_dir", "inbox_dir", "watch_dir", "path")
+            if c in existing_columns
+        ]
+        if not candidates:
+            return {
+                "ok": False,
+                "reason": "schema_unknown",
+                "table": "source_watch_config",
+                "existing_columns": existing_columns,
+            }
+        path_col = candidates[0]
+
+        row = con.execute(
+            "SELECT tenant_id FROM source_watch_config WHERE tenant_id=? LIMIT 1",
+            (tenant,),
+        ).fetchone()
+        existed_before = row is not None
+
+        if existed_before:
+            assignments = [f'"{path_col}"=?']
+            params: list[Any] = [inbox_value]
+            if "enabled" in existing_columns:
+                assignments.append('"enabled"=?')
+                params.append(1)
+            if "updated_at" in existing_columns:
+                assignments.append('"updated_at"=?')
+                params.append(_now_iso())
+            params.append(tenant)
+            con.execute(
+                f"""
+                UPDATE source_watch_config
+                SET {", ".join(assignments)}
+                WHERE tenant_id=?
+                """,
+                tuple(params),
+            )
+            con.commit()
+            return {
+                "ok": True,
+                "seeded": False,
+                "existed_before": True,
+                "inbox_dir": inbox_value,
+                "used_column": path_col,
+                "existing_columns": existing_columns,
+            }
+
+        values: dict[str, Any] = {
+            "tenant_id": tenant,
+            path_col: inbox_value,
+        }
+        for col in columns_meta:
+            name = str(col["name"])
+            if name in values:
+                continue
+            if name in _DEFAULT_WATCH_INSERT_VALUES:
+                values[name] = _DEFAULT_WATCH_INSERT_VALUES[name]
+                continue
+            if name == "updated_at":
+                values[name] = _now_iso()
+                continue
+            not_null = int(col.get("notnull") or 0) == 1
+            has_default = col.get("dflt_value") is not None
+            if not_null and not has_default:
+                return {
+                    "ok": False,
+                    "reason": "schema_unknown_insert",
+                    "table": "source_watch_config",
+                    "existing_columns": existing_columns,
+                    "unknown_required_columns": [name],
+                }
+
+        cols = sorted(values.keys())
+        placeholders = ", ".join("?" for _ in cols)
+        columns_sql = ", ".join(f'"{c}"' for c in cols)
+        params = [values[c] for c in cols]
+        con.execute(
+            f"""
+            INSERT INTO source_watch_config({columns_sql})
+            VALUES ({placeholders})
+            """,
+            tuple(params),
+        )
+        con.commit()
+        return {
+            "ok": True,
+            "seeded": True,
+            "existed_before": False,
+            "inbox_dir": inbox_value,
+            "used_column": path_col,
             "existing_columns": existing_columns,
         }
     finally:

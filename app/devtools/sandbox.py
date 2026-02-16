@@ -4,6 +4,7 @@ import hashlib
 import shutil
 import sqlite3
 import tempfile
+import uuid
 from pathlib import Path
 
 
@@ -45,6 +46,21 @@ def create_sandbox_copy(tenant_id: str) -> tuple[Path, Path]:
     sandbox_db = sandbox_dir / "core.sqlite3"
     _copy_db_with_sidecars(real_core_db, sandbox_db)
     return sandbox_db, sandbox_dir
+
+
+def create_temp_inbox_dir(sandbox_dir: Path) -> Path:
+    base = Path(str(sandbox_dir)) / "ocr_smoke_inbox"
+    inbox = base / f"inbox-{uuid.uuid4().hex[:10]}"
+    inbox.mkdir(parents=True, exist_ok=True)
+    return inbox
+
+
+def ensure_dir(path: Path) -> Path:
+    target = Path(str(path))
+    target.mkdir(parents=True, exist_ok=True)
+    if not target.is_dir():
+        raise RuntimeError("not_a_directory")
+    return target
 
 
 def cleanup_sandbox(sandbox_dir: Path) -> None:
