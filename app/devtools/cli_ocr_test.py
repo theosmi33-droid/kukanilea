@@ -227,6 +227,16 @@ def _human_report(result: dict) -> str:
     return "\n".join(lines)
 
 
+def _exit_code_for_result(result: dict[str, Any], *, strict: bool) -> int:
+    ok = bool(result.get("ok"))
+    reason = str(result.get("reason") or "")
+    if ok:
+        if reason == "ok_with_warnings":
+            return 1 if strict else 2
+        return 0
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run OCR pipeline verification test")
     parser.add_argument("--tenant", required=True)
@@ -302,7 +312,7 @@ def main() -> int:
                 print(json.dumps(result, sort_keys=True))
             else:
                 print(_human_report(result))
-            return 2
+            return 1
 
         if args.show_tesseract:
             from app.autonomy.ocr import resolve_tesseract_bin
@@ -478,7 +488,7 @@ def main() -> int:
             "message": type(exc).__name__,
         }
         print(json.dumps(payload, sort_keys=True))
-        return 3
+        return 1
 
     result["sandbox_db_path"] = _sanitize_path(
         str(result.get("sandbox_db_path") or "") or None
@@ -511,7 +521,7 @@ def main() -> int:
         print(json.dumps(result, sort_keys=True))
     else:
         print(_human_report(result))
-    return 0 if bool(result.get("ok")) else 2
+    return _exit_code_for_result(result, strict=bool(args.strict))
 
 
 if __name__ == "__main__":
