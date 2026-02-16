@@ -116,6 +116,9 @@ def _policy_view_payload(
         "tesseract_found": False,
         "tessdata_dir": None,
         "tessdata_source": None,
+        "tessdata_candidates": [],
+        "print_tessdata_dir": None,
+        "tesseract_bin_used": None,
         "tesseract_langs": [],
         "tesseract_lang_used": None,
         "tesseract_warnings": [],
@@ -168,6 +171,9 @@ def _human_report(result: dict) -> str:
         f"tesseract_found: {bool(result.get('tesseract_found'))}",
         f"tessdata_dir: {result.get('tessdata_dir') or '-'}",
         f"tessdata_source: {result.get('tessdata_source') or '-'}",
+        f"tessdata_candidates: {result.get('tessdata_candidates') or '-'}",
+        f"print_tessdata_dir: {result.get('print_tessdata_dir') or '-'}",
+        f"tesseract_bin_used: {result.get('tesseract_bin_used') or '-'}",
         f"tesseract_langs: {result.get('tesseract_langs') or '-'}",
         f"tesseract_lang_used: {result.get('tesseract_lang_used') or '-'}",
         f"tesseract_warnings: {result.get('tesseract_warnings') or '-'}",
@@ -213,6 +219,7 @@ def main() -> int:
     parser.add_argument("--no-sandbox", action="store_true")
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--no-retry", action="store_true")
+    parser.add_argument("--tesseract-bin")
     parser.add_argument("--tessdata-dir")
     parser.add_argument("--lang")
     parser.add_argument(
@@ -261,7 +268,8 @@ def main() -> int:
 
             resolved = resolve_tesseract_bin()
             probe = probe_tesseract(
-                bin_path=str(resolved) if resolved else None,
+                bin_path=str(args.tesseract_bin or "").strip()
+                or (str(resolved) if resolved else None),
                 tessdata_dir=str(args.tessdata_dir or "").strip() or None,
                 preferred_langs=preferred_langs,
             )
@@ -286,6 +294,17 @@ def main() -> int:
                 or None
             )
             result["tessdata_source"] = str(probe.get("tessdata_source") or "") or None
+            result["tessdata_candidates"] = [
+                _sanitize_path(str(item))
+                for item in list(probe.get("tessdata_candidates") or [])
+            ]
+            result["print_tessdata_dir"] = _sanitize_path(
+                str(probe.get("print_tessdata_dir") or "") or None
+            )
+            result["tesseract_bin_used"] = _sanitize_path(
+                str(probe.get("tesseract_bin_used") or probe.get("bin_path") or "")
+                or None
+            )
             result["tesseract_langs"] = [
                 str(item) for item in list(probe.get("langs") or [])
             ]
@@ -344,6 +363,7 @@ def main() -> int:
                     seed_watch_config_in_sandbox=False,
                     direct_submit_in_sandbox=False,
                     tessdata_dir=str(args.tessdata_dir or "").strip() or None,
+                    tesseract_bin=str(args.tesseract_bin or "").strip() or None,
                     lang=(preferred_langs[0] if preferred_langs else None),
                     strict=bool(args.strict),
                     retry_enabled=not bool(args.no_retry),
@@ -378,6 +398,7 @@ def main() -> int:
                     ),
                     direct_submit_in_sandbox=bool(args.direct_submit_in_sandbox),
                     tessdata_dir=str(args.tessdata_dir or "").strip() or None,
+                    tesseract_bin=str(args.tesseract_bin or "").strip() or None,
                     lang=(preferred_langs[0] if preferred_langs else None),
                     strict=bool(args.strict),
                     retry_enabled=not bool(args.no_retry),
@@ -421,6 +442,16 @@ def main() -> int:
     result["tessdata_dir"] = _sanitize_path(
         str(result.get("tessdata_dir") or "") or None
     )
+    result["print_tessdata_dir"] = _sanitize_path(
+        str(result.get("print_tessdata_dir") or "") or None
+    )
+    result["tesseract_bin_used"] = _sanitize_path(
+        str(result.get("tesseract_bin_used") or "") or None
+    )
+    result["tessdata_candidates"] = [
+        _sanitize_path(str(item))
+        for item in list(result.get("tessdata_candidates") or [])
+    ]
     result["tessdata_prefix_used"] = result.get("tessdata_dir")
     result["lang_used"] = result.get("tesseract_lang_used")
     result["probe_reason"] = result.get("tesseract_probe_reason")

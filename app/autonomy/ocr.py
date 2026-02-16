@@ -270,12 +270,21 @@ def _run_tesseract(
     timeout_sec: int,
     max_chars: int,
     tessdata_dir: str | None = None,
+    tesseract_bin_override: str | None = None,
     *,
     allow_retry: bool = True,
 ) -> tuple[str | None, str | None, int, str | None]:
     from app.devtools.tesseract_probe import probe_tesseract
 
-    binary = resolve_tesseract_bin()
+    if str(tesseract_bin_override or "").strip():
+        candidate = Path(str(tesseract_bin_override)).expanduser()
+        if not (
+            candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK)
+        ):
+            return None, "tesseract_missing", 0, None
+        binary = candidate
+    else:
+        binary = resolve_tesseract_bin()
     if binary is None:
         return None, "tesseract_missing", 0, None
 
@@ -478,6 +487,7 @@ def submit_ocr_for_source_file(
     *,
     lang_override: str | None = None,
     tessdata_dir: str | None = None,
+    tesseract_bin_override: str | None = None,
     allow_retry: bool = True,
 ) -> dict[str, Any]:
     if _is_read_only():
@@ -663,6 +673,7 @@ def submit_ocr_for_source_file(
         timeout_sec=timeout_sec,
         max_chars=max_chars,
         tessdata_dir=tessdata_dir,
+        tesseract_bin_override=tesseract_bin_override,
         allow_retry=allow_retry,
     )
     duration_ms = int(round((time.monotonic() - started) * 1000))

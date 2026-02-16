@@ -27,6 +27,7 @@ Nur Tesseract-Diagnostik (ohne OCR-Run):
 ```bash
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --json
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tessdata-dir /path/to/tessdata --lang eng --json
+python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tesseract-bin /path/to/tesseract --json
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --strict --json
 ```
 
@@ -72,6 +73,7 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `policy_reason`
 - `existing_columns`
 - `tessdata_dir`, `tessdata_source`
+- `print_tessdata_dir`, `tessdata_candidates`, `tesseract_bin_used`
 - `tessdata_prefix_used`
 - `tesseract_langs`, `tesseract_lang_used`
 - `tesseract_warnings`
@@ -148,6 +150,7 @@ Erwartung nach Aktivierung:
   - Tenant-ID pruefen.
 - `tesseract_missing`
   - Tesseract installieren und PATH pruefen.
+  - Falls gesetzt: `--tesseract-bin` auf existierende, ausfuehrbare Datei pruefen.
   - Erneut mit `--json` laufen lassen und `tesseract_found=true` verifizieren.
 - `tessdata_missing`
   - `--tessdata-dir` explizit setzen.
@@ -180,10 +183,12 @@ Erwartung nach Aktivierung:
 
 Hinweis:
 - Fuer reproduzierbare Diagnostik wird `--tessdata-dir` bevorzugt statt implizitem `TESSDATA_PREFIX`.
+- `--print-tessdata-dir` wird als priorisierte Probe-Quelle ausgewertet.
 - Detaillierte Probe-Logik: `docs/devtools/tesseract_probe.md`.
 
 Manuelle Triage:
 ```bash
 tesseract --version
 tesseract --list-langs --tessdata-dir <dir>
+tesseract --print-tessdata-dir
 ```
