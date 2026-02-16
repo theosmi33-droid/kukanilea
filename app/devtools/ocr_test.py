@@ -510,6 +510,7 @@ def _execute_test_round(
             "direct_submit_used": False,
             "source_lookup_reason": None,
             "source_files_columns": None,
+            "tesseract_exec_errno": None,
             "round_reason": "test_image_invalid",
         }
     if len(sample_bytes) < MIN_TEST_IMAGE_BYTES:
@@ -526,6 +527,7 @@ def _execute_test_round(
             "direct_submit_used": False,
             "source_lookup_reason": None,
             "source_files_columns": None,
+            "tesseract_exec_errno": None,
             "round_reason": "input_too_small",
         }
     target_path = documents_inbox / basename
@@ -547,6 +549,7 @@ def _execute_test_round(
             time.sleep(0.25)
 
         direct_submit_used = False
+        direct_submit_result: dict[str, Any] | None = None
         source_lookup_reason: str | None = None
         source_columns: list[str] | None = None
         if latest_job is None and bool(direct_submit_in_sandbox):
@@ -560,7 +563,7 @@ def _execute_test_round(
             )
             if source_file_id:
                 try:
-                    submit_ocr_for_source_file(
+                    direct_submit_result = submit_ocr_for_source_file(
                         tenant_id,
                         actor_user_id="devtools_ocr_test",
                         source_file_id=source_file_id,
@@ -606,6 +609,11 @@ def _execute_test_round(
             "direct_submit_used": direct_submit_used,
             "source_lookup_reason": source_lookup_reason,
             "source_files_columns": source_columns,
+            "tesseract_exec_errno": (
+                direct_submit_result.get("exec_errno")
+                if isinstance(direct_submit_result, dict)
+                else None
+            ),
             "round_reason": None,
         }
     finally:
@@ -623,6 +631,8 @@ def _build_message(result: dict[str, Any]) -> str:
         return "Tesseract binary not found."
     if reason == "tesseract_not_allowlisted":
         return "Tesseract binary is present but not allowlisted."
+    if reason == "tesseract_exec_failed":
+        return "Tesseract binary resolved, but execution failed."
     if reason == "tessdata_missing":
         return "Tesseract data files were not found."
     if reason == "language_missing":
@@ -678,6 +688,10 @@ def _next_actions_for_reason(reason: str | None) -> list[str]:
             "Tesseract binary is executable but outside the runtime allowlist.",
             "Use an allowlisted location or set KUKANILEA_TESSERACT_ALLOWED_PREFIXES to a safe prefix (never root).",
             "Re-run with --show-tesseract and verify tesseract_allowlisted=true.",
+        ],
+        "tesseract_exec_failed": [
+            "Tesseract binary was resolved but failed during execution.",
+            "Verify binary permissions and local security constraints, then retry with --show-tesseract.",
         ],
         "tessdata_missing": [
             "Set --tessdata-dir explicitly and verify traineddata files exist.",
@@ -790,6 +804,13 @@ def run_ocr_test(
         "tesseract_allowlisted": False,
         "tesseract_allowlist_reason": None,
         "tesseract_allowed_prefixes": [],
+        "tesseract_bin_used_probe": None,
+        "tesseract_resolution_source_probe": None,
+        "tesseract_bin_used_job": None,
+        "tesseract_resolution_source_job": None,
+        "tesseract_allowlisted_job": None,
+        "tesseract_allowlist_reason_job": None,
+        "tesseract_exec_errno": None,
         "tesseract_version": None,
         "supports_print_tessdata_dir": False,
         "tessdata_dir": None,
@@ -864,6 +885,18 @@ def run_ocr_test(
             result["tesseract_found"] = bool(
                 probe.get("tesseract_found") or probe.get("bin_path")
             )
+            probe_bin_raw = (
+                str(
+                    probe.get("bin_path") or probe.get("tesseract_bin_used") or ""
+                ).strip()
+                or None
+            )
+            result["tesseract_bin_used_probe"] = (
+                _sanitize_path_for_output(probe_bin_raw) if probe_bin_raw else None
+            )
+            result["tesseract_resolution_source_probe"] = (
+                str(probe.get("resolution_source") or "") or None
+            )
             result["tessdata_dir"] = (
                 _sanitize_path_for_output(
                     probe.get("tessdata_prefix")
@@ -922,6 +955,28 @@ def run_ocr_test(
             result["probe_next_actions"] = list(result["tesseract_probe_next_actions"])
             result["stderr_tail"] = result["tesseract_stderr_tail"]
 
+            try:
+                from app.autonomy.ocr import resolve_tesseract_binary
+
+                job_resolution = resolve_tesseract_binary(
+                    requested_bin=str(tesseract_bin or probe_bin_raw or "").strip()
+                    or None
+                )
+                result["tesseract_bin_used_job"] = (
+                    _sanitize_path_for_output(job_resolution.resolved_path)
+                    if job_resolution.resolved_path
+                    else None
+                )
+                result["tesseract_resolution_source_job"] = (
+                    str(job_resolution.resolution_source or "") or None
+                )
+                result["tesseract_allowlisted_job"] = bool(job_resolution.allowlisted)
+                result["tesseract_allowlist_reason_job"] = (
+                    str(job_resolution.allowlist_reason or "") or None
+                )
+            except Exception:
+                pass
+
             policy_status = get_policy_status(tenant, db_path=core_db_path)
             if bool(policy_status.get("ok")):
                 result["policy_enabled_effective"] = bool(
@@ -961,6 +1016,7 @@ def run_ocr_test(
             if result["tesseract_probe_reason"] in {
                 "tesseract_missing",
                 "tesseract_not_allowlisted",
+                "tesseract_exec_failed",
                 "tessdata_missing",
                 "language_missing",
                 "tesseract_failed",
@@ -1050,8 +1106,8 @@ def run_ocr_test(
                     ),
                     tesseract_bin=(
                         str(
-                            probe.get("tesseract_bin_used")
-                            or probe.get("bin_path")
+                            probe.get("bin_path")
+                            or probe.get("tesseract_bin_used")
                             or ""
                         )
                         or None
@@ -1063,6 +1119,11 @@ def run_ocr_test(
                     shutil.rmtree(artifacts_root, ignore_errors=True)
 
             result.update(round_result)
+            if round_result.get("tesseract_exec_errno") not in (None, ""):
+                with contextlib.suppress(Exception):
+                    result["tesseract_exec_errno"] = int(
+                        round_result.get("tesseract_exec_errno")
+                    )
             if round_result.get("round_reason"):
                 result["reason"] = str(round_result.get("round_reason") or "failed")
                 result["ok"] = False

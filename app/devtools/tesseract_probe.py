@@ -79,19 +79,26 @@ def _sanitize_text(
 
 
 def _resolve_bin(bin_path: str | None) -> Path | None:
+    try:
+        from app.autonomy.ocr import resolve_tesseract_binary
+
+        resolved = resolve_tesseract_binary(requested_bin=bin_path)
+        if (
+            resolved.resolved_path
+            and resolved.exists
+            and resolved.executable
+            and resolved.allowlisted
+        ):
+            return Path(str(resolved.resolved_path))
+        if bin_path:
+            return None
+    except Exception:
+        pass
     if bin_path:
         p = Path(str(bin_path)).expanduser()
         if p.exists() and p.is_file() and os.access(p, os.X_OK):
             return p
         return None
-    try:
-        from app.autonomy.ocr import resolve_tesseract_bin
-
-        resolved = resolve_tesseract_bin()
-        if resolved is not None:
-            return Path(str(resolved))
-    except Exception:
-        pass
     fallback = shutil.which("tesseract")
     if not fallback:
         return None
@@ -438,6 +445,7 @@ def probe_tesseract(
         "ok": False,
         "reason": None,
         "tesseract_found": False,
+        "resolution_source": "none",
         "tesseract_allowlisted": False,
         "tesseract_allowlist_reason": None,
         "tesseract_allowed_prefixes": [],
@@ -476,6 +484,12 @@ def probe_tesseract(
     result["tesseract_found"] = bool(
         classification.get("exists") and classification.get("executable")
     )
+    if str(bin_path or "").strip():
+        result["resolution_source"] = "explicit"
+    elif resolved_candidate:
+        result["resolution_source"] = "path"
+    else:
+        result["resolution_source"] = "none"
 
     binary = _resolve_bin(bin_path)
     if binary is None:
@@ -646,12 +660,7 @@ def probe_tesseract(
         result["tessdata_candidates"] = [
             item for item in result["tessdata_candidates"] if item
         ]
-        result["tesseract_bin_used"] = (
-            _sanitize_text(
-                str(binary), known_paths=[str(Path.home())], max_lines=1, max_chars=256
-            )
-            or None
-        )
+        result["tesseract_bin_used"] = str(binary)
         result["next_actions"] = _next_actions(reason, preferred_langs=preferred_langs)
         return result
 
@@ -676,12 +685,7 @@ def probe_tesseract(
     result["tessdata_candidates"] = [
         item for item in result["tessdata_candidates"] if item
     ]
-    result["tesseract_bin_used"] = (
-        _sanitize_text(
-            str(binary), known_paths=[str(Path.home())], max_lines=1, max_chars=256
-        )
-        or None
-    )
+    result["tesseract_bin_used"] = str(binary)
 
     selected_lang, allowed = _pick_lang(langs=langs, preferred_langs=preferred_langs)
     result["lang_selected"] = selected_lang
