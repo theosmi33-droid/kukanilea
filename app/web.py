@@ -45,6 +45,7 @@ from flask import (
     Blueprint,
     abort,
     current_app,
+    flash,
     g,
     jsonify,
     redirect,
@@ -234,6 +235,8 @@ db_path_for_doc = _core_get("db_path_for_doc")
 
 # Optional tasks
 task_list = _core_get("task_list")
+task_create_fn = _core_get("task_create")
+task_set_status_fn = _core_get("task_set_status")
 task_resolve = _core_get("task_resolve")
 task_dismiss = _core_get("task_dismiss")
 
@@ -2052,15 +2055,148 @@ def api_customer():
     )
 
 
+_TASK_STATUS_BY_COLUMN = {
+    "todo": "OPEN",
+    "in_progress": "IN_PROGRESS",
+    "done": "RESOLVED",
+}
+_TASK_STATUSES_ALL = ("OPEN", "IN_PROGRESS", "RESOLVED", "DISMISSED")
+
+
+def _task_read_only_response(api: bool = True):
+    if api:
+        return json_error("read_only", "Read-only mode aktiv.", status=403)
+    return _render_base(
+        _card("error", "Read-only mode aktiv."), active_tab="tasks"
+    ), 403
+
+
+def _task_mutation_guard(api: bool = True):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return _task_read_only_response(api=api)
+    return None
+
+
+def _task_status_from_input(value: str) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    col = raw.lower()
+    if col in _TASK_STATUS_BY_COLUMN:
+        return _TASK_STATUS_BY_COLUMN[col]
+    status = raw.upper()
+    if status == "DONE":
+        return "RESOLVED"
+    if status in _TASK_STATUSES_ALL:
+        return status
+    return None
+
+
+def _task_board_items(tenant_id: str) -> dict[str, list[dict]]:
+    if not callable(task_list):
+        return {"todo": [], "in_progress": [], "done": []}
+    todo = task_list(tenant=tenant_id, status="OPEN", limit=200)  # type: ignore
+    in_progress = task_list(tenant=tenant_id, status="IN_PROGRESS", limit=200)  # type: ignore
+    done = task_list(tenant=tenant_id, status="RESOLVED", limit=200)  # type: ignore
+    return {"todo": todo, "in_progress": in_progress, "done": done}
+
+
+def _task_find(tenant_id: str, task_id: int) -> dict | None:
+    if not callable(task_list):
+        return None
+    for status in _TASK_STATUSES_ALL:
+        items = task_list(tenant=tenant_id, status=status, limit=500)  # type: ignore
+        for item in items:
+            if int(item.get("id") or 0) == int(task_id):
+                return item
+    return None
+
+
 @bp.get("/api/tasks")
 @login_required
 def api_tasks():
-    status = (request.args.get("status") or "OPEN").strip().upper()
-    if callable(task_list):
-        tasks = task_list(tenant=current_tenant(), status=status, limit=200)  # type: ignore
-    else:
-        tasks = []
+    status_raw = (request.args.get("status") or "OPEN").strip()
+    if not callable(task_list):
+        return jsonify(ok=True, tasks=[])
+    status_upper = status_raw.upper()
+    tenant_id = current_tenant()
+    if status_upper in {"ALL", "KANBAN"}:
+        tasks_all = []
+        for status in _TASK_STATUSES_ALL:
+            tasks_all.extend(task_list(tenant=tenant_id, status=status, limit=200))  # type: ignore
+        return jsonify(ok=True, tasks=tasks_all)
+    status = _task_status_from_input(status_raw) or "OPEN"
+    tasks = task_list(tenant=tenant_id, status=status, limit=200)  # type: ignore
     return jsonify(ok=True, tasks=tasks)
+
+
+@bp.post("/api/tasks/create")
+@login_required
+@require_role("OPERATOR")
+def api_tasks_create():
+    if not callable(task_create_fn):
+        return json_error(
+            "feature_unavailable", "Tasks sind nicht verfügbar.", status=501
+        )
+    guarded = _task_mutation_guard(api=True)
+    if guarded:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    title = normalize_component(payload.get("title") or "")
+    if not title:
+        return json_error("title_missing", "Titel fehlt.", status=400)
+    severity = normalize_component(payload.get("severity") or "INFO").upper() or "INFO"
+    task_type = (
+        normalize_component(payload.get("task_type") or "GENERAL").upper() or "GENERAL"
+    )
+    details = str(payload.get("details") or "").strip()
+    task_id = task_create_fn(  # type: ignore
+        tenant=current_tenant(),
+        severity=severity,
+        task_type=task_type,
+        title=title,
+        details=details,
+        created_by=current_user() or "",
+    )
+    _audit(
+        "task_create",
+        target=str(task_id),
+        meta={"tenant_id": current_tenant(), "status": "OPEN", "source": "kanban_api"},
+    )
+    return jsonify(ok=True, task_id=int(task_id), status="OPEN")
+
+
+@bp.post("/api/tasks/<int:task_id>/move")
+@login_required
+@require_role("OPERATOR")
+def api_tasks_move(task_id: int):
+    if not callable(task_set_status_fn):
+        return json_error(
+            "feature_unavailable", "Tasks sind nicht verfügbar.", status=501
+        )
+    guarded = _task_mutation_guard(api=True)
+    if guarded:
+        return guarded
+    payload = request.get_json(silent=True) or {}
+    status = _task_status_from_input(
+        payload.get("status") or payload.get("column") or ""
+    )
+    if not status:
+        return json_error("status_invalid", "Status ungültig.", status=400)
+    changed = task_set_status_fn(  # type: ignore
+        int(task_id),
+        status,
+        resolved_by=current_user() or "",
+        tenant=current_tenant(),
+    )
+    if not changed:
+        return json_error("task_not_found", "Task nicht gefunden.", status=404)
+    _audit(
+        "task_move",
+        target=str(task_id),
+        meta={"tenant_id": current_tenant(), "status": status, "source": "kanban_api"},
+    )
+    return jsonify(ok=True, task_id=int(task_id), status=status)
 
 
 @bp.get("/api/audit")
@@ -6912,32 +7048,172 @@ def assistant():
 @bp.route("/tasks")
 @login_required
 def tasks():
-    available = callable(task_list)
+    available = (
+        callable(task_list)
+        and callable(task_create_fn)
+        and callable(task_set_status_fn)
+    )
     if not available:
         html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
           <div class='text-lg font-semibold'>Tasks</div>
-          <div class='muted text-sm mt-2'>Tasks sind im Core nicht verfügbar.</div>
+          <div class='muted text-sm mt-2'>Tasks/Kanban sind im Core nicht verfügbar.</div>
         </div>"""
         return _render_base(html, active_tab="tasks")
-    try:
-        items = task_list(tenant=current_tenant(), status="OPEN", limit=200)  # type: ignore
-    except Exception:
-        items = []
-    rows = []
-    for t in items:
-        tid = int(t.get("id") or 0)
-        rows.append(
-            f"<a class='block rounded-xl border border-slate-800 hover:border-slate-600 p-3' href='/tasks/{tid}'>"
-            f"<div class='text-sm font-semibold'>#{tid} {normalize_component(t.get('title') or '')}</div>"
-            f"<div class='muted text-xs'>Severity: {normalize_component(t.get('severity') or '')} · {normalize_component(t.get('task_type') or '')}</div>"
-            "</a>"
+    board = _task_board_items(current_tenant())
+    read_only = bool(current_app.config.get("READ_ONLY", False))
+
+    def _render_card(item: dict, current_column: str) -> str:
+        tid = int(item.get("id") or 0)
+        title = normalize_component(item.get("title") or "")
+        sev = normalize_component(item.get("severity") or "")
+        ttype = normalize_component(item.get("task_type") or "")
+        move_targets = [
+            ("todo", "Todo"),
+            ("in_progress", "In Progress"),
+            ("done", "Done"),
+        ]
+        controls = []
+        for target_key, target_label in move_targets:
+            if target_key == current_column:
+                continue
+            disabled = "disabled" if read_only else ""
+            controls.append(
+                "<form method='post' action='/tasks/{tid}/move' class='inline'>"
+                "<input type='hidden' name='column' value='{target}'>"
+                "<button type='submit' {disabled} class='rounded-lg px-2 py-1 text-xs btn-outline'>{label}</button>"
+                "</form>".format(
+                    tid=tid,
+                    target=target_key,
+                    label=target_label,
+                    disabled=disabled,
+                )
+            )
+        controls_html = "".join(controls) or (
+            "<span class='muted text-xs'>Kein Wechsel</span>"
         )
-    html = f"""<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
-      <div class='text-lg font-semibold'>Tasks</div>
-      <div class='muted text-xs mt-1'>Offen: {len(items)}</div>
-      <div class='mt-4 space-y-2'>{"".join(rows) or "<div class='muted text-sm'>Keine offenen Tasks.</div>"}</div>
-    </div>"""
+        return (
+            f"<div class='rounded-xl border border-slate-800 p-3 space-y-2'>"
+            f"<a class='block text-sm font-semibold hover:underline' href='/tasks/{tid}'>#{tid} {title}</a>"
+            f"<div class='muted text-xs'>Severity: {sev} · {ttype}</div>"
+            f"<div class='flex flex-wrap gap-1'>{controls_html}</div>"
+            f"</div>"
+        )
+
+    todo_cards = "".join(_render_card(t, "todo") for t in board["todo"])
+    progress_cards = "".join(
+        _render_card(t, "in_progress") for t in board["in_progress"]
+    )
+    done_cards = "".join(_render_card(t, "done") for t in board["done"])
+    create_disabled = "disabled" if read_only else ""
+
+    html = f"""
+    <div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card space-y-4'>
+      <div class='flex items-center justify-between'>
+        <div>
+          <div class='text-lg font-semibold'>Tasks Kanban</div>
+          <div class='muted text-xs mt-1'>Todo: {len(board["todo"])} · In Progress: {len(board["in_progress"])} · Done: {len(board["done"])}</div>
+        </div>
+        <a class='rounded-xl px-3 py-2 font-semibold btn-outline text-sm' href='/api/tasks?status=ALL'>API Preview</a>
+      </div>
+      <form method='post' action='/tasks/create' class='grid md:grid-cols-5 gap-2'>
+        <input name='title' class='rounded-xl border p-2 input md:col-span-2' placeholder='Task Titel' required>
+        <input name='task_type' class='rounded-xl border p-2 input' placeholder='Type (GENERAL)'>
+        <input name='severity' class='rounded-xl border p-2 input' placeholder='Severity (INFO)'>
+        <button type='submit' {create_disabled} class='rounded-xl px-4 py-2 font-semibold btn-primary'>Task anlegen</button>
+        <textarea name='details' class='rounded-xl border p-2 input md:col-span-5' rows='2' placeholder='Details (optional)'></textarea>
+      </form>
+      <div class='grid md:grid-cols-3 gap-3'>
+        <div class='rounded-xl border border-slate-800 p-3 space-y-2'>
+          <div class='text-sm font-semibold'>Todo</div>
+          {todo_cards or "<div class='muted text-sm'>Keine Tasks.</div>"}
+        </div>
+        <div class='rounded-xl border border-slate-800 p-3 space-y-2'>
+          <div class='text-sm font-semibold'>In Progress</div>
+          {progress_cards or "<div class='muted text-sm'>Keine Tasks.</div>"}
+        </div>
+        <div class='rounded-xl border border-slate-800 p-3 space-y-2'>
+          <div class='text-sm font-semibold'>Done</div>
+          {done_cards or "<div class='muted text-sm'>Keine Tasks.</div>"}
+        </div>
+      </div>
+      <div class='muted text-xs'>READ_ONLY: {"aktiv" if read_only else "aus"}</div>
+    </div>
+    """
     return _render_base(html, active_tab="tasks")
+
+
+@bp.route("/tasks/create", methods=["POST"])
+@login_required
+@require_role("OPERATOR")
+def tasks_create():
+    if not callable(task_create_fn):
+        return _render_base(
+            _card("error", "Tasks sind nicht verfügbar."), active_tab="tasks"
+        )
+    guarded = _task_mutation_guard(api=False)
+    if guarded:
+        return guarded
+    title = normalize_component(request.form.get("title") or "")
+    if not title:
+        flash("Task Titel fehlt.", "error")
+        return redirect("/tasks")
+    severity = (
+        normalize_component(request.form.get("severity") or "INFO").upper() or "INFO"
+    )
+    task_type = (
+        normalize_component(request.form.get("task_type") or "GENERAL").upper()
+        or "GENERAL"
+    )
+    details = str(request.form.get("details") or "").strip()
+    task_id = task_create_fn(  # type: ignore
+        tenant=current_tenant(),
+        severity=severity,
+        task_type=task_type,
+        title=title,
+        details=details,
+        created_by=current_user() or "",
+    )
+    _audit(
+        "task_create",
+        target=str(task_id),
+        meta={"tenant_id": current_tenant(), "status": "OPEN", "source": "kanban_ui"},
+    )
+    flash(f"Task #{int(task_id)} angelegt.", "success")
+    return redirect("/tasks")
+
+
+@bp.route("/tasks/<int:task_id>/move", methods=["POST"])
+@login_required
+@require_role("OPERATOR")
+def tasks_move(task_id: int):
+    if not callable(task_set_status_fn):
+        return _render_base(
+            _card("error", "Tasks sind nicht verfügbar."), active_tab="tasks"
+        )
+    guarded = _task_mutation_guard(api=False)
+    if guarded:
+        return guarded
+    target = request.form.get("column") or request.form.get("status") or ""
+    status = _task_status_from_input(target or "")
+    if not status:
+        flash("Ungültiger Status.", "error")
+        return redirect("/tasks")
+    changed = task_set_status_fn(  # type: ignore
+        int(task_id),
+        status,
+        resolved_by=current_user() or "",
+        tenant=current_tenant(),
+    )
+    if not changed:
+        flash("Task nicht gefunden.", "error")
+        return redirect("/tasks")
+    _audit(
+        "task_move",
+        target=str(task_id),
+        meta={"tenant_id": current_tenant(), "status": status, "source": "kanban_ui"},
+    )
+    flash(f"Task #{int(task_id)} -> {status}", "success")
+    return redirect("/tasks")
 
 
 @bp.route("/tasks/<int:task_id>")
@@ -6947,20 +7223,28 @@ def task_detail(task_id: int):
         return _render_base(
             _card("error", "Tasks sind nicht verfügbar."), active_tab="tasks"
         )
-    try:
-        items = task_list(tenant=current_tenant(), status="OPEN", limit=500)  # type: ignore
-    except Exception:
-        items = []
-    task = next((t for t in items if int(t.get("id") or 0) == int(task_id)), None)
+    task = _task_find(current_tenant(), int(task_id))
     if not task:
         return _render_base(_card("error", "Task nicht gefunden."), active_tab="tasks")
+    read_only = bool(current_app.config.get("READ_ONLY", False))
+    status = normalize_component(task.get("status") or "OPEN").upper()
 
     html = render_template_string(
         """
 <div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
   <div class='text-lg font-semibold'>Task #{{task.id}} · {{task.title}}</div>
-  <div class='muted text-xs mt-1'>{{task.severity}} · {{task.task_type}}</div>
+  <div class='muted text-xs mt-1'>{{task.severity}} · {{task.task_type}} · Status: {{status}}</div>
   <div class='text-sm mt-3 whitespace-pre-wrap'>{{task.details}}</div>
+  <div class='mt-3 flex flex-wrap gap-2'>
+    {% for key,label in move_targets %}
+      {% if key != current_column %}
+      <form method='post' action='/tasks/{{task.id}}/move' class='inline'>
+        <input type='hidden' name='column' value='{{key}}'>
+        <button type='submit' class='rounded-xl px-3 py-1 text-xs btn-outline' {% if read_only %}disabled{% endif %}>{{label}}</button>
+      </form>
+      {% endif %}
+    {% endfor %}
+  </div>
   <div class='mt-4 grid md:grid-cols-2 gap-3'>
     <div>
       <label class='muted text-xs'>Projekt-ID (optional)</label>
@@ -7060,6 +7344,20 @@ def task_detail(task_id: int):
 </script>
         """,
         task=task,
+        status=status,
+        read_only=read_only,
+        current_column=(
+            "todo"
+            if status == "OPEN"
+            else "in_progress"
+            if status == "IN_PROGRESS"
+            else "done"
+        ),
+        move_targets=[
+            ("todo", "Todo"),
+            ("in_progress", "In Progress"),
+            ("done", "Done"),
+        ],
     )
     return _render_base(html, active_tab="tasks")
 
