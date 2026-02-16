@@ -246,3 +246,73 @@ def test_run_tesseract_retry_guard(tmp_path: Path, monkeypatch) -> None:
     assert text2 is None
     assert error2 == "language_missing"
     assert len(calls) == 1
+
+
+def test_run_tesseract_no_retry_on_timeout(tmp_path: Path, monkeypatch) -> None:
+    image_path = tmp_path / "timeout.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")
+
+    calls: list[list[str]] = []
+
+    def _fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        raise ocr_mod.subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(
+        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
+    )
+    monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
+    import app.devtools.tesseract_probe as probe_mod
+
+    monkeypatch.setattr(
+        probe_mod,
+        "probe_tesseract",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not retry")),
+    )
+
+    text, error, _truncated, _stderr = ocr_mod._run_tesseract(
+        image_path,
+        lang="eng",
+        timeout_sec=1,
+        max_chars=1024,
+        tessdata_dir=None,
+        allow_retry=True,
+    )
+    assert text is None
+    assert error == "timeout"
+    assert len(calls) == 1
+
+
+def test_run_tesseract_config_file_missing_classification(
+    tmp_path: Path, monkeypatch
+) -> None:
+    image_path = tmp_path / "cfg.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")
+
+    class _ProcFail:
+        returncode = 1
+        stdout = ""
+        stderr = "read_params_file: Can't open config file"
+
+    calls: list[list[str]] = []
+
+    def _fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return _ProcFail()
+
+    monkeypatch.setattr(
+        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
+    )
+    monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
+
+    text, error, _truncated, _stderr = ocr_mod._run_tesseract(
+        image_path,
+        lang="eng",
+        timeout_sec=1,
+        max_chars=1024,
+        tessdata_dir=None,
+        allow_retry=True,
+    )
+    assert text is None
+    assert error == "config_file_missing"
+    assert len(calls) == 1

@@ -35,6 +35,10 @@ TESSDATA_ERROR_RE = re.compile(
     r"(error opening data file|failed loading language|could not initialize tesseract)",
     re.IGNORECASE,
 )
+CONFIG_FILE_ERROR_RE = re.compile(
+    r"(read_params_file|can.?t open config|could not open config)",
+    re.IGNORECASE,
+)
 
 
 def _tenant(tenant_id: str) -> str:
@@ -299,6 +303,8 @@ def _run_tesseract(
 
     def _classify(stderr_text: str | None) -> str:
         lower = str(stderr_text or "").casefold()
+        if CONFIG_FILE_ERROR_RE.search(lower):
+            return "config_file_missing"
         if "error opening data file" in lower:
             return "tessdata_missing"
         if (
@@ -308,13 +314,29 @@ def _run_tesseract(
             return "language_missing"
         return "tesseract_failed"
 
+    def _build_tesseract_cmd(
+        *,
+        binary_path: Path,
+        image: Path,
+        lang_code: str,
+        tess_dir: str | None,
+    ) -> list[str]:
+        cmd = [str(binary_path), str(image), "stdout", "-l", lang_code]
+        if tess_dir:
+            cmd.extend(["--tessdata-dir", str(tess_dir)])
+        return cmd
+
     def _run_once(
         lang_code: str, tess_dir: str | None
     ) -> tuple[str | None, str | None, int, str | None]:
-        cmd = [str(binary), str(image_path), "stdout", "-l", lang_code]
+        cmd = _build_tesseract_cmd(
+            binary_path=binary,
+            image=image_path,
+            lang_code=lang_code,
+            tess_dir=tess_dir,
+        )
         env_copy = dict(os.environ)
         if tess_dir:
-            cmd.extend(["--tessdata-dir", str(tess_dir)])
             env_copy["TESSDATA_PREFIX"] = str(tess_dir)
         try:
             proc = subprocess.run(  # noqa: S603

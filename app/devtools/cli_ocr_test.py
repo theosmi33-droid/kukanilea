@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,8 @@ def _reason_message(reason: str | None) -> str:
         return "Requested OCR language is unavailable."
     if key == "tesseract_failed":
         return "Tesseract execution failed."
+    if key == "config_file_missing":
+        return "Tesseract config file could not be loaded."
     if key == "tesseract_warning":
         return "Tesseract reported warnings and strict mode rejected the run."
     if key == "read_only":
@@ -57,9 +61,20 @@ def _sanitize_path(value: str | None) -> str | None:
     if value in (None, ""):
         return None
     text = str(value)
-    if text.startswith("/"):
+    if (
+        text.startswith("/")
+        or re.match(r"^[A-Za-z]:\\", text)
+        or text.startswith("\\\\")
+    ):
         return "<path>"
     return text
+
+
+def _valid_tesseract_bin(path_value: str | None) -> bool:
+    if not str(path_value or "").strip():
+        return True
+    p = Path(str(path_value)).expanduser()
+    return p.exists() and p.is_file() and os.access(p, os.R_OK | os.X_OK)
 
 
 def _status_enabled(status: dict[str, Any]) -> bool | None:
@@ -114,6 +129,8 @@ def _policy_view_payload(
         "policy_reason": reason,
         "existing_columns": _status_columns(status),
         "tesseract_found": False,
+        "tesseract_version": None,
+        "supports_print_tessdata_dir": False,
         "tessdata_dir": None,
         "tessdata_source": None,
         "tessdata_candidates": [],
@@ -169,6 +186,8 @@ def _human_report(result: dict) -> str:
         f"policy_reason: {result.get('policy_reason') or '-'}",
         f"existing_columns: {result.get('existing_columns') or '-'}",
         f"tesseract_found: {bool(result.get('tesseract_found'))}",
+        f"tesseract_version: {result.get('tesseract_version') or '-'}",
+        f"supports_print_tessdata_dir: {bool(result.get('supports_print_tessdata_dir'))}",
         f"tessdata_dir: {result.get('tessdata_dir') or '-'}",
         f"tessdata_source: {result.get('tessdata_source') or '-'}",
         f"tessdata_candidates: {result.get('tessdata_candidates') or '-'}",
@@ -218,6 +237,11 @@ def main() -> int:
     parser.add_argument("--enable-policy-in-sandbox", action="store_true")
     parser.add_argument("--no-sandbox", action="store_true")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument(
+        "--exit-nonzero-on-warnings",
+        dest="strict",
+        action="store_true",
+    )
     parser.add_argument("--no-retry", action="store_true")
     parser.add_argument("--tesseract-bin")
     parser.add_argument("--tessdata-dir")
@@ -257,18 +281,35 @@ def main() -> int:
 
         tenant = str(args.tenant or "").strip() or "default"
         timeout_s = max(1, int(args.timeout))
+        tesseract_bin_override = str(args.tesseract_bin or "").strip() or None
         preferred_langs = (
             [str(args.lang).strip()] if str(args.lang or "").strip() else None
         )
         base_db = resolve_core_db_path()
         base_status = get_policy_status(tenant, db_path=base_db)
 
+        if not _valid_tesseract_bin(tesseract_bin_override):
+            result = _policy_view_payload(
+                tenant=tenant,
+                status=base_status,
+                next_actions=next_actions_for_reason("tesseract_missing"),
+            )
+            result["ok"] = False
+            result["reason"] = "tesseract_missing"
+            result["message"] = _reason_message("tesseract_missing")
+            result["tesseract_bin_used"] = _sanitize_path(tesseract_bin_override)
+            if args.json:
+                print(json.dumps(result, sort_keys=True))
+            else:
+                print(_human_report(result))
+            return 2
+
         if args.show_tesseract:
             from app.autonomy.ocr import resolve_tesseract_bin
 
             resolved = resolve_tesseract_bin()
             probe = probe_tesseract(
-                bin_path=str(args.tesseract_bin or "").strip()
+                bin_path=tesseract_bin_override
                 or (str(resolved) if resolved else None),
                 tessdata_dir=str(args.tessdata_dir or "").strip() or None,
                 preferred_langs=preferred_langs,
@@ -294,6 +335,12 @@ def main() -> int:
                 or None
             )
             result["tessdata_source"] = str(probe.get("tessdata_source") or "") or None
+            result["tesseract_version"] = (
+                str(probe.get("tesseract_version") or "") or None
+            )
+            result["supports_print_tessdata_dir"] = bool(
+                probe.get("supports_print_tessdata_dir")
+            )
             result["tessdata_candidates"] = [
                 _sanitize_path(str(item))
                 for item in list(probe.get("tessdata_candidates") or [])
@@ -363,7 +410,7 @@ def main() -> int:
                     seed_watch_config_in_sandbox=False,
                     direct_submit_in_sandbox=False,
                     tessdata_dir=str(args.tessdata_dir or "").strip() or None,
-                    tesseract_bin=str(args.tesseract_bin or "").strip() or None,
+                    tesseract_bin=tesseract_bin_override,
                     lang=(preferred_langs[0] if preferred_langs else None),
                     strict=bool(args.strict),
                     retry_enabled=not bool(args.no_retry),
@@ -398,7 +445,7 @@ def main() -> int:
                     ),
                     direct_submit_in_sandbox=bool(args.direct_submit_in_sandbox),
                     tessdata_dir=str(args.tessdata_dir or "").strip() or None,
-                    tesseract_bin=str(args.tesseract_bin or "").strip() or None,
+                    tesseract_bin=tesseract_bin_override,
                     lang=(preferred_langs[0] if preferred_langs else None),
                     strict=bool(args.strict),
                     retry_enabled=not bool(args.no_retry),

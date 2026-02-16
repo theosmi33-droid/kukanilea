@@ -13,7 +13,7 @@ TEST_MARKERS = (
     "+49 151 12345678",
     "OCR_Test_2026-02-16_KD-9999",
 )
-LANG_CODE_RE = re.compile(r"^(?=.{2,32}$)(?=.*[a-z])[a-z0-9_]+$")
+LANG_CODE_RE = re.compile(r"^(?:[a-z]{3}|[a-z]{3}_[a-z0-9]+)$")
 MISSING_DATA_RE = re.compile(
     r"(error opening data file|couldn.?t load any languages|read_params_file)",
     re.IGNORECASE,
@@ -26,6 +26,8 @@ SUSPICIOUS_PATH_RE = re.compile(
 )
 HOME_DIR_RE = re.compile(r"/(?:Users|home)/[^\s\"']+")
 ABS_PATH_SPACE_RE = re.compile(r"/[^\n]+")
+WINDOWS_DRIVE_RE = re.compile(r"[A-Za-z]:\\(?:[^\\\r\n]+\\)*[^\\\r\n]*")
+WINDOWS_UNC_RE = re.compile(r"\\\\[A-Za-z0-9_.-]+\\(?:[^\\\r\n]+\\)*[^\\\r\n]*")
 
 
 def _sanitize_text(
@@ -47,6 +49,8 @@ def _sanitize_text(
         text = text.replace(str(known), "<path>")
     text = SUSPICIOUS_PATH_RE.sub("<path>", text)
     text = HOME_DIR_RE.sub("<path>", text)
+    text = WINDOWS_DRIVE_RE.sub("<path>", text)
+    text = WINDOWS_UNC_RE.sub("<path>", text)
     text = ABS_PATH_SPACE_RE.sub(
         lambda m: (
             "<path>"
@@ -100,6 +104,24 @@ def _resolve_bin(bin_path: str | None) -> Path | None:
 def _is_lang_code(line: str) -> bool:
     token = str(line or "").strip().casefold()
     return bool(LANG_CODE_RE.match(token))
+
+
+def supports_flag(bin_path: str, flag: str, timeout_s: int = 3) -> bool:
+    cmd = [str(bin_path), "--help"]
+    try:
+        proc = subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=max(1, int(timeout_s)),
+            check=False,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except Exception:
+        return False
+    stdout = str(proc.stdout or "")
+    return flag in stdout
 
 
 def _normalize_prefix(raw_path: Path) -> Path:
@@ -200,6 +222,48 @@ def _run_print_tessdata_dir(
     if not path:
         return None
     return path
+
+
+def _validate_print_tessdata_dir(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    path = Path(str(raw).strip()).expanduser()
+    if not path.exists() or not path.is_dir():
+        return None
+    if path.name.casefold() == "tessdata":
+        return str(path)
+    if _traineddata_count(path) > 0:
+        return str(path)
+    nested = path / "tessdata"
+    if nested.is_dir() and _traineddata_count(nested) > 0:
+        return str(path)
+    return None
+
+
+def _run_tesseract_version(
+    *,
+    binary: Path,
+    timeout_s: int = 3,
+) -> str | None:
+    cmd = [str(binary), "--version"]
+    try:
+        proc = subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=max(1, int(timeout_s)),
+            check=False,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except Exception:
+        return None
+    if int(proc.returncode or 0) != 0:
+        return None
+    lines = [
+        line.strip() for line in str(proc.stdout or "").splitlines() if line.strip()
+    ]
+    return lines[0] if lines else None
 
 
 def parse_list_langs_output(stdout: str, stderr: str) -> dict[str, Any]:
@@ -336,6 +400,8 @@ def probe_tesseract(
         "bin_path": None,
         "tesseract_bin": None,
         "tesseract_bin_used": None,
+        "tesseract_version": None,
+        "supports_print_tessdata_dir": False,
         "print_tessdata_dir": None,
         "tessdata_prefix": None,
         "tessdata_dir": None,
@@ -362,13 +428,22 @@ def probe_tesseract(
     result["bin_path"] = str(binary)
     result["tesseract_bin"] = str(binary)
     result["tesseract_bin_used"] = str(binary)
+    result["tesseract_version"] = _run_tesseract_version(binary=binary)
     preferred = preferred_langs if preferred_langs else list(DEFAULT_PREFERRED_LANGS)
 
-    print_tessdata_dir = _run_print_tessdata_dir(
-        binary=binary,
-        env=runtime_env,
-        timeout_s=min(max(1, int(timeout_s)), 5),
-    )
+    supports_print = supports_flag(str(binary), "--print-tessdata-dir", timeout_s=3)
+    result["supports_print_tessdata_dir"] = bool(supports_print)
+    print_tessdata_dir: str | None = None
+    if supports_print:
+        raw_print_dir = _run_print_tessdata_dir(
+            binary=binary,
+            env=runtime_env,
+            timeout_s=min(max(1, int(timeout_s)), 5),
+        )
+        print_tessdata_dir = _validate_print_tessdata_dir(raw_print_dir)
+        if raw_print_dir and not print_tessdata_dir:
+            result["warnings"].append("print_tessdata_dir_invalid")
+
     result["print_tessdata_dir"] = (
         _sanitize_text(
             print_tessdata_dir,
@@ -504,7 +579,9 @@ def probe_tesseract(
         )
     )
     result["langs"] = langs
-    result["warnings"] = list(success.get("warnings") or [])
+    result["warnings"] = list(result.get("warnings") or []) + list(
+        success.get("warnings") or []
+    )
     result["stderr_tail"] = str(success.get("stderr_tail") or "")
     result["tessdata_source"] = str(success.get("source") or "auto")
     result["tessdata_prefix"] = str(success.get("prefix") or "") or None
@@ -551,4 +628,9 @@ def probe_tesseract(
         result["next_actions"].append(
             "Preferred language 'eng' is unavailable; fallback language is used."
         )
+    result["warnings"] = [
+        _sanitize_text(item, known_paths=known_paths, max_lines=1, max_chars=240) or ""
+        for item in list(result.get("warnings") or [])
+    ]
+    result["warnings"] = [item for item in result["warnings"] if item]
     return result

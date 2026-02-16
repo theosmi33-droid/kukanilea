@@ -29,6 +29,7 @@ python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --json
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tessdata-dir /path/to/tessdata --lang eng --json
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tesseract-bin /path/to/tesseract --json
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --strict --json
+python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --exit-nonzero-on-warnings --json
 ```
 
 OCR-Policy nur in der Sandbox aktivieren und direkt E2E testen:
@@ -74,6 +75,7 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `existing_columns`
 - `tessdata_dir`, `tessdata_source`
 - `print_tessdata_dir`, `tessdata_candidates`, `tesseract_bin_used`
+- `tesseract_version`, `supports_print_tessdata_dir`
 - `tessdata_prefix_used`
 - `tesseract_langs`, `tesseract_lang_used`
 - `tesseract_warnings`
@@ -166,6 +168,9 @@ Erwartung nach Aktivierung:
   - Warnungen beheben oder Strict-Mode fuer lokale Diagnose deaktivieren.
 - `tesseract_failed`
   - `--show-tesseract` laufen lassen und `tesseract_stderr_tail` auswerten.
+- `config_file_missing`
+  - Installation/Config pruefen (read_params_file / config loading).
+  - Mit `--tessdata-dir` und `--show-tesseract` erneut testen.
 - `read_only`
   - READ_ONLY im Dev-Setup deaktivieren oder nur `--show-policy` nutzen.
 - `watch_config_table_missing`
@@ -185,6 +190,10 @@ Hinweis:
 - Fuer reproduzierbare Diagnostik wird `--tessdata-dir` bevorzugt statt implizitem `TESSDATA_PREFIX`.
 - `--print-tessdata-dir` wird als priorisierte Probe-Quelle ausgewertet.
 - Detaillierte Probe-Logik: `docs/devtools/tesseract_probe.md`.
+
+PR-Konsolidierung:
+- v4 superseded v3/v2 fuer den Probe-Stack.
+- Fuer Merge nur v4 verwenden; aeltere Probe-PRs als superseded schliessen.
 
 Manuelle Triage:
 ```bash
