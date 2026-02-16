@@ -6,6 +6,25 @@ from app.autonomy import ocr as ocr_mod
 
 
 def test_resolve_tesseract_bin_requires_allowlisted_directory(monkeypatch) -> None:
+    known = {
+        "/tmp/tesseract",
+        "/usr/local/bin/tesseract",
+        "/opt/homebrew/bin/tesseract",
+    }
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: str(self) in known,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda self: str(self) in known,
+        raising=False,
+    )
+    monkeypatch.setattr(ocr_mod.os, "access", lambda path, _mode: str(path) in known)
+
     monkeypatch.setattr(ocr_mod.shutil, "which", lambda _name: "/tmp/tesseract")
     assert ocr_mod.resolve_tesseract_bin() is None
 

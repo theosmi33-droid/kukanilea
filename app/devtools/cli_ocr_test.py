@@ -17,7 +17,9 @@ def _reason_message(reason: str | None) -> str:
     if key == "policy_denied":
         return "OCR policy is disabled for tenant."
     if key == "tesseract_missing":
-        return "Tesseract binary not found or not allowlisted."
+        return "Tesseract binary not found."
+    if key == "tesseract_not_allowlisted":
+        return "Tesseract binary is present but not allowlisted."
     if key == "tessdata_missing":
         return "Tesseract data files were not found."
     if key == "language_missing":
@@ -169,6 +171,9 @@ def _policy_view_payload(
         "policy_reason": reason,
         "existing_columns": _status_columns(status),
         "tesseract_found": False,
+        "tesseract_allowlisted": False,
+        "tesseract_allowlist_reason": None,
+        "tesseract_allowed_prefixes": [],
         "tesseract_version": None,
         "supports_print_tessdata_dir": False,
         "tessdata_dir": None,
@@ -226,6 +231,9 @@ def _human_report(result: dict) -> str:
         f"policy_reason: {result.get('policy_reason') or '-'}",
         f"existing_columns: {result.get('existing_columns') or '-'}",
         f"tesseract_found: {bool(result.get('tesseract_found'))}",
+        f"tesseract_allowlisted: {bool(result.get('tesseract_allowlisted'))}",
+        f"tesseract_allowlist_reason: {result.get('tesseract_allowlist_reason') or '-'}",
+        f"tesseract_allowed_prefixes: {result.get('tesseract_allowed_prefixes') or '-'}",
         f"tesseract_version: {result.get('tesseract_version') or '-'}",
         f"supports_print_tessdata_dir: {bool(result.get('supports_print_tessdata_dir'))}",
         f"tessdata_dir: {result.get('tessdata_dir') or '-'}",
@@ -534,6 +542,14 @@ def main() -> int:
             result["tesseract_found"] = bool(
                 probe.get("tesseract_found") or probe.get("bin_path")
             )
+            result["tesseract_allowlisted"] = bool(probe.get("tesseract_allowlisted"))
+            result["tesseract_allowlist_reason"] = (
+                str(probe.get("tesseract_allowlist_reason") or "") or None
+            )
+            result["tesseract_allowed_prefixes"] = [
+                _sanitize_path(str(item))
+                for item in list(probe.get("tesseract_allowed_prefixes") or [])
+            ]
             result["tessdata_dir"] = _sanitize_path(
                 str(
                     probe.get("tessdata_prefix")
@@ -713,6 +729,10 @@ def main() -> int:
     result["tessdata_candidates"] = [
         _sanitize_path(str(item))
         for item in list(result.get("tessdata_candidates") or [])
+    ]
+    result["tesseract_allowed_prefixes"] = [
+        _sanitize_path(str(item))
+        for item in list(result.get("tesseract_allowed_prefixes") or [])
     ]
     result["tessdata_prefix_used"] = result.get("tessdata_dir")
     result["lang_used"] = result.get("tesseract_lang_used")

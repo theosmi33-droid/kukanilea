@@ -5,6 +5,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -26,11 +27,7 @@ DEFAULT_OCR_MAX_CHARS = 200_000
 DEFAULT_OCR_LANG = "eng"
 MAX_DB_BODY_CHARS = 8000
 LANG_RE = re.compile(r"^[a-z0-9_+]{2,32}$")
-TESSERACT_ALLOWED_DIRS = (
-    Path("/usr/bin"),
-    Path("/usr/local/bin"),
-    Path("/opt/homebrew/bin"),
-)
+TESSERACT_ALLOWLIST_ENV = "KUKANILEA_TESSERACT_ALLOWED_PREFIXES"
 TESSDATA_ERROR_RE = re.compile(
     r"(error opening data file|failed loading language|could not initialize tesseract)",
     re.IGNORECASE,
@@ -109,6 +106,134 @@ def _cfg_lang() -> str:
     return DEFAULT_OCR_LANG
 
 
+def _default_tesseract_allowed_prefixes(
+    platform_name: str | None = None,
+) -> tuple[str, ...]:
+    detected = str(platform_name or sys.platform).casefold()
+    if detected.startswith("darwin"):
+        return ("/usr/bin", "/usr/local/bin", "/opt/homebrew")
+    if detected.startswith("linux"):
+        return ("/usr/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew")
+    if detected.startswith("win"):
+        return (
+            r"C:\Program Files\Tesseract-OCR",
+            r"C:\Program Files (x86)\Tesseract-OCR",
+        )
+    return ("/usr/bin", "/usr/local/bin")
+
+
+def _is_safe_tesseract_prefix(path: Path) -> bool:
+    try:
+        normalized = Path(os.path.normpath(str(path)))
+    except Exception:
+        return False
+    if not normalized.is_absolute():
+        return False
+    anchor = str(normalized.anchor or "")
+    # Reject filesystem root prefixes.
+    if str(normalized) == anchor:
+        return False
+    if os.name == "nt":
+        lowered = str(normalized).replace("/", "\\").strip().casefold()
+        if lowered in {r"c:\\", r"d:\\", r"e:\\", r"\\"}:
+            return False
+    else:
+        if str(normalized) == "/":
+            return False
+    return True
+
+
+def _allowed_tesseract_prefixes(
+    *,
+    platform_name: str | None = None,
+    env: dict[str, str] | None = None,
+) -> tuple[Path, ...]:
+    prefixes: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(raw: str | Path | None) -> None:
+        text = str(raw or "").strip()
+        if not text:
+            return
+        path = Path(text).expanduser()
+        if not _is_safe_tesseract_prefix(path):
+            return
+        normalized = Path(os.path.normpath(str(path)))
+        key = str(normalized).casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        prefixes.append(normalized)
+
+    for item in _default_tesseract_allowed_prefixes(platform_name):
+        _add(item)
+
+    env_map = env if env is not None else os.environ
+    extra_raw = str(env_map.get(TESSERACT_ALLOWLIST_ENV, "") or "")
+    if extra_raw:
+        for item in extra_raw.split(os.pathsep):
+            _add(item)
+    return tuple(prefixes)
+
+
+def _path_within_prefix(candidate: Path, prefix: Path) -> bool:
+    try:
+        return candidate.is_relative_to(prefix)
+    except AttributeError:
+        prefix_str = str(prefix)
+        candidate_str = str(candidate)
+        return candidate_str == prefix_str or candidate_str.startswith(
+            prefix_str + os.sep
+        )
+
+
+def classify_tesseract_path(
+    path: str | Path,
+    *,
+    platform_name: str | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    candidate = Path(str(path or "")).expanduser()
+    candidate_abs = Path(os.path.abspath(str(candidate))) if str(candidate) else None
+    prefixes = _allowed_tesseract_prefixes(platform_name=platform_name, env=env)
+    allowed_prefixes = [str(p) for p in prefixes]
+    result: dict[str, Any] = {
+        "exists": False,
+        "executable": False,
+        "allowlisted": False,
+        "reason": "tesseract_missing",
+        "allowlist_reason": "path_missing_or_not_executable",
+        "allowed_prefixes": allowed_prefixes,
+        "normalized": str(candidate_abs) if candidate_abs is not None else None,
+        "resolved": None,
+    }
+
+    if candidate_abs is None:
+        return result
+    exists = candidate_abs.exists() and candidate_abs.is_file()
+    executable = exists and os.access(candidate_abs, os.X_OK)
+    result["exists"] = bool(exists)
+    result["executable"] = bool(executable)
+    if not executable:
+        return result
+
+    resolved = Path(os.path.realpath(str(candidate_abs)))
+    result["resolved"] = str(resolved)
+
+    for prefix in prefixes:
+        if _path_within_prefix(candidate_abs, prefix) or _path_within_prefix(
+            resolved, prefix
+        ):
+            result["allowlisted"] = True
+            result["reason"] = "ok"
+            result["allowlist_reason"] = "matched_prefix"
+            return result
+
+    result["reason"] = "tesseract_not_allowlisted"
+    result["allowlist_reason"] = "outside_allowed_prefixes"
+    return result
+
+
 def ocr_allowed(tenant_id: str) -> bool:
     tenant = _tenant(tenant_id)
     policy = knowledge_policy_get(tenant)
@@ -123,40 +248,10 @@ def resolve_tesseract_bin() -> Path | None:
     location = shutil.which("tesseract")
     if not location:
         return None
-    from_which = Path(location)
-    if not from_which.is_absolute():
+    classification = classify_tesseract_path(location)
+    if str(classification.get("reason") or "") != "ok":
         return None
-
-    def _is_allowlisted(candidate: Path) -> bool:
-        for allowed_dir in TESSERACT_ALLOWED_DIRS:
-            try:
-                if candidate.is_relative_to(allowed_dir):
-                    return True
-            except AttributeError:
-                if str(candidate).startswith(str(allowed_dir) + os.sep):
-                    return True
-        return False
-
-    # Keep the original `which` location allowlisted even if it is a symlink into
-    # a versioned cellar path.
-    if _is_allowlisted(from_which):
-        return from_which
-
-    resolved = from_which.resolve()
-    if not resolved.is_absolute():
-        return None
-    if _is_allowlisted(resolved):
-        return resolved
-
-    # Homebrew resolves symlinks to /opt/homebrew/Cellar/...; allow that target.
-    cellar_root = Path("/opt/homebrew/Cellar")
-    try:
-        if resolved.is_relative_to(cellar_root):
-            return from_which
-    except AttributeError:
-        if str(resolved).startswith(str(cellar_root) + os.sep):
-            return from_which
-    return None
+    return Path(str(location)).expanduser()
 
 
 def _event_emit(
@@ -282,14 +377,19 @@ def _run_tesseract(
 
     if str(tesseract_bin_override or "").strip():
         candidate = Path(str(tesseract_bin_override)).expanduser()
-        if not (
-            candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK)
-        ):
-            return None, "tesseract_missing", 0, None
-        binary = candidate
+        classification = classify_tesseract_path(candidate)
+        reason = str(classification.get("reason") or "")
+        if reason and reason != "ok":
+            return None, reason, 0, None
+        binary = Path(str(classification.get("normalized") or candidate))
     else:
         binary = resolve_tesseract_bin()
     if binary is None:
+        which_path = shutil.which("tesseract")
+        if which_path:
+            classification = classify_tesseract_path(which_path)
+            if str(classification.get("reason") or "") == "tesseract_not_allowlisted":
+                return None, "tesseract_not_allowlisted", 0, None
         return None, "tesseract_missing", 0, None
 
     def _sanitize_stderr(text: str | None) -> str | None:

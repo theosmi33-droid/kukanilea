@@ -233,6 +233,48 @@ def test_run_ocr_test_tesseract_missing(monkeypatch) -> None:
     assert result["reason"] == "tesseract_missing"
 
 
+def test_run_ocr_test_tesseract_not_allowlisted(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": False,
+            "reason": "tesseract_not_allowlisted",
+            "tesseract_found": True,
+            "tesseract_allowlisted": False,
+            "tesseract_allowlist_reason": "outside_allowed_prefixes",
+            "tesseract_allowed_prefixes": ["/opt/homebrew", "/usr/local/bin"],
+            "bin_path": "/tmp/tesseract",
+            "tessdata_dir": None,
+            "tessdata_source": None,
+            "langs": [],
+            "lang_used": None,
+            "stderr_tail": None,
+            "next_actions": ["Use allowlisted prefix."],
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": True,
+            "tesseract_found": False,
+            "read_only": False,
+        },
+    )
+    result = ocr_test.run_ocr_test("TENANT_A", sandbox=False)
+    assert result["ok"] is False
+    assert result["reason"] == "tesseract_not_allowlisted"
+    assert result["tesseract_allowlisted"] is False
+    assert result["tesseract_allowlist_reason"] == "outside_allowed_prefixes"
+    assert result["tesseract_allowed_prefixes"]
+    assert any("allowlist" in str(item).lower() for item in result["next_actions"])
+
+
 def test_run_ocr_test_read_only(monkeypatch) -> None:
     monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
     monkeypatch.setattr(

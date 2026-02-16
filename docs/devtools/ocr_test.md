@@ -137,6 +137,7 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `existing_columns`
 - `tessdata_dir`, `tessdata_source`
 - `print_tessdata_dir`, `tessdata_candidates`, `tesseract_bin_used`
+- `tesseract_allowlisted`, `tesseract_allowlist_reason`, `tesseract_allowed_prefixes`
 - `tesseract_version`, `supports_print_tessdata_dir`
 - `tessdata_prefix_used`
 - `tesseract_langs`, `tesseract_lang_used`
@@ -220,6 +221,10 @@ Erwartung nach Aktivierung:
   - Tesseract installieren und PATH pruefen.
   - Falls gesetzt: `--tesseract-bin` auf existierende, ausfuehrbare Datei pruefen.
   - Erneut mit `--json` laufen lassen und `tesseract_found=true` verifizieren.
+- `tesseract_not_allowlisted`
+  - Binary ist vorhanden, aber ausserhalb der Runtime-Allowlist.
+  - Entweder in erlaubten Prefix installieren oder `KUKANILEA_TESSERACT_ALLOWED_PREFIXES` auf einen sicheren Prefix setzen.
+  - Keine Root-Prefixe verwenden (`/`, `C:\\`).
 - `tessdata_missing`
   - `--tessdata-dir` explizit setzen.
   - Sicherstellen, dass passende `*.traineddata` Dateien vorhanden sind.
@@ -255,6 +260,8 @@ Erwartung nach Aktivierung:
 Hinweis:
 - Fuer reproduzierbare Diagnostik wird `--tessdata-dir` bevorzugt statt implizitem `TESSDATA_PREFIX`.
 - `--print-tessdata-dir` wird als priorisierte Probe-Quelle ausgewertet.
+- Runtime-Allowlist kann additiv per `KUKANILEA_TESSERACT_ALLOWED_PREFIXES` erweitert werden
+  (Separator: `:` auf POSIX, `;` auf Windows, niemals Root-Prefix).
 - Detaillierte Probe-Logik: `docs/devtools/tesseract_probe.md`.
 
 PR-Konsolidierung:

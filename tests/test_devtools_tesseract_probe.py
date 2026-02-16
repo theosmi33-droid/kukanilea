@@ -50,6 +50,7 @@ def test_parse_list_langs_output_accepts_underscore_codes() -> None:
 
 def test_probe_bin_missing(monkeypatch) -> None:
     monkeypatch.setattr(probe_mod, "_resolve_bin", lambda _bin_path: None)
+    monkeypatch.setattr(probe_mod.shutil, "which", lambda _name: None)
     result = probe_mod.probe_tesseract()
     assert result["ok"] is False
     assert result["reason"] == "tesseract_missing"
@@ -225,6 +226,37 @@ def test_probe_invalid_override_bin_returns_missing() -> None:
     assert result["ok"] is False
     assert result["reason"] == "tesseract_missing"
     assert result["next_actions"]
+
+
+def test_probe_reports_not_allowlisted(monkeypatch, tmp_path: Path) -> None:
+    custom_bin = tmp_path / "tesseract"
+    custom_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    custom_bin.chmod(0o755)
+
+    monkeypatch.setattr(
+        probe_mod,
+        "_resolve_bin",
+        lambda _bin_path: custom_bin,
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "_classify_tesseract_path",
+        lambda *_args, **_kwargs: {
+            "exists": True,
+            "executable": True,
+            "allowlisted": False,
+            "reason": "tesseract_not_allowlisted",
+            "allowlist_reason": "outside_allowed_prefixes",
+            "allowed_prefixes": ["/opt/homebrew", "/usr/local/bin"],
+        },
+    )
+
+    result = probe_mod.probe_tesseract()
+    assert result["ok"] is False
+    assert result["reason"] == "tesseract_not_allowlisted"
+    assert result["tesseract_found"] is True
+    assert result["tesseract_allowlisted"] is False
+    assert result["tesseract_allowed_prefixes"]
 
 
 def test_probe_only_osd_is_language_missing(monkeypatch) -> None:
