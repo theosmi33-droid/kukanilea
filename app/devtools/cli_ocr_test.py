@@ -487,7 +487,13 @@ def main() -> int:
             "reason": "unexpected_error",
             "message": type(exc).__name__,
         }
-        print(json.dumps(payload, sort_keys=True))
+        if args.json:
+            print(json.dumps(payload, sort_keys=True))
+        else:
+            print("OCR Devtools Test")
+            print("ok: False")
+            print("reason: unexpected_error")
+            print(f"message: {type(exc).__name__}")
         return 1
 
     result["sandbox_db_path"] = _sanitize_path(
