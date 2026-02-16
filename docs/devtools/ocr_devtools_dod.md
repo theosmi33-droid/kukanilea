@@ -26,6 +26,11 @@ python -m app.devtools.cli_ocr_test --tenant dev --doctor --json
 python -m app.devtools.cli_ocr_test --tenant dev --doctor --strict --json
 ```
 
+6. Optionaler Proof-Bundle-Export:
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --doctor --json --write-proof --proof-dir docs/devtools
+```
+
 5. PII-Invariante:
 - `pii_found_knowledge == false`
 - `pii_found_eventlog == false`

@@ -6,6 +6,8 @@
 - Tesseract-Probe (Version, Langs, Tessdata-Discovery)
 - Deterministischer Sandbox-E2E-Smoke (Policy + Watch-Config + optional Direct-Submit)
 - Optionale, explizit abgesicherte Real-DB-Policy-Aktivierung
+- Operator-Bootstrap-Hinweise (`install_hints`, `config_hints`) fuer die
+  Faelle `tesseract_missing`, `tessdata_missing`, `language_missing`
 
 ## Sicherheitsmodell
 
@@ -46,6 +48,21 @@ python -m app.devtools.cli_ocr_test \
   --report-json-path reports/ocr_doctor.json \
   --report-text-path reports/ocr_doctor.txt
 ```
+
+Proof-Bundle (sanitisierte DoD-Artefakte im Repo):
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor \
+  --json \
+  --write-proof \
+  --proof-dir docs/devtools
+```
+
+Erzeugte Dateien:
+- `docs/devtools/ocr_doctor_proof.json`
+- `docs/devtools/ocr_sandbox_e2e_proof.json`
 
 ## Optional: reale Policy-Aktivierung (explizit)
 

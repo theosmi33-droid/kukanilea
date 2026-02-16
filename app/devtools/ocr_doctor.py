@@ -256,6 +256,63 @@ def _doctor_next_actions(reason: str | None, probe_actions: list[str]) -> list[s
     return [str(item) for item in list(probe_actions or [])]
 
 
+def _doctor_install_hints(reason: str | None) -> list[str]:
+    key = str(reason or "")
+    if key != "tesseract_missing":
+        return []
+    system = platform.system().casefold()
+    hints = [
+        "Validate installation with: tesseract --version",
+        "If PATH discovery fails, pass --tesseract-bin <binary> explicitly.",
+    ]
+    if "darwin" in system:
+        return [
+            "Install Tesseract via Homebrew: brew install tesseract",
+            *hints,
+        ]
+    if "linux" in system:
+        return [
+            "Install Tesseract from your distro package manager (e.g. apt/yum).",
+            *hints,
+        ]
+    if "windows" in system:
+        return [
+            "Install Tesseract and ensure the binary directory is on PATH.",
+            *hints,
+        ]
+    return [
+        "Install Tesseract and ensure the binary is available on PATH.",
+        *hints,
+    ]
+
+
+def _doctor_config_hints(
+    reason: str | None,
+    *,
+    supports_print_tessdata_dir: bool,
+) -> list[str]:
+    key = str(reason or "")
+    if key in {"tessdata_missing", "language_missing", "config_file_missing"}:
+        hints = [
+            "Set --tessdata-dir <prefix-or-tessdata-dir> when running doctor/smoke.",
+            "Use --lang <code> to force a known available OCR language.",
+            "If needed, export TESSDATA_PREFIX as fallback for local troubleshooting.",
+        ]
+        if supports_print_tessdata_dir:
+            hints.append(
+                "Run 'tesseract --print-tessdata-dir' and align --tessdata-dir with that location."
+            )
+        hints.append(
+            "Verify language packs with: tesseract --list-langs --tessdata-dir <dir>"
+        )
+        return hints
+    if key == "tesseract_missing":
+        return [
+            "Use --tesseract-bin <binary> to point doctor/smoke to a known executable.",
+        ]
+    return []
+
+
 def format_doctor_report(report: dict[str, Any]) -> str:
     lines = [
         "OCR Doctor Report",
@@ -285,6 +342,8 @@ def format_doctor_report(report: dict[str, Any]) -> str:
         f"commit_real_policy_requested: {bool(report.get('commit_real_policy_requested'))}",
         f"commit_real_policy_applied: {bool(report.get('commit_real_policy_applied'))}",
         f"commit_real_policy_reason: {report.get('commit_real_policy_reason') or '-'}",
+        f"install_hints: {report.get('install_hints') or '-'}",
+        f"config_hints: {report.get('config_hints') or '-'}",
         f"next_actions: {report.get('next_actions') or '-'}",
         f"message: {report.get('message') or '-'}",
     ]
@@ -452,9 +511,19 @@ def run_ocr_doctor(
         ok = False
         reason = "tesseract_warning"
 
+    hint_reason = reason or probe_reason
+    install_hints = _doctor_install_hints(hint_reason)
+    config_hints = _doctor_config_hints(
+        hint_reason,
+        supports_print_tessdata_dir=bool(probe.get("supports_print_tessdata_dir")),
+    )
     next_actions = _doctor_next_actions(
         reason, [str(item) for item in list(probe.get("next_actions") or [])]
     )
+    if install_hints or config_hints:
+        next_actions = list(
+            dict.fromkeys([*next_actions, *install_hints, *config_hints])
+        )
     message = _doctor_message(reason, ok=ok)
 
     report: dict[str, Any] = {
@@ -499,6 +568,8 @@ def run_ocr_doctor(
         "tesseract_langs": [str(item) for item in list(probe.get("langs") or [])],
         "tesseract_warnings": [str(item) for item in list(probe.get("warnings") or [])],
         "tesseract_stderr_tail": str(probe.get("stderr_tail") or "") or None,
+        "install_hints": install_hints,
+        "config_hints": config_hints,
         "commit_real_policy_requested": bool(commit_real_policy),
         "commit_real_policy_applied": bool(commit_applied),
         "commit_real_policy_reason": commit_reason,

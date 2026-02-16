@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import sys
 from hashlib import sha256
@@ -25,6 +26,9 @@ def _sha256_file(path: Path) -> str:
     h = sha256()
     h.update(path.read_bytes())
     return h.hexdigest()
+
+
+ABS_PATH_RE = re.compile(r"(^|[^A-Za-z0-9])/(Users|home)/")
 
 
 def test_run_ocr_doctor_schema_and_exit_ok(monkeypatch, tmp_path: Path) -> None:
@@ -362,6 +366,175 @@ def test_cli_doctor_writes_reports(monkeypatch, capsys, tmp_path: Path) -> None:
     text = report_text.read_text(encoding="utf-8")
     assert "OCR Doctor Report" in text
     assert "{" not in text
+
+
+def test_run_ocr_doctor_hints_for_common_bootstrap_reasons(
+    monkeypatch, tmp_path: Path
+) -> None:
+    base_db = tmp_path / "base.sqlite3"
+    sqlite3.connect(str(base_db)).close()
+
+    monkeypatch.setattr(ocr_doctor, "resolve_core_db_path", lambda: base_db)
+    monkeypatch.setattr(
+        ocr_doctor, "get_policy_status", lambda _tenant, *, db_path: _policy_ok(True)
+    )
+    monkeypatch.setattr(ocr_doctor, "detect_read_only", lambda: False)
+    monkeypatch.setattr(
+        ocr_doctor,
+        "run_ocr_test",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "reason": "tessdata_missing",
+            "job_status": "failed",
+            "job_error_code": "tessdata_missing",
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "next_actions": [],
+            "message": "missing tessdata",
+        },
+    )
+
+    monkeypatch.setattr(
+        ocr_doctor,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": False,
+            "reason": "tessdata_missing",
+            "tesseract_found": True,
+            "bin_path": "/usr/bin/tesseract",
+            "supports_print_tessdata_dir": True,
+            "langs": [],
+            "warnings": [],
+            "stderr_tail": None,
+            "next_actions": [],
+        },
+    )
+    report, exit_code = ocr_doctor.run_ocr_doctor(
+        "dev",
+        json_mode=True,
+        strict=False,
+        timeout_s=10,
+        sandbox=False,
+    )
+    assert exit_code == 1
+    assert report["reason"] == "tessdata_missing"
+    assert report["install_hints"] == []
+    assert report["config_hints"]
+    assert any("--tessdata-dir" in hint for hint in report["config_hints"])
+
+    monkeypatch.setattr(
+        ocr_doctor,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": False,
+            "reason": "tesseract_missing",
+            "tesseract_found": False,
+            "bin_path": None,
+            "supports_print_tessdata_dir": False,
+            "langs": [],
+            "warnings": [],
+            "stderr_tail": None,
+            "next_actions": [],
+        },
+    )
+    monkeypatch.setattr(
+        ocr_doctor,
+        "run_ocr_test",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "reason": "tesseract_missing",
+            "job_status": "failed",
+            "job_error_code": "tesseract_missing",
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "next_actions": [],
+            "message": "missing tesseract",
+        },
+    )
+    report_missing, exit_missing = ocr_doctor.run_ocr_doctor(
+        "dev",
+        json_mode=True,
+        strict=False,
+        timeout_s=10,
+        sandbox=False,
+    )
+    assert exit_missing == 1
+    assert report_missing["reason"] == "tesseract_missing"
+    assert report_missing["install_hints"]
+    assert report_missing["config_hints"]
+
+
+def test_cli_doctor_write_proof_bundle_sanitized(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    import app.devtools.ocr_policy as policy_mod
+    import app.devtools.sandbox as sandbox_mod
+
+    base_db = tmp_path / "base.sqlite3"
+    proof_dir = tmp_path / "proofs"
+    sqlite3.connect(str(base_db)).close()
+    monkeypatch.setattr(sandbox_mod, "resolve_core_db_path", lambda: base_db)
+    monkeypatch.setattr(
+        policy_mod,
+        "get_policy_status",
+        lambda _tenant_id, *, db_path: _policy_ok(True),
+    )
+
+    monkeypatch.setattr(
+        ocr_doctor,
+        "run_ocr_doctor",
+        lambda *args, **kwargs: (
+            {
+                "ok": False,
+                "reason": "tesseract_missing",
+                "tenant_id": "dev",
+                "strict_mode": False,
+                "sandbox": True,
+                "install_hints": ["Install tesseract"],
+                "config_hints": ["Use --tesseract-bin <binary>"],
+                "next_actions": ["Install tesseract and ensure PATH."],
+                "message": "missing",
+                "inbox_dir_used": "<path>",
+                "smoke": {
+                    "ok": False,
+                    "reason": "tesseract_missing",
+                    "inbox_dir_used": "<path>",
+                    "message": "missing",
+                },
+            },
+            1,
+        ),
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cli_ocr_test",
+            "--tenant",
+            "dev",
+            "--doctor",
+            "--json",
+            "--write-proof",
+            "--proof-dir",
+            str(proof_dir),
+        ],
+    )
+    exit_code = cli_ocr_test.main()
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["reason"] == "tesseract_missing"
+    doctor_proof = proof_dir / "ocr_doctor_proof.json"
+    smoke_proof = proof_dir / "ocr_sandbox_e2e_proof.json"
+    assert doctor_proof.exists()
+    assert smoke_proof.exists()
+    doctor_payload = json.loads(doctor_proof.read_text())
+    smoke_payload = json.loads(smoke_proof.read_text())
+    assert doctor_payload["tenant_id"] == "dev"
+    assert smoke_payload["reason"] == "tesseract_missing"
+    serialized = json.dumps(doctor_payload, sort_keys=True)
+    assert "pilot+test@example.com" not in serialized
+    assert ABS_PATH_RE.search(serialized) is None
 
 
 def test_ocr_v0_readiness_introspection_no_mutation(tmp_path: Path) -> None:

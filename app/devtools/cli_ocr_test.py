@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +78,34 @@ def _valid_tesseract_bin(path_value: str | None) -> bool:
         return True
     p = Path(str(path_value)).expanduser()
     return p.exists() and p.is_file() and os.access(p, os.R_OK | os.X_OK)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        delete=False,
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    ) as fh:
+        fh.write(content)
+        tmp_name = fh.name
+    os.replace(tmp_name, path)
+
+
+def _write_proof_bundle(
+    *,
+    report: dict[str, Any],
+    proof_dir: Path,
+) -> None:
+    doctor_path = proof_dir / "ocr_doctor_proof.json"
+    smoke_path = proof_dir / "ocr_sandbox_e2e_proof.json"
+    _atomic_write_text(doctor_path, json.dumps(report, sort_keys=True) + "\n")
+    _atomic_write_text(
+        smoke_path, json.dumps(report.get("smoke") or {}, sort_keys=True) + "\n"
+    )
 
 
 def _status_enabled(status: dict[str, Any]) -> bool | None:
@@ -274,6 +303,8 @@ def main() -> int:
     parser.add_argument("--keep-artifacts", action="store_true")
     parser.add_argument("--commit-real-policy", action="store_true")
     parser.add_argument("--yes-really-commit")
+    parser.add_argument("--write-proof", action="store_true")
+    parser.add_argument("--proof-dir", default="docs/devtools")
     parser.add_argument("--report-json-path")
     parser.add_argument("--report-text-path")
     args = parser.parse_args()
@@ -356,6 +387,11 @@ def main() -> int:
                 Path(str(args.report_text_path)).write_text(
                     format_doctor_report(report) + "\n",
                     encoding="utf-8",
+                )
+            if bool(args.write_proof):
+                _write_proof_bundle(
+                    report=report,
+                    proof_dir=Path(str(args.proof_dir or "docs/devtools")),
                 )
             if args.json:
                 print(report_to_json(report))
