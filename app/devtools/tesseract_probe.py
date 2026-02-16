@@ -13,7 +13,7 @@ TEST_MARKERS = (
     "+49 151 12345678",
     "OCR_Test_2026-02-16_KD-9999",
 )
-LANG_CODE_RE = re.compile(r"^(?:[a-z]{3}|[a-z]{3}_[a-z0-9]+)$")
+LANG_CODE_RE = re.compile(r"^[a-z]{3}(?:_[a-z0-9]{2,8})*$")
 MISSING_DATA_RE = re.compile(
     r"(error opening data file|couldn.?t load any languages|read_params_file)",
     re.IGNORECASE,

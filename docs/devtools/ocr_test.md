@@ -200,6 +200,7 @@ Hinweis:
 PR-Konsolidierung:
 - v4 superseded v3/v2 fuer den Probe-Stack.
 - Fuer Merge nur v4 verwenden; aeltere Probe-PRs als superseded schliessen.
+- `codex/feat/autonomy-ocr-devtools-final-v2` superseded `codex/feat/autonomy-ocr-devtools-final-v1`.
 
 Manuelle Triage:
 ```bash
