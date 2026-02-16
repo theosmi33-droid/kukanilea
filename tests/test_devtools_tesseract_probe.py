@@ -12,6 +12,24 @@ class _Proc:
         self.stderr = stderr
 
 
+def test_supports_flag_true_false(monkeypatch) -> None:
+    monkeypatch.setattr(
+        probe_mod.subprocess,
+        "run",
+        lambda cmd, **_kwargs: _Proc(0, stdout="... --print-tessdata-dir ..."),
+    )
+    assert probe_mod.supports_flag("/usr/bin/tesseract", "--print-tessdata-dir") is True
+
+    monkeypatch.setattr(
+        probe_mod.subprocess,
+        "run",
+        lambda cmd, **_kwargs: _Proc(0, stdout="no such flag"),
+    )
+    assert (
+        probe_mod.supports_flag("/usr/bin/tesseract", "--print-tessdata-dir") is False
+    )
+
+
 def test_parse_list_langs_output_warning_tolerant() -> None:
     parsed = probe_mod.parse_list_langs_output(
         "List of available languages (2):\ndeu\nosd\n",
@@ -24,10 +42,10 @@ def test_parse_list_langs_output_warning_tolerant() -> None:
 
 def test_parse_list_langs_output_accepts_underscore_codes() -> None:
     parsed = probe_mod.parse_list_langs_output(
-        "List of available languages (4):\neng\nosd\nchi_sim\naze_cyrl\n",
+        "List of available languages (5):\neng\nosd\nchi_sim\naze_cyrl\ndeu_frak\n",
         "",
     )
-    assert parsed["langs"] == ["eng", "osd", "chi_sim", "aze_cyrl"]
+    assert parsed["langs"] == ["eng", "osd", "chi_sim", "aze_cyrl", "deu_frak"]
 
 
 def test_probe_bin_missing(monkeypatch) -> None:
@@ -122,6 +140,16 @@ def test_probe_prefers_print_tessdata_dir_candidate(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         probe_mod,
+        "_validate_print_tessdata_dir",
+        lambda raw: str(raw),
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "supports_flag",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        probe_mod,
         "_candidate_tessdata_dirs",
         lambda **_kwargs: [
             ("print", Path("/custom/share")),
@@ -153,6 +181,43 @@ def test_probe_prefers_print_tessdata_dir_candidate(monkeypatch) -> None:
     assert result["tessdata_source"] == "print"
     assert result["print_tessdata_dir"]
     assert result["tessdata_candidates"]
+
+
+def test_probe_skips_print_tessdata_dir_when_not_supported(monkeypatch) -> None:
+    monkeypatch.setattr(
+        probe_mod, "_resolve_bin", lambda _bin_path: Path("/usr/bin/tesseract")
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "supports_flag",
+        lambda *args, **kwargs: False,
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "_run_print_tessdata_dir",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not call")),
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "_candidate_tessdata_dirs",
+        lambda **_kwargs: [("heuristic", Path("/usr/share"))],
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "_prefix_has_tessdata",
+        lambda p: str(p) == "/usr/share",
+    )
+    monkeypatch.setattr(probe_mod, "_prefix_direct_tessdata", lambda p: False)
+    monkeypatch.setattr(
+        probe_mod.subprocess,
+        "run",
+        lambda cmd, **_kwargs: _Proc(
+            0, stdout="List of available languages (1):\neng\n"
+        ),
+    )
+    result = probe_mod.probe_tesseract()
+    assert result["ok"] is True
+    assert result["supports_print_tessdata_dir"] is False
 
 
 def test_probe_invalid_override_bin_returns_missing() -> None:
@@ -196,3 +261,22 @@ def test_probe_sanitizes_stderr_tail_paths_and_markers(monkeypatch) -> None:
     assert "<path>" in tail
     assert "/Users/test" not in tail
     assert "pilot+test@example.com" not in tail
+
+
+def test_probe_sanitizes_windows_paths_with_spaces(monkeypatch) -> None:
+    monkeypatch.setattr(
+        probe_mod, "_resolve_bin", lambda _bin_path: Path("/usr/bin/tesseract")
+    )
+    stderr = (
+        r"Error opening data file C:\Users\Test User\Tesseract\tessdata\eng.traineddata"
+    )
+    monkeypatch.setattr(
+        probe_mod.subprocess,
+        "run",
+        lambda cmd, **_kwargs: _Proc(1, stdout="", stderr=stderr),
+    )
+    result = probe_mod.probe_tesseract()
+    assert result["ok"] is False
+    tail = str(result.get("stderr_tail") or "")
+    assert "C:\\Users\\Test User" not in tail
+    assert "<path>" in tail

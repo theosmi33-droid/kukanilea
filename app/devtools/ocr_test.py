@@ -66,7 +66,11 @@ def _sanitize_path_for_output(path: Path | str | None) -> str:
     text = (
         str(path or "").replace("\x00", "").replace("\r", "").replace("\n", "").strip()
     )
-    if text.startswith("/"):
+    if (
+        text.startswith("/")
+        or re.match(r"^[A-Za-z]:\\", text)
+        or text.startswith("\\\\")
+    ):
         return "<path>"
     text = SAFE_PATH_RE.sub("_", text)
     if len(text) > 256:
@@ -623,6 +627,8 @@ def _build_message(result: dict[str, Any]) -> str:
         return "Requested OCR language is unavailable."
     if reason == "tesseract_failed":
         return "Tesseract execution failed."
+    if reason == "config_file_missing":
+        return "Tesseract config file could not be loaded."
     if reason == "tesseract_warning":
         return "Tesseract reported warnings and strict mode is enabled."
     if reason == "read_only":
@@ -677,6 +683,10 @@ def _next_actions_for_reason(reason: str | None) -> list[str]:
         "tesseract_failed": [
             "Verify tesseract binary execution and local language data installation.",
             "Re-run with --show-tesseract for sanitized stderr diagnostics.",
+        ],
+        "config_file_missing": [
+            "Tesseract reported a missing config file (read_params_file / config).",
+            "Verify installation and rerun with explicit --tessdata-dir.",
         ],
         "tesseract_warning": [
             "Tesseract emitted warnings; verify tessdata and language packs.",
@@ -770,6 +780,8 @@ def run_ocr_test(
         "policy_reason": None,
         "existing_columns": None,
         "tesseract_found": False,
+        "tesseract_version": None,
+        "supports_print_tessdata_dir": False,
         "tessdata_dir": None,
         "tessdata_source": None,
         "tessdata_candidates": [],
@@ -851,6 +863,12 @@ def run_ocr_test(
                 or None
             )
             result["tessdata_source"] = str(probe.get("tessdata_source") or "") or None
+            result["tesseract_version"] = (
+                str(probe.get("tesseract_version") or "") or None
+            )
+            result["supports_print_tessdata_dir"] = bool(
+                probe.get("supports_print_tessdata_dir")
+            )
             result["tessdata_candidates"] = [
                 _sanitize_path_for_output(item)
                 for item in list(probe.get("tessdata_candidates") or [])
