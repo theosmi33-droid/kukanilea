@@ -24,6 +24,7 @@ from app.devtools.sandbox import (
     ensure_dir,
     resolve_core_db_path,
 )
+from app.devtools.tesseract_probe import probe_tesseract
 
 TEST_EMAIL_PATTERN = "pilot+test@example.com"
 TEST_PHONE_PATTERN = "+49 151 12345678"
@@ -58,6 +59,8 @@ def _sanitize_path_for_output(path: Path | str | None) -> str:
     text = (
         str(path or "").replace("\x00", "").replace("\r", "").replace("\n", "").strip()
     )
+    if text.startswith("/"):
+        return "<path>"
     text = SAFE_PATH_RE.sub("_", text)
     if len(text) > 256:
         text = text[-256:]
@@ -363,6 +366,8 @@ def _execute_test_round(
     *,
     inbox_dir_override: Path | None = None,
     direct_submit_in_sandbox: bool = False,
+    tesseract_lang: str | None = None,
+    tesseract_tessdata_dir: str | None = None,
 ) -> dict[str, Any]:
     from app.autonomy.ocr import submit_ocr_for_source_file
     from app.autonomy.source_scan import (
@@ -427,6 +432,8 @@ def _execute_test_round(
                         actor_user_id="devtools_ocr_test",
                         source_file_id=source_file_id,
                         abs_path=target_path,
+                        lang_override=tesseract_lang,
+                        tessdata_dir=tesseract_tessdata_dir,
                     )
                     direct_submit_used = True
                 except Exception:
@@ -478,6 +485,12 @@ def _build_message(result: dict[str, Any]) -> str:
         return "OCR policy is disabled for tenant."
     if reason == "tesseract_missing":
         return "Tesseract binary not found or not allowlisted."
+    if reason == "tessdata_missing":
+        return "Tesseract data files were not found."
+    if reason == "language_missing":
+        return "Requested OCR language is unavailable."
+    if reason == "tesseract_failed":
+        return "Tesseract execution failed."
     if reason == "read_only":
         return "READ_ONLY active; skipping ingest/job run."
     if reason == "pii_leak":
@@ -513,6 +526,18 @@ def _next_actions_for_reason(reason: str | None) -> list[str]:
         "tesseract_missing": [
             "Install tesseract and ensure it is on PATH (e.g. /opt/homebrew/bin/tesseract).",
             "Re-run with --json and confirm tesseract_found=true.",
+        ],
+        "tessdata_missing": [
+            "Set --tessdata-dir explicitly and verify traineddata files exist.",
+            "Run --show-tesseract to inspect sanitized diagnostics.",
+        ],
+        "language_missing": [
+            "Requested OCR language is unavailable in tessdata.",
+            "Use --lang with an available language from --show-tesseract.",
+        ],
+        "tesseract_failed": [
+            "Verify tesseract binary execution and local language data installation.",
+            "Re-run with --show-tesseract for sanitized stderr diagnostics.",
         ],
         "read_only": [
             "Disable READ_ONLY for dev testing or run without --enable-policy-in-sandbox.",
@@ -575,6 +600,8 @@ def run_ocr_test(
     db_path_override: Path | None = None,
     seed_watch_config_in_sandbox: bool = False,
     direct_submit_in_sandbox: bool = False,
+    tessdata_dir: str | None = None,
+    lang: str | None = None,
 ) -> dict[str, Any]:
     tenant = str(tenant_id or "").strip() or "default"
     sandbox_like = bool(sandbox or db_path_override is not None)
@@ -589,6 +616,13 @@ def run_ocr_test(
         "policy_reason": None,
         "existing_columns": None,
         "tesseract_found": False,
+        "tessdata_dir": None,
+        "tessdata_source": None,
+        "tesseract_langs": [],
+        "tesseract_lang_used": None,
+        "tesseract_probe_reason": None,
+        "tesseract_probe_next_actions": [],
+        "tesseract_stderr_tail": None,
         "read_only": False,
         "job_status": None,
         "job_error_code": None,
@@ -623,6 +657,36 @@ def run_ocr_test(
             if result["sandbox"]:
                 result["sandbox_db_path"] = str(core_db_path)
 
+            try:
+                from app.autonomy.ocr import resolve_tesseract_bin
+
+                resolved_bin = resolve_tesseract_bin()
+                resolved_bin_str = str(resolved_bin) if resolved_bin else None
+            except Exception:
+                resolved_bin_str = None
+            preferred_langs = [str(lang).strip()] if str(lang or "").strip() else None
+            probe = probe_tesseract(
+                bin_path=resolved_bin_str,
+                tessdata_dir=tessdata_dir,
+                preferred_langs=preferred_langs,
+            )
+            result["tesseract_found"] = bool(probe.get("bin_path"))
+            result["tessdata_dir"] = (
+                _sanitize_path_for_output(probe.get("tessdata_dir")) or None
+            )
+            result["tessdata_source"] = str(probe.get("tessdata_source") or "") or None
+            result["tesseract_langs"] = [
+                str(item) for item in list(probe.get("langs") or [])
+            ]
+            result["tesseract_lang_used"] = str(probe.get("lang_used") or "") or None
+            result["tesseract_probe_reason"] = str(probe.get("reason") or "") or None
+            result["tesseract_probe_next_actions"] = [
+                str(item) for item in list(probe.get("next_actions") or [])
+            ]
+            result["tesseract_stderr_tail"] = (
+                str(probe.get("stderr_tail") or "") or None
+            )
+
             policy_status = get_policy_status(tenant, db_path=core_db_path)
             if bool(policy_status.get("ok")):
                 result["policy_enabled_effective"] = bool(
@@ -641,7 +705,6 @@ def run_ocr_test(
 
             preflight = _preflight_status(tenant)
             result["policy_enabled"] = bool(preflight["policy_enabled"])
-            result["tesseract_found"] = bool(preflight["tesseract_found"])
             result["read_only"] = bool(preflight["read_only"])
             if result["policy_enabled_effective"] is None:
                 result["policy_enabled_effective"] = bool(result["policy_enabled"])
@@ -659,6 +722,20 @@ def run_ocr_test(
                 result["next_actions"] = _next_actions_for_reason(
                     str(result.get("reason") or "")
                 )
+                return result
+            if result["tesseract_probe_reason"] in {
+                "tesseract_missing",
+                "tessdata_missing",
+                "language_missing",
+                "tesseract_failed",
+            }:
+                result["reason"] = str(result["tesseract_probe_reason"])
+                result["message"] = _build_message(result)
+                result["next_actions"] = list(result["tesseract_probe_next_actions"])
+                if not result["next_actions"]:
+                    result["next_actions"] = _next_actions_for_reason(
+                        str(result.get("reason") or "")
+                    )
                 return result
             if not result["policy_enabled"]:
                 result["reason"] = "policy_denied"
@@ -719,6 +796,10 @@ def run_ocr_test(
                     inbox_dir_override=inbox_dir_override,
                     direct_submit_in_sandbox=bool(
                         direct_submit_in_sandbox and sandbox_like
+                    ),
+                    tesseract_lang=result.get("tesseract_lang_used"),
+                    tesseract_tessdata_dir=(
+                        str(probe.get("tessdata_dir") or "") or None
                     ),
                 )
             finally:

@@ -6,6 +6,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
+
 import app.devtools.cli_ocr_test as cli_ocr_test
 import app.devtools.ocr_test as ocr_test
 
@@ -32,6 +34,25 @@ def _policy_ok(enabled: bool = True) -> dict[str, object]:
     }
 
 
+@pytest.fixture(autouse=True)
+def _default_probe(monkeypatch):
+    monkeypatch.setattr(
+        ocr_test,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": True,
+            "reason": None,
+            "bin_path": "/usr/bin/tesseract",
+            "tessdata_dir": "/usr/share/tessdata",
+            "tessdata_source": "heuristic",
+            "langs": ["eng", "deu"],
+            "lang_used": "eng",
+            "stderr_tail": None,
+            "next_actions": [],
+        },
+    )
+
+
 def test_run_ocr_test_policy_denied(monkeypatch) -> None:
     monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
     monkeypatch.setattr(
@@ -50,12 +71,65 @@ def test_run_ocr_test_policy_denied(monkeypatch) -> None:
     assert result["ok"] is False
     assert result["reason"] == "policy_denied"
     assert result["tesseract_found"] is True
+    assert result["tesseract_lang_used"] == "eng"
+    assert result["tesseract_probe_reason"] is None
+
+
+def test_run_ocr_test_probe_failure_tessdata(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": False,
+            "reason": "tessdata_missing",
+            "bin_path": "/usr/bin/tesseract",
+            "tessdata_dir": None,
+            "tessdata_source": None,
+            "langs": [],
+            "lang_used": None,
+            "stderr_tail": "Error opening data file <path>/eng.traineddata",
+            "next_actions": ["Set --tessdata-dir explicitly."],
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": True,
+            "tesseract_found": True,
+            "read_only": False,
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_a, **_k: _policy_ok(True)
+    )
+    result = ocr_test.run_ocr_test("TENANT_A", sandbox=False)
+    assert result["ok"] is False
+    assert result["reason"] == "tessdata_missing"
+    assert result["tesseract_probe_reason"] == "tessdata_missing"
+    assert result["next_actions"]
 
 
 def test_run_ocr_test_tesseract_missing(monkeypatch) -> None:
     monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
     monkeypatch.setattr(
         ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": False,
+            "reason": "tesseract_missing",
+            "bin_path": None,
+            "tessdata_dir": None,
+            "tessdata_source": None,
+            "langs": [],
+            "lang_used": None,
+            "stderr_tail": None,
+            "next_actions": ["Install tesseract and ensure it is on PATH."],
+        },
     )
     monkeypatch.setattr(
         ocr_test,
@@ -586,7 +660,7 @@ def test_cli_sandbox_keep_artifacts_includes_path(
     assert exit_code == 0
     assert payload["policy_enabled_base"] is False
     assert payload["policy_enabled_effective"] is True
-    assert payload["sandbox_db_path"] == str(sandbox_db)
+    assert payload["sandbox_db_path"] == "<path>"
 
 
 def test_cli_enable_policy_in_sandbox_read_only_refused(
@@ -775,3 +849,55 @@ def test_cli_passes_seed_and_direct_submit_flags(
     assert exit_code == 0
     assert captured["seed_watch_config_in_sandbox"] is False
     assert captured["direct_submit_in_sandbox"] is True
+
+
+def test_cli_show_tesseract_json(monkeypatch, capsys, tmp_path: Path) -> None:
+    import app.autonomy.ocr as ocr_mod
+    import app.devtools.ocr_policy as policy_mod
+    import app.devtools.sandbox as sandbox_mod
+    import app.devtools.tesseract_probe as probe_mod
+
+    base_db = tmp_path / "base.sqlite3"
+    sqlite3.connect(str(base_db)).close()
+    monkeypatch.setattr(sandbox_mod, "resolve_core_db_path", lambda: base_db)
+    monkeypatch.setattr(
+        policy_mod,
+        "get_policy_status",
+        lambda _tenant_id, *, db_path: {
+            "ok": True,
+            "policy_enabled": True,
+            "ocr_column": "allow_ocr",
+            "row_present": True,
+            "existing_columns": ["tenant_id", "allow_ocr", "updated_at"],
+            "table": "knowledge_source_policies",
+        },
+    )
+    monkeypatch.setattr(
+        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
+    )
+    monkeypatch.setattr(
+        probe_mod,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": True,
+            "reason": None,
+            "bin_path": "/usr/bin/tesseract",
+            "tessdata_dir": "/opt/homebrew/share/tessdata",
+            "tessdata_source": "heuristic",
+            "langs": ["eng", "deu"],
+            "lang_used": "eng",
+            "stderr_tail": None,
+            "next_actions": [],
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["cli_ocr_test", "--tenant", "dev", "--show-tesseract", "--json"],
+    )
+    exit_code = cli_ocr_test.main()
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["ok"] is True
+    assert payload["tesseract_found"] is True
+    assert payload["tessdata_dir"] == "<path>"

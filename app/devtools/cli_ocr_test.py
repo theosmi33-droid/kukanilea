@@ -14,6 +14,12 @@ def _reason_message(reason: str | None) -> str:
         return "OCR policy is disabled for tenant."
     if key == "tesseract_missing":
         return "Tesseract binary not found or not allowlisted."
+    if key == "tessdata_missing":
+        return "Tesseract data files were not found."
+    if key == "language_missing":
+        return "Requested OCR language is unavailable."
+    if key == "tesseract_failed":
+        return "Tesseract execution failed."
     if key == "read_only":
         return "READ_ONLY active; skipping ingest/job run."
     if key == "pii_leak":
@@ -39,6 +45,15 @@ def _reason_message(reason: str | None) -> str:
     if key == "invalid_args":
         return "Invalid CLI argument combination."
     return "OCR test failed."
+
+
+def _sanitize_path(value: str | None) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value)
+    if text.startswith("/"):
+        return "<path>"
+    return text
 
 
 def _status_enabled(status: dict[str, Any]) -> bool | None:
@@ -93,6 +108,13 @@ def _policy_view_payload(
         "policy_reason": reason,
         "existing_columns": _status_columns(status),
         "tesseract_found": False,
+        "tessdata_dir": None,
+        "tessdata_source": None,
+        "tesseract_langs": [],
+        "tesseract_lang_used": None,
+        "tesseract_probe_reason": None,
+        "tesseract_probe_next_actions": [],
+        "tesseract_stderr_tail": None,
         "read_only": False,
         "job_status": None,
         "job_error_code": None,
@@ -127,6 +149,12 @@ def _human_report(result: dict) -> str:
         f"policy_reason: {result.get('policy_reason') or '-'}",
         f"existing_columns: {result.get('existing_columns') or '-'}",
         f"tesseract_found: {bool(result.get('tesseract_found'))}",
+        f"tessdata_dir: {result.get('tessdata_dir') or '-'}",
+        f"tessdata_source: {result.get('tessdata_source') or '-'}",
+        f"tesseract_langs: {result.get('tesseract_langs') or '-'}",
+        f"tesseract_lang_used: {result.get('tesseract_lang_used') or '-'}",
+        f"tesseract_probe_reason: {result.get('tesseract_probe_reason') or '-'}",
+        f"tesseract_stderr_tail: {result.get('tesseract_stderr_tail') or '-'}",
         f"read_only: {bool(result.get('read_only'))}",
         f"job_status: {result.get('job_status') or '-'}",
         f"job_error_code: {result.get('job_error_code') or '-'}",
@@ -153,8 +181,11 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--timeout", type=int, default=10)
     parser.add_argument("--show-policy", action="store_true")
+    parser.add_argument("--show-tesseract", action="store_true")
     parser.add_argument("--enable-policy-in-sandbox", action="store_true")
     parser.add_argument("--no-sandbox", action="store_true")
+    parser.add_argument("--tessdata-dir")
+    parser.add_argument("--lang")
     parser.add_argument(
         "--seed-watch-config-in-sandbox",
         dest="seed_watch_config_in_sandbox",
@@ -186,13 +217,52 @@ def main() -> int:
             create_sandbox_copy,
             resolve_core_db_path,
         )
+        from app.devtools.tesseract_probe import probe_tesseract
 
         tenant = str(args.tenant or "").strip() or "default"
         timeout_s = max(1, int(args.timeout))
+        preferred_langs = (
+            [str(args.lang).strip()] if str(args.lang or "").strip() else None
+        )
         base_db = resolve_core_db_path()
         base_status = get_policy_status(tenant, db_path=base_db)
 
-        if args.show_policy:
+        if args.show_tesseract:
+            from app.autonomy.ocr import resolve_tesseract_bin
+
+            resolved = resolve_tesseract_bin()
+            probe = probe_tesseract(
+                bin_path=str(resolved) if resolved else None,
+                tessdata_dir=str(args.tessdata_dir or "").strip() or None,
+                preferred_langs=preferred_langs,
+            )
+            result = _policy_view_payload(
+                tenant=tenant,
+                status=base_status,
+                next_actions=list(probe.get("next_actions") or []),
+            )
+            result["ok"] = bool(probe.get("ok"))
+            result["reason"] = str(probe.get("reason") or "") or None
+            result["message"] = _reason_message(result["reason"])
+            result["tesseract_found"] = bool(probe.get("bin_path"))
+            result["tessdata_dir"] = _sanitize_path(
+                str(probe.get("tessdata_dir") or "") or None
+            )
+            result["tessdata_source"] = str(probe.get("tessdata_source") or "") or None
+            result["tesseract_langs"] = [
+                str(item) for item in list(probe.get("langs") or [])
+            ]
+            result["tesseract_lang_used"] = str(probe.get("lang_used") or "") or None
+            result["tesseract_probe_reason"] = str(probe.get("reason") or "") or None
+            result["tesseract_probe_next_actions"] = list(
+                probe.get("next_actions") or []
+            )
+            result["tesseract_stderr_tail"] = (
+                str(probe.get("stderr_tail") or "") or None
+            )
+            if not result["next_actions"]:
+                result["next_actions"] = list(probe.get("next_actions") or [])
+        elif args.show_policy:
             result = _policy_view_payload(
                 tenant=tenant,
                 status=base_status,
@@ -217,6 +287,8 @@ def main() -> int:
                     keep_artifacts=bool(args.keep_artifacts),
                     seed_watch_config_in_sandbox=False,
                     direct_submit_in_sandbox=False,
+                    tessdata_dir=str(args.tessdata_dir or "").strip() or None,
+                    lang=(preferred_langs[0] if preferred_langs else None),
                 )
                 _merge_policy_fields(
                     result,
@@ -247,6 +319,8 @@ def main() -> int:
                         args.seed_watch_config_in_sandbox
                     ),
                     direct_submit_in_sandbox=bool(args.direct_submit_in_sandbox),
+                    tessdata_dir=str(args.tessdata_dir or "").strip() or None,
+                    lang=(preferred_langs[0] if preferred_langs else None),
                 )
                 result["sandbox"] = True
                 result["sandbox_db_path"] = (
@@ -277,6 +351,16 @@ def main() -> int:
         }
         print(json.dumps(payload, sort_keys=True))
         return 3
+
+    result["sandbox_db_path"] = _sanitize_path(
+        str(result.get("sandbox_db_path") or "") or None
+    )
+    result["inbox_dir_used"] = _sanitize_path(
+        str(result.get("inbox_dir_used") or "") or None
+    )
+    result["tessdata_dir"] = _sanitize_path(
+        str(result.get("tessdata_dir") or "") or None
+    )
 
     if args.json:
         print(json.dumps(result, sort_keys=True))
