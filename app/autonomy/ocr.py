@@ -31,6 +31,10 @@ TESSERACT_ALLOWED_DIRS = (
     Path("/usr/local/bin"),
     Path("/opt/homebrew/bin"),
 )
+TESSDATA_ERROR_RE = re.compile(
+    r"(error opening data file|failed loading language|could not initialize tesseract)",
+    re.IGNORECASE,
+)
 
 
 def _tenant(tenant_id: str) -> str:
@@ -265,33 +269,84 @@ def _run_tesseract(
     lang: str,
     timeout_sec: int,
     max_chars: int,
-) -> tuple[str | None, str | None, int]:
+    tessdata_dir: str | None = None,
+) -> tuple[str | None, str | None, int, str | None]:
+    from app.devtools.tesseract_probe import probe_tesseract
+
     binary = resolve_tesseract_bin()
     if binary is None:
-        return None, "tesseract_missing", 0
-    cmd = [str(binary), str(image_path), "stdout", "-l", lang]
-    try:
-        proc = subprocess.run(  # noqa: S603
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=int(timeout_sec),
-            check=False,
-            shell=False,
-            stdin=subprocess.DEVNULL,
+        return None, "tesseract_missing", 0, None
+
+    def _sanitize_stderr(text: str | None) -> str | None:
+        if not text:
+            return None
+        out = re.sub(r"/[^\s\"']+", "<path>", str(text))
+        out = out.replace("\x00", "").replace("\r", " ").replace("\n", " ").strip()
+        if len(out) > 400:
+            out = out[-400:]
+        return out or None
+
+    def _classify(stderr_text: str | None) -> str:
+        lower = str(stderr_text or "").casefold()
+        if "error opening data file" in lower:
+            return "tessdata_missing"
+        if (
+            "failed loading language" in lower
+            or "could not initialize tesseract" in lower
+        ):
+            return "language_missing"
+        return "tesseract_failed"
+
+    def _run_once(
+        lang_code: str, tess_dir: str | None
+    ) -> tuple[str | None, str | None, int, str | None]:
+        cmd = [str(binary), str(image_path), "stdout", "-l", lang_code]
+        if tess_dir:
+            cmd.extend(["--tessdata-dir", str(tess_dir)])
+        try:
+            proc = subprocess.run(  # noqa: S603
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=int(timeout_sec),
+                check=False,
+                shell=False,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired:
+            return None, "timeout", 0, "timeout"
+        except Exception as exc:
+            return None, "tesseract_failed", 0, type(exc).__name__
+        if int(proc.returncode or 0) != 0:
+            stderr = str(proc.stderr or proc.stdout or "")
+            return None, _classify(stderr), 0, _sanitize_stderr(stderr)
+        output = str(proc.stdout or "")
+        truncated = 0
+        if len(output) > max_chars:
+            output = output[:max_chars]
+            truncated = 1
+        return output, None, truncated, None
+
+    text_out, error_code, truncated, stderr_tail = _run_once(lang, tessdata_dir)
+    if error_code in {"tessdata_missing", "language_missing"}:
+        probe = probe_tesseract(
+            bin_path=str(binary),
+            tessdata_dir=tessdata_dir,
+            preferred_langs=[lang],
+            timeout_s=min(max(1, int(timeout_sec)), 5),
         )
-    except subprocess.TimeoutExpired:
-        return None, "timeout", 0
-    except Exception:
-        return None, "failed", 0
-    if int(proc.returncode or 0) != 0:
-        return None, "failed", 0
-    output = str(proc.stdout or "")
-    truncated = 0
-    if len(output) > max_chars:
-        output = output[:max_chars]
-        truncated = 1
-    return output, None, truncated
+        retry_lang = str(probe.get("lang_used") or "").strip()
+        retry_tess = str(probe.get("tessdata_dir") or "").strip() or None
+        if retry_lang and (retry_lang != lang or retry_tess != tessdata_dir):
+            retry_text, retry_error, retry_truncated, retry_stderr = _run_once(
+                retry_lang,
+                retry_tess,
+            )
+            if retry_error is None:
+                return retry_text, None, retry_truncated, retry_stderr
+            error_code = retry_error
+            stderr_tail = retry_stderr
+    return text_out, error_code, truncated, stderr_tail
 
 
 def _store_ocr_chunk(
@@ -399,6 +454,9 @@ def submit_ocr_for_source_file(
     actor_user_id: str | None,
     source_file_id: str,
     abs_path: Path | str,
+    *,
+    lang_override: str | None = None,
+    tessdata_dir: str | None = None,
 ) -> dict[str, Any]:
     if _is_read_only():
         raise PermissionError("read_only")
@@ -421,7 +479,9 @@ def submit_ocr_for_source_file(
     )
     timeout_sec = _cfg_int("AUTONOMY_OCR_TIMEOUT_SEC", DEFAULT_OCR_TIMEOUT_SEC, 1, 300)
     max_chars = _cfg_int("AUTONOMY_OCR_MAX_CHARS", DEFAULT_OCR_MAX_CHARS, 100, 500_000)
-    lang = _cfg_lang()
+    lang = str(lang_override or _cfg_lang()).strip().lower()
+    if not LANG_RE.match(lang):
+        lang = _cfg_lang()
 
     job_id = _job_create(tenant, source_file)
 
@@ -575,8 +635,12 @@ def submit_ocr_for_source_file(
     )
 
     started = time.monotonic()
-    text_out, error_code, truncated = _run_tesseract(
-        target, lang=lang, timeout_sec=timeout_sec, max_chars=max_chars
+    text_out, error_code, truncated, _stderr_tail = _run_tesseract(
+        target,
+        lang=lang,
+        timeout_sec=timeout_sec,
+        max_chars=max_chars,
+        tessdata_dir=tessdata_dir,
     )
     duration_ms = int(round((time.monotonic() - started) * 1000))
     if error_code:
