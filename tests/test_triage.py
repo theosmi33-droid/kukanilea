@@ -91,3 +91,66 @@ def test_json_report_written_on_failure(tmp_path: Path, monkeypatch) -> None:
         step for step in report["steps"] if step["name"] == "compileall"
     )
     assert compile_step["ok"] is False
+
+
+def test_bench_retry_can_recover_from_flaky_regression(
+    tmp_path: Path, monkeypatch
+) -> None:
+    report_path = tmp_path / "triage.json"
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "metrics": {
+                    "event_verify_chain_synth_2000": 1.0,
+                    "recompute_task_duration_synth": 1.0,
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(triage, "_baseline_path", lambda: baseline_path)
+    monkeypatch.setattr(triage.shutil, "which", lambda name: "/usr/bin/ruff")
+    monkeypatch.setattr(triage, "run_cmd", lambda args, timeout=None: _ok_result())
+
+    import app.bench.benchmarks as bm
+
+    calls = iter(
+        [
+            {
+                "event_verify_chain_synth_2000": 2.0,
+                "recompute_task_duration_synth": 2.0,
+            },
+            {
+                "event_verify_chain_synth_2000": 1.0,
+                "recompute_task_duration_synth": 1.0,
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        bm,
+        "run_benchmark_suite",
+        lambda runs=5, warmup=1, time_budget_secs=20.0: next(calls),
+    )
+
+    rc = triage.main(
+        [
+            "--bench",
+            "--require-baseline",
+            "--json-out",
+            str(report_path),
+            "--bench-retries",
+            "1",
+        ]
+    )
+    assert rc == 0
+    report = json.loads(report_path.read_text())
+    bench = next(step for step in report["steps"] if step["name"] == "bench")
+    assert bench["ok"] is True
+    assert bench["bench_retried"] is True
+    assert bench["bench_attempts"] == 2
+
+
+def test_ci_mode_uses_relaxed_default_bench_factor() -> None:
+    args = triage._parse_args(["--ci"])
+    triage._normalize_modes(args, ["--ci"])
+    assert args.bench_factor == 1.7
