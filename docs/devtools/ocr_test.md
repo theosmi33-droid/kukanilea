@@ -22,6 +22,13 @@ Nur Policy lesen (kein OCR-Run):
 python -m app.devtools.cli_ocr_test --tenant dev --show-policy --json
 ```
 
+Nur Tesseract-Diagnostik (ohne OCR-Run):
+
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --json
+python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tessdata-dir /path/to/tessdata --lang eng --json
+```
+
 OCR-Policy nur in der Sandbox aktivieren und direkt E2E testen:
 
 ```bash
@@ -61,6 +68,9 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `policy_enabled_effective`
 - `policy_reason`
 - `existing_columns`
+- `tessdata_dir`, `tessdata_source`
+- `tesseract_langs`, `tesseract_lang_used`
+- `tesseract_probe_reason`, `tesseract_probe_next_actions`, `tesseract_stderr_tail`
 - `sandbox_db_path` (nur gesetzt, wenn Sandbox aktiv und `--keep-artifacts` genutzt wird)
 - `watch_config_seeded`, `watch_config_existed`
 - `inbox_dir_used`, `scanner_discovered_files`
@@ -132,6 +142,14 @@ Erwartung nach Aktivierung:
 - `tesseract_missing`
   - Tesseract installieren und PATH pruefen.
   - Erneut mit `--json` laufen lassen und `tesseract_found=true` verifizieren.
+- `tessdata_missing`
+  - `--tessdata-dir` explizit setzen.
+  - Sicherstellen, dass passende `*.traineddata` Dateien vorhanden sind.
+- `language_missing`
+  - Gewuenschte Sprache mit `--lang` pruefen.
+  - Fehlende Sprachdaten installieren oder auf verfuegbare Sprache wechseln.
+- `tesseract_failed`
+  - `--show-tesseract` laufen lassen und `tesseract_stderr_tail` auswerten.
 - `read_only`
   - READ_ONLY im Dev-Setup deaktivieren oder nur `--show-policy` nutzen.
 - `watch_config_table_missing`
@@ -146,3 +164,6 @@ Erwartung nach Aktivierung:
   - Erneut mit `--direct-submit-in-sandbox` starten und `job_error_code` auswerten.
 - `pii_leak`
   - Sofort stoppen; Redaction/Eventlog-Pfad regressionspruefen.
+
+Hinweis:
+- Fuer reproduzierbare Diagnostik wird `--tessdata-dir` bevorzugt statt implizitem `TESSDATA_PREFIX`.
