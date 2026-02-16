@@ -130,6 +130,8 @@ from app.lead_intake import (
 )
 from app.lead_intake.core import ConflictError
 from app.lead_intake.guard import require_lead_access
+from app.omni import get_event as omni_get_event
+from app.omni import list_events as omni_list_events
 from app.security_ua_hash import ua_hmac_sha256_hex
 from app.tags import (
     tag_assign,
@@ -857,6 +859,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers">📈 CRM</a>
       <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
       <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">📚 Knowledge</a>
+      <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations">🧾 Conversations</a>
       <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation/rules">⚙️ Automation</a>
       <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health">🩺 Autonomy Health</a>
       <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily">📊 Insights</a>
@@ -4584,6 +4587,53 @@ def entity_links_delete_action(link_id: str):
     if _is_htmx() and context_type and context_id:
         return entity_links_partial(str(context_type), str(context_id))
     return jsonify({"ok": True})
+
+
+def _conversations_error(code: str, message: str, status: int = 400):
+    if request.is_json or request.path.startswith("/api/"):
+        return json_error(code, message, status=status)
+    return (
+        _render_base(
+            f'<div class="card p-4"><h2 class="text-lg font-semibold">Conversations</h2><p class="muted mt-2">{message}</p></div>',
+            active_tab="conversations",
+        ),
+        status,
+    )
+
+
+@bp.get("/conversations")
+@login_required
+def conversations_page():
+    channel = (request.args.get("channel") or "").strip().lower() or None
+    limit = _clamp_page_size(request.args.get("limit"), default=25)
+    if limit > 50:
+        limit = 50
+    try:
+        events = omni_list_events(current_tenant(), channel=channel, limit=limit)
+    except ValueError:
+        return _conversations_error(
+            "validation_error", "Ungültiger Filter für Conversations.", status=400
+        )
+    content = render_template(
+        "omni/inbox.html",
+        events=events,
+        channel=(channel or ""),
+        limit=limit,
+    )
+    return _render_base(content, active_tab="conversations")
+
+
+@bp.get("/conversations/<event_id>")
+@login_required
+def conversations_detail_page(event_id: str):
+    try:
+        event = omni_get_event(current_tenant(), event_id)
+    except ValueError:
+        return _conversations_error("validation_error", "Ungültige Event-ID.", 400)
+    if not event:
+        return _conversations_error("not_found", "Conversation nicht gefunden.", 404)
+    content = render_template("omni/event_detail.html", event=event)
+    return _render_base(content, active_tab="conversations")
 
 
 def _knowledge_error(code: str, message: str, status: int = 400):
