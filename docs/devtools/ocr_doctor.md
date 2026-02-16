@@ -8,6 +8,8 @@
 - Optionale, explizit abgesicherte Real-DB-Policy-Aktivierung
 - Operator-Bootstrap-Hinweise (`install_hints`, `config_hints`) fuer die
   Faelle `tesseract_missing`, `tessdata_missing`, `language_missing`
+- Strukturierte Operator-Hints in `operator_hints` (OS, Probe-Zusammenfassung,
+  sanitisiertes Hint-Set)
 
 ## Sicherheitsmodell
 
@@ -28,6 +30,8 @@
 ```bash
 python -m app.devtools.cli_ocr_test --tenant dev --doctor --json
 python -m app.devtools.cli_ocr_test --tenant dev --doctor --strict --json
+python -m app.devtools.cli_ocr_test --tenant dev --doctor --doctor-only --json
+python -m app.devtools.cli_ocr_test --tenant dev --doctor --doctor-and-sandbox --json
 ```
 
 Readiness-Felder fuer OCR-v0 (introspektiv, ohne DB-Mutation):
@@ -63,6 +67,20 @@ python -m app.devtools.cli_ocr_test \
 Erzeugte Dateien:
 - `docs/devtools/ocr_doctor_proof.json`
 - `docs/devtools/ocr_sandbox_e2e_proof.json`
+
+Support-Bundle (sanitisiert, schema-only, ohne DB/Datei-Inhalte):
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor-and-sandbox \
+  --write-support-bundle \
+  --json
+```
+
+Optional:
+- `--bundle-dir <dir>`
+- `--zip-bundle` / `--no-zip-bundle`
 
 ## Optional: reale Policy-Aktivierung (explizit)
 

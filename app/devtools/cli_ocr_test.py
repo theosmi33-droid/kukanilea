@@ -5,6 +5,7 @@ import json
 import os
 import re
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,8 @@ def _reason_message(reason: str | None) -> str:
         return "Invalid CLI argument combination."
     if key == "commit_guard_failed":
         return "Real policy commit refused by guard."
+    if key == "support_bundle_failed":
+        return "Support bundle creation failed."
     return "OCR test failed."
 
 
@@ -106,6 +109,12 @@ def _write_proof_bundle(
     _atomic_write_text(
         smoke_path, json.dumps(report.get("smoke") or {}, sort_keys=True) + "\n"
     )
+
+
+def _default_bundle_dir(tenant: str) -> Path:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    safe_tenant = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(tenant or "default"))[:64]
+    return Path("docs/devtools/support_bundles") / f"{stamp}-{safe_tenant}"
 
 
 def _status_enabled(status: dict[str, Any]) -> bool | None:
@@ -307,6 +316,13 @@ def main() -> int:
     parser.add_argument("--proof-dir", default="docs/devtools")
     parser.add_argument("--report-json-path")
     parser.add_argument("--report-text-path")
+    parser.add_argument("--write-support-bundle", action="store_true")
+    parser.add_argument("--bundle-dir")
+    parser.add_argument("--zip-bundle", dest="zip_bundle", action="store_true")
+    parser.add_argument("--no-zip-bundle", dest="zip_bundle", action="store_false")
+    parser.add_argument("--doctor-only", action="store_true")
+    parser.add_argument("--doctor-and-sandbox", action="store_true")
+    parser.set_defaults(zip_bundle=True)
     args = parser.parse_args()
 
     try:
@@ -330,6 +346,7 @@ def main() -> int:
             create_sandbox_copy,
             resolve_core_db_path,
         )
+        from app.devtools.support_bundle import write_support_bundle
         from app.devtools.tesseract_probe import probe_tesseract
 
         tenant = str(args.tenant or "").strip() or "default"
@@ -340,6 +357,9 @@ def main() -> int:
         )
         base_db = resolve_core_db_path()
         base_status = get_policy_status(tenant, db_path=base_db)
+
+        if bool(args.write_support_bundle) and not bool(args.doctor):
+            args.doctor = True
 
         if args.doctor and (args.show_policy or args.show_tesseract):
             result = _policy_view_payload(
@@ -358,6 +378,45 @@ def main() -> int:
             return 1
 
         if args.doctor:
+            if bool(args.doctor_only) and bool(args.doctor_and_sandbox):
+                result = _policy_view_payload(
+                    tenant=tenant,
+                    status=base_status,
+                    next_actions=next_actions_for_reason("invalid_args"),
+                )
+                result["ok"] = False
+                result["reason"] = "invalid_args"
+                result["policy_reason"] = "invalid_args"
+                result["message"] = _reason_message("invalid_args")
+                if args.json:
+                    print(json.dumps(result, sort_keys=True))
+                else:
+                    print(_human_report(result))
+                return 1
+
+            if bool(args.doctor_only):
+                run_sandbox_e2e = False
+            elif bool(args.doctor_and_sandbox) or bool(args.write_support_bundle):
+                run_sandbox_e2e = True
+            else:
+                run_sandbox_e2e = not bool(args.no_sandbox)
+
+            if bool(args.no_sandbox) and run_sandbox_e2e:
+                result = _policy_view_payload(
+                    tenant=tenant,
+                    status=base_status,
+                    next_actions=next_actions_for_reason("invalid_args"),
+                )
+                result["ok"] = False
+                result["reason"] = "invalid_args"
+                result["policy_reason"] = "invalid_args"
+                result["message"] = _reason_message("invalid_args")
+                if args.json:
+                    print(json.dumps(result, sort_keys=True))
+                else:
+                    print(_human_report(result))
+                return 1
+
             report, doctor_exit = run_ocr_doctor(
                 tenant,
                 json_mode=bool(args.json),
@@ -377,26 +436,65 @@ def main() -> int:
                 lang=(preferred_langs[0] if preferred_langs else None),
                 commit_real_policy=bool(args.commit_real_policy),
                 yes_really_commit=str(args.yes_really_commit or "").strip() or None,
+                run_sandbox_e2e=bool(run_sandbox_e2e),
             )
             if str(args.report_json_path or "").strip():
-                Path(str(args.report_json_path)).write_text(
+                _atomic_write_text(
+                    Path(str(args.report_json_path)),
                     report_to_json(report) + "\n",
-                    encoding="utf-8",
                 )
             if str(args.report_text_path or "").strip():
-                Path(str(args.report_text_path)).write_text(
+                _atomic_write_text(
+                    Path(str(args.report_text_path)),
                     format_doctor_report(report) + "\n",
-                    encoding="utf-8",
                 )
             if bool(args.write_proof):
                 _write_proof_bundle(
                     report=report,
                     proof_dir=Path(str(args.proof_dir or "docs/devtools")),
                 )
+            if bool(args.write_support_bundle):
+                bundle_dir = (
+                    Path(str(args.bundle_dir))
+                    if str(args.bundle_dir or "").strip()
+                    else _default_bundle_dir(tenant)
+                )
+                bundle = write_support_bundle(
+                    tenant,
+                    bundle_dir,
+                    doctor_result=report,
+                    sandbox_e2e_result=report.get("smoke") if run_sandbox_e2e else None,
+                    extra={
+                        "strict_mode": bool(args.strict),
+                        "doctor_mode": True,
+                        "run_sandbox_e2e": bool(run_sandbox_e2e),
+                    },
+                    atomic=True,
+                    zip_bundle=bool(args.zip_bundle),
+                )
+                report["support_bundle"] = bundle
+                if not bool(bundle.get("ok")):
+                    report["ok"] = False
+                    report["reason"] = "support_bundle_failed"
+                    report["message"] = _reason_message("support_bundle_failed")
+                    report["next_actions"] = list(
+                        dict.fromkeys(
+                            [
+                                *list(report.get("next_actions") or []),
+                                "Re-run with --write-support-bundle and verify output directory permissions.",
+                            ]
+                        )
+                    )
+                    doctor_exit = 1
             if args.json:
                 print(report_to_json(report))
             else:
                 print(format_doctor_report(report))
+                if report.get("support_bundle"):
+                    bundle = dict(report.get("support_bundle") or {})
+                    print(f"support_bundle_ok: {bool(bundle.get('ok'))}")
+                    print(f"support_bundle_dir: {bundle.get('bundle_dir') or '-'}")
+                    print(f"support_bundle_zip: {bundle.get('zip_path') or '-'}")
             return int(doctor_exit)
 
         if not _valid_tesseract_bin(tesseract_bin_override):

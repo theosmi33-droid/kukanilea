@@ -29,6 +29,7 @@ def _sha256_file(path: Path) -> str:
 
 
 ABS_PATH_RE = re.compile(r"(^|[^A-Za-z0-9])/(Users|home)/")
+WIN_ABS_RE = re.compile(r"[A-Za-z]:\\")
 
 
 def test_run_ocr_doctor_schema_and_exit_ok(monkeypatch, tmp_path: Path) -> None:
@@ -113,6 +114,8 @@ def test_run_ocr_doctor_schema_and_exit_ok(monkeypatch, tmp_path: Path) -> None:
     assert report["tenant_id"] == "dev"
     assert "environment" in report
     assert "smoke" in report
+    assert "operator_hints" in report
+    assert report["operator_hints"]["paths_sanitized"] is True
     assert report["job_status"] == "done"
     assert "pilot+test@example.com" not in json.dumps(report, sort_keys=True)
 
@@ -421,6 +424,8 @@ def test_run_ocr_doctor_hints_for_common_bootstrap_reasons(
     assert report["install_hints"] == []
     assert report["config_hints"]
     assert any("--tessdata-dir" in hint for hint in report["config_hints"])
+    assert report["operator_hints"]["install_hints"] == []
+    assert report["operator_hints"]["config_hints"]
 
     monkeypatch.setattr(
         ocr_doctor,
@@ -462,6 +467,9 @@ def test_run_ocr_doctor_hints_for_common_bootstrap_reasons(
     assert report_missing["reason"] == "tesseract_missing"
     assert report_missing["install_hints"]
     assert report_missing["config_hints"]
+    serialized = json.dumps(report_missing, sort_keys=True)
+    assert ABS_PATH_RE.search(serialized) is None
+    assert WIN_ABS_RE.search(serialized) is None
 
 
 def test_cli_doctor_write_proof_bundle_sanitized(

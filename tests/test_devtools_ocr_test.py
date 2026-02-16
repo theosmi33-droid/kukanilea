@@ -1109,3 +1109,142 @@ def test_cli_show_tesseract_ok_with_warnings_strict_exit_1(
     assert exit_code == 1
     assert payload["ok"] is False
     assert payload["reason"] == "tesseract_warning"
+
+
+def test_cli_doctor_write_support_bundle_keeps_exit_contract(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    import app.devtools.ocr_doctor as doctor_mod
+    import app.devtools.ocr_policy as policy_mod
+    import app.devtools.sandbox as sandbox_mod
+    import app.devtools.support_bundle as bundle_mod
+
+    base_db = tmp_path / "base.sqlite3"
+    sqlite3.connect(str(base_db)).close()
+    monkeypatch.setattr(sandbox_mod, "resolve_core_db_path", lambda: base_db)
+    monkeypatch.setattr(
+        policy_mod,
+        "get_policy_status",
+        lambda _tenant_id, *, db_path: {
+            "ok": True,
+            "policy_enabled": True,
+            "ocr_column": "allow_ocr",
+            "row_present": True,
+            "existing_columns": ["tenant_id", "allow_ocr", "updated_at"],
+            "table": "knowledge_source_policies",
+        },
+    )
+    monkeypatch.setattr(
+        doctor_mod,
+        "run_ocr_doctor",
+        lambda *args, **kwargs: (
+            {
+                "ok": True,
+                "reason": "ok_with_warnings",
+                "tenant_id": "dev",
+                "smoke": {"ok": True, "reason": None},
+                "next_actions": [],
+            },
+            2,
+        ),
+    )
+
+    captured: dict[str, object] = {}
+
+    def _bundle(*args, **kwargs):
+        captured["sandbox_e2e_result"] = kwargs.get("sandbox_e2e_result")
+        return {
+            "ok": True,
+            "bundle_dir": "docs/devtools/support_bundles/x",
+            "zip_path": "docs/devtools/support_bundles/x/support_bundle.zip",
+            "files": ["ocr_doctor.json", "schema_snapshot.json"],
+            "reason": None,
+        }
+
+    monkeypatch.setattr(bundle_mod, "write_support_bundle", _bundle)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cli_ocr_test",
+            "--tenant",
+            "dev",
+            "--doctor",
+            "--doctor-only",
+            "--write-support-bundle",
+            "--json",
+        ],
+    )
+    exit_code = cli_ocr_test.main()
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 2
+    assert payload["reason"] == "ok_with_warnings"
+    assert payload["support_bundle"]["ok"] is True
+    assert captured["sandbox_e2e_result"] is None
+
+
+def test_cli_doctor_support_bundle_failure_forces_error(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    import app.devtools.ocr_doctor as doctor_mod
+    import app.devtools.ocr_policy as policy_mod
+    import app.devtools.sandbox as sandbox_mod
+    import app.devtools.support_bundle as bundle_mod
+
+    base_db = tmp_path / "base.sqlite3"
+    sqlite3.connect(str(base_db)).close()
+    monkeypatch.setattr(sandbox_mod, "resolve_core_db_path", lambda: base_db)
+    monkeypatch.setattr(
+        policy_mod,
+        "get_policy_status",
+        lambda _tenant_id, *, db_path: {
+            "ok": True,
+            "policy_enabled": True,
+            "ocr_column": "allow_ocr",
+            "row_present": True,
+            "existing_columns": ["tenant_id", "allow_ocr", "updated_at"],
+            "table": "knowledge_source_policies",
+        },
+    )
+    monkeypatch.setattr(
+        doctor_mod,
+        "run_ocr_doctor",
+        lambda *args, **kwargs: (
+            {
+                "ok": True,
+                "reason": None,
+                "tenant_id": "dev",
+                "smoke": {"ok": True, "reason": None},
+                "next_actions": [],
+            },
+            0,
+        ),
+    )
+    monkeypatch.setattr(
+        bundle_mod,
+        "write_support_bundle",
+        lambda *args, **kwargs: {
+            "ok": False,
+            "bundle_dir": "docs/devtools/support_bundles/x",
+            "zip_path": None,
+            "files": [],
+            "reason": "permission_denied",
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cli_ocr_test",
+            "--tenant",
+            "dev",
+            "--doctor",
+            "--write-support-bundle",
+            "--json",
+        ],
+    )
+    exit_code = cli_ocr_test.main()
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["reason"] == "support_bundle_failed"
+    assert payload["support_bundle"]["ok"] is False
