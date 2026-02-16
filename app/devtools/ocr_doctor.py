@@ -258,13 +258,21 @@ def _doctor_next_actions(reason: str | None, probe_actions: list[str]) -> list[s
 
 def _doctor_install_hints(reason: str | None) -> list[str]:
     key = str(reason or "")
-    if key not in {"tesseract_missing", "tesseract_not_allowlisted"}:
+    if key not in {
+        "tesseract_missing",
+        "tesseract_not_allowlisted",
+        "tesseract_exec_failed",
+    }:
         return []
     system = platform.system().casefold()
     hints = ["Validate installation with: tesseract --version"]
     if key == "tesseract_not_allowlisted":
         hints.append(
             "Use an allowlisted install prefix or set KUKANILEA_TESSERACT_ALLOWED_PREFIXES to a safe non-root prefix."
+        )
+    elif key == "tesseract_exec_failed":
+        hints.append(
+            "Binary exists but execution failed; verify local permissions/sandboxing and rerun doctor."
         )
     else:
         hints.append(
@@ -320,6 +328,11 @@ def _doctor_config_hints(
             "Check runtime allowlist prefixes and keep them narrow (no filesystem root).",
             "Set KUKANILEA_TESSERACT_ALLOWED_PREFIXES with a safe prefix (e.g. /opt/homebrew).",
         ]
+    if key == "tesseract_exec_failed":
+        return [
+            "Inspect tesseract_exec_errno and sanitized stderr_tail in doctor output.",
+            "Retry with an explicit --tesseract-bin and verify executable permissions.",
+        ]
     return []
 
 
@@ -358,6 +371,13 @@ def format_doctor_report(report: dict[str, Any]) -> str:
         f"tesseract_allowlisted: {bool(report.get('tesseract_allowlisted'))}",
         f"tesseract_allowlist_reason: {report.get('tesseract_allowlist_reason') or '-'}",
         f"tesseract_allowed_prefixes: {report.get('tesseract_allowed_prefixes') or '-'}",
+        f"tesseract_bin_used_probe: {report.get('tesseract_bin_used_probe') or '-'}",
+        f"tesseract_resolution_source_probe: {report.get('tesseract_resolution_source_probe') or '-'}",
+        f"tesseract_bin_used_job: {report.get('tesseract_bin_used_job') or '-'}",
+        f"tesseract_resolution_source_job: {report.get('tesseract_resolution_source_job') or '-'}",
+        f"tesseract_allowlisted_job: {report.get('tesseract_allowlisted_job')}",
+        f"tesseract_allowlist_reason_job: {report.get('tesseract_allowlist_reason_job') or '-'}",
+        f"tesseract_exec_errno: {report.get('tesseract_exec_errno') if report.get('tesseract_exec_errno') is not None else '-'}",
         f"tesseract_version: {report.get('tesseract_version') or '-'}",
         f"lang_used: {report.get('lang_used') or '-'}",
         f"job_status: {report.get('job_status') or '-'}",
@@ -597,6 +617,12 @@ def run_ocr_doctor(
         "tesseract_allowed_prefixes": [
             str(item) for item in list(probe.get("tesseract_allowed_prefixes") or [])
         ],
+        "tesseract_bin_used_probe": str(
+            probe.get("tesseract_bin_used") or probe.get("bin_path") or ""
+        )
+        or None,
+        "tesseract_resolution_source_probe": str(probe.get("resolution_source") or "")
+        or None,
         "tesseract_bin_used": str(
             probe.get("tesseract_bin_used") or probe.get("bin_path") or ""
         ),
@@ -653,6 +679,11 @@ def run_ocr_doctor(
         "smoke": smoke,
         "job_status": smoke.get("job_status"),
         "job_error_code": smoke.get("job_error_code"),
+        "tesseract_bin_used_job": smoke.get("tesseract_bin_used_job"),
+        "tesseract_resolution_source_job": smoke.get("tesseract_resolution_source_job"),
+        "tesseract_allowlisted_job": smoke.get("tesseract_allowlisted_job"),
+        "tesseract_allowlist_reason_job": smoke.get("tesseract_allowlist_reason_job"),
+        "tesseract_exec_errno": smoke.get("tesseract_exec_errno"),
         "scanner_discovered_files": int(smoke.get("scanner_discovered_files") or 0),
         "watch_config_seeded": bool(smoke.get("watch_config_seeded")),
         "watch_config_existed": smoke.get("watch_config_existed"),

@@ -6,6 +6,7 @@ Dieses Runbook behebt die OCR-Doctor-Fehler:
 
 - `tesseract_missing`
 - `tesseract_not_allowlisted`
+- `tesseract_exec_failed`
 - `tessdata_missing`
 - `language_missing`
 
@@ -39,6 +40,12 @@ export KUKANILEA_TESSERACT_ALLOWED_PREFIXES="/opt/homebrew:/usr/local/bin"
 ```
 
 Wichtig: Niemals Root-Prefixe setzen (`/`, `C:\\`).
+
+Wenn `tesseract_exec_failed` erscheint:
+
+- Binary wurde gefunden und ist allowlisted, aber der Prozessstart schlug fehl.
+- In Doctor-Ausgabe `tesseract_exec_errno` und `stderr_tail` pruefen.
+- Dateirechte / lokale Security-Policies pruefen und mit explizitem `--tesseract-bin` erneut testen.
 
 ## 2) Sprachdaten pruefen
 

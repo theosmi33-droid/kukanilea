@@ -138,6 +138,9 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `tessdata_dir`, `tessdata_source`
 - `print_tessdata_dir`, `tessdata_candidates`, `tesseract_bin_used`
 - `tesseract_allowlisted`, `tesseract_allowlist_reason`, `tesseract_allowed_prefixes`
+- `tesseract_bin_used_probe`, `tesseract_resolution_source_probe`
+- `tesseract_bin_used_job`, `tesseract_resolution_source_job`
+- `tesseract_allowlisted_job`, `tesseract_allowlist_reason_job`, `tesseract_exec_errno`
 - `tesseract_version`, `supports_print_tessdata_dir`
 - `tessdata_prefix_used`
 - `tesseract_langs`, `tesseract_lang_used`
@@ -225,6 +228,10 @@ Erwartung nach Aktivierung:
   - Binary ist vorhanden, aber ausserhalb der Runtime-Allowlist.
   - Entweder in erlaubten Prefix installieren oder `KUKANILEA_TESSERACT_ALLOWED_PREFIXES` auf einen sicheren Prefix setzen.
   - Keine Root-Prefixe verwenden (`/`, `C:\\`).
+- `tesseract_exec_failed`
+  - Binary ist aufgeloest/allowlisted, aber Prozessstart fehlgeschlagen.
+  - `tesseract_exec_errno` und `tesseract_stderr_tail` pruefen.
+  - Mit explizitem `--tesseract-bin` erneut testen und Dateirechte/Runtime-Policies pruefen.
 - `tessdata_missing`
   - `--tessdata-dir` explizit setzen.
   - Sicherstellen, dass passende `*.traineddata` Dateien vorhanden sind.

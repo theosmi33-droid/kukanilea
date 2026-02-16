@@ -95,7 +95,7 @@ def test_ocr_subprocess_contract_and_redaction(tmp_path: Path, monkeypatch) -> N
     assert result["ok"] is True
     assert isinstance(captured.get("cmd"), list)
     cmd = captured["cmd"]
-    assert cmd[0] == "/usr/bin/tesseract"
+    assert str(cmd[0]).endswith("/tesseract")
     assert cmd[2] == "stdout"
     assert cmd[3] == "-l"
     assert cmd[4] == "eng"
@@ -152,6 +152,7 @@ def test_ocr_subprocess_uses_tessdata_override(tmp_path: Path, monkeypatch) -> N
     monkeypatch.setattr(
         ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
     )
+    monkeypatch.setattr(ocr_mod.shutil, "which", lambda _name: None)
     monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
 
     app = Flask(__name__)
@@ -436,3 +437,29 @@ def test_run_tesseract_override_not_allowlisted(tmp_path: Path, monkeypatch) -> 
     )
     assert text is None
     assert error == "tesseract_not_allowlisted"
+
+
+def test_run_tesseract_exec_failed_errno(tmp_path: Path, monkeypatch) -> None:
+    image_path = tmp_path / "input.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")
+    override_bin = tmp_path / "tesseract"
+    override_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    override_bin.chmod(0o755)
+    monkeypatch.setenv("KUKANILEA_TESSERACT_ALLOWED_PREFIXES", str(tmp_path))
+
+    def _fake_run(*_args, **_kwargs):
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
+
+    text, error, _truncated, stderr_tail = ocr_mod._run_tesseract(
+        image_path,
+        lang="eng",
+        timeout_sec=2,
+        max_chars=1024,
+        tesseract_bin_override=str(override_bin),
+        allow_retry=False,
+    )
+    assert text is None
+    assert error == "tesseract_exec_failed"
+    assert "errno=13" in str(stderr_tail or "")

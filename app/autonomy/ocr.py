@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -8,10 +9,11 @@ import subprocess
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Mapping
 
 from flask import current_app, has_app_context
 
@@ -234,6 +236,73 @@ def classify_tesseract_path(
     return result
 
 
+@dataclass(frozen=True)
+class ResolvedTesseractBin:
+    requested: str | None
+    resolved_path: str | None
+    exists: bool
+    executable: bool
+    allowlisted: bool
+    allowlist_reason: str | None
+    allowed_prefixes: tuple[str, ...]
+    resolution_source: Literal["explicit", "path", "none"]
+    os_error_errno: int | None = None
+    os_error_type: str | None = None
+
+
+def resolve_tesseract_binary(
+    requested_bin: str | None = None,
+    env: Mapping[str, str] | None = None,
+    *,
+    platform_name: str | None = None,
+) -> ResolvedTesseractBin:
+    env_map = dict(os.environ)
+    if env:
+        env_map.update(dict(env))
+
+    requested = str(requested_bin or "").strip() or None
+    if requested:
+        candidate = requested
+        source: Literal["explicit", "path", "none"] = "explicit"
+    else:
+        try:
+            candidate = shutil.which("tesseract", path=env_map.get("PATH"))
+        except TypeError:
+            candidate = shutil.which("tesseract")
+        source = "path" if candidate else "none"
+
+    if not candidate:
+        prefixes = _allowed_tesseract_prefixes(platform_name=platform_name, env=env_map)
+        return ResolvedTesseractBin(
+            requested=requested,
+            resolved_path=None,
+            exists=False,
+            executable=False,
+            allowlisted=False,
+            allowlist_reason="path_missing_or_not_executable",
+            allowed_prefixes=tuple(str(p) for p in prefixes),
+            resolution_source="none",
+        )
+
+    classified = classify_tesseract_path(
+        candidate,
+        platform_name=platform_name,
+        env=env_map,
+    )
+    return ResolvedTesseractBin(
+        requested=requested,
+        resolved_path=str(classified.get("normalized") or candidate),
+        exists=bool(classified.get("exists")),
+        executable=bool(classified.get("executable")),
+        allowlisted=bool(classified.get("allowlisted")),
+        allowlist_reason=str(classified.get("allowlist_reason") or "") or None,
+        allowed_prefixes=tuple(
+            str(item) for item in list(classified.get("allowed_prefixes") or [])
+        ),
+        resolution_source=source,
+    )
+
+
 def ocr_allowed(tenant_id: str) -> bool:
     tenant = _tenant(tenant_id)
     policy = knowledge_policy_get(tenant)
@@ -244,14 +313,14 @@ def is_supported_image_path(path: Path | str) -> bool:
     return Path(str(path)).suffix.lower() in IMAGE_EXTS
 
 
-def resolve_tesseract_bin() -> Path | None:
-    location = shutil.which("tesseract")
-    if not location:
+def resolve_tesseract_bin(
+    requested_bin: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path | None:
+    resolved = resolve_tesseract_binary(requested_bin=requested_bin, env=env)
+    if not (resolved.exists and resolved.executable and resolved.allowlisted):
         return None
-    classification = classify_tesseract_path(location)
-    if str(classification.get("reason") or "") != "ok":
-        return None
-    return Path(str(location)).expanduser()
+    return Path(str(resolved.resolved_path or "")).expanduser()
 
 
 def _event_emit(
@@ -375,21 +444,13 @@ def _run_tesseract(
 ) -> tuple[str | None, str | None, int, str | None]:
     from app.devtools.tesseract_probe import probe_tesseract
 
-    if str(tesseract_bin_override or "").strip():
-        candidate = Path(str(tesseract_bin_override)).expanduser()
-        classification = classify_tesseract_path(candidate)
-        reason = str(classification.get("reason") or "")
-        if reason and reason != "ok":
-            return None, reason, 0, None
-        binary = Path(str(classification.get("normalized") or candidate))
-    else:
-        binary = resolve_tesseract_bin()
-    if binary is None:
-        which_path = shutil.which("tesseract")
-        if which_path:
-            classification = classify_tesseract_path(which_path)
-            if str(classification.get("reason") or "") == "tesseract_not_allowlisted":
-                return None, "tesseract_not_allowlisted", 0, None
+    resolved = resolve_tesseract_binary(requested_bin=tesseract_bin_override)
+    if not resolved.exists or not resolved.executable:
+        return None, "tesseract_missing", 0, None
+    if not resolved.allowlisted:
+        return None, "tesseract_not_allowlisted", 0, None
+    binary = Path(str(resolved.resolved_path or "")).expanduser()
+    if not str(binary):
         return None, "tesseract_missing", 0, None
 
     def _sanitize_stderr(text: str | None) -> str | None:
@@ -451,6 +512,15 @@ def _run_tesseract(
             )
         except subprocess.TimeoutExpired:
             return None, "timeout", 0, "timeout"
+        except (FileNotFoundError, OSError) as exc:
+            errno = getattr(exc, "errno", None)
+            errno_part = f"errno={errno};" if errno is not None else ""
+            return (
+                None,
+                "tesseract_exec_failed",
+                0,
+                _sanitize_stderr(f"{errno_part}{type(exc).__name__}"),
+            )
         except Exception as exc:
             return None, "tesseract_failed", 0, type(exc).__name__
         if int(proc.returncode or 0) != 0:
@@ -788,6 +858,7 @@ def submit_ocr_for_source_file(
         data={"job_id": job_id, "source_file_id": source_file},
     )
 
+    job_resolution = resolve_tesseract_binary(requested_bin=tesseract_bin_override)
     started = time.monotonic()
     text_out, error_code, truncated, _stderr_tail = _run_tesseract(
         target,
@@ -800,6 +871,12 @@ def submit_ocr_for_source_file(
     )
     duration_ms = int(round((time.monotonic() - started) * 1000))
     if error_code:
+        exec_errno: int | None = None
+        if error_code == "tesseract_exec_failed" and str(_stderr_tail or "").strip():
+            match = re.search(r"errno=(\d+)", str(_stderr_tail))
+            if match:
+                with contextlib.suppress(Exception):
+                    exec_errno = int(match.group(1))
         _job_finish(
             tenant_id=tenant,
             job_id=job_id,
@@ -825,6 +902,12 @@ def submit_ocr_for_source_file(
             "job_id": job_id,
             "status": "failed",
             "error_code": error_code,
+            "stderr_tail": str(_stderr_tail or "") or None,
+            "exec_errno": exec_errno,
+            "tesseract_bin_used": job_resolution.resolved_path,
+            "tesseract_allowlisted": bool(job_resolution.allowlisted),
+            "tesseract_allowlist_reason": job_resolution.allowlist_reason,
+            "tesseract_resolution_source": job_resolution.resolution_source,
         }
 
     redacted = knowledge_redact_text(
@@ -896,6 +979,10 @@ def submit_ocr_for_source_file(
         "chars_out": chars_out,
         "duration_ms": duration_ms,
         "truncated": int(truncated),
+        "tesseract_bin_used": job_resolution.resolved_path,
+        "tesseract_allowlisted": bool(job_resolution.allowlisted),
+        "tesseract_allowlist_reason": job_resolution.allowlist_reason,
+        "tesseract_resolution_source": job_resolution.resolution_source,
     }
 
 

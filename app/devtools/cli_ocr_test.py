@@ -20,6 +20,8 @@ def _reason_message(reason: str | None) -> str:
         return "Tesseract binary not found."
     if key == "tesseract_not_allowlisted":
         return "Tesseract binary is present but not allowlisted."
+    if key == "tesseract_exec_failed":
+        return "Tesseract binary resolved, but execution failed."
     if key == "tessdata_missing":
         return "Tesseract data files were not found."
     if key == "language_missing":
@@ -174,6 +176,13 @@ def _policy_view_payload(
         "tesseract_allowlisted": False,
         "tesseract_allowlist_reason": None,
         "tesseract_allowed_prefixes": [],
+        "tesseract_bin_used_probe": None,
+        "tesseract_resolution_source_probe": None,
+        "tesseract_bin_used_job": None,
+        "tesseract_resolution_source_job": None,
+        "tesseract_allowlisted_job": None,
+        "tesseract_allowlist_reason_job": None,
+        "tesseract_exec_errno": None,
         "tesseract_version": None,
         "supports_print_tessdata_dir": False,
         "tessdata_dir": None,
@@ -234,6 +243,13 @@ def _human_report(result: dict) -> str:
         f"tesseract_allowlisted: {bool(result.get('tesseract_allowlisted'))}",
         f"tesseract_allowlist_reason: {result.get('tesseract_allowlist_reason') or '-'}",
         f"tesseract_allowed_prefixes: {result.get('tesseract_allowed_prefixes') or '-'}",
+        f"tesseract_bin_used_probe: {result.get('tesseract_bin_used_probe') or '-'}",
+        f"tesseract_resolution_source_probe: {result.get('tesseract_resolution_source_probe') or '-'}",
+        f"tesseract_bin_used_job: {result.get('tesseract_bin_used_job') or '-'}",
+        f"tesseract_resolution_source_job: {result.get('tesseract_resolution_source_job') or '-'}",
+        f"tesseract_allowlisted_job: {result.get('tesseract_allowlisted_job')}",
+        f"tesseract_allowlist_reason_job: {result.get('tesseract_allowlist_reason_job') or '-'}",
+        f"tesseract_exec_errno: {result.get('tesseract_exec_errno') if result.get('tesseract_exec_errno') is not None else '-'}",
         f"tesseract_version: {result.get('tesseract_version') or '-'}",
         f"supports_print_tessdata_dir: {bool(result.get('supports_print_tessdata_dir'))}",
         f"tessdata_dir: {result.get('tessdata_dir') or '-'}",
@@ -550,6 +566,13 @@ def main() -> int:
                 _sanitize_path(str(item))
                 for item in list(probe.get("tesseract_allowed_prefixes") or [])
             ]
+            result["tesseract_bin_used_probe"] = _sanitize_path(
+                str(probe.get("tesseract_bin_used") or probe.get("bin_path") or "")
+                or None
+            )
+            result["tesseract_resolution_source_probe"] = (
+                str(probe.get("resolution_source") or "") or None
+            )
             result["tessdata_dir"] = _sanitize_path(
                 str(
                     probe.get("tessdata_prefix")
@@ -734,6 +757,12 @@ def main() -> int:
         _sanitize_path(str(item))
         for item in list(result.get("tesseract_allowed_prefixes") or [])
     ]
+    result["tesseract_bin_used_probe"] = _sanitize_path(
+        str(result.get("tesseract_bin_used_probe") or "") or None
+    )
+    result["tesseract_bin_used_job"] = _sanitize_path(
+        str(result.get("tesseract_bin_used_job") or "") or None
+    )
     result["tessdata_prefix_used"] = result.get("tessdata_dir")
     result["lang_used"] = result.get("tesseract_lang_used")
     result["probe_reason"] = result.get("tesseract_probe_reason")

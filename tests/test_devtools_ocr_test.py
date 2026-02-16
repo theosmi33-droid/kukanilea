@@ -275,6 +275,91 @@ def test_run_ocr_test_tesseract_not_allowlisted(monkeypatch) -> None:
     assert any("allowlist" in str(item).lower() for item in result["next_actions"])
 
 
+def test_run_ocr_test_uses_probe_bin_path_for_job(monkeypatch) -> None:
+    import app.autonomy.ocr as autonomy_ocr
+
+    monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
+    monkeypatch.setattr(
+        ocr_test, "get_policy_status", lambda *_args, **_kwargs: _policy_ok(True)
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "_preflight_status",
+        lambda _tenant: {
+            "policy_enabled": True,
+            "tesseract_found": True,
+            "read_only": False,
+        },
+    )
+    monkeypatch.setattr(
+        ocr_test,
+        "probe_tesseract",
+        lambda **_kwargs: {
+            "ok": True,
+            "reason": "ok",
+            "tesseract_found": True,
+            "tesseract_allowlisted": True,
+            "tesseract_allowlist_reason": "matched_prefix",
+            "tesseract_allowed_prefixes": ["/opt/homebrew"],
+            "bin_path": "/opt/homebrew/bin/tesseract",
+            "tesseract_bin_used": "<path>",
+            "tessdata_prefix": "/opt/homebrew/share",
+            "tessdata_dir_used": "/opt/homebrew/share",
+            "tessdata_source": "cli",
+            "langs": ["eng"],
+            "lang_selected": "eng",
+            "warnings": [],
+            "stderr_tail": None,
+            "next_actions": [],
+        },
+    )
+    monkeypatch.setattr(
+        autonomy_ocr,
+        "resolve_tesseract_binary",
+        lambda **_kwargs: type(
+            "Resolved",
+            (),
+            {
+                "resolved_path": "/opt/homebrew/bin/tesseract",
+                "resolution_source": "path",
+                "allowlisted": True,
+                "allowlist_reason": "matched_prefix",
+            },
+        )(),
+    )
+    captured: dict[str, object] = {}
+
+    def _round(*_args, **kwargs):
+        captured["tesseract_bin"] = kwargs.get("tesseract_bin")
+        return {
+            "job_status": "done",
+            "job_error_code": None,
+            "duration_ms": 5,
+            "chars_out": 12,
+            "truncated": False,
+            "pii_found_knowledge": False,
+            "pii_found_eventlog": False,
+            "inbox_dir_used": "/tmp/inbox",
+            "scanner_discovered_files": 1,
+            "direct_submit_used": True,
+            "source_lookup_reason": None,
+            "source_files_columns": None,
+            "tesseract_exec_errno": None,
+        }
+
+    monkeypatch.setattr(ocr_test, "_execute_test_round", _round)
+
+    result = ocr_test.run_ocr_test(
+        "TENANT_A",
+        sandbox=False,
+        direct_submit_in_sandbox=True,
+    )
+    assert result["ok"] is True
+    assert captured["tesseract_bin"] == "/opt/homebrew/bin/tesseract"
+    assert result["tesseract_bin_used_probe"] == "<path>"
+    assert result["tesseract_bin_used_job"] == "<path>"
+
+
 def test_run_ocr_test_read_only(monkeypatch) -> None:
     monkeypatch.setattr(ocr_test, "_sandbox_context", lambda **_: _dummy_ctx())
     monkeypatch.setattr(
