@@ -27,6 +27,17 @@ python -m app.devtools.cli_ocr_test \
   --report-text-path reports/ocr_doctor.txt
 ```
 
+Proof-Bundle schreiben (sanitisierte JSON-Artefakte):
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor \
+  --json \
+  --write-proof \
+  --proof-dir docs/devtools
+```
+
 Optionaler Real-DB-Commit (explizit abgesichert):
 
 ```bash
@@ -122,6 +133,8 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `inbox_dir_used`, `scanner_discovered_files`
 - `direct_submit_used`
 - `next_actions`
+- `install_hints`
+- `config_hints`
 
 ## OCR fuer Tenant `dev` aktivieren (lokal)
 
