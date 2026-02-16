@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import platform
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -149,6 +150,69 @@ def _capture_environment() -> dict[str, Any]:
     }
 
 
+def _table_exists(db_path: Path, table: str) -> bool:
+    con = sqlite3.connect(str(db_path))
+    try:
+        row = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+            (str(table),),
+        ).fetchone()
+        return row is not None
+    finally:
+        con.close()
+
+
+def _ocr_v0_readiness(db_path: Path) -> dict[str, Any]:
+    required_tables = [
+        "knowledge_source_policies",
+        "source_watch_config",
+        "source_files",
+        "autonomy_ocr_jobs",
+    ]
+    table_presence = {name: _table_exists(db_path, name) for name in required_tables}
+    missing_tables = sorted(
+        name for name, present in table_presence.items() if not present
+    )
+    tables_present = not missing_tables
+
+    ocr_v0_present = False
+    pipeline_callable = False
+    try:
+        from app.autonomy import ocr as ocr_mod
+        from app.autonomy import source_scan as scan_mod
+
+        ocr_v0_present = True
+        pipeline_callable = callable(
+            getattr(ocr_mod, "submit_ocr_for_source_file", None)
+        ) and callable(getattr(scan_mod, "scan_sources_once", None))
+    except Exception:
+        ocr_v0_present = False
+        pipeline_callable = False
+
+    next_actions: list[str] = []
+    if not ocr_v0_present:
+        next_actions.append(
+            "OCR v0 module missing: ensure app.autonomy.ocr is available on the target branch."
+        )
+    if missing_tables:
+        next_actions.append(
+            "OCR tables missing: run db init/migrations and re-check readiness."
+        )
+    if ocr_v0_present and not pipeline_callable:
+        next_actions.append(
+            "OCR pipeline call path incomplete: verify submit_ocr_for_source_file and scan_sources_once exports."
+        )
+
+    return {
+        "ocr_v0_present": bool(ocr_v0_present),
+        "ocr_v0_tables_present": bool(tables_present),
+        "ocr_v0_missing_tables": missing_tables,
+        "ocr_v0_table_presence": table_presence,
+        "ocr_v0_pipeline_callable": bool(pipeline_callable),
+        "ocr_v0_next_actions": next_actions,
+    }
+
+
 def _exit_code_for_result(result: dict[str, Any], *, strict: bool) -> int:
     ok = bool(result.get("ok"))
     reason = str(result.get("reason") or "")
@@ -214,6 +278,10 @@ def format_doctor_report(report: dict[str, Any]) -> str:
         f"direct_submit_used: {bool(report.get('direct_submit_used'))}",
         f"pii_found_knowledge: {bool(report.get('pii_found_knowledge'))}",
         f"pii_found_eventlog: {bool(report.get('pii_found_eventlog'))}",
+        f"ocr_v0_present: {bool(report.get('ocr_v0_present'))}",
+        f"ocr_v0_tables_present: {bool(report.get('ocr_v0_tables_present'))}",
+        f"ocr_v0_pipeline_callable: {bool(report.get('ocr_v0_pipeline_callable'))}",
+        f"ocr_v0_missing_tables: {report.get('ocr_v0_missing_tables') or '-'}",
         f"commit_real_policy_requested: {bool(report.get('commit_real_policy_requested'))}",
         f"commit_real_policy_applied: {bool(report.get('commit_real_policy_applied'))}",
         f"commit_real_policy_reason: {report.get('commit_real_policy_reason') or '-'}",
@@ -324,6 +392,7 @@ def run_ocr_doctor(
     env_info = _capture_environment()
 
     base_db = resolve_core_db_path()
+    readiness = _ocr_v0_readiness(base_db)
 
     probe = probe_tesseract(
         bin_path=str(tesseract_bin or "").strip() or None,
@@ -443,6 +512,14 @@ def run_ocr_doctor(
         "direct_submit_used": bool(smoke.get("direct_submit_used")),
         "pii_found_knowledge": bool(smoke.get("pii_found_knowledge")),
         "pii_found_eventlog": bool(smoke.get("pii_found_eventlog")),
+        "ocr_v0_present": bool(readiness.get("ocr_v0_present")),
+        "ocr_v0_tables_present": bool(readiness.get("ocr_v0_tables_present")),
+        "ocr_v0_missing_tables": list(readiness.get("ocr_v0_missing_tables") or []),
+        "ocr_v0_table_presence": dict(readiness.get("ocr_v0_table_presence") or {}),
+        "ocr_v0_pipeline_callable": bool(readiness.get("ocr_v0_pipeline_callable")),
+        "ocr_v0_next_actions": [
+            str(item) for item in list(readiness.get("ocr_v0_next_actions") or [])
+        ],
         "next_actions": next_actions,
     }
 
