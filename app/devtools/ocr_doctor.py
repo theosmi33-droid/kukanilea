@@ -313,6 +313,24 @@ def _doctor_config_hints(
     return []
 
 
+def _default_smoke_stub() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "reason": None,
+        "message": "doctor_only",
+        "job_status": None,
+        "job_error_code": None,
+        "scanner_discovered_files": 0,
+        "watch_config_seeded": False,
+        "watch_config_existed": None,
+        "inbox_dir_used": None,
+        "direct_submit_used": False,
+        "pii_found_knowledge": False,
+        "pii_found_eventlog": False,
+        "next_actions": [],
+    }
+
+
 def format_doctor_report(report: dict[str, Any]) -> str:
     lines = [
         "OCR Doctor Report",
@@ -321,6 +339,7 @@ def format_doctor_report(report: dict[str, Any]) -> str:
         f"reason: {report.get('reason') or '-'}",
         f"strict_mode: {bool(report.get('strict_mode'))}",
         f"sandbox: {bool(report.get('sandbox'))}",
+        f"run_sandbox_e2e: {bool(report.get('run_sandbox_e2e'))}",
         f"read_only: {bool(report.get('read_only'))}",
         f"policy_enabled_base: {report.get('policy_enabled_base')}",
         f"policy_enabled_effective: {report.get('policy_enabled_effective')}",
@@ -344,6 +363,7 @@ def format_doctor_report(report: dict[str, Any]) -> str:
         f"commit_real_policy_reason: {report.get('commit_real_policy_reason') or '-'}",
         f"install_hints: {report.get('install_hints') or '-'}",
         f"config_hints: {report.get('config_hints') or '-'}",
+        f"operator_hints: {report.get('operator_hints') or '-'}",
         f"next_actions: {report.get('next_actions') or '-'}",
         f"message: {report.get('message') or '-'}",
     ]
@@ -445,6 +465,7 @@ def run_ocr_doctor(
     lang: str | None = None,
     commit_real_policy: bool = False,
     yes_really_commit: str | None = None,
+    run_sandbox_e2e: bool = True,
 ) -> tuple[dict[str, Any], int]:
     tenant = str(tenant_id or "").strip() or "default"
     read_only = detect_read_only()
@@ -478,21 +499,27 @@ def run_ocr_doctor(
             else:
                 commit_reason = str(commit_status.get("reason") or "policy_denied")
 
-    smoke, base_status_after, effective_status, _enable_status = (
-        _smoke_result_with_policy_merge(
-            tenant_id=tenant,
-            timeout_s=max(1, int(timeout_s)),
-            strict=bool(strict),
-            no_retry=bool(no_retry),
-            tesseract_bin=tesseract_bin,
-            tessdata_dir=tessdata_dir,
-            lang=lang,
-            sandbox=bool(sandbox),
-            enable_policy_in_sandbox=bool(enable_policy_in_sandbox),
-            seed_watch_config_in_sandbox=bool(seed_watch_config_in_sandbox),
-            direct_submit_in_sandbox=bool(direct_submit_in_sandbox),
+    if run_sandbox_e2e:
+        smoke, base_status_after, effective_status, _enable_status = (
+            _smoke_result_with_policy_merge(
+                tenant_id=tenant,
+                timeout_s=max(1, int(timeout_s)),
+                strict=bool(strict),
+                no_retry=bool(no_retry),
+                tesseract_bin=tesseract_bin,
+                tessdata_dir=tessdata_dir,
+                lang=lang,
+                sandbox=bool(sandbox),
+                enable_policy_in_sandbox=bool(enable_policy_in_sandbox),
+                seed_watch_config_in_sandbox=bool(seed_watch_config_in_sandbox),
+                direct_submit_in_sandbox=bool(direct_submit_in_sandbox),
+            )
         )
-    )
+    else:
+        base_status_after = get_policy_status(tenant, db_path=base_db)
+        effective_status = base_status_after
+        smoke = _default_smoke_stub()
+        _enable_status = None
 
     reason: str | None = None
     ok = bool(smoke.get("ok"))
@@ -501,11 +528,14 @@ def run_ocr_doctor(
     if commit_reason:
         ok = False
         reason = commit_reason
-    elif not ok:
+    elif run_sandbox_e2e and not ok:
         reason = str(smoke.get("reason") or "failed")
     elif probe_reason == "ok_with_warnings":
         reason = "ok_with_warnings"
         ok = True
+    elif (not run_sandbox_e2e) and probe_reason and probe_reason != "ok":
+        reason = probe_reason
+        ok = False
 
     if bool(strict) and reason == "ok_with_warnings":
         ok = False
@@ -534,6 +564,7 @@ def run_ocr_doctor(
         "json_mode": bool(json_mode),
         "strict_mode": bool(strict),
         "sandbox": bool(sandbox),
+        "run_sandbox_e2e": bool(run_sandbox_e2e),
         "read_only": bool(read_only),
         "timeout_s": max(1, int(timeout_s)),
         "retry_enabled": not bool(no_retry),
@@ -568,6 +599,26 @@ def run_ocr_doctor(
         "tesseract_langs": [str(item) for item in list(probe.get("langs") or [])],
         "tesseract_warnings": [str(item) for item in list(probe.get("warnings") or [])],
         "tesseract_stderr_tail": str(probe.get("stderr_tail") or "") or None,
+        "operator_hints": {
+            "install_hints": list(install_hints),
+            "config_hints": list(config_hints),
+            "paths_sanitized": True,
+            "os": {
+                "name": platform.system(),
+                "release": platform.release(),
+                "python": platform.python_version(),
+            },
+            "tesseract": {
+                "probe_reason": probe_reason,
+                "version": str(probe.get("tesseract_version") or "") or None,
+                "supports_print_tessdata_dir": bool(
+                    probe.get("supports_print_tessdata_dir")
+                ),
+                "print_tessdata_dir": str(probe.get("print_tessdata_dir") or "")
+                or None,
+                "langs": [str(item) for item in list(probe.get("langs") or [])],
+            },
+        },
         "install_hints": install_hints,
         "config_hints": config_hints,
         "commit_real_policy_requested": bool(commit_real_policy),

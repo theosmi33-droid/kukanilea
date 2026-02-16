@@ -49,6 +49,12 @@ tesseract --print-tessdata-dir
 python -m app.devtools.cli_ocr_test --tenant dev --doctor --json
 ```
 
+Nur Diagnose ohne Sandbox-E2E:
+
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --doctor --doctor-only --json
+```
+
 Bei fehlenden Sprachdaten mit explizitem Verzeichnis:
 
 ```bash
@@ -76,3 +82,13 @@ Erwartete Dateien:
 
 - `docs/devtools/ocr_doctor_proof.json`
 - `docs/devtools/ocr_sandbox_e2e_proof.json`
+
+Support-Bundle fuer Tickets:
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor-and-sandbox \
+  --write-support-bundle \
+  --json
+```

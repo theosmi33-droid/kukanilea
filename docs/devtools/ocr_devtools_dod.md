@@ -31,6 +31,11 @@ python -m app.devtools.cli_ocr_test --tenant dev --doctor --strict --json
 python -m app.devtools.cli_ocr_test --tenant dev --doctor --json --write-proof --proof-dir docs/devtools
 ```
 
+7. Optionales Support-Bundle fuer Eskalation:
+```bash
+python -m app.devtools.cli_ocr_test --tenant dev --doctor-and-sandbox --write-support-bundle --json
+```
+
 5. PII-Invariante:
 - `pii_found_knowledge == false`
 - `pii_found_eventlog == false`

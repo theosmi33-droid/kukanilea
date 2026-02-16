@@ -38,6 +38,22 @@ python -m app.devtools.cli_ocr_test \
   --proof-dir docs/devtools
 ```
 
+Support-Bundle schreiben (Issue-Triage-Artefakt):
+
+```bash
+python -m app.devtools.cli_ocr_test \
+  --tenant dev \
+  --doctor-and-sandbox \
+  --write-support-bundle \
+  --json
+```
+
+Optionen:
+- `--doctor-only` (nur Doctor, kein Sandbox-E2E)
+- `--doctor-and-sandbox` (Doctor + Sandbox-E2E)
+- `--bundle-dir <dir>`
+- `--zip-bundle` / `--no-zip-bundle`
+
 Optionaler Real-DB-Commit (explizit abgesichert):
 
 ```bash
@@ -135,6 +151,8 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `next_actions`
 - `install_hints`
 - `config_hints`
+- `operator_hints`
+- `support_bundle` (wenn `--write-support-bundle` aktiv)
 
 ## OCR fuer Tenant `dev` aktivieren (lokal)
 
