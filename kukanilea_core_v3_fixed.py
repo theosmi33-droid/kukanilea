@@ -2011,28 +2011,63 @@ def task_list(
             con.close()
 
 
-def task_set_status(task_id: int, status: str, resolved_by: str = "") -> bool:
+def task_set_status(
+    task_id: int, status: str, resolved_by: str = "", tenant: str = ""
+) -> bool:
     status = normalize_component(status).upper()
+    if status == "DONE":
+        status = "RESOLVED"
     resolved_by = normalize_component(resolved_by).lower()
-    if status not in {"OPEN", "RESOLVED", "DISMISSED"}:
+    tenant = normalize_component(tenant).lower()
+    if status not in {"OPEN", "IN_PROGRESS", "RESOLVED", "DISMISSED"}:
         return False
 
     with _DB_LOCK:
         con = _db()
         try:
-            row = con.execute(
-                "SELECT id FROM tasks WHERE id=?", (int(task_id),)
-            ).fetchone()
+            if tenant:
+                row = con.execute(
+                    "SELECT id FROM tasks WHERE id=? AND tenant=?",
+                    (int(task_id), tenant),
+                ).fetchone()
+            else:
+                row = con.execute(
+                    "SELECT id FROM tasks WHERE id=?", (int(task_id),)
+                ).fetchone()
             if not row:
                 return False
-            con.execute(
-                "UPDATE tasks SET status=?, resolved_by=?, resolved_at=? WHERE id=?",
-                (status, resolved_by, _now_iso(), int(task_id)),
-            )
+            if tenant:
+                con.execute(
+                    "UPDATE tasks SET status=?, resolved_by=?, resolved_at=? WHERE id=? AND tenant=?",
+                    (status, resolved_by, _now_iso(), int(task_id), tenant),
+                )
+            else:
+                con.execute(
+                    "UPDATE tasks SET status=?, resolved_by=?, resolved_at=? WHERE id=?",
+                    (status, resolved_by, _now_iso(), int(task_id)),
+                )
             con.commit()
             return True
         finally:
             con.close()
+
+
+def task_resolve(task_id: int, resolved_by: str = "", tenant: str = "") -> bool:
+    return task_set_status(
+        int(task_id),
+        "RESOLVED",
+        resolved_by=resolved_by,
+        tenant=tenant,
+    )
+
+
+def task_dismiss(task_id: int, resolved_by: str = "", tenant: str = "") -> bool:
+    return task_set_status(
+        int(task_id),
+        "DISMISSED",
+        resolved_by=resolved_by,
+        tenant=tenant,
+    )
 
 
 # ============================================================
