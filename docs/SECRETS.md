@@ -8,6 +8,8 @@
 ## Local Development
 1. Copy `.env.example` to `.env` and update values.
 2. Never commit `.env` files.
+3. For local IMAP password persistence, set `EMAIL_ENCRYPTION_KEY`.
+4. If `EMAIL_ENCRYPTION_KEY` is not set, IMAP sync still works with manual password entry per sync.
 
 ## Production Guidance
 - Use a secrets manager (e.g., OS keychain or enterprise secret store).

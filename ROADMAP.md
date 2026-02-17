@@ -1,22 +1,25 @@
 # Roadmap
 
-## Phase 2 Product Core (Handwerk)
-- Work time tracking (projects, timers, approvals, CSV export).
-- Jobs/projects/tasks core with deterministic reminders.
-- Document intake → review → archive hardening.
+Stand: 2026-02-17
 
-## v1 Local Agent Orchestra
-- App factory + blueprint structure.
-- Deterministic agent orchestration (no LLM runtime).
-- Tenant-safe auth and storage boundaries.
-- Upload → Extract → Review → Archive flow.
+## Aktueller Stand
+- OCR-v0 ist integriert.
+- Ops-Suite/Doctor ist integriert.
+- Sprint-1 Kanban MVP ist integriert.
+- UX-Overhaul hat noch Security-/Compliance-Blocker (IMAP hardening, docs consolidation, review gates).
 
-## v2 Multi-Tenant Hosted
-- Hosted auth provider + stronger RBAC.
-- Tenant isolation at DB + storage layers.
-- Audit log UI and export.
+## Naechste 4 Wochen
 
-## v3 LLM Drop-in
-- LLMProvider interface implementation.
-- Optional provider selection (on-prem/cloud).
-- Summarization + intent parsing extensions.
+### KW 8-9 (Abschluss Hardening)
+- UX/Auth/Mail Sicherheitsblocker final schliessen.
+- Onboarding/Constitution/Review-Checklisten konsolidieren.
+- CI Security-Scan als Pflichtgate stabilisieren.
+
+### KW 10-11 (Pilotphase)
+- Pilotgruppe mit 3-5 Teams.
+- Fokusmetriken: Durchlaufzeiten, Fehlercodes, Support-Aufwand, Datenqualitaet.
+- Runbooks auf Basis realer Pilotfaelle nachschaerfen.
+
+### KW 12 (Auswertung + Priorisierung)
+- Pilot-Retrospektive mit faktenbasierter Priorisierung.
+- Entscheidung ueber naechsten Ausbaupfad (z. B. Invoicing/DATEV oder OCR Phase 2).

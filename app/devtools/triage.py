@@ -25,6 +25,7 @@ def run_cmd(
     try:
         completed = subprocess.run(
             args,
+            shell=False,
             capture_output=True,
             text=True,
             timeout=timeout,

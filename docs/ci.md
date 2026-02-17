@@ -14,7 +14,9 @@ python -m app.devtools.triage --ci --fail-on-warnings \
 Do not broaden the ignore regex without a concrete reason. New warning classes should be fixed at source when possible.
 
 ## Security regression subset
-CI runs a focused security subset after the full test suite:
+CI runs a static security scan and a focused security subset after the full test suite:
+
+- `python -m app.devtools.security_scan`
 
 - `tests/test_security_templates_no_safe.py`
 - `tests/test_security_forbidden_imports.py`

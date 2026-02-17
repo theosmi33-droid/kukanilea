@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import hmac
+import secrets
 from typing import Optional
 
 from flask import abort, g, redirect, request, session, url_for
@@ -13,7 +15,33 @@ ROLE_ORDER = ["READONLY", "OPERATOR", "ADMIN", "DEV"]
 
 
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    salt = secrets.token_hex(16)
+    iterations = 210000
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), bytes.fromhex(salt), iterations
+    ).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    value = str(stored_hash or "")
+    if value.startswith("pbkdf2_sha256$"):
+        parts = value.split("$", 3)
+        if len(parts) != 4:
+            return False
+        try:
+            iterations = int(parts[1])
+            salt_hex = parts[2]
+            expected = parts[3]
+            actual = hashlib.pbkdf2_hmac(
+                "sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), iterations
+            ).hex()
+            return hmac.compare_digest(actual, expected)
+        except Exception:
+            return False
+    # Legacy fallback for existing SHA256 user rows.
+    legacy = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(legacy, value)
 
 
 def init_auth(app, db: AuthDB) -> None:
