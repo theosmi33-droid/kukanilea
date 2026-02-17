@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 import re
 import sqlite3
@@ -95,6 +96,18 @@ def decrypt_bytes(value: str) -> bytes:
     ciphertext = packed[12:]
     aes = AESGCM(_email_key())
     return bytes(aes.decrypt(nonce, ciphertext, b"kukanilea-postfach-bytes"))
+
+
+def _table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(r["name"]) for r in rows}
+
+
+def _ensure_column(con: sqlite3.Connection, table: str, column_def: str) -> None:
+    col_name = str(column_def.split()[0]).strip()
+    if col_name in _table_columns(con, table):
+        return
+    con.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
 
 
 def ensure_postfach_schema(db_path: Path) -> None:
@@ -236,6 +249,66 @@ def ensure_postfach_schema(db_path: Path) -> None:
         con.execute(
             "CREATE INDEX IF NOT EXISTS idx_mailbox_links_thread ON mailbox_links(tenant_id, thread_id, created_at DESC)"
         )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mailbox_oauth_tokens(
+              id TEXT PRIMARY KEY,
+              tenant_id TEXT NOT NULL,
+              account_id TEXT NOT NULL,
+              provider TEXT NOT NULL,
+              token_type TEXT NOT NULL DEFAULT 'Bearer',
+              access_token_encrypted TEXT NOT NULL,
+              refresh_token_encrypted TEXT,
+              expires_at TEXT,
+              scopes_json TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(tenant_id, account_id, provider),
+              FOREIGN KEY(account_id) REFERENCES mailbox_accounts(id) ON DELETE CASCADE
+            )
+            """
+        )
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mailbox_oauth_tokens_account ON mailbox_oauth_tokens(tenant_id, account_id, updated_at DESC)"
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mailbox_intake_artifacts(
+              id TEXT PRIMARY KEY,
+              tenant_id TEXT NOT NULL,
+              thread_id TEXT NOT NULL,
+              schema_name TEXT NOT NULL,
+              fields_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(tenant_id, thread_id, schema_name),
+              FOREIGN KEY(thread_id) REFERENCES mailbox_threads(id) ON DELETE CASCADE
+            )
+            """
+        )
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mailbox_intake_artifacts_thread ON mailbox_intake_artifacts(tenant_id, thread_id, updated_at DESC)"
+        )
+        _ensure_column(
+            con, "mailbox_accounts", "auth_mode TEXT NOT NULL DEFAULT 'password'"
+        )
+        _ensure_column(con, "mailbox_accounts", "oauth_provider TEXT")
+        _ensure_column(
+            con,
+            "mailbox_accounts",
+            "oauth_status TEXT NOT NULL DEFAULT 'not_connected'",
+        )
+        _ensure_column(con, "mailbox_accounts", "oauth_last_error TEXT")
+        _ensure_column(con, "mailbox_accounts", "oauth_scopes TEXT")
+        _ensure_column(con, "mailbox_accounts", "last_sync_at TEXT")
+        _ensure_column(con, "mailbox_accounts", "last_sync_status TEXT")
+        _ensure_column(con, "mailbox_accounts", "last_sync_error TEXT")
+        _ensure_column(
+            con, "mailbox_accounts", "last_sync_imported INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            con, "mailbox_accounts", "last_sync_duplicates INTEGER NOT NULL DEFAULT 0"
+        )
         con.commit()
     finally:
         con.close()
@@ -277,11 +350,23 @@ def create_account(
     smtp_username: str,
     smtp_use_ssl: bool,
     secret_plain: str,
+    auth_mode: str = "password",
+    oauth_provider: str | None = None,
 ) -> str:
     ensure_postfach_schema(db_path)
-    if not str(secret_plain or "").strip():
-        raise ValueError("account_secret_required")
-    encrypted_secret = encrypt_text(secret_plain)
+    mode = str(auth_mode or "password").strip().lower()
+    provider = str(oauth_provider or "").strip().lower() or None
+    if mode not in {"password", "oauth_google", "oauth_microsoft"}:
+        raise ValueError("validation_error")
+    if mode == "password":
+        if not str(secret_plain or "").strip():
+            raise ValueError("account_secret_required")
+        encrypted_secret = encrypt_text(secret_plain)
+    else:
+        encrypted_secret = encrypt_text("__oauth__")
+        if not provider:
+            provider = "google" if mode == "oauth_google" else "microsoft"
+
     now = _now_iso()
     account_id = uuid.uuid4().hex
     con = _db(db_path)
@@ -291,8 +376,9 @@ def create_account(
             INSERT INTO mailbox_accounts(
               id, tenant_id, label, imap_host, imap_port, imap_username,
               smtp_host, smtp_port, smtp_username, smtp_use_ssl,
-              encrypted_secret, sync_cursor, created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              encrypted_secret, auth_mode, oauth_provider, oauth_status, sync_cursor,
+              created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 account_id,
@@ -306,6 +392,9 @@ def create_account(
                 smtp_username.strip() or imap_username.strip(),
                 1 if smtp_use_ssl else 0,
                 encrypted_secret,
+                mode,
+                provider,
+                "not_connected" if mode != "password" else "n/a",
                 None,
                 now,
                 now,
@@ -324,6 +413,8 @@ def create_account(
             "account_id": account_id,
             "imap_host": imap_host.strip(),
             "smtp_host": (smtp_host.strip() or imap_host.strip()),
+            "auth_mode": mode,
+            "oauth_provider": provider,
         },
     )
     return account_id
@@ -336,8 +427,10 @@ def list_accounts(db_path: Path, tenant_id: str) -> list[dict[str, Any]]:
         rows = con.execute(
             """
             SELECT id, tenant_id, label, imap_host, imap_port, imap_username,
-                   smtp_host, smtp_port, smtp_username, smtp_use_ssl, sync_cursor,
-                   created_at, updated_at
+                   smtp_host, smtp_port, smtp_username, smtp_use_ssl,
+                   auth_mode, oauth_provider, oauth_status, oauth_last_error, oauth_scopes,
+                   sync_cursor, last_sync_at, last_sync_status, last_sync_error,
+                   last_sync_imported, last_sync_duplicates, created_at, updated_at
             FROM mailbox_accounts
             WHERE tenant_id=?
             ORDER BY updated_at DESC
@@ -352,6 +445,22 @@ def list_accounts(db_path: Path, tenant_id: str) -> list[dict[str, Any]]:
             row["smtp_username_redacted"] = knowledge_redact_text(
                 str(row.get("smtp_username") or ""), max_len=120
             )
+            row["oauth_last_error"] = knowledge_redact_text(
+                str(row.get("oauth_last_error") or ""), max_len=180
+            )
+            row["last_sync_error"] = knowledge_redact_text(
+                str(row.get("last_sync_error") or ""), max_len=180
+            )
+            raw_scopes = str(row.get("oauth_scopes") or "").strip()
+            scopes_list: list[str] = []
+            if raw_scopes:
+                try:
+                    parsed = json.loads(raw_scopes)
+                    if isinstance(parsed, list):
+                        scopes_list = [str(s) for s in parsed if str(s).strip()]
+                except Exception:
+                    scopes_list = []
+            row["oauth_scopes_list"] = scopes_list
             row.pop("imap_username", None)
             row.pop("smtp_username", None)
         return out
@@ -397,6 +506,246 @@ def update_account_sync_cursor(
             """,
             (str(sync_cursor or ""), _now_iso(), tenant_id, account_id),
         )
+        con.commit()
+    finally:
+        con.close()
+
+
+def update_account_sync_report(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    account_id: str,
+    ok: bool,
+    imported: int,
+    duplicates: int,
+    error_reason: str = "",
+) -> None:
+    ensure_postfach_schema(db_path)
+    now = _now_iso()
+    con = _db(db_path)
+    try:
+        con.execute(
+            """
+            UPDATE mailbox_accounts
+            SET last_sync_at=?,
+                last_sync_status=?,
+                last_sync_error=?,
+                last_sync_imported=?,
+                last_sync_duplicates=?,
+                updated_at=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (
+                now,
+                "ok" if ok else "error",
+                str(error_reason or "").strip()[:240] or None,
+                int(imported or 0),
+                int(duplicates or 0),
+                now,
+                tenant_id,
+                account_id,
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def set_account_oauth_state(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    account_id: str,
+    oauth_status: str,
+    oauth_last_error: str = "",
+    oauth_provider: str | None = None,
+    oauth_scopes: list[str] | None = None,
+) -> None:
+    ensure_postfach_schema(db_path)
+    now = _now_iso()
+    con = _db(db_path)
+    try:
+        con.execute(
+            """
+            UPDATE mailbox_accounts
+            SET oauth_status=?,
+                oauth_last_error=?,
+                oauth_provider=COALESCE(?, oauth_provider),
+                oauth_scopes=COALESCE(?, oauth_scopes),
+                updated_at=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (
+                str(oauth_status or "").strip() or "not_connected",
+                str(oauth_last_error or "").strip()[:240] or None,
+                str(oauth_provider or "").strip() or None,
+                json.dumps(list(oauth_scopes or []), ensure_ascii=False),
+                now,
+                tenant_id,
+                account_id,
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def save_oauth_token(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    account_id: str,
+    provider: str,
+    access_token: str,
+    refresh_token: str,
+    expires_at: str,
+    scopes: list[str],
+    token_type: str = "Bearer",
+) -> str:
+    ensure_postfach_schema(db_path)
+    token_id = uuid.uuid4().hex
+    now = _now_iso()
+    con = _db(db_path)
+    try:
+        con.execute(
+            """
+            INSERT INTO mailbox_oauth_tokens(
+              id, tenant_id, account_id, provider, token_type,
+              access_token_encrypted, refresh_token_encrypted, expires_at, scopes_json,
+              created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(tenant_id, account_id, provider) DO UPDATE SET
+              token_type=excluded.token_type,
+              access_token_encrypted=excluded.access_token_encrypted,
+              refresh_token_encrypted=CASE
+                WHEN excluded.refresh_token_encrypted IS NOT NULL
+                THEN excluded.refresh_token_encrypted
+                ELSE mailbox_oauth_tokens.refresh_token_encrypted
+              END,
+              expires_at=excluded.expires_at,
+              scopes_json=excluded.scopes_json,
+              updated_at=excluded.updated_at
+            """,
+            (
+                token_id,
+                tenant_id,
+                account_id,
+                str(provider or "").strip().lower(),
+                str(token_type or "Bearer").strip(),
+                encrypt_text(access_token),
+                encrypt_text(refresh_token)
+                if str(refresh_token or "").strip()
+                else None,
+                str(expires_at or "").strip() or None,
+                json.dumps(list(scopes or []), ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+    return token_id
+
+
+def get_oauth_token(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    account_id: str,
+    provider: str | None = None,
+) -> dict[str, Any] | None:
+    ensure_postfach_schema(db_path)
+    con = _db(db_path)
+    try:
+        if provider:
+            row = con.execute(
+                """
+                SELECT *
+                FROM mailbox_oauth_tokens
+                WHERE tenant_id=? AND account_id=? AND provider=?
+                LIMIT 1
+                """,
+                (tenant_id, account_id, str(provider or "").strip().lower()),
+            ).fetchone()
+        else:
+            row = con.execute(
+                """
+                SELECT *
+                FROM mailbox_oauth_tokens
+                WHERE tenant_id=? AND account_id=?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (tenant_id, account_id),
+            ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+    finally:
+        con.close()
+
+    access = decrypt_text(str(data.get("access_token_encrypted") or ""))
+    refresh_enc = str(data.get("refresh_token_encrypted") or "")
+    refresh = decrypt_text(refresh_enc) if refresh_enc else ""
+    scopes = []
+    try:
+        raw_scopes = json.loads(str(data.get("scopes_json") or "[]"))
+        if isinstance(raw_scopes, list):
+            scopes = [str(s) for s in raw_scopes if str(s).strip()]
+    except Exception:
+        scopes = []
+
+    return {
+        "id": str(data.get("id") or ""),
+        "tenant_id": str(data.get("tenant_id") or ""),
+        "account_id": str(data.get("account_id") or ""),
+        "provider": str(data.get("provider") or ""),
+        "token_type": str(data.get("token_type") or "Bearer"),
+        "access_token": access,
+        "refresh_token": refresh,
+        "expires_at": str(data.get("expires_at") or ""),
+        "scopes": scopes,
+    }
+
+
+def oauth_token_expired(expires_at: str, *, skew_seconds: int = 60) -> bool:
+    raw = str(expires_at or "").strip()
+    if not raw:
+        return True
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return True
+    return datetime.now(timezone.utc).timestamp() >= (dt.timestamp() - skew_seconds)
+
+
+def clear_oauth_token(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    account_id: str,
+    provider: str | None = None,
+) -> None:
+    ensure_postfach_schema(db_path)
+    con = _db(db_path)
+    try:
+        if provider:
+            con.execute(
+                """
+                DELETE FROM mailbox_oauth_tokens
+                WHERE tenant_id=? AND account_id=? AND provider=?
+                """,
+                (tenant_id, account_id, str(provider or "").strip().lower()),
+            )
+        else:
+            con.execute(
+                "DELETE FROM mailbox_oauth_tokens WHERE tenant_id=? AND account_id=?",
+                (tenant_id, account_id),
+            )
         con.commit()
     finally:
         con.close()
@@ -1004,6 +1353,164 @@ def extract_structured(
     )
 
     return {"ok": True, "reason": "ok", "fields": fields}
+
+
+def extract_intake(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    schema_name: str = "intake_v1",
+) -> dict[str, Any]:
+    data = get_thread(db_path, tenant_id=tenant_id, thread_id=thread_id)
+    if not data:
+        return {"ok": False, "reason": "thread_not_found", "fields": {}}
+    messages = data.get("messages", [])
+    merged = "\n".join(str(m.get("redacted_text") or "") for m in messages)
+    subject = str((data.get("thread") or {}).get("subject_redacted") or "")
+    lowered = merged.lower()
+
+    intent = "general_inquiry"
+    if any(k in lowered for k in ["angebot", "anfrage", "preis"]):
+        intent = "quote_request"
+    elif any(k in lowered for k in ["reklamation", "defekt", "mangel"]):
+        intent = "complaint"
+    elif any(k in lowered for k in ["termin", "besichtigung", "vor ort"]):
+        intent = "appointment_request"
+
+    phone_candidates = re.findall(r"\+?\d[\d\s/().-]{6,}", merged)
+    date_candidates = re.findall(r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b", merged)
+    domain_candidates = re.findall(r"\b[a-z0-9.-]+\.[a-z]{2,}\b", lowered)
+
+    fields = {
+        "schema": str(schema_name or "intake_v1").strip().lower(),
+        "thread_id": thread_id,
+        "subject": subject,
+        "intent": intent,
+        "date_candidates": date_candidates[:8],
+        "phone_candidates": phone_candidates[:8],
+        "domain_candidates": domain_candidates[:8],
+        "message_count": len(messages),
+    }
+
+    ensure_postfach_schema(db_path)
+    now = _now_iso()
+    artifact_id = uuid.uuid4().hex
+    con = _db(db_path)
+    try:
+        con.execute(
+            """
+            INSERT INTO mailbox_intake_artifacts(
+              id, tenant_id, thread_id, schema_name, fields_json, created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(tenant_id, thread_id, schema_name) DO UPDATE SET
+              fields_json=excluded.fields_json,
+              updated_at=excluded.updated_at
+            """,
+            (
+                artifact_id,
+                tenant_id,
+                thread_id,
+                fields["schema"],
+                json.dumps(fields, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    _event(
+        event_type="mailbox_thread_intake_extracted",
+        entity_type="mailbox_thread",
+        entity_text_id=thread_id,
+        tenant_id=tenant_id,
+        payload={
+            "thread_id": thread_id,
+            "schema": fields["schema"],
+            "intent": intent,
+            "message_count": int(fields["message_count"]),
+        },
+    )
+    return {"ok": True, "reason": "ok", "fields": fields}
+
+
+def safety_check_draft(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    draft_id: str,
+) -> dict[str, Any]:
+    draft = get_draft(
+        db_path, tenant_id=tenant_id, draft_id=draft_id, include_plain=True
+    )
+    if not draft:
+        return {"ok": False, "reason": "draft_not_found", "warnings": []}
+    account = get_account(
+        db_path, tenant_id=tenant_id, account_id=str(draft.get("account_id") or "")
+    )
+    if not account:
+        return {"ok": False, "reason": "account_not_found", "warnings": []}
+
+    warnings: list[dict[str, str]] = []
+    to_plain = str(draft.get("to_plain") or "").strip().lower()
+    body_plain = str(draft.get("body_plain") or "").strip()
+    account_user = str(
+        account.get("smtp_username") or account.get("imap_username") or ""
+    ).lower()
+    account_domain = account_user.split("@", 1)[1] if "@" in account_user else ""
+    recipient_domain = to_plain.split("@", 1)[1] if "@" in to_plain else ""
+
+    if recipient_domain and account_domain and recipient_domain != account_domain:
+        warnings.append(
+            {
+                "code": "recipient_domain_mismatch",
+                "message": "Empfaenger-Domain weicht von Konto-Domain ab.",
+            }
+        )
+
+    for url in re.findall(r"https?://[^\s)]+", body_plain, flags=re.IGNORECASE):
+        host = (
+            re.sub(r"^https?://", "", url, flags=re.IGNORECASE).split("/", 1)[0].lower()
+        )
+        if "xn--" in host:
+            warnings.append(
+                {
+                    "code": "punycode_link",
+                    "message": "Punycode-Link erkannt, bitte URL pruefen.",
+                }
+            )
+        if host in {"bit.ly", "t.co", "tinyurl.com", "goo.gl"}:
+            warnings.append(
+                {
+                    "code": "shortener_link",
+                    "message": "URL-Shortener erkannt, Zieladresse pruefen.",
+                }
+            )
+
+    if re.search(r"\b[a-z]{2}\d{2}[a-z0-9]{10,30}\b", body_plain, flags=re.IGNORECASE):
+        warnings.append(
+            {
+                "code": "possible_iban",
+                "message": "Moegliche IBAN im Entwurf erkannt.",
+            }
+        )
+
+    if re.search(r"\+?\d[\d\s/().-]{8,}", body_plain):
+        warnings.append(
+            {
+                "code": "possible_phone",
+                "message": "Telefonnummer im Entwurf erkannt.",
+            }
+        )
+
+    return {
+        "ok": True,
+        "reason": "ok",
+        "warning_count": len(warnings),
+        "warnings": warnings[:10],
+    }
 
 
 def create_followup_task(
