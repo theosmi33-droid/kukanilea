@@ -78,11 +78,13 @@ def _sanitize_text(
     return out or None
 
 
-def _resolve_bin(bin_path: str | None) -> Path | None:
+def _resolve_bin(
+    bin_path: str | None, *, env: dict[str, str] | None = None
+) -> Path | None:
     try:
         from app.autonomy.ocr import resolve_tesseract_binary
 
-        resolved = resolve_tesseract_binary(requested_bin=bin_path)
+        resolved = resolve_tesseract_binary(requested_bin=bin_path, env=env)
         if (
             resolved.resolved_path
             and resolved.exists
@@ -99,7 +101,13 @@ def _resolve_bin(bin_path: str | None) -> Path | None:
         if p.exists() and p.is_file() and os.access(p, os.X_OK):
             return p
         return None
-    fallback = shutil.which("tesseract")
+    try:
+        fallback = shutil.which(
+            "tesseract",
+            path=str((env or {}).get("PATH") or "") or None,
+        )
+    except TypeError:
+        fallback = shutil.which("tesseract")
     if not fallback:
         return None
     candidate = Path(fallback)
@@ -468,29 +476,52 @@ def probe_tesseract(
         "next_actions": [],
     }
 
-    resolved_candidate = (
-        str(bin_path).strip()
-        if str(bin_path or "").strip()
-        else (shutil.which("tesseract") or None)
-    )
-    classification = _classify_tesseract_path(resolved_candidate, env=runtime_env)
-    result["tesseract_allowlisted"] = bool(classification.get("allowlisted"))
-    result["tesseract_allowlist_reason"] = (
-        str(classification.get("allowlist_reason") or "") or None
-    )
-    result["tesseract_allowed_prefixes"] = [
-        str(item) for item in list(classification.get("allowed_prefixes") or [])
-    ]
-    result["tesseract_found"] = bool(
-        classification.get("exists") and classification.get("executable")
-    )
-    if str(bin_path or "").strip():
-        result["resolution_source"] = "explicit"
-    elif resolved_candidate:
-        result["resolution_source"] = "path"
-    else:
-        result["resolution_source"] = "none"
+    resolved_candidate = None
+    try:
+        from app.autonomy.ocr import resolve_tesseract_binary
 
+        resolved_info = resolve_tesseract_binary(
+            requested_bin=str(bin_path or "").strip() or None,
+            env=runtime_env,
+        )
+        resolved_candidate = resolved_info.resolved_path
+        result["resolution_source"] = str(resolved_info.resolution_source or "none")
+        result["tesseract_allowlisted"] = bool(resolved_info.allowlisted)
+        result["tesseract_allowlist_reason"] = (
+            str(resolved_info.allowlist_reason or "") or None
+        )
+        result["tesseract_allowed_prefixes"] = [
+            str(item) for item in list(resolved_info.allowed_prefixes or [])
+        ]
+        result["tesseract_found"] = bool(
+            resolved_info.exists and resolved_info.executable
+        )
+    except Exception:
+        resolved_candidate = (
+            str(bin_path).strip()
+            if str(bin_path or "").strip()
+            else (shutil.which("tesseract") or None)
+        )
+        classification = _classify_tesseract_path(resolved_candidate, env=runtime_env)
+        result["tesseract_allowlisted"] = bool(classification.get("allowlisted"))
+        result["tesseract_allowlist_reason"] = (
+            str(classification.get("allowlist_reason") or "") or None
+        )
+        result["tesseract_allowed_prefixes"] = [
+            str(item) for item in list(classification.get("allowed_prefixes") or [])
+        ]
+        result["tesseract_found"] = bool(
+            classification.get("exists") and classification.get("executable")
+        )
+        if str(bin_path or "").strip():
+            result["resolution_source"] = "explicit"
+        elif resolved_candidate:
+            result["resolution_source"] = "path"
+        else:
+            result["resolution_source"] = "none"
+
+    classification = _classify_tesseract_path(resolved_candidate, env=runtime_env)
+    # Keep compatibility with existing unit tests that monkeypatch _resolve_bin(bin_path).
     binary = _resolve_bin(bin_path)
     if binary is None:
         result["reason"] = str(classification.get("reason") or "tesseract_missing")

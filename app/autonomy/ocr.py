@@ -30,6 +30,8 @@ DEFAULT_OCR_LANG = "eng"
 MAX_DB_BODY_CHARS = 8000
 LANG_RE = re.compile(r"^[a-z0-9_+]{2,32}$")
 TESSERACT_ALLOWLIST_ENV = "KUKANILEA_TESSERACT_ALLOWED_PREFIXES"
+TESSERACT_BIN_ENV = "AUTONOMY_OCR_TESSERACT_BIN"
+TESSDATA_DIR_ENV = "AUTONOMY_OCR_TESSDATA_DIR"
 TESSDATA_ERROR_RE = re.compile(
     r"(error opening data file|failed loading language|could not initialize tesseract)",
     re.IGNORECASE,
@@ -106,6 +108,16 @@ def _cfg_lang() -> str:
     if LANG_RE.match(value):
         return value
     return DEFAULT_OCR_LANG
+
+
+def _cfg_tessdata_dir() -> str | None:
+    raw: Any = None
+    if has_app_context():
+        raw = current_app.config.get(TESSDATA_DIR_ENV)
+    if raw in (None, ""):
+        raw = os.environ.get(TESSDATA_DIR_ENV, "")
+    value = str(raw or "").strip()
+    return value or None
 
 
 def _default_tesseract_allowed_prefixes(
@@ -245,7 +257,7 @@ class ResolvedTesseractBin:
     allowlisted: bool
     allowlist_reason: str | None
     allowed_prefixes: tuple[str, ...]
-    resolution_source: Literal["explicit", "path", "none"]
+    resolution_source: Literal["explicit", "env", "path", "none"]
     os_error_errno: int | None = None
     os_error_type: str | None = None
 
@@ -261,9 +273,20 @@ def resolve_tesseract_binary(
         env_map.update(dict(env))
 
     requested = str(requested_bin or "").strip() or None
+    env_requested = str(env_map.get(TESSERACT_BIN_ENV, "") or "").strip() or None
+    cfg_requested = None
+    if has_app_context():
+        cfg_requested = (
+            str(current_app.config.get(TESSERACT_BIN_ENV, "") or "").strip() or None
+        )
+    preferred_from_runtime = env_requested or cfg_requested
+
     if requested:
         candidate = requested
-        source: Literal["explicit", "path", "none"] = "explicit"
+        source: Literal["explicit", "env", "path", "none"] = "explicit"
+    elif preferred_from_runtime:
+        candidate = preferred_from_runtime
+        source = "env"
     else:
         try:
             candidate = shutil.which("tesseract", path=env_map.get("PATH"))
@@ -291,7 +314,9 @@ def resolve_tesseract_binary(
     )
     return ResolvedTesseractBin(
         requested=requested,
-        resolved_path=str(classified.get("normalized") or candidate),
+        resolved_path=str(
+            classified.get("resolved") or classified.get("normalized") or candidate
+        ),
         exists=bool(classified.get("exists")),
         executable=bool(classified.get("executable")),
         allowlisted=bool(classified.get("allowlisted")),
@@ -703,6 +728,8 @@ def submit_ocr_for_source_file(
     )
     timeout_sec = _cfg_int("AUTONOMY_OCR_TIMEOUT_SEC", DEFAULT_OCR_TIMEOUT_SEC, 1, 300)
     max_chars = _cfg_int("AUTONOMY_OCR_MAX_CHARS", DEFAULT_OCR_MAX_CHARS, 100, 500_000)
+    effective_bin = str(tesseract_bin_override or "").strip()
+    effective_tessdata_dir = str(tessdata_dir or _cfg_tessdata_dir() or "").strip()
     lang = str(lang_override or _cfg_lang()).strip().lower()
     if not LANG_RE.match(lang):
         lang = _cfg_lang()
@@ -858,15 +885,15 @@ def submit_ocr_for_source_file(
         data={"job_id": job_id, "source_file_id": source_file},
     )
 
-    job_resolution = resolve_tesseract_binary(requested_bin=tesseract_bin_override)
+    job_resolution = resolve_tesseract_binary(requested_bin=effective_bin or None)
     started = time.monotonic()
     text_out, error_code, truncated, _stderr_tail = _run_tesseract(
         target,
         lang=lang,
         timeout_sec=timeout_sec,
         max_chars=max_chars,
-        tessdata_dir=tessdata_dir,
-        tesseract_bin_override=tesseract_bin_override,
+        tessdata_dir=effective_tessdata_dir or None,
+        tesseract_bin_override=effective_bin or None,
         allow_retry=allow_retry,
     )
     duration_ms = int(round((time.monotonic() - started) * 1000))

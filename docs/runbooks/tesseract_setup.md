@@ -30,6 +30,13 @@ Alternativ im Tool explizit setzen:
 python -m app.devtools.cli_ocr_test --tenant dev --show-tesseract --tesseract-bin <binary> --json
 ```
 
+Hinweis zur Laufzeit:
+- Probe **und** OCR-Job verwenden denselben Resolver.
+- Scanner-/Job-Pfad kann ueber Umgebungsvariablen gesteuert werden:
+  - `AUTONOMY_OCR_TESSERACT_BIN`
+  - `AUTONOMY_OCR_TESSDATA_DIR`
+  - `AUTONOMY_OCR_LANG`
+
 Wenn das Binary gefunden wird, aber `tesseract_not_allowlisted` gemeldet wird:
 
 - Installationspfad in einen erlaubten Prefix legen (z. B. `/opt/homebrew`, `/usr/local/bin`, `/usr/bin`)
