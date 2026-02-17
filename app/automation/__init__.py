@@ -9,6 +9,10 @@ from .core import (
     validate_condition,
 )
 from .insights import generate_daily_insights, get_or_build_daily_insights
+from .runner import process_events_for_tenant
+from .store import (
+    append_execution_log as builder_execution_log_append,
+)
 from .store import (
     create_rule as builder_rule_create,
 )
@@ -25,7 +29,13 @@ from .store import (
     get_state_cursor as builder_state_get_cursor,
 )
 from .store import (
+    list_execution_logs as builder_execution_log_list,
+)
+from .store import (
     list_rules as builder_rule_list,
+)
+from .store import (
+    update_execution_log as builder_execution_log_update,
 )
 from .store import (
     update_rule as builder_rule_update,
@@ -46,6 +56,9 @@ __all__ = [
     "builder_rule_create",
     "builder_rule_delete",
     "builder_ensure_schema",
+    "builder_execution_log_append",
+    "builder_execution_log_list",
+    "builder_execution_log_update",
     "builder_rule_get",
     "builder_rule_list",
     "builder_rule_update",
@@ -53,4 +66,5 @@ __all__ = [
     "builder_state_upsert_cursor",
     "generate_daily_insights",
     "get_or_build_daily_insights",
+    "process_events_for_tenant",
 ]

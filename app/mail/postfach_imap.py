@@ -356,6 +356,17 @@ def sync_account(
             duplicates=duplicates,
             error_reason="" if failures == 0 else f"fetch_failures:{failures}",
         )
+        automation_result: dict[str, Any] = {"ok": False, "reason": "not_run"}
+        try:
+            from app.automation.runner import process_events_for_tenant
+
+            automation_result = process_events_for_tenant(
+                tenant_id=tenant_id,
+                db_path=db_path,
+                source="eventlog",
+            )
+        except Exception:
+            automation_result = {"ok": False, "reason": "automation_runner_failed"}
         return {
             "ok": True,
             "reason": "ok",
@@ -364,6 +375,7 @@ def sync_account(
             "fetched": fetched,
             "failed_fetches": failures,
             "sync_cursor": str(last_uid or ""),
+            "automation": automation_result,
         }
     except Exception:
         store.update_account_sync_report(

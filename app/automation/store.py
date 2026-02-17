@@ -25,6 +25,7 @@ ACTION_TABLE = "automation_builder_actions"
 EXECUTION_LOG_TABLE = "automation_builder_execution_log"
 STATE_TABLE = "automation_builder_state"
 PENDING_ACTION_TABLE = "automation_builder_pending_actions"
+EXECUTION_STATUS_ALLOWLIST = {"started", "ok", "skipped", "failed", "pending"}
 
 
 def _now_rfc3339() -> str:
@@ -759,5 +760,145 @@ def upsert_state_cursor(
             (_new_id(), tenant, src, cur, now_iso),
         )
         con.commit()
+    finally:
+        con.close()
+
+
+def append_execution_log(
+    *,
+    tenant_id: str,
+    rule_id: str,
+    trigger_type: str,
+    trigger_ref: str,
+    status: str,
+    started_at: str | None = None,
+    finished_at: str = "",
+    error_redacted: str = "",
+    output_redacted: str = "",
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    tenant = _norm_tenant(tenant_id)
+    rid = str(rule_id or "").strip()
+    trig_type = str(trigger_type or "").strip()
+    trig_ref = str(trigger_ref or "").strip()
+    status_clean = str(status or "").strip().lower()
+    if not rid or not trig_type or not trig_ref:
+        raise ValueError("validation_error")
+    if status_clean not in EXECUTION_STATUS_ALLOWLIST:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    log_id = _new_id()
+    started = str(started_at or "").strip() or _now_rfc3339()
+    con = _connect(path)
+    try:
+        try:
+            con.execute(
+                f"""
+                INSERT INTO {EXECUTION_LOG_TABLE}(
+                  id, tenant_id, rule_id, trigger_type, trigger_ref, status, started_at, finished_at, error_redacted, output_redacted
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    log_id,
+                    tenant,
+                    rid,
+                    trig_type,
+                    trig_ref,
+                    status_clean,
+                    started,
+                    str(finished_at or "")[:48],
+                    str(error_redacted or "")[:1500],
+                    str(output_redacted or "")[:4000],
+                ),
+            )
+            con.commit()
+            return {"ok": True, "duplicate": False, "log_id": log_id}
+        except sqlite3.IntegrityError:
+            return {"ok": True, "duplicate": True, "log_id": ""}
+    finally:
+        con.close()
+
+
+def update_execution_log(
+    *,
+    tenant_id: str,
+    log_id: str,
+    status: str,
+    finished_at: str | None = None,
+    error_redacted: str = "",
+    output_redacted: str = "",
+    db_path: Path | str | None = None,
+) -> bool:
+    tenant = _norm_tenant(tenant_id)
+    lid = str(log_id or "").strip()
+    status_clean = str(status or "").strip().lower()
+    if not lid or status_clean not in EXECUTION_STATUS_ALLOWLIST:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    fin = str(finished_at or "").strip() or _now_rfc3339()
+    con = _connect(path)
+    try:
+        cur = con.execute(
+            f"""
+            UPDATE {EXECUTION_LOG_TABLE}
+            SET status=?, finished_at=?, error_redacted=?, output_redacted=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (
+                status_clean,
+                fin,
+                str(error_redacted or "")[:1500],
+                str(output_redacted or "")[:4000],
+                tenant,
+                lid,
+            ),
+        )
+        con.commit()
+        return int(cur.rowcount or 0) > 0
+    finally:
+        con.close()
+
+
+def list_execution_logs(
+    *,
+    tenant_id: str,
+    rule_id: str = "",
+    limit: int = 200,
+    db_path: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    tenant = _norm_tenant(tenant_id)
+    rid = str(rule_id or "").strip()
+    lim = max(1, min(int(limit or 200), 1000))
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        if rid:
+            rows = con.execute(
+                f"""
+                SELECT id, tenant_id, rule_id, trigger_type, trigger_ref, status,
+                       started_at, finished_at, error_redacted, output_redacted
+                FROM {EXECUTION_LOG_TABLE}
+                WHERE tenant_id=? AND rule_id=?
+                ORDER BY started_at DESC, id DESC
+                LIMIT ?
+                """,
+                (tenant, rid, lim),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                f"""
+                SELECT id, tenant_id, rule_id, trigger_type, trigger_ref, status,
+                       started_at, finished_at, error_redacted, output_redacted
+                FROM {EXECUTION_LOG_TABLE}
+                WHERE tenant_id=?
+                ORDER BY started_at DESC, id DESC
+                LIMIT ?
+                """,
+                (tenant, lim),
+            ).fetchall()
+        return [dict(row) for row in rows]
     finally:
         con.close()

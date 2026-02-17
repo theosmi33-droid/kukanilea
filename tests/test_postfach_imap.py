@@ -235,3 +235,40 @@ def test_postfach_sync_oauth_uses_xoauth2(tmp_path: Path, monkeypatch) -> None:
     assert result["ok"] is True
     assert _OAuthIMAP.saw_mechanism == "XOAUTH2"
     assert "auth=Bearer access-token-123" in _OAuthIMAP.saw_payload
+    assert "user=user@example.com" in _OAuthIMAP.saw_payload
+
+
+def test_postfach_sync_runs_automation_runner(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "core.sqlite3"
+    monkeypatch.setenv("EMAIL_ENCRYPTION_KEY", "dev-secret-key")
+    account_id = create_account(
+        db_path,
+        tenant_id="TENANT_A",
+        label="Demo",
+        imap_host="imap.example.com",
+        imap_port=993,
+        imap_username="user@example.com",
+        smtp_host="smtp.example.com",
+        smtp_port=465,
+        smtp_username="user@example.com",
+        smtp_use_ssl=True,
+        secret_plain="secret",
+    )
+    monkeypatch.setattr("app.mail.postfach_imap.imaplib.IMAP4_SSL", _FakeIMAP)
+    calls: list[tuple[str, str]] = []
+
+    def _runner(tenant_id: str, *, db_path, source: str = "eventlog", **_kwargs):
+        calls.append((tenant_id, source))
+        return {"ok": True, "reason": "ok", "processed": 1, "matched": 0, "cursor": "1"}
+
+    monkeypatch.setattr("app.automation.runner.process_events_for_tenant", _runner)
+    result = sync_account(
+        db_path,
+        tenant_id="TENANT_A",
+        account_id=account_id,
+        limit=10,
+    )
+    assert result["ok"] is True
+    assert calls == [("TENANT_A", "eventlog")]
+    assert isinstance(result.get("automation"), dict)
+    assert bool((result.get("automation") or {}).get("ok")) is True
