@@ -134,31 +134,19 @@ from app.lead_intake import (
 from app.lead_intake.core import ConflictError
 from app.lead_intake.guard import require_lead_access
 from app.mail import (
-    ensure_mail_schema,
-)
-from app.mail import (
-    get_account as mail_get_account,
-)
-from app.mail import (
-    get_message as mail_get_message,
-)
-from app.mail import (
-    list_accounts as mail_list_accounts,
-)
-from app.mail import (
-    list_messages as mail_list_messages,
-)
-from app.mail import (
-    load_secret as mail_load_secret,
-)
-from app.mail import (
-    save_account as mail_save_account,
-)
-from app.mail import (
-    store_secret as mail_store_secret,
-)
-from app.mail import (
-    sync_account as mail_sync_account,
+    ensure_postfach_schema,
+    postfach_create_account,
+    postfach_create_draft,
+    postfach_create_followup_task,
+    postfach_extract_structured,
+    postfach_get_draft,
+    postfach_get_thread,
+    postfach_link_entities,
+    postfach_list_accounts,
+    postfach_list_drafts_for_thread,
+    postfach_list_threads,
+    postfach_send_draft,
+    postfach_sync_account,
 )
 from app.omni import get_event as omni_get_event
 from app.omni import list_events as omni_list_events
@@ -696,8 +684,8 @@ def _core_db_path() -> Path:
     return Path(str(getattr(core, "DB_PATH")))
 
 
-def _ensure_mail_tables() -> None:
-    ensure_mail_schema(_core_db_path())
+def _ensure_postfach_tables() -> None:
+    ensure_postfach_schema(_core_db_path())
 
 
 def _crm_db_rows(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
@@ -941,7 +929,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">⏱️ Time</a>
       <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
       <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
-      <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
+      <a class="nav-link {{'active' if active_tab=='postfach' else ''}}" href="/postfach">📨 Postfach</a>
       <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers">📈 CRM</a>
       <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
       <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">📚 Knowledge</a>
@@ -2279,18 +2267,18 @@ def google_start():
                 "info",
                 "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET.",
             ),
-            active_tab="mail",
+            active_tab="postfach",
         )
     return _render_base(
         _card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."),
-        active_tab="mail",
+        active_tab="postfach",
     )
 
 
 @bp.get("/auth/google/callback")
 def google_callback():
     return _render_base(
-        _card("info", "Google OAuth Callback (Stub)."), active_tab="mail"
+        _card("info", "Google OAuth Callback (Stub)."), active_tab="postfach"
     )
 
 
@@ -6984,119 +6972,493 @@ Kontext/Stichpunkte:
 """
 
 
+def _postfach_redirect(
+    *,
+    account_id: str = "",
+    thread_id: str = "",
+    draft_id: str = "",
+    status: str = "",
+    query: str = "",
+) -> str:
+    return url_for(
+        "web.postfach_page",
+        account_id=(account_id or "").strip(),
+        thread_id=(thread_id or "").strip(),
+        draft_id=(draft_id or "").strip(),
+        status=(status or "").strip(),
+        q=(query or "").strip(),
+    )
+
+
+@bp.get("/postfach")
 @bp.get("/mail")
 @login_required
-def mail_page():
-    google_configured = bool(
-        current_app.config.get("GOOGLE_CLIENT_ID")
-        and current_app.config.get("GOOGLE_CLIENT_SECRET")
-    )
+def postfach_page():
+    if request.path == "/mail":
+        q = request.query_string.decode("utf-8", errors="ignore")
+        target = "/postfach"
+        if q:
+            target = f"{target}?{q}"
+        return redirect(target, code=302)
+
     tenant_id = current_tenant()
-    _ensure_mail_tables()
+    _ensure_postfach_tables()
     auth_db: AuthDB = current_app.extensions["auth_db"]
     selected_account_id = (request.args.get("account_id") or "").strip()
-    message_id = (request.args.get("message_id") or "").strip()
-    mail_status = (request.args.get("status") or "").strip()
-    accounts = mail_list_accounts(_core_db_path(), tenant_id)
+    selected_thread_id = (request.args.get("thread_id") or "").strip()
+    selected_draft_id = (request.args.get("draft_id") or "").strip()
+    postfach_status = (request.args.get("status") or "").strip()
+    query = (request.args.get("q") or "").strip()
+
+    accounts = postfach_list_accounts(_core_db_path(), tenant_id)
     if not selected_account_id and accounts:
         selected_account_id = str(accounts[0].get("id") or "")
-    messages = mail_list_messages(
-        _core_db_path(),
-        tenant_id,
-        account_id=selected_account_id or None,
-        limit=120,
+
+    threads: list[dict[str, Any]] = []
+    if selected_account_id:
+        threads = postfach_list_threads(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            account_id=selected_account_id,
+            filter_text=query,
+            limit=200,
+        )
+        if not selected_thread_id and threads:
+            selected_thread_id = str(threads[0].get("id") or "")
+
+    thread_data = (
+        postfach_get_thread(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            thread_id=selected_thread_id,
+        )
+        if selected_thread_id
+        else None
     )
-    mail_detail = (
-        mail_get_message(_core_db_path(), tenant_id, message_id) if message_id else None
+    drafts = (
+        postfach_list_drafts_for_thread(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            thread_id=selected_thread_id,
+            limit=20,
+        )
+        if selected_thread_id
+        else []
     )
+
+    selected_draft = (
+        postfach_get_draft(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            draft_id=selected_draft_id,
+            include_plain=True,
+        )
+        if selected_draft_id
+        else None
+    )
+    if not selected_draft and drafts:
+        selected_draft = postfach_get_draft(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            draft_id=str(drafts[0].get("id") or ""),
+            include_plain=True,
+        )
+
     outbox = auth_db.list_outbox(limit=20)
     return _render_base(
-        render_template_string(
-            HTML_MAIL,
-            google_configured=google_configured,
+        render_template(
+            "postfach/index.html",
             accounts=accounts,
             selected_account_id=selected_account_id,
-            messages=messages,
-            mail_detail=mail_detail,
+            threads=threads,
+            selected_thread_id=selected_thread_id,
+            thread_data=thread_data,
+            drafts=drafts,
+            selected_draft=selected_draft,
+            postfach_status=postfach_status,
+            search_query=query,
             outbox=outbox,
-            mail_status=mail_status,
         ),
-        active_tab="mail",
+        active_tab="postfach",
     )
 
 
+@bp.get("/postfach/thread/<thread_id>")
+@login_required
+def postfach_thread_page(thread_id: str):
+    tenant_id = current_tenant()
+    _ensure_postfach_tables()
+    data = postfach_get_thread(
+        _core_db_path(), tenant_id=tenant_id, thread_id=thread_id
+    )
+    if not data:
+        return redirect(_postfach_redirect(status="Thread nicht gefunden."))
+    return _render_base(
+        render_template("postfach/thread.html", thread_data=data),
+        active_tab="postfach",
+    )
+
+
+@bp.get("/postfach/compose/<draft_id>")
+@login_required
+def postfach_compose_page(draft_id: str):
+    tenant_id = current_tenant()
+    _ensure_postfach_tables()
+    draft = postfach_get_draft(
+        _core_db_path(), tenant_id=tenant_id, draft_id=draft_id, include_plain=True
+    )
+    if not draft:
+        return redirect(_postfach_redirect(status="Entwurf nicht gefunden."))
+    return _render_base(
+        render_template("postfach/compose.html", draft=draft),
+        active_tab="postfach",
+    )
+
+
+@bp.post("/postfach/accounts/add")
 @bp.post("/mail/accounts/add")
 @login_required
-def mail_account_add():
+def postfach_account_add():
     if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(url_for("web.mail_page", status="Read-only mode aktiv."))
+        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
     tenant_id = current_tenant()
     label = (request.form.get("label") or "").strip()
-    host = (request.form.get("imap_host") or "").strip()
-    username = (request.form.get("imap_username") or "").strip()
-    password = (request.form.get("imap_password") or "").strip()
+    imap_host = (request.form.get("imap_host") or "").strip()
+    imap_username = (request.form.get("imap_username") or "").strip()
+    smtp_host = (request.form.get("smtp_host") or "").strip()
+    smtp_username = (request.form.get("smtp_username") or "").strip()
+    secret_plain = (request.form.get("secret") or "").strip()
+    smtp_use_ssl = (request.form.get("smtp_use_ssl") or "1").strip() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+
     try:
-        port = int(request.form.get("imap_port") or 993)
+        imap_port = int(request.form.get("imap_port") or 993)
     except Exception:
-        port = 993
-    if not label or not host or not username:
-        return redirect(url_for("web.mail_page", status="Pflichtfelder fehlen."))
+        imap_port = 993
     try:
-        pw_ref = mail_store_secret(password) if password else None
-    except ValueError:
+        smtp_port = int(request.form.get("smtp_port") or 465)
+    except Exception:
+        smtp_port = 465
+
+    if not label or not imap_host or not imap_username or not secret_plain:
+        return redirect(_postfach_redirect(status="Pflichtfelder fehlen."))
+
+    try:
+        account_id = postfach_create_account(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            label=label,
+            imap_host=imap_host,
+            imap_port=imap_port,
+            imap_username=imap_username,
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            smtp_username=smtp_username,
+            smtp_use_ssl=smtp_use_ssl,
+            secret_plain=secret_plain,
+        )
+    except ValueError as exc:
+        reason = str(exc)
+        if reason == "email_encryption_key_missing":
+            return redirect(
+                _postfach_redirect(
+                    status="EMAIL_ENCRYPTION_KEY fehlt. Postfach-Operationen sind deaktiviert."
+                )
+            )
         return redirect(
-            url_for(
-                "web.mail_page",
-                status="EMAIL_ENCRYPTION_KEY fehlt. Passwort konnte nicht gespeichert werden.",
+            _postfach_redirect(
+                status=f"Account konnte nicht gespeichert werden ({reason})."
             )
         )
-    account_id = mail_save_account(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        label=label,
-        imap_host=host,
-        imap_port=port,
-        imap_username=username,
-        auth_mode="password",
-        imap_password_ref=pw_ref,
-    )
+
     return redirect(
-        url_for("web.mail_page", account_id=account_id, status="Account gespeichert.")
+        _postfach_redirect(account_id=account_id, status="Account gespeichert.")
     )
 
 
+@bp.post("/postfach/accounts/sync")
 @bp.post("/mail/accounts/sync")
 @login_required
-def mail_account_sync():
+def postfach_account_sync():
     if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(url_for("web.mail_page", status="Read-only mode aktiv."))
+        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
     tenant_id = current_tenant()
     account_id = (request.form.get("account_id") or "").strip()
     if not account_id:
-        return redirect(url_for("web.mail_page", status="Account fehlt."))
-    account = mail_get_account(_core_db_path(), tenant_id, account_id)
-    if not account:
-        return redirect(url_for("web.mail_page", status="Account nicht gefunden."))
-    supplied_password = (request.form.get("imap_password") or "").strip()
-    password = supplied_password
-    if not password:
-        password = mail_load_secret(str(account.get("imap_password_ref") or ""))
+        return redirect(_postfach_redirect(status="Account fehlt."))
     try:
         limit = int(request.form.get("limit") or 50)
     except Exception:
         limit = 50
-    result = mail_sync_account(
+
+    result = postfach_sync_account(
         _core_db_path(),
         tenant_id=tenant_id,
         account_id=account_id,
-        password=password,
         limit=limit,
     )
-    if result.get("ok"):
-        status = f"Sync erfolgreich ({int(result.get('imported') or 0)} Nachrichten)."
+    if bool(result.get("ok")):
+        status = (
+            f"Sync erfolgreich: {int(result.get('imported') or 0)} importiert, "
+            f"{int(result.get('duplicates') or 0)} Duplikate."
+        )
     else:
         status = f"Sync fehlgeschlagen: {result.get('reason')}"
-    return redirect(url_for("web.mail_page", account_id=account_id, status=status))
+    return redirect(_postfach_redirect(account_id=account_id, status=status))
+
+
+@bp.post("/postfach/thread/<thread_id>/draft")
+@login_required
+def postfach_thread_draft(thread_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(
+            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
+        )
+    tenant_id = current_tenant()
+    data = postfach_get_thread(
+        _core_db_path(), tenant_id=tenant_id, thread_id=thread_id
+    )
+    if not data:
+        return redirect(_postfach_redirect(status="Thread nicht gefunden."))
+    thread = data["thread"]
+    messages = data.get("messages", [])
+    last_msg = messages[-1] if messages else {}
+    intent = (request.form.get("intent") or "antworten").strip()
+    tone = (request.form.get("tone") or "neutral").strip()
+    citations_required = (request.form.get("citations_required") or "").strip() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    body = (
+        "Guten Tag,\n\n"
+        f"vielen Dank fuer Ihre Nachricht. Wir haben Ihr Anliegen ({intent}) erhalten "
+        f"und bereiten eine Rueckmeldung im Ton '{tone}' vor.\n\n"
+        "Naechste Schritte:\n"
+        "- Eingang geprueft\n"
+        "- Anliegen intern priorisiert\n"
+        "- Rueckmeldung vorbereitet\n\n"
+        f"Quellenhinweise erforderlich: {'Ja' if citations_required else 'Nein'}\n"
+        f"Thread-ID: {thread_id}\n\n"
+        "Mit freundlichen Gruessen\nKUKANILEA Systems"
+    )
+    subject = str(
+        last_msg.get("subject_redacted") or thread.get("subject_redacted") or ""
+    )
+    to_value = str(last_msg.get("from_redacted") or "")
+    try:
+        draft_id = postfach_create_draft(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            account_id=str(thread.get("account_id") or ""),
+            thread_id=thread_id,
+            to_value=to_value,
+            subject_value=f"Re: {subject}" if subject else "Re: Ihre Nachricht",
+            body_value=body,
+        )
+    except ValueError as exc:
+        return redirect(
+            _postfach_redirect(
+                account_id=str(thread.get("account_id") or ""),
+                thread_id=thread_id,
+                status=f"Entwurf fehlgeschlagen: {exc}",
+            )
+        )
+    return redirect(
+        _postfach_redirect(
+            account_id=str(thread.get("account_id") or ""),
+            thread_id=thread_id,
+            draft_id=draft_id,
+            status="Entwurf erstellt.",
+        )
+    )
+
+
+@bp.post("/postfach/drafts/send")
+@login_required
+def postfach_draft_send():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
+    tenant_id = current_tenant()
+    draft_id = (request.form.get("draft_id") or "").strip()
+    account_id = (request.form.get("account_id") or "").strip()
+    thread_id = (request.form.get("thread_id") or "").strip()
+    user_confirmed = (request.form.get("user_confirmed") or "").strip() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    result = postfach_send_draft(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        draft_id=draft_id,
+        user_confirmed=user_confirmed,
+    )
+    if not bool(result.get("ok")):
+        status = f"Versand blockiert: {result.get('reason')}"
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id, thread_id=thread_id, status=status
+            )
+        )
+    status = "Entwurf versendet."
+    return redirect(
+        _postfach_redirect(
+            account_id=account_id,
+            thread_id=str(result.get("thread_id") or thread_id),
+            status=status,
+        )
+    )
+
+
+@bp.post("/postfach/thread/<thread_id>/link")
+@login_required
+def postfach_thread_link(thread_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(
+            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
+        )
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    result = postfach_link_entities(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        customer_id=(request.form.get("customer_id") or "").strip() or None,
+        project_id=(request.form.get("project_id") or "").strip() or None,
+        lead_id=(request.form.get("lead_id") or "").strip() or None,
+    )
+    return redirect(
+        _postfach_redirect(
+            account_id=account_id,
+            thread_id=thread_id,
+            status=f"Verknuepfungen erstellt: {int(result.get('links_created') or 0)}",
+        )
+    )
+
+
+@bp.post("/postfach/thread/<thread_id>/extract")
+@login_required
+def postfach_thread_extract(thread_id: str):
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    schema_name = (request.form.get("schema_name") or "default").strip()
+    result = postfach_extract_structured(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        schema_name=schema_name,
+    )
+    if not bool(result.get("ok")):
+        status = f"Extraktion fehlgeschlagen: {result.get('reason')}"
+    else:
+        fields = result.get("fields") or {}
+        status = (
+            f"Extraktion ok (Schema={fields.get('schema')}, "
+            f"Zeilen={int(fields.get('line_count') or 0)})."
+        )
+    return redirect(
+        _postfach_redirect(account_id=account_id, thread_id=thread_id, status=status)
+    )
+
+
+@bp.post("/postfach/thread/<thread_id>/followup")
+@login_required
+def postfach_thread_followup(thread_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(
+            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
+        )
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    due_at = (request.form.get("due_at") or "").strip()
+    owner = (request.form.get("owner") or "").strip() or str(current_user() or "dev")
+    title = (request.form.get("title") or "").strip() or "Postfach Follow-up"
+    result = postfach_create_followup_task(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        due_at=due_at,
+        owner=owner,
+        title=title,
+        created_by=str(current_user() or "dev"),
+    )
+    return redirect(
+        _postfach_redirect(
+            account_id=account_id,
+            thread_id=thread_id,
+            status=f"Follow-up Aufgabe erstellt (Task #{int(result.get('task_id') or 0)}).",
+        )
+    )
+
+
+@bp.post("/postfach/thread/<thread_id>/lead")
+@login_required
+def postfach_thread_create_lead(thread_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(
+            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
+        )
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    data = postfach_get_thread(
+        _core_db_path(), tenant_id=tenant_id, thread_id=thread_id
+    )
+    if not data:
+        return redirect(_postfach_redirect(status="Thread nicht gefunden."))
+    thread = data.get("thread") or {}
+    messages = data.get("messages") or []
+    newest = messages[-1] if messages else {}
+    subject = str(
+        thread.get("subject_redacted")
+        or newest.get("subject_redacted")
+        or "Neue Anfrage"
+    )
+    message = str(newest.get("redacted_text") or "Anfrage aus Postfach")
+    try:
+        lead_id = leads_create(
+            tenant_id=tenant_id,
+            source="email",
+            contact_name="Postfach Anfrage",
+            contact_email="",
+            contact_phone="",
+            subject=subject[:500],
+            message=message[:20000],
+            actor_user_id=str(current_user() or "dev"),
+        )
+    except ConflictError:
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id, thread_id=thread_id, status="Lead-Konflikt."
+            )
+        )
+    except Exception as exc:
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                thread_id=thread_id,
+                status=f"Lead-Erzeugung fehlgeschlagen: {exc}",
+            )
+        )
+    postfach_link_entities(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        lead_id=lead_id,
+    )
+    return redirect(
+        _postfach_redirect(
+            account_id=account_id,
+            thread_id=thread_id,
+            status=f"Lead erstellt: {lead_id}",
+        )
+    )
 
 
 @bp.get("/settings")
@@ -7148,7 +7510,7 @@ def api_load_demo_data():
     tenant_id = current_tenant() or str(
         current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
     )
-    _ensure_mail_tables()
+    _ensure_postfach_tables()
     summary = generate_demo_data(db_path=_core_db_path(), tenant_id=tenant_id)
     _audit("demo_data_load", meta={"tenant_id": tenant_id, "summary": summary})
     return jsonify(ok=True, message="Demo-Daten geladen.", summary=summary)

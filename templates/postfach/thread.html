@@ -1,0 +1,26 @@
+<div class="grid gap-4">
+  {% set thread = thread_data.thread %}
+  <div class="card p-4 rounded-2xl border">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <div class="text-lg font-semibold">Thread Detail</div>
+        <div class="text-sm opacity-80">{{thread.subject_redacted}}</div>
+      </div>
+      <a class="rounded-xl px-3 py-2 text-sm btn-outline" href="/postfach?account_id={{thread.account_id}}&thread_id={{thread.id}}">Zurueck</a>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border space-y-3">
+    {% for m in thread_data.messages %}
+    <div class="rounded-xl border border-slate-800 p-3">
+      <div class="text-xs muted">{{m.direction}} · {{m.received_at or m.created_at}}</div>
+      <div class="text-xs">Von: {{m.from_redacted}}</div>
+      <div class="text-xs">An: {{m.to_redacted}}</div>
+      <div class="text-sm font-medium">{{m.subject_redacted}}</div>
+      <pre class="text-xs whitespace-pre-wrap">{{m.redacted_text}}</pre>
+    </div>
+    {% else %}
+    <div class="text-sm muted">Keine Nachrichten im Thread.</div>
+    {% endfor %}
+  </div>
+</div>

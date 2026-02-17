@@ -1,0 +1,15 @@
+<div class="grid gap-4">
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold">Entwurf</div>
+    <div class="text-sm opacity-80">ID: {{draft.id}}</div>
+  </div>
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-xs muted mb-1">To</div>
+    <div class="text-sm mb-2">{{draft.to_redacted}}</div>
+    <div class="text-xs muted mb-1">Subject</div>
+    <div class="text-sm mb-2">{{draft.subject_redacted}}</div>
+    <div class="text-xs muted mb-1">Body</div>
+    <pre class="text-xs whitespace-pre-wrap">{{draft.body_redacted}}</pre>
+    <a class="inline-block mt-3 rounded-xl px-3 py-2 text-sm btn-outline" href="/postfach?account_id={{draft.account_id}}&thread_id={{draft.thread_id}}&draft_id={{draft.id}}">Zurueck ins Postfach</a>
+  </div>
+</div>
