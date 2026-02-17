@@ -1,19 +1,42 @@
 # KUKANILEA Constitution
 
-## Principles (Non‑Negotiable)
-1. **DB is source of truth**: The database defines meaning, lifecycle, and access. Filesystem is the executor.
-2. **Deny‑by‑default security**: RBAC + tenant scoping everywhere. Unknown roles are denied safely.
-3. **Local‑first**: The product works fully offline. Connectors are optional and explicitly enabled.
-4. **Prompt‑injection resistance**: All untrusted inputs (docs, mail, chat) are hostile. No tool execution without policy gate + provenance.
-5. **Determinism**: Core workflows are reproducible and testable (idempotent jobs, stable outputs).
-6. **Deterministic API envelopes**: Every API error responds with the ErrorEnvelope contract.
-7. **Observability**: Critical paths emit logs, metrics, and audit events.
-8. **Premium UX**: Consistent UI components, accessible defaults, zero broken states.
-9. **Spec‑driven delivery**: Every major change updates specs, ADRs, and tests.
+Last updated: 2026-02-17
 
-## Engineering Commitments
-- Prefer small, mergeable commits.
-- Keep APIs consistent with error envelopes and correlation IDs.
-- Maintain tenant isolation in every query and filesystem access path.
-- DEV-only maintenance/import tools must be allowlisted and audited.
-- Local update flows are rebase-only and must not allow conflict markers to land in the repo.
+## Five Core Principles (Non-negotiable)
+1. DB-first truth: lifecycle and ownership are defined in the DB.
+2. Tenant isolation: no cross-tenant reads or writes.
+3. Default-safe operations: deny by default, explicit allowlists.
+4. Offline-first reliability: core workflows run without cloud dependency.
+5. Deterministic quality: reproducible behavior, explicit error contracts, auditable changes.
+
+## NEVER DO
+- Add dependencies or change stack components without ADR.
+- Persist raw PII in eventlog/telemetry.
+- Use `subprocess` with `shell=True`.
+- Merge mutating endpoints without READ_ONLY guards.
+- Bypass tenant scoping in SQL or filesystem mapping.
+
+## ALWAYS DO
+- Use `secrets.compare_digest()` for token/code/hash comparisons.
+- Redact OCR/mail text before writing to DB.
+- Keep migrations additive and idempotent.
+- Add tests for security/compliance sensitive paths.
+- Run triage + lint + tests before merge.
+
+## Eventlog Payload Policy
+Allowed payload content:
+- entity IDs
+- tenant_id
+- status/reason codes
+- counters/metrics
+- redacted flags and booleans
+
+Disallowed payload content:
+- names
+- emails
+- phone numbers
+- subject/body free-text
+- IBAN or account details
+
+## Governance Rule
+Any stack/dependency change requires an ADR under `docs/adr/ADR-*.md` before merge.

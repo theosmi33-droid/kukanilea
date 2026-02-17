@@ -88,6 +88,15 @@ def test_ocr_persists_redacted_text_only(tmp_path: Path, monkeypatch) -> None:
             LIMIT 1
             """
         ).fetchone()
+        job = con.execute(
+            """
+            SELECT redacted_text
+            FROM autonomy_ocr_jobs
+            WHERE tenant_id='TENANT_A'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
     finally:
         con.close()
 
@@ -96,3 +105,8 @@ def test_ocr_persists_redacted_text_only(tmp_path: Path, monkeypatch) -> None:
     assert "private.person@example.com" not in body
     assert "+49 170" not in body
     assert "[redacted-email]" in body
+    assert job is not None
+    redacted_text = str(job["redacted_text"] or "").lower()
+    assert "private.person@example.com" not in redacted_text
+    assert "+49 170" not in redacted_text
+    assert "[redacted-email]" in redacted_text

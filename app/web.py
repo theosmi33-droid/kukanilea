@@ -2148,6 +2148,7 @@ def register():
                 auth_db.upsert_tenant(default_tenant, default_tenant, now)
                 auth_db.upsert_membership(username, default_tenant, "OPERATOR", now)
                 auth_db.add_outbox(
+                    tenant_id=default_tenant,
                     kind="verify_email",
                     recipient_redacted=_redact_email(email),
                     subject="Bestätigungscode",
@@ -2213,6 +2214,9 @@ def forgot_password():
                         email, _hash_code(code), expires, now
                     )
                     auth_db.add_outbox(
+                        tenant_id=str(
+                            current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
+                        ),
                         kind="reset_password",
                         recipient_redacted=_redact_email(email),
                         subject="Reset-Code",
@@ -7037,7 +7041,15 @@ def mail_account_add():
         port = 993
     if not label or not host or not username:
         return redirect(url_for("web.mail_page", status="Pflichtfelder fehlen."))
-    pw_ref = mail_store_secret(password) if password else None
+    try:
+        pw_ref = mail_store_secret(password) if password else None
+    except ValueError:
+        return redirect(
+            url_for(
+                "web.mail_page",
+                status="EMAIL_ENCRYPTION_KEY fehlt. Passwort konnte nicht gespeichert werden.",
+            )
+        )
     account_id = mail_save_account(
         _core_db_path(),
         tenant_id=tenant_id,

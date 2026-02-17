@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import secrets
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional
@@ -84,7 +86,7 @@ class AuthDB:
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS chat_history(
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  id TEXT PRIMARY KEY,
                   ts TEXT NOT NULL,
                   tenant_id TEXT NOT NULL,
                   username TEXT NOT NULL,
@@ -97,7 +99,8 @@ class AuthDB:
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS auth_outbox(
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL DEFAULT 'KUKANILEA',
                   kind TEXT NOT NULL,
                   recipient_redacted TEXT NOT NULL,
                   subject TEXT NOT NULL,
@@ -106,12 +109,21 @@ class AuthDB:
                 );
                 """
             )
+            self._ensure_outbox_schema(con)
             con.execute(
                 "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')"
             )
             con.commit()
         finally:
             con.close()
+
+    def _ensure_outbox_schema(self, con: sqlite3.Connection) -> None:
+        rows = con.execute("PRAGMA table_info(auth_outbox)").fetchall()
+        existing = {str(r["name"]) for r in rows}
+        if "tenant_id" not in existing:
+            con.execute(
+                "ALTER TABLE auth_outbox ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'KUKANILEA'"
+            )
 
     def _ensure_user_schema(self, con: sqlite3.Connection) -> None:
         rows = con.execute("PRAGMA table_info(users)").fetchall()
@@ -315,16 +327,20 @@ class AuthDB:
         try:
             row = con.execute(
                 """
-                SELECT username
+                SELECT username, COALESCE(email_verify_code,'') AS verify_hash
                 FROM users
                 WHERE LOWER(COALESCE(email,''))=LOWER(?)
-                  AND COALESCE(email_verify_code,'')=?
                   AND COALESCE(email_verify_expires_at,'')>=?
                 LIMIT 1
                 """,
-                (email, code_hash, now_iso),
+                (email, now_iso),
             ).fetchone()
-            return str(row["username"]) if row else None
+            if not row:
+                return None
+            stored = str(row["verify_hash"] or "")
+            if not stored or not secrets.compare_digest(stored, str(code_hash or "")):
+                return None
+            return str(row["username"])
         finally:
             con.close()
 
@@ -352,16 +368,20 @@ class AuthDB:
         try:
             row = con.execute(
                 """
-                SELECT username
+                SELECT username, COALESCE(reset_code,'') AS reset_hash
                 FROM users
                 WHERE LOWER(COALESCE(email,''))=LOWER(?)
-                  AND COALESCE(reset_code,'')=?
                   AND COALESCE(reset_expires_at,'')>=?
                 LIMIT 1
                 """,
-                (email, code_hash, now_iso),
+                (email, now_iso),
             ).fetchone()
-            return str(row["username"]) if row else None
+            if not row:
+                return None
+            stored = str(row["reset_hash"] or "")
+            if not stored or not secrets.compare_digest(stored, str(code_hash or "")):
+                return None
+            return str(row["username"])
         finally:
             con.close()
 
@@ -386,6 +406,7 @@ class AuthDB:
     def add_outbox(
         self,
         *,
+        tenant_id: str = "KUKANILEA",
         kind: str,
         recipient_redacted: str,
         subject: str,
@@ -396,10 +417,18 @@ class AuthDB:
         try:
             con.execute(
                 """
-                INSERT INTO auth_outbox(kind, recipient_redacted, subject, body, created_at)
-                VALUES (?,?,?,?,?)
+                INSERT INTO auth_outbox(id, tenant_id, kind, recipient_redacted, subject, body, created_at)
+                VALUES (?,?,?,?,?,?,?)
                 """,
-                (kind, recipient_redacted, subject, body, created_at),
+                (
+                    uuid.uuid4().hex,
+                    tenant_id,
+                    kind,
+                    recipient_redacted,
+                    subject,
+                    body,
+                    created_at,
+                ),
             )
             con.commit()
         finally:
@@ -411,9 +440,9 @@ class AuthDB:
         try:
             rows = con.execute(
                 """
-                SELECT id, kind, recipient_redacted, subject, body, created_at
+                SELECT id, tenant_id, kind, recipient_redacted, subject, body, created_at
                 FROM auth_outbox
-                ORDER BY id DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (lim,),
@@ -467,10 +496,10 @@ class AuthDB:
         try:
             con.execute(
                 """
-                INSERT INTO chat_history(ts, tenant_id, username, role, direction, message)
-                VALUES (?,?,?,?,?,?)
+                INSERT INTO chat_history(id, ts, tenant_id, username, role, direction, message)
+                VALUES (?,?,?,?,?,?,?)
                 """,
-                (ts, tenant_id, username, role, direction, message),
+                (uuid.uuid4().hex, ts, tenant_id, username, role, direction, message),
             )
             con.commit()
         finally:
@@ -483,7 +512,7 @@ class AuthDB:
                 """
                 SELECT * FROM chat_history
                 WHERE tenant_id=?
-                ORDER BY id DESC
+                ORDER BY ts DESC, id DESC
                 LIMIT ?
                 """,
                 (tenant_id, limit),

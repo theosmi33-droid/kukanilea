@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="KUKANILEA"
-ENTRYPOINT="$ROOT_DIR/kukanilea_server.py"
+ENTRYPOINT="$ROOT_DIR/kukanilea_app.py"
 
 PY_BIN="${PYTHON:-python3}"
 

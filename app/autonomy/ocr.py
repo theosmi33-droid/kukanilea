@@ -386,8 +386,8 @@ def _job_create(tenant_id: str, source_file_id: str) -> str:
             """
             INSERT INTO autonomy_ocr_jobs(
               id, tenant_id, source_file_id, status, started_at, finished_at,
-              duration_ms, bytes_in, chars_out, error_code, created_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+              duration_ms, bytes_in, chars_out, error_code, created_at, redacted_text
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 job_id,
@@ -401,6 +401,7 @@ def _job_create(tenant_id: str, source_file_id: str) -> str:
                 0,
                 None,
                 created_at,
+                None,
             ),
         )
 
@@ -434,12 +435,13 @@ def _job_finish(
     duration_ms: int,
     bytes_in: int,
     chars_out: int,
+    redacted_text: str | None = None,
 ) -> None:
     def _tx(con: sqlite3.Connection) -> None:
         con.execute(
             """
             UPDATE autonomy_ocr_jobs
-            SET status=?, finished_at=?, duration_ms=?, bytes_in=?, chars_out=?, error_code=?
+            SET status=?, finished_at=?, duration_ms=?, bytes_in=?, chars_out=?, error_code=?, redacted_text=?
             WHERE tenant_id=? AND id=?
             """,
             (
@@ -449,6 +451,7 @@ def _job_finish(
                 int(bytes_in),
                 int(chars_out),
                 error_code,
+                redacted_text,
                 tenant_id,
                 job_id,
             ),
@@ -983,6 +986,7 @@ def submit_ocr_for_source_file(
         duration_ms=duration_ms,
         bytes_in=size_bytes,
         chars_out=chars_out,
+        redacted_text=redacted,
     )
     _event_emit(
         event_type="autonomy_ocr_done",

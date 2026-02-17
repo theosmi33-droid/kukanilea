@@ -1,5 +1,12 @@
 # KUKANILEA (macOS, local-first)
 
+Referenzen:
+- Onboarding: `ONBOARDING.md`
+- Weekly Review: `WEEKLY_TEMPLATE.md`
+- Glossar: `GLOSSARY.md`
+- Teamrollen: `TEAM_ROLES.md`
+- Verfassung: `docs/CONSTITUTION.md`
+
 ## End-user install (DMG)
 1. Open `KUKANILEA.dmg`.
 2. Drag `KUKANILEA.app` to `Applications`.
@@ -30,7 +37,7 @@ Place a signed `license.json` into:
 
 ## Run (production entrypoint)
 ```bash
-python kukanilea_server.py
+python kukanilea_app.py
 ```
 
 ## Build artifacts
@@ -42,7 +49,7 @@ bash scripts/make_dmg.sh
 
 ## Developer checks
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pytest -q

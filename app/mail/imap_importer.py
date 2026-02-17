@@ -4,11 +4,15 @@ import base64
 import hashlib
 import imaplib
 import json
+import os
 import sqlite3
+import ssl
 from datetime import datetime
 from email import message_from_bytes, policy
 from pathlib import Path
 from typing import Any
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.config import Config
 from app.knowledge import knowledge_redact_text
@@ -105,12 +109,50 @@ def _save_secrets(data: dict[str, str]) -> None:
     path.chmod(0o600)
 
 
+def _encryption_key() -> bytes:
+    raw = str(os.environ.get("EMAIL_ENCRYPTION_KEY", "") or "").strip()
+    if not raw:
+        raise ValueError("email_encryption_key_missing")
+    if raw.startswith("base64:"):
+        decoded = base64.urlsafe_b64decode(raw.split(":", 1)[1].encode("utf-8"))
+        if len(decoded) in {16, 24, 32}:
+            return decoded
+    try:
+        as_hex = bytes.fromhex(raw)
+        if len(as_hex) in {16, 24, 32}:
+            return as_hex
+    except Exception:
+        pass
+    return hashlib.sha256(raw.encode("utf-8")).digest()
+
+
+def _encrypt_secret(secret: str) -> str:
+    key = _encryption_key()
+    aes = AESGCM(key)
+    nonce = os.urandom(12)
+    ciphertext = aes.encrypt(nonce, secret.encode("utf-8"), b"kukanilea-email-secret")
+    packed = nonce + ciphertext
+    return "aesgcm:" + base64.urlsafe_b64encode(packed).decode("ascii")
+
+
+def _decrypt_secret(payload: str) -> str:
+    raw = str(payload or "")
+    if raw.startswith("aesgcm:"):
+        encoded = raw.split(":", 1)[1]
+        packed = base64.urlsafe_b64decode(encoded.encode("ascii"))
+        nonce, ciphertext = packed[:12], packed[12:]
+        aes = AESGCM(_encryption_key())
+        return aes.decrypt(nonce, ciphertext, b"kukanilea-email-secret").decode("utf-8")
+    # Legacy fallback (pre-encryption local format).
+    return base64.b64decode(raw.encode("ascii")).decode("utf-8")
+
+
 def store_secret(secret: str) -> str:
     ref = (
         f"sec_{hashlib.sha256((secret + _now_iso()).encode('utf-8')).hexdigest()[:24]}"
     )
     data = _load_secrets()
-    data[ref] = base64.b64encode(secret.encode("utf-8")).decode("ascii")
+    data[ref] = _encrypt_secret(secret)
     _save_secrets(data)
     return ref
 
@@ -121,7 +163,7 @@ def load_secret(ref: str) -> str:
     if not value:
         return ""
     try:
-        return base64.b64decode(value.encode("ascii")).decode("utf-8")
+        return _decrypt_secret(value)
     except Exception:
         return ""
 
@@ -286,7 +328,8 @@ def sync_account(
 
     imported = 0
     try:
-        with imaplib.IMAP4_SSL(host, port) as imap:
+        context = ssl.create_default_context()
+        with imaplib.IMAP4_SSL(host, port, ssl_context=context) as imap:
             imap.login(username, password)
             imap.select("INBOX")
             status, data = imap.uid("search", None, "ALL")

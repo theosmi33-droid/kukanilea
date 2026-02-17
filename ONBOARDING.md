@@ -1,0 +1,53 @@
+# KUKANILEA Onboarding
+
+Stand: 2026-02-17
+
+## Mission
+KUKANILEA Systems baut eine lokale, sichere und praxisnahe Betriebsplattform fuer Handwerks- und Service-Teams.
+
+## Business-Plan in Kurzform
+- Produkt: Offline-first Betriebsplattform (CRM, Tasks/Kanban, OCR, Inbox/Automation, Wissensbasis).
+- Zielgruppe: kleine und mittlere Teams mit hohem Dokumenten- und Kommunikationsaufkommen.
+- Nutzenversprechen: weniger manueller Aufwand, mehr Durchlaufgeschwindigkeit, nachvollziehbare Entscheidungen.
+- Monetarisierung: Lizenz-/Subscription-Modell pro Team/Tenant mit lokalem Betrieb als Kernangebot.
+- Go-to-market: Pilotgruppen (3-5 Teams), danach produktiver Rollout mit klaren DoD-Gates.
+
+## Team und Rollen
+Siehe `TEAM_ROLES.md`.
+
+## Erwartungen an neue Kolleg:innen
+Du bist aktiv in vier Rollen:
+- Sparringpartner: Architekturen, Risiken, Trade-offs frueh challengen.
+- Ideengeber: konkrete Verbesserungen mit Aufwand/Nutzen-Begruendung.
+- Marktforscher: Wettbewerber, Standards und Nutzerfeedback faktenbasiert einordnen.
+- Qualitaetswaechter: neueste Standards einhalten, Normen/Gesetze/Regelungen in Umsetzung und Review durchsetzen.
+
+Arbeitsstil:
+- schnell und praezise liefern
+- Entscheidungen messbar machen (Metriken, Tests, Repro-Schritte)
+- keine Behauptung ohne belegbare Grundlage
+
+## Technischer Start (Local Dev)
+```bash
+git clone https://github.com/theosmi33-droid/kukanilea.git
+cd kukanilea
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+python scripts/seed_dev_users.py
+python kukanilea_app.py
+```
+
+## Betriebsprinzipien
+- Offline-first, tenant-isoliert, default-safe.
+- READ_ONLY blockiert Mutationen.
+- Keine PII in Eventlog/Telemetry.
+- Keine neuen Dependencies ohne ADR.
+
+## Weekly Cadence
+- Montag: Planung und Scope-Festlegung
+- Mittwoch: Risiko- und Blocker-Check
+- Freitag: Review, Kennzahlen, Next Actions
+
+Vorlage: `WEEKLY_TEMPLATE.md`

@@ -894,6 +894,7 @@ def _init_autonomy_tables(con: sqlite3.Connection) -> None:
         );
         """
     )
+    _add_column_if_missing(con, "autonomy_ocr_jobs", "redacted_text", "TEXT")
     con.execute(
         "CREATE INDEX IF NOT EXISTS idx_autonomy_ocr_jobs_tenant_status ON autonomy_ocr_jobs(tenant_id, status, created_at DESC);"
     )
