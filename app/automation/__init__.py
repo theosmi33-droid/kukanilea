@@ -1,3 +1,5 @@
+from .actions import execute_action as builder_execute_action
+from .actions import run_rule_actions as builder_run_actions
 from .core import (
     automation_rule_create,
     automation_rule_disable,
@@ -14,6 +16,9 @@ from .store import (
     append_execution_log as builder_execution_log_append,
 )
 from .store import (
+    create_pending_action as builder_pending_action_create,
+)
+from .store import (
     create_rule as builder_rule_create,
 )
 from .store import (
@@ -21,6 +26,9 @@ from .store import (
 )
 from .store import (
     ensure_automation_schema as builder_ensure_schema,
+)
+from .store import (
+    get_pending_action as builder_pending_action_get,
 )
 from .store import (
     get_rule as builder_rule_get,
@@ -32,7 +40,13 @@ from .store import (
     list_execution_logs as builder_execution_log_list,
 )
 from .store import (
+    list_pending_actions as builder_pending_action_list,
+)
+from .store import (
     list_rules as builder_rule_list,
+)
+from .store import (
+    mark_pending_action_confirmed as builder_pending_action_confirm,
 )
 from .store import (
     update_execution_log as builder_execution_log_update,
@@ -56,9 +70,15 @@ __all__ = [
     "builder_rule_create",
     "builder_rule_delete",
     "builder_ensure_schema",
+    "builder_execute_action",
+    "builder_run_actions",
     "builder_execution_log_append",
     "builder_execution_log_list",
     "builder_execution_log_update",
+    "builder_pending_action_create",
+    "builder_pending_action_list",
+    "builder_pending_action_get",
+    "builder_pending_action_confirm",
     "builder_rule_get",
     "builder_rule_list",
     "builder_rule_update",

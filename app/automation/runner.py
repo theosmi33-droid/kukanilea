@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 import kukanilea_core_v3_fixed as core
 
+from .actions import run_rule_actions
 from .conditions import evaluate_conditions
 from .store import (
     append_execution_log,
@@ -168,11 +169,36 @@ def _process_rule_for_event(
         )
         return {"ok": True, "matched": True, "duplicate": False}
 
+    actions = [a for a in (rule.get("actions") or []) if isinstance(a, Mapping)]
+    action_payloads = [
+        {"action_type": str(a.get("type") or "").strip(), **(a.get("config") or {})}
+        for a in actions
+    ]
+    action_result = run_rule_actions(
+        tenant_id=tenant_id,
+        rule_id=rule_id,
+        actions=action_payloads,
+        context=context,
+        db_path=db_path,
+    )
+    if not bool(action_result.get("ok")):
+        update_execution_log(
+            tenant_id=tenant_id,
+            log_id=log_id,
+            status="failed",
+            error_redacted="action_execution_failed",
+            output_redacted=str(action_result.get("summary_redacted") or ""),
+            db_path=db_path,
+        )
+        return {"ok": False, "reason": "action_execution_failed"}
+
+    status = "pending" if int(action_result.get("pending") or 0) > 0 else "ok"
+
     update_execution_log(
         tenant_id=tenant_id,
         log_id=log_id,
-        status="ok",
-        output_redacted=f"conditions_met:{event_type}",
+        status=status,
+        output_redacted=str(action_result.get("summary_redacted") or ""),
         db_path=db_path,
     )
     return {"ok": True, "matched": True, "duplicate": False}
