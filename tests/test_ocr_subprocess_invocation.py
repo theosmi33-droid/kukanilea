@@ -184,6 +184,65 @@ def test_ocr_subprocess_uses_tessdata_override(tmp_path: Path, monkeypatch) -> N
     assert kwargs["env"]["TESSDATA_PREFIX"] == "/opt/homebrew/share"
 
 
+def test_ocr_subprocess_uses_env_overrides_when_no_explicit_args(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _init_core(tmp_path)
+    knowledge_policy_update("TENANT_A", actor_user_id="dev", allow_ocr=True)
+    source_file_id = "sf3-env"
+    _insert_source_file("TENANT_A", source_file_id, "env-override.png")
+    image_path = tmp_path / "env-override.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")
+    override_bin = tmp_path / "tesseract"
+    override_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    override_bin.chmod(0o755)
+    monkeypatch.setenv("KUKANILEA_TESSERACT_ALLOWED_PREFIXES", str(tmp_path))
+    monkeypatch.setenv("AUTONOMY_OCR_TESSERACT_BIN", str(override_bin))
+    monkeypatch.setenv("AUTONOMY_OCR_TESSDATA_DIR", "/opt/homebrew/share")
+    monkeypatch.setenv("AUTONOMY_OCR_LANG", "deu")
+
+    captured: dict[str, object] = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "OCR TEXT"
+        stderr = ""
+
+    def _fake_run(cmd, **kwargs):
+        captured["cmd"] = list(cmd)
+        captured["kwargs"] = kwargs
+        return _Proc()
+
+    monkeypatch.setattr(ocr_mod.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
+
+    app = Flask(__name__)
+    app.config.update(
+        SECRET_KEY="test",
+        AUTONOMY_OCR_TIMEOUT_SEC=8,
+        AUTONOMY_OCR_MAX_CHARS=200_000,
+        AUTONOMY_OCR_LANG="",
+    )
+    with app.app_context():
+        result = submit_ocr_for_source_file(
+            tenant_id="TENANT_A",
+            actor_user_id="dev",
+            source_file_id=source_file_id,
+            abs_path=image_path,
+        )
+
+    assert result["ok"] is True
+    cmd = captured["cmd"]
+    assert cmd[0] == str(override_bin)
+    assert "--tessdata-dir" in cmd
+    assert cmd[cmd.index("--tessdata-dir") + 1] == "/opt/homebrew/share"
+    assert "-l" in cmd
+    assert cmd[cmd.index("-l") + 1] == "deu"
+    assert result["tesseract_resolution_source"] == "env"
+    kwargs = captured["kwargs"]
+    assert kwargs["env"]["TESSDATA_PREFIX"] == "/opt/homebrew/share"
+
+
 def test_run_tesseract_retry_guard(tmp_path: Path, monkeypatch) -> None:
     image_path = tmp_path / "retry.png"
     image_path.write_bytes(b"\x89PNG\r\n\x1a\npayload")

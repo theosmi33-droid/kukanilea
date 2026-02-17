@@ -43,6 +43,11 @@ ENV_DB_KEYS = (
     "TOPHANDWERK_DB_FILENAME",
     "KUKANILEA_ANONYMIZATION_KEY",
 )
+OCR_RUNTIME_OVERRIDE_KEYS = (
+    "AUTONOMY_OCR_TESSERACT_BIN",
+    "AUTONOMY_OCR_TESSDATA_DIR",
+    "AUTONOMY_OCR_LANG",
+)
 SAFE_PATH_RE = re.compile(r"[^\x20-\x7E]+")
 
 
@@ -161,6 +166,30 @@ def _restore_env(previous: dict[str, str | None]) -> None:
             os.environ.pop(key, None)
         else:
             os.environ[key] = value
+
+
+@contextlib.contextmanager
+def _ocr_runtime_overrides(
+    *,
+    tesseract_bin: str | None,
+    tessdata_dir: str | None,
+    lang: str | None,
+) -> Iterator[None]:
+    previous = {key: os.environ.get(key) for key in OCR_RUNTIME_OVERRIDE_KEYS}
+    updates = {
+        "AUTONOMY_OCR_TESSERACT_BIN": str(tesseract_bin or "").strip() or None,
+        "AUTONOMY_OCR_TESSDATA_DIR": str(tessdata_dir or "").strip() or None,
+        "AUTONOMY_OCR_LANG": str(lang or "").strip().lower() or None,
+    }
+    try:
+        for key, value in updates.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        yield
+    finally:
+        _restore_env(previous)
 
 
 @contextlib.contextmanager
@@ -534,55 +563,62 @@ def _execute_test_round(
     shutil.copy2(sample_path, target_path)
 
     try:
-        scan_summary = scan_sources_once(
-            tenant_id,
-            actor_user_id="devtools_ocr_test",
-            budget_ms=max(1000, int(timeout_s * 1000)),
-        )
-        scanner_discovered_files = int(scan_summary.get("discovered") or 0)
-        deadline = time.monotonic() + max(1, timeout_s)
-        latest_job: dict[str, Any] | None = None
-        while time.monotonic() <= deadline:
-            latest_job = _query_latest_ocr_job(core_db_path, tenant_id, basename)
-            if latest_job:
-                break
-            time.sleep(0.25)
-
-        direct_submit_used = False
-        direct_submit_result: dict[str, Any] | None = None
-        source_lookup_reason: str | None = None
-        source_columns: list[str] | None = None
-        if latest_job is None and bool(direct_submit_in_sandbox):
-            source_file_id, source_lookup_reason, source_columns = (
-                _lookup_source_file_id(
-                    core_db_path,
-                    tenant_id,
-                    path_hash=hmac_path_hash(str(target_path)),
-                    basename=basename,
-                )
+        with _ocr_runtime_overrides(
+            tesseract_bin=tesseract_bin,
+            tessdata_dir=tesseract_tessdata_dir,
+            lang=tesseract_lang,
+        ):
+            scan_summary = scan_sources_once(
+                tenant_id,
+                actor_user_id="devtools_ocr_test",
+                budget_ms=max(1000, int(timeout_s * 1000)),
             )
-            if source_file_id:
-                try:
-                    direct_submit_result = submit_ocr_for_source_file(
-                        tenant_id,
-                        actor_user_id="devtools_ocr_test",
-                        source_file_id=source_file_id,
-                        abs_path=target_path,
-                        lang_override=tesseract_lang,
-                        tessdata_dir=tesseract_tessdata_dir,
-                        tesseract_bin_override=tesseract_bin,
-                        allow_retry=retry_enabled,
-                    )
-                    direct_submit_used = True
-                except Exception:
-                    source_lookup_reason = "direct_submit_failed"
-
+            scanner_discovered_files = int(scan_summary.get("discovered") or 0)
             deadline = time.monotonic() + max(1, timeout_s)
+            latest_job: dict[str, Any] | None = None
             while time.monotonic() <= deadline:
                 latest_job = _query_latest_ocr_job(core_db_path, tenant_id, basename)
                 if latest_job:
                     break
                 time.sleep(0.25)
+
+            direct_submit_used = False
+            direct_submit_result: dict[str, Any] | None = None
+            source_lookup_reason: str | None = None
+            source_columns: list[str] | None = None
+            if latest_job is None and bool(direct_submit_in_sandbox):
+                source_file_id, source_lookup_reason, source_columns = (
+                    _lookup_source_file_id(
+                        core_db_path,
+                        tenant_id,
+                        path_hash=hmac_path_hash(str(target_path)),
+                        basename=basename,
+                    )
+                )
+                if source_file_id:
+                    try:
+                        direct_submit_result = submit_ocr_for_source_file(
+                            tenant_id,
+                            actor_user_id="devtools_ocr_test",
+                            source_file_id=source_file_id,
+                            abs_path=target_path,
+                            lang_override=tesseract_lang,
+                            tessdata_dir=tesseract_tessdata_dir,
+                            tesseract_bin_override=tesseract_bin,
+                            allow_retry=retry_enabled,
+                        )
+                        direct_submit_used = True
+                    except Exception:
+                        source_lookup_reason = "direct_submit_failed"
+
+                deadline = time.monotonic() + max(1, timeout_s)
+                while time.monotonic() <= deadline:
+                    latest_job = _query_latest_ocr_job(
+                        core_db_path, tenant_id, basename
+                    )
+                    if latest_job:
+                        break
+                    time.sleep(0.25)
 
         pii_patterns = [TEST_EMAIL_PATTERN, TEST_PHONE_PATTERN]
         pii_found_knowledge = (
@@ -959,8 +995,7 @@ def run_ocr_test(
                 from app.autonomy.ocr import resolve_tesseract_binary
 
                 job_resolution = resolve_tesseract_binary(
-                    requested_bin=str(tesseract_bin or probe_bin_raw or "").strip()
-                    or None
+                    requested_bin=str(tesseract_bin or "").strip() or None
                 )
                 result["tesseract_bin_used_job"] = (
                     _sanitize_path_for_output(job_resolution.resolved_path)

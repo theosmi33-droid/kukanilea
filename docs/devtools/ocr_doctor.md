@@ -10,6 +10,7 @@
   Faelle `tesseract_missing`, `tesseract_not_allowlisted`, `tesseract_exec_failed`, `tessdata_missing`, `language_missing`
 - Strukturierte Operator-Hints in `operator_hints` (OS, Probe-Zusammenfassung,
   sanitisiertes Hint-Set)
+- Probe- und Job-Resolver sind vereinheitlicht (gleiche Allowlist-/Prefix-Regeln)
 
 ## Sicherheitsmodell
 
@@ -33,6 +34,11 @@ python -m app.devtools.cli_ocr_test --tenant dev --doctor --strict --json
 python -m app.devtools.cli_ocr_test --tenant dev --doctor --doctor-only --json
 python -m app.devtools.cli_ocr_test --tenant dev --doctor --doctor-and-sandbox --json
 ```
+
+Runtime-Overrides fuer den Jobpfad (optional):
+- `AUTONOMY_OCR_TESSERACT_BIN`
+- `AUTONOMY_OCR_TESSDATA_DIR`
+- `AUTONOMY_OCR_LANG`
 
 Readiness-Felder fuer OCR-v0 (introspektiv, ohne DB-Mutation):
 

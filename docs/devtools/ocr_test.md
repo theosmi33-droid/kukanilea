@@ -158,6 +158,13 @@ Zusaetzliche Felder fuer Operator-Diagnose:
 - `operator_hints`
 - `support_bundle` (wenn `--write-support-bundle` aktiv)
 
+Resolver-Hinweis:
+- Der OCR-Job nutzt denselben Tesseract-Resolver wie die Probe.
+- Optionale Runtime-Overrides fuer den Jobpfad:
+  - `AUTONOMY_OCR_TESSERACT_BIN`
+  - `AUTONOMY_OCR_TESSDATA_DIR`
+  - `AUTONOMY_OCR_LANG`
+
 ## OCR fuer Tenant `dev` aktivieren (lokal)
 
 Die OCR-Policy wird in der Tabelle `knowledge_source_policies` gespeichert.

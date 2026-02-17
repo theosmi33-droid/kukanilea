@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -726,6 +727,79 @@ def test_run_ocr_test_output_does_not_echo_test_pii(monkeypatch) -> None:
     for item in result.get("next_actions") or []:
         assert ocr_test.TEST_EMAIL_PATTERN not in str(item)
         assert ocr_test.TEST_PHONE_PATTERN not in str(item)
+
+
+def test_execute_test_round_applies_and_restores_runtime_ocr_overrides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import app.autonomy.source_scan as source_scan_mod
+
+    core_db = tmp_path / "core.sqlite3"
+    sqlite3.connect(str(core_db)).close()
+    artifacts_root = tmp_path / "artifacts"
+    artifacts_root.mkdir(parents=True, exist_ok=True)
+    inbox_dir = tmp_path / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("AUTONOMY_OCR_TESSERACT_BIN", "old-bin")
+    monkeypatch.setenv("AUTONOMY_OCR_TESSDATA_DIR", "old-tess")
+    monkeypatch.setenv("AUTONOMY_OCR_LANG", "old-lang")
+
+    captured: dict[str, str | None] = {}
+
+    monkeypatch.setattr(
+        source_scan_mod,
+        "source_watch_config_get",
+        lambda _tenant_id, create_if_missing=False: {
+            "documents_inbox_dir": str(inbox_dir)
+        },
+    )
+    monkeypatch.setattr(
+        source_scan_mod,
+        "source_watch_config_update",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def _scan(_tenant_id: str, *, actor_user_id: str, budget_ms: int):
+        captured["bin"] = os.environ.get("AUTONOMY_OCR_TESSERACT_BIN")
+        captured["tessdata"] = os.environ.get("AUTONOMY_OCR_TESSDATA_DIR")
+        captured["lang"] = os.environ.get("AUTONOMY_OCR_LANG")
+        return {"discovered": 0}
+
+    monkeypatch.setattr(source_scan_mod, "scan_sources_once", _scan)
+    monkeypatch.setattr(
+        ocr_test,
+        "_query_latest_ocr_job",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(ocr_test.time, "sleep", lambda *_args, **_kwargs: None)
+    ticks = {"value": 0.0}
+
+    def _monotonic() -> float:
+        ticks["value"] += 2.0
+        return ticks["value"]
+
+    monkeypatch.setattr(ocr_test.time, "monotonic", _monotonic)
+
+    result = ocr_test._execute_test_round(
+        "TENANT_A",
+        timeout_s=1,
+        core_db_path=core_db,
+        artifacts_root=artifacts_root,
+        direct_submit_in_sandbox=False,
+        tesseract_lang="deu",
+        tesseract_tessdata_dir="/opt/homebrew/share",
+        tesseract_bin="/opt/homebrew/bin/tesseract",
+        retry_enabled=True,
+    )
+
+    assert captured["bin"] == "/opt/homebrew/bin/tesseract"
+    assert captured["tessdata"] == "/opt/homebrew/share"
+    assert captured["lang"] == "deu"
+    assert result["job_status"] is None
+    assert os.environ.get("AUTONOMY_OCR_TESSERACT_BIN") == "old-bin"
+    assert os.environ.get("AUTONOMY_OCR_TESSDATA_DIR") == "old-tess"
+    assert os.environ.get("AUTONOMY_OCR_LANG") == "old-lang"
 
 
 def test_preflight_reports_tesseract_even_when_policy_denied(monkeypatch) -> None:
