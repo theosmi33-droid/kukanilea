@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import importlib
 import importlib.util
 import json
@@ -54,6 +55,7 @@ from flask import (
     render_template_string,
     request,
     send_file,
+    session,
     url_for,
 )
 
@@ -135,17 +137,30 @@ from app.lead_intake.core import ConflictError
 from app.lead_intake.guard import require_lead_access
 from app.mail import (
     ensure_postfach_schema,
+    postfach_build_authorization_url,
+    postfach_clear_oauth_token,
     postfach_create_account,
     postfach_create_draft,
     postfach_create_followup_task,
+    postfach_email_encryption_ready,
+    postfach_exchange_code_for_tokens,
+    postfach_extract_intake,
     postfach_extract_structured,
+    postfach_generate_oauth_state,
+    postfach_generate_pkce_pair,
+    postfach_get_account,
     postfach_get_draft,
+    postfach_get_oauth_token,
     postfach_get_thread,
     postfach_link_entities,
     postfach_list_accounts,
     postfach_list_drafts_for_thread,
     postfach_list_threads,
+    postfach_oauth_provider_config,
+    postfach_safety_check_draft,
+    postfach_save_oauth_token,
     postfach_send_draft,
+    postfach_set_account_oauth_state,
     postfach_sync_account,
 )
 from app.omni import get_event as omni_get_event
@@ -6990,6 +7005,36 @@ def _postfach_redirect(
     )
 
 
+def _postfach_oauth_redirect_uri() -> str:
+    configured = str(current_app.config.get("OAUTH_REDIRECT_BASE") or "").strip()
+    if configured:
+        return configured.rstrip("/") + "/postfach/accounts/oauth/callback"
+    base = str(request.host_url or "").rstrip("/")
+    return base + "/postfach/accounts/oauth/callback"
+
+
+def _postfach_oauth_client(provider: str) -> tuple[str, str]:
+    p = str(provider or "").strip().lower()
+    if p == "google":
+        return (
+            str(current_app.config.get("GOOGLE_CLIENT_ID") or "").strip(),
+            str(current_app.config.get("GOOGLE_CLIENT_SECRET") or "").strip(),
+        )
+    return (
+        str(current_app.config.get("MICROSOFT_CLIENT_ID") or "").strip(),
+        str(current_app.config.get("MICROSOFT_CLIENT_SECRET") or "").strip(),
+    )
+
+
+def _postfach_has_connected_oauth_token(tenant_id: str, account_id: str) -> bool:
+    token = postfach_get_oauth_token(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        account_id=account_id,
+    )
+    return bool(token and str(token.get("access_token") or "").strip())
+
+
 @bp.get("/postfach")
 @bp.get("/mail")
 @login_required
@@ -7011,6 +7056,10 @@ def postfach_page():
     query = (request.args.get("q") or "").strip()
 
     accounts = postfach_list_accounts(_core_db_path(), tenant_id)
+    for row in accounts:
+        row["oauth_connected"] = _postfach_has_connected_oauth_token(
+            tenant_id, str(row.get("id") or "")
+        )
     if not selected_account_id and accounts:
         selected_account_id = str(accounts[0].get("id") or "")
 
@@ -7123,6 +7172,8 @@ def postfach_account_add():
         return redirect(_postfach_redirect(status="Read-only mode aktiv."))
     tenant_id = current_tenant()
     label = (request.form.get("label") or "").strip()
+    auth_mode = (request.form.get("auth_mode") or "password").strip().lower()
+    oauth_provider = (request.form.get("oauth_provider") or "").strip().lower()
     imap_host = (request.form.get("imap_host") or "").strip()
     imap_username = (request.form.get("imap_username") or "").strip()
     smtp_host = (request.form.get("smtp_host") or "").strip()
@@ -7144,8 +7195,33 @@ def postfach_account_add():
     except Exception:
         smtp_port = 465
 
-    if not label or not imap_host or not imap_username or not secret_plain:
+    if auth_mode in {"oauth_google", "oauth_microsoft"} and not oauth_provider:
+        oauth_provider = "google" if auth_mode == "oauth_google" else "microsoft"
+    if auth_mode in {"oauth_google", "oauth_microsoft"} and not imap_host:
+        try:
+            cfg = postfach_oauth_provider_config(oauth_provider)
+            imap_host = str(cfg.get("imap_host") or "")
+            imap_port = int(cfg.get("imap_port") or imap_port)
+            smtp_host = str(cfg.get("smtp_host") or "")
+            smtp_port = int(cfg.get("smtp_port") or smtp_port)
+            if not smtp_use_ssl and oauth_provider == "google":
+                smtp_use_ssl = True
+        except Exception:
+            pass
+
+    if not label or not imap_host or not imap_username:
         return redirect(_postfach_redirect(status="Pflichtfelder fehlen."))
+    if auth_mode == "password" and not secret_plain:
+        return redirect(_postfach_redirect(status="Pflichtfelder fehlen."))
+    if (
+        auth_mode in {"oauth_google", "oauth_microsoft"}
+        and not postfach_email_encryption_ready()
+    ):
+        return redirect(
+            _postfach_redirect(
+                status="EMAIL_ENCRYPTION_KEY fehlt. OAuth-Token koennen nicht sicher gespeichert werden."
+            )
+        )
 
     try:
         account_id = postfach_create_account(
@@ -7160,6 +7236,8 @@ def postfach_account_add():
             smtp_username=smtp_username,
             smtp_use_ssl=smtp_use_ssl,
             secret_plain=secret_plain,
+            auth_mode=auth_mode,
+            oauth_provider=oauth_provider or None,
         )
     except ValueError as exc:
         reason = str(exc)
@@ -7175,8 +7253,221 @@ def postfach_account_add():
             )
         )
 
+    status = "Account gespeichert."
+    if auth_mode in {"oauth_google", "oauth_microsoft"}:
+        status = "OAuth-Account gespeichert. Bitte jetzt verbinden."
+    return redirect(_postfach_redirect(account_id=account_id, status=status))
+
+
+@bp.post("/postfach/accounts/oauth/start")
+@login_required
+def postfach_account_oauth_start():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    if not account_id:
+        return redirect(_postfach_redirect(status="Account fehlt."))
+    account = postfach_get_account(_core_db_path(), tenant_id, account_id)
+    if not account:
+        return redirect(_postfach_redirect(status="Account nicht gefunden."))
+    provider = str(account.get("oauth_provider") or "").strip().lower()
+    if not provider:
+        mode = str(account.get("auth_mode") or "").strip().lower()
+        provider = "google" if mode == "oauth_google" else "microsoft"
+    client_id, _client_secret = _postfach_oauth_client(provider)
+    if not client_id:
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                status=f"OAuth Client-ID fuer {provider} fehlt.",
+            )
+        )
+    state = postfach_generate_oauth_state()
+    verifier, challenge = postfach_generate_pkce_pair()
+    session["postfach_oauth_state"] = state
+    session["postfach_oauth_verifier"] = verifier
+    session["postfach_oauth_account_id"] = account_id
+    session["postfach_oauth_provider"] = provider
+    redirect_uri = _postfach_oauth_redirect_uri()
+    try:
+        auth_url = postfach_build_authorization_url(
+            provider=provider,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            state=state,
+            code_challenge=challenge,
+            login_hint=str(account.get("imap_username") or "").strip() or None,
+        )
+    except Exception as exc:
+        postfach_set_account_oauth_state(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            account_id=account_id,
+            oauth_status="error",
+            oauth_last_error=f"oauth_start_failed:{exc}",
+            oauth_provider=provider,
+        )
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                status=f"OAuth Start fehlgeschlagen ({exc}).",
+            )
+        )
+    postfach_set_account_oauth_state(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        account_id=account_id,
+        oauth_status="pending",
+        oauth_last_error="",
+        oauth_provider=provider,
+    )
+    return redirect(auth_url)
+
+
+@bp.get("/postfach/accounts/oauth/callback")
+@login_required
+def postfach_account_oauth_callback():
+    tenant_id = current_tenant()
+    state = str(request.args.get("state") or "").strip()
+    code = str(request.args.get("code") or "").strip()
+    error = str(request.args.get("error") or "").strip()
+    expected_state = str(session.get("postfach_oauth_state") or "")
+    account_id = str(session.get("postfach_oauth_account_id") or "")
+    provider = str(session.get("postfach_oauth_provider") or "")
+    verifier = str(session.get("postfach_oauth_verifier") or "")
+
+    session.pop("postfach_oauth_state", None)
+    session.pop("postfach_oauth_account_id", None)
+    session.pop("postfach_oauth_provider", None)
+    session.pop("postfach_oauth_verifier", None)
+
+    if not account_id:
+        return redirect(
+            _postfach_redirect(status="OAuth Callback ohne Account-Kontext.")
+        )
+    if error:
+        postfach_set_account_oauth_state(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            account_id=account_id,
+            oauth_status="error",
+            oauth_last_error=f"oauth_callback_error:{error}",
+            oauth_provider=provider,
+        )
+        return redirect(
+            _postfach_redirect(account_id=account_id, status=f"OAuth Fehler: {error}")
+        )
+    if (
+        not state
+        or not expected_state
+        or not hmac.compare_digest(state, expected_state)
+    ):
+        postfach_set_account_oauth_state(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            account_id=account_id,
+            oauth_status="error",
+            oauth_last_error="oauth_state_mismatch",
+            oauth_provider=provider,
+        )
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                status="OAuth State ungueltig. Bitte erneut verbinden.",
+            )
+        )
+    if not code or not verifier:
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                status="OAuth Code/Verifier fehlt.",
+            )
+        )
+
+    client_id, client_secret = _postfach_oauth_client(provider)
+    if not client_id:
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                status="OAuth Client-Konfiguration fehlt.",
+            )
+        )
+    try:
+        tokens = postfach_exchange_code_for_tokens(
+            provider=provider,
+            client_id=client_id,
+            client_secret=client_secret or None,
+            code=code,
+            redirect_uri=_postfach_oauth_redirect_uri(),
+            code_verifier=verifier,
+        )
+        postfach_save_oauth_token(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            account_id=account_id,
+            provider=provider,
+            access_token=str(tokens.get("access_token") or ""),
+            refresh_token=str(tokens.get("refresh_token") or ""),
+            expires_at=str(tokens.get("expires_at") or ""),
+            scopes=[str(s) for s in (tokens.get("scopes") or [])],
+            token_type=str(tokens.get("token_type") or "Bearer"),
+        )
+        postfach_set_account_oauth_state(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            account_id=account_id,
+            oauth_status="connected",
+            oauth_last_error="",
+            oauth_provider=provider,
+            oauth_scopes=[str(s) for s in (tokens.get("scopes") or [])],
+        )
+    except Exception as exc:
+        postfach_set_account_oauth_state(
+            _core_db_path(),
+            tenant_id=tenant_id,
+            account_id=account_id,
+            oauth_status="error",
+            oauth_last_error=f"oauth_exchange_failed:{exc}",
+            oauth_provider=provider,
+        )
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                status=f"OAuth Token-Austausch fehlgeschlagen ({exc}).",
+            )
+        )
     return redirect(
-        _postfach_redirect(account_id=account_id, status="Account gespeichert.")
+        _postfach_redirect(account_id=account_id, status="OAuth erfolgreich verbunden.")
+    )
+
+
+@bp.post("/postfach/accounts/oauth/disconnect")
+@login_required
+def postfach_account_oauth_disconnect():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    provider = (request.form.get("provider") or "").strip().lower() or None
+    if not account_id:
+        return redirect(_postfach_redirect(status="Account fehlt."))
+    postfach_clear_oauth_token(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        account_id=account_id,
+        provider=provider,
+    )
+    postfach_set_account_oauth_state(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        account_id=account_id,
+        oauth_status="not_connected",
+        oauth_last_error="",
+        oauth_provider=provider or None,
+    )
+    return redirect(
+        _postfach_redirect(account_id=account_id, status="OAuth Verbindung getrennt.")
     )
 
 
@@ -7294,6 +7585,31 @@ def postfach_draft_send():
         "on",
         "yes",
     }
+    safety_ack = (request.form.get("safety_ack") or "").strip() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    safety = postfach_safety_check_draft(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        draft_id=draft_id,
+    )
+    if (
+        bool(safety.get("ok"))
+        and int(safety.get("warning_count") or 0) > 0
+        and not safety_ack
+    ):
+        warnings = safety.get("warnings") or []
+        first_warning = str((warnings[0] or {}).get("message") or "Warnung")
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                thread_id=thread_id,
+                status=f"Sicherheitscheck: {first_warning} (bitte bestaetigen).",
+            )
+        )
     result = postfach_send_draft(
         _core_db_path(),
         tenant_id=tenant_id,
@@ -7313,6 +7629,41 @@ def postfach_draft_send():
             account_id=account_id,
             thread_id=str(result.get("thread_id") or thread_id),
             status=status,
+        )
+    )
+
+
+@bp.post("/postfach/drafts/safety-check")
+@login_required
+def postfach_draft_safety_check():
+    tenant_id = current_tenant()
+    draft_id = (request.form.get("draft_id") or "").strip()
+    account_id = (request.form.get("account_id") or "").strip()
+    thread_id = (request.form.get("thread_id") or "").strip()
+    if not draft_id:
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id, thread_id=thread_id, status="Draft fehlt."
+            )
+        )
+    safety = postfach_safety_check_draft(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        draft_id=draft_id,
+    )
+    if not bool(safety.get("ok")):
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                thread_id=thread_id,
+                status=f"Sicherheitscheck fehlgeschlagen: {safety.get('reason')}",
+            )
+        )
+    count = int(safety.get("warning_count") or 0)
+    status = f"Sicherheitscheck: {count} Warnungen."
+    return redirect(
+        _postfach_redirect(
+            account_id=account_id, thread_id=thread_id, draft_id=draft_id, status=status
         )
     )
 
@@ -7368,6 +7719,29 @@ def postfach_thread_extract(thread_id: str):
     )
 
 
+@bp.post("/postfach/thread/<thread_id>/intake")
+@login_required
+def postfach_thread_intake(thread_id: str):
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    result = postfach_extract_intake(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+    )
+    if not bool(result.get("ok")):
+        status = f"Intake fehlgeschlagen: {result.get('reason')}"
+    else:
+        fields = result.get("fields") or {}
+        status = (
+            f"Intake extrahiert (Intent={fields.get('intent')}, "
+            f"Nachrichten={int(fields.get('message_count') or 0)})."
+        )
+    return redirect(
+        _postfach_redirect(account_id=account_id, thread_id=thread_id, status=status)
+    )
+
+
 @bp.post("/postfach/thread/<thread_id>/followup")
 @login_required
 def postfach_thread_followup(thread_id: str):
@@ -7394,6 +7768,134 @@ def postfach_thread_followup(thread_id: str):
             account_id=account_id,
             thread_id=thread_id,
             status=f"Follow-up Aufgabe erstellt (Task #{int(result.get('task_id') or 0)}).",
+        )
+    )
+
+
+@bp.post("/postfach/thread/<thread_id>/case")
+@login_required
+def postfach_thread_create_case(thread_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(
+            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
+        )
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    data = postfach_get_thread(
+        _core_db_path(), tenant_id=tenant_id, thread_id=thread_id
+    )
+    if not data:
+        return redirect(_postfach_redirect(status="Thread nicht gefunden."))
+    if not callable(task_create_fn):
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                thread_id=thread_id,
+                status="Task-System nicht verfuegbar.",
+            )
+        )
+    thread = data.get("thread") or {}
+    title = f"Case: {str(thread.get('subject_redacted') or thread_id)[:160]}"
+    try:
+        case_id = int(
+            task_create_fn(  # type: ignore[misc]
+                tenant=tenant_id,
+                severity="INFO",
+                task_type="CASE",
+                title=title,
+                details=f"Postfach Thread: {thread_id}",
+                created_by=str(current_user() or "dev"),
+            )
+        )
+    except Exception as exc:
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                thread_id=thread_id,
+                status=f"Case-Erzeugung fehlgeschlagen: {exc}",
+            )
+        )
+    return redirect(
+        _postfach_redirect(
+            account_id=account_id,
+            thread_id=thread_id,
+            status=f"Case erstellt (Task #{case_id}).",
+        )
+    )
+
+
+@bp.post("/postfach/thread/<thread_id>/tasks")
+@login_required
+def postfach_thread_create_tasks(thread_id: str):
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(
+            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
+        )
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    intake = postfach_extract_intake(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+    )
+    if not bool(intake.get("ok")):
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                thread_id=thread_id,
+                status=f"Task-Intake fehlgeschlagen: {intake.get('reason')}",
+            )
+        )
+    fields = intake.get("fields") or {}
+    intent = str(fields.get("intent") or "general_inquiry")
+    task_ids: list[int] = []
+    if not callable(task_create_fn):
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                thread_id=thread_id,
+                status="Task-System nicht verfuegbar.",
+            )
+        )
+    try:
+        task_ids.append(
+            int(
+                task_create_fn(  # type: ignore[misc]
+                    tenant=tenant_id,
+                    severity="INFO",
+                    task_type="FOLLOWUP",
+                    title=f"Postfach Follow-up ({intent})",
+                    details=f"Thread: {thread_id}",
+                    created_by=str(current_user() or "dev"),
+                )
+            )
+        )
+        if intent in {"complaint", "quote_request"}:
+            task_ids.append(
+                int(
+                    task_create_fn(  # type: ignore[misc]
+                        tenant=tenant_id,
+                        severity="INFO",
+                        task_type="GENERAL",
+                        title=f"Postfach Klaerung ({intent})",
+                        details=f"Thread: {thread_id}",
+                        created_by=str(current_user() or "dev"),
+                    )
+                )
+            )
+    except Exception as exc:
+        return redirect(
+            _postfach_redirect(
+                account_id=account_id,
+                thread_id=thread_id,
+                status=f"Task-Erzeugung fehlgeschlagen: {exc}",
+            )
+        )
+    return redirect(
+        _postfach_redirect(
+            account_id=account_id,
+            thread_id=thread_id,
+            status=f"Aufgaben erzeugt: {', '.join(str(t) for t in task_ids)}",
         )
     )
 
@@ -7426,8 +7928,8 @@ def postfach_thread_create_lead(thread_id: str):
             tenant_id=tenant_id,
             source="email",
             contact_name="Postfach Anfrage",
-            contact_email="",
-            contact_phone="",
+            contact_email="postfach.request@kukanilea.local",
+            contact_phone="+490000000000",
             subject=subject[:500],
             message=message[:20000],
             actor_user_id=str(current_user() or "dev"),

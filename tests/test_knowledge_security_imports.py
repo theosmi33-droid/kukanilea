@@ -26,6 +26,6 @@ def test_no_forbidden_imports_or_exec_in_knowledge_sources() -> None:
     for py in sorted(root.glob("*.py")):
         content = py.read_text(encoding="utf-8")
         for pat in FORBIDDEN_PATTERNS:
-            assert not re.search(pat, content, flags=re.MULTILINE), (
-                f"{pat} found in {py.name}"
-            )
+            assert not re.search(
+                pat, content, flags=re.MULTILINE
+            ), f"{pat} found in {py.name}"

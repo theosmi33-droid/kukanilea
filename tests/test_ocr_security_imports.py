@@ -24,9 +24,9 @@ def test_ocr_module_follows_exec_safety_constraints() -> None:
     content = module_path.read_text(encoding="utf-8")
 
     for pat in FORBIDDEN_PATTERNS:
-        assert not re.search(pat, content, flags=re.MULTILINE), (
-            f"{pat} found in {module_path.name}"
-        )
+        assert not re.search(
+            pat, content, flags=re.MULTILINE
+        ), f"{pat} found in {module_path.name}"
 
     assert "subprocess.run(" in content
     assert "shell=False" in content

@@ -27,6 +27,6 @@ def test_autotag_module_has_no_forbidden_imports_or_exec_paths() -> None:
     assert module_path.exists()
     content = module_path.read_text(encoding="utf-8")
     for pat in FORBIDDEN_PATTERNS:
-        assert not re.search(pat, content, flags=re.MULTILINE), (
-            f"{pat} found in {module_path.name}"
-        )
+        assert not re.search(
+            pat, content, flags=re.MULTILINE
+        ), f"{pat} found in {module_path.name}"

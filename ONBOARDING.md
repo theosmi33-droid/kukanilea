@@ -45,6 +45,7 @@ python kukanilea_app.py
 - Keine PII in Eventlog/Telemetry.
 - Keine neuen Dependencies ohne ADR.
 - Legacy-Schema nur phasenweise migrieren (siehe `docs/runbooks/text_id_migration_plan.md`).
+- Postfach (Phase 2): OAuth-ready fuer Google/Microsoft, TLS-only, Versand nur mit expliziter Bestaetigung (`user_confirmed` + Safety-Check).
 
 ## Weekly Cadence
 - Montag: Planung und Scope-Festlegung

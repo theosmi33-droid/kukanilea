@@ -10,9 +10,11 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.ai.knowledge import store_entity
 from app.config import Config
+from app.lead_intake import leads_create
 from app.mail import (
     postfach_create_draft,
     postfach_create_followup_task,
+    postfach_extract_intake,
     postfach_extract_structured,
     postfach_get_thread,
     postfach_link_entities,
@@ -89,6 +91,22 @@ class PostfachCreateFollowupArgs(BaseModel):
     title: str = "Postfach Follow-up"
 
 
+class PostfachExtractIntakeArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+
+
+class PostfachCreateLeadFromThreadArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+
+
+class PostfachCreateCaseFromThreadArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+
+
+class PostfachCreateTasksFromThreadArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+
+
 @dataclass
 class ToolSpec:
     name: str
@@ -103,9 +121,15 @@ def _core_web_module():
     return web
 
 
-def _create_task_handler(
-    *, tenant_id: str, user: str, args: CreateTaskArgs
-) -> Dict[str, Any]:
+def _create_task_via_web(
+    *,
+    tenant_id: str,
+    user: str,
+    title: str,
+    details: str,
+    severity: str = "INFO",
+    task_type: str = "GENERAL",
+) -> int:
     web = _core_web_module()
     creator = getattr(web, "task_create", None)
     if not callable(creator):
@@ -113,14 +137,28 @@ def _create_task_handler(
     task_id = int(
         creator(
             tenant=tenant_id,
-            severity=args.severity,
-            task_type=args.task_type,
-            title=args.title,
-            details=args.details,
+            severity=severity,
+            task_type=task_type,
+            title=title,
+            details=details,
             created_by=user,
         )
     )
     retrieval_fts.enqueue("task", task_id, "upsert")
+    return task_id
+
+
+def _create_task_handler(
+    *, tenant_id: str, user: str, args: CreateTaskArgs
+) -> Dict[str, Any]:
+    task_id = _create_task_via_web(
+        tenant_id=tenant_id,
+        user=user,
+        title=args.title,
+        details=args.details,
+        severity=args.severity,
+        task_type=args.task_type,
+    )
     try:
         store_entity(
             "task",
@@ -321,6 +359,18 @@ def _postfach_extract_structured_handler(
     )
 
 
+def _postfach_extract_intake_handler(
+    *, tenant_id: str, user: str, args: PostfachExtractIntakeArgs
+) -> Dict[str, Any]:
+    _ = user
+    return postfach_extract_intake(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        thread_id=args.thread_id,
+        schema_name="intake_v1",
+    )
+
+
 def _postfach_create_followup_handler(
     *, tenant_id: str, user: str, args: PostfachCreateFollowupArgs
 ) -> Dict[str, Any]:
@@ -333,6 +383,191 @@ def _postfach_create_followup_handler(
         title=args.title,
         created_by=user,
     )
+
+
+def _postfach_create_lead_from_thread_handler(
+    *, tenant_id: str, user: str, args: PostfachCreateLeadFromThreadArgs
+) -> Dict[str, Any]:
+    data = postfach_get_thread(
+        Path(Config.CORE_DB), tenant_id=tenant_id, thread_id=args.thread_id
+    )
+    if not data:
+        raise RuntimeError("thread_not_found")
+    thread = data.get("thread") or {}
+    messages = data.get("messages") or []
+    newest = messages[-1] if messages else {}
+    subject = str(
+        thread.get("subject_redacted")
+        or newest.get("subject_redacted")
+        or "Neue Anfrage"
+    )
+    message = str(newest.get("redacted_text") or "Anfrage aus Postfach")
+    lead_id = leads_create(
+        tenant_id=tenant_id,
+        source="email",
+        contact_name="Postfach Anfrage",
+        contact_email="postfach.request@kukanilea.local",
+        contact_phone="+490000000000",
+        subject=subject[:500],
+        message=message[:20000],
+        actor_user_id=user,
+    )
+    postfach_link_entities(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        thread_id=args.thread_id,
+        lead_id=lead_id,
+    )
+    return {"lead_id": lead_id, "thread_id": args.thread_id}
+
+
+def _postfach_create_case_from_thread_handler(
+    *, tenant_id: str, user: str, args: PostfachCreateCaseFromThreadArgs
+) -> Dict[str, Any]:
+    data = postfach_get_thread(
+        Path(Config.CORE_DB), tenant_id=tenant_id, thread_id=args.thread_id
+    )
+    if not data:
+        raise RuntimeError("thread_not_found")
+    thread = data.get("thread") or {}
+    title = f"Case: {str(thread.get('subject_redacted') or args.thread_id)[:160]}"
+    details = f"Postfach Thread: {args.thread_id}"
+    case_task_id = _create_task_via_web(
+        tenant_id=tenant_id,
+        user=user,
+        title=title,
+        details=details,
+        severity="INFO",
+        task_type="CASE",
+    )
+    return {"case_id": case_task_id, "thread_id": args.thread_id}
+
+
+def _postfach_create_tasks_from_thread_handler(
+    *, tenant_id: str, user: str, args: PostfachCreateTasksFromThreadArgs
+) -> Dict[str, Any]:
+    intake = postfach_extract_intake(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        thread_id=args.thread_id,
+        schema_name="intake_v1",
+    )
+    if not intake.get("ok"):
+        raise RuntimeError(str(intake.get("reason") or "intake_failed"))
+    fields = intake.get("fields") or {}
+    intent = str(fields.get("intent") or "general_inquiry")
+    base_title = f"Postfach {intent}: {args.thread_id[:8]}"
+    task_ids = [
+        _create_task_via_web(
+            tenant_id=tenant_id,
+            user=user,
+            title=base_title,
+            details=f"Automatisch aus Thread {args.thread_id}",
+            severity="INFO",
+            task_type="FOLLOWUP",
+        )
+    ]
+    if str(intent) in {"complaint", "quote_request"}:
+        task_ids.append(
+            _create_task_via_web(
+                tenant_id=tenant_id,
+                user=user,
+                title=f"Klaerung: {base_title}",
+                details=f"Zusatz-Task fuer Intent {intent}",
+                severity="INFO",
+                task_type="GENERAL",
+            )
+        )
+    return {"task_ids": task_ids, "thread_id": args.thread_id, "intent": intent}
+
+
+def _postfach_specs() -> dict[str, ToolSpec]:
+    specs = {
+        "postfach_sync": ToolSpec(
+            name="postfach_sync",
+            args_model=PostfachSyncArgs,
+            is_mutating=True,
+            handler=_postfach_sync_handler,
+        ),
+        "postfach_list_threads": ToolSpec(
+            name="postfach_list_threads",
+            args_model=PostfachListThreadsArgs,
+            is_mutating=False,
+            handler=_postfach_list_threads_handler,
+        ),
+        "postfach_get_thread": ToolSpec(
+            name="postfach_get_thread",
+            args_model=PostfachGetThreadArgs,
+            is_mutating=False,
+            handler=_postfach_get_thread_handler,
+        ),
+        "postfach_draft_reply": ToolSpec(
+            name="postfach_draft_reply",
+            args_model=PostfachDraftReplyArgs,
+            is_mutating=True,
+            handler=_postfach_draft_reply_handler,
+        ),
+        "postfach_send_draft": ToolSpec(
+            name="postfach_send_draft",
+            args_model=PostfachSendDraftArgs,
+            is_mutating=True,
+            handler=_postfach_send_draft_handler,
+        ),
+        "postfach_link_entities": ToolSpec(
+            name="postfach_link_entities",
+            args_model=PostfachLinkEntitiesArgs,
+            is_mutating=True,
+            handler=_postfach_link_entities_handler,
+        ),
+        "postfach_extract_structured": ToolSpec(
+            name="postfach_extract_structured",
+            args_model=PostfachExtractStructuredArgs,
+            is_mutating=True,
+            handler=_postfach_extract_structured_handler,
+        ),
+        "postfach_extract_intake": ToolSpec(
+            name="postfach_extract_intake",
+            args_model=PostfachExtractIntakeArgs,
+            is_mutating=True,
+            handler=_postfach_extract_intake_handler,
+        ),
+        "postfach_create_followup": ToolSpec(
+            name="postfach_create_followup",
+            args_model=PostfachCreateFollowupArgs,
+            is_mutating=True,
+            handler=_postfach_create_followup_handler,
+        ),
+        "postfach_create_lead_from_thread": ToolSpec(
+            name="postfach_create_lead_from_thread",
+            args_model=PostfachCreateLeadFromThreadArgs,
+            is_mutating=True,
+            handler=_postfach_create_lead_from_thread_handler,
+        ),
+        "postfach_create_case_from_thread": ToolSpec(
+            name="postfach_create_case_from_thread",
+            args_model=PostfachCreateCaseFromThreadArgs,
+            is_mutating=True,
+            handler=_postfach_create_case_from_thread_handler,
+        ),
+        "postfach_create_tasks_from_thread": ToolSpec(
+            name="postfach_create_tasks_from_thread",
+            args_model=PostfachCreateTasksFromThreadArgs,
+            is_mutating=True,
+            handler=_postfach_create_tasks_from_thread_handler,
+        ),
+    }
+    # Dot aliases for forward compatibility with tool-call conventions.
+    specs["postfach.extract_intake"] = specs["postfach_extract_intake"]
+    specs["postfach.create_lead_from_thread"] = specs[
+        "postfach_create_lead_from_thread"
+    ]
+    specs["postfach.create_case_from_thread"] = specs[
+        "postfach_create_case_from_thread"
+    ]
+    specs["postfach.create_tasks_from_thread"] = specs[
+        "postfach_create_tasks_from_thread"
+    ]
+    return specs
 
 
 TOOL_REGISTRY: Dict[str, ToolSpec] = {
@@ -354,54 +589,7 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         is_mutating=True,
         handler=_export_akte_handler,
     ),
-    "postfach_sync": ToolSpec(
-        name="postfach_sync",
-        args_model=PostfachSyncArgs,
-        is_mutating=True,
-        handler=_postfach_sync_handler,
-    ),
-    "postfach_list_threads": ToolSpec(
-        name="postfach_list_threads",
-        args_model=PostfachListThreadsArgs,
-        is_mutating=False,
-        handler=_postfach_list_threads_handler,
-    ),
-    "postfach_get_thread": ToolSpec(
-        name="postfach_get_thread",
-        args_model=PostfachGetThreadArgs,
-        is_mutating=False,
-        handler=_postfach_get_thread_handler,
-    ),
-    "postfach_draft_reply": ToolSpec(
-        name="postfach_draft_reply",
-        args_model=PostfachDraftReplyArgs,
-        is_mutating=True,
-        handler=_postfach_draft_reply_handler,
-    ),
-    "postfach_send_draft": ToolSpec(
-        name="postfach_send_draft",
-        args_model=PostfachSendDraftArgs,
-        is_mutating=True,
-        handler=_postfach_send_draft_handler,
-    ),
-    "postfach_link_entities": ToolSpec(
-        name="postfach_link_entities",
-        args_model=PostfachLinkEntitiesArgs,
-        is_mutating=True,
-        handler=_postfach_link_entities_handler,
-    ),
-    "postfach_extract_structured": ToolSpec(
-        name="postfach_extract_structured",
-        args_model=PostfachExtractStructuredArgs,
-        is_mutating=True,
-        handler=_postfach_extract_structured_handler,
-    ),
-    "postfach_create_followup": ToolSpec(
-        name="postfach_create_followup",
-        args_model=PostfachCreateFollowupArgs,
-        is_mutating=True,
-        handler=_postfach_create_followup_handler,
-    ),
+    **_postfach_specs(),
 }
 
 
