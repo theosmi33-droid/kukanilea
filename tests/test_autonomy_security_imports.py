@@ -42,6 +42,6 @@ def test_autonomy_sources_do_not_use_forbidden_exec_or_network_imports() -> None
             if py.name != "ocr.py":
                 patterns.extend(FORBIDDEN_SUBPROCESS_PATTERNS)
             for pat in patterns:
-                assert not re.search(pat, content, flags=re.MULTILINE), (
-                    f"{pat} found in {py.name}"
-                )
+                assert not re.search(
+                    pat, content, flags=re.MULTILINE
+                ), f"{pat} found in {py.name}"

@@ -26,6 +26,6 @@ def test_automation_sources_do_not_use_forbidden_exec_or_network_imports() -> No
     for py in sorted(root.glob("*.py")):
         content = py.read_text(encoding="utf-8")
         for pat in FORBIDDEN_PATTERNS:
-            assert not re.search(pat, content, flags=re.MULTILINE), (
-                f"{pat} found in {py.name}"
-            )
+            assert not re.search(
+                pat, content, flags=re.MULTILINE
+            ), f"{pat} found in {py.name}"
