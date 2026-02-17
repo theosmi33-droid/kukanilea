@@ -23,6 +23,9 @@ TRIGGER_TABLE = "automation_builder_triggers"
 CONDITION_TABLE = "automation_builder_conditions"
 ACTION_TABLE = "automation_builder_actions"
 EXECUTION_LOG_TABLE = "automation_builder_execution_log"
+STATE_TABLE = "automation_builder_state"
+PENDING_ACTION_TABLE = "automation_builder_pending_actions"
+EXECUTION_STATUS_ALLOWLIST = {"started", "ok", "skipped", "failed", "pending"}
 
 
 def _now_rfc3339() -> str:
@@ -50,6 +53,18 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys=ON;")
     con.execute("PRAGMA busy_timeout=5000;")
     return con
+
+
+def _table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(r["name"]) for r in rows}
+
+
+def _ensure_column(con: sqlite3.Connection, table_name: str, column_def: str) -> None:
+    column_name = str(column_def.split()[0]).strip()
+    if column_name in _table_columns(con, table_name):
+        return
+    con.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_def}")
 
 
 def _norm_tenant(tenant_id: str) -> str:
@@ -218,6 +233,34 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             """
         )
         con.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {STATE_TABLE}(
+              id TEXT PRIMARY KEY,
+              tenant_id TEXT NOT NULL,
+              source TEXT NOT NULL,
+              cursor TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(tenant_id, source)
+            )
+            """
+        )
+        con.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {PENDING_ACTION_TABLE}(
+              id TEXT PRIMARY KEY,
+              tenant_id TEXT NOT NULL,
+              rule_id TEXT NOT NULL,
+              action_type TEXT NOT NULL,
+              action_config TEXT NOT NULL,
+              context_snapshot TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              confirmed_at TEXT,
+              FOREIGN KEY(rule_id) REFERENCES {RULE_TABLE}(id) ON DELETE CASCADE
+            )
+            """
+        )
+        _ensure_column(con, EXECUTION_LOG_TABLE, "trigger_ref TEXT NOT NULL DEFAULT ''")
+        con.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{RULE_TABLE}_tenant_enabled ON {RULE_TABLE}(tenant_id, is_enabled)"
         )
         con.execute(
@@ -231,6 +274,15 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
         )
         con.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_tenant_rule_started ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, started_at)"
+        )
+        con.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_unique ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, trigger_ref)"
+        )
+        con.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{STATE_TABLE}_tenant_source ON {STATE_TABLE}(tenant_id, source)"
+        )
+        con.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{PENDING_ACTION_TABLE}_tenant_created ON {PENDING_ACTION_TABLE}(tenant_id, created_at DESC)"
         )
         con.commit()
     finally:
@@ -657,3 +709,371 @@ def delete_rule(
             payload={"deleted": 1},
         )
     return deleted
+
+
+def get_state_cursor(
+    *, tenant_id: str, source: str, db_path: Path | str | None = None
+) -> str:
+    tenant = _norm_tenant(tenant_id)
+    src = str(source or "").strip()
+    if not src:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        row = con.execute(
+            f"SELECT cursor FROM {STATE_TABLE} WHERE tenant_id=? AND source=? LIMIT 1",
+            (tenant, src),
+        ).fetchone()
+        if row is None:
+            return ""
+        return str(row["cursor"] or "")
+    finally:
+        con.close()
+
+
+def upsert_state_cursor(
+    *,
+    tenant_id: str,
+    source: str,
+    cursor: str,
+    db_path: Path | str | None = None,
+) -> None:
+    tenant = _norm_tenant(tenant_id)
+    src = str(source or "").strip()
+    cur = str(cursor or "").strip()
+    if not src or not cur:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        now_iso = _now_rfc3339()
+        con.execute(
+            f"""
+            INSERT INTO {STATE_TABLE}(id, tenant_id, source, cursor, updated_at)
+            VALUES (?,?,?,?,?)
+            ON CONFLICT(tenant_id, source) DO UPDATE
+              SET cursor=excluded.cursor, updated_at=excluded.updated_at
+            """,
+            (_new_id(), tenant, src, cur, now_iso),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def append_execution_log(
+    *,
+    tenant_id: str,
+    rule_id: str,
+    trigger_type: str,
+    trigger_ref: str,
+    status: str,
+    started_at: str | None = None,
+    finished_at: str = "",
+    error_redacted: str = "",
+    output_redacted: str = "",
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    tenant = _norm_tenant(tenant_id)
+    rid = str(rule_id or "").strip()
+    trig_type = str(trigger_type or "").strip()
+    trig_ref = str(trigger_ref or "").strip()
+    status_clean = str(status or "").strip().lower()
+    if not rid or not trig_type or not trig_ref:
+        raise ValueError("validation_error")
+    if status_clean not in EXECUTION_STATUS_ALLOWLIST:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    log_id = _new_id()
+    started = str(started_at or "").strip() or _now_rfc3339()
+    con = _connect(path)
+    try:
+        try:
+            con.execute(
+                f"""
+                INSERT INTO {EXECUTION_LOG_TABLE}(
+                  id, tenant_id, rule_id, trigger_type, trigger_ref, status, started_at, finished_at, error_redacted, output_redacted
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    log_id,
+                    tenant,
+                    rid,
+                    trig_type,
+                    trig_ref,
+                    status_clean,
+                    started,
+                    str(finished_at or "")[:48],
+                    str(error_redacted or "")[:1500],
+                    str(output_redacted or "")[:4000],
+                ),
+            )
+            con.commit()
+            return {"ok": True, "duplicate": False, "log_id": log_id}
+        except sqlite3.IntegrityError:
+            return {"ok": True, "duplicate": True, "log_id": ""}
+    finally:
+        con.close()
+
+
+def update_execution_log(
+    *,
+    tenant_id: str,
+    log_id: str,
+    status: str,
+    finished_at: str | None = None,
+    error_redacted: str = "",
+    output_redacted: str = "",
+    db_path: Path | str | None = None,
+) -> bool:
+    tenant = _norm_tenant(tenant_id)
+    lid = str(log_id or "").strip()
+    status_clean = str(status or "").strip().lower()
+    if not lid or status_clean not in EXECUTION_STATUS_ALLOWLIST:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    fin = str(finished_at or "").strip() or _now_rfc3339()
+    con = _connect(path)
+    try:
+        cur = con.execute(
+            f"""
+            UPDATE {EXECUTION_LOG_TABLE}
+            SET status=?, finished_at=?, error_redacted=?, output_redacted=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (
+                status_clean,
+                fin,
+                str(error_redacted or "")[:1500],
+                str(output_redacted or "")[:4000],
+                tenant,
+                lid,
+            ),
+        )
+        con.commit()
+        return int(cur.rowcount or 0) > 0
+    finally:
+        con.close()
+
+
+def list_execution_logs(
+    *,
+    tenant_id: str,
+    rule_id: str = "",
+    limit: int = 200,
+    db_path: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    tenant = _norm_tenant(tenant_id)
+    rid = str(rule_id or "").strip()
+    lim = max(1, min(int(limit or 200), 1000))
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        if rid:
+            rows = con.execute(
+                f"""
+                SELECT id, tenant_id, rule_id, trigger_type, trigger_ref, status,
+                       started_at, finished_at, error_redacted, output_redacted
+                FROM {EXECUTION_LOG_TABLE}
+                WHERE tenant_id=? AND rule_id=?
+                ORDER BY started_at DESC, id DESC
+                LIMIT ?
+                """,
+                (tenant, rid, lim),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                f"""
+                SELECT id, tenant_id, rule_id, trigger_type, trigger_ref, status,
+                       started_at, finished_at, error_redacted, output_redacted
+                FROM {EXECUTION_LOG_TABLE}
+                WHERE tenant_id=?
+                ORDER BY started_at DESC, id DESC
+                LIMIT ?
+                """,
+                (tenant, lim),
+            ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        con.close()
+
+
+def create_pending_action(
+    *,
+    tenant_id: str,
+    rule_id: str,
+    action_type: str,
+    action_config: Mapping[str, Any] | str,
+    context_snapshot: Mapping[str, Any] | str,
+    db_path: Path | str | None = None,
+) -> str:
+    tenant = _norm_tenant(tenant_id)
+    rid = str(rule_id or "").strip()
+    atype = str(action_type or "").strip().lower()
+    if not rid or not atype:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    action_json = (
+        _json_canonical(action_config)
+        if isinstance(action_config, Mapping)
+        else _json_canonical(_parse_config(action_config))
+    )
+    context_json = (
+        _json_canonical(context_snapshot)
+        if isinstance(context_snapshot, Mapping)
+        else _json_canonical(_parse_config(context_snapshot))
+    )
+    pending_id = _new_id()
+    now_iso = _now_rfc3339()
+    con = _connect(path)
+    try:
+        con.execute(
+            f"""
+            INSERT INTO {PENDING_ACTION_TABLE}(
+              id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, confirmed_at
+            ) VALUES (?,?,?,?,?,?,?,NULL)
+            """,
+            (
+                pending_id,
+                tenant,
+                rid,
+                atype,
+                action_json,
+                context_json,
+                now_iso,
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+    _event(
+        event_type="automation.pending.created",
+        rule_id=rid,
+        tenant_id=tenant,
+        payload={"pending_id": pending_id, "action_type": atype},
+    )
+    return pending_id
+
+
+def list_pending_actions(
+    *,
+    tenant_id: str,
+    include_confirmed: bool = False,
+    limit: int = 200,
+    db_path: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    tenant = _norm_tenant(tenant_id)
+    lim = max(1, min(int(limit or 200), 1000))
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        if include_confirmed:
+            rows = con.execute(
+                f"""
+                SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, confirmed_at
+                FROM {PENDING_ACTION_TABLE}
+                WHERE tenant_id=?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (tenant, lim),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                f"""
+                SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, confirmed_at
+                FROM {PENDING_ACTION_TABLE}
+                WHERE tenant_id=? AND confirmed_at IS NULL
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (tenant, lim),
+            ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        con.close()
+
+
+def get_pending_action(
+    *,
+    tenant_id: str,
+    pending_id: str,
+    db_path: Path | str | None = None,
+) -> dict[str, Any] | None:
+    tenant = _norm_tenant(tenant_id)
+    pid = str(pending_id or "").strip()
+    if not pid:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        row = con.execute(
+            f"""
+            SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, confirmed_at
+            FROM {PENDING_ACTION_TABLE}
+            WHERE tenant_id=? AND id=?
+            LIMIT 1
+            """,
+            (tenant, pid),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        con.close()
+
+
+def mark_pending_action_confirmed(
+    *,
+    tenant_id: str,
+    pending_id: str,
+    confirmed_at: str | None = None,
+    db_path: Path | str | None = None,
+) -> bool:
+    tenant = _norm_tenant(tenant_id)
+    pid = str(pending_id or "").strip()
+    if not pid:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    confirm_ts = str(confirmed_at or "").strip() or _now_rfc3339()
+    con = _connect(path)
+    rule_ref = ""
+    try:
+        row = con.execute(
+            f"""
+            SELECT rule_id
+            FROM {PENDING_ACTION_TABLE}
+            WHERE tenant_id=? AND id=? AND confirmed_at IS NULL
+            LIMIT 1
+            """,
+            (tenant, pid),
+        ).fetchone()
+        rule_ref = str((row["rule_id"] if row else "") or "")
+        cur = con.execute(
+            f"""
+            UPDATE {PENDING_ACTION_TABLE}
+            SET confirmed_at=?
+            WHERE tenant_id=? AND id=? AND confirmed_at IS NULL
+            """,
+            (confirm_ts, tenant, pid),
+        )
+        con.commit()
+        ok = int(cur.rowcount or 0) > 0
+    finally:
+        con.close()
+    if ok:
+        _event(
+            event_type="automation.pending.confirmed",
+            rule_id=rule_ref or pid,
+            tenant_id=tenant,
+            payload={"pending_id": pid},
+        )
+    return ok

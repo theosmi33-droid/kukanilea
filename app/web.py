@@ -71,7 +71,16 @@ from app.automation import (
     automation_rule_list,
     automation_rule_toggle,
     automation_run_now,
+    builder_execute_action,
+    builder_execution_log_list,
+    builder_pending_action_confirm,
+    builder_pending_action_get,
+    builder_pending_action_list,
+    builder_rule_get,
+    builder_rule_list,
+    builder_rule_update,
     get_or_build_daily_insights,
+    process_events_for_tenant,
 )
 from app.autonomy import (
     autotag_rule_create,
@@ -949,7 +958,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
       <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">📚 Knowledge</a>
       <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations">🧾 Conversations</a>
-      <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation/rules">⚙️ Automation</a>
+      <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation">⚙️ Automation</a>
       <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health">🩺 Autonomy Health</a>
       <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily">📊 Insights</a>
       {% if roles in ['DEV', 'ADMIN'] %}
@@ -4833,6 +4842,173 @@ def automation_run_now_action():
     if _is_htmx():
         return redirect(url_for("web.automation_rules_page"))
     return jsonify({"ok": True, "run_id": run_id})
+
+
+@bp.get("/automation")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_page():
+    rows = builder_rule_list(tenant_id=current_tenant())
+    content = render_template(
+        "automation/index.html",
+        rules=rows,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="automation")
+
+
+@bp.get("/automation/pending")
+@login_required
+@require_role("OPERATOR")
+def automation_pending_page():
+    items = builder_pending_action_list(tenant_id=current_tenant(), limit=200)
+    content = render_template(
+        "automation/pending.html",
+        items=items,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="automation")
+
+
+@bp.post("/automation/pending/<pending_id>/confirm")
+@login_required
+@require_role("OPERATOR")
+def automation_pending_confirm_action(pending_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    ack = str(
+        payload.get("safety_ack") or payload.get("user_confirmed") or ""
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not ack:
+        return _automation_error("confirm_required", "Bestätigung erforderlich.", 400)
+
+    item = builder_pending_action_get(tenant_id=current_tenant(), pending_id=pending_id)
+    if not item:
+        return _automation_error("not_found", "Pending Action nicht gefunden.", 404)
+    if str(item.get("confirmed_at") or "").strip():
+        if _is_htmx():
+            return redirect(url_for("web.automation_pending_page"))
+        return jsonify({"ok": True, "already_confirmed": True})
+
+    try:
+        action_cfg = json.loads(str(item.get("action_config") or "{}"))
+        context_snapshot = json.loads(str(item.get("context_snapshot") or "{}"))
+    except Exception:
+        return _automation_error(
+            "validation_error", "Pending Action ist ungültig.", 400
+        )
+
+    result = builder_execute_action(
+        tenant_id=current_tenant(),
+        rule_id=str(item.get("rule_id") or ""),
+        action_config=action_cfg,
+        context=context_snapshot,
+        user_confirmed=True,
+    )
+    status = str(result.get("status") or "").strip().lower()
+    if status == "failed":
+        return _automation_error(
+            "action_failed", "Action konnte nicht ausgeführt werden.", 400
+        )
+
+    builder_pending_action_confirm(tenant_id=current_tenant(), pending_id=pending_id)
+    if _is_htmx():
+        return redirect(url_for("web.automation_pending_page"))
+    return jsonify({"ok": True, "result": result})
+
+
+@bp.post("/automation/run")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_run_action():
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    result = process_events_for_tenant(current_tenant())
+    if not bool(result.get("ok")):
+        return _automation_error(
+            "runner_failed",
+            "Automation-Runner konnte nicht ausgeführt werden.",
+            400,
+        )
+    if _is_htmx():
+        return redirect(url_for("web.automation_builder_page"))
+    return jsonify({"ok": True, "result": result})
+
+
+@bp.get("/automation/<rule_id>/logs")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_rule_logs_page(rule_id: str):
+    rule = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
+    if not rule:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    logs = builder_execution_log_list(
+        tenant_id=current_tenant(),
+        rule_id=rule_id,
+        limit=200,
+    )
+    content = render_template(
+        "automation/logs.html",
+        rule=rule,
+        logs=logs,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="automation")
+
+
+@bp.get("/automation/<rule_id>")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_rule_detail_page(rule_id: str):
+    rule = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
+    if not rule:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    content = render_template(
+        "automation/rule_detail_builder.html",
+        rule=rule,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="automation")
+
+
+@bp.post("/automation/<rule_id>/toggle")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_rule_toggle_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    enabled = str(payload.get("enabled") or "1").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    row = builder_rule_update(
+        tenant_id=current_tenant(),
+        rule_id=rule_id,
+        patch={"is_enabled": enabled},
+    )
+    if not row:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    if _is_htmx():
+        return redirect(
+            url_for("web.automation_builder_rule_detail_page", rule_id=rule_id)
+        )
+    return jsonify({"ok": True, "rule": row})
 
 
 @bp.get("/insights/daily")
