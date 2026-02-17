@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import kukanilea_core_v3_fixed as core
 
+from .conditions import evaluate_conditions
 from .store import (
     append_execution_log,
     get_rule,
@@ -17,6 +18,17 @@ from .store import (
 )
 
 EVENTLOG_SOURCE = "eventlog"
+CONTEXT_ALLOWLIST = {
+    "event_id",
+    "event_type",
+    "entity_type",
+    "entity_id",
+    "tenant_id",
+    "timestamp",
+    "trigger_ref",
+    "source",
+    "from_domain",
+}
 
 
 def _resolve_db_path(db_path: Path | str | None) -> Path:
@@ -143,14 +155,67 @@ def _process_rule_for_event(
     if not log_id:
         return {"ok": False, "reason": "execution_log_append_failed"}
 
+    context = _build_context(
+        tenant_id=tenant_id, event_row=event_row, trigger_ref=trigger_ref
+    )
+    if not _rule_conditions_pass(rule, context):
+        update_execution_log(
+            tenant_id=tenant_id,
+            log_id=log_id,
+            status="skipped",
+            output_redacted="conditions_not_met",
+            db_path=db_path,
+        )
+        return {"ok": True, "matched": True, "duplicate": False}
+
     update_execution_log(
         tenant_id=tenant_id,
         log_id=log_id,
         status="ok",
-        output_redacted=f"trigger_matched:{event_type}",
+        output_redacted=f"conditions_met:{event_type}",
         db_path=db_path,
     )
     return {"ok": True, "matched": True, "duplicate": False}
+
+
+def _build_context(
+    *,
+    tenant_id: str,
+    event_row: Mapping[str, Any],
+    trigger_ref: str,
+) -> dict[str, str]:
+    payload = _safe_json_loads(str(event_row.get("payload_json") or "{}"))
+    context = {
+        "event_id": str(event_row.get("id") or ""),
+        "event_type": str(event_row.get("event_type") or ""),
+        "entity_type": str(event_row.get("entity_type") or ""),
+        "entity_id": str(event_row.get("entity_id") or ""),
+        "tenant_id": tenant_id,
+        "timestamp": str(event_row.get("ts") or ""),
+        "trigger_ref": str(trigger_ref or ""),
+        "source": EVENTLOG_SOURCE,
+        "from_domain": str(payload.get("from_domain") or ""),
+    }
+    return context
+
+
+def _rule_conditions_pass(rule: dict[str, Any], context: Mapping[str, Any]) -> bool:
+    conditions = rule.get("conditions") or []
+    if not isinstance(conditions, list):
+        return False
+    if not conditions:
+        return True
+    for condition in conditions:
+        if not isinstance(condition, Mapping):
+            return False
+        cfg = condition.get("config")
+        if not isinstance(cfg, Mapping):
+            return False
+        if not evaluate_conditions(
+            cfg, context, allowed_fields=sorted(CONTEXT_ALLOWLIST)
+        ):
+            return False
+    return True
 
 
 def process_events_for_tenant(
