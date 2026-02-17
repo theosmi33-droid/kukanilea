@@ -23,6 +23,8 @@ TRIGGER_TABLE = "automation_builder_triggers"
 CONDITION_TABLE = "automation_builder_conditions"
 ACTION_TABLE = "automation_builder_actions"
 EXECUTION_LOG_TABLE = "automation_builder_execution_log"
+STATE_TABLE = "automation_builder_state"
+PENDING_ACTION_TABLE = "automation_builder_pending_actions"
 
 
 def _now_rfc3339() -> str:
@@ -50,6 +52,18 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys=ON;")
     con.execute("PRAGMA busy_timeout=5000;")
     return con
+
+
+def _table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(r["name"]) for r in rows}
+
+
+def _ensure_column(con: sqlite3.Connection, table_name: str, column_def: str) -> None:
+    column_name = str(column_def.split()[0]).strip()
+    if column_name in _table_columns(con, table_name):
+        return
+    con.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_def}")
 
 
 def _norm_tenant(tenant_id: str) -> str:
@@ -218,6 +232,34 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             """
         )
         con.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {STATE_TABLE}(
+              id TEXT PRIMARY KEY,
+              tenant_id TEXT NOT NULL,
+              source TEXT NOT NULL,
+              cursor TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(tenant_id, source)
+            )
+            """
+        )
+        con.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {PENDING_ACTION_TABLE}(
+              id TEXT PRIMARY KEY,
+              tenant_id TEXT NOT NULL,
+              rule_id TEXT NOT NULL,
+              action_type TEXT NOT NULL,
+              action_config TEXT NOT NULL,
+              context_snapshot TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              confirmed_at TEXT,
+              FOREIGN KEY(rule_id) REFERENCES {RULE_TABLE}(id) ON DELETE CASCADE
+            )
+            """
+        )
+        _ensure_column(con, EXECUTION_LOG_TABLE, "trigger_ref TEXT NOT NULL DEFAULT ''")
+        con.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{RULE_TABLE}_tenant_enabled ON {RULE_TABLE}(tenant_id, is_enabled)"
         )
         con.execute(
@@ -231,6 +273,15 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
         )
         con.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_tenant_rule_started ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, started_at)"
+        )
+        con.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_unique ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, trigger_ref)"
+        )
+        con.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{STATE_TABLE}_tenant_source ON {STATE_TABLE}(tenant_id, source)"
+        )
+        con.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{PENDING_ACTION_TABLE}_tenant_created ON {PENDING_ACTION_TABLE}(tenant_id, created_at DESC)"
         )
         con.commit()
     finally:
@@ -657,3 +708,56 @@ def delete_rule(
             payload={"deleted": 1},
         )
     return deleted
+
+
+def get_state_cursor(
+    *, tenant_id: str, source: str, db_path: Path | str | None = None
+) -> str:
+    tenant = _norm_tenant(tenant_id)
+    src = str(source or "").strip()
+    if not src:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        row = con.execute(
+            f"SELECT cursor FROM {STATE_TABLE} WHERE tenant_id=? AND source=? LIMIT 1",
+            (tenant, src),
+        ).fetchone()
+        if row is None:
+            return ""
+        return str(row["cursor"] or "")
+    finally:
+        con.close()
+
+
+def upsert_state_cursor(
+    *,
+    tenant_id: str,
+    source: str,
+    cursor: str,
+    db_path: Path | str | None = None,
+) -> None:
+    tenant = _norm_tenant(tenant_id)
+    src = str(source or "").strip()
+    cur = str(cursor or "").strip()
+    if not src or not cur:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        now_iso = _now_rfc3339()
+        con.execute(
+            f"""
+            INSERT INTO {STATE_TABLE}(id, tenant_id, source, cursor, updated_at)
+            VALUES (?,?,?,?,?)
+            ON CONFLICT(tenant_id, source) DO UPDATE
+              SET cursor=excluded.cursor, updated_at=excluded.updated_at
+            """,
+            (_new_id(), tenant, src, cur, now_iso),
+        )
+        con.commit()
+    finally:
+        con.close()

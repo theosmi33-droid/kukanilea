@@ -22,10 +22,16 @@ from .store import (
     get_rule as builder_rule_get,
 )
 from .store import (
+    get_state_cursor as builder_state_get_cursor,
+)
+from .store import (
     list_rules as builder_rule_list,
 )
 from .store import (
     update_rule as builder_rule_update,
+)
+from .store import (
+    upsert_state_cursor as builder_state_upsert_cursor,
 )
 
 __all__ = [
@@ -43,6 +49,8 @@ __all__ = [
     "builder_rule_get",
     "builder_rule_list",
     "builder_rule_update",
+    "builder_state_get_cursor",
+    "builder_state_upsert_cursor",
     "generate_daily_insights",
     "get_or_build_daily_insights",
 ]
