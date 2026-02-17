@@ -44,6 +44,7 @@ python kukanilea_app.py
 - READ_ONLY blockiert Mutationen.
 - Keine PII in Eventlog/Telemetry.
 - Keine neuen Dependencies ohne ADR.
+- Legacy-Schema nur phasenweise migrieren (siehe `docs/runbooks/text_id_migration_plan.md`).
 
 ## Weekly Cadence
 - Montag: Planung und Scope-Festlegung

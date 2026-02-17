@@ -6,6 +6,7 @@ Referenzen:
 - Glossar: `GLOSSARY.md`
 - Teamrollen: `TEAM_ROLES.md`
 - Verfassung: `docs/CONSTITUTION.md`
+- TEXT-ID Migration: `docs/runbooks/text_id_migration_plan.md`
 
 ## End-user install (DMG)
 1. Open `KUKANILEA.dmg`.
