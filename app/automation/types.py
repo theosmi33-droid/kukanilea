@@ -29,6 +29,7 @@ class AutomationRuleSummary(TypedDict):
     name: str
     description: str
     is_enabled: bool
+    max_executions_per_minute: int
     version: int
     created_at: str
     updated_at: str
@@ -43,6 +44,7 @@ class AutomationRuleRecord(TypedDict):
     name: str
     description: str
     is_enabled: bool
+    max_executions_per_minute: int
     version: int
     created_at: str
     updated_at: str

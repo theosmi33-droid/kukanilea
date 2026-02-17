@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -11,6 +12,7 @@ from .actions import run_rule_actions
 from .conditions import evaluate_conditions
 from .store import (
     append_execution_log,
+    count_execution_logs_since,
     get_rule,
     get_state_cursor,
     list_rules,
@@ -52,6 +54,12 @@ def _safe_json_loads(raw: str) -> dict[str, Any]:
         return loaded if isinstance(loaded, dict) else {}
     except Exception:
         return {}
+
+
+def _now_minus_minutes_rfc3339(minutes: int) -> str:
+    delta = max(1, int(minutes or 1))
+    ts = datetime.now(timezone.utc) - timedelta(minutes=delta)
+    return ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _fetch_events_after_cursor(
@@ -138,6 +146,31 @@ def _process_rule_for_event(
             break
     if not matched:
         return {"ok": True, "matched": False}
+
+    max_execs = int(rule.get("max_executions_per_minute") or 10)
+    recent_count = count_execution_logs_since(
+        tenant_id=tenant_id,
+        rule_id=rule_id,
+        since_rfc3339=_now_minus_minutes_rfc3339(1),
+        db_path=db_path,
+    )
+    if recent_count >= max_execs:
+        trigger_ref = f"{EVENTLOG_SOURCE}:{event_id}"
+        appended = append_execution_log(
+            tenant_id=tenant_id,
+            rule_id=rule_id,
+            trigger_type=EVENTLOG_SOURCE,
+            trigger_ref=trigger_ref,
+            status="rate_limited",
+            output_redacted=f"rate_limited:max={max_execs}",
+            db_path=db_path,
+        )
+        return {
+            "ok": True,
+            "matched": True,
+            "duplicate": bool(appended.get("duplicate")),
+            "rate_limited": True,
+        }
 
     trigger_ref = f"{EVENTLOG_SOURCE}:{event_id}"
     appended = append_execution_log(
