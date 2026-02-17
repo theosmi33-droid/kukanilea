@@ -35,6 +35,7 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import sqlite3
 import time
 from datetime import datetime, timedelta
@@ -80,6 +81,7 @@ from app.autonomy import (
     run_backup,
     run_smoke_test,
 )
+from app.demo_data import generate_demo_data
 from app.entity_links import (
     create_link as entity_link_create,
 )
@@ -131,6 +133,33 @@ from app.lead_intake import (
 )
 from app.lead_intake.core import ConflictError
 from app.lead_intake.guard import require_lead_access
+from app.mail import (
+    ensure_mail_schema,
+)
+from app.mail import (
+    get_account as mail_get_account,
+)
+from app.mail import (
+    get_message as mail_get_message,
+)
+from app.mail import (
+    list_accounts as mail_list_accounts,
+)
+from app.mail import (
+    list_messages as mail_list_messages,
+)
+from app.mail import (
+    load_secret as mail_load_secret,
+)
+from app.mail import (
+    save_account as mail_save_account,
+)
+from app.mail import (
+    store_secret as mail_store_secret,
+)
+from app.mail import (
+    sync_account as mail_sync_account,
+)
 from app.omni import get_event as omni_get_event
 from app.omni import list_events as omni_list_events
 from app.security_ua_hash import ua_hmac_sha256_hex
@@ -155,6 +184,7 @@ from .auth import (
     login_user,
     logout_user,
     require_role,
+    verify_password,
 )
 from .config import Config
 from .db import AuthDB
@@ -462,7 +492,52 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
     auth_db.upsert_user("dev", hash_password("dev"), now)
     auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
     auth_db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
-    return "Seeded users: admin/admin, dev/dev"
+    office_email = "theosmi33@gmail.com"
+    office_info = "office user unchanged"
+    if auth_db.get_user_by_email(office_email) is None:
+        office_password = secrets.token_urlsafe(12)
+        office_username = "office"
+        if auth_db.get_user(office_username) is not None:
+            office_username = f"office_{secrets.randbelow(1000)}"
+        auth_db.create_user(
+            username=office_username,
+            password_hash=hash_password(office_password),
+            created_at=now,
+            email=office_email,
+            email_verified=1,
+        )
+        auth_db.upsert_membership(office_username, "KUKANILEA Dev", "OPERATOR", now)
+        office_info = f"office password: {office_password}"
+    return f"Seeded users: admin/admin, dev/dev, {office_info}"
+
+
+def _now_iso() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds")
+
+
+def _normalize_email(value: str) -> str:
+    return (value or "").strip().lower()
+
+
+def _redact_email(value: str) -> str:
+    email = _normalize_email(value)
+    if "@" not in email:
+        return "***"
+    local, domain = email.split("@", 1)
+    if not local:
+        return f"***@{domain}"
+    keep = local[:1]
+    return f"{keep}***@{domain}"
+
+
+def _hash_code(value: str) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
+def _generate_numeric_code(length: int = 6) -> str:
+    width = max(4, int(length or 6))
+    upper = 10**width
+    return str(secrets.randbelow(upper)).zfill(width)
 
 
 def _safe_filename(name: str) -> str:
@@ -615,6 +690,14 @@ def _format_cents(value: int | None, currency: str = "EUR") -> str:
 
 def _is_htmx() -> bool:
     return bool(request.headers.get("HX-Request"))
+
+
+def _core_db_path() -> Path:
+    return Path(str(getattr(core, "DB_PATH")))
+
+
+def _ensure_mail_tables() -> None:
+    ensure_mail_schema(_core_db_path())
 
 
 def _crm_db_rows(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
@@ -1020,7 +1103,7 @@ HTML_LOGIN = r"""
     {% if error %}<div class="alert alert-error mb-3">{{ error }}</div>{% endif %}
     <form method="post" class="space-y-3">
       <div>
-        <label class="label">Username</label>
+        <label class="label">Username oder E-Mail</label>
         <input class="input w-full" name="username" autocomplete="username" required>
       </div>
       <div>
@@ -1029,6 +1112,122 @@ HTML_LOGIN = r"""
       </div>
       <button class="btn btn-primary w-full" type="submit">Login</button>
     </form>
+    <div class="mt-4 text-sm flex items-center justify-between">
+      <a class="underline" href="/register">Registrieren</a>
+      <a class="underline" href="/forgot-password">Passwort vergessen?</a>
+    </div>
+  </div>
+</div>
+"""
+
+HTML_REGISTER = r"""
+<div class="max-w-md mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">Registrierung</h1>
+    <p class="text-sm opacity-80 mb-4">Offline-Flow: Bestätigungscode wird lokal in der Outbox abgelegt.</p>
+    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
+    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
+    <form method="post" class="space-y-3">
+      <div>
+        <label class="label">E-Mail</label>
+        <input class="input w-full" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div>
+        <label class="label">Passwort</label>
+        <input class="input w-full" name="password" type="password" autocomplete="new-password" required>
+      </div>
+      <div>
+        <label class="label">Passwort bestätigen</label>
+        <input class="input w-full" name="password_confirm" type="password" autocomplete="new-password" required>
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Account erstellen</button>
+    </form>
+    <div class="mt-4 text-sm flex items-center justify-between">
+      <a class="underline" href="/login">Zum Login</a>
+      <a class="underline" href="/verify-email">Code bestätigen</a>
+    </div>
+  </div>
+</div>
+"""
+
+HTML_VERIFY_EMAIL = r"""
+<div class="max-w-md mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">E-Mail bestätigen</h1>
+    <p class="text-sm opacity-80 mb-4">Gib die E-Mail und den 6-stelligen Code aus der lokalen Outbox ein.</p>
+    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
+    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
+    <form method="post" class="space-y-3">
+      <div>
+        <label class="label">E-Mail</label>
+        <input class="input w-full" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div>
+        <label class="label">Code</label>
+        <input class="input w-full" name="code" inputmode="numeric" maxlength="12" required>
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Bestätigen</button>
+    </form>
+    <div class="mt-4 text-sm flex items-center justify-between">
+      <a class="underline" href="/register">Registrieren</a>
+      <a class="underline" href="/login">Zum Login</a>
+    </div>
+  </div>
+</div>
+"""
+
+HTML_FORGOT_PASSWORD = r"""
+<div class="max-w-md mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">Passwort vergessen</h1>
+    <p class="text-sm opacity-80 mb-4">Wir erzeugen lokal einen Reset-Code und legen ihn in der Outbox ab.</p>
+    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
+    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
+    <form method="post" class="space-y-3">
+      <div>
+        <label class="label">E-Mail</label>
+        <input class="input w-full" name="email" type="email" autocomplete="email" required>
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Reset-Code erzeugen</button>
+    </form>
+    <div class="mt-4 text-sm flex items-center justify-between">
+      <a class="underline" href="/reset-password">Reset ausführen</a>
+      <a class="underline" href="/login">Zum Login</a>
+    </div>
+  </div>
+</div>
+"""
+
+HTML_RESET_PASSWORD = r"""
+<div class="max-w-md mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">Passwort zurücksetzen</h1>
+    <p class="text-sm opacity-80 mb-4">Nutze E-Mail + Reset-Code aus der lokalen Outbox.</p>
+    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
+    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
+    <form method="post" class="space-y-3">
+      <div>
+        <label class="label">E-Mail</label>
+        <input class="input w-full" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div>
+        <label class="label">Reset-Code</label>
+        <input class="input w-full" name="code" inputmode="numeric" maxlength="12" required>
+      </div>
+      <div>
+        <label class="label">Neues Passwort</label>
+        <input class="input w-full" name="password" type="password" autocomplete="new-password" required>
+      </div>
+      <div>
+        <label class="label">Passwort bestätigen</label>
+        <input class="input w-full" name="password_confirm" type="password" autocomplete="new-password" required>
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Passwort ändern</button>
+    </form>
+    <div class="mt-4 text-sm flex items-center justify-between">
+      <a class="underline" href="/forgot-password">Code erneut anfordern</a>
+      <a class="underline" href="/login">Zum Login</a>
+    </div>
   </div>
 </div>
 """
@@ -1833,6 +2032,10 @@ def _guard_login():
     p = request.path or "/"
     if p.startswith("/static/") or p in [
         "/login",
+        "/register",
+        "/verify-email",
+        "/forgot-password",
+        "/reset-password",
         "/health",
         "/auth/google/start",
         "/auth/google/callback",
@@ -1860,19 +2063,27 @@ def login():
         u = (request.form.get("username") or "").strip().lower()
         pw = (request.form.get("password") or "").strip()
         if not u or not pw:
-            error = "Bitte Username und Passwort eingeben."
+            error = "Bitte Login und Passwort eingeben."
         else:
-            user = auth_db.get_user(u)
-            if user and user.password_hash == hash_password(pw):
+            user = auth_db.get_user_for_login(u)
+            if user and verify_password(pw, user.password_hash):
+                if user.email and not int(user.email_verified or 0):
+                    error = "E-Mail ist noch nicht verifiziert."
+                    return _render_base(
+                        render_template_string(HTML_LOGIN, error=error),
+                        active_tab="upload",
+                    )
                 memberships = auth_db.get_memberships(u)
+                if not memberships and user.username != u:
+                    memberships = auth_db.get_memberships(user.username)
                 if not memberships:
                     error = "Keine Mandanten-Zuordnung gefunden."
                 else:
                     membership = memberships[0]
-                    login_user(u, membership.role, membership.tenant_id)
+                    login_user(user.username, membership.role, membership.tenant_id)
                     _audit(
                         "login",
-                        target=u,
+                        target=user.username,
                         meta={"role": membership.role, "tenant": membership.tenant_id},
                     )
                     return redirect(nxt or url_for("web.index"))
@@ -1880,6 +2091,176 @@ def login():
                 error = "Login fehlgeschlagen."
     return _render_base(
         render_template_string(HTML_LOGIN, error=error), active_tab="upload"
+    )
+
+
+def _username_from_email(auth_db: AuthDB, email: str) -> str:
+    base = re.sub(r"[^a-z0-9._-]+", "_", email.split("@", 1)[0].lower()).strip("_")
+    if not base:
+        base = "user"
+    candidate = base[:48]
+    idx = 1
+    while auth_db.get_user(candidate) is not None:
+        idx += 1
+        candidate = f"{base[:40]}_{idx}"
+    return candidate
+
+
+@bp.route("/register", methods=["GET", "POST"])
+def register():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    error = ""
+    info = ""
+    if request.method == "POST":
+        if bool(current_app.config.get("READ_ONLY", False)):
+            error = "Read-only mode aktiv."
+        else:
+            email = _normalize_email(request.form.get("email") or "")
+            password = (request.form.get("password") or "").strip()
+            password_confirm = (request.form.get("password_confirm") or "").strip()
+            if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+                error = "Bitte eine gültige E-Mail eingeben."
+            elif len(password) < 8:
+                error = "Passwort muss mindestens 8 Zeichen haben."
+            elif password != password_confirm:
+                error = "Passwörter stimmen nicht überein."
+            elif auth_db.get_user_by_email(email):
+                error = "E-Mail ist bereits registriert."
+            else:
+                now = _now_iso()
+                code = _generate_numeric_code(6)
+                code_hash = _hash_code(code)
+                expires = (datetime.utcnow() + timedelta(minutes=15)).isoformat(
+                    timespec="seconds"
+                )
+                username = _username_from_email(auth_db, email)
+                auth_db.create_user(
+                    username=username,
+                    password_hash=hash_password(password),
+                    created_at=now,
+                    email=email,
+                    email_verified=0,
+                )
+                auth_db.set_email_verification_code(username, code_hash, expires, now)
+                default_tenant = str(
+                    current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
+                )
+                auth_db.upsert_tenant(default_tenant, default_tenant, now)
+                auth_db.upsert_membership(username, default_tenant, "OPERATOR", now)
+                auth_db.add_outbox(
+                    kind="verify_email",
+                    recipient_redacted=_redact_email(email),
+                    subject="Bestätigungscode",
+                    body=f"Code: {code}",
+                    created_at=now,
+                )
+                info = "Registrierung gespeichert. Code in lokaler Outbox."
+    return _render_base(
+        render_template_string(HTML_REGISTER, error=error, info=info),
+        active_tab="upload",
+    )
+
+
+@bp.route("/verify-email", methods=["GET", "POST"])
+def verify_email():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    error = ""
+    info = ""
+    if request.method == "POST":
+        if bool(current_app.config.get("READ_ONLY", False)):
+            error = "Read-only mode aktiv."
+        else:
+            email = _normalize_email(request.form.get("email") or "")
+            code = (request.form.get("code") or "").strip()
+            if not email or not code:
+                error = "E-Mail und Code sind erforderlich."
+            else:
+                username = auth_db.get_user_by_email_verify_code(
+                    email, _hash_code(code), _now_iso()
+                )
+                if not username:
+                    error = "Code ungültig oder abgelaufen."
+                else:
+                    auth_db.mark_email_verified(username, _now_iso())
+                    info = "E-Mail bestätigt. Du kannst dich jetzt einloggen."
+    return _render_base(
+        render_template_string(HTML_VERIFY_EMAIL, error=error, info=info),
+        active_tab="upload",
+    )
+
+
+@bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    error = ""
+    info = ""
+    if request.method == "POST":
+        if bool(current_app.config.get("READ_ONLY", False)):
+            error = "Read-only mode aktiv."
+        else:
+            email = _normalize_email(request.form.get("email") or "")
+            if not email:
+                error = "Bitte E-Mail eingeben."
+            else:
+                user = auth_db.get_user_by_email(email)
+                now = _now_iso()
+                if user:
+                    code = _generate_numeric_code(6)
+                    expires = (datetime.utcnow() + timedelta(minutes=15)).isoformat(
+                        timespec="seconds"
+                    )
+                    auth_db.set_password_reset_code(
+                        email, _hash_code(code), expires, now
+                    )
+                    auth_db.add_outbox(
+                        kind="reset_password",
+                        recipient_redacted=_redact_email(email),
+                        subject="Reset-Code",
+                        body=f"Code: {code}",
+                        created_at=now,
+                    )
+                info = "Wenn der Account existiert, wurde ein Reset-Code erzeugt."
+    return _render_base(
+        render_template_string(HTML_FORGOT_PASSWORD, error=error, info=info),
+        active_tab="upload",
+    )
+
+
+@bp.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    error = ""
+    info = ""
+    if request.method == "POST":
+        if bool(current_app.config.get("READ_ONLY", False)):
+            error = "Read-only mode aktiv."
+        else:
+            email = _normalize_email(request.form.get("email") or "")
+            code = (request.form.get("code") or "").strip()
+            password = (request.form.get("password") or "").strip()
+            password_confirm = (request.form.get("password_confirm") or "").strip()
+            if not email or not code:
+                error = "E-Mail und Code sind erforderlich."
+            elif len(password) < 8:
+                error = "Passwort muss mindestens 8 Zeichen haben."
+            elif password != password_confirm:
+                error = "Passwörter stimmen nicht überein."
+            else:
+                username = auth_db.get_user_by_reset_code(
+                    email, _hash_code(code), _now_iso()
+                )
+                if not username:
+                    error = "Code ungültig oder abgelaufen."
+                else:
+                    auth_db.reset_password(
+                        username=username,
+                        password_hash=hash_password(password),
+                        now_iso=_now_iso(),
+                    )
+                    info = "Passwort aktualisiert. Bitte einloggen."
+    return _render_base(
+        render_template_string(HTML_RESET_PASSWORD, error=error, info=info),
+        active_tab="upload",
     )
 
 
@@ -1969,10 +2350,17 @@ def api_chat():
 
     if not msg:
         return json_error("empty_query", "Leer.", status=400)
+    if len(msg) > 4000:
+        return json_error(
+            "too_long", "Nachricht ist zu lang (max. 4000 Zeichen).", status=400
+        )
 
     response = agent_answer(msg)
     if request.headers.get("HX-Request"):
-        return f"<div class='text-sm'>{response.get('text', '')}</div>"
+        return render_template_string(
+            "<div class='rounded-xl border border-slate-700 p-2 text-sm'>{{text}}</div>",
+            text=str(response.get("text") or ""),
+        )
     return jsonify(response)
 
 
@@ -6163,23 +6551,112 @@ self.addEventListener('fetch',e=>{const req=e.request; if(req.method!=='GET'){re
 HTML_MAIL = """
 <div class="grid gap-4">
   <div class="card p-4 rounded-2xl border">
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between gap-3">
       <div>
-        <div class="text-lg font-semibold">Google Mail (Stub)</div>
-        <div class="text-sm opacity-80">OAuth Platzhalter – keine echte Verbindung in dieser Version.</div>
+        <div class="text-lg font-semibold">Mailbox (IMAP v0)</div>
+        <div class="text-sm opacity-80">On-demand Sync ohne neue Dependencies. OAuth bleibt optional/später.</div>
       </div>
       <div class="text-right text-xs opacity-70">
-        Status: {{ 'konfiguriert' if google_configured else 'nicht konfiguriert' }}
+        Google OAuth: {{ 'konfiguriert' if google_configured else 'nicht konfiguriert' }}
       </div>
     </div>
-    <div class="mt-3 flex gap-2">
-      <a class="rounded-xl px-4 py-2 text-sm btn-outline" href="/auth/google/start">Connect Google</a>
-      <span class="text-xs opacity-70">Setze GOOGLE_CLIENT_ID/SECRET um den Flow zu aktivieren.</span>
+    {% if read_only %}
+      <div class="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm">
+        READ_ONLY aktiv: Account-Anlage und Sync sind deaktiviert.
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-3">
+    <div class="lg:col-span-2 card p-4 rounded-2xl border">
+      <div class="text-base font-semibold mb-3">Inbox</div>
+
+      <form method="post" action="/mail/accounts/add" class="grid gap-2 md:grid-cols-6 mb-4">
+        <input name="label" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" placeholder="Label" required {% if read_only %}disabled{% endif %} />
+        <input name="imap_host" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" placeholder="imap.example.com" required {% if read_only %}disabled{% endif %} />
+        <input name="imap_port" type="number" value="993" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" required {% if read_only %}disabled{% endif %} />
+        <input name="imap_username" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" placeholder="user@example.com" required {% if read_only %}disabled{% endif %} />
+        <input name="imap_password" type="password" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" placeholder="Passwort" {% if read_only %}disabled{% endif %} />
+        <button class="rounded-xl px-3 py-2 text-sm btn-primary md:col-span-1" type="submit" {% if read_only %}disabled{% endif %}>Account speichern</button>
+      </form>
+
+      {% if accounts %}
+      <form method="post" action="/mail/accounts/sync" class="grid gap-2 md:grid-cols-6 mb-4">
+        <select name="account_id" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-2" required {% if read_only %}disabled{% endif %}>
+          {% for a in accounts %}
+            <option value="{{a.id}}" {{'selected' if selected_account_id==a.id else ''}}>{{a.label}} · {{a.imap_host}}</option>
+          {% endfor %}
+        </select>
+        <input name="imap_password" type="password" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-2" placeholder="Passwort (optional, falls gespeichert)" {% if read_only %}disabled{% endif %} />
+        <input name="limit" type="number" min="1" max="200" value="50" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" {% if read_only %}disabled{% endif %} />
+        <button class="rounded-xl px-3 py-2 text-sm btn-outline md:col-span-1" type="submit" {% if read_only %}disabled{% endif %}>Sync</button>
+      </form>
+      {% endif %}
+
+      {% if mail_status %}
+      <div class="rounded-xl border border-slate-700 bg-slate-950/40 p-3 text-sm mb-3">{{ mail_status }}</div>
+      {% endif %}
+
+      <div class="overflow-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left muted">
+              <th class="py-2 pr-2">Betreff</th>
+              <th class="py-2 pr-2">Von</th>
+              <th class="py-2 pr-2">Datum</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in messages %}
+            <tr class="border-t border-slate-800">
+              <td class="py-2 pr-2">
+                <a class="underline" href="/mail?message_id={{m.id}}{% if selected_account_id %}&account_id={{selected_account_id}}{% endif %}">{{m.subject_redacted}}</a>
+              </td>
+              <td class="py-2 pr-2">{{m.from_redacted}}</td>
+              <td class="py-2 pr-2">{{m.received_at}}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="py-3 muted">Noch keine synchronisierten Mails.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card p-4 rounded-2xl border">
+      <div class="text-base font-semibold mb-2">Detail</div>
+      {% if mail_detail %}
+        <div class="text-xs muted mb-1">Von</div>
+        <div class="text-sm mb-2">{{mail_detail.from_redacted}}</div>
+        <div class="text-xs muted mb-1">An</div>
+        <div class="text-sm mb-2">{{mail_detail.to_redacted}}</div>
+        <div class="text-xs muted mb-1">Betreff</div>
+        <div class="text-sm mb-2">{{mail_detail.subject_redacted}}</div>
+        <div class="text-xs muted mb-1">Inhalt</div>
+        <pre class="text-xs whitespace-pre-wrap rounded-xl border border-slate-800 p-3 max-h-80 overflow-auto">{{mail_detail.body_text_redacted}}</pre>
+      {% else %}
+        <div class="text-sm muted">Nachricht in der Inbox auswählen.</div>
+      {% endif %}
+      <div class="mt-4 border-t border-slate-800 pt-3">
+        <div class="text-base font-semibold mb-2">Outbox (lokal)</div>
+        <div class="space-y-2">
+          {% for row in outbox %}
+            <div class="rounded-xl border border-slate-800 p-2">
+              <div class="text-xs muted">{{row.created_at}} · {{row.kind}}</div>
+              <div class="text-xs">{{row.recipient_redacted}}</div>
+              <div class="text-sm">{{row.body}}</div>
+            </div>
+          {% else %}
+            <div class="text-sm muted">Keine Outbox-Einträge.</div>
+          {% endfor %}
+        </div>
+      </div>
     </div>
   </div>
+
   <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-1">Mail Agent</div>
-    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM. Keine Drittanbieter-Links.</div>
+    <div class="text-lg font-semibold mb-1">Mail Agent (Compose)</div>
+    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM.</div>
 
     <div class="grid gap-3 md:grid-cols-2">
       <div>
@@ -6190,7 +6667,6 @@ HTML_MAIL = """
         <label class="block text-xs opacity-70 mb-1">Betreff (optional)</label>
         <input id="m_subj" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Mangel: Defekte Fliesenlieferung" />
       </div>
-
       <div>
         <label class="block text-xs opacity-70 mb-1">Ton</label>
         <select id="m_tone" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent">
@@ -6209,7 +6685,6 @@ HTML_MAIL = """
           <option value="detailliert">Detailliert</option>
         </select>
       </div>
-
       <div class="md:col-span-2">
         <label class="block text-xs opacity-70 mb-1">Kontext / Stichpunkte</label>
         <textarea id="m_ctx" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent h-32" placeholder="z.B. Bitte Fotos an Händler schicken, Rabatt anfragen, Lieferung vom ... (Details)"></textarea>
@@ -6379,6 +6854,7 @@ HTML_SETTINGS = """
     <div class="text-sm font-semibold mb-2">Tools</div>
     <div class="flex flex-wrap gap-2">
       <button id="seedUsers" class="rounded-xl px-3 py-2 text-sm btn-outline">Seed Dev Users</button>
+      <button id="loadDemoData" class="rounded-xl px-3 py-2 text-sm btn-outline">Load Demo Data</button>
       <button id="rebuildIndex" class="rounded-xl px-3 py-2 text-sm btn-outline">Rebuild Index</button>
       <button id="fullScan" class="rounded-xl px-3 py-2 text-sm btn-outline">Full Scan</button>
       <button id="repairDrift" class="rounded-xl px-3 py-2 text-sm btn-outline">Repair Drift Scan</button>
@@ -6409,6 +6885,13 @@ HTML_SETTINGS = """
     status.textContent = 'Seeding...';
     try{
       const j = await postJson('/api/dev/seed-users');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('loadDemoData')?.addEventListener('click', async () => {
+    status.textContent = 'Demo-Daten werden geladen...';
+    try{
+      const j = await postJson('/api/dev/load-demo-data');
       status.textContent = j.message || 'OK';
     }catch(e){ status.textContent = 'Fehler: ' + e.message; }
   });
@@ -6504,10 +6987,104 @@ def mail_page():
         current_app.config.get("GOOGLE_CLIENT_ID")
         and current_app.config.get("GOOGLE_CLIENT_SECRET")
     )
+    tenant_id = current_tenant()
+    _ensure_mail_tables()
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    selected_account_id = (request.args.get("account_id") or "").strip()
+    message_id = (request.args.get("message_id") or "").strip()
+    mail_status = (request.args.get("status") or "").strip()
+    accounts = mail_list_accounts(_core_db_path(), tenant_id)
+    if not selected_account_id and accounts:
+        selected_account_id = str(accounts[0].get("id") or "")
+    messages = mail_list_messages(
+        _core_db_path(),
+        tenant_id,
+        account_id=selected_account_id or None,
+        limit=120,
+    )
+    mail_detail = (
+        mail_get_message(_core_db_path(), tenant_id, message_id) if message_id else None
+    )
+    outbox = auth_db.list_outbox(limit=20)
     return _render_base(
-        render_template_string(HTML_MAIL, google_configured=google_configured),
+        render_template_string(
+            HTML_MAIL,
+            google_configured=google_configured,
+            accounts=accounts,
+            selected_account_id=selected_account_id,
+            messages=messages,
+            mail_detail=mail_detail,
+            outbox=outbox,
+            mail_status=mail_status,
+        ),
         active_tab="mail",
     )
+
+
+@bp.post("/mail/accounts/add")
+@login_required
+def mail_account_add():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(url_for("web.mail_page", status="Read-only mode aktiv."))
+    tenant_id = current_tenant()
+    label = (request.form.get("label") or "").strip()
+    host = (request.form.get("imap_host") or "").strip()
+    username = (request.form.get("imap_username") or "").strip()
+    password = (request.form.get("imap_password") or "").strip()
+    try:
+        port = int(request.form.get("imap_port") or 993)
+    except Exception:
+        port = 993
+    if not label or not host or not username:
+        return redirect(url_for("web.mail_page", status="Pflichtfelder fehlen."))
+    pw_ref = mail_store_secret(password) if password else None
+    account_id = mail_save_account(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        label=label,
+        imap_host=host,
+        imap_port=port,
+        imap_username=username,
+        auth_mode="password",
+        imap_password_ref=pw_ref,
+    )
+    return redirect(
+        url_for("web.mail_page", account_id=account_id, status="Account gespeichert.")
+    )
+
+
+@bp.post("/mail/accounts/sync")
+@login_required
+def mail_account_sync():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return redirect(url_for("web.mail_page", status="Read-only mode aktiv."))
+    tenant_id = current_tenant()
+    account_id = (request.form.get("account_id") or "").strip()
+    if not account_id:
+        return redirect(url_for("web.mail_page", status="Account fehlt."))
+    account = mail_get_account(_core_db_path(), tenant_id, account_id)
+    if not account:
+        return redirect(url_for("web.mail_page", status="Account nicht gefunden."))
+    supplied_password = (request.form.get("imap_password") or "").strip()
+    password = supplied_password
+    if not password:
+        password = mail_load_secret(str(account.get("imap_password_ref") or ""))
+    try:
+        limit = int(request.form.get("limit") or 50)
+    except Exception:
+        limit = 50
+    result = mail_sync_account(
+        _core_db_path(),
+        tenant_id=tenant_id,
+        account_id=account_id,
+        password=password,
+        limit=limit,
+    )
+    if result.get("ok"):
+        status = f"Sync erfolgreich ({int(result.get('imported') or 0)} Nachrichten)."
+    else:
+        status = f"Sync fehlgeschlagen: {result.get('reason')}"
+    return redirect(url_for("web.mail_page", account_id=account_id, status=status))
 
 
 @bp.get("/settings")
@@ -6548,6 +7125,21 @@ def api_seed_users():
     msg = _seed_dev_users(auth_db)
     _audit("seed_users", meta={"status": "ok"})
     return jsonify(ok=True, message=msg)
+
+
+@bp.post("/api/dev/load-demo-data")
+@login_required
+@require_role("DEV")
+def api_load_demo_data():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return json_error("read_only", "Read-only mode aktiv.", status=403)
+    tenant_id = current_tenant() or str(
+        current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
+    )
+    _ensure_mail_tables()
+    summary = generate_demo_data(db_path=_core_db_path(), tenant_id=tenant_id)
+    _audit("demo_data_load", meta={"tenant_id": tenant_id, "summary": summary})
+    return jsonify(ok=True, message="Demo-Daten geladen.", summary=summary)
 
 
 @bp.post("/api/dev/rebuild-index")
