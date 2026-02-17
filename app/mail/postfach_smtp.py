@@ -6,11 +6,19 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from email.utils import format_datetime, make_msgid
 
+from . import postfach_oauth as oauth
 from . import postfach_store as store
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _smtp_auth_with_xoauth2(smtp, *, username: str, access_token: str):
+    auth_str = oauth.xoauth2_auth_string(username, access_token)
+    code, resp = smtp.docmd("AUTH", "XOAUTH2 " + auth_str)
+    if int(code) not in {235, 250}:
+        raise RuntimeError(f"smtp_oauth_auth_failed:{code}:{resp}")
 
 
 def send_draft(
@@ -38,11 +46,7 @@ def send_draft(
     if not account:
         return {"ok": False, "reason": "account_not_found"}
 
-    try:
-        password = store.decrypt_account_secret(account)
-    except Exception:
-        return {"ok": False, "reason": "account_secret_unavailable"}
-
+    auth_mode = str(account.get("auth_mode") or "password").strip().lower()
     smtp_host = str(account.get("smtp_host") or "").strip()
     smtp_port = int(account.get("smtp_port") or 465)
     smtp_username = str(account.get("smtp_username") or "").strip()
@@ -65,19 +69,59 @@ def send_draft(
 
     context = ssl.create_default_context()
     try:
-        if smtp_use_ssl:
-            with smtplib.SMTP_SSL(
-                smtp_host, smtp_port, timeout=20, context=context
-            ) as smtp:
-                smtp.login(smtp_username, password)
-                smtp.send_message(msg)
+        if auth_mode == "password":
+            try:
+                password = store.decrypt_account_secret(account)
+            except Exception:
+                return {"ok": False, "reason": "account_secret_unavailable"}
+            if smtp_use_ssl:
+                with smtplib.SMTP_SSL(
+                    smtp_host, smtp_port, timeout=20, context=context
+                ) as smtp:
+                    smtp.login(smtp_username, password)
+                    smtp.send_message(msg)
+            else:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as smtp:
+                    smtp.ehlo()
+                    smtp.starttls(context=context)
+                    smtp.ehlo()
+                    smtp.login(smtp_username, password)
+                    smtp.send_message(msg)
         else:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as smtp:
-                smtp.ehlo()
-                smtp.starttls(context=context)
-                smtp.ehlo()
-                smtp.login(smtp_username, password)
-                smtp.send_message(msg)
+            provider = str(account.get("oauth_provider") or "").strip().lower()
+            token = store.get_oauth_token(
+                db_path,
+                tenant_id=tenant_id,
+                account_id=account_id,
+                provider=provider or None,
+            )
+            if not token:
+                return {"ok": False, "reason": "oauth_token_missing"}
+            access_token = str(token.get("access_token") or "").strip()
+            if not access_token:
+                return {"ok": False, "reason": "oauth_access_token_missing"}
+
+            if smtp_use_ssl:
+                with smtplib.SMTP_SSL(
+                    smtp_host, smtp_port, timeout=20, context=context
+                ) as smtp:
+                    _smtp_auth_with_xoauth2(
+                        smtp,
+                        username=smtp_username,
+                        access_token=access_token,
+                    )
+                    smtp.send_message(msg)
+            else:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as smtp:
+                    smtp.ehlo()
+                    smtp.starttls(context=context)
+                    smtp.ehlo()
+                    _smtp_auth_with_xoauth2(
+                        smtp,
+                        username=smtp_username,
+                        access_token=access_token,
+                    )
+                    smtp.send_message(msg)
     except Exception:
         return {"ok": False, "reason": "smtp_send_failed"}
 

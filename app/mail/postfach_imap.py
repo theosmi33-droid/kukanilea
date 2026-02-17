@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import imaplib
+import os
 import ssl
+import time
 from datetime import datetime, timezone
 from email import message_from_bytes, policy
 from typing import Any
 
+from . import postfach_oauth as oauth
 from . import postfach_store as store
 
 
@@ -54,6 +57,149 @@ def connect(account: dict[str, Any]) -> imaplib.IMAP4_SSL:
     return imaplib.IMAP4_SSL(host, port, ssl_context=context, timeout=20)
 
 
+def _oauth_client_env(provider: str) -> tuple[str, str]:
+    p = str(provider or "").strip().lower()
+    if p == "google":
+        return (
+            str(os.environ.get("GOOGLE_CLIENT_ID", "") or "").strip(),
+            str(os.environ.get("GOOGLE_CLIENT_SECRET", "") or "").strip(),
+        )
+    return (
+        str(os.environ.get("MICROSOFT_CLIENT_ID", "") or "").strip(),
+        str(os.environ.get("MICROSOFT_CLIENT_SECRET", "") or "").strip(),
+    )
+
+
+def _resolve_auth(
+    db_path,
+    *,
+    tenant_id: str,
+    account: dict[str, Any],
+) -> dict[str, Any]:
+    auth_mode = str(account.get("auth_mode") or "password").strip().lower()
+    username = str(account.get("imap_username") or "").strip()
+    if auth_mode == "password":
+        try:
+            password = store.decrypt_account_secret(account)
+        except Exception:
+            return {"ok": False, "reason": "account_secret_unavailable"}
+        return {
+            "ok": True,
+            "kind": "password",
+            "username": username,
+            "password": password,
+        }
+
+    provider = str(account.get("oauth_provider") or "").strip().lower()
+    if not provider:
+        provider = "google" if auth_mode == "oauth_google" else "microsoft"
+
+    token = store.get_oauth_token(
+        db_path,
+        tenant_id=tenant_id,
+        account_id=str(account.get("id") or ""),
+        provider=provider,
+    )
+    if not token:
+        store.set_account_oauth_state(
+            db_path,
+            tenant_id=tenant_id,
+            account_id=str(account.get("id") or ""),
+            oauth_status="error",
+            oauth_last_error="oauth_token_missing",
+            oauth_provider=provider,
+        )
+        return {"ok": False, "reason": "oauth_token_missing"}
+
+    if store.oauth_token_expired(str(token.get("expires_at") or "")):
+        refresh_token = str(token.get("refresh_token") or "").strip()
+        if not refresh_token:
+            store.set_account_oauth_state(
+                db_path,
+                tenant_id=tenant_id,
+                account_id=str(account.get("id") or ""),
+                oauth_status="expired",
+                oauth_last_error="oauth_refresh_token_missing",
+                oauth_provider=provider,
+            )
+            return {"ok": False, "reason": "oauth_refresh_token_missing"}
+        client_id, client_secret = _oauth_client_env(provider)
+        if not client_id:
+            store.set_account_oauth_state(
+                db_path,
+                tenant_id=tenant_id,
+                account_id=str(account.get("id") or ""),
+                oauth_status="error",
+                oauth_last_error="oauth_client_not_configured",
+                oauth_provider=provider,
+            )
+            return {"ok": False, "reason": "oauth_client_not_configured"}
+        try:
+            refreshed = oauth.refresh_access_token(
+                provider=provider,
+                client_id=client_id,
+                client_secret=client_secret or None,
+                refresh_token=refresh_token,
+                scopes=token.get("scopes") or [],
+            )
+            store.save_oauth_token(
+                db_path,
+                tenant_id=tenant_id,
+                account_id=str(account.get("id") or ""),
+                provider=provider,
+                access_token=str(refreshed.get("access_token") or ""),
+                refresh_token=str(refreshed.get("refresh_token") or refresh_token),
+                expires_at=str(refreshed.get("expires_at") or ""),
+                scopes=[str(s) for s in (refreshed.get("scopes") or [])],
+                token_type=str(refreshed.get("token_type") or "Bearer"),
+            )
+            store.set_account_oauth_state(
+                db_path,
+                tenant_id=tenant_id,
+                account_id=str(account.get("id") or ""),
+                oauth_status="connected",
+                oauth_last_error="",
+                oauth_provider=provider,
+                oauth_scopes=[str(s) for s in (refreshed.get("scopes") or [])],
+            )
+            token = store.get_oauth_token(
+                db_path,
+                tenant_id=tenant_id,
+                account_id=str(account.get("id") or ""),
+                provider=provider,
+            )
+        except Exception:
+            store.set_account_oauth_state(
+                db_path,
+                tenant_id=tenant_id,
+                account_id=str(account.get("id") or ""),
+                oauth_status="error",
+                oauth_last_error="oauth_refresh_failed",
+                oauth_provider=provider,
+            )
+            return {"ok": False, "reason": "oauth_refresh_failed"}
+
+    access_token = str((token or {}).get("access_token") or "").strip()
+    if not access_token:
+        return {"ok": False, "reason": "oauth_access_token_missing"}
+
+    store.set_account_oauth_state(
+        db_path,
+        tenant_id=tenant_id,
+        account_id=str(account.get("id") or ""),
+        oauth_status="connected",
+        oauth_last_error="",
+        oauth_provider=provider,
+        oauth_scopes=[str(s) for s in ((token or {}).get("scopes") or [])],
+    )
+    return {
+        "ok": True,
+        "kind": "xoauth2",
+        "username": username,
+        "access_token": access_token,
+    }
+
+
 def sync_account(
     db_path,
     *,
@@ -70,26 +216,55 @@ def sync_account(
     if not account:
         return {"ok": False, "reason": "account_not_found", "imported": 0}
 
-    try:
-        password = store.decrypt_account_secret(account)
-    except Exception:
-        return {"ok": False, "reason": "account_secret_unavailable", "imported": 0}
+    auth = _resolve_auth(db_path, tenant_id=tenant_id, account=account)
+    if not bool(auth.get("ok")):
+        store.update_account_sync_report(
+            db_path,
+            tenant_id=tenant_id,
+            account_id=account_id,
+            ok=False,
+            imported=0,
+            duplicates=0,
+            error_reason=str(auth.get("reason") or "auth_failed"),
+        )
+        return {
+            "ok": False,
+            "reason": str(auth.get("reason") or "auth_failed"),
+            "imported": 0,
+        }
 
-    username = str(account.get("imap_username") or "").strip()
+    username = str(auth.get("username") or "")
     lim = max(1, min(int(limit or 50), 200))
 
     cursor = str(since or account.get("sync_cursor") or "").strip()
     imported = 0
     duplicates = 0
     fetched = 0
+    failures = 0
     last_uid = cursor
 
     try:
         with connect(account) as imap:
-            imap.login(username, password)
+            if str(auth.get("kind") or "") == "password":
+                imap.login(username, str(auth.get("password") or ""))
+            else:
+                xoauth = oauth.xoauth2_auth_string(
+                    username, str(auth.get("access_token") or "")
+                )
+                imap.authenticate("XOAUTH2", lambda _: xoauth.encode("utf-8"))
+
             imap.select("INBOX")
             status, data = imap.uid("search", None, "ALL")
             if status != "OK":
+                store.update_account_sync_report(
+                    db_path,
+                    tenant_id=tenant_id,
+                    account_id=account_id,
+                    ok=False,
+                    imported=imported,
+                    duplicates=duplicates,
+                    error_reason="imap_search_failed",
+                )
                 return {
                     "ok": False,
                     "reason": "imap_search_failed",
@@ -106,8 +281,15 @@ def sync_account(
             uids = candidate_uids[-lim:]
             for uid in uids:
                 fetched += 1
-                f_status, msg_data = imap.uid("fetch", uid, "(RFC822)")
+                msg_data = None
+                f_status = "NO"
+                for attempt in range(3):
+                    f_status, msg_data = imap.uid("fetch", uid, "(RFC822)")
+                    if f_status == "OK" and msg_data:
+                        break
+                    time.sleep(0.2 * (2**attempt))
                 if f_status != "OK" or not msg_data:
+                    failures += 1
                     continue
 
                 raw_bytes = b""
@@ -120,6 +302,7 @@ def sync_account(
                         raw_bytes = bytes(part[1])
                         break
                 if not raw_bytes:
+                    failures += 1
                     continue
 
                 msg = message_from_bytes(raw_bytes, policy=policy.default)
@@ -164,19 +347,39 @@ def sync_account(
                 sync_cursor=last_uid,
             )
 
+        store.update_account_sync_report(
+            db_path,
+            tenant_id=tenant_id,
+            account_id=account_id,
+            ok=True,
+            imported=imported,
+            duplicates=duplicates,
+            error_reason="" if failures == 0 else f"fetch_failures:{failures}",
+        )
         return {
             "ok": True,
             "reason": "ok",
             "imported": imported,
             "duplicates": duplicates,
             "fetched": fetched,
+            "failed_fetches": failures,
             "sync_cursor": str(last_uid or ""),
         }
     except Exception:
+        store.update_account_sync_report(
+            db_path,
+            tenant_id=tenant_id,
+            account_id=account_id,
+            ok=False,
+            imported=imported,
+            duplicates=duplicates,
+            error_reason="imap_sync_failed",
+        )
         return {
             "ok": False,
             "reason": "imap_sync_failed",
             "imported": imported,
             "duplicates": duplicates,
             "fetched": fetched,
+            "failed_fetches": failures,
         }
