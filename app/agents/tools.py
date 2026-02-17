@@ -10,6 +10,16 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.ai.knowledge import store_entity
 from app.config import Config
+from app.mail import (
+    postfach_create_draft,
+    postfach_create_followup_task,
+    postfach_extract_structured,
+    postfach_get_thread,
+    postfach_link_entities,
+    postfach_list_threads,
+    postfach_send_draft,
+    postfach_sync_account,
+)
 
 from . import retrieval_fts
 
@@ -29,6 +39,54 @@ class LogTimeArgs(BaseModel):
 
 class ExportAkteArgs(BaseModel):
     task_id: int = Field(gt=0)
+
+
+class PostfachSyncArgs(BaseModel):
+    account_id: str = Field(min_length=1)
+    limit: int = Field(default=50, ge=1, le=200)
+    since: str | None = None
+
+
+class PostfachListThreadsArgs(BaseModel):
+    account_id: str = Field(min_length=1)
+    filter: str = ""
+    limit: int = Field(default=50, ge=1, le=500)
+
+
+class PostfachGetThreadArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+
+
+class PostfachDraftReplyArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+    intent: str = ""
+    tone: str = "neutral"
+    template_id: str | None = None
+    citations_required: bool = True
+
+
+class PostfachSendDraftArgs(BaseModel):
+    draft_id: str = Field(min_length=1)
+    user_confirmed: bool = False
+
+
+class PostfachLinkEntitiesArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+    customer_id: str | None = None
+    project_id: str | None = None
+    lead_id: str | None = None
+
+
+class PostfachExtractStructuredArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+    schema_name: str = "default"
+
+
+class PostfachCreateFollowupArgs(BaseModel):
+    thread_id: str = Field(min_length=1)
+    due_at: str
+    owner: str
+    title: str = "Postfach Follow-up"
 
 
 @dataclass
@@ -138,6 +196,145 @@ def _export_akte_handler(
     return {"file": str(out)}
 
 
+def _postfach_sync_handler(
+    *, tenant_id: str, user: str, args: PostfachSyncArgs
+) -> Dict[str, Any]:
+    _ = user
+    result = postfach_sync_account(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        account_id=args.account_id,
+        limit=args.limit,
+        since=args.since,
+    )
+    if not result.get("ok"):
+        raise RuntimeError(str(result.get("reason") or "postfach_sync_failed"))
+    return result
+
+
+def _postfach_list_threads_handler(
+    *, tenant_id: str, user: str, args: PostfachListThreadsArgs
+) -> Dict[str, Any]:
+    _ = user
+    rows = postfach_list_threads(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        account_id=args.account_id,
+        filter_text=args.filter,
+        limit=args.limit,
+    )
+    return {"count": len(rows), "threads": rows}
+
+
+def _postfach_get_thread_handler(
+    *, tenant_id: str, user: str, args: PostfachGetThreadArgs
+) -> Dict[str, Any]:
+    _ = user
+    data = postfach_get_thread(
+        Path(Config.CORE_DB), tenant_id=tenant_id, thread_id=args.thread_id
+    )
+    if not data:
+        raise RuntimeError("thread_not_found")
+    return data
+
+
+def _postfach_draft_reply_handler(
+    *, tenant_id: str, user: str, args: PostfachDraftReplyArgs
+) -> Dict[str, Any]:
+    thread_data = postfach_get_thread(
+        Path(Config.CORE_DB), tenant_id=tenant_id, thread_id=args.thread_id
+    )
+    if not thread_data:
+        raise RuntimeError("thread_not_found")
+    thread = thread_data["thread"]
+    messages = thread_data.get("messages", [])
+    last_msg = messages[-1] if messages else {}
+    subject = str(
+        last_msg.get("subject_redacted") or thread.get("subject_redacted") or ""
+    ).strip()
+    tone = (args.tone or "neutral").strip()
+    intent = (args.intent or "antworten").strip()
+    citations = "Ja" if bool(args.citations_required) else "Nein"
+    body = (
+        "Guten Tag,\n\n"
+        f"vielen Dank fuer Ihre Nachricht ({intent}). "
+        f"Wir haben Ihr Anliegen mit Tonalitaet '{tone}' aufgenommen.\n\n"
+        "Naechste Schritte:\n"
+        "- Eingang geprueft\n"
+        "- Rueckmeldung vorbereitet\n"
+        f"- Quellenhinweise erforderlich: {citations}\n\n"
+        f"Thread-ID: {args.thread_id}\n"
+        f"Bearbeiter: {user}\n\n"
+        "Mit freundlichen Gruessen\n"
+        "KUKANILEA Systems"
+    )
+    draft_id = postfach_create_draft(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        account_id=str(thread.get("account_id") or ""),
+        thread_id=str(thread.get("id") or args.thread_id),
+        to_value=str(last_msg.get("from_redacted") or ""),
+        subject_value=f"Re: {subject}" if subject else "Re: Ihre Anfrage",
+        body_value=body,
+    )
+    return {"draft_id": draft_id, "thread_id": args.thread_id}
+
+
+def _postfach_send_draft_handler(
+    *, tenant_id: str, user: str, args: PostfachSendDraftArgs
+) -> Dict[str, Any]:
+    _ = user
+    result = postfach_send_draft(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        draft_id=args.draft_id,
+        user_confirmed=bool(args.user_confirmed),
+    )
+    if not result.get("ok"):
+        raise RuntimeError(str(result.get("reason") or "postfach_send_failed"))
+    return result
+
+
+def _postfach_link_entities_handler(
+    *, tenant_id: str, user: str, args: PostfachLinkEntitiesArgs
+) -> Dict[str, Any]:
+    _ = user
+    return postfach_link_entities(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        thread_id=args.thread_id,
+        customer_id=args.customer_id,
+        project_id=args.project_id,
+        lead_id=args.lead_id,
+    )
+
+
+def _postfach_extract_structured_handler(
+    *, tenant_id: str, user: str, args: PostfachExtractStructuredArgs
+) -> Dict[str, Any]:
+    _ = user
+    return postfach_extract_structured(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        thread_id=args.thread_id,
+        schema_name=args.schema_name,
+    )
+
+
+def _postfach_create_followup_handler(
+    *, tenant_id: str, user: str, args: PostfachCreateFollowupArgs
+) -> Dict[str, Any]:
+    return postfach_create_followup_task(
+        Path(Config.CORE_DB),
+        tenant_id=tenant_id,
+        thread_id=args.thread_id,
+        due_at=args.due_at,
+        owner=args.owner,
+        title=args.title,
+        created_by=user,
+    )
+
+
 TOOL_REGISTRY: Dict[str, ToolSpec] = {
     "create_task": ToolSpec(
         name="create_task",
@@ -156,6 +353,54 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         args_model=ExportAkteArgs,
         is_mutating=True,
         handler=_export_akte_handler,
+    ),
+    "postfach_sync": ToolSpec(
+        name="postfach_sync",
+        args_model=PostfachSyncArgs,
+        is_mutating=True,
+        handler=_postfach_sync_handler,
+    ),
+    "postfach_list_threads": ToolSpec(
+        name="postfach_list_threads",
+        args_model=PostfachListThreadsArgs,
+        is_mutating=False,
+        handler=_postfach_list_threads_handler,
+    ),
+    "postfach_get_thread": ToolSpec(
+        name="postfach_get_thread",
+        args_model=PostfachGetThreadArgs,
+        is_mutating=False,
+        handler=_postfach_get_thread_handler,
+    ),
+    "postfach_draft_reply": ToolSpec(
+        name="postfach_draft_reply",
+        args_model=PostfachDraftReplyArgs,
+        is_mutating=True,
+        handler=_postfach_draft_reply_handler,
+    ),
+    "postfach_send_draft": ToolSpec(
+        name="postfach_send_draft",
+        args_model=PostfachSendDraftArgs,
+        is_mutating=True,
+        handler=_postfach_send_draft_handler,
+    ),
+    "postfach_link_entities": ToolSpec(
+        name="postfach_link_entities",
+        args_model=PostfachLinkEntitiesArgs,
+        is_mutating=True,
+        handler=_postfach_link_entities_handler,
+    ),
+    "postfach_extract_structured": ToolSpec(
+        name="postfach_extract_structured",
+        args_model=PostfachExtractStructuredArgs,
+        is_mutating=True,
+        handler=_postfach_extract_structured_handler,
+    ),
+    "postfach_create_followup": ToolSpec(
+        name="postfach_create_followup",
+        args_model=PostfachCreateFollowupArgs,
+        is_mutating=True,
+        handler=_postfach_create_followup_handler,
     ),
 }
 
