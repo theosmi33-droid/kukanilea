@@ -1,0 +1,57 @@
+<div class="space-y-4">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h1 class="text-xl font-semibold">Automation Builder v1</h1>
+    <div class="flex items-center gap-2">
+      <a class="btn-outline px-3 py-2 text-sm" href="/automation/pending">Pending Actions</a>
+      <form method="post" action="/automation/run">
+        <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Run now</button>
+      </form>
+    </div>
+  </div>
+
+  {% if read_only %}
+  <div class="rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm">Read-only mode aktiv. Schreibaktionen sind deaktiviert.</div>
+  {% endif %}
+
+  <div class="card p-0 overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="text-left border-b border-zinc-700/40">
+          <th class="p-3">Name</th>
+          <th class="p-3">Enabled</th>
+          <th class="p-3">Version</th>
+          <th class="p-3">Trigger</th>
+          <th class="p-3">Conditions</th>
+          <th class="p-3">Actions</th>
+          <th class="p-3">Updated</th>
+          <th class="p-3">Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rules %}
+        <tr class="border-b border-zinc-700/20">
+          <td class="p-3"><a class="underline" href="/automation/{{ r.id }}">{{ r.name }}</a></td>
+          <td class="p-3">{{ "yes" if r.is_enabled else "no" }}</td>
+          <td class="p-3">{{ r.version }}</td>
+          <td class="p-3">{{ r.trigger_count }}</td>
+          <td class="p-3">{{ r.condition_count }}</td>
+          <td class="p-3">{{ r.action_count }}</td>
+          <td class="p-3">{{ r.updated_at }}</td>
+          <td class="p-3">
+            <form method="post" action="/automation/{{ r.id }}/toggle" class="inline">
+              <input type="hidden" name="enabled" value="{{ 0 if r.is_enabled else 1 }}">
+              <button class="btn-outline px-2 py-1 text-xs" type="submit" {% if read_only %}disabled{% endif %}>
+                {{ "Disable" if r.is_enabled else "Enable" }}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="p-3 opacity-70" colspan="8">Keine Builder-Regeln vorhanden.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
