@@ -33,12 +33,14 @@ import hashlib
 import hmac
 import importlib
 import importlib.util
+import ipaddress
 import json
 import os
 import re
 import secrets
 import sqlite3
 import time
+import urllib.parse
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, List, Tuple
@@ -75,6 +77,7 @@ from app.automation import (
     builder_execution_log_list,
     builder_pending_action_confirm_once,
     builder_pending_action_list,
+    builder_pending_action_set_status,
     builder_rule_create,
     builder_rule_get,
     builder_rule_list,
@@ -4771,6 +4774,8 @@ _BUILDER_ACTION_ALLOWLIST = {
     "create_postfach_draft",
     "create_followup",
     "email_draft",
+    "email_send",
+    "webhook",
 }
 
 
@@ -4794,6 +4799,49 @@ def _split_recipients_csv(raw: Any) -> list[str]:
         seen.add(lower)
         out.append(lower)
     return out
+
+
+def _split_ids_csv(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        parts = [str(item or "").strip() for item in raw]
+    else:
+        text = str(raw or "")
+        normalized = text.replace(";", ",").replace("\n", ",")
+        parts = [part.strip() for part in normalized.split(",")]
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in parts:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
+def _builder_webhook_allowed_domains() -> set[str]:
+    configured = getattr(Config, "WEBHOOK_ALLOWED_DOMAINS_LIST", None)
+    if isinstance(configured, list):
+        return {str(v).strip().lower() for v in configured if str(v).strip()}
+    raw = str(getattr(Config, "WEBHOOK_ALLOWED_DOMAINS", "") or "")
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+
+
+def _builder_webhook_url_allowed(url: str) -> bool:
+    parsed = urllib.parse.urlparse(str(url or "").strip())
+    if parsed.scheme.lower() != "https":
+        return False
+    if parsed.username or parsed.password:
+        return False
+    host = str(parsed.hostname or "").strip().lower()
+    if not host or host in {"localhost", "127.0.0.1", "::1"}:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    allowed = _builder_webhook_allowed_domains()
+    return bool(allowed and host in allowed)
 
 
 def _normalize_rule_component_for_import(item: Any, *, type_key: str) -> dict[str, Any]:
@@ -4828,10 +4876,82 @@ def _normalize_rule_component_for_import(item: Any, *, type_key: str) -> dict[st
         if ctype_lower not in _BUILDER_ACTION_ALLOWLIST:
             raise ValueError("validation_error")
         if ctype_lower == "email_draft":
+            allowed_keys = {
+                "to",
+                "subject",
+                "body_template",
+                "body",
+                "requires_confirm",
+                "account_id",
+                "attachments",
+            }
+            if set(cfg.keys()) - allowed_keys:
+                raise ValueError("validation_error")
             recipients = _split_recipients_csv(cfg.get("to"))
             if not recipients:
                 raise ValueError("validation_error")
             cfg["to"] = recipients
+        if ctype_lower == "email_send":
+            allowed_keys = {
+                "to",
+                "subject",
+                "body_template",
+                "body",
+                "requires_confirm",
+                "account_id",
+                "attachments",
+            }
+            if set(cfg.keys()) - allowed_keys:
+                raise ValueError("validation_error")
+            recipients = _split_recipients_csv(cfg.get("to"))
+            subject = str(cfg.get("subject") or "").strip()
+            body_template = str(
+                cfg.get("body_template") or cfg.get("body") or ""
+            ).strip()
+            account_id = str(cfg.get("account_id") or "").strip()
+            attachments = _split_ids_csv(cfg.get("attachments"))
+            if not recipients or not subject or not body_template:
+                raise ValueError("validation_error")
+            cfg = {
+                "to": recipients,
+                "subject": subject,
+                "body_template": body_template,
+                "requires_confirm": True,
+            }
+            if account_id:
+                cfg["account_id"] = account_id
+            if attachments:
+                cfg["attachments"] = attachments
+        if ctype_lower == "webhook":
+            allowed_keys = {"url", "method", "body_template", "headers"}
+            if set(cfg.keys()) - allowed_keys:
+                raise ValueError("validation_error")
+            url_value = str(cfg.get("url") or "").strip()
+            method = str(cfg.get("method") or "POST").strip().upper()
+            body_template = str(cfg.get("body_template") or "{}")
+            headers = cfg.get("headers") or {}
+            if (
+                not url_value
+                or method != "POST"
+                or not _builder_webhook_url_allowed(url_value)
+                or not isinstance(headers, dict)
+            ):
+                raise ValueError("validation_error")
+            for key in headers:
+                lowered = str(key or "").strip().lower()
+                if (
+                    not lowered
+                    or "auth" in lowered
+                    or "token" in lowered
+                    or lowered in {"cookie", "set-cookie"}
+                ):
+                    raise ValueError("validation_error")
+            cfg = {
+                "url": url_value,
+                "method": "POST",
+                "body_template": body_template,
+                "headers": {str(k): str(v)[:300] for k, v in headers.items()},
+            }
     return {type_key: ctype, "config": cfg}
 
 
@@ -5170,6 +5290,11 @@ def automation_pending_confirm_action(pending_id: str):
     )
     status = str(result.get("status") or "").strip().lower()
     if status == "failed":
+        builder_pending_action_set_status(
+            tenant_id=current_tenant(),
+            pending_id=pending_id,
+            status="failed",
+        )
         return _automation_error(
             "action_failed", "Action konnte nicht ausgeführt werden.", 400
         )
@@ -5270,6 +5395,7 @@ def automation_builder_rule_detail_page(rule_id: str):
         "automation/rule_detail_builder.html",
         rule=rule,
         read_only=bool(current_app.config.get("READ_ONLY", False)),
+        webhook_allowed_domains=sorted(_builder_webhook_allowed_domains()),
     )
     return _render_base(content, active_tab="automation")
 
@@ -5356,6 +5482,133 @@ def automation_builder_add_email_draft_action(rule_id: str):
     if attachments:
         action_cfg["attachments"] = attachments
     actions.append({"action_type": "email_draft", "config": action_cfg})
+    updated = builder_rule_update(
+        tenant_id=current_tenant(),
+        rule_id=rule_id,
+        patch={"actions": actions},
+    )
+    if not updated:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    return redirect(url_for("web.automation_builder_rule_detail_page", rule_id=rule_id))
+
+
+@bp.post("/automation/<rule_id>/action/email-send")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_add_email_send_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    recipients = _split_recipients_csv(payload.get("to"))
+    subject = str(payload.get("subject") or "").strip()
+    body_template = str(payload.get("body_template") or "").strip()
+    if not recipients or not subject or not body_template:
+        return _automation_error(
+            "validation_error",
+            "Empfänger, Betreff und Body sind Pflicht.",
+            400,
+        )
+    attachments = _split_ids_csv(payload.get("attachments"))
+    account_id = str(payload.get("account_id") or "").strip()
+
+    existing = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
+    if not existing:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+
+    actions = [
+        {"action_type": str(a.get("type") or ""), "config": a.get("config") or {}}
+        for a in (existing.get("actions") or [])
+        if isinstance(a, dict)
+    ]
+    action_cfg: dict[str, Any] = {
+        "to": recipients,
+        "subject": subject,
+        "body_template": body_template,
+        "requires_confirm": True,
+    }
+    if account_id:
+        action_cfg["account_id"] = account_id
+    if attachments:
+        action_cfg["attachments"] = attachments
+
+    actions.append({"action_type": "email_send", "config": action_cfg})
+    updated = builder_rule_update(
+        tenant_id=current_tenant(),
+        rule_id=rule_id,
+        patch={"actions": actions},
+    )
+    if not updated:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    return redirect(url_for("web.automation_builder_rule_detail_page", rule_id=rule_id))
+
+
+@bp.post("/automation/<rule_id>/action/webhook")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_add_webhook_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    url_value = str(payload.get("url") or "").strip()
+    method = str(payload.get("method") or "POST").strip().upper()
+    body_template = str(payload.get("body_template") or "{}")
+    headers_raw = str(payload.get("headers_json") or "").strip()
+    if not headers_raw:
+        headers_raw = "{}"
+    try:
+        headers_cfg = json.loads(headers_raw)
+    except Exception:
+        return _automation_error("validation_error", "Headers-JSON ist ungültig.", 400)
+    if not isinstance(headers_cfg, dict):
+        return _automation_error("validation_error", "Headers-JSON ist ungültig.", 400)
+    if method != "POST":
+        return _automation_error("validation_error", "Nur POST ist erlaubt.", 400)
+    if not _builder_webhook_url_allowed(url_value):
+        return _automation_error(
+            "validation_error",
+            "Webhook-URL nicht erlaubt (HTTPS + Allowlist).",
+            400,
+        )
+    for key in headers_cfg:
+        lowered = str(key or "").strip().lower()
+        if (
+            not lowered
+            or "auth" in lowered
+            or "token" in lowered
+            or lowered in {"cookie", "set-cookie"}
+        ):
+            return _automation_error(
+                "validation_error",
+                "Unsichere Header sind nicht erlaubt.",
+                400,
+            )
+
+    existing = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
+    if not existing:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+
+    actions = [
+        {"action_type": str(a.get("type") or ""), "config": a.get("config") or {}}
+        for a in (existing.get("actions") or [])
+        if isinstance(a, dict)
+    ]
+    actions.append(
+        {
+            "action_type": "webhook",
+            "config": {
+                "url": url_value,
+                "method": "POST",
+                "body_template": body_template,
+                "headers": {str(k): str(v)[:300] for k, v in headers_cfg.items()},
+            },
+        }
+    )
     updated = builder_rule_update(
         tenant_id=current_tenant(),
         rule_id=rule_id,

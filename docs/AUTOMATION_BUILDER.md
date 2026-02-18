@@ -12,8 +12,8 @@ Flow:
 - Ausfuehrung wird im `automation_builder_execution_log` protokolliert.
 
 ## Sicherheitsgrenzen
-- Kein automatischer E-Mail-Versand.
-- Keine externen Requests/Webhooks.
+- Kein automatischer E-Mail-Versand (nur pending + Confirm-Gate).
+- Webhooks nur per HTTPS und Domain-Allowlist (`WEBHOOK_ALLOWED_DOMAINS`).
 - Pending Actions muessen serverseitig bestaetigt werden (`safety_ack`/`user_confirmed`).
 - Pending-Confirm ist replay-sicher (one-time `confirm_token`, atomarer Consume).
 - Pending-Confirm ist fuer `ADMIN`/`DEV` begrenzt.
@@ -69,6 +69,8 @@ Allowlist:
 - `create_postfach_draft`
 - `create_followup`
 - `email_draft`
+- `email_send`
+- `webhook`
 
 Verhalten:
 - Standard: pending (Confirm-Gate).
@@ -76,6 +78,9 @@ Verhalten:
 - `create_postfach_draft` und `email_draft` bleiben confirm-gated.
 - `email_draft` erstellt nur Entwuerfe im Postfach, kein automatischer Versand.
 - `email_draft` validiert Empfaenger gegen CRM-Contacts des Tenants und nutzt standardmaessig das erste konfigurierte Postfach-Konto.
+- `email_send` erstellt zuerst eine pending Action und sendet erst nach Confirm mit gueltigem `confirm_token`.
+- `email_send` validiert Empfaenger gegen CRM und benoetigt ein aktives OAuth-Postfach-Konto (kein Auto-Refresh in der Automation-Action selbst).
+- `webhook` ist synchron, `POST`-only, max. 2 Versuche (Retry nur bei transienten Fehlern wie 429/5xx/Netzwerk-Timeout).
 
 ## Idempotenz und Cursor
 - Per tenant/source wird ein Cursor in `automation_builder_state` gefuehrt.
@@ -94,6 +99,11 @@ Verhalten:
 - UI: `GET /automation/pending`
 - Confirm: `POST /automation/pending/<id>/confirm` mit `safety_ack=1`
 - Confirm verlangt zusaetzlich `confirm_token` (hidden POST field, kein Query-Parameter).
+
+## Konfiguration
+- `WEBHOOK_ALLOWED_DOMAINS`: Komma-getrennte Domain-Allowlist fuer `webhook`-Actions.
+  - Beispiel: `WEBHOOK_ALLOWED_DOMAINS=hooks.example.com,api.partner.tld`
+  - Wenn leer, sind Webhooks fail-closed deaktiviert.
 
 ## Beispielregel (komplett)
 ```json

@@ -34,7 +34,7 @@
     </form>
   </div>
 
-  <div class="grid gap-4 md:grid-cols-2">
+  <div class="grid gap-4 md:grid-cols-3">
     <div class="card p-4 space-y-2">
       <h2 class="font-semibold">Cron Trigger hinzufügen</h2>
       <p class="text-xs opacity-80">Format: <code>minute hour day month weekday</code> (nur <code>*</code> oder feste Zahlen)</p>
@@ -56,6 +56,39 @@
         <button class="btn-outline px-3 py-2 text-sm w-fit" type="submit" {% if read_only %}disabled{% endif %}>Email-Draft Action hinzufügen</button>
       </form>
     </div>
+    <div class="card p-4 space-y-2">
+      <h2 class="font-semibold">Email-Send Action hinzufügen</h2>
+      <p class="text-xs opacity-80">Nur pending + Confirm. Kein Auto-Send ohne Bestätigung.</p>
+      <form method="post" action="/automation/{{ rule.id }}/action/email-send" class="grid gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input class="input px-3 py-2 text-sm" name="to" placeholder="kunde@example.com, team@example.com" required {% if read_only %}disabled{% endif %} />
+        <input class="input px-3 py-2 text-sm" name="subject" placeholder="Betreff" required {% if read_only %}disabled{% endif %} />
+        <textarea class="input px-3 py-2 text-sm" rows="4" name="body_template" placeholder="Sehr geehrte/r {customer_name}, ..." required {% if read_only %}disabled{% endif %}></textarea>
+        <input class="input px-3 py-2 text-sm" name="account_id" placeholder="optional account_id" {% if read_only %}disabled{% endif %} />
+        <input class="input px-3 py-2 text-sm" name="attachments" placeholder="optionale doc IDs (kommagetrennt)" {% if read_only %}disabled{% endif %} />
+        <button class="btn-outline px-3 py-2 text-sm w-fit" type="submit" {% if read_only %}disabled{% endif %}>Email-Send Action hinzufügen</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card p-4 space-y-2">
+    <h2 class="font-semibold">Webhook Action hinzufügen</h2>
+    <p class="text-xs opacity-80">
+      Nur HTTPS + Domain-Allowlist.
+      {% if webhook_allowed_domains %}
+      Erlaubte Domains: <code>{{ webhook_allowed_domains | join(", ") }}</code>
+      {% else %}
+      Keine Domains konfiguriert (<code>WEBHOOK_ALLOWED_DOMAINS</code>).
+      {% endif %}
+    </p>
+    <form method="post" action="/automation/{{ rule.id }}/action/webhook" class="grid gap-2 md:grid-cols-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input class="input px-3 py-2 text-sm md:col-span-2" name="url" placeholder="https://example.com/hook" required {% if read_only %}disabled{% endif %} />
+      <input class="input px-3 py-2 text-sm" name="method" value="POST" readonly {% if read_only %}disabled{% endif %} />
+      <textarea class="input px-3 py-2 text-sm md:col-span-2" rows="3" name="body_template" placeholder='{"event":"{{event_type}}","entity_id":"{{entity_id}}"}' {% if read_only %}disabled{% endif %}></textarea>
+      <textarea class="input px-3 py-2 text-sm md:col-span-2" rows="3" name="headers_json" placeholder='{"X-Source":"kukanilea"}' {% if read_only %}disabled{% endif %}></textarea>
+      <button class="btn-outline px-3 py-2 text-sm w-fit" type="submit" {% if read_only %}disabled{% endif %}>Webhook Action hinzufügen</button>
+    </form>
   </div>
 
   <div class="grid gap-4 md:grid-cols-3">

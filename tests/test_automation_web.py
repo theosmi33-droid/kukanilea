@@ -138,7 +138,9 @@ def test_automation_pending_confirm_requires_ack_and_confirms(
     assert str(row.get("confirmed_at") or "").strip()
 
 
-def test_automation_rule_detail_supports_cron_and_email_draft(tmp_path: Path) -> None:
+def test_automation_rule_detail_supports_cron_and_mail_actions(
+    tmp_path: Path, monkeypatch
+) -> None:
     app = create_app()
     app.config.update(TESTING=True, SECRET_KEY="test")
     db_path = _set_core_db(tmp_path)
@@ -152,10 +154,15 @@ def test_automation_rule_detail_supports_cron_and_email_draft(tmp_path: Path) ->
     )
     client = app.test_client()
     _login(client)
+    monkeypatch.setattr(
+        webmod.Config, "WEBHOOK_ALLOWED_DOMAINS_LIST", ["hooks.example.com"]
+    )
     detail = client.get(f"/automation/{rule_id}")
     assert detail.status_code == 200
     assert b"cron_expression" in detail.data
     assert b"body_template" in detail.data
+    assert b"/action/email-send" in detail.data
+    assert b"/action/webhook" in detail.data
     csrf = _csrf_from_html(detail.data)
 
     add_cron = client.post(
@@ -177,7 +184,34 @@ def test_automation_rule_detail_supports_cron_and_email_draft(tmp_path: Path) ->
     )
     assert add_action.status_code == 302
 
+    add_send_action = client.post(
+        f"/automation/{rule_id}/action/email-send",
+        data={
+            "csrf_token": csrf,
+            "to": "kunde@example.com",
+            "subject": "Jetzt senden",
+            "body_template": "Hallo {customer_name}",
+        },
+        follow_redirects=False,
+    )
+    assert add_send_action.status_code == 302
+
+    add_webhook_action = client.post(
+        f"/automation/{rule_id}/action/webhook",
+        data={
+            "csrf_token": csrf,
+            "url": "https://hooks.example.com/hook",
+            "method": "POST",
+            "body_template": '{"event":"{{event_type}}"}',
+            "headers_json": '{"X-Source":"kukanilea"}',
+        },
+        follow_redirects=False,
+    )
+    assert add_webhook_action.status_code == 302
+
     rule = get_rule(tenant_id="KUKANILEA", rule_id=rule_id, db_path=db_path)
     assert rule is not None
     assert any(str(t.get("type") or "") == "cron" for t in rule["triggers"])
     assert any(str(a.get("type") or "") == "email_draft" for a in rule["actions"])
+    assert any(str(a.get("type") or "") == "email_send" for a in rule["actions"])
+    assert any(str(a.get("type") or "") == "webhook" for a in rule["actions"])
