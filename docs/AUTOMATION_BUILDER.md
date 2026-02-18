@@ -30,6 +30,15 @@ Flow:
   "allowed_event_types": ["email.received", "lead.created"]
 }
 ```
+- `cron` (v1.2)
+  - `cron` im Format `minute hour day month weekday`
+  - Nur `*` oder feste Zahlen, keine Listen/Bereiche/Step-Werte
+  - Beispiel:
+```json
+{
+  "cron": "0 8 * * 1"
+}
+```
 
 ## Conditions (v1, Allowlist)
 Unterstuetzte Operatoren:
@@ -59,15 +68,19 @@ Allowlist:
 - `create_task`
 - `create_postfach_draft`
 - `create_followup`
+- `email_draft`
 
 Verhalten:
 - Standard: pending (Confirm-Gate).
 - Direktausfuehrung nur fuer nicht-destruktive Typen mit `requires_confirm=false`.
-- `create_postfach_draft` bleibt confirm-gated.
+- `create_postfach_draft` und `email_draft` bleiben confirm-gated.
+- `email_draft` erstellt nur Entwuerfe im Postfach, kein automatischer Versand.
+- `email_draft` validiert Empfaenger gegen CRM-Contacts des Tenants und nutzt standardmaessig das erste konfigurierte Postfach-Konto.
 
 ## Idempotenz und Cursor
 - Per tenant/source wird ein Cursor in `automation_builder_state` gefuehrt.
 - Execution-Logs sind per `(tenant_id, rule_id, trigger_ref)` eindeutig.
+- Cron-Trigger verwenden `trigger_ref=cron:<rule_id>:<YYYYMMDDHHMM>` fuer minute-genaue Idempotenz.
 - Bei Fehlern bleibt der Cursor auf dem letzten sicheren Punkt stehen.
 - Per-Rule Rate-Limit: `max_executions_per_minute` (default: 10), Ueberschreitungen werden als `rate_limited` protokolliert.
 - Reason-Codes in Execution-Logs: `ok`, `condition_false`, `action_pending`, `rate_limited`, `error_permanent:*`, `error_transient:*`.
@@ -75,6 +88,7 @@ Verhalten:
 ## Manuelle Ausfuehrung
 - UI: `POST /automation/run`
 - Trigger aus Postfach-Sync: nach erfolgreichem IMAP-Sync wird `process_events_for_tenant()` aufgerufen.
+- Cron-Trigger laufen zusaetzlich ueber einen lokalen Background-Checker (Default: alle 60s, konfigurierbar per `AUTOMATION_CRON_INTERVAL_SECONDS`).
 
 ## Pending Actions bestaetigen
 - UI: `GET /automation/pending`
@@ -113,6 +127,12 @@ Verhalten:
 - Regeltest ohne Seiteneffekte: `POST /automation/<rule_id>/simulate`
 - Optional mit `event_id`, sonst wird das letzte passende Tenant-Event verwendet.
 - Dry-Run schreibt einen `simulation`-Logeintrag, erzeugt aber keine echten Pending-Actions.
+
+## Builder UI (v1.2)
+- Regel-Detail (`/automation/<rule_id>`) bietet jetzt:
+  - Formular zum Hinzufuegen eines Cron-Triggers
+  - Formular zum Hinzufuegen einer `email_draft`-Action
+- Import-Validierung akzeptiert `cron`/`email_draft` nur in erlaubten, sicheren Strukturen.
 
 ## Export / Import (safe JSON)
 - Export: `GET /automation/<rule_id>/export`

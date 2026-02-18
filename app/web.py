@@ -80,9 +80,11 @@ from app.automation import (
     builder_rule_list,
     builder_rule_update,
     get_or_build_daily_insights,
+    process_cron_for_tenant,
     process_events_for_tenant,
     simulate_rule_for_tenant,
 )
+from app.automation.cron import parse_cron_expression
 from app.autonomy import (
     autotag_rule_create,
     autotag_rule_delete,
@@ -4763,6 +4765,35 @@ _RULE_COMPONENT_ALLOWED_KEYS = {
     "config",
     "config_json",
 }
+_BUILDER_TRIGGER_ALLOWLIST = {"eventlog", "cron"}
+_BUILDER_ACTION_ALLOWLIST = {
+    "create_task",
+    "create_postfach_draft",
+    "create_followup",
+    "email_draft",
+}
+
+
+def _split_recipients_csv(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        parts = [str(item or "").strip() for item in raw]
+    else:
+        text = str(raw or "")
+        normalized = text.replace(";", ",").replace("\n", ",")
+        parts = [part.strip() for part in normalized.split(",")]
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in parts:
+        if not value:
+            continue
+        lower = value.lower()
+        if "@" not in lower or "." not in lower.rsplit("@", 1)[-1]:
+            continue
+        if lower in seen:
+            continue
+        seen.add(lower)
+        out.append(lower)
+    return out
 
 
 def _normalize_rule_component_for_import(item: Any, *, type_key: str) -> dict[str, Any]:
@@ -4781,6 +4812,26 @@ def _normalize_rule_component_for_import(item: Any, *, type_key: str) -> dict[st
         cfg = json.loads(str(raw or "{}")) if not isinstance(raw, dict) else raw
     else:
         cfg = {}
+    if not isinstance(cfg, dict):
+        raise ValueError("validation_error")
+    ctype_lower = ctype.lower()
+    if type_key == "trigger_type":
+        if ctype_lower not in _BUILDER_TRIGGER_ALLOWLIST:
+            raise ValueError("validation_error")
+        if ctype_lower == "cron":
+            cron_expr = str(cfg.get("cron") or "").strip()
+            if not cron_expr:
+                raise ValueError("validation_error")
+            parse_cron_expression(cron_expr)
+            cfg = {"cron": cron_expr}
+    if type_key == "action_type":
+        if ctype_lower not in _BUILDER_ACTION_ALLOWLIST:
+            raise ValueError("validation_error")
+        if ctype_lower == "email_draft":
+            recipients = _split_recipients_csv(cfg.get("to"))
+            if not recipients:
+                raise ValueError("validation_error")
+            cfg["to"] = recipients
     return {type_key: ctype, "config": cfg}
 
 
@@ -5134,13 +5185,21 @@ def automation_builder_run_action():
     guarded = _automation_guard(api=not _is_htmx())
     if guarded is not None:
         return guarded
-    result = process_events_for_tenant(current_tenant())
-    if not bool(result.get("ok")):
+    event_result = process_events_for_tenant(current_tenant())
+    if not bool(event_result.get("ok")):
         return _automation_error(
             "runner_failed",
             "Automation-Runner konnte nicht ausgeführt werden.",
             400,
         )
+    cron_result = process_cron_for_tenant(current_tenant())
+    if not bool(cron_result.get("ok")):
+        return _automation_error(
+            "runner_failed",
+            "Automation-Runner konnte nicht ausgeführt werden.",
+            400,
+        )
+    result = {"eventlog": event_result, "cron": cron_result}
     if _is_htmx():
         return redirect(url_for("web.automation_builder_page"))
     return jsonify({"ok": True, "result": result})
@@ -5213,6 +5272,98 @@ def automation_builder_rule_detail_page(rule_id: str):
         read_only=bool(current_app.config.get("READ_ONLY", False)),
     )
     return _render_base(content, active_tab="automation")
+
+
+@bp.post("/automation/<rule_id>/trigger/cron")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_add_cron_trigger_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    cron_expr = str(payload.get("cron_expression") or "").strip()
+    if not cron_expr:
+        return _automation_error("validation_error", "Cron-Ausdruck fehlt.", 400)
+    try:
+        parse_cron_expression(cron_expr)
+    except ValueError:
+        return _automation_error("validation_error", "Cron-Ausdruck ungültig.", 400)
+
+    existing = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
+    if not existing:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    triggers = [
+        {"trigger_type": str(t.get("type") or ""), "config": t.get("config") or {}}
+        for t in (existing.get("triggers") or [])
+        if isinstance(t, dict)
+    ]
+    triggers.append({"trigger_type": "cron", "config": {"cron": cron_expr}})
+    updated = builder_rule_update(
+        tenant_id=current_tenant(),
+        rule_id=rule_id,
+        patch={"triggers": triggers},
+    )
+    if not updated:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    return redirect(url_for("web.automation_builder_rule_detail_page", rule_id=rule_id))
+
+
+@bp.post("/automation/<rule_id>/action/email-draft")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_add_email_draft_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    recipients = _split_recipients_csv(payload.get("to"))
+    subject = str(payload.get("subject") or "").strip()
+    body_template = str(payload.get("body_template") or "").strip()
+    if not recipients or not subject:
+        return _automation_error(
+            "validation_error", "Empfänger und Betreff sind Pflicht.", 400
+        )
+    attachments_raw = str(payload.get("attachments") or "").strip()
+    attachments = [
+        part.strip()
+        for part in attachments_raw.replace(";", ",").split(",")
+        if part.strip()
+    ]
+
+    existing = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
+    if not existing:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+
+    actions = [
+        {"action_type": str(a.get("type") or ""), "config": a.get("config") or {}}
+        for a in (existing.get("actions") or [])
+        if isinstance(a, dict)
+    ]
+    action_cfg: dict[str, Any] = {
+        "to": recipients,
+        "subject": subject,
+        "body_template": body_template,
+        "requires_confirm": True,
+    }
+    account_id = str(payload.get("account_id") or "").strip()
+    if account_id:
+        action_cfg["account_id"] = account_id
+    if attachments:
+        action_cfg["attachments"] = attachments
+    actions.append({"action_type": "email_draft", "config": action_cfg})
+    updated = builder_rule_update(
+        tenant_id=current_tenant(),
+        rule_id=rule_id,
+        patch={"actions": actions},
+    )
+    if not updated:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    return redirect(url_for("web.automation_builder_rule_detail_page", rule_id=rule_id))
 
 
 @bp.get("/automation/<rule_id>/export")

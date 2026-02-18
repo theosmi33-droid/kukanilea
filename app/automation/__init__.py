@@ -11,7 +11,13 @@ from .core import (
     validate_condition,
 )
 from .insights import generate_daily_insights, get_or_build_daily_insights
-from .runner import process_events_for_tenant, simulate_rule_for_tenant
+from .runner import (
+    process_cron_for_tenant,
+    process_events_for_tenant,
+    simulate_rule_for_tenant,
+    start_cron_checker,
+    stop_cron_checker,
+)
 from .store import (
     append_execution_log as builder_execution_log_append,
 )
@@ -90,6 +96,9 @@ __all__ = [
     "builder_state_upsert_cursor",
     "generate_daily_insights",
     "get_or_build_daily_insights",
+    "process_cron_for_tenant",
     "process_events_for_tenant",
     "simulate_rule_for_tenant",
+    "start_cron_checker",
+    "stop_cron_checker",
 ]

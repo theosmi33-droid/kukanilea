@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any, Mapping
 
 import kukanilea_core_v3_fixed as core
-from app.mail import postfach_create_draft, postfach_create_followup_task
+from app.mail import (
+    postfach_create_draft,
+    postfach_create_followup_task,
+    postfach_list_accounts,
+)
 
 from .store import create_pending_action
 
-ALLOWLIST_ACTIONS = {"create_task", "create_postfach_draft", "create_followup"}
+ALLOWLIST_ACTIONS = {
+    "create_task",
+    "create_postfach_draft",
+    "create_followup",
+    "email_draft",
+}
 NON_DESTRUCTIVE_DIRECT = {"create_task", "create_followup"}
 SNAPSHOT_ALLOWLIST = {
     "event_id",
@@ -54,6 +64,8 @@ def _requires_confirm(
     action_type: str, action_cfg: Mapping[str, Any], user_confirmed: bool
 ) -> bool:
     if action_type == "create_postfach_draft":
+        return not bool(user_confirmed)
+    if action_type == "email_draft":
         return not bool(user_confirmed)
     configured = bool(action_cfg.get("requires_confirm", True))
     if configured:
@@ -158,6 +170,130 @@ def _execute_create_postfach_draft(
     return {"status": "ok", "result": {"draft_id": draft_id}}
 
 
+def _split_recipients(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        candidates = [str(item or "").strip() for item in raw]
+    else:
+        text = str(raw or "")
+        normalized = text.replace(";", ",").replace("\n", ",")
+        candidates = [part.strip() for part in normalized.split(",")]
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in candidates:
+        if not value:
+            continue
+        email = value.lower()
+        if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+            continue
+        if email in seen:
+            continue
+        seen.add(email)
+        out.append(email)
+    return out
+
+
+def _crm_recipients_exist(
+    *, db_path: Path, tenant_id: str, recipients: list[str]
+) -> bool:
+    if not recipients:
+        return False
+    con = sqlite3.connect(str(db_path), timeout=30)
+    con.row_factory = sqlite3.Row
+    try:
+        table_exists = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='contacts' LIMIT 1"
+        ).fetchone()
+        if table_exists is None:
+            return False
+        placeholders = ",".join(["?"] * len(recipients))
+        rows = con.execute(
+            f"""
+            SELECT LOWER(TRIM(email)) AS email_norm
+            FROM contacts
+            WHERE tenant_id=?
+              AND email IS NOT NULL
+              AND LOWER(TRIM(email)) IN ({placeholders})
+            """,
+            (tenant_id, *recipients),
+        ).fetchall()
+        found = {str(row["email_norm"] or "").strip() for row in rows}
+        return set(recipients).issubset(found)
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        con.close()
+
+
+def _first_account_id(db_path: Path, tenant_id: str) -> str:
+    rows = postfach_list_accounts(db_path, tenant_id)
+    if not rows:
+        return ""
+    return str(rows[0].get("id") or "").strip()
+
+
+def _allowed_template_value(context: Mapping[str, Any], key: str) -> str:
+    value = context.get(key)
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _render_template_text(template: str, context: Mapping[str, Any]) -> str:
+    rendered = str(template or "")
+    for key in (
+        "customer_name",
+        "event_type",
+        "trigger_ref",
+        "thread_id",
+        "entity_id",
+        "tenant_id",
+    ):
+        rendered = rendered.replace(
+            "{" + key + "}", _allowed_template_value(context, key)
+        )
+    return rendered
+
+
+def _execute_email_draft(
+    *,
+    tenant_id: str,
+    action_cfg: Mapping[str, Any],
+    context: Mapping[str, Any],
+    db_path: Path,
+) -> dict[str, Any]:
+    recipients = _split_recipients(action_cfg.get("to"))
+    if not recipients:
+        return {"status": "failed", "error": "recipient_required"}
+    if not _crm_recipients_exist(
+        db_path=db_path, tenant_id=tenant_id, recipients=recipients
+    ):
+        return {"status": "failed", "error": "recipient_not_in_crm"}
+
+    account_id = str(
+        action_cfg.get("account_id") or context.get("account_id") or ""
+    ).strip() or _first_account_id(db_path, tenant_id)
+    if not account_id:
+        return {"status": "failed", "error": "account_not_configured"}
+
+    subject = str(action_cfg.get("subject") or "").strip()
+    body_template = str(action_cfg.get("body_template") or action_cfg.get("body") or "")
+    body = _render_template_text(body_template, context)
+    thread_id = (
+        str(action_cfg.get("thread_id") or context.get("thread_id") or "").strip()
+        or None
+    )
+    draft_id = postfach_create_draft(
+        db_path,
+        tenant_id=tenant_id,
+        account_id=account_id,
+        thread_id=thread_id,
+        to_value=", ".join(recipients),
+        subject_value=subject,
+        body_value=body,
+    )
+    return {"status": "ok", "result": {"draft_id": draft_id}}
+
+
 def execute_action(
     *,
     tenant_id: str,
@@ -223,6 +359,13 @@ def execute_action(
         )
     if action_type == "create_postfach_draft":
         return _execute_create_postfach_draft(
+            tenant_id=tenant,
+            action_cfg=action_cfg,
+            context=context,
+            db_path=db_resolved,
+        )
+    if action_type == "email_draft":
+        return _execute_email_draft(
             tenant_id=tenant,
             action_cfg=action_cfg,
             context=context,
