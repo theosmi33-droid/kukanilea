@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ import kukanilea_core_v3_fixed as core
 
 from .actions import run_rule_actions
 from .conditions import evaluate_conditions
+from .cron import cron_match, cron_minute_ref
 from .store import (
     append_execution_log,
     count_execution_logs_since,
@@ -22,6 +24,7 @@ from .store import (
 )
 
 EVENTLOG_SOURCE = "eventlog"
+CRON_SOURCE = "cron"
 CONTEXT_ALLOWLIST = {
     "event_id",
     "event_type",
@@ -32,7 +35,12 @@ CONTEXT_ALLOWLIST = {
     "trigger_ref",
     "source",
     "from_domain",
+    "cron_expression",
+    "scheduled_minute",
 }
+
+_CRON_CHECKER_LOCK = threading.Lock()
+_CRON_CHECKER: "CronChecker | None" = None
 
 
 def _resolve_db_path(db_path: Path | str | None) -> Path:
@@ -133,12 +141,40 @@ def _rule_eventlog_triggers(rule: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _rule_cron_triggers(rule: dict[str, Any]) -> list[dict[str, Any]]:
+    triggers = rule.get("triggers") or []
+    out: list[dict[str, Any]] = []
+    for trigger in triggers:
+        if not isinstance(trigger, dict):
+            continue
+        trigger_type = str(trigger.get("type") or "").strip().lower()
+        if trigger_type != CRON_SOURCE:
+            continue
+        cfg = trigger.get("config")
+        out.append(cfg if isinstance(cfg, dict) else {})
+    return out
+
+
 def _trigger_matches_event(trigger_cfg: dict[str, Any], event_type: str) -> bool:
     allowed = trigger_cfg.get("allowed_event_types")
     if not isinstance(allowed, list) or not allowed:
         return False
     allowed_set = {str(item).strip() for item in allowed if str(item).strip()}
     return str(event_type or "").strip() in allowed_set
+
+
+def _cron_expression(trigger_cfg: Mapping[str, Any]) -> str:
+    return str(trigger_cfg.get("cron") or trigger_cfg.get("expression") or "").strip()
+
+
+def _trigger_matches_cron(trigger_cfg: Mapping[str, Any], dt: datetime) -> bool:
+    expr = _cron_expression(trigger_cfg)
+    if not expr:
+        return False
+    try:
+        return bool(cron_match(expr, dt))
+    except ValueError:
+        return False
 
 
 def _load_eventlog_rules(tenant_id: str, db_path: Path) -> list[dict[str, Any]]:
@@ -154,6 +190,23 @@ def _load_eventlog_rules(tenant_id: str, db_path: Path) -> list[dict[str, Any]]:
         if not full:
             continue
         if _rule_eventlog_triggers(full):
+            out.append(full)
+    return out
+
+
+def _load_cron_rules(tenant_id: str, db_path: Path) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    summaries = list_rules(tenant_id=tenant_id, db_path=db_path)
+    for summary in summaries:
+        if not bool(summary.get("is_enabled")):
+            continue
+        rid = str(summary.get("id") or "").strip()
+        if not rid:
+            continue
+        full = get_rule(tenant_id=tenant_id, rule_id=rid, db_path=db_path)
+        if not full:
+            continue
+        if _rule_cron_triggers(full):
             out.append(full)
     return out
 
@@ -310,6 +363,140 @@ def _rule_conditions_pass(rule: dict[str, Any], context: Mapping[str, Any]) -> b
     return True
 
 
+def _build_cron_context(
+    *,
+    tenant_id: str,
+    trigger_ref: str,
+    cron_expression: str,
+    now_dt: datetime,
+) -> dict[str, str]:
+    current = now_dt.replace(second=0, microsecond=0)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    else:
+        current = current.astimezone(timezone.utc)
+    return {
+        "event_id": "",
+        "event_type": "cron.tick",
+        "entity_type": "",
+        "entity_id": "",
+        "tenant_id": tenant_id,
+        "timestamp": current.isoformat().replace("+00:00", "Z"),
+        "trigger_ref": trigger_ref,
+        "source": CRON_SOURCE,
+        "from_domain": "",
+        "cron_expression": cron_expression,
+        "scheduled_minute": cron_minute_ref(current),
+    }
+
+
+def _process_rule_for_cron(
+    *,
+    tenant_id: str,
+    rule: dict[str, Any],
+    trigger_cfg: dict[str, Any],
+    now_dt: datetime,
+    db_path: Path,
+) -> dict[str, Any]:
+    rule_id = str(rule.get("id") or "").strip()
+    cron_expr = _cron_expression(trigger_cfg)
+    if not rule_id or not cron_expr:
+        return {"ok": False, "reason": "validation_error"}
+    if not _trigger_matches_cron(trigger_cfg, now_dt):
+        return {"ok": True, "matched": False}
+
+    trigger_ref = f"{CRON_SOURCE}:{rule_id}:{cron_minute_ref(now_dt)}"
+    max_execs = int(rule.get("max_executions_per_minute") or 10)
+    recent_count = count_execution_logs_since(
+        tenant_id=tenant_id,
+        rule_id=rule_id,
+        since_rfc3339=_now_minus_minutes_rfc3339(1),
+        db_path=db_path,
+    )
+    if recent_count >= max_execs:
+        appended = append_execution_log(
+            tenant_id=tenant_id,
+            rule_id=rule_id,
+            trigger_type=CRON_SOURCE,
+            trigger_ref=trigger_ref,
+            status="rate_limited",
+            output_redacted=f"rate_limited:max={max_execs}",
+            db_path=db_path,
+        )
+        return {
+            "ok": True,
+            "matched": True,
+            "duplicate": bool(appended.get("duplicate")),
+            "rate_limited": True,
+        }
+
+    appended = append_execution_log(
+        tenant_id=tenant_id,
+        rule_id=rule_id,
+        trigger_type=CRON_SOURCE,
+        trigger_ref=trigger_ref,
+        status="started",
+        output_redacted="cron_tick",
+        db_path=db_path,
+    )
+    if bool(appended.get("duplicate")):
+        return {"ok": True, "matched": True, "duplicate": True}
+
+    log_id = str(appended.get("log_id") or "").strip()
+    if not log_id:
+        return {"ok": False, "reason": "execution_log_append_failed"}
+
+    context = _build_cron_context(
+        tenant_id=tenant_id,
+        trigger_ref=trigger_ref,
+        cron_expression=cron_expr,
+        now_dt=now_dt,
+    )
+    if not _rule_conditions_pass(rule, context):
+        update_execution_log(
+            tenant_id=tenant_id,
+            log_id=log_id,
+            status="skipped",
+            output_redacted="condition_false",
+            db_path=db_path,
+        )
+        return {"ok": True, "matched": True, "duplicate": False}
+
+    actions = [a for a in (rule.get("actions") or []) if isinstance(a, Mapping)]
+    action_payloads = [
+        {"action_type": str(a.get("type") or "").strip(), **(a.get("config") or {})}
+        for a in actions
+    ]
+    action_result = run_rule_actions(
+        tenant_id=tenant_id,
+        rule_id=rule_id,
+        actions=action_payloads,
+        context=context,
+        db_path=db_path,
+    )
+    if not bool(action_result.get("ok")):
+        update_execution_log(
+            tenant_id=tenant_id,
+            log_id=log_id,
+            status="failed",
+            error_redacted="error_permanent:action_execution_failed",
+            output_redacted=str(action_result.get("summary_redacted") or ""),
+            db_path=db_path,
+        )
+        return {"ok": False, "reason": "error_permanent:action_execution_failed"}
+
+    status = "pending" if int(action_result.get("pending") or 0) > 0 else "ok"
+    reason = "action_pending" if status == "pending" else "ok"
+    update_execution_log(
+        tenant_id=tenant_id,
+        log_id=log_id,
+        status=status,
+        output_redacted=f"{reason}:{str(action_result.get('summary_redacted') or '')}",
+        db_path=db_path,
+    )
+    return {"ok": True, "matched": True, "duplicate": False}
+
+
 def process_events_for_tenant(
     tenant_id: str,
     *,
@@ -419,6 +606,133 @@ def process_events_for_tenant(
         "duplicates": duplicates,
         "cursor": str(last_cursor),
     }
+
+
+def process_cron_for_tenant(
+    tenant_id: str,
+    *,
+    db_path: Path | str | None = None,
+    now_dt: datetime | None = None,
+) -> dict[str, Any]:
+    tenant = str(tenant_id or "").strip()
+    if not tenant:
+        raise ValueError("validation_error")
+    resolved_db = _resolve_db_path(db_path)
+    current = now_dt or datetime.now(timezone.utc)
+    rules = _load_cron_rules(tenant, resolved_db)
+    processed = 0
+    matched = 0
+    duplicates = 0
+    for rule in rules:
+        for trigger_cfg in _rule_cron_triggers(rule):
+            outcome = _process_rule_for_cron(
+                tenant_id=tenant,
+                rule=rule,
+                trigger_cfg=trigger_cfg,
+                now_dt=current,
+                db_path=resolved_db,
+            )
+            if not bool(outcome.get("ok")):
+                return {
+                    "ok": False,
+                    "reason": str(outcome.get("reason") or "rule_processing_failed"),
+                    "processed": processed,
+                    "matched": matched,
+                    "duplicates": duplicates,
+                }
+            processed += 1
+            if bool(outcome.get("matched")):
+                matched += 1
+                if bool(outcome.get("duplicate")):
+                    duplicates += 1
+    return {
+        "ok": True,
+        "reason": "ok",
+        "processed": processed,
+        "matched": matched,
+        "duplicates": duplicates,
+    }
+
+
+def _list_tenants_with_cron_rules(db_path: Path) -> list[str]:
+    con = _connect(db_path)
+    try:
+        rows = con.execute(
+            """
+            SELECT DISTINCT r.tenant_id
+            FROM automation_builder_rules r
+            JOIN automation_builder_triggers t
+              ON t.tenant_id=r.tenant_id AND t.rule_id=r.id
+            WHERE r.is_enabled=1
+              AND LOWER(TRIM(t.trigger_type))=?
+            ORDER BY r.tenant_id ASC
+            """,
+            (CRON_SOURCE,),
+        ).fetchall()
+        return [
+            str(row["tenant_id"] or "").strip()
+            for row in rows
+            if str(row["tenant_id"] or "").strip()
+        ]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+
+class CronChecker(threading.Thread):
+    def __init__(
+        self,
+        *,
+        db_path: Path,
+        interval_seconds: int = 60,
+    ) -> None:
+        super().__init__(name="automation-cron-checker", daemon=True)
+        self._db_path = db_path
+        self._interval_seconds = max(10, int(interval_seconds or 60))
+        self._stop_event = threading.Event()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    def run(self) -> None:  # pragma: no cover - thread behavior
+        while not self._stop_event.is_set():
+            tick = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            for tenant_id in _list_tenants_with_cron_rules(self._db_path):
+                try:
+                    process_cron_for_tenant(
+                        tenant_id,
+                        db_path=self._db_path,
+                        now_dt=tick,
+                    )
+                except Exception:
+                    continue
+            self._stop_event.wait(self._interval_seconds)
+
+
+def start_cron_checker(
+    *,
+    db_path: Path | str | None = None,
+    interval_seconds: int = 60,
+) -> CronChecker:
+    global _CRON_CHECKER
+    resolved = _resolve_db_path(db_path)
+    with _CRON_CHECKER_LOCK:
+        if _CRON_CHECKER is not None and _CRON_CHECKER.is_alive():
+            return _CRON_CHECKER
+        checker = CronChecker(db_path=resolved, interval_seconds=interval_seconds)
+        checker.start()
+        _CRON_CHECKER = checker
+        return checker
+
+
+def stop_cron_checker() -> None:
+    global _CRON_CHECKER
+    with _CRON_CHECKER_LOCK:
+        if _CRON_CHECKER is None:
+            return
+        _CRON_CHECKER.stop()
+        _CRON_CHECKER = None
 
 
 def simulate_rule_for_tenant(

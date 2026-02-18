@@ -111,4 +111,26 @@ def create_app() -> Flask:
         init_ai(app)
     except Exception:
         pass
+    try:
+        cron_enabled = bool(app.config.get("AUTOMATION_CRON_ENABLED", True))
+        should_start_reloader_proc = os.environ.get(
+            "WERKZEUG_RUN_MAIN"
+        ) == "true" or not bool(app.debug)
+        is_pytest = "PYTEST_CURRENT_TEST" in os.environ
+        if (
+            cron_enabled
+            and not bool(app.config.get("TESTING", False))
+            and not is_pytest
+            and should_start_reloader_proc
+        ):
+            from .automation import start_cron_checker
+
+            start_cron_checker(
+                db_path=app.config["CORE_DB"],
+                interval_seconds=int(
+                    app.config.get("AUTOMATION_CRON_INTERVAL_SECONDS", 60)
+                ),
+            )
+    except Exception:
+        pass
     return app
