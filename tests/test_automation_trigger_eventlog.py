@@ -120,7 +120,7 @@ def test_eventlog_trigger_failure_keeps_cursor(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setattr("app.automation.runner._process_rule_for_event", _raise)
     result = process_events_for_tenant("TENANT_A", db_path=db_path)
     assert result["ok"] is False
-    assert str(result["reason"]) == "rule_processing_failed"
+    assert str(result["reason"]) == "error_permanent:rule_processing_failed"
     assert (
         get_state_cursor(tenant_id="TENANT_A", source="eventlog", db_path=db_path) == ""
     )

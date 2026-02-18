@@ -75,11 +75,13 @@ from app.automation import (
     builder_execution_log_list,
     builder_pending_action_confirm_once,
     builder_pending_action_list,
+    builder_rule_create,
     builder_rule_get,
     builder_rule_list,
     builder_rule_update,
     get_or_build_daily_insights,
     process_events_for_tenant,
+    simulate_rule_for_tenant,
 )
 from app.autonomy import (
     autotag_rule_create,
@@ -4744,6 +4746,109 @@ def _automation_guard(api: bool = True):
     return None
 
 
+_RULE_IMPORT_ALLOWED_KEYS = {
+    "name",
+    "description",
+    "is_enabled",
+    "max_executions_per_minute",
+    "triggers",
+    "conditions",
+    "actions",
+}
+_RULE_COMPONENT_ALLOWED_KEYS = {
+    "type",
+    "trigger_type",
+    "condition_type",
+    "action_type",
+    "config",
+    "config_json",
+}
+
+
+def _normalize_rule_component_for_import(item: Any, *, type_key: str) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("validation_error")
+    unknown = set(item.keys()) - _RULE_COMPONENT_ALLOWED_KEYS
+    if unknown:
+        raise ValueError("validation_error")
+    ctype = str(item.get(type_key) or item.get("type") or "").strip()
+    if not ctype:
+        raise ValueError("validation_error")
+    if "config" in item:
+        cfg = item.get("config")
+    elif "config_json" in item:
+        raw = item.get("config_json")
+        cfg = json.loads(str(raw or "{}")) if not isinstance(raw, dict) else raw
+    else:
+        cfg = {}
+    return {type_key: ctype, "config": cfg}
+
+
+def _normalize_rule_import_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("validation_error")
+    unknown = set(payload.keys()) - _RULE_IMPORT_ALLOWED_KEYS
+    if unknown:
+        raise ValueError("validation_error")
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("validation_error")
+    description = str(payload.get("description") or "").strip()
+    max_per_minute = int(payload.get("max_executions_per_minute") or 10)
+    if max_per_minute < 1 or max_per_minute > 10000:
+        raise ValueError("validation_error")
+
+    out = {
+        "name": name,
+        "description": description,
+        "is_enabled": False,
+        "max_executions_per_minute": max_per_minute,
+        "triggers": [],
+        "conditions": [],
+        "actions": [],
+    }
+    for key, type_key in (
+        ("triggers", "trigger_type"),
+        ("conditions", "condition_type"),
+        ("actions", "action_type"),
+    ):
+        raw_list = payload.get(key) or []
+        if not isinstance(raw_list, list):
+            raise ValueError("validation_error")
+        out[key] = [
+            _normalize_rule_component_for_import(item, type_key=type_key)
+            for item in raw_list
+        ]
+    return out
+
+
+def _export_rule_payload(rule: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": str(rule.get("name") or ""),
+        "description": str(rule.get("description") or ""),
+        "is_enabled": bool(rule.get("is_enabled")),
+        "max_executions_per_minute": int(rule.get("max_executions_per_minute") or 10),
+        "triggers": [
+            {"trigger_type": str(t.get("type") or ""), "config": t.get("config") or {}}
+            for t in (rule.get("triggers") or [])
+            if isinstance(t, dict)
+        ],
+        "conditions": [
+            {
+                "condition_type": str(c.get("type") or ""),
+                "config": c.get("config") or {},
+            }
+            for c in (rule.get("conditions") or [])
+            if isinstance(c, dict)
+        ],
+        "actions": [
+            {"action_type": str(a.get("type") or ""), "config": a.get("config") or {}}
+            for a in (rule.get("actions") or [])
+            if isinstance(a, dict)
+        ],
+    }
+
+
 @bp.get("/automation/rules")
 @login_required
 @require_role("OPERATOR")
@@ -4904,6 +5009,43 @@ def automation_builder_page():
     return _render_base(content, active_tab="automation")
 
 
+@bp.post("/automation/import")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_import_action():
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    try:
+        raw = payload.get("rule_json")
+        parsed = raw if isinstance(raw, dict) else json.loads(str(raw or "{}"))
+        normalized = _normalize_rule_import_payload(parsed)
+        rule_id = builder_rule_create(
+            tenant_id=current_tenant(),
+            name=normalized["name"],
+            description=normalized["description"],
+            is_enabled=False,
+            max_executions_per_minute=normalized["max_executions_per_minute"],
+            triggers=normalized["triggers"],
+            conditions=normalized["conditions"],
+            actions=normalized["actions"],
+        )
+    except Exception:
+        return _automation_error(
+            "validation_error",
+            "Import fehlgeschlagen. JSON prüfen.",
+            400,
+        )
+    if _is_htmx():
+        return redirect(
+            url_for("web.automation_builder_rule_detail_page", rule_id=rule_id)
+        )
+    return jsonify({"ok": True, "rule_id": rule_id})
+
+
 @bp.get("/automation/pending")
 @login_required
 @require_role("OPERATOR")
@@ -4924,6 +5066,12 @@ def automation_pending_confirm_action(pending_id: str):
     guarded = _automation_guard(api=not _is_htmx())
     if guarded is not None:
         return guarded
+    if current_role() not in {"ADMIN", "DEV"}:
+        return _automation_error(
+            "forbidden",
+            "Bestätigen ist nur für ADMIN/DEV erlaubt.",
+            403,
+        )
     payload = (
         request.form if not request.is_json else (request.get_json(silent=True) or {})
     )
@@ -4998,6 +5146,39 @@ def automation_builder_run_action():
     return jsonify({"ok": True, "result": result})
 
 
+@bp.post("/automation/<rule_id>/simulate")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_simulate_rule_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    raw_event_id = str(payload.get("event_id") or "").strip()
+    ev_id = int(raw_event_id) if raw_event_id.isdigit() else None
+    result = simulate_rule_for_tenant(
+        current_tenant(),
+        rule_id,
+        event_id=ev_id,
+    )
+    if not bool(result.get("ok")) and str(result.get("reason") or "") not in {
+        "condition_false",
+        "trigger_not_matched",
+    }:
+        return _automation_error(
+            "simulation_failed",
+            "Simulation fehlgeschlagen.",
+            400,
+        )
+    if _is_htmx():
+        return redirect(
+            url_for("web.automation_builder_rule_logs_page", rule_id=rule_id)
+        )
+    return jsonify({"ok": True, "result": result})
+
+
 @bp.get("/automation/<rule_id>/logs")
 @login_required
 @require_role("OPERATOR")
@@ -5032,6 +5213,16 @@ def automation_builder_rule_detail_page(rule_id: str):
         read_only=bool(current_app.config.get("READ_ONLY", False)),
     )
     return _render_base(content, active_tab="automation")
+
+
+@bp.get("/automation/<rule_id>/export")
+@login_required
+@require_role("OPERATOR")
+def automation_builder_rule_export_action(rule_id: str):
+    rule = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
+    if not rule:
+        return _automation_error("not_found", "Regel nicht gefunden.", 404)
+    return jsonify({"ok": True, "item": _export_rule_payload(rule)})
 
 
 @bp.post("/automation/<rule_id>/toggle")

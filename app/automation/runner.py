@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -85,6 +86,37 @@ def _fetch_events_after_cursor(
         return []
     finally:
         con.close()
+
+
+def _fetch_event_by_id(*, db_path: Path, event_id: int) -> dict[str, Any] | None:
+    con = _connect(db_path)
+    try:
+        row = con.execute(
+            """
+            SELECT id, ts, event_type, entity_type, entity_id, payload_json
+            FROM events
+            WHERE id=?
+            LIMIT 1
+            """,
+            (int(event_id),),
+        ).fetchone()
+        return dict(row) if row else None
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        con.close()
+
+
+def _fetch_latest_tenant_event(
+    *, db_path: Path, tenant_id: str
+) -> dict[str, Any] | None:
+    rows = _fetch_events_after_cursor(db_path=db_path, cursor=0, limit=500)
+    tenant = str(tenant_id or "").strip()
+    for row in reversed(rows):
+        payload = _safe_json_loads(str(row.get("payload_json") or "{}"))
+        if str(payload.get("tenant_id") or "").strip() == tenant:
+            return row
+    return None
 
 
 def _rule_eventlog_triggers(rule: dict[str, Any]) -> list[dict[str, Any]]:
@@ -197,7 +229,7 @@ def _process_rule_for_event(
             tenant_id=tenant_id,
             log_id=log_id,
             status="skipped",
-            output_redacted="conditions_not_met",
+            output_redacted="condition_false",
             db_path=db_path,
         )
         return {"ok": True, "matched": True, "duplicate": False}
@@ -219,19 +251,20 @@ def _process_rule_for_event(
             tenant_id=tenant_id,
             log_id=log_id,
             status="failed",
-            error_redacted="action_execution_failed",
+            error_redacted="error_permanent:action_execution_failed",
             output_redacted=str(action_result.get("summary_redacted") or ""),
             db_path=db_path,
         )
-        return {"ok": False, "reason": "action_execution_failed"}
+        return {"ok": False, "reason": "error_permanent:action_execution_failed"}
 
     status = "pending" if int(action_result.get("pending") or 0) > 0 else "ok"
+    reason = "action_pending" if status == "pending" else "ok"
 
     update_execution_log(
         tenant_id=tenant_id,
         log_id=log_id,
         status=status,
-        output_redacted=str(action_result.get("summary_redacted") or ""),
+        output_redacted=f"{reason}:{str(action_result.get('summary_redacted') or '')}",
         db_path=db_path,
     )
     return {"ok": True, "matched": True, "duplicate": False}
@@ -314,17 +347,41 @@ def process_events_for_tenant(
             continue
 
         for rule in rules:
-            try:
-                outcome = _process_rule_for_event(
-                    tenant_id=tenant,
-                    rule=rule,
-                    event_row=event_row,
-                    db_path=resolved_db,
-                )
-            except Exception:
+            outcome: dict[str, Any] | None = None
+            for attempt in (0, 1):
+                try:
+                    outcome = _process_rule_for_event(
+                        tenant_id=tenant,
+                        rule=rule,
+                        event_row=event_row,
+                        db_path=resolved_db,
+                    )
+                    break
+                except sqlite3.OperationalError:
+                    if attempt == 0:
+                        time.sleep(0.1)
+                        continue
+                    return {
+                        "ok": False,
+                        "reason": "error_transient:rule_processing_failed",
+                        "processed": processed,
+                        "matched": matched,
+                        "duplicates": duplicates,
+                        "cursor": str(last_cursor),
+                    }
+                except Exception:
+                    return {
+                        "ok": False,
+                        "reason": "error_permanent:rule_processing_failed",
+                        "processed": processed,
+                        "matched": matched,
+                        "duplicates": duplicates,
+                        "cursor": str(last_cursor),
+                    }
+            if outcome is None:
                 return {
                     "ok": False,
-                    "reason": "rule_processing_failed",
+                    "reason": "error_transient:rule_processing_failed",
                     "processed": processed,
                     "matched": matched,
                     "duplicates": duplicates,
@@ -361,4 +418,102 @@ def process_events_for_tenant(
         "matched": matched,
         "duplicates": duplicates,
         "cursor": str(last_cursor),
+    }
+
+
+def simulate_rule_for_tenant(
+    tenant_id: str,
+    rule_id: str,
+    *,
+    db_path: Path | str | None = None,
+    event_id: int | None = None,
+) -> dict[str, Any]:
+    tenant = str(tenant_id or "").strip()
+    rid = str(rule_id or "").strip()
+    if not tenant or not rid:
+        raise ValueError("validation_error")
+
+    resolved_db = _resolve_db_path(db_path)
+    rule = get_rule(tenant_id=tenant, rule_id=rid, db_path=resolved_db)
+    if not rule:
+        return {"ok": False, "reason": "not_found"}
+
+    row = (
+        _fetch_event_by_id(db_path=resolved_db, event_id=int(event_id))
+        if event_id is not None
+        else _fetch_latest_tenant_event(db_path=resolved_db, tenant_id=tenant)
+    )
+    if not row:
+        return {"ok": False, "reason": "event_not_found"}
+
+    payload = _safe_json_loads(str(row.get("payload_json") or "{}"))
+    if str(payload.get("tenant_id") or "").strip() != tenant:
+        return {"ok": False, "reason": "event_not_found"}
+
+    ev_type = str(row.get("event_type") or "").strip()
+    matched = any(
+        _trigger_matches_event(cfg, ev_type) for cfg in _rule_eventlog_triggers(rule)
+    )
+    trigger_ref = f"simulation:eventlog:{int(row.get('id') or 0)}"
+    context = _build_context(tenant_id=tenant, event_row=row, trigger_ref=trigger_ref)
+    cond_ok = matched and _rule_conditions_pass(rule, context)
+    actions_payload = [
+        {"action_type": str(a.get("type") or "").strip(), **(a.get("config") or {})}
+        for a in (rule.get("actions") or [])
+        if isinstance(a, Mapping)
+    ]
+    action_result = (
+        run_rule_actions(
+            tenant_id=tenant,
+            rule_id=rid,
+            actions=actions_payload,
+            context=context,
+            db_path=resolved_db,
+            dry_run=True,
+        )
+        if cond_ok
+        else {
+            "ok": True,
+            "executed": 0,
+            "pending": 0,
+            "failed": 0,
+            "details": [],
+            "summary_redacted": '{"simulated":true}',
+        }
+    )
+    if not matched:
+        status = "skipped"
+        reason = "trigger_not_matched"
+    elif not cond_ok:
+        status = "skipped"
+        reason = "condition_false"
+    elif not bool(action_result.get("ok")):
+        status = "failed"
+        reason = "error_permanent:simulation_action_failed"
+    elif int(action_result.get("pending") or 0) > 0:
+        status = "pending"
+        reason = "action_pending"
+    else:
+        status = "ok"
+        reason = "ok"
+
+    append_execution_log(
+        tenant_id=tenant,
+        rule_id=rid,
+        trigger_type="simulation",
+        trigger_ref=f"{trigger_ref}:{int(time.time())}",
+        status=status,
+        error_redacted="" if status != "failed" else reason,
+        output_redacted=reason,
+        db_path=resolved_db,
+    )
+    return {
+        "ok": status != "failed",
+        "reason": reason,
+        "status": status,
+        "matched": matched,
+        "condition_passed": cond_ok,
+        "event_id": int(row.get("id") or 0),
+        "event_type": ev_type,
+        "result": action_result,
     }
