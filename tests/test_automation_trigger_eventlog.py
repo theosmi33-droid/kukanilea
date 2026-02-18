@@ -124,3 +124,54 @@ def test_eventlog_trigger_failure_keeps_cursor(monkeypatch, tmp_path: Path) -> N
     assert (
         get_state_cursor(tenant_id="TENANT_A", source="eventlog", db_path=db_path) == ""
     )
+
+
+def test_eventlog_trigger_rate_limit_skips_excess_runs(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = _set_core_db(tmp_path, monkeypatch)
+    task_calls: list[int] = []
+
+    def _task_create(**_kwargs):
+        task_calls.append(1)
+        return 100 + len(task_calls)
+
+    monkeypatch.setattr(core, "task_create", _task_create)
+
+    rule_id = create_rule(
+        tenant_id="TENANT_A",
+        name="Rate limited rule",
+        max_executions_per_minute=1,
+        triggers=[
+            {
+                "trigger_type": "eventlog",
+                "config": {"allowed_event_types": ["email.received"]},
+            }
+        ],
+        conditions=[],
+        actions=[{"action_type": "create_task", "config": {"requires_confirm": False}}],
+        db_path=db_path,
+    )
+    event_append(
+        "email.received",
+        "mailbox_thread",
+        1,
+        {"tenant_id": "TENANT_A", "ref_id": "limit-1"},
+    )
+    event_append(
+        "email.received",
+        "mailbox_thread",
+        2,
+        {"tenant_id": "TENANT_A", "ref_id": "limit-2"},
+    )
+
+    result = process_events_for_tenant("TENANT_A", db_path=db_path)
+    assert result["ok"] is True
+    assert int(result["processed"]) >= 2
+    assert int(result["matched"]) == 2
+    assert len(task_calls) == 1
+
+    logs = list_execution_logs(tenant_id="TENANT_A", rule_id=rule_id, db_path=db_path)
+    statuses = {str(row["status"]) for row in logs}
+    assert "ok" in statuses
+    assert "rate_limited" in statuses

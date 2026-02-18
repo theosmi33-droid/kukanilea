@@ -73,8 +73,7 @@ from app.automation import (
     automation_run_now,
     builder_execute_action,
     builder_execution_log_list,
-    builder_pending_action_confirm,
-    builder_pending_action_get,
+    builder_pending_action_confirm_once,
     builder_pending_action_list,
     builder_rule_get,
     builder_rule_list,
@@ -702,6 +701,51 @@ def _format_cents(value: int | None, currency: str = "EUR") -> str:
 
 def _is_htmx() -> bool:
     return bool(request.headers.get("HX-Request"))
+
+
+def _ensure_csrf_token() -> str:
+    token = str(session.get("csrf_token") or "").strip()
+    if token:
+        return token
+    token = secrets.token_urlsafe(24)
+    session["csrf_token"] = token
+    return token
+
+
+@bp.app_context_processor
+def _inject_csrf_token() -> dict[str, Any]:
+    return {"csrf_token": _ensure_csrf_token()}
+
+
+def _csrf_error_response(api: bool = True):
+    rid = getattr(g, "request_id", "")
+    if api:
+        return (
+            jsonify({"ok": False, "error_code": "csrf_invalid", "request_id": rid}),
+            403,
+        )
+    return (
+        render_template(
+            "lead_intake/partials/_error.html",
+            message="CSRF-Validierung fehlgeschlagen.",
+            request_id=rid,
+        ),
+        403,
+    )
+
+
+def _csrf_guard(api: bool = True):
+    if request.method != "POST":
+        return None
+    # JSON API endpoints are protected via auth/session gates; CSRF is enforced
+    # for browser form submissions that mutate state.
+    if request.is_json:
+        return None
+    expected = _ensure_csrf_token()
+    provided = str(request.form.get("csrf_token") or "").strip()
+    if not expected or not provided or not hmac.compare_digest(expected, provided):
+        return _csrf_error_response(api=api)
+    return None
 
 
 def _core_db_path() -> Path:
@@ -4694,6 +4738,9 @@ def _automation_read_only_response(api: bool = True):
 def _automation_guard(api: bool = True):
     if bool(current_app.config.get("READ_ONLY", False)):
         return _automation_read_only_response(api=api)
+    csrf = _csrf_guard(api=api)
+    if csrf is not None:
+        return csrf
     return None
 
 
@@ -4890,14 +4937,22 @@ def automation_pending_confirm_action(pending_id: str):
     }
     if not ack:
         return _automation_error("confirm_required", "Bestätigung erforderlich.", 400)
-
-    item = builder_pending_action_get(tenant_id=current_tenant(), pending_id=pending_id)
+    token = str(payload.get("confirm_token") or "").strip()
+    if not token:
+        return _automation_error(
+            "confirm_token_required", "Bestätigungs-Token fehlt.", 400
+        )
+    item = builder_pending_action_confirm_once(
+        tenant_id=current_tenant(),
+        pending_id=pending_id,
+        confirm_token=token,
+    )
     if not item:
-        return _automation_error("not_found", "Pending Action nicht gefunden.", 404)
-    if str(item.get("confirmed_at") or "").strip():
-        if _is_htmx():
-            return redirect(url_for("web.automation_pending_page"))
-        return jsonify({"ok": True, "already_confirmed": True})
+        return _automation_error(
+            "confirm_replay_blocked",
+            "Bestätigung ungültig oder bereits verwendet.",
+            403,
+        )
 
     try:
         action_cfg = json.loads(str(item.get("action_config") or "{}"))
@@ -4919,8 +4974,6 @@ def automation_pending_confirm_action(pending_id: str):
         return _automation_error(
             "action_failed", "Action konnte nicht ausgeführt werden.", 400
         )
-
-    builder_pending_action_confirm(tenant_id=current_tenant(), pending_id=pending_id)
     if _is_htmx():
         return redirect(url_for("web.automation_pending_page"))
     return jsonify({"ok": True, "result": result})

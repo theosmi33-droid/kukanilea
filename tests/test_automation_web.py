@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import app.web as webmod
@@ -21,6 +22,15 @@ def _set_core_db(tmp_path: Path) -> Path:
     webmod.core.DB_PATH = db_path
     core.DB_PATH = db_path
     return db_path
+
+
+def _csrf_from_html(payload: bytes) -> str:
+    match = re.search(
+        rb'name="csrf_token"\s+value="([^"]+)"',
+        payload,
+    )
+    assert match is not None
+    return match.group(1).decode("utf-8")
 
 
 def test_automation_builder_requires_login() -> None:
@@ -50,10 +60,11 @@ def test_automation_builder_toggle_rule(tmp_path: Path) -> None:
     page = client.get("/automation")
     assert page.status_code == 200
     assert b"Automation Builder v1" in page.data
+    csrf = _csrf_from_html(page.data)
 
     res = client.post(
         f"/automation/{rule_id}/toggle",
-        data={"enabled": "0"},
+        data={"enabled": "0", "csrf_token": csrf},
         follow_redirects=False,
     )
     assert res.status_code == 200
@@ -92,18 +103,29 @@ def test_automation_pending_confirm_requires_ack_and_confirms(
     assert pending_id
     client = app.test_client()
     _login(client)
+    pending_page = client.get("/automation/pending")
+    assert pending_page.status_code == 200
+    csrf = _csrf_from_html(pending_page.data)
 
     blocked = client.post(
         f"/automation/pending/{pending_id}/confirm",
-        data={},
+        data={"csrf_token": csrf},
         follow_redirects=False,
     )
     assert blocked.status_code == 400
 
     monkeypatch.setattr(core, "task_create", lambda **_kwargs: 77)
+    row_before = get_pending_action(
+        tenant_id="KUKANILEA",
+        pending_id=pending_id,
+        db_path=db_path,
+    )
+    assert row_before is not None
+    token = str(row_before.get("confirm_token") or "")
+    assert token
     allowed = client.post(
         f"/automation/pending/{pending_id}/confirm",
-        data={"safety_ack": "1"},
+        data={"safety_ack": "1", "confirm_token": token, "csrf_token": csrf},
         follow_redirects=False,
     )
     assert allowed.status_code == 200

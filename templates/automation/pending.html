@@ -28,7 +28,9 @@
           <td class="p-3"><code>{{ item.context_snapshot }}</code></td>
           <td class="p-3">
             <form method="post" action="/automation/pending/{{ item.id }}/confirm" class="inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="safety_ack" value="1">
+              <input type="hidden" name="confirm_token" value="{{ item.confirm_token }}">
               <button class="btn-primary px-2 py-1 text-xs" type="submit" {% if read_only %}disabled{% endif %}>Confirm</button>
             </form>
           </td>

@@ -53,6 +53,7 @@ def test_automation_store_minimal_crud_and_tenant_isolation(tmp_path: Path) -> N
     assert loaded["id"] == rule_id
     assert loaded["name"] == "Lead from Inbox"
     assert loaded["is_enabled"] is True
+    assert loaded["max_executions_per_minute"] == 10
     assert loaded["version"] == 1
     assert len(loaded["triggers"]) == 1
     assert len(loaded["conditions"]) == 1
@@ -63,6 +64,7 @@ def test_automation_store_minimal_crud_and_tenant_isolation(tmp_path: Path) -> N
     assert len(listing) == 1
     assert listing[0]["id"] == rule_id
     assert listing[0]["action_count"] == 2
+    assert listing[0]["max_executions_per_minute"] == 10
 
     updated = update_rule(
         tenant_id=tenant_a,
@@ -71,6 +73,7 @@ def test_automation_store_minimal_crud_and_tenant_isolation(tmp_path: Path) -> N
             "name": "Lead + Followup",
             "description": "Updated",
             "is_enabled": False,
+            "max_executions_per_minute": 3,
             "triggers": [
                 {
                     "type": "manual",
@@ -85,6 +88,7 @@ def test_automation_store_minimal_crud_and_tenant_isolation(tmp_path: Path) -> N
     assert updated["name"] == "Lead + Followup"
     assert updated["description"] == "Updated"
     assert updated["is_enabled"] is False
+    assert updated["max_executions_per_minute"] == 3
     assert updated["version"] == 2
     assert len(updated["triggers"]) == 1
     assert updated["triggers"][0]["type"] == "manual"

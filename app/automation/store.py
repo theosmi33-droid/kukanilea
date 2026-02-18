@@ -25,7 +25,15 @@ ACTION_TABLE = "automation_builder_actions"
 EXECUTION_LOG_TABLE = "automation_builder_execution_log"
 STATE_TABLE = "automation_builder_state"
 PENDING_ACTION_TABLE = "automation_builder_pending_actions"
-EXECUTION_STATUS_ALLOWLIST = {"started", "ok", "skipped", "failed", "pending"}
+RULE_MAX_EXECUTIONS_DEFAULT = 10
+EXECUTION_STATUS_ALLOWLIST = {
+    "started",
+    "ok",
+    "skipped",
+    "failed",
+    "pending",
+    "rate_limited",
+}
 
 
 def _now_rfc3339() -> str:
@@ -86,6 +94,16 @@ def _norm_description(description: str) -> str:
     if len(value) > 2000:
         raise ValueError("validation_error")
     return value
+
+
+def _norm_max_executions_per_minute(value: Any) -> int:
+    try:
+        limit = int(value)
+    except Exception as exc:  # pragma: no cover - defensive conversion
+        raise ValueError("validation_error") from exc
+    if limit < 1 or limit > 10_000:
+        raise ValueError("validation_error")
+    return limit
 
 
 def _json_canonical(value: Any) -> str:
@@ -167,6 +185,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
               name TEXT NOT NULL,
               description TEXT NOT NULL DEFAULT '',
               is_enabled INTEGER NOT NULL DEFAULT 1 CHECK (is_enabled IN (0,1)),
+              max_executions_per_minute INTEGER NOT NULL DEFAULT {RULE_MAX_EXECUTIONS_DEFAULT},
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
               version INTEGER NOT NULL DEFAULT 1
@@ -254,12 +273,37 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
               action_config TEXT NOT NULL,
               context_snapshot TEXT NOT NULL,
               created_at TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              confirm_token TEXT,
               confirmed_at TEXT,
               FOREIGN KEY(rule_id) REFERENCES {RULE_TABLE}(id) ON DELETE CASCADE
             )
             """
         )
         _ensure_column(con, EXECUTION_LOG_TABLE, "trigger_ref TEXT NOT NULL DEFAULT ''")
+        _ensure_column(
+            con,
+            RULE_TABLE,
+            (
+                f"max_executions_per_minute INTEGER NOT NULL "
+                f"DEFAULT {RULE_MAX_EXECUTIONS_DEFAULT}"
+            ),
+        )
+        _ensure_column(
+            con, PENDING_ACTION_TABLE, "status TEXT NOT NULL DEFAULT 'pending'"
+        )
+        _ensure_column(con, PENDING_ACTION_TABLE, "confirm_token TEXT")
+        con.execute(
+            f"""
+            UPDATE {RULE_TABLE}
+            SET max_executions_per_minute={RULE_MAX_EXECUTIONS_DEFAULT}
+            WHERE max_executions_per_minute IS NULL
+               OR max_executions_per_minute < 1
+            """
+        )
+        con.execute(
+            f"UPDATE {PENDING_ACTION_TABLE} SET status='pending' WHERE status IS NULL OR TRIM(status)=''"
+        )
         con.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{RULE_TABLE}_tenant_enabled ON {RULE_TABLE}(tenant_id, is_enabled)"
         )
@@ -283,6 +327,9 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
         )
         con.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{PENDING_ACTION_TABLE}_tenant_created ON {PENDING_ACTION_TABLE}(tenant_id, created_at DESC)"
+        )
+        con.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{PENDING_ACTION_TABLE}_tenant_confirm_token ON {PENDING_ACTION_TABLE}(tenant_id, confirm_token)"
         )
         con.commit()
     finally:
@@ -348,6 +395,7 @@ def create_rule(
     name: str,
     description: str = "",
     is_enabled: bool = True,
+    max_executions_per_minute: int = RULE_MAX_EXECUTIONS_DEFAULT,
     triggers: Sequence[AutomationComponentInput | Mapping[str, Any]] | None = None,
     conditions: Sequence[AutomationComponentInput | Mapping[str, Any]] | None = None,
     actions: Sequence[AutomationComponentInput | Mapping[str, Any]] | None = None,
@@ -356,6 +404,7 @@ def create_rule(
     tenant = _norm_tenant(tenant_id)
     rule_name = _norm_name(name)
     rule_description = _norm_description(description)
+    max_execs = _norm_max_executions_per_minute(max_executions_per_minute)
     trigger_rows = _normalize_components(triggers, "trigger_type")
     condition_rows = _normalize_components(conditions, "condition_type")
     action_rows = _normalize_components(actions, "action_type")
@@ -368,8 +417,11 @@ def create_rule(
         con.execute("BEGIN IMMEDIATE")
         con.execute(
             f"""
-            INSERT INTO {RULE_TABLE}(id, tenant_id, name, description, is_enabled, created_at, updated_at, version)
-            VALUES (?,?,?,?,?,?,?,?)
+            INSERT INTO {RULE_TABLE}(
+              id, tenant_id, name, description, is_enabled,
+              max_executions_per_minute, created_at, updated_at, version
+            )
+            VALUES (?,?,?,?,?,?,?,?,?)
             """,
             (
                 rule_id,
@@ -377,6 +429,7 @@ def create_rule(
                 rule_name,
                 rule_description,
                 1 if is_enabled else 0,
+                max_execs,
                 now_iso,
                 now_iso,
                 1,
@@ -419,6 +472,7 @@ def create_rule(
         tenant_id=tenant,
         payload={
             "enabled": 1 if is_enabled else 0,
+            "max_executions_per_minute": max_execs,
             "trigger_count": len(trigger_rows),
             "condition_count": len(condition_rows),
             "action_count": len(action_rows),
@@ -441,7 +495,9 @@ def get_rule(
     try:
         row = con.execute(
             f"""
-            SELECT id, tenant_id, name, description, is_enabled, created_at, updated_at, version
+            SELECT
+              id, tenant_id, name, description, is_enabled,
+              max_executions_per_minute, created_at, updated_at, version
             FROM {RULE_TABLE}
             WHERE tenant_id=? AND id=?
             LIMIT 1
@@ -456,6 +512,9 @@ def get_rule(
             "name": str(row["name"]),
             "description": str(row["description"] or ""),
             "is_enabled": bool(int(row["is_enabled"] or 0)),
+            "max_executions_per_minute": int(
+                row["max_executions_per_minute"] or RULE_MAX_EXECUTIONS_DEFAULT
+            ),
             "version": int(row["version"] or 1),
             "created_at": str(row["created_at"] or ""),
             "updated_at": str(row["updated_at"] or ""),
@@ -501,6 +560,7 @@ def list_rules(
               r.name,
               r.description,
               r.is_enabled,
+              r.max_executions_per_minute,
               r.version,
               r.created_at,
               r.updated_at,
@@ -522,6 +582,9 @@ def list_rules(
                     "name": str(row["name"]),
                     "description": str(row["description"] or ""),
                     "is_enabled": bool(int(row["is_enabled"] or 0)),
+                    "max_executions_per_minute": int(
+                        row["max_executions_per_minute"] or RULE_MAX_EXECUTIONS_DEFAULT
+                    ),
                     "version": int(row["version"] or 1),
                     "created_at": str(row["created_at"] or ""),
                     "updated_at": str(row["updated_at"] or ""),
@@ -553,7 +616,7 @@ def update_rule(
     try:
         existing = con.execute(
             f"""
-            SELECT id, name, description, is_enabled
+            SELECT id, name, description, is_enabled, max_executions_per_minute
             FROM {RULE_TABLE}
             WHERE tenant_id=? AND id=?
             LIMIT 1
@@ -578,6 +641,13 @@ def update_rule(
             if "is_enabled" in patch
             else bool(int(existing["is_enabled"] or 0))
         )
+        max_execs = (
+            _norm_max_executions_per_minute(patch["max_executions_per_minute"])
+            if "max_executions_per_minute" in patch
+            else _norm_max_executions_per_minute(
+                existing["max_executions_per_minute"] or RULE_MAX_EXECUTIONS_DEFAULT
+            )
+        )
 
         trigger_rows = (
             _normalize_components(patch.get("triggers"), "trigger_type")
@@ -599,13 +669,14 @@ def update_rule(
         cur = con.execute(
             f"""
             UPDATE {RULE_TABLE}
-            SET name=?, description=?, is_enabled=?, updated_at=?, version=version+1
+            SET name=?, description=?, is_enabled=?, max_executions_per_minute=?, updated_at=?, version=version+1
             WHERE tenant_id=? AND id=?
             """,
             (
                 name,
                 description,
                 1 if is_enabled else 0,
+                max_execs,
                 now_iso,
                 tenant,
                 rid,
@@ -671,6 +742,9 @@ def update_rule(
         tenant_id=tenant,
         payload={
             "enabled": 1 if updated["is_enabled"] else 0,
+            "max_executions_per_minute": int(
+                updated.get("max_executions_per_minute") or RULE_MAX_EXECUTIONS_DEFAULT
+            ),
             "version": int(updated["version"]),
             "trigger_count": len(updated["triggers"]),
             "condition_count": len(updated["conditions"]),
@@ -904,6 +978,35 @@ def list_execution_logs(
         con.close()
 
 
+def count_execution_logs_since(
+    *,
+    tenant_id: str,
+    rule_id: str,
+    since_rfc3339: str,
+    db_path: Path | str | None = None,
+) -> int:
+    tenant = _norm_tenant(tenant_id)
+    rid = str(rule_id or "").strip()
+    since = str(since_rfc3339 or "").strip()
+    if not rid or not since:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        row = con.execute(
+            f"""
+            SELECT COUNT(1) AS cnt
+            FROM {EXECUTION_LOG_TABLE}
+            WHERE tenant_id=? AND rule_id=? AND started_at>=?
+            """,
+            (tenant, rid, since),
+        ).fetchone()
+        return int((row["cnt"] if row else 0) or 0)
+    finally:
+        con.close()
+
+
 def create_pending_action(
     *,
     tenant_id: str,
@@ -911,6 +1014,7 @@ def create_pending_action(
     action_type: str,
     action_config: Mapping[str, Any] | str,
     context_snapshot: Mapping[str, Any] | str,
+    confirm_token: str | None = None,
     db_path: Path | str | None = None,
 ) -> str:
     tenant = _norm_tenant(tenant_id)
@@ -931,14 +1035,17 @@ def create_pending_action(
         else _json_canonical(_parse_config(context_snapshot))
     )
     pending_id = _new_id()
+    token = str(confirm_token or _new_id()).strip()
+    if not token:
+        raise ValueError("validation_error")
     now_iso = _now_rfc3339()
     con = _connect(path)
     try:
         con.execute(
             f"""
             INSERT INTO {PENDING_ACTION_TABLE}(
-              id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, confirmed_at
-            ) VALUES (?,?,?,?,?,?,?,NULL)
+              id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
+            ) VALUES (?,?,?,?,?,?,?,'pending',?,NULL)
             """,
             (
                 pending_id,
@@ -948,6 +1055,7 @@ def create_pending_action(
                 action_json,
                 context_json,
                 now_iso,
+                token,
             ),
         )
         con.commit()
@@ -978,7 +1086,7 @@ def list_pending_actions(
         if include_confirmed:
             rows = con.execute(
                 f"""
-                SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, confirmed_at
+                SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
                 FROM {PENDING_ACTION_TABLE}
                 WHERE tenant_id=?
                 ORDER BY created_at DESC, id DESC
@@ -989,9 +1097,9 @@ def list_pending_actions(
         else:
             rows = con.execute(
                 f"""
-                SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, confirmed_at
+                SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
                 FROM {PENDING_ACTION_TABLE}
-                WHERE tenant_id=? AND confirmed_at IS NULL
+                WHERE tenant_id=? AND status='pending'
                 ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
@@ -1018,7 +1126,7 @@ def get_pending_action(
     try:
         row = con.execute(
             f"""
-            SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, confirmed_at
+            SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
             FROM {PENDING_ACTION_TABLE}
             WHERE tenant_id=? AND id=?
             LIMIT 1
@@ -1051,7 +1159,7 @@ def mark_pending_action_confirmed(
             f"""
             SELECT rule_id
             FROM {PENDING_ACTION_TABLE}
-            WHERE tenant_id=? AND id=? AND confirmed_at IS NULL
+            WHERE tenant_id=? AND id=? AND status='pending'
             LIMIT 1
             """,
             (tenant, pid),
@@ -1060,8 +1168,8 @@ def mark_pending_action_confirmed(
         cur = con.execute(
             f"""
             UPDATE {PENDING_ACTION_TABLE}
-            SET confirmed_at=?
-            WHERE tenant_id=? AND id=? AND confirmed_at IS NULL
+            SET status='confirmed', confirmed_at=?, confirm_token=NULL
+            WHERE tenant_id=? AND id=? AND status='pending'
             """,
             (confirm_ts, tenant, pid),
         )
@@ -1077,3 +1185,62 @@ def mark_pending_action_confirmed(
             payload={"pending_id": pid},
         )
     return ok
+
+
+def confirm_pending_action_once(
+    *,
+    tenant_id: str,
+    pending_id: str,
+    confirm_token: str,
+    db_path: Path | str | None = None,
+) -> dict[str, Any] | None:
+    tenant = _norm_tenant(tenant_id)
+    pid = str(pending_id or "").strip()
+    token = str(confirm_token or "").strip()
+    if not pid or not token:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            f"""
+            SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
+            FROM {PENDING_ACTION_TABLE}
+            WHERE tenant_id=? AND id=? AND status='pending' AND confirm_token=?
+            LIMIT 1
+            """,
+            (tenant, pid, token),
+        ).fetchone()
+        if row is None:
+            con.rollback()
+            return None
+
+        now_iso = _now_rfc3339()
+        cur = con.execute(
+            f"""
+            UPDATE {PENDING_ACTION_TABLE}
+            SET status='confirmed', confirmed_at=?, confirm_token=NULL
+            WHERE tenant_id=? AND id=? AND status='pending' AND confirm_token=?
+            """,
+            (now_iso, tenant, pid, token),
+        )
+        if int(cur.rowcount or 0) <= 0:
+            con.rollback()
+            return None
+        con.commit()
+        item = dict(row)
+    finally:
+        con.close()
+
+    _event(
+        event_type="automation.pending.confirmed",
+        rule_id=str(item.get("rule_id") or pid),
+        tenant_id=tenant,
+        payload={"pending_id": pid},
+    )
+    item["status"] = "confirmed"
+    item["confirm_token"] = None
+    item["confirmed_at"] = now_iso
+    return item

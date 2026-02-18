@@ -9,6 +9,7 @@ from app.automation.store import (
     ACTION_TABLE,
     CONDITION_TABLE,
     EXECUTION_LOG_TABLE,
+    PENDING_ACTION_TABLE,
     RULE_TABLE,
     STATE_TABLE,
     TRIGGER_TABLE,
@@ -48,12 +49,14 @@ def test_automation_schema_contracts_and_indexes(tmp_path: Path) -> None:
             ACTION_TABLE,
             EXECUTION_LOG_TABLE,
             STATE_TABLE,
+            PENDING_ACTION_TABLE,
         }.issubset(table_names)
 
         rule_cols = _table_columns(con, RULE_TABLE)
         assert "id" in rule_cols and str(rule_cols["id"]["type"]).upper() == "TEXT"
         assert "tenant_id" in rule_cols
         assert "version" in rule_cols
+        assert "max_executions_per_minute" in rule_cols
 
         for table_name in (
             TRIGGER_TABLE,
@@ -85,6 +88,7 @@ def test_automation_schema_contracts_and_indexes(tmp_path: Path) -> None:
         assert f"idx_{EXECUTION_LOG_TABLE}_tenant_rule_started" in index_names
         assert f"idx_{EXECUTION_LOG_TABLE}_unique" in index_names
         assert f"idx_{STATE_TABLE}_tenant_source" in index_names
+        assert f"idx_{PENDING_ACTION_TABLE}_tenant_confirm_token" in index_names
     finally:
         con.close()
 
@@ -129,6 +133,26 @@ def test_automation_schema_state_unique_and_execution_trigger_ref_unique(
                 INSERT INTO {EXECUTION_LOG_TABLE}(
                   id, tenant_id, rule_id, trigger_type, trigger_ref, status, started_at, finished_at, error_redacted, output_redacted
                 ) VALUES ('log-2','TENANT_A','rule-1','eventlog','event:100','started','2026-02-17T00:00:01Z','','','')
+                """
+            )
+
+        con.execute(
+            f"""
+            INSERT INTO {PENDING_ACTION_TABLE}(
+              id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
+            ) VALUES (
+              'pending-1','TENANT_A','rule-1','create_task','{{}}','{{}}','2026-02-17T00:00:02Z','pending','tok-1',NULL
+            )
+            """
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute(
+                f"""
+                INSERT INTO {PENDING_ACTION_TABLE}(
+                  id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
+                ) VALUES (
+                  'pending-2','TENANT_A','rule-1','create_task','{{}}','{{}}','2026-02-17T00:00:03Z','pending','tok-1',NULL
+                )
                 """
             )
     finally:
