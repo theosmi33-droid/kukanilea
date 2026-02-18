@@ -46,7 +46,7 @@ python kukanilea_app.py
 - Keine neuen Dependencies ohne ADR.
 - Legacy-Schema nur phasenweise migrieren (siehe `docs/runbooks/text_id_migration_plan.md`).
 - Postfach (Phase 2): OAuth-ready fuer Google/Microsoft, TLS-only, Versand nur mit expliziter Bestaetigung (`user_confirmed` + Safety-Check).
-- Automation Builder (Phase 3): Eventlog-Trigger, Conditions-Allowlist, pending Actions mit Confirm-Gate (siehe `docs/AUTOMATION_BUILDER.md`).
+- Automation Builder (Phase 3): Eventlog-Trigger, Conditions-Allowlist, pending Actions mit Confirm-Gate, Replay-Schutz, CSRF, per-Rule Rate-Limits, Dry-Run und safe Export/Import (siehe `docs/AUTOMATION_BUILDER.md`).
 
 ## Weekly Cadence
 - Montag: Planung und Scope-Festlegung
