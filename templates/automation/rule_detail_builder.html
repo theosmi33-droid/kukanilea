@@ -34,6 +34,30 @@
     </form>
   </div>
 
+  <div class="grid gap-4 md:grid-cols-2">
+    <div class="card p-4 space-y-2">
+      <h2 class="font-semibold">Cron Trigger hinzufügen</h2>
+      <p class="text-xs opacity-80">Format: <code>minute hour day month weekday</code> (nur <code>*</code> oder feste Zahlen)</p>
+      <form method="post" action="/automation/{{ rule.id }}/trigger/cron" class="flex flex-wrap gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input class="input px-3 py-2 text-sm min-w-[260px]" name="cron_expression" placeholder="0 8 * * 1" required {% if read_only %}disabled{% endif %} />
+        <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Cron Trigger hinzufügen</button>
+      </form>
+    </div>
+    <div class="card p-4 space-y-2">
+      <h2 class="font-semibold">Email-Draft Action hinzufügen</h2>
+      <form method="post" action="/automation/{{ rule.id }}/action/email-draft" class="grid gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input class="input px-3 py-2 text-sm" name="to" placeholder="kunde@example.com, team@example.com" required {% if read_only %}disabled{% endif %} />
+        <input class="input px-3 py-2 text-sm" name="subject" placeholder="Betreff" required {% if read_only %}disabled{% endif %} />
+        <textarea class="input px-3 py-2 text-sm" rows="4" name="body_template" placeholder="Sehr geehrte/r {customer_name}, ..." {% if read_only %}disabled{% endif %}></textarea>
+        <input class="input px-3 py-2 text-sm" name="account_id" placeholder="optional account_id" {% if read_only %}disabled{% endif %} />
+        <input class="input px-3 py-2 text-sm" name="attachments" placeholder="optionale doc IDs (kommagetrennt)" {% if read_only %}disabled{% endif %} />
+        <button class="btn-outline px-3 py-2 text-sm w-fit" type="submit" {% if read_only %}disabled{% endif %}>Email-Draft Action hinzufügen</button>
+      </form>
+    </div>
+  </div>
+
   <div class="grid gap-4 md:grid-cols-3">
     <div class="card p-4">
       <h2 class="font-semibold mb-2">Triggers</h2>

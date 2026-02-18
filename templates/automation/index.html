@@ -59,9 +59,10 @@
 
   <div class="card p-4 space-y-2">
     <h2 class="font-semibold">Rule Import (safe JSON)</h2>
+    <p class="text-xs opacity-80">Trigger-Typen: <code>eventlog</code>, <code>cron</code>. Actions: <code>create_task</code>, <code>create_followup</code>, <code>create_postfach_draft</code>, <code>email_draft</code>.</p>
     <form method="post" action="/automation/import" class="grid gap-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <textarea class="input px-3 py-2 text-sm" rows="6" name="rule_json" placeholder='{"name":"Imported Rule","description":"","max_executions_per_minute":10,"triggers":[],"conditions":[],"actions":[]}' {% if read_only %}disabled{% endif %}></textarea>
+      <textarea class="input px-3 py-2 text-sm" rows="6" name="rule_json" placeholder='{"name":"Cron Draft Rule","description":"","max_executions_per_minute":10,"triggers":[{"trigger_type":"cron","config":{"cron":"0 8 * * 1"}}],"conditions":[],"actions":[{"action_type":"email_draft","config":{"to":["kunde@example.com"],"subject":"Wochenupdate","body_template":"Hallo {customer_name}"}}]}' {% if read_only %}disabled{% endif %}></textarea>
       <button class="btn-outline px-3 py-2 text-sm w-fit" type="submit" {% if read_only %}disabled{% endif %}>Import Rule (disabled by default)</button>
     </form>
   </div>
