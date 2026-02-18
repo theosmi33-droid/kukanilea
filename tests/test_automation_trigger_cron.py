@@ -25,12 +25,26 @@ def test_cron_match_supports_wildcards_and_fixed_values() -> None:
 
 def test_cron_match_rejects_invalid_expression() -> None:
     dt = datetime(2026, 2, 18, 8, 30, tzinfo=timezone.utc)
+    for expr in ("*/5 8 * * *", "0 8 * * ?", "0 8 * * L", "0 8 * * 1#2"):
+        try:
+            cron_match(expr, dt)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(
+                f"expected ValueError for unsupported cron syntax: {expr}"
+            )
+
+
+def test_cron_match_rejects_too_long_expression() -> None:
+    dt = datetime(2026, 2, 18, 8, 30, tzinfo=timezone.utc)
+    long_expr = ("0 " * 70).strip()
     try:
-        cron_match("*/5 8 * * *", dt)
-    except ValueError:
-        pass
+        cron_match(long_expr, dt)
+    except ValueError as exc:
+        assert "cron_too_long" in str(exc)
     else:
-        raise AssertionError("expected ValueError for unsupported cron syntax")
+        raise AssertionError("expected ValueError for cron_too_long")
 
 
 def test_cron_trigger_executes_once_per_minute(tmp_path: Path, monkeypatch) -> None:
@@ -80,3 +94,8 @@ def test_cron_trigger_ignores_non_matching_minute(tmp_path: Path, monkeypatch) -
     result = process_cron_for_tenant("TENANT_A", db_path=db_path, now_dt=tick)
     assert result["ok"] is True
     assert int(result["matched"]) == 0
+
+
+def test_cron_match_uses_utc_normalization() -> None:
+    local_dt = datetime.fromisoformat("2026-02-18T10:30:00+02:00")
+    assert cron_match("30 8 * * 3", local_dt) is True
