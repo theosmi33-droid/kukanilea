@@ -94,12 +94,17 @@ def test_rule_export_and_safe_import(tmp_path: Path) -> None:
     assert int(imported["max_executions_per_minute"]) == 7
 
 
-def test_rule_import_supports_cron_and_email_draft(tmp_path: Path) -> None:
+def test_rule_import_supports_cron_email_send_and_webhook(
+    tmp_path: Path, monkeypatch
+) -> None:
     app = create_app()
     app.config.update(TESTING=True, SECRET_KEY="test")
     db_path = _set_core_db(tmp_path)
     client = app.test_client()
     _login(client)
+    monkeypatch.setattr(
+        webmod.Config, "WEBHOOK_ALLOWED_DOMAINS_LIST", ["hooks.example.com"]
+    )
     page = client.get("/automation")
     assert page.status_code == 200
     csrf = _csrf_from_html(page.data)
@@ -112,13 +117,22 @@ def test_rule_import_supports_cron_and_email_draft(tmp_path: Path) -> None:
         "conditions": [],
         "actions": [
             {
-                "action_type": "email_draft",
+                "action_type": "email_send",
                 "config": {
                     "to": ["kunde@example.com"],
                     "subject": "Weekly",
                     "body_template": "Hallo",
                 },
-            }
+            },
+            {
+                "action_type": "webhook",
+                "config": {
+                    "url": "https://hooks.example.com/hook",
+                    "method": "POST",
+                    "body_template": '{"event":"{{event_type}}"}',
+                    "headers": {"X-Source": "kukanilea"},
+                },
+            },
         ],
     }
     response = client.post(
@@ -133,7 +147,8 @@ def test_rule_import_supports_cron_and_email_draft(tmp_path: Path) -> None:
     imported = get_rule(tenant_id="KUKANILEA", rule_id=rule_id, db_path=db_path)
     assert imported is not None
     assert any(str(t.get("type") or "") == "cron" for t in imported["triggers"])
-    assert any(str(a.get("type") or "") == "email_draft" for a in imported["actions"])
+    assert any(str(a.get("type") or "") == "email_send" for a in imported["actions"])
+    assert any(str(a.get("type") or "") == "webhook" for a in imported["actions"])
 
 
 def test_rule_import_rejects_invalid_cron_expression(tmp_path: Path) -> None:
@@ -152,6 +167,44 @@ def test_rule_import_rejects_invalid_cron_expression(tmp_path: Path) -> None:
         "triggers": [{"trigger_type": "cron", "config": {"cron": "*/15 8 * * *"}}],
         "conditions": [],
         "actions": [],
+    }
+    response = client.post(
+        "/automation/import",
+        data={"csrf_token": csrf, "rule_json": json.dumps(payload)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+
+def test_rule_import_rejects_webhook_outside_allowlist(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    _set_core_db(tmp_path)
+    client = app.test_client()
+    _login(client)
+    monkeypatch.setattr(webmod.Config, "WEBHOOK_ALLOWED_DOMAINS_LIST", ["good.example"])
+    page = client.get("/automation")
+    assert page.status_code == 200
+    csrf = _csrf_from_html(page.data)
+    payload = {
+        "name": "Webhook invalid",
+        "description": "",
+        "max_executions_per_minute": 5,
+        "triggers": [],
+        "conditions": [],
+        "actions": [
+            {
+                "action_type": "webhook",
+                "config": {
+                    "url": "https://evil.example/hook",
+                    "method": "POST",
+                    "body_template": "{}",
+                    "headers": {},
+                },
+            }
+        ],
     }
     response = client.post(
         "/automation/import",
