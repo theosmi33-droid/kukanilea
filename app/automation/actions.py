@@ -166,6 +166,7 @@ def execute_action(
     context: Mapping[str, Any],
     db_path: Path | str | None = None,
     user_confirmed: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     tenant = str(tenant_id or "").strip()
     rid = str(rule_id or "").strip()
@@ -180,6 +181,19 @@ def execute_action(
         }
 
     db_resolved = _resolve_db_path(db_path)
+    if bool(dry_run):
+        if _requires_confirm(action_type, action_cfg, user_confirmed):
+            return {
+                "status": "pending",
+                "action_type": action_type,
+                "result": {"dry_run": True, "requires_confirm": True},
+            }
+        return {
+            "status": "ok",
+            "action_type": action_type,
+            "result": {"dry_run": True, "requires_confirm": False},
+        }
+
     if _requires_confirm(action_type, action_cfg, user_confirmed):
         pending_id = create_pending_action(
             tenant_id=tenant,
@@ -229,6 +243,7 @@ def run_rule_actions(
     actions: list[Mapping[str, Any]],
     context: Mapping[str, Any],
     db_path: Path | str | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     executed = 0
     pending = 0
@@ -242,6 +257,7 @@ def run_rule_actions(
             context=context,
             db_path=db_path,
             user_confirmed=False,
+            dry_run=dry_run,
         )
         details.append(outcome)
         status = str(outcome.get("status") or "").strip().lower()
