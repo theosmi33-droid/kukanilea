@@ -15,6 +15,9 @@ KUKANILEA Systems baut eine lokale, sichere und praxisnahe Betriebsplattform fue
 ## Team und Rollen
 Siehe `TEAM_ROLES.md`.
 
+## Systemkontext
+- Systemhandbuch (Snapshot, Architektur und Betriebsmodell): `docs/SYSTEMHANDBUCH_v1.md`
+
 ## Erwartungen an neue Kolleg:innen
 Du bist aktiv in vier Rollen:
 - Sparringpartner: Architekturen, Risiken, Trade-offs frueh challengen.

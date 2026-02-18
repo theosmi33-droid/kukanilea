@@ -2,6 +2,7 @@
 
 Referenzen:
 - Onboarding: `ONBOARDING.md`
+- Systemhandbuch: `docs/SYSTEMHANDBUCH_v1.md`
 - Weekly Review: `WEEKLY_TEMPLATE.md`
 - Glossar: `GLOSSARY.md`
 - Teamrollen: `TEAM_ROLES.md`
