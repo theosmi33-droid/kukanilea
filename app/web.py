@@ -4777,6 +4777,18 @@ _BUILDER_ACTION_ALLOWLIST = {
     "email_send",
     "webhook",
 }
+_BUILDER_EMAIL_ALLOWED_PLACEHOLDERS = {
+    "customer_name",
+    "event_type",
+    "trigger_ref",
+    "thread_id",
+    "entity_id",
+    "tenant_id",
+}
+_BUILDER_EMAIL_SUBJECT_MAX_LENGTH = 255
+_BUILDER_EMAIL_BODY_MAX_LENGTH = 20000
+_BUILDER_TEMPLATE_VAR_PATTERN = re.compile(r"\{([a-zA-Z0-9_]+)\}")
+_BUILDER_TEMPLATE_VAR_DOUBLE_PATTERN = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 
 
 def _split_recipients_csv(raw: Any) -> list[str]:
@@ -4816,6 +4828,18 @@ def _split_ids_csv(raw: Any) -> list[str]:
         seen.add(value)
         out.append(value)
     return out
+
+
+def _extract_builder_template_vars(template: str) -> set[str]:
+    text = str(template or "")
+    names = set(_BUILDER_TEMPLATE_VAR_PATTERN.findall(text))
+    names.update(_BUILDER_TEMPLATE_VAR_DOUBLE_PATTERN.findall(text))
+    return {str(name or "").strip() for name in names if str(name or "").strip()}
+
+
+def _builder_template_vars_allowed(template: str) -> bool:
+    names = _extract_builder_template_vars(template)
+    return names.issubset(_BUILDER_EMAIL_ALLOWED_PLACEHOLDERS)
 
 
 def _builder_webhook_allowed_domains() -> set[str]:
@@ -4888,9 +4912,32 @@ def _normalize_rule_component_for_import(item: Any, *, type_key: str) -> dict[st
             if set(cfg.keys()) - allowed_keys:
                 raise ValueError("validation_error")
             recipients = _split_recipients_csv(cfg.get("to"))
+            subject = str(cfg.get("subject") or "").strip()
+            body_template = str(
+                cfg.get("body_template") or cfg.get("body") or ""
+            ).strip()
+            account_id = str(cfg.get("account_id") or "").strip()
+            attachments = _split_ids_csv(cfg.get("attachments"))
             if not recipients:
                 raise ValueError("validation_error")
-            cfg["to"] = recipients
+            if (
+                not subject
+                or not body_template
+                or len(subject) > _BUILDER_EMAIL_SUBJECT_MAX_LENGTH
+                or len(body_template) > _BUILDER_EMAIL_BODY_MAX_LENGTH
+                or not _builder_template_vars_allowed(body_template)
+            ):
+                raise ValueError("validation_error")
+            cfg = {
+                "to": recipients,
+                "subject": subject,
+                "body_template": body_template,
+                "requires_confirm": True,
+            }
+            if account_id:
+                cfg["account_id"] = account_id
+            if attachments:
+                cfg["attachments"] = attachments
         if ctype_lower == "email_send":
             allowed_keys = {
                 "to",
@@ -4911,6 +4958,12 @@ def _normalize_rule_component_for_import(item: Any, *, type_key: str) -> dict[st
             account_id = str(cfg.get("account_id") or "").strip()
             attachments = _split_ids_csv(cfg.get("attachments"))
             if not recipients or not subject or not body_template:
+                raise ValueError("validation_error")
+            if (
+                len(subject) > _BUILDER_EMAIL_SUBJECT_MAX_LENGTH
+                or len(body_template) > _BUILDER_EMAIL_BODY_MAX_LENGTH
+                or not _builder_template_vars_allowed(body_template)
+            ):
                 raise ValueError("validation_error")
             cfg = {
                 "to": recipients,
@@ -5450,9 +5503,17 @@ def automation_builder_add_email_draft_action(rule_id: str):
     recipients = _split_recipients_csv(payload.get("to"))
     subject = str(payload.get("subject") or "").strip()
     body_template = str(payload.get("body_template") or "").strip()
-    if not recipients or not subject:
+    if not recipients or not subject or not body_template:
         return _automation_error(
-            "validation_error", "Empfänger und Betreff sind Pflicht.", 400
+            "validation_error", "Empfänger, Betreff und Inhalt sind Pflicht.", 400
+        )
+    if (
+        len(subject) > _BUILDER_EMAIL_SUBJECT_MAX_LENGTH
+        or len(body_template) > _BUILDER_EMAIL_BODY_MAX_LENGTH
+        or not _builder_template_vars_allowed(body_template)
+    ):
+        return _automation_error(
+            "validation_error", "E-Mail-Template ist ungültig.", 400
         )
     attachments_raw = str(payload.get("attachments") or "").strip()
     attachments = [
@@ -5510,6 +5571,14 @@ def automation_builder_add_email_send_action(rule_id: str):
             "validation_error",
             "Empfänger, Betreff und Body sind Pflicht.",
             400,
+        )
+    if (
+        len(subject) > _BUILDER_EMAIL_SUBJECT_MAX_LENGTH
+        or len(body_template) > _BUILDER_EMAIL_BODY_MAX_LENGTH
+        or not _builder_template_vars_allowed(body_template)
+    ):
+        return _automation_error(
+            "validation_error", "E-Mail-Template ist ungültig.", 400
         )
     attachments = _split_ids_csv(payload.get("attachments"))
     account_id = str(payload.get("account_id") or "").strip()

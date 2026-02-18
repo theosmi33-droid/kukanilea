@@ -176,6 +176,65 @@ def test_rule_import_rejects_invalid_cron_expression(tmp_path: Path) -> None:
     assert response.status_code == 400
 
 
+def test_rule_import_rejects_cron_with_six_fields(tmp_path: Path) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    _set_core_db(tmp_path)
+    client = app.test_client()
+    _login(client)
+    page = client.get("/automation")
+    assert page.status_code == 200
+    csrf = _csrf_from_html(page.data)
+    payload = {
+        "name": "Invalid cron six fields",
+        "description": "",
+        "max_executions_per_minute": 5,
+        "triggers": [{"trigger_type": "cron", "config": {"cron": "0 0 8 * * 1"}}],
+        "conditions": [],
+        "actions": [],
+    }
+    response = client.post(
+        "/automation/import",
+        data={"csrf_token": csrf, "rule_json": json.dumps(payload)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+
+def test_rule_import_rejects_email_draft_unknown_placeholder(tmp_path: Path) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    _set_core_db(tmp_path)
+    client = app.test_client()
+    _login(client)
+    page = client.get("/automation")
+    assert page.status_code == 200
+    csrf = _csrf_from_html(page.data)
+    payload = {
+        "name": "Invalid email template",
+        "description": "",
+        "max_executions_per_minute": 5,
+        "triggers": [],
+        "conditions": [],
+        "actions": [
+            {
+                "action_type": "email_draft",
+                "config": {
+                    "to": ["kunde@example.com"],
+                    "subject": "Status",
+                    "body_template": "Hallo {unknown_var}",
+                },
+            }
+        ],
+    }
+    response = client.post(
+        "/automation/import",
+        data={"csrf_token": csrf, "rule_json": json.dumps(payload)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+
 def test_rule_import_rejects_webhook_outside_allowlist(
     tmp_path: Path, monkeypatch
 ) -> None:
