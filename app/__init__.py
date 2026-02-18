@@ -45,12 +45,29 @@ def create_app() -> Flask:
         license_path=app.config["LICENSE_PATH"],
         trial_path=app.config["TRIAL_PATH"],
         trial_days=int(app.config.get("TRIAL_DAYS", 14)),
+        cache_path=app.config.get("LICENSE_CACHE_PATH"),
+        validate_url=str(app.config.get("LICENSE_VALIDATE_URL", "")),
+        validate_timeout_seconds=int(
+            app.config.get("LICENSE_VALIDATE_TIMEOUT_SECONDS", 10)
+        ),
+        validate_interval_days=int(
+            app.config.get("LICENSE_VALIDATE_INTERVAL_DAYS", 30)
+        ),
+        grace_days=int(app.config.get("LICENSE_GRACE_DAYS", 30)),
     )
     app.config["PLAN"] = license_state["plan"]
     app.config["TRIAL"] = license_state["trial"]
     app.config["TRIAL_DAYS_LEFT"] = license_state["trial_days_left"]
     app.config["READ_ONLY"] = license_state["read_only"]
     app.config["LICENSE_REASON"] = license_state["reason"]
+    app.config["LICENSE_GRACE_ACTIVE"] = bool(license_state.get("grace_active", False))
+    app.config["LICENSE_GRACE_DAYS_LEFT"] = int(
+        license_state.get("grace_days_left", 0) or 0
+    )
+    app.config["LICENSE_VALIDATED_ONLINE"] = bool(
+        license_state.get("validated_online", False)
+    )
+    app.config["LICENSE_LAST_VALIDATED"] = str(license_state.get("last_validated", ""))
 
     @app.before_request
     def _enforce_read_only():
@@ -76,6 +93,14 @@ def create_app() -> Flask:
             "plan": str(app.config.get("PLAN", "TRIAL")),
             "trial_active": bool(app.config.get("TRIAL", False)),
             "trial_days_left": int(app.config.get("TRIAL_DAYS_LEFT", 0)),
+            "license_grace_active": bool(app.config.get("LICENSE_GRACE_ACTIVE", False)),
+            "license_grace_days_left": int(
+                app.config.get("LICENSE_GRACE_DAYS_LEFT", 0)
+            ),
+            "license_validated_online": bool(
+                app.config.get("LICENSE_VALIDATED_ONLINE", False)
+            ),
+            "license_last_validated": str(app.config.get("LICENSE_LAST_VALIDATED", "")),
         }
 
     logger = py_logging.getLogger("kukanilea")

@@ -39,7 +39,18 @@ class Config:
         _env("KUKANILEA_LICENSE_PATH", str(USER_DATA_ROOT / "license.json"))
     )
     TRIAL_PATH = Path(_env("KUKANILEA_TRIAL_PATH", str(USER_DATA_ROOT / "trial.json")))
+    LICENSE_CACHE_PATH = Path(
+        _env("KUKANILEA_LICENSE_CACHE_PATH", str(USER_DATA_ROOT / "license_cache.json"))
+    )
     TRIAL_DAYS = int(_env("KUKANILEA_TRIAL_DAYS", "14"))
+    LICENSE_VALIDATE_URL = _env("KUKANILEA_LICENSE_VALIDATE_URL", "")
+    LICENSE_VALIDATE_TIMEOUT_SECONDS = int(
+        _env("KUKANILEA_LICENSE_VALIDATE_TIMEOUT_SECONDS", "10")
+    )
+    LICENSE_VALIDATE_INTERVAL_DAYS = int(
+        _env("KUKANILEA_LICENSE_VALIDATE_INTERVAL_DAYS", "30")
+    )
+    LICENSE_GRACE_DAYS = int(_env("KUKANILEA_LICENSE_GRACE_DAYS", "30"))
 
     IMPORT_ROOT = Path(_env("IMPORT_ROOT", str(USER_DATA_ROOT / "imports")))
     IMPORT_ROOT.mkdir(parents=True, exist_ok=True)
