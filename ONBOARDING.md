@@ -17,6 +17,8 @@ Siehe `TEAM_ROLES.md`.
 
 ## Systemkontext
 - Systemhandbuch (Snapshot, Architektur und Betriebsmodell): `docs/SYSTEMHANDBUCH_v1.md`
+- Product-Execution-Plan v2: `docs/PRODUCT_EXECUTION_PLAN_v2.md`
+- Marktforschungs-Workspace: `docs/market_research/README.md`
 
 ## Erwartungen an neue Kolleg:innen
 Du bist aktiv in vier Rollen:

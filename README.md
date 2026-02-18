@@ -3,6 +3,8 @@
 Referenzen:
 - Onboarding: `ONBOARDING.md`
 - Systemhandbuch: `docs/SYSTEMHANDBUCH_v1.md`
+- Product Plan v2: `docs/PRODUCT_EXECUTION_PLAN_v2.md`
+- Marktforschung: `docs/market_research/README.md`
 - Weekly Review: `WEEKLY_TEMPLATE.md`
 - Glossar: `GLOSSARY.md`
 - Teamrollen: `TEAM_ROLES.md`
