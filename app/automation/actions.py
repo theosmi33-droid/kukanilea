@@ -13,6 +13,7 @@ from app.mail import (
     postfach_get_oauth_token,
     postfach_list_accounts,
     postfach_oauth_token_expired,
+    postfach_safety_check_draft,
     postfach_send_draft,
 )
 from app.webhooks import execute_webhook_action
@@ -52,6 +53,8 @@ SNAPSHOT_ALLOWLIST = {
 }
 _TEMPLATE_VAR_PATTERN = re.compile(r"\{([a-zA-Z0-9_]+)\}")
 _TEMPLATE_VAR_DOUBLE_PATTERN = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
+EMAIL_SUBJECT_MAX_LENGTH = 255
+EMAIL_BODY_MAX_LENGTH = 20000
 
 
 def _resolve_db_path(db_path: Path | str | None) -> Path:
@@ -307,13 +310,23 @@ def _execute_email_draft(
     if not account_id:
         return {"status": "failed", "error": "account_not_configured"}
 
+    doc_ids = _normalize_doc_ids(action_cfg.get("attachments"))
+    if doc_ids and not _docs_exist(
+        db_path=db_path, tenant_id=tenant_id, doc_ids=doc_ids
+    ):
+        return {"status": "failed", "error": "attachments_invalid"}
+
     subject = str(action_cfg.get("subject") or "").strip()
     body_template = str(action_cfg.get("body_template") or action_cfg.get("body") or "")
-    if not subject:
+    if not subject or not body_template:
         return {"status": "failed", "error": "payload_invalid"}
+    if len(subject) > EMAIL_SUBJECT_MAX_LENGTH:
+        return {"status": "failed", "error": "subject_too_long"}
     if not _validate_template_vars(body_template, allowed=EMAIL_ALLOWED_PLACEHOLDERS):
         return {"status": "failed", "error": "template_variables_not_allowed"}
     body = _render_email_template_text(body_template, context)
+    if len(body) > EMAIL_BODY_MAX_LENGTH:
+        return {"status": "failed", "error": "body_too_long"}
     thread_id = (
         str(action_cfg.get("thread_id") or context.get("thread_id") or "").strip()
         or None
@@ -327,7 +340,19 @@ def _execute_email_draft(
         subject_value=subject,
         body_value=body,
     )
-    return {"status": "ok", "result": {"draft_id": draft_id}}
+    safety = postfach_safety_check_draft(
+        db_path, tenant_id=tenant_id, draft_id=str(draft_id)
+    )
+    warning_codes: list[str] = []
+    if bool(safety.get("ok")):
+        for warning in safety.get("warnings") or []:
+            code = str((warning or {}).get("code") or "").strip()
+            if code:
+                warning_codes.append(code)
+    result: dict[str, Any] = {"draft_id": draft_id, "warning_count": len(warning_codes)}
+    if warning_codes:
+        result["warning_codes"] = warning_codes[:10]
+    return {"status": "ok", "result": result}
 
 
 def _normalize_doc_ids(raw: Any) -> list[str]:
@@ -468,6 +493,10 @@ def _prepare_email_send(
     body = _render_email_template_text(body_template, context)
     if not subject or not body:
         return {"ok": False, "reason": "payload_invalid"}
+    if len(subject) > EMAIL_SUBJECT_MAX_LENGTH:
+        return {"ok": False, "reason": "subject_too_long"}
+    if len(body) > EMAIL_BODY_MAX_LENGTH:
+        return {"ok": False, "reason": "body_too_long"}
 
     return {
         "ok": True,

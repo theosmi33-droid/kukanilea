@@ -33,6 +33,9 @@ Flow:
 - `cron` (v1.2)
   - `cron` im Format `minute hour day month weekday`
   - Nur `*` oder feste Zahlen, keine Listen/Bereiche/Step-Werte
+  - Exakt 5 Felder, max. 120 Zeichen, nur Ziffern/Leerzeichen/`*`
+  - Nicht unterstützt (werden hart abgelehnt): `?`, `L`, `#`, `,`, `/`, Quartz-6/7-Feld-Varianten
+  - Auswertung immer minute-genau in UTC
   - Beispiel:
 ```json
 {
@@ -78,6 +81,8 @@ Verhalten:
 - `create_postfach_draft` und `email_draft` bleiben confirm-gated.
 - `email_draft` erstellt nur Entwuerfe im Postfach, kein automatischer Versand.
 - `email_draft` validiert Empfaenger gegen CRM-Contacts des Tenants und nutzt standardmaessig das erste konfigurierte Postfach-Konto.
+- `email_draft` erlaubt nur Placeholder aus der Allowlist (`customer_name`, `event_type`, `trigger_ref`, `thread_id`, `entity_id`, `tenant_id`).
+- `email_draft` erzwingt Längenlimits (`subject <= 255`, `body <= 20000`) und fuehrt nach Draft-Erstellung einen Safety-Check aus (Warning-Codes im Action-Resultat).
 - `email_send` erstellt zuerst eine pending Action und sendet erst nach Confirm mit gueltigem `confirm_token`.
 - `email_send` validiert Empfaenger gegen CRM und benoetigt ein aktives OAuth-Postfach-Konto (kein Auto-Refresh in der Automation-Action selbst).
 - `webhook` ist synchron, `POST`-only, max. 2 Versuche (Retry nur bei transienten Fehlern wie 429/5xx/Netzwerk-Timeout).
