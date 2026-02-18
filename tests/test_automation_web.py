@@ -136,3 +136,48 @@ def test_automation_pending_confirm_requires_ack_and_confirms(
     )
     assert row is not None
     assert str(row.get("confirmed_at") or "").strip()
+
+
+def test_automation_rule_detail_supports_cron_and_email_draft(tmp_path: Path) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    db_path = _set_core_db(tmp_path)
+    rule_id = create_rule(
+        tenant_id="KUKANILEA",
+        name="Builder Rule",
+        triggers=[],
+        conditions=[],
+        actions=[],
+        db_path=db_path,
+    )
+    client = app.test_client()
+    _login(client)
+    detail = client.get(f"/automation/{rule_id}")
+    assert detail.status_code == 200
+    assert b"cron_expression" in detail.data
+    assert b"body_template" in detail.data
+    csrf = _csrf_from_html(detail.data)
+
+    add_cron = client.post(
+        f"/automation/{rule_id}/trigger/cron",
+        data={"csrf_token": csrf, "cron_expression": "0 8 * * 1"},
+        follow_redirects=False,
+    )
+    assert add_cron.status_code == 302
+
+    add_action = client.post(
+        f"/automation/{rule_id}/action/email-draft",
+        data={
+            "csrf_token": csrf,
+            "to": "kunde@example.com",
+            "subject": "Wochenreport",
+            "body_template": "Hallo {customer_name}",
+        },
+        follow_redirects=False,
+    )
+    assert add_action.status_code == 302
+
+    rule = get_rule(tenant_id="KUKANILEA", rule_id=rule_id, db_path=db_path)
+    assert rule is not None
+    assert any(str(t.get("type") or "") == "cron" for t in rule["triggers"])
+    assert any(str(a.get("type") or "") == "email_draft" for a in rule["actions"])
