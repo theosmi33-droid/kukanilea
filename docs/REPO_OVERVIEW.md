@@ -7,9 +7,6 @@ Quellen: `README.md`, `docs/ARCHITECTURE.md`, `PROJECT_STATUS.md`.
 ## Start / Betrieb
 - Haupt-Entry-Point: `python kukanilea_app.py` (delegiert auf `create_app()` in `app/__init__.py`).
 - Flask-CLI (Factory): `flask --app app run --port 5051`.
-- Alternative UIs/APIs im Repo:
-  - `kukanilea_api.py` (minimal API/UI)
-  - `kukanilea_upload.py` (Upload/Review UI)
 - Dev-Skripte:
   - `./scripts/dev_run.sh`
   - `./scripts/dev_bootstrap.sh`

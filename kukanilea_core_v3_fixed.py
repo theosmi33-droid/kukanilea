@@ -5,17 +5,10 @@
 KUKANILEA Core (v2.4 - A2 Multi-Tenant + More Formats) — DROP-IN replacement
 ============================================================================
 
-Das ist dein `kukanilea_core.py` als kompletter, kopierfertiger Code.
-
 Wichtig (Kompatibilität):
 - Exportiert die gleichen Funktionen/Variablen wie vorher (Contract).
 - Behält **TOPHANDWERK_*** ENV-Variablen für Abwärtskompatibilität.
 - Zusätzlich werden **KUKANILEA_*** ENV-Variablen als Alias akzeptiert (haben Vorrang).
-
-Hinweis:
-- In `kukanilea_upload.py` musst du nur den Import anpassen:
-    import kukanilea_core as core
-  (statt `import tophandwerk_core as core`)
 """
 
 from __future__ import annotations
