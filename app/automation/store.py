@@ -34,6 +34,7 @@ EXECUTION_STATUS_ALLOWLIST = {
     "pending",
     "rate_limited",
 }
+PENDING_STATUS_ALLOWLIST = {"pending", "confirmed", "failed", "executing"}
 
 
 def _now_rfc3339() -> str:
@@ -1244,3 +1245,33 @@ def confirm_pending_action_once(
     item["confirm_token"] = None
     item["confirmed_at"] = now_iso
     return item
+
+
+def update_pending_action_status(
+    *,
+    tenant_id: str,
+    pending_id: str,
+    status: str,
+    db_path: Path | str | None = None,
+) -> bool:
+    tenant = _norm_tenant(tenant_id)
+    pid = str(pending_id or "").strip()
+    status_value = str(status or "").strip().lower()
+    if not pid or status_value not in PENDING_STATUS_ALLOWLIST:
+        raise ValueError("validation_error")
+    ensure_automation_schema(db_path)
+    path = _resolve_db_path(db_path)
+    con = _connect(path)
+    try:
+        cur = con.execute(
+            f"""
+            UPDATE {PENDING_ACTION_TABLE}
+            SET status=?
+            WHERE tenant_id=? AND id=?
+            """,
+            (status_value, tenant, pid),
+        )
+        con.commit()
+        return int(cur.rowcount or 0) > 0
+    finally:
+        con.close()

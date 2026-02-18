@@ -61,6 +61,9 @@ from .store import (
     update_execution_log as builder_execution_log_update,
 )
 from .store import (
+    update_pending_action_status as builder_pending_action_set_status,
+)
+from .store import (
     update_rule as builder_rule_update,
 )
 from .store import (
@@ -89,6 +92,7 @@ __all__ = [
     "builder_pending_action_get",
     "builder_pending_action_confirm",
     "builder_pending_action_confirm_once",
+    "builder_pending_action_set_status",
     "builder_rule_get",
     "builder_rule_list",
     "builder_rule_update",
