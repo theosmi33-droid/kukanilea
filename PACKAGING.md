@@ -1,25 +1,19 @@
 # Packaging Plan (macOS DMG)
 
-## Goal
-Provide a repeatable DMG build for a local demo. No notarization in this phase.
+The canonical packaging documentation moved to:
 
-## Plan
-1. Build the macOS app bundle using PyInstaller.
-2. Create a DMG using `dmgbuild` or `hdiutil`.
-3. Document manual notarization steps for future use.
+- `docs/packaging/BUILD.md`
+- `docs/packaging/SIGNING.md`
 
-## Commands
+Quick path:
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-scripts/build_mac.sh
-scripts/make_dmg.sh
+scripts/build/obfuscate.sh
+scripts/build/bundle_macos.sh
+scripts/build/dmg_macos.sh
 ```
 
-## Future (Notarization)
-- Register an Apple Developer ID.
-- Sign the app with `codesign`.
-- Submit to Apple notarization with `xcrun notarytool`.
-- Staple the ticket to the app and DMG.
+Compatibility wrappers remain available:
+
+- `scripts/build_mac.sh`
+- `scripts/make_dmg.sh`
