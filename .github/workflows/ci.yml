@@ -29,7 +29,6 @@ jobs:
             tests/test_security_templates_no_safe.py \
             tests/test_security_forbidden_imports.py \
             tests/test_security_eventlog_payload_keys.py
-      - run: |
-          PYTEST_ADDOPTS="-m not e2e" \
-          python -m app.devtools.triage --ci --fail-on-warnings \
+      - run: >
+          python -m app.devtools.triage --ci --fail-on-warnings
           --ignore-warning-regex "(?i)(swig|deprecation|userwarning|resourcewarning|warning:)"
