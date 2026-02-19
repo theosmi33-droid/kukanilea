@@ -22,3 +22,9 @@ Open: [http://127.0.0.1:5051](http://127.0.0.1:5051)
 
 Default dev login:
 - `admin` / `admin`
+
+## Optional: macOS bundle + DMG
+```bash
+scripts/build/bundle_macos.sh
+scripts/build/dmg_macos.sh
+```

@@ -217,6 +217,8 @@ from .config import Config
 from .db import AuthDB
 from .errors import json_error
 from .license import load_license, load_runtime_license_state
+from .update_checker import check_for_updates
+from .version import __version__
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
@@ -8210,6 +8212,29 @@ HTML_SETTINGS = """
   </div>
 
   <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Release Update Check</div>
+    <div class="text-sm">
+      <div>Aktuell installiert: <strong>{{ update_info.current_version }}</strong></div>
+      {% if not update_info.enabled %}
+        <div class="muted text-xs mt-1">Update-Check ist deaktiviert (`KUKANILEA_UPDATE_CHECK_ENABLED=0`).</div>
+      {% elif update_info.error %}
+        <div class="text-xs mt-1">Prüfung fehlgeschlagen ({{ update_info.error }}).</div>
+      {% elif update_info.update_available %}
+        <div class="mt-1">
+          Neue Version verfügbar: <strong>{{ update_info.latest_version }}</strong>
+          {% if update_info.download_url %}
+            <a class="underline ml-1" href="{{ update_info.download_url }}" target="_blank" rel="noopener">Release öffnen</a>
+          {% endif %}
+        </div>
+      {% elif update_info.checked %}
+        <div class="muted text-xs mt-1">Keine neuere Version gefunden.</div>
+      {% else %}
+        <div class="muted text-xs mt-1">Noch nicht geprüft.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">DB wechseln (Allowlist)</div>
     <div class="flex flex-wrap gap-2 items-center">
       <select id="dbSelect" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
@@ -9367,6 +9392,33 @@ def settings_page():
             "schema_version": "?",
             "tenants": "?",
         }
+    update_enabled = bool(current_app.config.get("UPDATE_CHECK_ENABLED", False))
+    update_info: dict[str, Any] = {
+        "enabled": update_enabled,
+        "checked": False,
+        "current_version": __version__,
+        "latest_version": "",
+        "download_url": "",
+        "update_available": False,
+        "error": "",
+    }
+    if update_enabled:
+        try:
+            update_info = check_for_updates(
+                __version__,
+                release_url=str(current_app.config.get("UPDATE_CHECK_URL", "")),
+                timeout_seconds=int(
+                    current_app.config.get("UPDATE_CHECK_TIMEOUT_SECONDS", 5)
+                ),
+            )
+            update_info["enabled"] = True
+            update_info["current_version"] = __version__
+        except Exception:
+            update_info = {
+                **update_info,
+                "enabled": True,
+                "error": "update_check_failed",
+            }
     return _render_base(
         render_template_string(
             HTML_SETTINGS,
@@ -9378,6 +9430,7 @@ def settings_page():
             base_paths=[str(p) for p in _list_allowlisted_base_paths()],
             profile=_get_profile(),
             import_root=str(current_app.config.get("IMPORT_ROOT", "")),
+            update_info=update_info,
         ),
         active_tab="settings",
     )
