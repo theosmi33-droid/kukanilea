@@ -29,6 +29,12 @@ Hinweis:
 - Ist der Endpoint voruebergehend nicht erreichbar, wird das Grace-Fenster aus dem lokalen Cache genutzt.
 - Nach Ablauf von Grace wird auf `READ_ONLY` gewechselt.
 
+## Lizenzserver-Prototyp (Phase 5)
+- Ein separater Referenzservice liegt unter `license_server/`.
+- Kompatibler Validation-Endpoint: `POST /api/v1/validate`
+- Admin-Upsert fuer Lizenzdaten: `POST /api/v1/licenses/upsert` (optional mit API-Token).
+- Setup und API-Details: `license_server/README.md`.
+
 ## Security & Privacy
 - Hardware-Bindung nutzt einen gehashten Identifier aus `MAC + Hostname`.
 - Dieser Wert ist **pseudonymisiert** (Hash), aber **nicht anonym**.
