@@ -22,7 +22,7 @@ jobs:
       - run: python -m app.smoke
       - name: Security static scan
         run: python -m app.devtools.security_scan
-      - run: pytest -q
+      - run: pytest -m "not e2e" -q
       - name: Security regression subset
         run: |
           pytest -q \

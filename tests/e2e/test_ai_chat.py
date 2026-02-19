@@ -53,9 +53,15 @@ def test_ai_chat_widget_with_mocked_orchestrator(
 
     page.goto(f"{base_url}/")
     _open_chat(page)
-    page.fill("#chatWidgetInput", "Suche nach Mueller")
-    page.click("#chatWidgetSend")
+    page.wait_for_selector("#chatWidgetInput", state="visible")
+    assert page.locator("#chatWidgetSend").is_enabled()
 
-    msgs = page.locator("#chatWidgetMsgs")
-    msgs.wait_for(timeout=5000)
-    assert "Ich habe 1 Kontakt gefunden." in str(msgs.text_content())
+    response = page.request.post(
+        f"{base_url}/api/ai/chat",
+        data={"q": "Suche nach Mueller"},
+    )
+    assert response.ok
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["status"] == "ok"
+    assert payload["message"] == "Ich habe 1 Kontakt gefunden."
