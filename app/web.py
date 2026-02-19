@@ -8007,6 +8007,7 @@ def postfach_page():
         )
 
     outbox = auth_db.list_outbox(limit=20)
+    postfach_key_ready = bool(postfach_email_encryption_ready())
     return _render_base(
         render_template(
             "postfach/index.html",
@@ -8018,6 +8019,7 @@ def postfach_page():
             drafts=drafts,
             selected_draft=selected_draft,
             postfach_status=postfach_status,
+            postfach_key_ready=postfach_key_ready,
             search_query=query,
             outbox=outbox,
         ),

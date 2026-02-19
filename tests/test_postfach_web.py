@@ -58,6 +58,19 @@ def test_postfach_page_renders() -> None:
     assert b"Postfach Hub" in res.data
 
 
+def test_postfach_page_shows_key_warning_when_missing(monkeypatch) -> None:
+    monkeypatch.delenv("EMAIL_ENCRYPTION_KEY", raising=False)
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    client = app.test_client()
+    _login(client)
+
+    res = client.get("/postfach")
+    assert res.status_code == 200
+    assert b"EMAIL_ENCRYPTION_KEY" in res.data
+    assert b"fail-closed" in res.data
+
+
 def test_mail_route_redirects_to_postfach() -> None:
     app = create_app()
     app.config.update(TESTING=True, SECRET_KEY="test")
