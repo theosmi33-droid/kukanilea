@@ -1,7 +1,9 @@
+{% from 'components/button.html' import button_link, button_submit %}
+
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <h1 class="text-xl font-semibold">CRM · E-Mail Import (.eml)</h1>
-    <a class="btn-outline px-3 py-2 text-sm" href="/crm/customers">Kunden</a>
+    {{ button_link('Kunden', '/crm/customers', kind='outline') }}
   </div>
 
   {% if read_only %}{% include 'crm/partials/read_only_banner.html' %}{% endif %}
@@ -12,14 +14,14 @@
       <input class="input px-3 py-2 text-sm" type="file" name="file" accept=".eml" {% if read_only %}disabled{% endif %} required>
       <input class="input px-3 py-2 text-sm" type="text" name="customer_id" placeholder="customer_id (optional)" {% if read_only %}disabled{% endif %}>
       <input class="input px-3 py-2 text-sm" type="text" name="contact_id" placeholder="contact_id (optional)" {% if read_only %}disabled{% endif %}>
-      <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Importieren</button>
+      {{ button_submit('Importieren', kind='primary', disabled=read_only) }}
     </form>
   </div>
 
-  <div class="card overflow-hidden">
+  <div class="card table-shell">
     <table class="w-full text-sm">
       <thead>
-        <tr class="border-b" style="border-color:var(--border)">
+        <tr class="table-head">
           <th class="text-left px-3 py-2">Von</th>
           <th class="text-left px-3 py-2">Betreff</th>
           <th class="text-left px-3 py-2">Empfangen</th>
@@ -28,7 +30,7 @@
       </thead>
       <tbody>
         {% for e in emails %}
-        <tr class="border-b" style="border-color:var(--border)">
+        <tr class="table-row">
           <td class="px-3 py-2">{{ e.from_addr or '-' }}</td>
           <td class="px-3 py-2">{{ e.subject or '(ohne Betreff)' }}</td>
           <td class="px-3 py-2">{{ e.received_at or '-' }}</td>
@@ -42,8 +44,8 @@
     <div class="flex items-center justify-between px-3 py-2 text-xs muted">
       <div>Gesamt: {{ total }} · Seite {{ page }}</div>
       <div class="flex gap-2">
-        {% if page > 1 %}<a class="btn-outline px-2 py-1" href="/crm/emails/import?page={{ page-1 }}&page_size={{ page_size }}">Zurück</a>{% endif %}
-        {% if (page*page_size) < total %}<a class="btn-outline px-2 py-1" href="/crm/emails/import?page={{ page+1 }}&page_size={{ page_size }}">Weiter</a>{% endif %}
+        {% if page > 1 %}{{ button_link('Zurück', '/crm/emails/import?page=' ~ (page-1) ~ '&page_size=' ~ page_size, kind='outline', size='sm') }}{% endif %}
+        {% if (page*page_size) < total %}{{ button_link('Weiter', '/crm/emails/import?page=' ~ (page+1) ~ '&page_size=' ~ page_size, kind='outline', size='sm') }}{% endif %}
       </div>
     </div>
   </div>

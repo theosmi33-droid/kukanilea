@@ -1,3 +1,5 @@
+{% from 'components/button.html' import button_link, button_submit %}
+
 <div class="space-y-4">
   <div class="flex items-center justify-between gap-2">
     <h1 class="text-xl font-bold">Conversations</h1>
@@ -9,14 +11,14 @@
         <option value="phone" {% if channel == 'phone' %}selected{% endif %}>Telefon</option>
       </select>
       <input class="input w-24 px-3 py-2 text-sm" type="number" min="1" max="50" name="limit" value="{{ limit }}">
-      <button class="btn-outline rounded-xl px-3 py-2 text-sm" type="submit">Filter</button>
+      {{ button_submit('Filter', kind='outline') }}
     </form>
   </div>
 
-  <div class="card overflow-hidden">
+  <div class="card table-shell">
     <table class="w-full text-sm">
       <thead>
-        <tr class="border-b" style="border-color:var(--border)">
+        <tr class="table-head">
           <th class="text-left px-3 py-2">Zeit</th>
           <th class="text-left px-3 py-2">Kanal</th>
           <th class="text-left px-3 py-2">Richtung</th>
@@ -27,14 +29,14 @@
       </thead>
       <tbody>
         {% for row in events %}
-        <tr class="border-b" style="border-color:var(--border)">
+        <tr class="table-row">
           <td class="px-3 py-2">{{ row.occurred_at }}</td>
           <td class="px-3 py-2">{{ row.channel }}</td>
           <td class="px-3 py-2">{{ row.direction }}</td>
           <td class="px-3 py-2">{{ row.preview_subject or '-' }}</td>
           <td class="px-3 py-2">{{ row.preview_body or '-' }}</td>
           <td class="px-3 py-2">
-            <a class="btn-outline inline-flex rounded-lg px-2 py-1 text-xs" href="/conversations/{{ row.id }}">Details</a>
+            {{ button_link('Details', '/conversations/' ~ row.id, kind='outline', size='sm') }}
           </td>
         </tr>
         {% else %}
@@ -46,4 +48,3 @@
     </table>
   </div>
 </div>
-

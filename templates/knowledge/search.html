@@ -1,16 +1,19 @@
+{% from 'components/alert.html' import banner %}
+{% from 'components/button.html' import button_link, button_submit %}
+
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <h1 class="text-xl font-semibold">Knowledge</h1>
     <div class="flex gap-2">
-      <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/knowledge/notes">Meine Notizen</a>
-      <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/tags">Tags</a>
-      <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/knowledge/email/upload">E-Mail Upload</a>
-      <a class="btn-outline rounded-xl px-3 py-2 text-sm" href="/knowledge/ics/upload">ICS Upload</a>
+      {{ button_link('Meine Notizen', '/knowledge/notes', kind='outline') }}
+      {{ button_link('Tags', '/tags', kind='outline') }}
+      {{ button_link('E-Mail Upload', '/knowledge/email/upload', kind='outline') }}
+      {{ button_link('ICS Upload', '/knowledge/ics/upload', kind='outline') }}
     </div>
   </div>
 
   {% if read_only %}
-  <div class="card p-3 text-sm" style="border-color:#f59e0b">Read-only mode aktiv. Schreibaktionen sind deaktiviert.</div>
+  {{ banner('Read-only mode aktiv. Schreibaktionen sind deaktiviert.', kind='warn') }}
   {% endif %}
 
   <form class="card p-4 grid gap-2 md:grid-cols-5" hx-get="/knowledge/_results" hx-target="#kbResults" hx-swap="innerHTML">
@@ -26,11 +29,10 @@
       <option value="calendar" {% if source_type=='calendar' %}selected{% endif %}>Calendar</option>
     </select>
     <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="owner_only" value="1" {% if owner_only %}checked{% endif %}>Nur meine Inhalte</label>
-    <button class="btn-primary px-3 py-2 text-sm" type="submit">Suchen</button>
+    {{ button_submit('Suchen', kind='primary') }}
   </form>
 
   <div id="kbResults">
     {% include 'knowledge/partials/_results.html' %}
   </div>
 </div>
-

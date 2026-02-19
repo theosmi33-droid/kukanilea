@@ -937,62 +937,139 @@ HTML_BASE = r"""<!doctype html>
 </script>
 <style>
   :root{
-    --bg:#0b1220;
-    --bg-elev:#111a2c;
-    --bg-panel:#0f172a;
-    --border:rgba(148,163,184,.15);
-    --text:#e2e8f0;
+    --bg:#0f172a;
+    --bg-elev:#111827;
+    --bg-panel:#172033;
+    --border:rgba(148,163,184,.2);
+    --text:#e5e7eb;
     --muted:#94a3b8;
-    --accent-500:#6366f1;
-    --accent-600:#4f46e5;
-    --shadow:0 8px 30px rgba(15,23,42,.35);
+    --accent-500:#0ea5e9;
+    --accent-600:#0284c7;
+    --danger-500:#dc2626;
+    --danger-600:#b91c1c;
+    --warn-bg:rgba(245,158,11,.12);
+    --warn-border:rgba(245,158,11,.35);
+    --info-bg:rgba(14,165,233,.12);
+    --info-border:rgba(14,165,233,.35);
+    --error-bg:rgba(220,38,38,.12);
+    --error-border:rgba(220,38,38,.35);
     --radius-lg:18px;
     --radius-md:14px;
+    --radius-sm:10px;
+    --shadow:0 8px 30px rgba(15,23,42,.35);
+    --shadow-soft:0 4px 16px rgba(15,23,42,.2);
   }
-  html[data-accent="indigo"]{ --accent-500:#6366f1; --accent-600:#4f46e5; }
+  html[data-accent="indigo"]{ --accent-500:#0ea5e9; --accent-600:#0284c7; }
   html[data-accent="emerald"]{ --accent-500:#10b981; --accent-600:#059669; }
   html[data-accent="amber"]{ --accent-500:#f59e0b; --accent-600:#d97706; }
   .light body{
     --bg:#f8fafc;
     --bg-elev:#ffffff;
     --bg-panel:#ffffff;
-    --border:rgba(148,163,184,.25);
+    --border:rgba(71,85,105,.22);
     --text:#0f172a;
     --muted:#475569;
     --shadow:0 8px 30px rgba(15,23,42,.12);
+    --shadow-soft:0 4px 16px rgba(15,23,42,.08);
   }
-  body{ background:var(--bg); color:var(--text); }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); }
   .app-shell{ display:flex; min-height:100vh; }
   .app-nav{
     width:240px; background:var(--bg-elev); border-right:1px solid var(--border);
     padding:24px 18px; position:sticky; top:0; height:100vh;
   }
+  .app-nav .brand-mark{
+    height:40px; width:40px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+    background:color-mix(in srgb, var(--accent-500) 24%, transparent);
+    color:#fff;
+  }
   .app-main{ flex:1; display:flex; flex-direction:column; }
   .app-topbar{
-    display:flex; justify-content:space-between; align-items:center;
+    display:flex; justify-content:space-between; align-items:flex-start;
     padding:22px 28px; border-bottom:1px solid var(--border); background:var(--bg-elev);
+    gap:16px;
   }
+  .topbar-primary{ display:flex; align-items:center; gap:10px; }
+  .topbar-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  .mobile-nav-btn{ display:none; width:36px; height:36px; border-radius:10px; }
   .app-content{ padding:24px 28px; }
+  .app-overlay{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(15,23,42,.55);
+    z-index:40;
+  }
+  .app-overlay.open{ display:block; }
   .nav-link{
     display:flex; gap:12px; align-items:center; padding:10px 12px; border-radius:12px;
     color:var(--muted); text-decoration:none; transition:all .15s ease;
   }
   .nav-link:hover{ background:rgba(148,163,184,.08); color:var(--text); }
-  .nav-link.active{ background:rgba(99,102,241,.15); color:var(--text); border:1px solid rgba(99,102,241,.25); }
-  .badge{ font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
+  .nav-link.active{
+    background:color-mix(in srgb, var(--accent-500) 18%, transparent);
+    color:var(--text);
+    border:1px solid color-mix(in srgb, var(--accent-500) 42%, transparent);
+  }
+  .badge{
+    font-size:11px; padding:3px 8px; border-radius:999px;
+    border:1px solid var(--border); color:var(--muted); white-space:nowrap;
+  }
   .card{ background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow); }
-  .btn-primary{ background:var(--accent-600); color:white; border-radius:12px; }
-  .btn-outline{ border:1px solid var(--border); border-radius:12px; }
-  .input{ background:transparent; border:1px solid var(--border); border-radius:12px; }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    text-decoration:none; border:1px solid transparent; border-radius:var(--radius-sm);
+    transition:all .15s ease; cursor:pointer; line-height:1.2;
+  }
+  .btn:disabled{ opacity:.55; cursor:not-allowed; }
+  .btn-primary{ background:var(--accent-600); color:white; border-color:var(--accent-600); }
+  .btn-primary:hover{ filter:brightness(1.04); }
+  .btn-outline{ border-color:var(--border); color:var(--text); background:transparent; }
+  .btn-outline:hover{ background:rgba(148,163,184,.1); }
+  .btn-danger{ background:var(--danger-600); color:white; border-color:var(--danger-600); }
+  .input{
+    background:transparent; border:1px solid var(--border);
+    border-radius:var(--radius-sm); color:var(--text);
+  }
+  .label{ display:block; font-size:12px; margin-bottom:4px; color:var(--muted); }
   .muted{ color:var(--muted); }
-  .pill{ background:rgba(99,102,241,.12); color:var(--text); border:1px solid rgba(99,102,241,.2); padding:2px 8px; border-radius:999px; font-size:11px; }
+  .pill{
+    background:color-mix(in srgb, var(--accent-500) 15%, transparent);
+    color:var(--text); border:1px solid color-mix(in srgb, var(--accent-500) 24%, transparent);
+    padding:2px 8px; border-radius:999px; font-size:11px;
+  }
+  .alert{ border:1px solid var(--border); border-radius:12px; padding:12px; font-size:14px; }
+  .alert-info{ background:var(--info-bg); border-color:var(--info-border); }
+  .alert-warn{ background:var(--warn-bg); border-color:var(--warn-border); }
+  .alert-error{ background:var(--error-bg); border-color:var(--error-border); }
+  .table-shell{ border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+  .table-head{ border-bottom:1px solid var(--border); }
+  .table-row{ border-bottom:1px solid color-mix(in srgb, var(--border) 75%, transparent); }
+  .chat-fab{ background:var(--accent-600); box-shadow:var(--shadow-soft); color:white; }
+  .chat-drawer{ background:var(--bg-elev); border-color:var(--border); box-shadow:var(--shadow); }
+  .chat-section{ border-color:var(--border); }
+  .chat-messages{ height:calc(100vh - 230px); }
+  @media (max-width: 1120px){
+    .mobile-nav-btn{ display:inline-flex; }
+    .app-nav{
+      position:fixed; top:0; left:0; z-index:50; transform:translateX(-102%);
+      transition:transform .2s ease; height:100vh; box-shadow:var(--shadow-soft);
+    }
+    .app-nav.open{ transform:translateX(0); }
+    .app-topbar{
+      padding:14px 16px; position:sticky; top:0; z-index:20; backdrop-filter:blur(6px);
+    }
+    .app-content{ padding:16px; }
+  }
 </style>
 </head>
 <body>
 <div class="app-shell">
-  <aside class="app-nav">
+  <div id="appNavOverlay" class="app-overlay"></div>
+  <aside id="appNav" class="app-nav">
     <div class="flex items-center gap-2 mb-6">
-      <div class="h-10 w-10 rounded-2xl flex items-center justify-center" style="background:rgba(99,102,241,.2);">✦</div>
+      <div class="brand-mark">✦</div>
       <div>
         <div class="text-sm font-semibold">KUKANILEA</div>
         <div class="text-[11px] muted">Agent Orchestra</div>
@@ -1022,11 +1099,14 @@ HTML_BASE = r"""<!doctype html>
   </aside>
   <main class="app-main">
     <div class="app-topbar">
-      <div>
+      <div class="topbar-primary">
+        <button id="navToggle" class="btn btn-outline mobile-nav-btn px-2 py-2" type="button" aria-label="Navigation öffnen">☰</button>
+        <div>
         <div class="text-lg font-semibold">Workspace</div>
         <div class="text-xs muted">Upload → Review → Ablage</div>
+        </div>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="topbar-actions">
         <span class="badge">User: {{user}}</span>
         <span class="badge">Role: {{roles}}</span>
         <span class="badge">Tenant: {{tenant}}</span>
@@ -1034,19 +1114,19 @@ HTML_BASE = r"""<!doctype html>
         <span class="badge">Live: <span id="healthLive">...</span></span>
         <span class="badge">Ready: <span id="healthReady">...</span></span>
         {% if user and user != '-' %}
-        <a class="px-3 py-2 text-sm btn-outline" href="/logout">Logout</a>
+        <a class="btn btn-outline px-3 py-2 text-sm" href="/logout">Logout</a>
         {% endif %}
-        <button id="accentBtn" class="px-3 py-2 text-sm btn-outline">Accent: <span id="accentLabel"></span></button>
-        <button id="themeBtn" class="px-3 py-2 text-sm btn-outline">Theme: <span id="themeLabel"></span></button>
+        <button id="accentBtn" class="btn btn-outline px-3 py-2 text-sm">Accent: <span id="accentLabel"></span></button>
+        <button id="themeBtn" class="btn btn-outline px-3 py-2 text-sm">Theme: <span id="themeLabel"></span></button>
       </div>
     </div>
     <div class="app-content">
       {% if read_only %}
-      <div class="mb-4 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm">
+      <div class="mb-4 alert alert-error">
         Read-only mode aktiv ({{license_reason}}). Schreibaktionen sind deaktiviert.
       </div>
       {% elif trial_active and trial_days_left <= 3 %}
-      <div class="mb-4 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm">
+      <div class="mb-4 alert alert-warn">
         Trial aktiv: noch {{trial_days_left}} Tage.
       </div>
       {% endif %}
@@ -1057,14 +1137,14 @@ HTML_BASE = r"""<!doctype html>
 
 <!-- Floating Chat Widget -->
 <div id="chatWidgetBtn" title="Chat" class="fixed bottom-6 right-6 z-50 cursor-pointer select-none">
-  <div class="relative h-12 w-12 rounded-full flex items-center justify-center" style="background:var(--accent-600); box-shadow:var(--shadow); color:white;">
+  <div class="chat-fab relative h-12 w-12 rounded-full flex items-center justify-center">
     💬
     <span id="chatUnread" class="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-500 hidden"></span>
   </div>
 </div>
 
-<div id="chatDrawer" class="fixed inset-y-0 right-0 z-50 hidden w-[420px] max-w-[92vw] border-l" style="background:var(--bg-elev); border-color:var(--border); box-shadow:var(--shadow);">
-  <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:var(--border);">
+<div id="chatDrawer" class="chat-drawer fixed inset-y-0 right-0 z-50 hidden w-[420px] max-w-[92vw] border-l">
+  <div class="chat-section flex items-center justify-between px-4 py-3 border-b">
     <div>
       <div class="text-sm font-semibold">KUKANILEA Assistant</div>
       <div class="text-xs muted">Tenant: {{tenant}}</div>
@@ -1074,7 +1154,7 @@ HTML_BASE = r"""<!doctype html>
       <button id="chatWidgetClose" class="rounded-lg px-2 py-1 text-sm btn-outline">✕</button>
     </div>
   </div>
-  <div class="px-4 py-3 border-b" style="border-color:var(--border);">
+  <div class="chat-section px-4 py-3 border-b">
     <div class="flex flex-wrap gap-2">
       <button class="chat-quick pill" data-q="suche rechnung">Suche Rechnung</button>
       <button class="chat-quick pill" data-q="suche angebot">Suche Angebot</button>
@@ -1082,8 +1162,8 @@ HTML_BASE = r"""<!doctype html>
       <button class="chat-quick pill" data-q="hilfe">Hilfe</button>
     </div>
   </div>
-  <div id="chatWidgetMsgs" class="flex-1 overflow-auto px-4 py-4 space-y-3 text-sm" style="height: calc(100vh - 230px);"></div>
-  <div class="border-t px-4 py-3 space-y-2" style="border-color:var(--border);">
+  <div id="chatWidgetMsgs" class="chat-messages flex-1 overflow-auto px-4 py-4 space-y-3 text-sm"></div>
+  <div class="chat-section border-t px-4 py-3 space-y-2">
     <div class="flex gap-2">
       <input id="chatWidgetKdnr" class="w-24 rounded-xl input px-3 py-2 text-sm" placeholder="KDNR" />
       <input id="chatWidgetInput" class="flex-1 rounded-xl input px-3 py-2 text-sm" placeholder="Frag etwas…" />
@@ -1123,6 +1203,20 @@ HTML_BASE = r"""<!doctype html>
     const i = order.indexOf(curAccent());
     applyAccent(order[(i+1) % order.length]);
   });
+
+  const nav = document.getElementById("appNav");
+  const navToggle = document.getElementById("navToggle");
+  const navOverlay = document.getElementById("appNavOverlay");
+  function closeNav(){
+    nav?.classList.remove("open");
+    navOverlay?.classList.remove("open");
+  }
+  function toggleNav(){
+    nav?.classList.toggle("open");
+    navOverlay?.classList.toggle("open");
+  }
+  navToggle?.addEventListener("click", toggleNav);
+  navOverlay?.addEventListener("click", closeNav);
 })();
 </script>
 

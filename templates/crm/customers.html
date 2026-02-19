@@ -1,7 +1,9 @@
+{% from 'components/button.html' import button_link, button_submit %}
+
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <h1 class="text-xl font-semibold">CRM · Kunden</h1>
-    <a class="rounded-xl px-3 py-2 text-sm btn-outline" href="/crm/deals">Pipeline</a>
+    {{ button_link('Pipeline', '/crm/deals', kind='outline') }}
   </div>
 
   {% if read_only %}{% include 'crm/partials/read_only_banner.html' %}{% endif %}
@@ -16,14 +18,14 @@
       </select>
       <input type="hidden" name="page" value="{{ page }}">
       <input type="hidden" name="page_size" value="{{ page_size }}">
-      <button class="btn-outline px-3 py-2 text-sm" type="submit">Aktualisieren</button>
+      {{ button_submit('Aktualisieren', kind='outline') }}
     </form>
 
     <form id="createCustomerForm" class="grid gap-2 md:grid-cols-4">
       <input class="input px-3 py-2 text-sm" type="text" name="name" placeholder="Firmenname" {% if read_only %}disabled{% endif %} required>
       <input class="input px-3 py-2 text-sm" type="text" name="vat_id" placeholder="USt-ID" {% if read_only %}disabled{% endif %}>
       <input class="input px-3 py-2 text-sm md:col-span-2" type="text" name="notes" placeholder="Notizen" {% if read_only %}disabled{% endif %}>
-      <button class="btn-primary px-3 py-2 text-sm md:col-span-4" type="submit" {% if read_only %}disabled{% endif %}>Neuen Kunden anlegen</button>
+      {{ button_submit('Neuen Kunden anlegen', kind='primary', extra='md:col-span-4', disabled=read_only) }}
     </form>
   </div>
 
