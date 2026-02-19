@@ -55,3 +55,7 @@ build/
 *.spec
 
 triage_report.json
+
+# keep tracked release scripts under scripts/build
+!scripts/build/
+!scripts/build/*.sh

@@ -32,6 +32,16 @@ ollama serve
 ollama pull llama3.1:8b
 ```
 
+## Desktop packaging (macOS)
+Source-first remains the default. For native macOS artifacts:
+
+```bash
+scripts/build/bundle_macos.sh
+scripts/build/dmg_macos.sh
+```
+
+See `/docs/packaging/BUILD.md` and `/docs/packaging/SIGNING.md`.
+
 ## Quality gates
 ```bash
 python -m compileall -q .

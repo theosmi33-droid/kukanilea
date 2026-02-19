@@ -1,6 +1,6 @@
 # Configuration
 
-Stand: 2026-02-18
+Stand: 2026-02-19
 
 ## Postfach / E-Mail Secrets
 
@@ -94,6 +94,42 @@ Regeln:
 - Typ: Integer (Sekunden)
 - Standard: `300`
 - Zweck: Request-Timeout fuer lokale LLM-Generierung
+
+## Update-Checker (notify-only)
+
+### `KUKANILEA_UPDATE_CHECK_ENABLED`
+- Typ: Bool (`0|1`)
+- Standard: `0` (deaktiviert)
+- Zweck: Aktiviert die Hinweis-Pruefung auf neuere Releases im Settings-Bereich
+
+### `KUKANILEA_UPDATE_CHECK_URL`
+- Typ: String (URL)
+- Standard: `https://api.github.com/repos/theosmi33-droid/kukanilea/releases/latest`
+- Zweck: Endpoint fuer Release-Metadaten
+
+### `KUKANILEA_UPDATE_CHECK_TIMEOUT_SECONDS`
+- Typ: Integer
+- Standard: `5`
+- Zweck: Timeout fuer Update-Check-Requests
+
+## Lizenzserver (separater Service)
+
+Diese Variablen gelten nur fuer den separaten Server unter `license_server/`.
+
+### `LICENSE_SERVER_DB`
+- Typ: Pfad
+- Standard: `license_server/license_server.db`
+- Zweck: SQLite-Datei fuer Lizenzdaten
+
+### `LICENSE_SERVER_PORT`
+- Typ: Integer
+- Standard: `5061`
+- Zweck: HTTP-Port des Lizenzservers
+
+### `LICENSE_SERVER_API_TOKEN`
+- Typ: String
+- Standard: leer (`""`)
+- Zweck: Optionaler Schutz fuer Admin-Endpoint `/api/v1/licenses/upsert`
 
 ## Pilot / Demo Seed
 

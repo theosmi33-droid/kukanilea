@@ -78,3 +78,17 @@ class Config:
     OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     OLLAMA_MODEL = _env("OLLAMA_MODEL", "llama3.1:8b")
     OLLAMA_TIMEOUT = int(_env("OLLAMA_TIMEOUT", "300"))
+    UPDATE_CHECK_ENABLED = _env("KUKANILEA_UPDATE_CHECK_ENABLED", "0") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+    )
+    UPDATE_CHECK_URL = _env(
+        "KUKANILEA_UPDATE_CHECK_URL",
+        "https://api.github.com/repos/theosmi33-droid/kukanilea/releases/latest",
+    )
+    UPDATE_CHECK_TIMEOUT_SECONDS = int(
+        _env("KUKANILEA_UPDATE_CHECK_TIMEOUT_SECONDS", "5")
+    )

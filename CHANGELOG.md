@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Phase 5 packaging scripts under `scripts/build/` for obfuscation, macOS bundle and DMG creation.
+- Separate `license_server/` prototype with `/api/v1/validate` and admin upsert endpoint.
+- Notify-only update checker (`app/update_checker.py`) with optional Settings integration.
+- Packaging and license-server documentation (`docs/packaging/*`, `LICENSE_SERVER.md`).
+
 ## [v1.0.0-beta.1] - 2026-02-19
 
 ### Added
