@@ -57,6 +57,6 @@ def e2e_server(e2e_app):
         thread.join(timeout=5)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def base_url(e2e_server: str) -> str:
     return e2e_server
