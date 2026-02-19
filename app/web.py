@@ -65,6 +65,9 @@ from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.retrieval_fts import upsert_external_fact
 from app.ai.knowledge import store_entity
+from app.ai.memory import add_feedback as ai_add_feedback
+from app.ai.ollama_client import ollama_is_available, ollama_list_models
+from app.ai.orchestrator import process_message as ai_process_message
 from app.ai.predictions import daily_report, predict_budget
 from app.automation import (
     automation_rule_create,
@@ -1895,7 +1898,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   <div class="flex items-center justify-between gap-2">
     <div>
       <div class="text-lg font-semibold">Local Chat</div>
-      <div class="muted text-sm">Tool-fähiger Chat mit Agent-Orchestrator (lokal, deterministisch).</div>
+      <div class="muted text-sm">Tool-faehiger Chat mit lokalem Ollama-Orchestrator.</div>
     </div>
   </div>
   <div class="mt-4 flex flex-col md:flex-row gap-2">
@@ -1982,7 +1985,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     q.value = "";
     send.disabled = true;
     try{
-      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
+      const res = await fetch("/api/ai/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
       const j = await res.json();
       if(!res.ok){
         const errMsg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ("HTTP " + res.status));
@@ -2017,6 +2020,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     quick: document.querySelectorAll('.chat-quick'),
   };
   let _cwLastBody = null;
+  let _cwAiAvailable = true;
   function _cwAppend(role, text, actions, results, suggestions){
     if(!_cw.msgs) return;
     const wrap = document.createElement('div');
@@ -2119,7 +2123,37 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
     }catch(e){}
   }
+  async function _cwRefreshAiStatus(){
+    try{
+      const r = await fetch('/api/ai/status', {method:'GET', headers:{'Accept':'application/json'}});
+      let j = {};
+      try{ j = await r.json(); }catch(e){}
+      _cwAiAvailable = !!(r.ok && j && j.available);
+      if(_cw.status){
+        if(_cwAiAvailable){
+          _cw.status.textContent = 'Bereit';
+        }else{
+          _cw.status.textContent = 'KI offline';
+        }
+      }
+      if(_cw.send) _cw.send.disabled = !_cwAiAvailable;
+      if(_cw.input) _cw.input.disabled = !_cwAiAvailable;
+      if(!_cwAiAvailable && _cw.msgs && !_cw.msgs.dataset.aiNotice){
+        _cw.msgs.dataset.aiNotice = '1';
+        _cwAppend('assistant', 'KI-Assistent ist derzeit nicht verfuegbar. Bitte starte lokal `ollama serve`.');
+      }
+    }catch(e){
+      _cwAiAvailable = false;
+      if(_cw.status) _cw.status.textContent = 'KI offline';
+      if(_cw.send) _cw.send.disabled = true;
+      if(_cw.input) _cw.input.disabled = true;
+    }
+  }
   async function _cwSend(){
+    if(!_cwAiAvailable){
+      _cwAppend('assistant', 'KI-Assistent ist offline. Starte `ollama serve` und versuche es erneut.');
+      return;
+    }
     const q = (_cw.input && _cw.input.value ? _cw.input.value.trim() : '');
     if(!q) return;
     _cwAppend('you', q);
@@ -2130,7 +2164,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     try{
       const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
       _cwLastBody = body;
-      const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const r = await fetch('/api/ai/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
       let j = {};
       try{ j = await r.json(); }catch(e){}
       if(!r.ok){
@@ -2162,6 +2196,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       _cw.drawer.classList.toggle('hidden');
       if(_cw.unread) _cw.unread.classList.add('hidden');
       _cwLoad();
+      _cwRefreshAiStatus();
       if(!_cw.drawer.classList.contains('hidden') && _cw.input) _cw.input.focus();
     });
   }
@@ -2181,6 +2216,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       _cwSend();
     });
   });
+  _cwRefreshAiStatus();
   // ---- /Floating Chat Widget ----
 })();
 </script>"""
@@ -2502,6 +2538,108 @@ _DEV_STATUS = {"index": None, "scan": None, "llm": None, "db": None}
 
 def _mock_generate(prompt: str) -> str:
     return f"[mocked] {prompt.strip()[:200]}"
+
+
+@bp.get("/api/ai/status")
+@login_required
+def api_ai_status():
+    base_url = str(current_app.config.get("OLLAMA_BASE_URL") or "").strip() or None
+    available = bool(ollama_is_available(base_url=base_url, timeout_s=5))
+    models: list[str] = []
+    if available:
+        try:
+            models = ollama_list_models(base_url=base_url, timeout_s=5)
+        except Exception:
+            models = []
+    return jsonify(
+        {
+            "ok": True,
+            "available": available,
+            "models": models,
+            "model_default": str(current_app.config.get("OLLAMA_MODEL") or ""),
+        }
+    )
+
+
+@bp.route("/api/ai/chat", methods=["POST"])
+@login_required
+def api_ai_chat():
+    payload = request.get_json(silent=True) or {}
+    msg = (
+        (payload.get("msg") if isinstance(payload, dict) else None)
+        or (payload.get("q") if isinstance(payload, dict) else None)
+        or request.form.get("msg")
+        or request.form.get("q")
+        or request.form.get("message")
+        or ""
+    ).strip()
+    if not msg:
+        return json_error("empty_query", "Leer.", status=400)
+    if len(msg) > 4000:
+        return json_error(
+            "too_long", "Nachricht ist zu lang (max. 4000 Zeichen).", status=400
+        )
+
+    try:
+        result = ai_process_message(
+            tenant_id=current_tenant(),
+            user_id=str(current_user() or "system"),
+            user_message=msg,
+            read_only=bool(current_app.config.get("READ_ONLY", False)),
+        )
+    except Exception as exc:
+        return json_error("ai_error", f"KI-Fehler: {exc}", status=500)
+
+    tool_used = [str(v) for v in (result.get("tool_used") or []) if str(v).strip()]
+    actions = [{"type": "tool_call", "name": name} for name in tool_used[:8]]
+    response_text = str(result.get("response") or "")
+    out = {
+        "ok": True,
+        "status": str(result.get("status") or "error"),
+        "conversation_id": result.get("conversation_id"),
+        "tool_used": tool_used,
+        "response": response_text,
+        "message": response_text,
+        "actions": actions,
+        "results": [],
+        "suggestions": [],
+    }
+    if request.headers.get("HX-Request"):
+        return render_template_string(
+            "<div class='rounded-xl border border-slate-700 p-2 text-sm'>{{text}}</div>",
+            text=response_text,
+        )
+    return jsonify(out)
+
+
+@bp.route("/api/ai/feedback", methods=["POST"])
+@login_required
+def api_ai_feedback():
+    payload = request.get_json(silent=True) or {}
+    conversation_id = (
+        (payload.get("conversation_id") if isinstance(payload, dict) else None)
+        or request.form.get("conversation_id")
+        or ""
+    ).strip()
+    rating = (
+        (payload.get("rating") if isinstance(payload, dict) else None)
+        or request.form.get("rating")
+        or ""
+    ).strip()
+    if not conversation_id or rating not in {"positive", "negative"}:
+        return json_error("validation_error", "conversation_id/rating ungueltig.", 400)
+    try:
+        feedback_id = ai_add_feedback(
+            tenant_id=current_tenant(),
+            conversation_id=conversation_id,
+            rating=rating,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            return json_error("not_found", "Konversation nicht gefunden.", status=404)
+        return json_error("validation_error", "Feedback ungueltig.", status=400)
+    return jsonify({"ok": True, "feedback_id": feedback_id})
 
 
 @bp.route("/api/chat", methods=["POST"])
