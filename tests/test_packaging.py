@@ -10,6 +10,9 @@ BUILD_SCRIPTS = [
     Path("scripts/build/bundle_macos.sh"),
     Path("scripts/build/dmg_macos.sh"),
     Path("scripts/build/sign_macos.sh"),
+    Path("scripts/build/obfuscate.ps1"),
+    Path("scripts/build/bundle_windows.ps1"),
+    Path("scripts/build/installer_windows.ps1"),
 ]
 
 
@@ -22,6 +25,11 @@ def test_packaging_scripts_exist_and_executable() -> None:
 def test_packaging_docs_exist() -> None:
     assert Path("docs/packaging/BUILD.md").exists()
     assert Path("docs/packaging/SIGNING.md").exists()
+
+
+def test_packaging_ci_workflows_exist() -> None:
+    assert Path(".github/workflows/build-macos.yml").exists()
+    assert Path(".github/workflows/build-windows.yml").exists()
 
 
 @pytest.mark.packaging
