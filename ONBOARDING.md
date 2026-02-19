@@ -19,6 +19,8 @@ Siehe `TEAM_ROLES.md`.
 - Systemhandbuch (Snapshot, Architektur und Betriebsmodell): `docs/SYSTEMHANDBUCH_v1.md`
 - Product-Execution-Plan v2: `docs/PRODUCT_EXECUTION_PLAN_v2.md`
 - Marktforschungs-Workspace: `docs/market_research/README.md`
+- Pilotbetrieb: `docs/runbooks/pilot_v1.md`
+- Pilot-Feedback-Prozess: `docs/pilot_feedback.md`
 
 ## Erwartungen an neue Kolleg:innen
 Du bist aktiv in vier Rollen:
@@ -65,3 +67,13 @@ Vorlage: `WEEKLY_TEMPLATE.md`
 - Pending Actions pruefen/bestaetigen: `/automation/pending`
 - Details und Ausfuehrungslogs: `/automation/<rule_id>` und `/automation/<rule_id>/logs`
 - Technische Details, Sicherheitsgrenzen und Beispiel-JSON: `docs/AUTOMATION_BUILDER.md`
+
+## Pilot Quickstart
+```bash
+python scripts/seed_demo_data.py --tenant-name "DEMO AG"
+```
+
+Optionaler Reset der Demo-Daten:
+```bash
+python scripts/seed_demo_data.py --tenant-name "DEMO AG" --force
+```

@@ -73,6 +73,7 @@ def test_write_support_bundle_creates_expected_files_and_zip(
     assert (out_dir / "ocr_sandbox_e2e.json").exists()
     assert (out_dir / "env_summary.json").exists()
     assert (out_dir / "schema_snapshot.json").exists()
+    assert (out_dir / "pilot_metrics.json").exists()
     zip_path = out_dir / "support_bundle.zip"
     assert zip_path.exists()
     with zipfile.ZipFile(zip_path) as zf:
