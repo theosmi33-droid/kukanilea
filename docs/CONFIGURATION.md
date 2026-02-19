@@ -51,6 +51,7 @@ Regeln:
 - Zweck: Optionaler Online-Validierungsendpoint fuer signierte Lizenzen
 - Standard: leer (`""`) => rein lokale Lizenzpruefung
 - Alias: `LICENSE_SERVER_URL` (wird genutzt, falls `KUKANILEA_LICENSE_VALIDATE_URL` leer ist)
+- Test/CI: fuer deterministische Tests lokale Stub-URL nutzen (z. B. `http://127.0.0.1:11436/api/v1/validate`)
 
 ### `KUKANILEA_LICENSE_VALIDATE_TIMEOUT_SECONDS`
 - Typ: Integer

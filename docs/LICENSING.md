@@ -22,11 +22,18 @@ Hinweis:
 - Schreiboperationen (`POST/PUT/PATCH/DELETE`) werden bei `READ_ONLY` global mit `403` geblockt.
 - Leseoperationen bleiben verfuegbar.
 - UI zeigt den aktuellen Lizenzstatus und den Grund (`LICENSE_REASON`).
+- Aktivierung ueber `/license` ist auch im Read-only-Modus erlaubt.
 
 ## Online-Validierung / Grace
 - Wenn `KUKANILEA_LICENSE_VALIDATE_URL` gesetzt ist, validiert die App den signierten Payload periodisch.
 - Ist der Endpoint voruebergehend nicht erreichbar, wird das Grace-Fenster aus dem lokalen Cache genutzt.
 - Nach Ablauf von Grace wird auf `READ_ONLY` gewechselt.
+
+## Security & Privacy
+- Hardware-Bindung nutzt einen gehashten Identifier aus `MAC + Hostname`.
+- Dieser Wert ist **pseudonymisiert** (Hash), aber **nicht anonym**.
+- Der Identifier dient nur zur Lizenzpruefung/Wiedererkennung und sollte nicht breit geloggt oder exportiert werden.
+- Bei Support/Bugreports keine Lizenzdateien, Keys oder Hardware-Identifier posten.
 
 ## Relevante Umgebungsvariablen
 - `KUKANILEA_LICENSE_PATH`
