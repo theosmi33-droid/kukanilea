@@ -35,6 +35,19 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _table_exists(con: sqlite3.Connection, table_name: str) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (table_name,),
+    ).fetchone()
+    return bool(row)
+
+
+def _table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(r[1]) for r in rows}
+
+
 def _sanitize_text(raw: str) -> str:
     text = str(raw or "").replace("\x00", "").replace("\r", "").strip()
     for marker in TEST_MARKERS:
@@ -133,6 +146,116 @@ def _schema_snapshot(core_db_path: Path, tables: tuple[str, ...]) -> dict[str, A
     return snapshot
 
 
+def collect_pilot_metrics(con: sqlite3.Connection, tenant_id: str) -> dict[str, Any]:
+    tenant = str(tenant_id or "").strip() or "default"
+    metrics: dict[str, Any] = {
+        "tenant_id": tenant,
+        "logins_last_14d": 0,
+        "documents_total": 0,
+        "tasks_total": 0,
+        "automation_executions": 0,
+        "active_rules": 0,
+        "last_activity": None,
+    }
+
+    if _table_exists(con, "events") and {
+        "event_type",
+        "payload_json",
+        "ts",
+    }.issubset(_table_columns(con, "events")):
+        row = con.execute(
+            """
+            SELECT COUNT(1) AS n
+            FROM events
+            WHERE event_type='user_login'
+              AND payload_json LIKE ?
+              AND ts >= datetime('now', '-14 days')
+            """,
+            (f'%"tenant_id":"{tenant}"%',),
+        ).fetchone()
+        metrics["logins_last_14d"] = int(row["n"] if row and row["n"] else 0)
+
+        row = con.execute(
+            """
+            SELECT MAX(ts) AS ts
+            FROM events
+            WHERE payload_json LIKE ?
+            """,
+            (f'%"tenant_id":"{tenant}"%',),
+        ).fetchone()
+        metrics["last_activity"] = str(row["ts"]) if row and row["ts"] else None
+
+    if _table_exists(con, "source_files") and "tenant_id" in _table_columns(
+        con, "source_files"
+    ):
+        row = con.execute(
+            "SELECT COUNT(1) AS n FROM source_files WHERE tenant_id=?",
+            (tenant,),
+        ).fetchone()
+        metrics["documents_total"] = int(row["n"] if row and row["n"] else 0)
+
+    if _table_exists(con, "tasks") and "tenant" in _table_columns(con, "tasks"):
+        row = con.execute(
+            "SELECT COUNT(1) AS n FROM tasks WHERE LOWER(COALESCE(tenant,''))=LOWER(?)",
+            (tenant,),
+        ).fetchone()
+        metrics["tasks_total"] = int(row["n"] if row and row["n"] else 0)
+
+    if _table_exists(con, "automation_builder_execution_log") and {
+        "tenant_id",
+        "status",
+    }.issubset(_table_columns(con, "automation_builder_execution_log")):
+        row = con.execute(
+            """
+            SELECT COUNT(1) AS n
+            FROM automation_builder_execution_log
+            WHERE tenant_id=? AND status='ok'
+            """,
+            (tenant,),
+        ).fetchone()
+        metrics["automation_executions"] = int(row["n"] if row and row["n"] else 0)
+    elif _table_exists(con, "automation_runs") and {"tenant_id", "status"}.issubset(
+        _table_columns(con, "automation_runs")
+    ):
+        row = con.execute(
+            """
+            SELECT COUNT(1) AS n
+            FROM automation_runs
+            WHERE tenant_id=? AND status='done'
+            """,
+            (tenant,),
+        ).fetchone()
+        metrics["automation_executions"] = int(row["n"] if row and row["n"] else 0)
+
+    if _table_exists(con, "automation_builder_rules") and {
+        "tenant_id",
+        "is_enabled",
+    }.issubset(_table_columns(con, "automation_builder_rules")):
+        row = con.execute(
+            """
+            SELECT COUNT(1) AS n
+            FROM automation_builder_rules
+            WHERE tenant_id=? AND is_enabled=1
+            """,
+            (tenant,),
+        ).fetchone()
+        metrics["active_rules"] = int(row["n"] if row and row["n"] else 0)
+    elif _table_exists(con, "automation_rules") and {"tenant_id", "enabled"}.issubset(
+        _table_columns(con, "automation_rules")
+    ):
+        row = con.execute(
+            """
+            SELECT COUNT(1) AS n
+            FROM automation_rules
+            WHERE tenant_id=? AND enabled=1
+            """,
+            (tenant,),
+        ).fetchone()
+        metrics["active_rules"] = int(row["n"] if row and row["n"] else 0)
+
+    return metrics
+
+
 def _env_summary() -> dict[str, Any]:
     app_version = None
     try:
@@ -180,12 +303,25 @@ def write_support_bundle(
         _schema_snapshot(core_db_path, DEFAULT_SCHEMA_TABLES)
     )
     extra_payload = _sanitize_obj(dict(extra or {}))
+    pilot_metrics: dict[str, Any] = {}
+
+    try:
+        con = sqlite3.connect(str(core_db_path))
+        con.row_factory = sqlite3.Row
+        try:
+            pilot_metrics = collect_pilot_metrics(con, tenant)
+        finally:
+            con.close()
+    except Exception:
+        pilot_metrics = {}
 
     file_payloads: dict[str, Any] = {
         "ocr_doctor.json": sanitized_doctor,
         "env_summary.json": env_summary,
         "schema_snapshot.json": schema_snapshot,
     }
+    if pilot_metrics:
+        file_payloads["pilot_metrics.json"] = _sanitize_obj(pilot_metrics)
     if sanitized_e2e is not None:
         file_payloads["ocr_sandbox_e2e.json"] = sanitized_e2e
     if extra_payload:
