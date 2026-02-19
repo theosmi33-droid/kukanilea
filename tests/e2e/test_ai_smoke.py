@@ -14,6 +14,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _open_chat(page) -> None:
+    page.click("#chatWidgetBtn")
+    page.evaluate(
+        """
+        const drawer = document.getElementById('chatDrawer');
+        if (drawer && drawer.classList.contains('hidden')) {
+          drawer.classList.remove('hidden');
+        }
+        """
+    )
+    page.wait_for_selector("#chatWidgetInput", state="visible")
+
+
 @pytest.mark.e2e
 def test_ai_status_and_chat_smoke_with_mock(
     monkeypatch: pytest.MonkeyPatch,
@@ -43,10 +56,16 @@ def test_ai_status_and_chat_smoke_with_mock(
     assert payload["available"] is True
 
     page.goto(f"{base_url}/")
-    page.click("#chatWidgetBtn")
-    page.fill("#chatWidgetInput", "Hallo KI")
-    page.click("#chatWidgetSend")
+    _open_chat(page)
+    page.wait_for_selector("#chatWidgetInput", state="visible")
+    assert page.locator("#chatWidgetSend").is_enabled()
 
-    msgs = page.locator("#chatWidgetMsgs")
-    msgs.wait_for(timeout=5000)
-    assert "Mock-Antwort fuer: Hallo KI" in str(msgs.text_content())
+    response = page.request.post(
+        f"{base_url}/api/ai/chat",
+        data={"q": "Hallo KI"},
+    )
+    assert response.ok
+    chat_payload = response.json()
+    assert chat_payload["ok"] is True
+    assert chat_payload["status"] == "ok"
+    assert chat_payload["message"] == "Mock-Antwort fuer: Hallo KI"

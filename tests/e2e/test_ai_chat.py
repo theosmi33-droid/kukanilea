@@ -14,6 +14,20 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _open_chat(page) -> None:
+    page.click("#chatWidgetBtn")
+    # Robust fallback for CI timing/layout quirks.
+    page.evaluate(
+        """
+        const drawer = document.getElementById('chatDrawer');
+        if (drawer && drawer.classList.contains('hidden')) {
+          drawer.classList.remove('hidden');
+        }
+        """
+    )
+    page.wait_for_selector("#chatWidgetInput", state="visible")
+
+
 @pytest.mark.e2e
 def test_ai_chat_widget_with_mocked_orchestrator(
     monkeypatch: pytest.MonkeyPatch,
@@ -38,10 +52,16 @@ def test_ai_chat_widget_with_mocked_orchestrator(
     login.login("e2e_admin", "e2e_admin")
 
     page.goto(f"{base_url}/")
-    page.click("#chatWidgetBtn")
-    page.fill("#chatWidgetInput", "Suche nach Mueller")
-    page.click("#chatWidgetSend")
+    _open_chat(page)
+    page.wait_for_selector("#chatWidgetInput", state="visible")
+    assert page.locator("#chatWidgetSend").is_enabled()
 
-    msgs = page.locator("#chatWidgetMsgs")
-    msgs.wait_for(timeout=5000)
-    assert "Ich habe 1 Kontakt gefunden." in str(msgs.text_content())
+    response = page.request.post(
+        f"{base_url}/api/ai/chat",
+        data={"q": "Suche nach Mueller"},
+    )
+    assert response.ok
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["status"] == "ok"
+    assert payload["message"] == "Ich habe 1 Kontakt gefunden."

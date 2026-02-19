@@ -23,4 +23,4 @@ def test_tasks_kanban_page_loads(page, base_url: str) -> None:
 
     nav.open("/tasks")
     nav.expect_text("Tasks Kanban")
-    assert page.locator("text=Todo").is_visible()
+    assert page.locator("div.text-sm.font-semibold", has_text="Todo").first.is_visible()

@@ -517,6 +517,10 @@ def main(argv: list[str] | None = None) -> int:
                 "tests/test_benchmarks.py",
             ]
         )
+        # Keep CI smoke/triage deterministic: browser-backed E2E runs in a separate
+        # dedicated workflow that installs Playwright browsers.
+        if args.ci and os.environ.get("TRIAGE_INCLUDE_E2E", "") != "1":
+            pytest_cmd.extend(["-m", "not e2e"])
         if not _run_step_command(
             steps,
             name="pytest",
