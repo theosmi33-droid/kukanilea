@@ -1,0 +1,59 @@
+name: Beta Bug Report
+description: Fehlerbericht fuer die Beta-Phase
+title: "[Beta] "
+labels:
+  - beta
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bitte keine personenbezogenen Daten (PII), Keys oder Zugangsdaten posten.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v1.0.0-beta.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Betriebssystem
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zum Reproduzieren
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Tatsächliches Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevante Logs / Support Bundle
+      description: Keine PII posten.
+  - type: checkboxes
+    id: pii_check
+    attributes:
+      label: Datenschutz
+      options:
+        - label: Ich habe keine PII/Secrets in diesem Report enthalten.
+          required: true
