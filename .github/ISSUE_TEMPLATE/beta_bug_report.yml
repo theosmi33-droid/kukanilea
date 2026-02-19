@@ -26,6 +26,28 @@ body:
         - Windows
     validations:
       required: true
+  - type: dropdown
+    id: ollama
+    attributes:
+      label: Ollama / KI aktiv?
+      options:
+        - Ja
+        - Nein
+        - Unklar
+    validations:
+      required: true
+  - type: dropdown
+    id: license_status
+    attributes:
+      label: Lizenzstatus
+      options:
+        - active
+        - grace
+        - expired
+        - invalid
+        - unknown
+    validations:
+      required: true
   - type: textarea
     id: steps
     attributes:
