@@ -39,3 +39,9 @@ In der App:
 - Keine PII-Inhalte im Eventlog (`ai_conversation` enthält nur IDs/Counts).
 - Tool-Use ist allowlisted (`search_contacts`, `search_documents`, `create_task`).
 - Tenant-Isolation bleibt in allen Tool-Queries aktiv.
+
+## Testmodus fuer CI / E2E
+- Browser-E2E Tests nutzen keine echte Ollama-Instanz.
+- Die KI-Schicht wird in `tests/e2e/test_ai_chat.py` und
+  `tests/e2e/test_ai_smoke.py` gemockt.
+- Damit bleiben Tests stabil und reproduzierbar ohne lokale Modell-Laufzeit.

@@ -71,6 +71,23 @@ Regeln:
 - Standard: `~/Library/Application Support/KUKANILEA/license_cache.json`
 - Zweck: Lokaler Cache fuer letzte erfolgreiche Validierung/Grace-Status
 
+## Lokale KI (Ollama)
+
+### `OLLAMA_BASE_URL`
+- Typ: String (URL)
+- Standard: `http://127.0.0.1:11434`
+- Zweck: Basis-URL fuer lokalen Ollama-Dienst
+
+### `OLLAMA_MODEL`
+- Typ: String
+- Standard: `llama3.1:8b`
+- Zweck: Standardmodell fuer AI-Chat und Orchestrator
+
+### `OLLAMA_TIMEOUT`
+- Typ: Integer (Sekunden)
+- Standard: `300`
+- Zweck: Request-Timeout fuer lokale LLM-Generierung
+
 ## Pilot / Demo Seed
 
 ### `KUKANILEA_ANONYMIZATION_KEY`

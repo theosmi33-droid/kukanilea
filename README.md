@@ -1,62 +1,44 @@
-# KUKANILEA (macOS, local-first)
+# KUKANILEA (local-first business OS)
 
-Referenzen:
-- Onboarding: `ONBOARDING.md`
-- Systemhandbuch: `docs/SYSTEMHANDBUCH_v1.md`
-- Product Plan v2: `docs/PRODUCT_EXECUTION_PLAN_v2.md`
-- Marktforschung: `docs/market_research/README.md`
-- Weekly Review: `WEEKLY_TEMPLATE.md`
-- Glossar: `GLOSSARY.md`
-- Teamrollen: `TEAM_ROLES.md`
-- Verfassung: `docs/CONSTITUTION.md`
-- Konfiguration: `docs/CONFIGURATION.md`
-- TEXT-ID Migration: `docs/runbooks/text_id_migration_plan.md`
+KUKANILEA is a local, tenant-aware operations platform for CRM, tasks/kanban,
+documents/knowledge, workflows, and local AI assistance.
 
-## End-user install (DMG)
-1. Open `KUKANILEA.dmg`.
-2. Drag `KUKANILEA.app` to `Applications`.
-3. Start the app and open [http://127.0.0.1:5051](http://127.0.0.1:5051).
-
-KUKANILEA runs local-only and binds to `127.0.0.1`.
-
-## Data location (macOS)
-All writable data is stored under:
-`~/Library/Application Support/KUKANILEA/`
-
-Files include:
-- `auth.sqlite3`
-- `core.sqlite3`
-- `license.json`
-- `trial.json`
-- `logs/`
-
-## Licensing and trial
-- No online license validation.
-- If `license.json` is missing, a 14-day trial starts on first run (`trial.json`).
-- If trial expires, license expires, or device binding mismatches, app enters read-only mode.
-- Read-only mode blocks all `POST/PUT/PATCH/DELETE` requests server-side (HTTP 403).
-
-### Apply a license
-Place a signed `license.json` into:
-`~/Library/Application Support/KUKANILEA/license.json`
-
-## Run (production entrypoint)
-```bash
-python kukanilea_app.py
-```
-
-## Build artifacts
-```bash
-bash scripts/release_zip.sh
-bash scripts/build_mac.sh
-bash scripts/make_dmg.sh
-```
-
-## Developer checks
+## Getting started (3 commands)
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt && python kukanilea_app.py
+```
+Open: [http://127.0.0.1:5051](http://127.0.0.1:5051)
+
+Default dev login:
+- `admin` / `admin`
+
+## Key docs
+- Quickstart: `QUICKSTART.md`
+- Onboarding: `ONBOARDING.md`
+- Configuration: `docs/CONFIGURATION.md`
+- AI setup (Ollama): `docs/AI_SETUP.md`
+- Workflows: `docs/WORKFLOWS.md`
+- Pilot runbook: `docs/runbooks/pilot_v1.md`
+
+## Data location (macOS)
+`~/Library/Application Support/KUKANILEA/`
+
+## Local AI
+For local AI chat, run Ollama and pull a model:
+```bash
+ollama serve
+ollama pull llama3.1:8b
+```
+
+## Quality gates
+```bash
+python -m compileall -q .
+ruff check .
+ruff format . --check
 pytest -q
-python -m app.smoke
+python -m app.devtools.security_scan
+python -m app.devtools.triage --ci --fail-on-warnings
+python -m app.devtools.schema_audit --json > /dev/null
 ```
