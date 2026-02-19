@@ -1,0 +1,102 @@
+{% from 'components/alert.html' import banner %}
+{% from 'components/button.html' import button_link, button_submit %}
+
+<div class="space-y-4">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h1 class="text-xl font-semibold">Workflows</h1>
+    <div class="flex items-center gap-2">
+      {{ button_link('Automation Builder', '/automation', kind='outline') }}
+    </div>
+  </div>
+
+  {% if read_only %}
+  {{ banner('Read-only mode aktiv. Workflow-Aenderungen sind deaktiviert.', kind='error') }}
+  {% endif %}
+
+  <div class="card p-4 space-y-3">
+    <h2 class="font-semibold">Template Katalog</h2>
+    <div class="table-shell overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="table-head">
+          <tr>
+            <th class="p-3 text-left">Template</th>
+            <th class="p-3 text-left">Trigger</th>
+            <th class="p-3 text-left">Actions</th>
+            <th class="p-3 text-left">Status</th>
+            <th class="p-3 text-left">Aktion</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tpl in templates %}
+          {% set installed = installed_by_key.get(tpl.key) %}
+          <tr class="table-row">
+            <td class="p-3 align-top">
+              <div class="font-medium">{{ tpl.name }}</div>
+              <div class="muted text-xs mt-1">{{ tpl.description }}</div>
+            </td>
+            <td class="p-3 align-top">{{ ", ".join(tpl.trigger_types) if tpl.trigger_types else "-" }}</td>
+            <td class="p-3 align-top">{{ ", ".join(tpl.action_types) if tpl.action_types else "-" }}</td>
+            <td class="p-3 align-top">
+              {% if installed %}
+              <span class="pill">Installiert</span>
+              {% else %}
+              <span class="muted">Nicht installiert</span>
+              {% endif %}
+            </td>
+            <td class="p-3 align-top">
+              {% if installed %}
+                {{ button_link('Details', '/workflows/' ~ installed.id, kind='outline', size='sm') }}
+              {% else %}
+              <form method="post" action="/workflows/install/{{ tpl.key }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                {{ button_submit('Installieren', kind='primary', size='sm', disabled=read_only) }}
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="p-3 muted" colspan="5">Keine Templates verfuegbar.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card p-4 space-y-3">
+    <h2 class="font-semibold">Installierte Workflows</h2>
+    <div class="table-shell overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="table-head">
+          <tr>
+            <th class="p-3 text-left">Name</th>
+            <th class="p-3 text-left">Template</th>
+            <th class="p-3 text-left">Enabled</th>
+            <th class="p-3 text-left">Runs</th>
+            <th class="p-3 text-left">Last Status</th>
+            <th class="p-3 text-left">Aktion</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in installed_rows %}
+          <tr class="table-row">
+            <td class="p-3"><a class="underline" href="/workflows/{{ row.id }}">{{ row.name }}</a></td>
+            <td class="p-3">{{ row.template_key }}</td>
+            <td class="p-3">{{ "yes" if row.is_enabled else "no" }}</td>
+            <td class="p-3">{{ row.run_count }}</td>
+            <td class="p-3">{{ row.last_status or "-" }}</td>
+            <td class="p-3">
+              <form method="post" action="/workflows/{{ row.id }}/toggle">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="enabled" value="{{ 0 if row.is_enabled else 1 }}">
+                {{ button_submit("Disable" if row.is_enabled else "Enable", kind='outline', size='sm', disabled=read_only) }}
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="p-3 muted" colspan="6">Keine installierten Workflow-Templates.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
