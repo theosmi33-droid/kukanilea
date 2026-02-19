@@ -9,6 +9,24 @@ from app.autonomy.source_scan import scan_sources_once, source_watch_config_upda
 from app.knowledge.core import knowledge_policy_update
 
 
+def _mock_tesseract_binary(monkeypatch) -> None:
+    def _resolve(requested_bin=None, env=None, *, platform_name=None):
+        selected = str(requested_bin or "/usr/bin/tesseract")
+        source = "explicit" if requested_bin else "path"
+        return ocr_mod.ResolvedTesseractBin(
+            requested=requested_bin,
+            resolved_path=selected,
+            exists=True,
+            executable=True,
+            allowlisted=True,
+            allowlist_reason="matched_prefix",
+            allowed_prefixes=("/usr/bin",),
+            resolution_source=source,
+        )
+
+    monkeypatch.setattr(ocr_mod, "resolve_tesseract_binary", _resolve)
+
+
 def _init_core(tmp_path: Path) -> None:
     core.DB_PATH = tmp_path / "core.db"
     core.BASE_PATH = tmp_path / "base"
@@ -34,9 +52,7 @@ def test_source_scan_runs_ocr_for_supported_images(tmp_path: Path, monkeypatch) 
         stdout = "OCR text"
         stderr = ""
 
-    monkeypatch.setattr(
-        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
-    )
+    _mock_tesseract_binary(monkeypatch)
     monkeypatch.setattr(ocr_mod.subprocess, "run", lambda *_a, **_k: _Proc())
 
     docs_dir = tmp_path / "docs"

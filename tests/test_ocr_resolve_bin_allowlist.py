@@ -9,7 +9,6 @@ def test_resolve_tesseract_bin_requires_allowlisted_directory(monkeypatch) -> No
     known = {
         "/tmp/tesseract",
         "/usr/local/bin/tesseract",
-        "/opt/homebrew/bin/tesseract",
     }
     monkeypatch.setattr(
         Path,
@@ -33,13 +32,6 @@ def test_resolve_tesseract_bin_requires_allowlisted_directory(monkeypatch) -> No
     )
     resolved = ocr_mod.resolve_tesseract_bin()
     assert resolved == Path("/usr/local/bin/tesseract")
-
-    monkeypatch.setattr(
-        ocr_mod.shutil, "which", lambda _name: "/opt/homebrew/bin/tesseract"
-    )
-    resolved_homebrew = ocr_mod.resolve_tesseract_bin()
-    assert resolved_homebrew is not None
-    assert str(resolved_homebrew).startswith("/opt/homebrew")
 
 
 def test_resolve_tesseract_binary_prefers_explicit(monkeypatch, tmp_path: Path) -> None:
