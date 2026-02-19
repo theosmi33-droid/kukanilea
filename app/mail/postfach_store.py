@@ -110,6 +110,44 @@ def _ensure_column(con: sqlite3.Connection, table: str, column_def: str) -> None
     con.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
 
 
+def _migrate_legacy_account_secrets(con: sqlite3.Connection) -> int:
+    """
+    Backfill legacy plaintext secrets into AES-GCM encrypted payloads.
+    The migration is best effort and only runs when EMAIL_ENCRYPTION_KEY is available.
+    """
+    if not email_encryption_ready():
+        return 0
+
+    rows = con.execute(
+        """
+        SELECT id, encrypted_secret
+        FROM mailbox_accounts
+        WHERE encrypted_secret IS NOT NULL AND TRIM(encrypted_secret) != ''
+        """
+    ).fetchall()
+    migrated = 0
+    now = _now_iso()
+    for row in rows:
+        account_id = str(row["id"] or "")
+        current = str(row["encrypted_secret"] or "")
+        if not account_id or not current or current.startswith("aesgcm:"):
+            continue
+        try:
+            encrypted = encrypt_text(current)
+        except Exception:
+            continue
+        con.execute(
+            """
+            UPDATE mailbox_accounts
+            SET encrypted_secret=?, updated_at=?
+            WHERE id=?
+            """,
+            (encrypted, now, account_id),
+        )
+        migrated += 1
+    return migrated
+
+
 def ensure_postfach_schema(db_path: Path) -> None:
     con = _db(db_path)
     try:
@@ -309,6 +347,7 @@ def ensure_postfach_schema(db_path: Path) -> None:
         _ensure_column(
             con, "mailbox_accounts", "last_sync_duplicates INTEGER NOT NULL DEFAULT 0"
         )
+        _migrate_legacy_account_secrets(con)
         con.commit()
     finally:
         con.close()

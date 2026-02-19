@@ -2,6 +2,31 @@
 
 Stand: 2026-02-18
 
+## Postfach / E-Mail Secrets
+
+### `EMAIL_ENCRYPTION_KEY` (pflichtig fuer Postfach)
+- Typ: String
+- Zweck: Schluesselmaterial fuer at-rest Verschluesselung von Postfach-Credentials
+  und OAuth-Tokens.
+- Standard: leer (`""`) => Postfach-Funktionen laufen fail-closed nicht.
+
+Hinweise:
+- Bereits gespeicherte Legacy-Secrets werden beim Zugriff automatisch auf
+  AES-GCM migriert, wenn `EMAIL_ENCRYPTION_KEY` gesetzt ist.
+- Ohne Key sind IMAP/SMTP-Operationen und OAuth-Token-Nutzung deaktiviert.
+
+Generieren:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Setzen (Shell):
+
+```bash
+export EMAIL_ENCRYPTION_KEY="dein-schluessel"
+```
+
 ## Automation Builder
 
 ### `WEBHOOK_ALLOWED_DOMAINS`

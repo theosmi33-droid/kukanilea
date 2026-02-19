@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import ssl
 from pathlib import Path
 
@@ -124,3 +126,37 @@ def test_sync_uses_ssl_context(tmp_path: Path, monkeypatch) -> None:
     )
     assert result["ok"] is True
     assert _RecordingIMAP.saw_ssl_context is True
+
+
+def test_load_secret_legacy_payload_requires_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+    ref = "sec_legacy"
+    legacy_payload = base64.b64encode(b"legacy-secret").decode("ascii")
+    (tmp_path / "secrets.json").write_text(
+        json.dumps({ref: legacy_payload}),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("EMAIL_ENCRYPTION_KEY", raising=False)
+
+    assert load_secret(ref) == ""
+    saved = json.loads((tmp_path / "secrets.json").read_text(encoding="utf-8"))
+    assert str(saved.get(ref) or "") == legacy_payload
+
+
+def test_load_secret_legacy_payload_migrates_with_key(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+    monkeypatch.setenv("EMAIL_ENCRYPTION_KEY", "dev-secret-key")
+    ref = "sec_legacy"
+    legacy_payload = base64.b64encode(b"legacy-secret").decode("ascii")
+    (tmp_path / "secrets.json").write_text(
+        json.dumps({ref: legacy_payload}),
+        encoding="utf-8",
+    )
+
+    assert load_secret(ref) == "legacy-secret"
+    saved = json.loads((tmp_path / "secrets.json").read_text(encoding="utf-8"))
+    migrated = str(saved.get(ref) or "")
+    assert migrated.startswith("aesgcm:")
+    assert "legacy-secret" not in migrated

@@ -144,6 +144,8 @@ def _decrypt_secret(payload: str) -> str:
         aes = AESGCM(_encryption_key())
         return aes.decrypt(nonce, ciphertext, b"kukanilea-email-secret").decode("utf-8")
     # Legacy fallback (pre-encryption local format).
+    # Keep fail-closed semantics: even legacy payloads require EMAIL_ENCRYPTION_KEY.
+    _encryption_key()
     return base64.b64decode(raw.encode("ascii")).decode("utf-8")
 
 
@@ -163,7 +165,12 @@ def load_secret(ref: str) -> str:
     if not value:
         return ""
     try:
-        return _decrypt_secret(value)
+        secret = _decrypt_secret(value)
+        # Auto-migrate legacy payloads after successful read.
+        if not str(value).startswith("aesgcm:"):
+            data[str(ref)] = _encrypt_secret(secret)
+            _save_secrets(data)
+        return secret
     except Exception:
         return ""
 

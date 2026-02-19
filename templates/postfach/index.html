@@ -12,6 +12,11 @@
         READ_ONLY aktiv: Mutationen (Account, Sync, Draft, Send) sind blockiert.
       </div>
     {% endif %}
+    {% if not postfach_key_ready %}
+      <div class="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        EMAIL_ENCRYPTION_KEY fehlt. Postfach-Funktionen sind fail-closed deaktiviert.
+      </div>
+    {% endif %}
     {% if postfach_status %}
       <div class="mt-3 rounded-xl border border-slate-700 bg-slate-950/40 p-3 text-sm">{{ postfach_status }}</div>
     {% endif %}
