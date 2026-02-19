@@ -12,6 +12,24 @@ from app.autonomy.ocr import submit_ocr_for_source_file
 from app.knowledge.core import knowledge_policy_update
 
 
+def _mock_tesseract_binary(monkeypatch) -> None:
+    def _resolve(requested_bin=None, env=None, *, platform_name=None):
+        selected = str(requested_bin or "/usr/bin/tesseract")
+        source = "explicit" if requested_bin else "path"
+        return ocr_mod.ResolvedTesseractBin(
+            requested=requested_bin,
+            resolved_path=selected,
+            exists=True,
+            executable=True,
+            allowlisted=True,
+            allowlist_reason="matched_prefix",
+            allowed_prefixes=("/usr/bin",),
+            resolution_source=source,
+        )
+
+    monkeypatch.setattr(ocr_mod, "resolve_tesseract_binary", _resolve)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -72,9 +90,7 @@ def test_ocr_subprocess_contract_and_redaction(tmp_path: Path, monkeypatch) -> N
         captured["kwargs"] = kwargs
         return _Proc()
 
-    monkeypatch.setattr(
-        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
-    )
+    _mock_tesseract_binary(monkeypatch)
     monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
 
     app = Flask(__name__)
@@ -149,9 +165,7 @@ def test_ocr_subprocess_uses_tessdata_override(tmp_path: Path, monkeypatch) -> N
         captured["kwargs"] = kwargs
         return _Proc()
 
-    monkeypatch.setattr(
-        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
-    )
+    _mock_tesseract_binary(monkeypatch)
     monkeypatch.setattr(ocr_mod.shutil, "which", lambda _name: None)
     monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
 
@@ -264,9 +278,7 @@ def test_run_tesseract_retry_guard(tmp_path: Path, monkeypatch) -> None:
         calls.append(list(cmd))
         return seq.pop(0)
 
-    monkeypatch.setattr(
-        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
-    )
+    _mock_tesseract_binary(monkeypatch)
     monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
     import app.devtools.tesseract_probe as probe_mod
 
@@ -319,9 +331,7 @@ def test_run_tesseract_no_retry_on_timeout(tmp_path: Path, monkeypatch) -> None:
         calls.append(list(cmd))
         raise ocr_mod.subprocess.TimeoutExpired(cmd, 1)
 
-    monkeypatch.setattr(
-        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
-    )
+    _mock_tesseract_binary(monkeypatch)
     monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
     import app.devtools.tesseract_probe as probe_mod
 
@@ -361,9 +371,7 @@ def test_run_tesseract_config_file_missing_classification(
         calls.append(list(cmd))
         return _ProcFail()
 
-    monkeypatch.setattr(
-        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
-    )
+    _mock_tesseract_binary(monkeypatch)
     monkeypatch.setattr(ocr_mod.subprocess, "run", _fake_run)
 
     text, error, _truncated, _stderr = ocr_mod._run_tesseract(

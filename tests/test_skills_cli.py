@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _env(tmp_path: Path, mock_file: Path) -> dict[str, str]:
     env = os.environ.copy()
@@ -53,7 +55,7 @@ def test_cli_add_activate_quarantine(tmp_path: Path) -> None:
             "--skill",
             "demo",
         ],
-        cwd="/Users/gensuminguyen/Tophandwerk/kukanilea-git",
+        cwd=str(REPO_ROOT),
         env=env,
         capture_output=True,
         text=True,
@@ -66,7 +68,7 @@ def test_cli_add_activate_quarantine(tmp_path: Path) -> None:
 
     activate = subprocess.run(
         [sys.executable, "-m", "app.skills.cli", "activate", str(skill_id)],
-        cwd="/Users/gensuminguyen/Tophandwerk/kukanilea-git",
+        cwd=str(REPO_ROOT),
         env=env,
         capture_output=True,
         text=True,
@@ -78,7 +80,7 @@ def test_cli_add_activate_quarantine(tmp_path: Path) -> None:
 
     quarantine = subprocess.run(
         [sys.executable, "-m", "app.skills.cli", "quarantine", str(skill_id)],
-        cwd="/Users/gensuminguyen/Tophandwerk/kukanilea-git",
+        cwd=str(REPO_ROOT),
         env=env,
         capture_output=True,
         text=True,

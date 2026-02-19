@@ -10,6 +10,24 @@ from app.autonomy.ocr import submit_ocr_for_source_file
 from app.knowledge.core import knowledge_policy_update
 
 
+def _mock_tesseract_binary(monkeypatch) -> None:
+    def _resolve(requested_bin=None, env=None, *, platform_name=None):
+        selected = str(requested_bin or "/usr/bin/tesseract")
+        source = "explicit" if requested_bin else "path"
+        return ocr_mod.ResolvedTesseractBin(
+            requested=requested_bin,
+            resolved_path=selected,
+            exists=True,
+            executable=True,
+            allowlisted=True,
+            allowlist_reason="matched_prefix",
+            allowed_prefixes=("/usr/bin",),
+            resolution_source=source,
+        )
+
+    monkeypatch.setattr(ocr_mod, "resolve_tesseract_binary", _resolve)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -65,9 +83,7 @@ def test_ocr_events_do_not_contain_paths_filenames_or_text(
         stdout = "subject confidential and mail me at x@example.com"
         stderr = ""
 
-    monkeypatch.setattr(
-        ocr_mod, "resolve_tesseract_bin", lambda: Path("/usr/bin/tesseract")
-    )
+    _mock_tesseract_binary(monkeypatch)
     monkeypatch.setattr(ocr_mod.subprocess, "run", lambda *_a, **_k: _Proc())
 
     result = submit_ocr_for_source_file(
