@@ -1132,6 +1132,37 @@ def db_init() -> None:
                 );
                 """
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_conversations(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  user_message_redacted TEXT NOT NULL,
+                  assistant_response_redacted TEXT NOT NULL,
+                  tool_used_json TEXT,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_feedback(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  conversation_id TEXT NOT NULL,
+                  rating TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(conversation_id) REFERENCES ai_conversations(id)
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_conversations_tenant_created ON ai_conversations(tenant_id, created_at DESC);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_feedback_tenant_created ON ai_feedback(tenant_id, created_at DESC);"
+            )
 
             con.execute(
                 """

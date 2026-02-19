@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.ai.knowledge import store_entity
 from app.config import Config
+from app.knowledge import knowledge_search
 from app.lead_intake import leads_create
 from app.mail import (
     postfach_create_draft,
@@ -31,6 +33,16 @@ class CreateTaskArgs(BaseModel):
     severity: str = "INFO"
     task_type: str = "GENERAL"
     details: str = ""
+
+
+class SearchContactsArgs(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class SearchDocumentsArgs(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    limit: int = Field(default=10, ge=1, le=50)
 
 
 class LogTimeArgs(BaseModel):
@@ -173,6 +185,88 @@ def _create_task_handler(
     except Exception:
         pass
     return {"task_id": task_id}
+
+
+def _search_contacts_handler(
+    *, tenant_id: str, user: str, args: SearchContactsArgs
+) -> Dict[str, Any]:
+    _ = user
+    db_path = Path(Config.CORE_DB)
+    con = sqlite3.connect(str(db_path), timeout=30)
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            """
+            SELECT c.id,
+                   c.name,
+                   c.email,
+                   c.phone,
+                   c.role,
+                   c.customer_id,
+                   cu.name AS customer_name
+            FROM contacts c
+            LEFT JOIN customers cu
+              ON cu.id=c.customer_id
+             AND cu.tenant_id=c.tenant_id
+            WHERE c.tenant_id=?
+              AND (
+                LOWER(COALESCE(c.name,'')) LIKE LOWER(?)
+                OR LOWER(COALESCE(c.email,'')) LIKE LOWER(?)
+                OR LOWER(COALESCE(c.phone,'')) LIKE LOWER(?)
+                OR LOWER(COALESCE(c.role,'')) LIKE LOWER(?)
+                OR LOWER(COALESCE(cu.name,'')) LIKE LOWER(?)
+              )
+            ORDER BY c.updated_at DESC, c.id DESC
+            LIMIT ?
+            """,
+            (
+                tenant_id,
+                f"%{args.query}%",
+                f"%{args.query}%",
+                f"%{args.query}%",
+                f"%{args.query}%",
+                f"%{args.query}%",
+                int(args.limit),
+            ),
+        ).fetchall()
+    finally:
+        con.close()
+
+    contacts = []
+    for row in rows:
+        contacts.append(
+            {
+                "id": str(row["id"] or ""),
+                "name": str(row["name"] or ""),
+                "email": str(row["email"] or ""),
+                "phone": str(row["phone"] or ""),
+                "role": str(row["role"] or ""),
+                "customer_id": str(row["customer_id"] or ""),
+                "customer_name": str(row["customer_name"] or ""),
+            }
+        )
+    return {"count": len(contacts), "contacts": contacts}
+
+
+def _search_documents_handler(
+    *, tenant_id: str, user: str, args: SearchDocumentsArgs
+) -> Dict[str, Any]:
+    _ = user
+    rows = knowledge_search(tenant_id=tenant_id, query=args.query, limit=args.limit)
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "chunk_id": str(row.get("chunk_id") or ""),
+                "source_type": str(row.get("source_type") or ""),
+                "source_ref": str(row.get("source_ref") or ""),
+                "title": str(row.get("title") or ""),
+                "snippet": str(row.get("snippet") or ""),
+                "score": float(row.get("score") or 0.0),
+                "updated_at": str(row.get("updated_at") or ""),
+            }
+        )
+    return {"count": len(items), "documents": items}
 
 
 def _log_time_handler(
@@ -571,6 +665,18 @@ def _postfach_specs() -> dict[str, ToolSpec]:
 
 
 TOOL_REGISTRY: Dict[str, ToolSpec] = {
+    "search_contacts": ToolSpec(
+        name="search_contacts",
+        args_model=SearchContactsArgs,
+        is_mutating=False,
+        handler=_search_contacts_handler,
+    ),
+    "search_documents": ToolSpec(
+        name="search_documents",
+        args_model=SearchDocumentsArgs,
+        is_mutating=False,
+        handler=_search_documents_handler,
+    ),
     "create_task": ToolSpec(
         name="create_task",
         args_model=CreateTaskArgs,
@@ -590,6 +696,12 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         handler=_export_akte_handler,
     ),
     **_postfach_specs(),
+}
+
+TOOL_DESCRIPTIONS: Dict[str, str] = {
+    "search_contacts": "Sucht Kontakte (Name, E-Mail, Rolle, Kunde).",
+    "search_documents": "Durchsucht redigierte Knowledge-Dokumente per Volltext.",
+    "create_task": "Erstellt einen neuen Task.",
 }
 
 
@@ -633,3 +745,30 @@ def dispatch(
             "result": {},
             "error": {"code": "tool_failed", "msg": f"{tool.name}: {exc}"},
         }
+
+
+def ollama_tool_definitions(
+    *, allowed_names: list[str] | None = None
+) -> list[dict[str, Any]]:
+    names = (
+        [str(name) for name in allowed_names]
+        if allowed_names
+        else sorted(TOOL_REGISTRY.keys())
+    )
+    out: list[dict[str, Any]] = []
+    for name in names:
+        tool = TOOL_REGISTRY.get(name)
+        if tool is None:
+            continue
+        schema = tool.args_model.model_json_schema()
+        out.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": TOOL_DESCRIPTIONS.get(name, f"Tool: {name}"),
+                    "parameters": schema,
+                },
+            }
+        )
+    return out
