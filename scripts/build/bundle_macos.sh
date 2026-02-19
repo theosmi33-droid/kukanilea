@@ -42,22 +42,24 @@ if __name__ == "__main__":
     serve(app, host="127.0.0.1", port=int(os.environ.get("PORT", "5051")))
 PY
 
-ICON_ARG=()
-if [ -f "$ROOT_DIR/assets/icon.icns" ]; then
-  ICON_ARG=(--icon "$ROOT_DIR/assets/icon.icns")
-fi
-
 rm -rf "$ROOT_DIR/build/$APP_NAME" "$ROOT_DIR/dist/$APP_NAME" "$ROOT_DIR/dist/$APP_NAME.app"
 
-pyinstaller \
-  --noconfirm \
-  --clean \
-  --windowed \
-  --name "$APP_NAME" \
-  --paths "$OBF_PARENT" \
-  --add-data "$ROOT_DIR/templates:templates" \
-  --add-data "$ROOT_DIR/static:static" \
-  "${ICON_ARG[@]}" \
-  "$ENTRYPOINT"
+PYI_ARGS=(
+  --noconfirm
+  --clean
+  --windowed
+  --name "$APP_NAME"
+  --paths "$OBF_PARENT"
+  --add-data "$ROOT_DIR/templates:templates"
+  --add-data "$ROOT_DIR/static:static"
+)
+
+if [ -f "$ROOT_DIR/assets/icon.icns" ]; then
+  PYI_ARGS+=(--icon "$ROOT_DIR/assets/icon.icns")
+fi
+
+PYI_ARGS+=("$ENTRYPOINT")
+
+pyinstaller "${PYI_ARGS[@]}"
 
 echo "Bundle ready: $ROOT_DIR/dist/$APP_NAME.app"
