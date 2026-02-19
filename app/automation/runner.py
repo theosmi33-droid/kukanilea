@@ -35,6 +35,14 @@ CONTEXT_ALLOWLIST = {
     "trigger_ref",
     "source",
     "from_domain",
+    "thread_id",
+    "account_id",
+    "lead_id",
+    "case_id",
+    "source_kind",
+    "source_action",
+    "task_status",
+    "intent",
     "cron_expression",
     "scheduled_minute",
 }
@@ -63,6 +71,26 @@ def _safe_json_loads(raw: str) -> dict[str, Any]:
         return loaded if isinstance(loaded, dict) else {}
     except Exception:
         return {}
+
+
+def _payload_value(payload: Mapping[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    nested = payload.get("data")
+    if isinstance(nested, Mapping):
+        for key in keys:
+            value = nested.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+    return ""
 
 
 def _now_minus_minutes_rfc3339(minutes: int) -> str:
@@ -339,7 +367,15 @@ def _build_context(
         "timestamp": str(event_row.get("ts") or ""),
         "trigger_ref": str(trigger_ref or ""),
         "source": EVENTLOG_SOURCE,
-        "from_domain": str(payload.get("from_domain") or ""),
+        "from_domain": _payload_value(payload, "from_domain"),
+        "thread_id": _payload_value(payload, "thread_id"),
+        "account_id": _payload_value(payload, "account_id"),
+        "lead_id": _payload_value(payload, "lead_id"),
+        "case_id": _payload_value(payload, "case_id"),
+        "source_kind": _payload_value(payload, "source_kind"),
+        "source_action": _payload_value(payload, "action", "detail_code"),
+        "task_status": _payload_value(payload, "task_status", "status"),
+        "intent": _payload_value(payload, "intent"),
     }
     return context
 

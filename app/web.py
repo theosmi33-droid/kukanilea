@@ -190,6 +190,12 @@ from app.tags import (
     tag_update,
     tags_for_entities,
 )
+from app.workflows import (
+    WORKFLOW_TEMPLATE_MARKER_PREFIX,
+    get_workflow_template,
+    list_workflow_templates,
+    workflow_template_marker,
+)
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
@@ -1086,6 +1092,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
       <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">📚 Knowledge</a>
       <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations">🧾 Conversations</a>
+      <a class="nav-link {{'active' if active_tab=='workflows' else ''}}" href="/workflows">🧭 Workflows</a>
       <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation">⚙️ Automation</a>
       <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health">🩺 Autonomy Health</a>
       <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily">📊 Insights</a>
@@ -2712,6 +2719,19 @@ def api_tasks_create():
         target=str(task_id),
         meta={"tenant_id": current_tenant(), "status": "OPEN", "source": "kanban_api"},
     )
+    try:
+        event_append(
+            event_type="task_created",
+            entity_type="task",
+            entity_id=int(task_id),
+            payload={
+                "tenant_id": current_tenant(),
+                "task_status": "OPEN",
+                "source": "kanban_api",
+            },
+        )
+    except Exception:
+        pass
     return jsonify(ok=True, task_id=int(task_id), status="OPEN")
 
 
@@ -2745,6 +2765,19 @@ def api_tasks_move(task_id: int):
         target=str(task_id),
         meta={"tenant_id": current_tenant(), "status": status, "source": "kanban_api"},
     )
+    try:
+        event_append(
+            event_type="task_moved",
+            entity_type="task",
+            entity_id=int(task_id),
+            payload={
+                "tenant_id": current_tenant(),
+                "task_status": status,
+                "source": "kanban_api",
+            },
+        )
+    except Exception:
+        pass
     return jsonify(ok=True, task_id=int(task_id), status=status)
 
 
@@ -5167,6 +5200,68 @@ def _export_rule_payload(rule: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _workflow_template_key_from_description(description: str) -> str:
+    text = str(description or "")
+    pattern = re.compile(
+        r"\[" + re.escape(WORKFLOW_TEMPLATE_MARKER_PREFIX) + r"([a-z0-9_]+)\]"
+    )
+    match = pattern.search(text.lower())
+    if not match:
+        return ""
+    return str(match.group(1) or "").strip()
+
+
+def _workflow_summaries(tenant_id: str) -> list[dict[str, Any]]:
+    rows = builder_rule_list(tenant_id=tenant_id)
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        rule_id = str(row.get("id") or "").strip()
+        if not rule_id:
+            continue
+        description = str(row.get("description") or "")
+        template_key = _workflow_template_key_from_description(description)
+        if not template_key:
+            continue
+        logs = builder_execution_log_list(
+            tenant_id=tenant_id, rule_id=rule_id, limit=50
+        )
+        out.append(
+            {
+                **row,
+                "template_key": template_key,
+                "run_count": len(logs),
+                "last_status": str(logs[0].get("status") or "") if logs else "",
+                "last_started_at": str(logs[0].get("started_at") or "") if logs else "",
+            }
+        )
+    return out
+
+
+def _workflow_install_rule(tenant_id: str, template_key: str) -> str:
+    existing = _workflow_summaries(tenant_id)
+    for row in existing:
+        if str(row.get("template_key") or "") == template_key:
+            return str(row.get("id") or "")
+
+    tpl = get_workflow_template(template_key)
+    if not tpl:
+        raise ValueError("not_found")
+    payload = _normalize_rule_import_payload(tpl.get("rule_payload") or {})
+    desc = str(payload.get("description") or "").strip()
+    marker = workflow_template_marker(template_key)
+    payload["description"] = f"{desc}\n{marker}" if desc else marker
+    return builder_rule_create(
+        tenant_id=tenant_id,
+        name=str(payload["name"]),
+        description=str(payload["description"]),
+        is_enabled=False,
+        max_executions_per_minute=int(payload["max_executions_per_minute"]),
+        triggers=list(payload.get("triggers") or []),
+        conditions=list(payload.get("conditions") or []),
+        actions=list(payload.get("actions") or []),
+    )
+
+
 @bp.get("/automation/rules")
 @login_required
 @require_role("OPERATOR")
@@ -5312,6 +5407,100 @@ def automation_run_now_action():
     if _is_htmx():
         return redirect(url_for("web.automation_rules_page"))
     return jsonify({"ok": True, "run_id": run_id})
+
+
+@bp.get("/workflows")
+@login_required
+@require_role("OPERATOR")
+def workflows_page():
+    templates = list_workflow_templates()
+    installed_rows = _workflow_summaries(current_tenant())
+    installed_by_key = {
+        str(row.get("template_key") or ""): row for row in installed_rows
+    }
+    content = render_template(
+        "workflows/list.html",
+        templates=templates,
+        installed_rows=installed_rows,
+        installed_by_key=installed_by_key,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="workflows")
+
+
+@bp.get("/workflows/<rule_id>")
+@login_required
+@require_role("OPERATOR")
+def workflows_detail_page(rule_id: str):
+    rule = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
+    if not rule:
+        return _automation_error("not_found", "Workflow nicht gefunden.", 404)
+    logs = builder_execution_log_list(
+        tenant_id=current_tenant(),
+        rule_id=rule_id,
+        limit=100,
+    )
+    template_key = _workflow_template_key_from_description(
+        str(rule.get("description") or "")
+    )
+    content = render_template(
+        "workflows/detail.html",
+        rule=rule,
+        logs=logs,
+        template_key=template_key,
+        read_only=bool(current_app.config.get("READ_ONLY", False)),
+    )
+    return _render_base(content, active_tab="workflows")
+
+
+@bp.post("/workflows/install/<template_key>")
+@login_required
+@require_role("OPERATOR")
+def workflows_install_action(template_key: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    try:
+        rule_id = _workflow_install_rule(current_tenant(), template_key)
+    except ValueError as exc:
+        if str(exc) == "not_found":
+            return _automation_error("not_found", "Template nicht gefunden.", 404)
+        return _automation_error("validation_error", "Template ungueltig.", 400)
+    if _is_htmx():
+        return redirect(url_for("web.workflows_detail_page", rule_id=rule_id))
+    if request.is_json:
+        return jsonify({"ok": True, "rule_id": rule_id})
+    return redirect(url_for("web.workflows_detail_page", rule_id=rule_id))
+
+
+@bp.post("/workflows/<rule_id>/toggle")
+@login_required
+@require_role("OPERATOR")
+def workflows_toggle_action(rule_id: str):
+    guarded = _automation_guard(api=not _is_htmx())
+    if guarded is not None:
+        return guarded
+    payload = (
+        request.form if not request.is_json else (request.get_json(silent=True) or {})
+    )
+    enabled = str(payload.get("enabled") or "1").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    row = builder_rule_update(
+        tenant_id=current_tenant(),
+        rule_id=rule_id,
+        patch={"is_enabled": enabled},
+    )
+    if not row:
+        return _automation_error("not_found", "Workflow nicht gefunden.", 404)
+    if _is_htmx():
+        return redirect(url_for("web.workflows_detail_page", rule_id=rule_id))
+    if request.is_json:
+        return jsonify({"ok": True, "rule": row})
+    return redirect(url_for("web.workflows_page"))
 
 
 @bp.get("/automation")
@@ -9635,6 +9824,19 @@ def tasks_create():
         target=str(task_id),
         meta={"tenant_id": current_tenant(), "status": "OPEN", "source": "kanban_ui"},
     )
+    try:
+        event_append(
+            event_type="task_created",
+            entity_type="task",
+            entity_id=int(task_id),
+            payload={
+                "tenant_id": current_tenant(),
+                "task_status": "OPEN",
+                "source": "kanban_ui",
+            },
+        )
+    except Exception:
+        pass
     flash(f"Task #{int(task_id)} angelegt.", "success")
     return redirect("/tasks")
 
@@ -9669,6 +9871,19 @@ def tasks_move(task_id: int):
         target=str(task_id),
         meta={"tenant_id": current_tenant(), "status": status, "source": "kanban_ui"},
     )
+    try:
+        event_append(
+            event_type="task_moved",
+            entity_type="task",
+            entity_id=int(task_id),
+            payload={
+                "tenant_id": current_tenant(),
+                "task_status": status,
+                "source": "kanban_ui",
+            },
+        )
+    except Exception:
+        pass
     flash(f"Task #{int(task_id)} -> {status}", "success")
     return redirect("/tasks")
 
