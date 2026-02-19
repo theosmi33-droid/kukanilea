@@ -70,3 +70,26 @@ Regeln:
 - Typ: Pfad
 - Standard: `~/Library/Application Support/KUKANILEA/license_cache.json`
 - Zweck: Lokaler Cache fuer letzte erfolgreiche Validierung/Grace-Status
+
+## Pilot / Demo Seed
+
+### `KUKANILEA_ANONYMIZATION_KEY`
+- Typ: String
+- Zweck: Deterministische Anonymisierung fuer Source-Scan-Metadaten (z. B. gehashte Dateipfade).
+- Standard: leer (`""`)
+- Empfehlung: fuer Pilotbetrieb setzen, damit Scan-/Seed-Metadaten stabil und nachvollziehbar sind.
+
+Beispiel:
+```bash
+export KUKANILEA_ANONYMIZATION_KEY="pilot-anon-key"
+```
+
+### Demo-Daten laden (CLI)
+```bash
+python scripts/seed_demo_data.py --tenant-name "DEMO AG"
+```
+
+Reset fuer reproduzierbaren Pilottest:
+```bash
+python scripts/seed_demo_data.py --tenant-name "DEMO AG" --force
+```
