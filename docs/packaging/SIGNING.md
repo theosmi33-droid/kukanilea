@@ -33,3 +33,13 @@ Typical follow-up steps:
 3. Re-verify with `spctl`.
 
 This phase does not automate notarization.
+
+## Windows signing (future)
+
+Phase 5.1 introduces automated Windows EXE builds, but no code-signing yet.
+
+Recommended next step:
+
+1. Add a Windows code-signing certificate in CI secrets.
+2. Sign `dist/KUKANILEA.exe` in `build-windows.yml`.
+3. Verify signatures before uploading release assets.

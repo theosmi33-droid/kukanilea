@@ -43,6 +43,23 @@ Output artifacts:
 - `dist/KUKANILEA.app`
 - `dist/KUKANILEA-<version>.dmg`
 
+## CI automation (Phase 5.1)
+
+Installer builds are automated in GitHub Actions:
+
+- `.github/workflows/build-macos.yml`
+- `.github/workflows/build-windows.yml`
+
+Behavior:
+
+- `release.published`: builds run and upload installers to the GitHub Release.
+- `workflow_dispatch`: builds run and publish artifacts in the workflow run.
+
+Release outputs:
+
+- macOS: `KUKANILEA-<version>.dmg`
+- Windows: `KUKANILEA.exe`
+
 ## Compatibility wrappers
 
 Legacy commands still work and forward to the new scripts:
@@ -55,3 +72,4 @@ Legacy commands still work and forward to the new scripts:
 - If `assets/icon.icns` exists, it is used automatically.
 - If `create-dmg` is unavailable, `hdiutil` is used.
 - For distribution outside trusted environments, add codesign/notarization.
+- Windows build currently ships a standalone `.exe` (no NSIS/MSI wrapper yet).
