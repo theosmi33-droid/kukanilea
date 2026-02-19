@@ -1,0 +1,27 @@
+{% macro button_link(text, href, kind="outline", size="md", extra="") -%}
+  {% set kind_class = {
+    'primary': 'btn-primary',
+    'outline': 'btn-outline',
+    'danger': 'btn-danger'
+  }[kind] if kind in ['primary', 'outline', 'danger'] else 'btn-outline' %}
+  {% set size_class = {
+    'sm': 'px-2 py-1 text-xs',
+    'md': 'px-3 py-2 text-sm',
+    'lg': 'px-4 py-2 text-sm font-semibold'
+  }[size] if size in ['sm', 'md', 'lg'] else 'px-3 py-2 text-sm' %}
+  <a class="btn {{ kind_class }} {{ size_class }} {{ extra }}" href="{{ href }}">{{ text }}</a>
+{%- endmacro %}
+
+{% macro button_submit(text, kind="primary", size="md", extra="", disabled=False) -%}
+  {% set kind_class = {
+    'primary': 'btn-primary',
+    'outline': 'btn-outline',
+    'danger': 'btn-danger'
+  }[kind] if kind in ['primary', 'outline', 'danger'] else 'btn-primary' %}
+  {% set size_class = {
+    'sm': 'px-2 py-1 text-xs',
+    'md': 'px-3 py-2 text-sm',
+    'lg': 'px-4 py-2 text-sm font-semibold'
+  }[size] if size in ['sm', 'md', 'lg'] else 'px-3 py-2 text-sm' %}
+  <button class="btn {{ kind_class }} {{ size_class }} {{ extra }}" type="submit" {% if disabled %}disabled{% endif %}>{{ text }}</button>
+{%- endmacro %}
