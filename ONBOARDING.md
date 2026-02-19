@@ -77,3 +77,10 @@ Optionaler Reset der Demo-Daten:
 ```bash
 python scripts/seed_demo_data.py --tenant-name "DEMO AG" --force
 ```
+
+## Phase 2 Focus (Polish & Testing)
+- E2E browser tests: `tests/e2e/`
+- QA checklist: `docs/qa/testcases.md`
+- Bug bash guide: `docs/qa/bug_bash.md`
+- Performance baselines: `docs/performance/BENCHMARKS.md`
+- Workflow quick reference: `docs/WORKFLOWS.md`
