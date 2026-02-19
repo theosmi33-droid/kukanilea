@@ -216,6 +216,7 @@ from .auth import (
 from .config import Config
 from .db import AuthDB
 from .errors import json_error
+from .license import load_license, load_runtime_license_state
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
@@ -656,6 +657,41 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
         profile=profile,
         active_tab=active_tab,
     )
+
+
+def _apply_license_state_to_app(state: dict[str, Any]) -> None:
+    current_app.config["PLAN"] = state["plan"]
+    current_app.config["TRIAL"] = state["trial"]
+    current_app.config["TRIAL_DAYS_LEFT"] = state["trial_days_left"]
+    current_app.config["READ_ONLY"] = state["read_only"]
+    current_app.config["LICENSE_REASON"] = state["reason"]
+    current_app.config["LICENSE_GRACE_ACTIVE"] = bool(state.get("grace_active", False))
+    current_app.config["LICENSE_GRACE_DAYS_LEFT"] = int(
+        state.get("grace_days_left", 0) or 0
+    )
+    current_app.config["LICENSE_VALIDATED_ONLINE"] = bool(
+        state.get("validated_online", False)
+    )
+    current_app.config["LICENSE_LAST_VALIDATED"] = str(state.get("last_validated", ""))
+
+
+def _reload_runtime_license_state() -> dict[str, Any]:
+    state = load_runtime_license_state(
+        license_path=current_app.config["LICENSE_PATH"],
+        trial_path=current_app.config["TRIAL_PATH"],
+        trial_days=int(current_app.config.get("TRIAL_DAYS", 14)),
+        cache_path=current_app.config.get("LICENSE_CACHE_PATH"),
+        validate_url=str(current_app.config.get("LICENSE_VALIDATE_URL", "")),
+        validate_timeout_seconds=int(
+            current_app.config.get("LICENSE_VALIDATE_TIMEOUT_SECONDS", 10)
+        ),
+        validate_interval_days=int(
+            current_app.config.get("LICENSE_VALIDATE_INTERVAL_DAYS", 30)
+        ),
+        grace_days=int(current_app.config.get("LICENSE_GRACE_DAYS", 30)),
+    )
+    _apply_license_state_to_app(state)
+    return state
 
 
 def _get_profile() -> dict:
@@ -1100,6 +1136,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health">🩺 Autonomy Health</a>
       <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily">📊 Insights</a>
       {% if roles in ['DEV', 'ADMIN'] %}
+      <a class="nav-link {{'active' if active_tab=='license' else ''}}" href="/license">🔐 Lizenz</a>
       <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
       {% endif %}
     </nav>
@@ -1134,6 +1171,9 @@ HTML_BASE = r"""<!doctype html>
       {% if read_only %}
       <div class="mb-4 alert alert-error">
         Read-only mode aktiv ({{license_reason}}). Schreibaktionen sind deaktiviert.
+        {% if roles in ['DEV', 'ADMIN'] %}
+        <a class="underline ml-1" href="/license">Lizenz verwalten</a>
+        {% endif %}
       </div>
       {% elif trial_active and trial_days_left <= 3 %}
       <div class="mb-4 alert alert-warn">
@@ -8112,6 +8152,40 @@ HTML_MAIL = """
 </script>
 """
 
+HTML_LICENSE = """
+<div class="grid gap-4">
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">Lizenzstatus</div>
+    <div class="grid gap-2 text-sm md:grid-cols-2">
+      <div><span class="muted text-xs">Plan</span><div><strong>{{ plan }}</strong></div></div>
+      <div><span class="muted text-xs">Read-only</span><div><strong>{{ "ja" if read_only else "nein" }}</strong></div></div>
+      <div><span class="muted text-xs">Grund</span><div>{{ license_reason or "-" }}</div></div>
+      <div><span class="muted text-xs">Trial Resttage</span><div>{{ trial_days_left }}</div></div>
+      <div><span class="muted text-xs">Grace aktiv</span><div>{{ "ja" if license_grace_active else "nein" }}{% if license_grace_active %} ({{ license_grace_days_left }} Tage){% endif %}</div></div>
+      <div><span class="muted text-xs">Letzte Online-Validierung</span><div>{{ license_last_validated or "-" }}</div></div>
+    </div>
+    {% if notice %}
+    <div class="mt-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">{{ notice }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm">{{ error }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Lizenz aktivieren</div>
+    <div class="muted text-xs mb-3">Hier eine signierte Lizenz als JSON einfügen (aus dem Ausstellungsprozess).</div>
+    <form method="post" action="/license" class="grid gap-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <textarea name="license_json" rows="12" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder='{"customer_id":"...","plan":"PRO","issued":"YYYY-MM-DD","expiry":"YYYY-MM-DD","signature":"..."}'></textarea>
+      <div class="flex items-center gap-2">
+        <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary">Lizenz speichern und prüfen</button>
+      </div>
+    </form>
+  </div>
+</div>
+"""
+
 HTML_SETTINGS = """
 <div class="grid gap-4">
   <div class="card p-4 rounded-2xl border">
@@ -9306,6 +9380,74 @@ def settings_page():
             import_root=str(current_app.config.get("IMPORT_ROOT", "")),
         ),
         active_tab="settings",
+    )
+
+
+@bp.route("/license", methods=["GET", "POST"])
+@login_required
+def license_page():
+    if current_role() not in {"ADMIN", "DEV"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
+
+    notice = ""
+    error = ""
+    if request.method == "POST":
+        csrf_error = _csrf_guard(api=False)
+        if csrf_error:
+            return csrf_error
+        blob = str(request.form.get("license_json") or "").strip()
+        if not blob:
+            error = "Lizenz-JSON fehlt."
+        else:
+            try:
+                payload = json.loads(blob)
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON root must be object")
+            except Exception:
+                payload = None
+                error = "Lizenz-JSON ist ungültig."
+
+            if payload is not None:
+                license_path = Path(current_app.config["LICENSE_PATH"])
+                previous_text = (
+                    license_path.read_text(encoding="utf-8")
+                    if license_path.exists()
+                    else None
+                )
+                license_path.parent.mkdir(parents=True, exist_ok=True)
+                license_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                info = load_license(license_path)
+                if not bool(info.get("valid")):
+                    if previous_text is None:
+                        try:
+                            license_path.unlink()
+                        except Exception:
+                            pass
+                    else:
+                        license_path.write_text(previous_text, encoding="utf-8")
+                    error = f"Lizenz ungültig ({info.get('reason') or 'invalid'})."
+                else:
+                    state = _reload_runtime_license_state()
+                    notice = (
+                        "Lizenz aktiviert. Plan: "
+                        f"{state.get('plan', 'PRO')} | Reason: {state.get('reason', 'ok')}"
+                    )
+                    _audit(
+                        "license_activate",
+                        target=str(state.get("plan", "PRO")),
+                        meta={
+                            "tenant_id": current_tenant(),
+                            "reason": str(state.get("reason", "ok")),
+                            "read_only": bool(state.get("read_only", False)),
+                        },
+                    )
+
+    return _render_base(
+        render_template_string(HTML_LICENSE, notice=notice, error=error),
+        active_tab="license",
     )
 
 

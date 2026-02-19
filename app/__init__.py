@@ -73,6 +73,10 @@ def create_app() -> Flask:
     def _enforce_read_only():
         if not app.config.get("READ_ONLY"):
             return None
+        path = (request.path or "").rstrip("/") or "/"
+        # License activation must remain possible when instance is read-only.
+        if path == "/license":
+            return None
         if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
             return json_error(
                 "read_only",

@@ -50,6 +50,7 @@ Regeln:
 - Typ: String (HTTPS URL)
 - Zweck: Optionaler Online-Validierungsendpoint fuer signierte Lizenzen
 - Standard: leer (`""`) => rein lokale Lizenzpruefung
+- Alias: `LICENSE_SERVER_URL` (wird genutzt, falls `KUKANILEA_LICENSE_VALIDATE_URL` leer ist)
 
 ### `KUKANILEA_LICENSE_VALIDATE_TIMEOUT_SECONDS`
 - Typ: Integer
@@ -70,6 +71,11 @@ Regeln:
 - Typ: Pfad
 - Standard: `~/Library/Application Support/KUKANILEA/license_cache.json`
 - Zweck: Lokaler Cache fuer letzte erfolgreiche Validierung/Grace-Status
+
+### `KUKANILEA_LICENSE_PATH`
+- Typ: Pfad
+- Standard: `~/Library/Application Support/KUKANILEA/license.json`
+- Zweck: Speicherort der signierten Lizenzdatei (wird ueber `/license` geschrieben)
 
 ## Lokale KI (Ollama)
 
