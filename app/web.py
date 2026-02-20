@@ -741,16 +741,33 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
     )
     if theme_default not in {"light", "dark"}:
         theme_default = "light"
+    nav_collapsed_default = False
+    user_name = current_user() or "-"
+    auth_db: AuthDB | None = current_app.extensions.get("auth_db")
+    if auth_db and user_name != "-":
+        try:
+            prefs = auth_db.get_user_preferences(
+                user_name,
+                keys=["ui.theme", "ui.nav_collapsed"],
+            )
+            saved_theme = str(prefs.get("ui.theme", "")).strip().lower()
+            if saved_theme in {"light", "dark"}:
+                theme_default = saved_theme
+            saved_nav = str(prefs.get("ui.nav_collapsed", "")).strip().lower()
+            nav_collapsed_default = saved_nav in {"1", "true", "yes", "on"}
+        except Exception:
+            pass
     return render_template_string(
         HTML_BASE,
         content=content,
         ablage=str(BASE_PATH),
-        user=current_user() or "-",
+        user=user_name,
         roles=current_role(),
         tenant=current_tenant() or "-",
         profile=profile,
         active_tab=active_tab,
         theme_default=theme_default,
+        nav_collapsed_default=nav_collapsed_default,
     )
 
 
@@ -1367,21 +1384,35 @@ HTML_BASE = r"""<!doctype html>
   const lblTheme = document.getElementById("themeLabel");
   const btnAcc = document.getElementById("accentBtn");
   const lblAcc = document.getElementById("accentLabel");
+  async function persistUiPref(path, payload){
+    try{
+      await fetch(path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload || {})
+      });
+    }catch(_){
+      // no-op: UI should still remain responsive if persistence fails
+    }
+  }
   function curTheme(){ return (localStorage.getItem("ks_theme") || "{{ theme_default }}"); }
   function curAccent(){ return (localStorage.getItem("ks_accent") || "indigo"); }
-  function applyTheme(t){
+  function applyTheme(t, persist=true){
     if(t === "light"){ document.documentElement.classList.add("light"); }
     else { document.documentElement.classList.remove("light"); }
     document.documentElement.dataset.theme = t;
     localStorage.setItem("ks_theme", t);
     lblTheme.textContent = t;
+    if(persist){
+      persistUiPref("/settings/ui/theme", {theme: t});
+    }
   }
   function applyAccent(a){
     document.documentElement.dataset.accent = a;
     localStorage.setItem("ks_accent", a);
     lblAcc.textContent = a;
   }
-  applyTheme(curTheme());
+  applyTheme(curTheme(), false);
   applyAccent(curAccent());
   btnTheme?.addEventListener("click", ()=>{ applyTheme(curTheme() === "dark" ? "light" : "dark"); });
   btnAcc?.addEventListener("click", ()=>{
@@ -1395,12 +1426,17 @@ HTML_BASE = r"""<!doctype html>
   const navOverlay = document.getElementById("appNavOverlay");
   const navCollapse = document.getElementById("navCollapse");
   const navCollapseKey = "ks_nav_collapsed";
-  function setCollapsed(collapsed){
+  const serverNavCollapsed = {{ "true" if nav_collapsed_default else "false" }};
+  function setCollapsed(collapsed, persist=true){
     document.body.classList.toggle("nav-collapsed", !!collapsed);
     if(navCollapse){ navCollapse.textContent = collapsed ? "▶" : "◀"; }
     localStorage.setItem(navCollapseKey, collapsed ? "1" : "0");
+    if(persist){
+      persistUiPref("/settings/ui/sidebar", {collapsed: !!collapsed});
+    }
   }
-  setCollapsed(localStorage.getItem(navCollapseKey) === "1");
+  const storedNavCollapsed = localStorage.getItem(navCollapseKey);
+  setCollapsed(storedNavCollapsed === null ? serverNavCollapsed : storedNavCollapsed === "1", false);
   function closeNav(){
     nav?.classList.remove("open");
     navOverlay?.classList.remove("open");
@@ -10211,6 +10247,67 @@ def set_idle_timeout():
     if current_role() in {"ADMIN", "DEV"}:
         return redirect(url_for("web.settings_page"))
     return redirect(url_for("web.index"))
+
+
+@bp.post("/settings/ui/theme")
+@login_required
+def settings_ui_theme_update():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    theme = str((payload or {}).get("theme", "")).strip().lower()
+    if theme not in {"light", "dark"}:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error_code": "validation_error",
+                    "message": "Ungültiges Theme.",
+                }
+            ),
+            400,
+        )
+    user_name = str(current_user() or "").strip().lower()
+    if not user_name:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error_code": "auth_required",
+                    "message": "Nicht eingeloggt.",
+                }
+            ),
+            401,
+        )
+    auth_db.set_user_preference(user_name, "ui.theme", theme)
+    return jsonify({"ok": True, "theme": theme})
+
+
+@bp.post("/settings/ui/sidebar")
+@login_required
+def settings_ui_sidebar_update():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    raw_collapsed = (payload or {}).get("collapsed", False)
+    if isinstance(raw_collapsed, bool):
+        collapsed = raw_collapsed
+    else:
+        collapsed = str(raw_collapsed).strip().lower() in {"1", "true", "yes", "on"}
+    user_name = str(current_user() or "").strip().lower()
+    if not user_name:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error_code": "auth_required",
+                    "message": "Nicht eingeloggt.",
+                }
+            ),
+            401,
+        )
+    auth_db.set_user_preference(
+        user_name, "ui.nav_collapsed", "1" if collapsed else "0"
+    )
+    return jsonify({"ok": True, "collapsed": collapsed})
 
 
 @bp.get("/settings/permissions")

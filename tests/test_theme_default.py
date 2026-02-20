@@ -13,6 +13,8 @@ def _login(client, role: str = "DEV") -> None:
 def test_shell_default_theme_is_light() -> None:
     app = create_app()
     app.config.update(TESTING=True, SECRET_KEY="test")
+    auth_db = app.extensions["auth_db"]
+    auth_db.set_user_preference("dev", "ui.theme", "light")
     client = app.test_client()
     _login(client)
     res = client.get("/")

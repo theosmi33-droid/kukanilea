@@ -121,6 +121,7 @@ class AuthDB:
             )
             self._ensure_outbox_schema(con)
             self._ensure_rbac_schema(con)
+            self._ensure_user_preferences_schema(con)
             self._seed_rbac_defaults(con)
             self._sync_legacy_memberships_to_rbac(con)
             con.execute(
@@ -215,6 +216,22 @@ class AuthDB:
             ON auth_user_roles(role_name)
             WHERE role_name='OWNER_ADMIN'
             """
+        )
+
+    def _ensure_user_preferences_schema(self, con: sqlite3.Connection) -> None:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auth_user_preferences(
+              username TEXT NOT NULL,
+              pref_key TEXT NOT NULL,
+              pref_value TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY(username, pref_key)
+            );
+            """
+        )
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auth_user_preferences_user ON auth_user_preferences(username)"
         )
 
     def _seed_rbac_defaults(self, con: sqlite3.Connection) -> None:
@@ -804,6 +821,65 @@ class AuthDB:
             return roles
         mapped = map_legacy_role_to_rbac(legacy_role)
         return [mapped]
+
+    def get_user_preferences(
+        self, username: str, *, keys: list[str] | None = None
+    ) -> dict[str, str]:
+        user = str(username or "").strip().lower()
+        if not user:
+            return {}
+        con = self._db()
+        try:
+            self._ensure_user_preferences_schema(con)
+            if keys:
+                cleaned = [str(k or "").strip() for k in keys if str(k or "").strip()]
+                if not cleaned:
+                    return {}
+                marks = ",".join("?" for _ in cleaned)
+                rows = con.execute(
+                    f"""
+                    SELECT pref_key, pref_value
+                    FROM auth_user_preferences
+                    WHERE username=? AND pref_key IN ({marks})
+                    """,
+                    tuple([user, *cleaned]),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    """
+                    SELECT pref_key, pref_value
+                    FROM auth_user_preferences
+                    WHERE username=?
+                    """,
+                    (user,),
+                ).fetchall()
+            return {str(r["pref_key"]): str(r["pref_value"] or "") for r in rows}
+        finally:
+            con.close()
+
+    def set_user_preference(
+        self, username: str, pref_key: str, pref_value: str
+    ) -> None:
+        user = str(username or "").strip().lower()
+        key = str(pref_key or "").strip()
+        if not user or not key:
+            return
+        con = self._db()
+        try:
+            self._ensure_user_preferences_schema(con)
+            con.execute(
+                """
+                INSERT INTO auth_user_preferences(username, pref_key, pref_value, updated_at)
+                VALUES (?,?,?,?)
+                ON CONFLICT(username, pref_key) DO UPDATE SET
+                  pref_value=excluded.pref_value,
+                  updated_at=excluded.updated_at
+                """,
+                (user, key, str(pref_value or ""), self._now_iso()),
+            )
+            con.commit()
+        finally:
+            con.close()
 
     def ensure_user_rbac_roles(
         self, username: str, *, legacy_role: str = ""
