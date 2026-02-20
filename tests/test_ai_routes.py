@@ -33,6 +33,7 @@ def test_api_ai_status(monkeypatch) -> None:
     _login(client)
 
     monkeypatch.setattr(webmod, "ollama_is_available", lambda **kwargs: True)
+    monkeypatch.setattr(webmod, "is_any_provider_available", lambda **kwargs: True)
     monkeypatch.setattr(
         webmod,
         "ollama_list_models",
@@ -42,6 +43,8 @@ def test_api_ai_status(monkeypatch) -> None:
     assert res.status_code == 200
     payload = res.get_json() or {}
     assert payload.get("available") is True
+    assert payload.get("any_provider_available") is True
+    assert payload.get("ollama_available") is True
     assert "llama3.1:8b" in (payload.get("models") or [])
 
 

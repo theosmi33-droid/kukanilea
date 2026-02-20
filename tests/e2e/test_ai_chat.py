@@ -27,6 +27,7 @@ def test_ai_chat_widget_with_mocked_orchestrator(
     base_url: str,
 ) -> None:
     monkeypatch.setattr(webmod, "ollama_is_available", lambda **_: True)
+    monkeypatch.setattr(webmod, "is_any_provider_available", lambda **_: True)
     monkeypatch.setattr(webmod, "ollama_list_models", lambda **_: ["llama3.1:8b"])
     monkeypatch.setattr(
         webmod,

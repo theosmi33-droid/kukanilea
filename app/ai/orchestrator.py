@@ -10,7 +10,12 @@ from app.eventlog.core import event_append
 from .audit import audit_tool_call
 from .confirm import sign_confirmation, verify_confirmation
 from .memory import list_recent_conversations, save_conversation
-from .ollama_client import DEFAULT_OLLAMA_MODEL, ollama_chat, ollama_is_available
+from .ollama_client import DEFAULT_OLLAMA_MODEL, ollama_is_available
+from .provider_router import (
+    chat_with_fallback,
+    provider_order_from_env,
+    provider_specs_from_env,
+)
 from .queue import llm_queue
 from .tool_policy import validate_tool_call
 from .tools import execute_tool, ollama_tools
@@ -85,8 +90,13 @@ def process_message(
     user_id: str,
     user_message: str,
     read_only: bool,
+    role: str | None = None,
 ) -> dict[str, Any]:
     model = os.environ.get("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    providers = provider_order_from_env()
+    effective_specs = provider_specs_from_env(
+        order=providers, tenant_id=tenant_id, role=role
+    )
     message_clean = str(user_message or "").strip()
     if not message_clean:
         return {
@@ -97,7 +107,22 @@ def process_message(
             "pending_confirmation": None,
         }
 
-    if not ollama_is_available():
+    if not effective_specs:
+        return {
+            "status": "ai_disabled",
+            "response": (
+                "KI-Assistent ist fuer Rolle/Mandant nicht freigeschaltet. "
+                "Bitte AI-Policy pruefen."
+            ),
+            "conversation_id": None,
+            "tool_used": [],
+        }
+
+    if (
+        len(effective_specs) == 1
+        and str(effective_specs[0].provider_type).strip().lower() == "ollama"
+        and not ollama_is_available()
+    ):
         return {
             "status": "ai_disabled",
             "response": (
@@ -129,16 +154,39 @@ def process_message(
     final_text = ""
     status = "ok"
     pending_confirmation: dict[str, Any] | None = None
+    provider_used = ""
+    first_round = True
 
     for _round in range(MAX_TOOL_ROUNDS + 1):
-        response = llm_queue.run(
-            ollama_chat,
+        queued = llm_queue.run(
+            chat_with_fallback,
             messages=messages,
             model=model,
             tools=tools,
             timeout_s=90,
+            tenant_id=tenant_id,
+            role=role,
         )
+        if isinstance(queued, dict) and "response" in queued:
+            response = queued.get("response")
+            provider_used = str(queued.get("provider") or provider_used)
+        else:
+            # Backward-compatible path for tests monkeypatching llm_queue.run.
+            response = queued if isinstance(queued, dict) else None
+            provider_used = provider_used or "ollama"
+
         if not isinstance(response, dict):
+            if first_round:
+                return {
+                    "status": "ai_disabled",
+                    "response": (
+                        "KI-Assistent ist derzeit nicht verfuegbar. "
+                        "Bitte lokalen/externen Provider pruefen."
+                    ),
+                    "conversation_id": None,
+                    "tool_used": [],
+                    "pending_confirmation": None,
+                }
             final_text = "KI-Antwort ungueltig."
             status = "error"
             break
@@ -148,6 +196,7 @@ def process_message(
             final_text = "KI-Antwort ungueltig."
             status = "error"
             break
+        first_round = False
 
         assistant_text = _assistant_content(message_obj)
         tool_calls = _tool_calls_from_message(message_obj)
@@ -302,6 +351,7 @@ def process_message(
         "conversation_id": conversation_id,
         "tool_used": [tool for tool in used_tools if tool],
         "pending_confirmation": pending_confirmation,
+        "provider": provider_used,
     }
 
 
