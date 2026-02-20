@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import logging as py_logging
 import os
+from pathlib import Path
 
-from flask import Flask, g, request
+from flask import Flask, abort, g, redirect, request, url_for
 from werkzeug.exceptions import HTTPException
 
 from .ai import init_ai
 from .auth import init_auth
+from .bootstrap import is_localhost_addr, needs_bootstrap
 from .config import Config
 from .db import AuthDB
 from .errors import json_error
 from .license import load_runtime_license_state
 from .logging import init_request_logging
+from .tenant.context import ensure_tenant_config, load_tenant_context
 
 
 def _wire_runtime_env(app: Flask) -> None:
@@ -38,6 +41,18 @@ def create_app() -> Flask:
     auth_db = AuthDB(app.config["AUTH_DB"])
     auth_db.init()
     app.extensions["auth_db"] = auth_db
+    tenant_db_path = Path(
+        str(getattr(getattr(web, "core", None), "DB_PATH", app.config["CORE_DB"]))
+    )
+    app.config["TENANT_CONFIG_DB_PATH"] = tenant_db_path
+    tenant_ctx = ensure_tenant_config(
+        db_path=tenant_db_path,
+        license_path=app.config["LICENSE_PATH"],
+        fallback_tenant_id=str(app.config.get("TENANT_DEFAULT", "KUKANILEA")),
+        fallback_tenant_name=str(app.config.get("TENANT_NAME", "KUKANILEA")),
+    )
+    app.config["TENANT_DEFAULT"] = tenant_ctx.tenant_id
+    app.config["TENANT_NAME"] = tenant_ctx.tenant_name
     init_auth(app, auth_db)
     init_request_logging(app)
 
@@ -70,12 +85,72 @@ def create_app() -> Flask:
     app.config["LICENSE_LAST_VALIDATED"] = str(license_state.get("last_validated", ""))
 
     @app.before_request
+    def _enforce_bootstrap():
+        if app.config.get("TESTING"):
+            return None
+        if not needs_bootstrap(auth_db):
+            return None
+        path = (request.path or "").rstrip("/") or "/"
+        if not is_localhost_addr(request.remote_addr):
+            if path.startswith("/api/"):
+                return json_error(
+                    "bootstrap_localhost_only",
+                    "Bootstrap nur auf localhost erlaubt.",
+                    status=403,
+                )
+            abort(403)
+        if path.startswith("/static/") or path == "/bootstrap":
+            return None
+        return redirect(url_for("web.bootstrap"))
+
+    @app.before_request
+    def _set_tenant_context():
+        if bool(app.config.get("TESTING", False)) and not bool(
+            app.config.get("TENANT_FIXED_TEST_ENFORCE", False)
+        ):
+            return None
+        path = (request.path or "").rstrip("/") or "/"
+        if path.startswith("/static/"):
+            return None
+        if path in {
+            "/login",
+            "/logout",
+            "/bootstrap",
+            "/license",
+            "/health",
+            "/api/health",
+            "/api/health/live",
+            "/api/health/ready",
+            "/api/ping",
+            "/app.webmanifest",
+            "/sw.js",
+        }:
+            return None
+        ctx = load_tenant_context(Path(app.config["TENANT_CONFIG_DB_PATH"]))
+        if ctx is None:
+            if path.startswith("/api/"):
+                return json_error(
+                    "tenant_not_configured",
+                    "Tenant nicht konfiguriert.",
+                    status=403,
+                )
+            abort(403)
+        g.tenant_ctx = ctx
+        g.tenant_id = ctx.tenant_id
+        # Override any client/session tenant to enforce fixed installation tenant.
+        from flask import session
+
+        if session.get("tenant_id") != ctx.tenant_id:
+            session["tenant_id"] = ctx.tenant_id
+        return None
+
+    @app.before_request
     def _enforce_read_only():
         if not app.config.get("READ_ONLY"):
             return None
         path = (request.path or "").rstrip("/") or "/"
         # License activation must remain possible when instance is read-only.
-        if path == "/license":
+        if path in {"/license", "/bootstrap"}:
             return None
         if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
             return json_error(

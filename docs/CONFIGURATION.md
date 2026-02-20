@@ -78,6 +78,22 @@ Regeln:
 - Standard: `~/Library/Application Support/KUKANILEA/license.json`
 - Zweck: Speicherort der signierten Lizenzdatei (wird ueber `/license` geschrieben)
 
+## Tenant Lock (Single-Tenant)
+
+### `KUKANILEA_FIXED_TENANT_ID`
+- Typ: String
+- Standard: `KUKANILEA` (ueber `TENANT_DEFAULT`, falls gesetzt)
+- Zweck: Fallback fuer feste Tenant-ID pro Installation (wenn Lizenzpayload keine Tenant-ID liefert)
+
+### `KUKANILEA_TENANT_NAME`
+- Typ: String
+- Standard: Wert von `KUKANILEA_FIXED_TENANT_ID`
+- Zweck: Fallback fuer Tenant-Anzeigenamen/Branding
+
+Hinweis:
+- Tenant-Kontext wird serverseitig aus `tenant_config` erzwungen.
+- Clientseitige Tenant-Werte (Session/Request) werden fuer Autorisierung nicht vertraut.
+
 ## Lokale KI (Ollama)
 
 ### `OLLAMA_BASE_URL`

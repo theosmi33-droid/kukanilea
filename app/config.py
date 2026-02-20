@@ -57,7 +57,10 @@ class Config:
     IMPORT_ROOT = Path(_env("IMPORT_ROOT", str(USER_DATA_ROOT / "imports")))
     IMPORT_ROOT.mkdir(parents=True, exist_ok=True)
 
-    TENANT_DEFAULT = _env("TENANT_DEFAULT", "KUKANILEA")
+    TENANT_DEFAULT = _env(
+        "KUKANILEA_FIXED_TENANT_ID", _env("TENANT_DEFAULT", "KUKANILEA")
+    )
+    TENANT_NAME = _env("KUKANILEA_TENANT_NAME", TENANT_DEFAULT)
     TENANT_FIXED = _env("TENANT_FIXED", "1") not in ("0", "false", "False", "no", "NO")
     FEATURE_GOOGLE_OAUTH = _env("FEATURE_GOOGLE_OAUTH", "0") == "1"
     GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID", "")
@@ -78,6 +81,14 @@ class Config:
     OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     OLLAMA_MODEL = _env("OLLAMA_MODEL", "llama3.1:8b")
     OLLAMA_TIMEOUT = int(_env("OLLAMA_TIMEOUT", "300"))
+    MAIL_MODE = _env("MAIL_MODE", "outbox").strip().lower() or "outbox"
+    DEV_LOCAL_EMAIL_CODES = _env("DEV_LOCAL_EMAIL_CODES", "0") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+    )
     UPDATE_CHECK_ENABLED = _env("KUKANILEA_UPDATE_CHECK_ENABLED", "0") in (
         "1",
         "true",

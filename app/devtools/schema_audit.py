@@ -23,6 +23,7 @@ DEFAULT_GLOBAL_TABLES = {
     "review_locks",
     "roles",
     "skills",
+    "tenant_config",
 }
 DEFAULT_GLOBAL_TABLE_PREFIXES = ("docs_fts", "knowledge_fts", "derived_")
 

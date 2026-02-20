@@ -80,6 +80,10 @@ def current_role() -> str:
 
 
 def current_tenant() -> str:
+    ctx = getattr(g, "tenant_ctx", None)
+    tenant_id = str(getattr(ctx, "tenant_id", "") or "").strip()
+    if tenant_id:
+        return tenant_id
     return session.get("tenant_id") or ""
 
 
