@@ -39,6 +39,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import time
 import urllib.parse
 from datetime import datetime, timedelta
@@ -1199,6 +1200,22 @@ HTML_BASE = r"""<!doctype html>
     font-size:11px; padding:3px 8px; border-radius:999px;
     border:1px solid var(--border); color:var(--muted); white-space:nowrap;
   }
+  .nav-mini-badge{
+    margin-left:auto;
+    min-width:18px;
+    height:18px;
+    padding:0 6px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:999px;
+    border:1px solid color-mix(in srgb, var(--accent-500) 45%, transparent);
+    background:color-mix(in srgb, var(--accent-500) 16%, transparent);
+    color:var(--text);
+    font-size:11px;
+    line-height:1;
+  }
+  .nav-mini-badge.hidden{ display:none !important; }
   .card{ background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow); }
   .btn{
     display:inline-flex; align-items:center; justify-content:center;
@@ -1270,10 +1287,10 @@ HTML_BASE = r"""<!doctype html>
       <button id="navCollapse" class="btn btn-outline nav-collapse-btn" type="button" aria-label="Navigation minimieren">◀</button>
     </div>
     <nav class="space-y-2">
-      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/"><span class="nav-icon">📥</span><span class="nav-label">Upload</span></a>
+      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/"><span class="nav-icon">📥</span><span class="nav-label">Upload</span><span id="navBadgeUpload" class="nav-mini-badge hidden">0</span></a>
       <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks"><span class="nav-icon">✅</span><span class="nav-label">Tasks</span></a>
       <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time"><span class="nav-icon">⏱️</span><span class="nav-label">Time</span></a>
-      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant"><span class="nav-icon">🧠</span><span class="nav-label">Assistant</span></a>
+      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant"><span class="nav-icon">🧠</span><span class="nav-label">Assistant</span><span id="navBadgeLlm" class="nav-mini-badge hidden">0</span></a>
       <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat"><span class="nav-icon">💬</span><span class="nav-label">Chat</span></a>
       <a class="nav-link {{'active' if active_tab=='postfach' else ''}}" href="/postfach"><span class="nav-icon">📨</span><span class="nav-label">Postfach</span></a>
       <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers"><span class="nav-icon">📈</span><span class="nav-label">CRM</span></a>
@@ -1282,7 +1299,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations"><span class="nav-icon">🧾</span><span class="nav-label">Conversations</span></a>
       <a class="nav-link {{'active' if active_tab=='workflows' else ''}}" href="/workflows"><span class="nav-icon">🧭</span><span class="nav-label">Workflows</span></a>
       <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation"><span class="nav-icon">⚙️</span><span class="nav-label">Automation</span></a>
-      <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health"><span class="nav-icon">🩺</span><span class="nav-label">Autonomy Health</span></a>
+      <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health"><span class="nav-icon">🩺</span><span class="nav-label">Autonomy Health</span><span id="navBadgeOcr" class="nav-mini-badge hidden">0</span></a>
       <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily"><span class="nav-icon">📊</span><span class="nav-label">Insights</span></a>
       {% if roles in ['DEV', 'ADMIN'] %}
       <a class="nav-link {{'active' if active_tab=='license' else ''}}" href="/license"><span class="nav-icon">🔐</span><span class="nav-label">Lizenz</span></a>
@@ -1310,6 +1327,7 @@ HTML_BASE = r"""<!doctype html>
         <span class="badge">Profile: {{ profile.name }}</span>
         <span class="badge">Live: <span id="healthLive">...</span></span>
         <span class="badge">Ready: <span id="healthReady">...</span></span>
+        <span class="badge">Jobs: <span id="jobsRunning">0</span></span>
         <button id="goBack" class="btn btn-outline px-3 py-2 text-sm" type="button">Zurück</button>
         <button id="reloadPage" class="btn btn-outline px-3 py-2 text-sm" type="button">Neu laden</button>
         {% if user and user != '-' %}
@@ -1459,6 +1477,19 @@ HTML_BASE = r"""<!doctype html>
 
 <script>
 (function(){
+  function setNavBadge(id, value, showWhenZero=false){
+    const el = document.getElementById(id);
+    if(!el){ return; }
+    const num = Number(value || 0);
+    if(!showWhenZero && !(num > 0)){
+      el.classList.add('hidden');
+      el.textContent = '0';
+      return;
+    }
+    el.classList.remove('hidden');
+    el.textContent = String(num);
+  }
+
   async function updateHealth(){
     try{
       const l = await fetch('/api/health/live', {headers:{'Accept':'application/json'}});
@@ -1473,8 +1504,34 @@ HTML_BASE = r"""<!doctype html>
       document.getElementById('healthReady').textContent = 'NOT READY';
     }
   }
+
+  async function updateJobStatus(){
+    try{
+      const r = await fetch('/api/status', {headers:{'Accept':'application/json'}});
+      if(!r.ok){ return; }
+      const j = await r.json();
+      const queue = j.queue || {};
+      const ocr = j.ocr || {};
+      const jobs = j.jobs || {};
+      const total = Number(j.running_total || 0);
+      const runningEl = document.getElementById('jobsRunning');
+      if(runningEl){ runningEl.textContent = String(total); }
+
+      setNavBadge('navBadgeUpload', Number(queue.analyzing || 0), false);
+      const llmRunning = (jobs.llm && jobs.llm.state === 'running') ? 1 : 0;
+      const llmError = (jobs.llm && jobs.llm.state === 'error') ? 1 : 0;
+      setNavBadge('navBadgeLlm', llmRunning > 0 ? llmRunning : llmError, llmError > 0);
+      const ocrLoad = Number(ocr.pending || 0) + Number(ocr.processing || 0);
+      setNavBadge('navBadgeOcr', ocrLoad, false);
+    }catch(_){
+      // ignore transient polling failures
+    }
+  }
+
   updateHealth();
+  updateJobStatus();
   setInterval(updateHealth, 30000);
+  setInterval(updateJobStatus, 5000);
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function(){
@@ -3153,6 +3210,152 @@ def _weather_adapter(message: str) -> str:
 ORCHESTRATOR = Orchestrator(core, weather_adapter=_weather_adapter)
 _DEV_STATUS = {"index": None, "scan": None, "llm": None, "db": None}
 
+_JOB_TRACKER_LOCK = threading.Lock()
+_JOB_TRACKERS: dict[str, dict[str, Any]] = {
+    "index": {},
+    "scan": {},
+    "import": {},
+    "llm": {},
+}
+
+
+def _job_result_summary(result: Any) -> Any:
+    if isinstance(result, dict):
+        keep = (
+            "status",
+            "ok",
+            "message",
+            "imported",
+            "processed",
+            "count",
+            "intent",
+            "reason",
+        )
+        summary: dict[str, Any] = {}
+        for key in keep:
+            if key in result:
+                summary[key] = result.get(key)
+        return summary or {"keys": sorted(result.keys())[:8]}
+    if isinstance(result, (str, int, float, bool)) or result is None:
+        return result
+    return str(type(result).__name__)
+
+
+def _job_tracker_start(job_name: str) -> float:
+    started_monotonic = time.monotonic()
+    started_at = _now_iso()
+    with _JOB_TRACKER_LOCK:
+        slot = _JOB_TRACKERS.setdefault(job_name, {})
+        slot["state"] = "running"
+        slot["started_at"] = started_at
+        slot["finished_at"] = None
+        slot["last_error"] = ""
+        slot["last_duration_ms"] = None
+    return started_monotonic
+
+
+def _job_tracker_finish(
+    job_name: str,
+    started_monotonic: float,
+    *,
+    result: Any = None,
+    error: str = "",
+) -> None:
+    duration_ms = int(max(0.0, (time.monotonic() - started_monotonic) * 1000))
+    with _JOB_TRACKER_LOCK:
+        slot = _JOB_TRACKERS.setdefault(job_name, {})
+        slot["state"] = "error" if error else "idle"
+        slot["finished_at"] = _now_iso()
+        slot["last_duration_ms"] = duration_ms
+        slot["last_error"] = str(error or "")
+        slot["last_result"] = _job_result_summary(result)
+        slot["runs"] = int(slot.get("runs") or 0) + 1
+
+
+def _job_tracker_snapshot() -> dict[str, dict[str, Any]]:
+    with _JOB_TRACKER_LOCK:
+        out: dict[str, dict[str, Any]] = {}
+        for name, slot in _JOB_TRACKERS.items():
+            out[name] = {
+                "state": str(slot.get("state") or "idle"),
+                "started_at": str(slot.get("started_at") or ""),
+                "finished_at": str(slot.get("finished_at") or ""),
+                "last_duration_ms": (
+                    int(slot.get("last_duration_ms"))
+                    if slot.get("last_duration_ms") not in (None, "")
+                    else None
+                ),
+                "last_error": str(slot.get("last_error") or ""),
+                "last_result": slot.get("last_result"),
+                "runs": int(slot.get("runs") or 0),
+            }
+        return out
+
+
+def _queue_status_snapshot() -> dict[str, int]:
+    items_meta = list_pending() or []
+    stats = {"total": 0, "analyzing": 0, "ready": 0, "error": 0}
+    stats["total"] = len(items_meta)
+    for item in items_meta:
+        status = str(item.get("status") or "").strip().upper()
+        if status in {"ANALYZING", "RUNNING", "PENDING"}:
+            stats["analyzing"] += 1
+        elif status in {"DONE", "READY"}:
+            stats["ready"] += 1
+        elif status in {"ERROR", "FAILED"}:
+            stats["error"] += 1
+    return stats
+
+
+def _ocr_status_snapshot(tenant_id: str) -> dict[str, Any]:
+    tenant = _norm_tenant(tenant_id)
+    stats = {
+        "available": False,
+        "pending": 0,
+        "processing": 0,
+        "failed_24h": 0,
+        "last_event_at": "",
+    }
+    con = sqlite3.connect(str(_core_db_path()))
+    con.row_factory = sqlite3.Row
+    try:
+        tables = con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='autonomy_ocr_jobs'"
+        ).fetchone()
+        if not tables:
+            return stats
+        stats["available"] = True
+        row = con.execute(
+            """
+            SELECT
+              SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count,
+              SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS processing_count,
+              MAX(COALESCE(finished_at, started_at, created_at, '')) AS latest_event
+            FROM autonomy_ocr_jobs
+            WHERE tenant_id=?
+            """,
+            (tenant,),
+        ).fetchone()
+        if row:
+            stats["pending"] = int(row["pending_count"] or 0)
+            stats["processing"] = int(row["processing_count"] or 0)
+            stats["last_event_at"] = str(row["latest_event"] or "")
+        since = (datetime.utcnow() - timedelta(hours=24)).isoformat(timespec="seconds")
+        failed_row = con.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM autonomy_ocr_jobs
+            WHERE tenant_id=? AND status='failed' AND created_at>=?
+            """,
+            (tenant, since),
+        ).fetchone()
+        stats["failed_24h"] = int((failed_row["c"] if failed_row else 0) or 0)
+        return stats
+    except Exception:
+        return stats
+    finally:
+        con.close()
+
 
 def _mock_generate(prompt: str) -> str:
     return f"[mocked] {prompt.strip()[:200]}"
@@ -3205,6 +3408,31 @@ def api_ai_status():
             else [],
             "provider_policy_effective": effective_policy,
             "any_provider_available": any_available,
+        }
+    )
+
+
+@bp.get("/api/status")
+@login_required
+def api_status():
+    tenant_id = current_tenant() or str(
+        current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
+    )
+    jobs = _job_tracker_snapshot()
+    queue = _queue_status_snapshot()
+    ocr = _ocr_status_snapshot(tenant_id)
+    running_total = sum(1 for item in jobs.values() if item.get("state") == "running")
+    running_total += int(queue.get("analyzing") or 0)
+    running_total += int(ocr.get("processing") or 0)
+    return jsonify(
+        {
+            "ok": True,
+            "as_of": _now_iso(),
+            "tenant_id": tenant_id,
+            "running_total": running_total,
+            "jobs": jobs,
+            "queue": queue,
+            "ocr": ocr,
         }
     )
 
@@ -10681,67 +10909,108 @@ def api_load_demo_data():
 @login_required
 @require_role("DEV")
 def api_rebuild_index():
-    if callable(getattr(core, "index_rebuild", None)):
-        result = core.index_rebuild()
-    elif callable(getattr(core, "index_run_full", None)):
-        result = core.index_run_full()
-    else:
-        return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
-    _DEV_STATUS["index"] = result
-    _audit("rebuild_index", meta={"result": result})
-    return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
+    started = _job_tracker_start("index")
+    try:
+        if callable(getattr(core, "index_rebuild", None)):
+            result = core.index_rebuild()
+        elif callable(getattr(core, "index_run_full", None)):
+            result = core.index_run_full()
+        else:
+            _job_tracker_finish(
+                "index", started, error="indexing_not_available", result=None
+            )
+            return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
+        _DEV_STATUS["index"] = result
+        _job_tracker_finish("index", started, result=result)
+        _audit("rebuild_index", meta={"result": result})
+        return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
+    except Exception as exc:
+        _job_tracker_finish("index", started, error=str(exc), result=None)
+        raise
 
 
 @bp.post("/api/dev/full-scan")
 @login_required
 @require_role("DEV")
 def api_full_scan():
-    if callable(getattr(core, "index_run_full", None)):
-        result = core.index_run_full()
-    else:
-        return jsonify(ok=False, message="Scan nicht verfügbar."), 400
-    _DEV_STATUS["scan"] = result
-    _audit("full_scan", meta={"result": result})
-    return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
+    started = _job_tracker_start("scan")
+    try:
+        if callable(getattr(core, "index_run_full", None)):
+            result = core.index_run_full()
+        else:
+            _job_tracker_finish(
+                "scan", started, error="scan_not_available", result=None
+            )
+            return jsonify(ok=False, message="Scan nicht verfügbar."), 400
+        _DEV_STATUS["scan"] = result
+        _job_tracker_finish("scan", started, result=result)
+        _audit("full_scan", meta={"result": result})
+        return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
+    except Exception as exc:
+        _job_tracker_finish("scan", started, error=str(exc), result=None)
+        raise
 
 
 @bp.post("/api/dev/repair-drift")
 @login_required
 @require_role("DEV")
 def api_repair_drift():
-    if callable(getattr(core, "index_run_full", None)):
-        result = core.index_run_full()
-    else:
-        return jsonify(ok=False, message="Drift-Scan nicht verfügbar."), 400
-    _DEV_STATUS["scan"] = result
-    _audit("repair_drift", meta={"result": result})
-    return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
+    started = _job_tracker_start("scan")
+    try:
+        if callable(getattr(core, "index_run_full", None)):
+            result = core.index_run_full()
+        else:
+            _job_tracker_finish(
+                "scan", started, error="drift_scan_not_available", result=None
+            )
+            return jsonify(ok=False, message="Drift-Scan nicht verfügbar."), 400
+        _DEV_STATUS["scan"] = result
+        _job_tracker_finish("scan", started, result=result)
+        _audit("repair_drift", meta={"result": result})
+        return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
+    except Exception as exc:
+        _job_tracker_finish("scan", started, error=str(exc), result=None)
+        raise
 
 
 @bp.post("/api/dev/import/run")
 @login_required
 @require_role("DEV")
 def api_import_run():
+    started = _job_tracker_start("import")
     import_root = Path(str(current_app.config.get("IMPORT_ROOT", ""))).expanduser()
     if not str(import_root):
+        _job_tracker_finish("import", started, error="import_root_missing", result=None)
         return json_error("import_root_missing", "IMPORT_ROOT fehlt.", status=400)
     if not _is_allowlisted_path(import_root):
+        _job_tracker_finish(
+            "import", started, error="import_root_forbidden", result=None
+        )
         return json_error(
             "import_root_forbidden", "IMPORT_ROOT nicht erlaubt.", status=403
         )
     if not import_root.exists():
+        _job_tracker_finish("import", started, error="import_root_missing", result=None)
         return json_error(
             "import_root_missing", "IMPORT_ROOT existiert nicht.", status=400
         )
     if callable(getattr(core, "import_run", None)):
-        result = core.import_run(
-            import_root=import_root,
-            user=str(current_user() or "dev"),
-            role=str(current_role()),
-        )
+        try:
+            result = core.import_run(
+                import_root=import_root,
+                user=str(current_user() or "dev"),
+                role=str(current_role()),
+            )
+        except Exception as exc:
+            _job_tracker_finish("import", started, error=str(exc), result=None)
+            raise
     else:
+        _job_tracker_finish(
+            "import", started, error="import_not_available", result=None
+        )
         return json_error("import_not_available", "Import nicht verfügbar.", status=400)
     _DEV_STATUS["scan"] = result
+    _job_tracker_finish("import", started, result=result)
     _audit("import_run", meta={"result": result, "root": str(import_root)})
     return jsonify(ok=True, message="Import abgeschlossen.", result=result)
 
@@ -10795,13 +11064,20 @@ def api_switch_base():
 @login_required
 @require_role("DEV")
 def api_test_llm():
+    started = _job_tracker_start("llm")
     payload = request.get_json(silent=True) or {}
     q = str(payload.get("q") or "suche rechnung")
     llm = getattr(ORCHESTRATOR, "llm", None)
     if not llm:
+        _job_tracker_finish("llm", started, error="llm_not_available", result=None)
         return jsonify(ok=False, message="LLM nicht verfügbar."), 400
-    result = llm.rewrite_query(q)
+    try:
+        result = llm.rewrite_query(q)
+    except Exception as exc:
+        _job_tracker_finish("llm", started, error=str(exc), result=None)
+        raise
     _DEV_STATUS["llm"] = result
+    _job_tracker_finish("llm", started, result=result)
     _audit("test_llm", meta={"result": result})
     return jsonify(ok=True, message=f"LLM: {llm.name}, intent={result.get('intent')}")
 
