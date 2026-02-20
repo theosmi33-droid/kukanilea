@@ -1040,8 +1040,9 @@ HTML_BASE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="manifest" href="/app.webmanifest">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
 <title>KUKANILEA Systems</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
 <script>
   const savedTheme = localStorage.getItem("ks_theme") || "dark";
   const savedAccent = localStorage.getItem("ks_accent") || "indigo";

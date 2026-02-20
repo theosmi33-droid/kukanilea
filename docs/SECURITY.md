@@ -20,3 +20,14 @@ Referenzen:
 
 - OWASP Session Management Cheat Sheet
 - OWASP ASVS / Broken Access Control Prinzipien (serverseitige Erzwingung)
+
+## Externe Ressourcen
+
+KUKANILEA verwendet keine extern gehosteten Google Fonts.
+Alle Schriften werden lokal aus `static/fonts/` ausgeliefert.
+
+Zusatzschutz:
+
+- Content Security Policy erzwingt `font-src 'self'`.
+- Browser blockieren dadurch jeden externen Font-Nachladeversuch.
+- Runtime-Assets enthalten keine Referenzen auf `fonts.googleapis.com` oder `fonts.gstatic.com`.

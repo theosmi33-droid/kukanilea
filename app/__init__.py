@@ -311,6 +311,24 @@ def create_app() -> Flask:
             },
         )
 
+    @app.after_request
+    def _set_security_headers(response):
+        csp = "; ".join(
+            [
+                "default-src 'self'",
+                "font-src 'self'",
+                "style-src 'self' 'unsafe-inline'",
+                "script-src 'self' 'unsafe-inline'",
+                "img-src 'self' data:",
+                "connect-src 'self'",
+                "base-uri 'self'",
+                "frame-ancestors 'none'",
+                "object-src 'none'",
+            ]
+        )
+        response.headers["Content-Security-Policy"] = csp
+        return response
+
     app.register_blueprint(web.bp)
     app.register_blueprint(api.bp)
     if web.db_init is not None:
