@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging as py_logging
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -133,8 +134,22 @@ def _active_tab_from_path(path: str) -> str:
     return "upload"
 
 
+def _resource_dir() -> Path:
+    """Resolve template/static root for source and frozen desktop bundles."""
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            return Path(str(meipass)).resolve()
+    return Path(__file__).resolve().parent.parent
+
+
 def create_app() -> Flask:
-    app = Flask(__name__, template_folder="../templates", static_folder="../static")
+    resources = _resource_dir()
+    app = Flask(
+        __name__,
+        template_folder=str(resources / "templates"),
+        static_folder=str(resources / "static"),
+    )
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
