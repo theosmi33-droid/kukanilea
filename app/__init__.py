@@ -22,7 +22,7 @@ from .auth import init_auth
 from .bootstrap import is_localhost_addr, needs_bootstrap
 from .config import Config
 from .db import AuthDB
-from .errors import json_error
+from .errors import json_error, wants_json_error
 from .license import load_runtime_license_state
 from .logging import init_request_logging
 from .tenant.context import ensure_tenant_config, load_tenant_context
@@ -366,7 +366,7 @@ def create_app() -> Flask:
     @app.errorhandler(HTTPException)
     def _handle_http_exception(exc: HTTPException):
         status = int(exc.code or 500)
-        if request.path.startswith("/api/"):
+        if wants_json_error():
             return json_error(
                 "http_error",
                 str(exc.description or exc.name or "Request fehlgeschlagen."),
@@ -385,7 +385,7 @@ def create_app() -> Flask:
             getattr(g, "tenant_id", "-"),
             getattr(g, "request_id", "-"),
         )
-        if request.path.startswith("/api/"):
+        if wants_json_error():
             return json_error(
                 "internal_error",
                 "Interner Fehler.",

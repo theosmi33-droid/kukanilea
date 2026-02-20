@@ -208,6 +208,14 @@ class AuthDB:
         con.execute(
             "CREATE INDEX IF NOT EXISTS idx_auth_user_roles_role ON auth_user_roles(role_name)"
         )
+        # Hard constraint for single-tenant owner model: only one OWNER_ADMIN row.
+        con.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_roles_single_owner_admin
+            ON auth_user_roles(role_name)
+            WHERE role_name='OWNER_ADMIN'
+            """
+        )
 
     def _seed_rbac_defaults(self, con: sqlite3.Connection) -> None:
         now = self._now_iso()
