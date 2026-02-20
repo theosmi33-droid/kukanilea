@@ -23,3 +23,9 @@ Fuer weitere Framework-Haertung sollten neue Features bevorzugt ueber klar getre
 - migrations/schema governance
 - asset pipeline mit reproduzierbaren Builds
 - erweiterbare extension points statt route-lokaler Sonderlogik
+
+## RBAC pattern reference (Frappe/ERPNext-inspiriert)
+
+- KUKANILEA nutzt ein Role->Permission-Modell mit serverseitiger Erzwingung pro Request.
+- Das orientiert sich konzeptionell an matrixbasierten Berechtigungen (Role/Permission + User-Zuweisung), ohne fremden Code zu uebernehmen.
+- Lizenzhinweis: ERPNext steht unter GPL-3.0; daher keine direkte Code-Übernahme in proprietaeren Kundenkontexten.

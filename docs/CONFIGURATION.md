@@ -94,6 +94,13 @@ Hinweis:
 - Tenant-Kontext wird serverseitig aus `tenant_config` erzwungen.
 - Clientseitige Tenant-Werte (Session/Request) werden fuer Autorisierung nicht vertraut.
 
+## RBAC / Berechtigungen
+
+- Rollen und Permissions werden in der Auth-DB gespeichert (`auth_roles`, `auth_permissions`, `auth_role_permissions`, `auth_user_roles`).
+- Berechtigungen werden serverseitig erzwungen (deny-by-default).
+- Verwaltung erfolgt im UI unter `/settings/permissions` (nur Owner Admin / DEV).
+- Legacy-Rollen werden automatisch auf RBAC-Rollen gemappt.
+
 ## Lokale KI (Ollama)
 
 ### `OLLAMA_BASE_URL`

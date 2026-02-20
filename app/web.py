@@ -206,12 +206,15 @@ from kukanilea.orchestrator import Orchestrator
 
 from .auth import (
     current_role,
+    current_roles,
     current_tenant,
     current_user,
+    has_permission,
     hash_password,
     login_required,
     login_user,
     logout_user,
+    require_permission,
     require_role,
     verify_password,
 )
@@ -550,6 +553,16 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
         )
         auth_db.upsert_membership(office_username, "KUKANILEA Dev", "OPERATOR", now)
         office_info = f"office password: {office_password}"
+    office_user = auth_db.get_user_by_email(office_email)
+    try:
+        auth_db.set_user_roles("admin", ["OWNER_ADMIN"], actor_roles=["DEV"])
+        auth_db.set_user_roles("dev", ["DEV"], actor_roles=["DEV"])
+        if office_user is not None:
+            auth_db.set_user_roles(
+                office_user.username, ["OFFICE"], actor_roles=["DEV"]
+            )
+    except Exception:
+        pass
     return f"Seeded users: admin/admin, dev/dev, {office_info}"
 
 
@@ -8518,6 +8531,19 @@ HTML_SETTINGS = """
     </div>
   </div>
 
+  {% if can_manage_permissions %}
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Rollen & Berechtigungen</div>
+    <div class="text-sm">
+      <div>Zentrale Rechteverwaltung pro Rolle und Benutzer.</div>
+      <div class="muted text-xs mt-1">Serverseitig erzwungen (deny-by-default).</div>
+      <div class="mt-2">
+        <a class="underline" href="/settings/permissions">Berechtigungsmanager öffnen</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if role == "DEV" %}
   <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">In-Place Update (DEV)</div>
@@ -8680,6 +8706,85 @@ HTML_SETTINGS = """
   });
 })();
 </script>
+"""
+
+HTML_SETTINGS_PERMISSIONS = """
+<div class="grid gap-4">
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">Berechtigungen</div>
+    <div class="text-sm muted mb-3">
+      Serverseitige Rechteverwaltung (deny-by-default). Nur Owner Admin und DEV duerfen aendern.
+    </div>
+    <a href="/settings" class="underline text-sm">Zurueck zu Einstellungen</a>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-3">Rollen und Permissions</div>
+    {% for role in rbac_roles %}
+      {% set assigned = role_permissions.get(role.role_name, []) %}
+      <form method="post" action="{{ url_for('web.settings_permissions_role_update') }}" class="rounded-xl border p-3 mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="role_name" value="{{ role.role_name }}">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div>
+            <div class="text-sm font-semibold">{{ role.label }} <span class="muted">({{ role.role_name }})</span></div>
+            <div class="muted text-xs">{{ role.description }}</div>
+          </div>
+          {% if role.role_name == "DEV" and not can_edit_dev_roles %}
+            <span class="text-xs rounded-lg border px-2 py-1">Nur DEV editierbar</span>
+          {% endif %}
+        </div>
+        <div class="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+          {% for perm in rbac_permissions %}
+            <label class="text-xs flex items-center gap-2">
+              <input
+                type="checkbox"
+                name="perm_keys"
+                value="{{ perm.perm_key }}"
+                {{ "checked" if perm.perm_key in assigned else "" }}
+                {{ "disabled" if role.role_name == "DEV" and not can_edit_dev_roles else "" }}
+              />
+              <span>{{ perm.perm_key }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="mt-3">
+          <button
+            type="submit"
+            class="rounded-xl px-3 py-2 text-sm btn-primary"
+            {{ "disabled" if role.role_name == "DEV" and not can_edit_dev_roles else "" }}
+          >
+            Rolle speichern
+          </button>
+        </div>
+      </form>
+    {% endfor %}
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-3">Benutzerrollen</div>
+    <div class="grid gap-3">
+      {% for user in users_with_roles %}
+        <form method="post" action="{{ url_for('web.settings_permissions_user_update') }}" class="rounded-xl border p-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="username" value="{{ user.username }}">
+          <div class="text-sm font-semibold">{{ user.username }}</div>
+          <div class="muted text-xs mb-2">{{ user.email or "-" }}</div>
+          <select name="role_names" multiple class="w-full rounded-xl border px-3 py-2 text-xs bg-transparent min-h-[84px]">
+            {% for role in rbac_roles %}
+              <option value="{{ role.role_name }}" {{ "selected" if role.role_name in user.roles else "" }}>
+                {{ role.label }} ({{ role.role_name }})
+              </option>
+            {% endfor %}
+          </select>
+          <div class="mt-2">
+            <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary">Rollen speichern</button>
+          </div>
+        </form>
+      {% endfor %}
+    </div>
+  </div>
+</div>
 """
 
 
@@ -9686,7 +9791,10 @@ def postfach_thread_create_lead(thread_id: str):
 @login_required
 def settings_page():
     role = current_role()
-    show_admin_settings = role in {"ADMIN", "DEV"}
+    show_admin_settings = role in {"ADMIN", "DEV"} or has_permission(
+        "settings.manage_permissions"
+    )
+    can_manage_permissions = has_permission("settings.manage_permissions")
     auth_db: AuthDB = current_app.extensions["auth_db"]
     core_db = {
         "path": str(getattr(core, "DB_PATH", "")),
@@ -9743,6 +9851,7 @@ def settings_page():
             update_install_enabled=bool(
                 current_app.config.get("UPDATE_INSTALL_ENABLED", False)
             ),
+            can_manage_permissions=can_manage_permissions,
             idle_timeout_minutes=idle_timeout,
             idle_timeout_choices=[15, 30, 60, 120, 240, 480],
         ),
@@ -9766,6 +9875,92 @@ def set_idle_timeout():
     if current_role() in {"ADMIN", "DEV"}:
         return redirect(url_for("web.settings_page"))
     return redirect(url_for("web.index"))
+
+
+@bp.get("/settings/permissions")
+@login_required
+@require_permission("settings.manage_permissions")
+def settings_permissions_page():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    role_rows = auth_db.list_roles()
+    permission_rows = auth_db.list_permissions()
+    role_permissions = {
+        role: sorted(perms)
+        for role, perms in auth_db.list_all_role_permissions().items()
+    }
+    users_with_roles = auth_db.list_users_with_roles()
+    can_edit_dev_roles = "DEV" in {str(r) for r in current_roles()}
+    return _render_base(
+        render_template_string(
+            HTML_SETTINGS_PERMISSIONS,
+            rbac_roles=role_rows,
+            rbac_permissions=permission_rows,
+            role_permissions=role_permissions,
+            users_with_roles=users_with_roles,
+            can_edit_dev_roles=can_edit_dev_roles,
+        ),
+        active_tab="settings",
+    )
+
+
+@bp.post("/settings/permissions/role")
+@login_required
+@require_permission("settings.manage_permissions")
+def settings_permissions_role_update():
+    csrf_error = _csrf_guard(api=False)
+    if csrf_error:
+        return csrf_error
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    role_name = str(request.form.get("role_name") or "").strip().upper()
+    perm_keys = [str(v or "").strip() for v in request.form.getlist("perm_keys")]
+    try:
+        auth_db.set_role_permissions(
+            role_name,
+            perm_keys,
+            actor_roles=current_roles(),
+        )
+        _audit(
+            "rbac_role_permissions_update",
+            target=role_name,
+            meta={"perm_count": len(perm_keys)},
+        )
+        flash(f"Rollenrechte gespeichert: {role_name}", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    except Exception:
+        flash("Rollenrechte konnten nicht gespeichert werden.", "error")
+    return redirect(url_for("web.settings_permissions_page"))
+
+
+@bp.post("/settings/permissions/user")
+@login_required
+@require_permission("users.assign_roles")
+def settings_permissions_user_update():
+    csrf_error = _csrf_guard(api=False)
+    if csrf_error:
+        return csrf_error
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    username = str(request.form.get("username") or "").strip().lower()
+    role_names = [
+        str(v or "").strip().upper() for v in request.form.getlist("role_names")
+    ]
+    try:
+        auth_db.set_user_roles(
+            username,
+            role_names,
+            actor_roles=current_roles(),
+        )
+        _audit(
+            "rbac_user_roles_update",
+            target=username,
+            meta={"roles": role_names},
+        )
+        flash(f"Benutzerrollen gespeichert: {username}", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    except Exception:
+        flash("Benutzerrollen konnten nicht gespeichert werden.", "error")
+    return redirect(url_for("web.settings_permissions_page"))
 
 
 @bp.route("/dev/tenant", methods=["GET", "POST"])
