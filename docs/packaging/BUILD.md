@@ -54,6 +54,9 @@ Behavior:
 
 - `release.published`: builds run and upload installers to the GitHub Release.
 - `workflow_dispatch`: builds run and publish artifacts in the workflow run.
+- CI default is stable/fail-safe: PyArmor is not installed automatically on release events.
+- Manual runs can opt-in to PyArmor with `workflow_dispatch` input `install_pyarmor=true`.
+- If PyArmor is unavailable or fails, obfuscation scripts fall back to plain source copy and continue.
 
 Release outputs:
 
