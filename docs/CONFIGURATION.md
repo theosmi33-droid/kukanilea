@@ -128,6 +128,31 @@ Hinweis:
 - Standard: `5`
 - Zweck: Timeout fuer Update-Check-Requests
 
+### `KUKANILEA_UPDATE_INSTALL_ENABLED`
+- Typ: Bool (`0|1`)
+- Standard: `0` (deaktiviert)
+- Zweck: Aktiviert den DEV In-Place-Install-Flow (`/dev/update`)
+
+### `KUKANILEA_UPDATE_INSTALL_URL`
+- Typ: String (URL)
+- Standard: Wert von `KUKANILEA_UPDATE_CHECK_URL`
+- Zweck: Release-Endpoint fuer installierbare Update-Assets
+
+### `KUKANILEA_UPDATE_INSTALL_TIMEOUT_SECONDS`
+- Typ: Integer
+- Standard: `30`
+- Zweck: Timeout fuer Download/Metadaten im Install-Flow
+
+### `KUKANILEA_UPDATE_APP_DIR`
+- Typ: Pfad
+- Standard: automatisch erkannter App-Pfad
+- Zweck: Installationsziel fuer Atomic-Swap-Updates
+
+### `KUKANILEA_UPDATE_DOWNLOAD_DIR`
+- Typ: Pfad
+- Standard: `<KUKANILEA_USER_DATA_ROOT>/updates`
+- Zweck: Ablagepfad fuer heruntergeladene Update-Archive
+
 ## Lizenzserver (separater Service)
 
 Diese Variablen gelten nur fuer den separaten Server unter `license_server/`.
