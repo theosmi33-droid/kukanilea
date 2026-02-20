@@ -16,15 +16,7 @@ pytestmark = pytest.mark.skipif(
 
 def _open_chat(page) -> None:
     page.click("#chatWidgetBtn")
-    # Robust fallback for CI timing/layout quirks.
-    page.evaluate(
-        """
-        const drawer = document.getElementById('chatDrawer');
-        if (drawer && drawer.classList.contains('hidden')) {
-          drawer.classList.remove('hidden');
-        }
-        """
-    )
+    page.wait_for_selector("#chatDrawer:not(.hidden)", state="visible")
     page.wait_for_selector("#chatWidgetInput", state="visible")
 
 

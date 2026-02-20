@@ -51,7 +51,9 @@ $Args = @(
     "--name", "KUKANILEA",
     "--windowed",
     "--onefile",
+    "--paths", $Root,
     "--paths", (Join-Path $Root "dist/obfuscated"),
+    "--hidden-import", "kukanilea_core_v3_fixed",
     "--add-data", "templates;templates",
     "--add-data", "static;static",
     $EntryPoint

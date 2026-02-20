@@ -49,7 +49,9 @@ PYI_ARGS=(
   --clean
   --windowed
   --name "$APP_NAME"
+  --paths "$ROOT_DIR"
   --paths "$OBF_PARENT"
+  --hidden-import kukanilea_core_v3_fixed
   --add-data "$ROOT_DIR/templates:templates"
   --add-data "$ROOT_DIR/static:static"
 )
