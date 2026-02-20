@@ -25,7 +25,7 @@ def test_license_page_forbidden_for_non_admin() -> None:
     client = app.test_client()
     _login(client, role="OPERATOR")
 
-    res = client.get("/license")
+    res = client.get("/license", headers={"Accept": "application/json"})
     assert res.status_code == 403
     data = res.get_json() or {}
     assert data.get("error", {}).get("code") == "forbidden"

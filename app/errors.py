@@ -40,15 +40,31 @@ def _active_tab_from_path(path: str) -> str:
     return "upload"
 
 
-def _wants_html_error() -> bool:
+def wants_json_error() -> bool:
     path = str(request.path or "")
     if path.startswith("/api/"):
-        return False
-    accept = str(request.headers.get("Accept") or "").lower()
-    if "text/html" in accept:
         return True
+
+    # Browser navigations should prefer shell-based HTML errors.
     if str(request.headers.get("Sec-Fetch-Mode") or "").lower() == "navigate":
+        return False
+
+    accept = request.accept_mimetypes
+    json_quality = float(accept["application/json"])
+    html_quality = float(accept["text/html"])
+    if json_quality > 0 and json_quality > html_quality:
         return True
+
+    # XHR callers commonly expect JSON when HTML is not explicitly requested.
+    xrw = str(request.headers.get("X-Requested-With") or "").lower()
+    raw_accept = str(request.headers.get("Accept") or "").lower()
+    if (
+        xrw == "xmlhttprequest"
+        and "text/html" not in raw_accept
+        and ("application/json" in raw_accept or "*/*" in raw_accept)
+    ):
+        return True
+
     return False
 
 
@@ -108,6 +124,6 @@ def error_payload(
 def json_error(
     code: str, message: str, *, status: int = 400, details: Dict[str, Any] | None = None
 ):
-    if _wants_html_error():
+    if not wants_json_error():
         return _html_error_response(code, message, status=status)
     return jsonify(error_envelope(code, message, details=details)), status

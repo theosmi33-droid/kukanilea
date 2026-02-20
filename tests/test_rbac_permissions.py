@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 
 import pytest
@@ -97,3 +98,31 @@ def test_owner_admin_uniqueness_enforced(monkeypatch, tmp_path) -> None:
             ["OWNER_ADMIN"],
             actor_roles=["OFFICE"],
         )
+
+
+def test_owner_admin_unique_index_blocks_direct_duplicate_insert(
+    monkeypatch, tmp_path
+) -> None:
+    app = _make_app(monkeypatch, tmp_path)
+    auth_db = app.extensions["auth_db"]
+    now = datetime.now(timezone.utc).isoformat()
+    auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+    auth_db.upsert_user("owner", hash_password("pw123456"), now)
+    auth_db.upsert_membership("owner", "KUKANILEA", "ADMIN", now)
+    auth_db.set_user_roles("owner", ["OWNER_ADMIN"], actor_roles=["DEV"])
+    auth_db.upsert_user("other", hash_password("pw123456"), now)
+    auth_db.upsert_membership("other", "KUKANILEA", "OPERATOR", now)
+
+    con = sqlite3.connect(str(auth_db.path))
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute(
+                """
+                INSERT INTO auth_user_roles(username, role_name, created_at)
+                VALUES (?,?,?)
+                """,
+                ("other", "OWNER_ADMIN", now),
+            )
+            con.commit()
+    finally:
+        con.close()

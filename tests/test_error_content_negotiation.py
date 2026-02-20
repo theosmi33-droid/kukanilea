@@ -35,3 +35,28 @@ def test_non_api_error_can_still_return_json() -> None:
     assert res.status_code == 403
     payload = res.get_json() or {}
     assert payload.get("error", {}).get("code") == "forbidden"
+
+
+def test_non_api_error_defaults_to_html_when_accept_unspecified() -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    client = app.test_client()
+    _login(client, role="OPERATOR")
+
+    res = client.get("/license")
+    assert res.status_code == 403
+    body = res.get_data(as_text=True)
+    assert 'data-app-shell="1"' in body
+    assert "Request-ID:" in body
+
+
+def test_global_http_exception_honors_accept_json() -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    client = app.test_client()
+    _login(client, role="OPERATOR")
+
+    res = client.get("/route-does-not-exist", headers={"Accept": "application/json"})
+    assert res.status_code == 404
+    payload = res.get_json() or {}
+    assert payload.get("error", {}).get("code") == "http_error"
