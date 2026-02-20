@@ -4,6 +4,12 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      install_pyarmor:
+        description: "Install PyArmor and attempt obfuscation (manual runs only)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,13 +33,30 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install pyinstaller pyarmor
+          python -m pip install pyinstaller
+
+      - name: Install PyArmor (optional)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.install_pyarmor }}
+        run: python -m pip install pyarmor
 
       - name: Install create-dmg
         run: brew install create-dmg
 
       - name: Run obfuscation
         run: bash scripts/build/obfuscate.sh
+
+      - name: Obfuscation summary
+        if: always()
+        run: |
+          mode="plain-copy"
+          if [ -d "dist/obfuscated/app/pyarmor_runtime_000000" ]; then
+            mode="pyarmor"
+          fi
+          echo "### Obfuscation mode" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Mode: \`$mode\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "release" ] && [ "$mode" = "plain-copy" ]; then
+            echo "- Note: release ran without PyArmor (expected default)." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Build app bundle
         run: bash scripts/build/bundle_macos.sh --skip-obfuscate
