@@ -62,11 +62,16 @@ jobs:
         run: bash scripts/build/bundle_macos.sh --skip-obfuscate
 
       - name: Prepare signing keychain (optional)
-        if: ${{ github.event_name == 'release' && secrets.APPLE_CERT_P12_BASE64 != '' && secrets.APPLE_CERT_PASSWORD != '' && secrets.APPLE_SIGN_IDENTITY != '' }}
+        if: ${{ github.event_name == 'release' }}
         env:
           APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
         run: |
+          if [ -z "$APPLE_CERT_P12_BASE64" ] || [ -z "$APPLE_CERT_PASSWORD" ] || [ -z "$APPLE_SIGN_IDENTITY" ]; then
+            echo "Signing secrets missing; skipping keychain setup."
+            exit 0
+          fi
           KEYCHAIN_PATH="$RUNNER_TEMP/kukanilea-signing.keychain-db"
           CERT_PATH="$RUNNER_TEMP/kukanilea-signing.p12"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
@@ -81,20 +86,29 @@ jobs:
           rm -f "$CERT_PATH"
 
       - name: Sign app bundle (optional)
-        if: ${{ github.event_name == 'release' && secrets.APPLE_SIGN_IDENTITY != '' }}
+        if: ${{ github.event_name == 'release' }}
         env:
           APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
-        run: bash scripts/build/sign_macos.sh
+        run: |
+          if [ -z "$APPLE_SIGN_IDENTITY" ]; then
+            echo "APPLE_SIGN_IDENTITY missing; skipping app signing."
+            exit 0
+          fi
+          bash scripts/build/sign_macos.sh
 
       - name: Create DMG
         run: bash scripts/build/dmg_macos.sh
 
       - name: Sign DMG (optional)
-        if: ${{ github.event_name == 'release' && secrets.APPLE_SIGN_IDENTITY != '' }}
+        if: ${{ github.event_name == 'release' }}
         env:
           APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
         run: |
-          dmg_path="$(ls dist/KUKANILEA-*.dmg | head -n 1)"
+          if [ -z "$APPLE_SIGN_IDENTITY" ]; then
+            echo "APPLE_SIGN_IDENTITY missing; skipping DMG signing."
+            exit 0
+          fi
+          dmg_path="$(find dist -maxdepth 1 -name 'KUKANILEA-*.dmg' | head -n 1)"
           if [ -n "$dmg_path" ]; then
             codesign --force --sign "$APPLE_SIGN_IDENTITY" "$dmg_path"
           fi
@@ -108,8 +122,11 @@ jobs:
             dist/KUKANILEA-*.dmg
 
       - name: Cleanup signing keychain (optional)
-        if: ${{ always() && env.MACOS_KEYCHAIN_PATH != '' }}
-        run: security delete-keychain "$MACOS_KEYCHAIN_PATH" || true
+        if: ${{ always() }}
+        run: |
+          if [ -n "$MACOS_KEYCHAIN_PATH" ]; then
+            security delete-keychain "$MACOS_KEYCHAIN_PATH" || true
+          fi
 
       - name: Upload DMG to release
         if: github.event_name == 'release'
