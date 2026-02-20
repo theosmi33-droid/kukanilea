@@ -38,6 +38,7 @@ def test_packaging_uses_native_desktop_entrypoint() -> None:
 
     assert "from app.desktop import main" in mac_script
     assert "raise SystemExit(main())" in mac_script
+    assert "import webview" in mac_script
     assert (
         'serve(app, host="127.0.0.1", port=int(os.environ.get("PORT", "5051")))'
         not in mac_script
@@ -45,6 +46,7 @@ def test_packaging_uses_native_desktop_entrypoint() -> None:
 
     assert "from app.desktop import main" in win_script
     assert "raise SystemExit(main())" in win_script
+    assert "import webview" in win_script
     assert (
         'serve(app, host="127.0.0.1", port=int(os.environ.get("PORT", "5051")))'
         not in win_script

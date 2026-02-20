@@ -15,6 +15,11 @@ if (!(Test-Path $ObfApp)) {
 if ($null -eq (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
     throw "pyinstaller not found. Install build tools first."
 }
+try {
+    python -c "import webview" | Out-Null
+} catch {
+    throw "pywebview not found. Install build tools first (pip install pywebview)."
+}
 
 $EntryPoint = Join-Path $Root "dist/_packaging_entrypoint_windows.py"
 @"
