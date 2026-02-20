@@ -31,6 +31,8 @@ if ($null -ne $PyArmor) {
         }
         Copy-Item -Recurse -Force $SrcDir $OutDir
         Write-Host "Copied source to: $OutDir"
+        # Prevent CI step failure when fallback completed successfully.
+        $global:LASTEXITCODE = 0
     }
 }
 else {
