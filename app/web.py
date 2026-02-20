@@ -193,6 +193,7 @@ from app.tags import (
     tag_update,
     tags_for_entities,
 )
+from app.tenant.context import load_tenant_context, update_tenant_name
 from app.workflows import (
     WORKFLOW_TEMPLATE_MARKER_PREFIX,
     get_workflow_template,
@@ -213,8 +214,9 @@ from .auth import (
     require_role,
     verify_password,
 )
+from .bootstrap import bootstrap_dev_user, is_localhost_addr, needs_bootstrap
 from .config import Config
-from .db import AuthDB
+from .db import AuthDB, Membership
 from .errors import json_error
 from .license import load_license, load_runtime_license_state
 from .update_checker import check_for_updates
@@ -558,6 +560,44 @@ def _redact_email(value: str) -> str:
         return f"***@{domain}"
     keep = local[:1]
     return f"{keep}***@{domain}"
+
+
+def _ensure_default_membership(auth_db: AuthDB, username: str) -> Membership | None:
+    """Auto-heal legacy users without membership in fixed-tenant mode."""
+    uname = str(username or "").strip()
+    if not uname:
+        return None
+    if not bool(current_app.config.get("TENANT_FIXED", True)):
+        return None
+    tenant_id = str(current_app.config.get("TENANT_DEFAULT", "KUKANILEA")).strip()
+    if not tenant_id:
+        tenant_id = "KUKANILEA"
+    role = "OPERATOR"
+    if not bool(current_app.config.get("READ_ONLY", False)):
+        now = _now_iso()
+        auth_db.upsert_tenant(tenant_id, tenant_id, now)
+        auth_db.upsert_membership(uname, tenant_id, role, now)
+        memberships = auth_db.get_memberships(uname)
+        if memberships:
+            return memberships[0]
+    return Membership(username=uname, tenant_id=tenant_id, role=role)
+
+
+def _dev_local_email_codes_enabled() -> bool:
+    return bool(current_app.config.get("DEV_LOCAL_EMAIL_CODES", False))
+
+
+def _mail_mode_is_outbox() -> bool:
+    mode = str(current_app.config.get("MAIL_MODE", "outbox")).strip().lower()
+    return mode == "outbox"
+
+
+def _should_show_local_email_code() -> bool:
+    return (
+        _dev_local_email_codes_enabled()
+        and _mail_mode_is_outbox()
+        and is_localhost_addr(request.remote_addr)
+    )
 
 
 def _hash_code(value: str) -> str:
@@ -1329,6 +1369,33 @@ HTML_LOGIN = r"""
 </div>
 """
 
+HTML_BOOTSTRAP_START = r"""
+<div class="max-w-md mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">Initialer Bootstrap</h1>
+    <p class="text-sm opacity-80 mb-4">Noch kein Benutzer vorhanden. Erzeuge jetzt den ersten lokalen DEV-Zugang.</p>
+    <form method="post" class="space-y-3">
+      <button class="btn btn-primary w-full" type="submit">DEV-User erstellen</button>
+    </form>
+  </div>
+</div>
+"""
+
+HTML_BOOTSTRAP_DONE = r"""
+<div class="max-w-md mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">Bootstrap erfolgreich</h1>
+    <p class="text-sm opacity-80 mb-4">Die Zugangsdaten werden nur einmal angezeigt.</p>
+    <div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">
+      <div><strong>Username:</strong> <code id="bootstrapUsername">{{ credentials.username }}</code></div>
+      <div><strong>Passwort:</strong> <code id="bootstrapPassword">{{ credentials.password }}</code></div>
+      <div><strong>Tenant:</strong> <code id="bootstrapTenant">{{ credentials.tenant_id }}</code></div>
+    </div>
+    <a class="btn btn-primary w-full text-center" href="/login">Zum Login</a>
+  </div>
+</div>
+"""
+
 HTML_REGISTER = r"""
 <div class="max-w-md mx-auto mt-10">
   <div class="card p-6">
@@ -1336,6 +1403,7 @@ HTML_REGISTER = r"""
     <p class="text-sm opacity-80 mb-4">Offline-Flow: Bestätigungscode wird lokal in der Outbox abgelegt.</p>
     {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
     {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
+    {% if local_code %}<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm mb-3">Lokaler Verify-Code: <code id="localVerifyCode">{{ local_code }}</code></div>{% endif %}
     <form method="post" class="space-y-3">
       <div>
         <label class="label">E-Mail</label>
@@ -1392,6 +1460,7 @@ HTML_FORGOT_PASSWORD = r"""
     <p class="text-sm opacity-80 mb-4">Wir erzeugen lokal einen Reset-Code und legen ihn in der Outbox ab.</p>
     {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
     {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
+    {% if local_code %}<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm mb-3">Lokaler Reset-Code: <code id="localResetCode">{{ local_code }}</code></div>{% endif %}
     <form method="post" class="space-y-3">
       <div>
         <label class="label">E-Mail</label>
@@ -1437,6 +1506,28 @@ HTML_RESET_PASSWORD = r"""
       <a class="underline" href="/forgot-password">Code erneut anfordern</a>
       <a class="underline" href="/login">Zum Login</a>
     </div>
+  </div>
+</div>
+"""
+
+HTML_DEV_TENANT = r"""
+<div class="max-w-xl mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">DEV Tenant-Konfiguration</h1>
+    <p class="text-sm opacity-80 mb-4">Tenant-ID ist fixiert und kann nicht geändert werden.</p>
+    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
+    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
+    <form method="post" class="space-y-3">
+      <div>
+        <label class="label">Tenant-ID (read-only)</label>
+        <input class="input w-full" value="{{ tenant_id }}" readonly>
+      </div>
+      <div>
+        <label class="label">Tenant-Name</label>
+        <input class="input w-full" name="tenant_name" maxlength="120" value="{{ tenant_name }}" required>
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Tenant-Name speichern</button>
+    </form>
   </div>
 </div>
 """
@@ -2273,6 +2364,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 def _guard_login():
     p = request.path or "/"
     if p.startswith("/static/") or p in [
+        "/bootstrap",
         "/login",
         "/register",
         "/verify-email",
@@ -2294,6 +2386,34 @@ def _guard_login():
             )
         return redirect(url_for("web.login", next=p))
     return None
+
+
+@bp.route("/bootstrap", methods=["GET", "POST"])
+def bootstrap():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    if not needs_bootstrap(auth_db):
+        return redirect(url_for("web.login"))
+    if not is_localhost_addr(request.remote_addr):
+        abort(403)
+    if request.method == "POST":
+        if bool(current_app.config.get("READ_ONLY", False)):
+            abort(403)
+        credentials = bootstrap_dev_user(
+            auth_db,
+            tenant_id=str(current_app.config.get("TENANT_DEFAULT", "KUKANILEA")),
+            tenant_name=str(
+                current_app.config.get(
+                    "TENANT_NAME", current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
+                )
+            ),
+        )
+        return _render_base(
+            render_template_string(HTML_BOOTSTRAP_DONE, credentials=credentials),
+            active_tab="upload",
+        )
+    return _render_base(
+        render_template_string(HTML_BOOTSTRAP_START), active_tab="upload"
+    )
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -2318,6 +2438,10 @@ def login():
                 memberships = auth_db.get_memberships(u)
                 if not memberships and user.username != u:
                     memberships = auth_db.get_memberships(user.username)
+                if not memberships:
+                    fallback = _ensure_default_membership(auth_db, user.username)
+                    if fallback:
+                        memberships = [fallback]
                 if not memberships:
                     error = "Keine Mandanten-Zuordnung gefunden."
                 else:
@@ -2353,6 +2477,7 @@ def register():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     error = ""
     info = ""
+    local_code = ""
     if request.method == "POST":
         if bool(current_app.config.get("READ_ONLY", False)):
             error = "Read-only mode aktiv."
@@ -2398,8 +2523,12 @@ def register():
                     created_at=now,
                 )
                 info = "Registrierung gespeichert. Code in lokaler Outbox."
+                if _should_show_local_email_code():
+                    local_code = code
     return _render_base(
-        render_template_string(HTML_REGISTER, error=error, info=info),
+        render_template_string(
+            HTML_REGISTER, error=error, info=info, local_code=local_code
+        ),
         active_tab="upload",
     )
 
@@ -2437,6 +2566,7 @@ def forgot_password():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     error = ""
     info = ""
+    local_code = ""
     if request.method == "POST":
         if bool(current_app.config.get("READ_ONLY", False)):
             error = "Read-only mode aktiv."
@@ -2465,9 +2595,13 @@ def forgot_password():
                         body=f"Code: {code}",
                         created_at=now,
                     )
+                    if _should_show_local_email_code():
+                        local_code = code
                 info = "Wenn der Account existiert, wurde ein Reset-Code erzeugt."
     return _render_base(
-        render_template_string(HTML_FORGOT_PASSWORD, error=error, info=info),
+        render_template_string(
+            HTML_FORGOT_PASSWORD, error=error, info=info, local_code=local_code
+        ),
         active_tab="upload",
     )
 
@@ -9431,6 +9565,48 @@ def settings_page():
             profile=_get_profile(),
             import_root=str(current_app.config.get("IMPORT_ROOT", "")),
             update_info=update_info,
+        ),
+        active_tab="settings",
+    )
+
+
+@bp.route("/dev/tenant", methods=["GET", "POST"])
+@login_required
+@require_role("DEV")
+def dev_tenant_page():
+    if not is_localhost_addr(request.remote_addr):
+        return json_error("forbidden", "Nur localhost erlaubt.", status=403)
+
+    tenant_db_path = Path(current_app.config["TENANT_CONFIG_DB_PATH"])
+    error = ""
+    info = ""
+    if request.method == "POST":
+        if bool(current_app.config.get("READ_ONLY", False)):
+            error = "Read-only mode aktiv."
+        else:
+            tenant_name = (request.form.get("tenant_name") or "").strip()
+            if not tenant_name:
+                error = "Tenant-Name darf nicht leer sein."
+            else:
+                try:
+                    ctx = update_tenant_name(tenant_db_path, tenant_name)
+                    info = "Tenant-Name aktualisiert."
+                    current_app.config["TENANT_NAME"] = ctx.tenant_name
+                except Exception:
+                    error = "Tenant-Name konnte nicht gespeichert werden."
+
+    ctx = load_tenant_context(tenant_db_path)
+    if ctx is None:
+        return json_error(
+            "tenant_not_configured", "Tenant nicht konfiguriert.", status=403
+        )
+    return _render_base(
+        render_template_string(
+            HTML_DEV_TENANT,
+            tenant_id=ctx.tenant_id,
+            tenant_name=ctx.tenant_name,
+            error=error,
+            info=info,
         ),
         active_tab="settings",
     )
