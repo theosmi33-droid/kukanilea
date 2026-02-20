@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 try:
@@ -15,6 +16,26 @@ def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
 
 
+def get_data_dir() -> Path:
+    root = _env("KUKANILEA_USER_DATA_ROOT", "")
+    if root.strip():
+        path = Path(root).expanduser()
+    else:
+        path = Path(user_data_dir("KUKANILEA", appauthor=False))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_app_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        exe = Path(sys.executable).resolve()
+        for parent in exe.parents:
+            if parent.suffix.lower() == ".app":
+                return parent
+        return exe.parent
+    return Path(__file__).resolve().parent.parent
+
+
 class Config:
     BASE_DIR = Path(__file__).resolve().parent.parent
     PORT = int(_env("PORT", "5051"))
@@ -22,13 +43,9 @@ class Config:
     MAX_CONTENT_LENGTH = int(_env("KUKANILEA_MAX_UPLOAD", str(25 * 1024 * 1024)))
     MAX_EML_BYTES = int(_env("KUKA_MAX_EML_BYTES", str(10 * 1024 * 1024)))
 
-    USER_DATA_ROOT = Path(
-        _env(
-            "KUKANILEA_USER_DATA_ROOT",
-            user_data_dir("KUKANILEA", appauthor=False),
-        )
-    )
+    USER_DATA_ROOT = get_data_dir()
     USER_DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    APP_DIR = get_app_dir()
 
     LOG_DIR = USER_DATA_ROOT / "logs"
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,4 +119,19 @@ class Config:
     )
     UPDATE_CHECK_TIMEOUT_SECONDS = int(
         _env("KUKANILEA_UPDATE_CHECK_TIMEOUT_SECONDS", "5")
+    )
+    UPDATE_INSTALL_ENABLED = _env("KUKANILEA_UPDATE_INSTALL_ENABLED", "0") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+    )
+    UPDATE_INSTALL_URL = _env("KUKANILEA_UPDATE_INSTALL_URL", UPDATE_CHECK_URL)
+    UPDATE_INSTALL_TIMEOUT_SECONDS = int(
+        _env("KUKANILEA_UPDATE_INSTALL_TIMEOUT_SECONDS", "30")
+    )
+    UPDATE_APP_DIR = Path(_env("KUKANILEA_UPDATE_APP_DIR", str(APP_DIR)))
+    UPDATE_DOWNLOAD_DIR = Path(
+        _env("KUKANILEA_UPDATE_DOWNLOAD_DIR", str(USER_DATA_ROOT / "updates"))
     )

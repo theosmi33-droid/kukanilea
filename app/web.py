@@ -219,6 +219,15 @@ from .config import Config
 from .db import AuthDB, Membership
 from .errors import json_error
 from .license import load_license, load_runtime_license_state
+from .update import (
+    UpdateError,
+    check_for_installable_update,
+    download_update_asset,
+    get_app_dir,
+    get_data_dir,
+    install_update_from_archive,
+    rollback_update,
+)
 from .update_checker import check_for_updates
 from .version import __version__
 
@@ -1528,6 +1537,66 @@ HTML_DEV_TENANT = r"""
       </div>
       <button class="btn btn-primary w-full" type="submit">Tenant-Name speichern</button>
     </form>
+  </div>
+</div>
+"""
+
+
+HTML_DEV_UPDATE = r"""
+<div class="max-w-3xl mx-auto mt-10">
+  <div class="card p-6 space-y-4">
+    <h1 class="text-2xl font-bold">DEV Update Center</h1>
+    <p class="text-sm opacity-80">In-Place Update per Atomic Swap. App-Dateien werden ersetzt, Daten bleiben im User-Data-Ordner.</p>
+
+    <div class="grid gap-2 text-sm md:grid-cols-2">
+      <div><span class="muted text-xs">Installierte Version</span><div><strong>{{ current_version }}</strong></div></div>
+      <div><span class="muted text-xs">Install-Pfad</span><div class="break-all">{{ app_dir }}</div></div>
+      <div><span class="muted text-xs">Daten-Pfad</span><div class="break-all">{{ data_dir }}</div></div>
+      <div><span class="muted text-xs">Install-Flow</span><div><strong>{{ "aktiv" if install_enabled else "deaktiviert" }}</strong></div></div>
+    </div>
+
+    {% if error %}
+      <div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm">{{ error }}</div>
+    {% endif %}
+    {% if info %}
+      <div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">{{ info }}</div>
+    {% endif %}
+
+    <div class="grid gap-3 md:grid-cols-3">
+      <form method="post" class="contents">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="check">
+        <button class="btn btn-outline w-full" type="submit">Check for Updates</button>
+      </form>
+      <form method="post" class="contents">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="install">
+        <button class="btn btn-primary w-full" type="submit" {% if not install_enabled %}disabled{% endif %}>Install Update</button>
+      </form>
+      <form method="post" class="contents">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="rollback">
+        <button class="btn btn-outline w-full" type="submit" {% if not install_enabled %}disabled{% endif %}>Rollback</button>
+      </form>
+    </div>
+
+    <div class="rounded-xl border p-3 text-sm">
+      <div class="font-semibold mb-1">Letzter Check</div>
+      {% if update_state.error %}
+        <div>Fehler: <code>{{ update_state.error }}</code></div>
+      {% elif update_state.checked %}
+        <div>Neueste Version: <strong>{{ update_state.latest_version or "-" }}</strong></div>
+        <div>Installierbares Asset: <strong>{{ update_state.asset_name or "-" }}</strong></div>
+        {% if update_state.asset_url %}
+          <div class="break-all">Asset URL: {{ update_state.asset_url }}</div>
+        {% endif %}
+        {% if update_state.sha256 %}
+          <div>SHA256: <code>{{ update_state.sha256 }}</code></div>
+        {% endif %}
+      {% else %}
+        <div class="muted">Noch kein Check ausgeführt.</div>
+      {% endif %}
+    </div>
   </div>
 </div>
 """
@@ -8368,6 +8437,25 @@ HTML_SETTINGS = """
     </div>
   </div>
 
+  {% if role == "DEV" %}
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">In-Place Update (DEV)</div>
+    <div class="text-sm">
+      <div>Atomarer App-Swap mit Rollback (Datenverzeichnis bleibt unverändert).</div>
+      <div class="muted text-xs mt-1">
+        {% if update_install_enabled %}
+          Install-Flow aktiviert.
+        {% else %}
+          Install-Flow deaktiviert (`KUKANILEA_UPDATE_INSTALL_ENABLED=0`).
+        {% endif %}
+      </div>
+      <div class="mt-2">
+        <a class="underline" href="/dev/update">Update Center öffnen</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">DB wechseln (Allowlist)</div>
     <div class="flex flex-wrap gap-2 items-center">
@@ -9565,6 +9653,10 @@ def settings_page():
             profile=_get_profile(),
             import_root=str(current_app.config.get("IMPORT_ROOT", "")),
             update_info=update_info,
+            role=current_role(),
+            update_install_enabled=bool(
+                current_app.config.get("UPDATE_INSTALL_ENABLED", False)
+            ),
         ),
         active_tab="settings",
     )
@@ -9605,6 +9697,132 @@ def dev_tenant_page():
             HTML_DEV_TENANT,
             tenant_id=ctx.tenant_id,
             tenant_name=ctx.tenant_name,
+            error=error,
+            info=info,
+        ),
+        active_tab="settings",
+    )
+
+
+@bp.route("/dev/update", methods=["GET", "POST"])
+@login_required
+@require_role("DEV")
+def dev_update_page():
+    if not is_localhost_addr(request.remote_addr):
+        return json_error("forbidden", "Nur localhost erlaubt.", status=403)
+
+    install_enabled = bool(current_app.config.get("UPDATE_INSTALL_ENABLED", False))
+    app_dir = Path(current_app.config.get("UPDATE_APP_DIR") or get_app_dir()).resolve()
+    data_dir = Path(
+        current_app.config.get("USER_DATA_ROOT") or get_data_dir()
+    ).resolve()
+    download_dir = Path(
+        current_app.config.get("UPDATE_DOWNLOAD_DIR") or (data_dir / "updates")
+    ).resolve()
+    timeout_seconds = int(current_app.config.get("UPDATE_INSTALL_TIMEOUT_SECONDS", 30))
+    release_url = str(
+        current_app.config.get(
+            "UPDATE_INSTALL_URL", current_app.config.get("UPDATE_CHECK_URL", "")
+        )
+    ).strip()
+    update_state: dict[str, Any] = {
+        "checked": False,
+        "update_available": False,
+        "latest_version": "",
+        "release_url": "",
+        "asset_name": "",
+        "asset_url": "",
+        "sha256": "",
+        "error": "",
+    }
+    error = ""
+    info = ""
+
+    if request.method == "POST":
+        csrf_error = _csrf_guard(api=False)
+        if csrf_error:
+            return csrf_error
+        action = str(request.form.get("action") or "").strip().lower()
+        try:
+            if action == "check":
+                update_state = check_for_installable_update(
+                    __version__,
+                    release_url=release_url,
+                    timeout_seconds=timeout_seconds,
+                )
+                if update_state.get("error"):
+                    error = f"Update-Check fehlgeschlagen ({update_state['error']})."
+                elif bool(update_state.get("update_available")):
+                    info = (
+                        "Installierbares Update gefunden: "
+                        f"{update_state.get('latest_version', '-')}"
+                    )
+                else:
+                    info = "Keine neue installierbare Version gefunden."
+            elif action == "install":
+                if not install_enabled:
+                    error = "Install-Flow ist deaktiviert."
+                elif bool(current_app.config.get("READ_ONLY", False)):
+                    error = "Read-only mode aktiv."
+                else:
+                    update_state = check_for_installable_update(
+                        __version__,
+                        release_url=release_url,
+                        timeout_seconds=timeout_seconds,
+                    )
+                    if update_state.get("error"):
+                        error = f"Update-Check fehlgeschlagen ({update_state.get('error')})."
+                    elif not bool(update_state.get("update_available")):
+                        info = "Keine neue installierbare Version gefunden."
+                    else:
+                        archive = download_update_asset(
+                            str(update_state.get("asset_url") or ""),
+                            download_dir=download_dir,
+                            timeout_seconds=timeout_seconds,
+                        )
+                        result = install_update_from_archive(
+                            archive,
+                            app_dir=app_dir,
+                            data_dir=data_dir,
+                            expected_sha256=str(update_state.get("sha256") or ""),
+                        )
+                        info = (
+                            "Update installiert. Backup: "
+                            f"{result.get('backup_dir', '')}"
+                        )
+            elif action == "rollback":
+                if not install_enabled:
+                    error = "Install-Flow ist deaktiviert."
+                else:
+                    rollback = rollback_update(app_dir=app_dir)
+                    info = (
+                        "Rollback abgeschlossen. Wiederhergestellt aus "
+                        f"{rollback.get('restored_from', '')}."
+                    )
+            else:
+                error = "Unbekannte Aktion."
+        except UpdateError as exc:
+            error = str(exc)
+        except Exception:
+            error = "Update-Aktion fehlgeschlagen."
+    else:
+        try:
+            update_state = check_for_installable_update(
+                __version__,
+                release_url=release_url,
+                timeout_seconds=timeout_seconds,
+            )
+        except Exception:
+            update_state = {**update_state, "error": "check_failed"}
+
+    return _render_base(
+        render_template_string(
+            HTML_DEV_UPDATE,
+            current_version=__version__,
+            app_dir=str(app_dir),
+            data_dir=str(data_dir),
+            install_enabled=install_enabled,
+            update_state=update_state,
             error=error,
             info=info,
         ),
