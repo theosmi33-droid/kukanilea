@@ -14,12 +14,21 @@ if [ ! -d "$SRC_DIR" ]; then
   exit 1
 fi
 
-if command -v pyarmor >/dev/null 2>&1; then
-  echo "Obfuscating app/ with PyArmor..."
-  pyarmor gen --recursive --output "$OUT_DIR" "$SRC_DIR"
-  echo "Obfuscation output: $OUT_DIR"
-else
-  echo "PyArmor not found. Falling back to plain copy (no obfuscation)."
+copy_fallback() {
+  rm -rf "$OUT_DIR"
   cp -R "$SRC_DIR" "$OUT_DIR"
   echo "Copied source to: $OUT_DIR"
+}
+
+if command -v pyarmor >/dev/null 2>&1; then
+  echo "Obfuscating app/ with PyArmor..."
+  if pyarmor gen --recursive --output "$OUT_DIR" "$SRC_DIR"; then
+    echo "Obfuscation output: $OUT_DIR"
+  else
+    echo "PyArmor failed (likely trial/license/runtime issue). Falling back to plain copy (no obfuscation)." >&2
+    copy_fallback
+  fi
+else
+  echo "PyArmor not found. Falling back to plain copy (no obfuscation)."
+  copy_fallback
 fi

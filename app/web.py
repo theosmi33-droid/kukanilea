@@ -1109,13 +1109,20 @@ HTML_BASE = r"""<!doctype html>
     --shadow-soft:0 4px 16px rgba(15,23,42,.08);
   }
   *{ box-sizing:border-box; }
-  body{ margin:0; background:var(--bg); color:var(--text); --nav-width:240px; }
+  body{
+    margin:0; background:var(--bg); color:var(--text); --nav-width:240px;
+    --z-nav: 4000;
+    --z-overlay: 3900;
+    --z-topbar: 3000;
+    --z-chat: 3500;
+  }
   body.nav-collapsed{ --nav-width:78px; }
   .app-shell{ min-height:100vh; }
   .app-nav{
     width:var(--nav-width); background:var(--bg-elev); border-right:1px solid var(--border);
-    padding:24px 18px; position:fixed; top:0; left:0; bottom:0; z-index:80; overflow-x:hidden;
+    padding:24px 18px; position:fixed; top:0; left:0; bottom:0; z-index:var(--z-nav); overflow-x:hidden;
     transition:width .18s ease, transform .2s ease;
+    isolation:isolate;
   }
   .app-nav .brand-mark{
     height:40px; width:40px; border-radius:16px; display:flex; align-items:center; justify-content:center;
@@ -1138,6 +1145,7 @@ HTML_BASE = r"""<!doctype html>
     display:flex; justify-content:space-between; align-items:flex-start;
     padding:22px 28px; border-bottom:1px solid var(--border); background:var(--bg-elev);
     gap:16px;
+    position:sticky; top:0; z-index:var(--z-topbar);
   }
   .topbar-primary{ display:flex; align-items:center; gap:10px; }
   .topbar-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
@@ -1149,7 +1157,7 @@ HTML_BASE = r"""<!doctype html>
     position:fixed;
     inset:0;
     background:rgba(15,23,42,.55);
-    z-index:40;
+    z-index:var(--z-overlay);
   }
   .app-overlay.open{ display:block; }
   .nav-link{
@@ -1198,6 +1206,7 @@ HTML_BASE = r"""<!doctype html>
   .table-row{ border-bottom:1px solid color-mix(in srgb, var(--border) 75%, transparent); }
   .chat-fab{ background:var(--accent-600); box-shadow:var(--shadow-soft); color:white; }
   .chat-drawer{ background:var(--bg-elev); border-color:var(--border); box-shadow:var(--shadow); }
+  #chatWidgetBtn, #chatDrawer{ z-index:var(--z-chat) !important; }
   .chat-section{ border-color:var(--border); }
   .chat-messages{ height:calc(100vh - 230px); }
   @media (max-width: 1120px){
@@ -1205,7 +1214,7 @@ HTML_BASE = r"""<!doctype html>
     .mobile-nav-btn{ display:inline-flex; }
     .app-nav{
       width:240px;
-      position:fixed; top:0; left:0; z-index:80; transform:translateX(-102%);
+      position:fixed; top:0; left:0; z-index:var(--z-nav); transform:translateX(-102%);
       transition:transform .2s ease; height:100vh; box-shadow:var(--shadow-soft);
     }
     body.nav-collapsed .app-nav{ width:240px; }
@@ -1214,9 +1223,7 @@ HTML_BASE = r"""<!doctype html>
     body.nav-collapsed .nav-meta,
     body.nav-collapsed #navCollapseHint{ display:initial; }
     .app-nav.open{ transform:translateX(0); }
-    .app-topbar{
-      padding:14px 16px; position:sticky; top:0; z-index:20; backdrop-filter:blur(6px);
-    }
+    .app-topbar{ padding:14px 16px; backdrop-filter:blur(6px); }
     .app-main{ margin-left:0; }
     .app-content{ padding:16px; }
     #navCollapse{ display:none; }
@@ -1430,6 +1437,226 @@ HTML_BASE = r"""<!doctype html>
       navigator.serviceWorker.register('/sw.js').catch(function(){});
     });
   }
+})();
+</script>
+<script>
+(function(){
+  if(window.__kukaChatWidgetInit){ return; }
+  window.__kukaChatWidgetInit = true;
+
+  async function openToken(token){
+    if(!token) return;
+    try{
+      const res = await fetch('/api/open', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body: JSON.stringify({token})});
+      const data = await res.json();
+      if(!res.ok) return;
+      if(data && data.token){
+        window.location.href = '/review/' + data.token + '/kdnr';
+      }
+    }catch(_){}
+  }
+  async function copyToken(token){
+    if(!token) return;
+    try{ await navigator.clipboard.writeText(token); }catch(_){}
+  }
+
+  const _cw = {
+    btn: document.getElementById('chatWidgetBtn'),
+    drawer: document.getElementById('chatDrawer'),
+    close: document.getElementById('chatWidgetClose'),
+    msgs: document.getElementById('chatWidgetMsgs'),
+    input: document.getElementById('chatWidgetInput'),
+    send: document.getElementById('chatWidgetSend'),
+    kdnr: document.getElementById('chatWidgetKdnr'),
+    clear: document.getElementById('chatWidgetClear'),
+    status: document.getElementById('chatWidgetStatus'),
+    retry: document.getElementById('chatWidgetRetry'),
+    unread: document.getElementById('chatUnread'),
+    quick: Array.from(document.querySelectorAll('.chat-quick')),
+  };
+  if(!_cw.btn || !_cw.drawer){ return; }
+
+  let _cwLastBody = null;
+  let _cwAiAvailable = true;
+  function _cwAppend(role, text, actions, results, suggestions){
+    if(!_cw.msgs) return;
+    const wrap = document.createElement('div');
+    const isUser = role === 'you';
+    wrap.className = 'flex ' + (isUser ? 'justify-end' : 'justify-start');
+    const bubble = document.createElement('div');
+    bubble.className = (isUser
+      ? 'max-w-[85%] rounded-2xl px-3 py-2 text-white'
+      : 'max-w-[85%] rounded-2xl px-3 py-2 border') + ' card';
+    bubble.textContent = text;
+    if(actions && actions.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      actions.forEach((action) => {
+        if(action.type === 'open_token' && action.token){
+          const btn = document.createElement('button');
+          btn.textContent = 'Öffnen ' + action.token.slice(0,10) + '…';
+          btn.className = 'rounded-full border px-2 py-1';
+          btn.addEventListener('click', () => openToken(action.token));
+          list.appendChild(btn);
+          const tokenBtn = document.createElement('button');
+          tokenBtn.textContent = 'Token ' + action.token.slice(0,10) + '…';
+          tokenBtn.className = 'rounded-full border px-2 py-1';
+          tokenBtn.addEventListener('click', () => copyToken(action.token));
+          list.appendChild(tokenBtn);
+        }
+      });
+      bubble.appendChild(list);
+    }
+    if(results && results.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      results.forEach((row) => {
+        const token = row.token || row.doc_id || '';
+        const label = row.file_name || token || 'Dokument';
+        if(token){
+          const btn = document.createElement('button');
+          btn.textContent = label;
+          btn.className = 'rounded-full border px-2 py-1';
+          btn.addEventListener('click', () => openToken(token));
+          list.appendChild(btn);
+        }
+      });
+      bubble.appendChild(list);
+    }
+    if(suggestions && suggestions.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      suggestions.forEach((s) => {
+        const btn = document.createElement('button');
+        btn.textContent = s;
+        btn.dataset.q = s;
+        btn.className = 'rounded-full border px-2 py-1 chat-suggestion';
+        list.appendChild(btn);
+      });
+      bubble.appendChild(list);
+    }
+    if(isUser){
+      bubble.style.background = 'var(--accent-600)';
+    }
+    wrap.appendChild(bubble);
+    _cw.msgs.appendChild(wrap);
+    _cw.msgs.scrollTop = _cw.msgs.scrollHeight;
+    if(_cw.unread && _cw.drawer?.classList.contains('hidden')){
+      _cw.unread.classList.remove('hidden');
+    }
+  }
+  function _cwLoad(){
+    try{
+      const k = localStorage.getItem('kukanilea_cw_kdnr') || '';
+      if(_cw.kdnr) _cw.kdnr.value = k;
+      const hist = JSON.parse(localStorage.getItem('kukanilea_cw_hist') || '[]');
+      if(_cw.msgs){
+        _cw.msgs.innerHTML = '';
+        hist.forEach(x => _cwAppend(x.role, x.text));
+      }
+    }catch(_){}
+  }
+  function _cwSave(){
+    try{
+      if(_cw.kdnr) localStorage.setItem('kukanilea_cw_kdnr', _cw.kdnr.value || '');
+      const hist = [];
+      if(_cw.msgs){
+        _cw.msgs.querySelectorAll('div.flex').forEach(row => {
+          const isUser = row.className.includes('justify-end');
+          const bubble = row.querySelector('div');
+          hist.push({role: isUser ? 'you' : 'assistant', text: bubble ? bubble.textContent : ''});
+        });
+      }
+      localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
+    }catch(_){}
+  }
+  async function _cwRefreshAiStatus(){
+    try{
+      const r = await fetch('/api/ai/status', {method:'GET', headers:{'Accept':'application/json'}});
+      let j = {};
+      try{ j = await r.json(); }catch(_){}
+      _cwAiAvailable = !!(r.ok && j && j.available);
+      if(_cw.status) _cw.status.textContent = _cwAiAvailable ? 'Bereit' : 'KI offline';
+      if(_cw.send) _cw.send.disabled = !_cwAiAvailable;
+      if(_cw.input) _cw.input.disabled = !_cwAiAvailable;
+      if(!_cwAiAvailable && _cw.msgs && !_cw.msgs.dataset.aiNotice){
+        _cw.msgs.dataset.aiNotice = '1';
+        _cwAppend('assistant', 'KI-Assistent ist derzeit nicht verfuegbar. Bitte starte lokal `ollama serve`.');
+      }
+    }catch(_){
+      _cwAiAvailable = false;
+      if(_cw.status) _cw.status.textContent = 'KI offline';
+      if(_cw.send) _cw.send.disabled = true;
+      if(_cw.input) _cw.input.disabled = true;
+    }
+  }
+  async function _cwSend(){
+    if(!_cwAiAvailable){
+      _cwAppend('assistant', 'KI-Assistent ist offline. Starte `ollama serve` und versuche es erneut.');
+      return;
+    }
+    const q = (_cw.input && _cw.input.value ? _cw.input.value.trim() : '');
+    if(!q) return;
+    _cwAppend('you', q);
+    if(_cw.input) _cw.input.value = '';
+    _cwSave();
+    if(_cw.status) _cw.status.textContent = 'Denke…';
+    if(_cw.retry) _cw.retry.classList.add('hidden');
+    try{
+      const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
+      _cwLastBody = body;
+      const r = await fetch('/api/ai/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      let j = {};
+      try{ j = await r.json(); }catch(_){}
+      if(!r.ok){
+        const msg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ('HTTP ' + r.status));
+        _cwAppend('assistant', 'Fehler: ' + msg);
+        if(_cw.status) _cw.status.textContent = 'Fehler';
+        if(_cw.retry) _cw.retry.classList.remove('hidden');
+        return;
+      }
+      _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || [], j.results || [], j.suggestions || []);
+      if(_cw.status) _cw.status.textContent = 'OK';
+      _cwSave();
+    }catch(e){
+      _cwAppend('assistant', 'Fehler: ' + (e && e.message ? e.message : e));
+      if(_cw.status) _cw.status.textContent = 'Fehler';
+      if(_cw.retry) _cw.retry.classList.remove('hidden');
+    }
+  }
+
+  if(_cw.msgs){
+    _cw.msgs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chat-suggestion');
+      if(!btn) return;
+      if(_cw.input) _cw.input.value = btn.dataset.q || '';
+      _cwSend();
+    });
+  }
+  _cw.btn.addEventListener('click', () => {
+    _cw.drawer.classList.toggle('hidden');
+    if(_cw.unread) _cw.unread.classList.add('hidden');
+    _cwLoad();
+    _cwRefreshAiStatus();
+    if(!_cw.drawer.classList.contains('hidden') && _cw.input) _cw.input.focus();
+  });
+  if(_cw.close) _cw.close.addEventListener('click', () => _cw.drawer.classList.add('hidden'));
+  if(_cw.send) _cw.send.addEventListener('click', _cwSend);
+  if(_cw.input) _cw.input.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); _cwSend(); }});
+  if(_cw.kdnr) _cw.kdnr.addEventListener('change', _cwSave);
+  if(_cw.clear) _cw.clear.addEventListener('click', () => { if(_cw.msgs) _cw.msgs.innerHTML=''; localStorage.removeItem('kukanilea_cw_hist'); _cwSave(); });
+  if(_cw.retry) _cw.retry.addEventListener('click', () => {
+    if(!_cwLastBody) return;
+    if(_cw.input) _cw.input.value = _cwLastBody.q || '';
+    _cwSend();
+  });
+  _cw.quick.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if(_cw.input) _cw.input.value = btn.dataset.q || '';
+      _cwSend();
+    });
+  });
+  _cwRefreshAiStatus();
 })();
 </script>
 </body>
@@ -2233,6 +2460,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   window.openToken = openToken;
   window.copyToken = copyToken;
   function add(role, text, actions, results, suggestions){
+    if(!log) return;
     const d = document.createElement("div");
     d.className = "mb-3";
     let actionHtml = "";
@@ -2266,13 +2494,14 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     log.scrollTop = log.scrollHeight;
   }
   async function doSend(){
+    if(!q || !send) return;
     const msg = (q.value || "").trim();
     if(!msg) return;
     add("you", msg);
     q.value = "";
     send.disabled = true;
     try{
-      const res = await fetch("/api/ai/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
+      const res = await fetch("/api/ai/chat", {method:"POST", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr?.value||"").trim()})});
       const j = await res.json();
       if(!res.ok){
         const errMsg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ("HTTP " + res.status));
@@ -2282,16 +2511,20 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     }catch(e){ add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e)); }
     finally{ send.disabled = false; }
   }
-  send.addEventListener("click", doSend);
-  q.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSend(); }});
-  log.addEventListener("click", (e) => {
-    const btn = e.target.closest(".chat-suggestion");
-    if(!btn) return;
-    q.value = btn.dataset.q || "";
-    doSend();
-  });
+  if(log && q && send){
+    send.addEventListener("click", doSend);
+    q.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSend(); }});
+    log.addEventListener("click", (e) => {
+      const btn = e.target.closest(".chat-suggestion");
+      if(!btn) return;
+      q.value = btn.dataset.q || "";
+      doSend();
+    });
+  }
 
   // ---- Floating Chat Widget ----
+  if(window.__kukaChatWidgetInit){ return; }
+  window.__kukaChatWidgetInit = true;
   const _cw = {
     btn: document.getElementById('chatWidgetBtn'),
     drawer: document.getElementById('chatDrawer'),

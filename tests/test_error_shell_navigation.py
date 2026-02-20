@@ -37,6 +37,10 @@ def test_navigation_is_persistent_and_minimizable_in_shell() -> None:
     assert 'id="navCollapse"' in body
     assert 'id="goBack"' in body
     assert 'id="reloadPage"' in body
+    assert 'id="chatWidgetBtn"' in body
+    assert "__kukaChatWidgetInit" in body
+    assert "--z-nav: 4000;" in body
+    assert "z-index:var(--z-nav)" in body
 
 
 def test_api_404_returns_json_error_shape() -> None:
