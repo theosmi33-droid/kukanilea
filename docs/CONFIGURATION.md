@@ -153,6 +153,33 @@ Hinweis:
 - Standard: `<KUKANILEA_USER_DATA_ROOT>/updates`
 - Zweck: Ablagepfad fuer heruntergeladene Update-Archive
 
+## Session Management
+
+### `KUKANILEA_SESSION_ABSOLUTE_TIMEOUT_HOURS`
+- Typ: Integer
+- Standard: `8`
+- Zweck: Absolute maximale Sitzungsdauer in Stunden (serverseitig erzwungen).
+
+### `KUKANILEA_IDLE_TIMEOUT_DEFAULT_MINUTES`
+- Typ: Integer
+- Standard: `60`
+- Zweck: Standard-Inaktivitaets-Timeout pro User in Minuten.
+
+### `KUKANILEA_IDLE_TIMEOUT_MIN_MINUTES`
+- Typ: Integer
+- Standard: `15`
+- Zweck: Untere Grenze fuer benutzerseitig einstellbares Inaktivitaets-Timeout.
+
+### `KUKANILEA_IDLE_TIMEOUT_MAX_MINUTES`
+- Typ: Integer
+- Standard: `480`
+- Zweck: Obere Grenze fuer benutzerseitig einstellbares Inaktivitaets-Timeout.
+
+### `KUKANILEA_IDLE_TOUCH_SECONDS`
+- Typ: Integer
+- Standard: `60`
+- Zweck: Aktualisiert `last_activity` maximal alle N Sekunden, um Session-Schreiblast zu begrenzen.
+
 ## Lizenzserver (separater Service)
 
 Diese Variablen gelten nur fuer den separaten Server unter `license_server/`.

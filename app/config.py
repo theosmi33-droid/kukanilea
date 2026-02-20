@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 try:
@@ -135,3 +136,17 @@ class Config:
     UPDATE_DOWNLOAD_DIR = Path(
         _env("KUKANILEA_UPDATE_DOWNLOAD_DIR", str(USER_DATA_ROOT / "updates"))
     )
+    PERMANENT_SESSION_LIFETIME = timedelta(
+        hours=int(_env("KUKANILEA_SESSION_ABSOLUTE_TIMEOUT_HOURS", "8"))
+    )
+    SESSION_REFRESH_EACH_REQUEST = False
+    SESSION_IDLE_TIMEOUT_DEFAULT_MINUTES = int(
+        _env("KUKANILEA_IDLE_TIMEOUT_DEFAULT_MINUTES", "60")
+    )
+    SESSION_IDLE_TIMEOUT_MIN_MINUTES = int(
+        _env("KUKANILEA_IDLE_TIMEOUT_MIN_MINUTES", "15")
+    )
+    SESSION_IDLE_TIMEOUT_MAX_MINUTES = int(
+        _env("KUKANILEA_IDLE_TIMEOUT_MAX_MINUTES", "480")
+    )
+    SESSION_IDLE_TOUCH_SECONDS = int(_env("KUKANILEA_IDLE_TOUCH_SECONDS", "60"))

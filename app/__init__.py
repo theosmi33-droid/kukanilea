@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging as py_logging
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Flask, abort, g, redirect, request, url_for
+from flask import Flask, abort, g, redirect, request, session, url_for
 from werkzeug.exceptions import HTTPException
 
 from .ai import init_ai
@@ -16,6 +17,69 @@ from .errors import json_error
 from .license import load_runtime_license_state
 from .logging import init_request_logging
 from .tenant.context import ensure_tenant_config, load_tenant_context
+
+_SESSION_TIMEOUT_PUBLIC_PATHS = {
+    "/login",
+    "/logout",
+    "/register",
+    "/verify-email",
+    "/forgot-password",
+    "/reset-password",
+    "/bootstrap",
+    "/license",
+    "/health",
+    "/api/health",
+    "/api/health/live",
+    "/api/health/ready",
+    "/api/ping",
+    "/app.webmanifest",
+    "/sw.js",
+    "/auth/google/start",
+    "/auth/google/callback",
+}
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _to_session_iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _parse_session_iso(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    token = raw
+    if token.endswith("Z"):
+        token = token[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(token)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _session_idle_minutes(app: Flask, raw: object) -> int:
+    default_val = int(app.config.get("SESSION_IDLE_TIMEOUT_DEFAULT_MINUTES", 60) or 60)
+    min_val = int(app.config.get("SESSION_IDLE_TIMEOUT_MIN_MINUTES", 15) or 15)
+    max_val = int(app.config.get("SESSION_IDLE_TIMEOUT_MAX_MINUTES", 480) or 480)
+    if min_val > max_val:
+        min_val, max_val = max_val, min_val
+    try:
+        value = int(raw)
+    except Exception:
+        value = default_val
+    return max(min_val, min(max_val, value))
+
+
+def _session_timeout_response(reason: str):
+    if request.path.startswith("/api/"):
+        return json_error("session_timeout", f"Sitzung beendet ({reason}).", status=401)
+    return redirect(url_for("web.login", next=request.path))
 
 
 def _wire_runtime_env(app: Flask) -> None:
@@ -138,10 +202,55 @@ def create_app() -> Flask:
         g.tenant_ctx = ctx
         g.tenant_id = ctx.tenant_id
         # Override any client/session tenant to enforce fixed installation tenant.
-        from flask import session
-
         if session.get("tenant_id") != ctx.tenant_id:
             session["tenant_id"] = ctx.tenant_id
+        return None
+
+    @app.before_request
+    def _enforce_session_timeouts():
+        path = (request.path or "").rstrip("/") or "/"
+        if path.startswith("/static/") or path in _SESSION_TIMEOUT_PUBLIC_PATHS:
+            return None
+        if not session.get("user"):
+            return None
+
+        now = _utcnow()
+        session.permanent = True
+
+        created_at = _parse_session_iso(session.get("session_created_at"))
+        if created_at is None:
+            session["session_created_at"] = _to_session_iso(now)
+            created_at = now
+
+        absolute_cap = app.permanent_session_lifetime
+        if not isinstance(absolute_cap, timedelta):
+            absolute_cap = timedelta(hours=8)
+        if now - created_at > absolute_cap:
+            session.clear()
+            return _session_timeout_response("maximale Sitzungsdauer erreicht")
+
+        last_activity = _parse_session_iso(session.get("last_activity"))
+        if last_activity is None:
+            session["last_activity"] = _to_session_iso(now)
+            return None
+
+        idle_minutes = _session_idle_minutes(app, session.get("idle_timeout_minutes"))
+        try:
+            stored_idle = int(session.get("idle_timeout_minutes", idle_minutes))
+        except Exception:
+            stored_idle = None
+        if stored_idle != idle_minutes:
+            session["idle_timeout_minutes"] = idle_minutes
+
+        if (now - last_activity).total_seconds() > float(idle_minutes * 60):
+            session.clear()
+            return _session_timeout_response("Inaktivität")
+
+        touch_seconds = int(app.config.get("SESSION_IDLE_TOUCH_SECONDS", 60) or 60)
+        if touch_seconds < 1:
+            touch_seconds = 1
+        if (now - last_activity).total_seconds() >= touch_seconds:
+            session["last_activity"] = _to_session_iso(now)
         return None
 
     @app.before_request

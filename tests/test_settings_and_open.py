@@ -10,16 +10,14 @@ def _login(client, role: str):
         sess["tenant_id"] = "KUKANILEA"
 
 
-def test_settings_forbidden_for_non_admin():
+def test_settings_available_for_operator():
     app = create_app()
     app.config.update(TESTING=True, SECRET_KEY="test")
     client = app.test_client()
     _login(client, "OPERATOR")
     res = client.get("/settings")
-    assert res.status_code == 403
-    data = res.get_json()
-    assert data["ok"] is False
-    assert data["error"]["code"] == "forbidden"
+    assert res.status_code == 200
+    assert b"Inaktivitaets-Timeout" in res.data
 
 
 def test_open_by_token_creates_pending(tmp_path, monkeypatch):
