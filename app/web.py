@@ -729,6 +729,11 @@ def _card(kind: str, msg: str) -> str:
 
 def _render_base(content: str, active_tab: str = "upload") -> str:
     profile = _get_profile()
+    theme_default = (
+        str(current_app.config.get("THEME_DEFAULT", "light")).strip().lower()
+    )
+    if theme_default not in {"light", "dark"}:
+        theme_default = "light"
     return render_template_string(
         HTML_BASE,
         content=content,
@@ -738,6 +743,7 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
         tenant=current_tenant() or "-",
         profile=profile,
         active_tab=active_tab,
+        theme_default=theme_default,
     )
 
 
@@ -1049,7 +1055,7 @@ def _crm_contacts_list(tenant_id: str, customer_id: str) -> list[dict[str, Any]]
 
 # -------- UI Templates ----------
 HTML_BASE = r"""<!doctype html>
-<html lang="de">
+<html lang="de" data-theme="{{ theme_default }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1058,9 +1064,11 @@ HTML_BASE = r"""<!doctype html>
 <title>KUKANILEA Systems</title>
 <script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
 <script>
-  const savedTheme = localStorage.getItem("ks_theme") || "dark";
+  const savedTheme = localStorage.getItem("ks_theme") || "{{ theme_default }}";
   const savedAccent = localStorage.getItem("ks_accent") || "indigo";
   if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
+  else { document.documentElement.classList.remove("light"); }
+  document.documentElement.dataset.theme = savedTheme;
   document.documentElement.dataset.accent = savedAccent;
 </script>
 <style>
@@ -1215,7 +1223,7 @@ HTML_BASE = r"""<!doctype html>
   }
 </style>
 </head>
-<body>
+<body data-app-shell="1">
 <div class="app-shell">
   <div id="appNavOverlay" class="app-overlay"></div>
   <aside id="appNav" class="app-nav">
@@ -1344,11 +1352,12 @@ HTML_BASE = r"""<!doctype html>
   const lblTheme = document.getElementById("themeLabel");
   const btnAcc = document.getElementById("accentBtn");
   const lblAcc = document.getElementById("accentLabel");
-  function curTheme(){ return (localStorage.getItem("ks_theme") || "dark"); }
+  function curTheme(){ return (localStorage.getItem("ks_theme") || "{{ theme_default }}"); }
   function curAccent(){ return (localStorage.getItem("ks_accent") || "indigo"); }
   function applyTheme(t){
     if(t === "light"){ document.documentElement.classList.add("light"); }
     else { document.documentElement.classList.remove("light"); }
+    document.documentElement.dataset.theme = t;
     localStorage.setItem("ks_theme", t);
     lblTheme.textContent = t;
   }
