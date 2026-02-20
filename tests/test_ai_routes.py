@@ -69,6 +69,32 @@ def test_api_ai_chat_success(monkeypatch) -> None:
     assert payload.get("conversation_id") == "conv-123"
 
 
+def test_api_ai_confirm_tool_success(monkeypatch) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    client = app.test_client()
+    _login(client)
+
+    monkeypatch.setattr(
+        webmod,
+        "ai_confirm_tool_call",
+        lambda **kwargs: {
+            "status": "ok",
+            "response": "Bestaetigte Aktion ausgefuehrt.",
+            "conversation_id": "conv-confirm-1",
+            "tool_used": ["create_task"],
+            "result": {"task_id": 12},
+        },
+    )
+    res = client.post("/api/ai/confirm_tool", json={"token": "signed-token"})
+    assert res.status_code == 200
+    payload = res.get_json() or {}
+    assert payload.get("ok") is True
+    assert payload.get("status") == "ok"
+    assert payload.get("conversation_id") == "conv-confirm-1"
+    assert payload.get("tool_used") == ["create_task"]
+
+
 def test_api_ai_feedback_route(tmp_path: Path) -> None:
     app = create_app()
     app.config.update(TESTING=True, SECRET_KEY="test")
