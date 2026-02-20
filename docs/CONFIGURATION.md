@@ -249,6 +249,26 @@ python scripts/connect_source_root.py \
 - Standard: `30`
 - Zweck: Timeout fuer Download/Metadaten im Install-Flow
 
+### `KUKANILEA_UPDATE_MANIFEST_URL`
+- Typ: String (URL)
+- Standard: leer (`""`)
+- Zweck: Optionaler Endpoint fuer ein signiertes Update-Manifest (bevorzugte Quelle fuer installierbare Assets)
+
+### `KUKANILEA_UPDATE_SIGNING_REQUIRED`
+- Typ: Bool (`0|1`)
+- Standard: `0`
+- Zweck: Erzwingt gueltige Manifest-Signaturpruefung (fail-closed bei Signatur-/Fetch-Fehlern)
+
+### `KUKANILEA_UPDATE_SIGNING_PUBLIC_KEY`
+- Typ: String (PEM oder Base64-kodiertes PEM)
+- Standard: leer (`""`)
+- Zweck: Oeffentlicher Schluessel zur Signaturpruefung des Update-Manifests
+
+### `KUKANILEA_UPDATE_SIGNING_PUBLIC_KEY_FILE`
+- Typ: Pfad
+- Standard: leer (`""`)
+- Zweck: Alternative zu `KUKANILEA_UPDATE_SIGNING_PUBLIC_KEY`; wird aus Datei geladen
+
 ### `KUKANILEA_UPDATE_APP_DIR`
 - Typ: Pfad
 - Standard: automatisch erkannter App-Pfad

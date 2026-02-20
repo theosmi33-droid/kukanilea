@@ -1906,12 +1906,23 @@ HTML_DEV_UPDATE = r"""
         <div>Fehler: <code>{{ update_state.error }}</code></div>
       {% elif update_state.checked %}
         <div>Neueste Version: <strong>{{ update_state.latest_version or "-" }}</strong></div>
+        <div>Quelle: <strong>{{ "Signiertes Manifest" if update_state.manifest_used else "Release API" }}</strong></div>
         <div>Installierbares Asset: <strong>{{ update_state.asset_name or "-" }}</strong></div>
         {% if update_state.asset_url %}
           <div class="break-all">Asset URL: {{ update_state.asset_url }}</div>
         {% endif %}
         {% if update_state.sha256 %}
           <div>SHA256: <code>{{ update_state.sha256 }}</code></div>
+        {% endif %}
+        {% if update_state.signature_required %}
+          <div>Signaturpflicht: <strong>aktiv</strong></div>
+          <div>Signaturprüfung: <strong>{{ "OK" if update_state.signature_verified else "FEHLER" }}</strong></div>
+          {% if update_state.signature_key_id %}
+            <div>Signing-Key-ID: <code>{{ update_state.signature_key_id }}</code></div>
+          {% endif %}
+          {% if update_state.signature_error %}
+            <div>Signaturfehler: <code>{{ update_state.signature_error }}</code></div>
+          {% endif %}
         {% endif %}
       {% else %}
         <div class="muted">Noch kein Check ausgeführt.</div>
@@ -10351,6 +10362,11 @@ def dev_update_page():
             "UPDATE_INSTALL_URL", current_app.config.get("UPDATE_CHECK_URL", "")
         )
     ).strip()
+    manifest_url = str(current_app.config.get("UPDATE_MANIFEST_URL", "")).strip()
+    signing_required = bool(current_app.config.get("UPDATE_SIGNING_REQUIRED", False))
+    signing_public_key = str(
+        current_app.config.get("UPDATE_SIGNING_PUBLIC_KEY", "")
+    ).strip()
     update_state: dict[str, Any] = {
         "checked": False,
         "update_available": False,
@@ -10359,6 +10375,12 @@ def dev_update_page():
         "asset_name": "",
         "asset_url": "",
         "sha256": "",
+        "manifest_url": manifest_url,
+        "manifest_used": False,
+        "signature_required": signing_required,
+        "signature_verified": False,
+        "signature_key_id": "",
+        "signature_error": "",
         "error": "",
     }
     error = ""
@@ -10375,6 +10397,9 @@ def dev_update_page():
                     __version__,
                     release_url=release_url,
                     timeout_seconds=timeout_seconds,
+                    manifest_url=manifest_url,
+                    signing_required=signing_required,
+                    public_key_pem=signing_public_key,
                 )
                 if update_state.get("error"):
                     error = f"Update-Check fehlgeschlagen ({update_state['error']})."
@@ -10395,6 +10420,9 @@ def dev_update_page():
                         __version__,
                         release_url=release_url,
                         timeout_seconds=timeout_seconds,
+                        manifest_url=manifest_url,
+                        signing_required=signing_required,
+                        public_key_pem=signing_public_key,
                     )
                     if update_state.get("error"):
                         error = f"Update-Check fehlgeschlagen ({update_state.get('error')})."
@@ -10437,6 +10465,9 @@ def dev_update_page():
                 __version__,
                 release_url=release_url,
                 timeout_seconds=timeout_seconds,
+                manifest_url=manifest_url,
+                signing_required=signing_required,
+                public_key_pem=signing_public_key,
             )
         except Exception:
             update_state = {**update_state, "error": "check_failed"}
