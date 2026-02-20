@@ -67,6 +67,7 @@ from app.agents.retrieval_fts import upsert_external_fact
 from app.ai.knowledge import store_entity
 from app.ai.memory import add_feedback as ai_add_feedback
 from app.ai.ollama_client import ollama_is_available, ollama_list_models
+from app.ai.orchestrator import confirm_tool_call as ai_confirm_tool_call
 from app.ai.orchestrator import process_message as ai_process_message
 from app.ai.predictions import daily_report, predict_budget
 from app.automation import (
@@ -2854,13 +2855,22 @@ def api_ai_chat():
         return json_error("ai_error", f"KI-Fehler: {exc}", status=500)
 
     tool_used = [str(v) for v in (result.get("tool_used") or []) if str(v).strip()]
+    pending_confirmation = result.get("pending_confirmation")
     actions = [{"type": "tool_call", "name": name} for name in tool_used[:8]]
+    if isinstance(pending_confirmation, dict):
+        actions.append(
+            {
+                "type": "confirmation_required",
+                "name": str(pending_confirmation.get("tool_name") or ""),
+            }
+        )
     response_text = str(result.get("response") or "")
     out = {
         "ok": True,
         "status": str(result.get("status") or "error"),
         "conversation_id": result.get("conversation_id"),
         "tool_used": tool_used,
+        "pending_confirmation": pending_confirmation,
         "response": response_text,
         "message": response_text,
         "actions": actions,
@@ -2873,6 +2883,41 @@ def api_ai_chat():
             text=response_text,
         )
     return jsonify(out)
+
+
+@bp.route("/api/ai/confirm_tool", methods=["POST"])
+@login_required
+def api_ai_confirm_tool():
+    payload = request.get_json(silent=True) or {}
+    token = (
+        (payload.get("token") if isinstance(payload, dict) else None)
+        or request.form.get("token")
+        or ""
+    ).strip()
+    if not token:
+        return json_error("validation_error", "token fehlt.", status=400)
+
+    try:
+        result = ai_confirm_tool_call(
+            tenant_id=current_tenant(),
+            user_id=str(current_user() or "system"),
+            confirmation_token=token,
+            read_only=bool(current_app.config.get("READ_ONLY", False)),
+        )
+    except Exception as exc:
+        return json_error("ai_error", f"Bestaetigungsfehler: {exc}", status=500)
+
+    return jsonify(
+        {
+            "ok": result.get("status") != "error",
+            "status": str(result.get("status") or "error"),
+            "conversation_id": result.get("conversation_id"),
+            "tool_used": [str(v) for v in (result.get("tool_used") or [])],
+            "response": str(result.get("response") or ""),
+            "message": str(result.get("response") or ""),
+            "result": result.get("result") or {},
+        }
+    )
 
 
 @bp.route("/api/ai/feedback", methods=["POST"])

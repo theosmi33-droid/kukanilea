@@ -31,3 +31,15 @@ Zusatzschutz:
 - Content Security Policy erzwingt `font-src 'self'`.
 - Browser blockieren dadurch jeden externen Font-Nachladeversuch.
 - Runtime-Assets enthalten keine Referenzen auf `fonts.googleapis.com` oder `fonts.gstatic.com`.
+
+## LLM Tool-Use Security
+
+Der lokale KI-Orchestrator erzwingt serverseitige Schutzmechanismen gegen Prompt-Injection:
+
+- Tool-Allowlist: nur freigegebene Tool-Namen werden akzeptiert.
+- Strikte Argumentvalidierung (`extra=\"forbid\"`): unbekannte/zusätzliche Felder werden verworfen.
+- Confirm-Gate für mutierende Tools: Schreibaktionen werden erst nach expliziter serverseitig verifizierter Bestätigung ausgeführt.
+- Replay-Schutz für Bestätigungstoken (einmalige Verwendung).
+- Audit-Events für Tool-Calls (`ai_tool_call`) mit redigierten Argumenten.
+
+Damit gilt: deny-by-default bei Tool-Aufrufen, keine stillen Mutationen durch Modell-Ausgaben.
