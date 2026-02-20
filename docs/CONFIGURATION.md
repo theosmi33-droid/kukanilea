@@ -180,6 +180,20 @@ Hinweis:
 - Standard: `60`
 - Zweck: Aktualisiert `last_activity` maximal alle N Sekunden, um Session-Schreiblast zu begrenzen.
 
+## Content Security Policy (CSP)
+
+KUKANILEA sendet einen restriktiven CSP-Header fuer alle Responses:
+
+```text
+Content-Security-Policy: default-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'
+```
+
+Hinweise:
+
+- `font-src 'self'` blockiert externe Schriftarten (z. B. Google Fonts) browserseitig.
+- `style-src`/`script-src` enthalten `unsafe-inline`, da die aktuelle UI Inline-Styles/-Skripte nutzt.
+- Externe CDN-Fonts sind nicht erlaubt; Schriften werden lokal unter `static/fonts/` ausgeliefert.
+
 ## Lizenzserver (separater Service)
 
 Diese Variablen gelten nur fuer den separaten Server unter `license_server/`.
