@@ -24,22 +24,10 @@ fi
 cat > "$ENTRYPOINT" <<'PY'
 from __future__ import annotations
 
-import os
-import sys
-
-ROOT = os.path.dirname(__file__)
-OBF_PARENT = os.path.join(ROOT, "obfuscated")
-if os.path.isdir(OBF_PARENT):
-    sys.path.insert(0, OBF_PARENT)
-
-from app import create_app  # noqa: E402
-
-app = create_app()
-
 if __name__ == "__main__":
-    from waitress import serve
+    from app.desktop import main
 
-    serve(app, host="127.0.0.1", port=int(os.environ.get("PORT", "5051")))
+    raise SystemExit(main())
 PY
 
 rm -rf "$ROOT_DIR/build/$APP_NAME" "$ROOT_DIR/dist/$APP_NAME" "$ROOT_DIR/dist/$APP_NAME.app"
@@ -49,9 +37,11 @@ PYI_ARGS=(
   --clean
   --windowed
   --name "$APP_NAME"
-  --paths "$ROOT_DIR"
   --paths "$OBF_PARENT"
+  --paths "$ROOT_DIR"
   --hidden-import kukanilea_core_v3_fixed
+  --hidden-import webview
+  --hidden-import webview.platforms.cocoa
   --add-data "$ROOT_DIR/templates:templates"
   --add-data "$ROOT_DIR/static:static"
 )

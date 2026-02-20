@@ -20,22 +20,10 @@ $EntryPoint = Join-Path $Root "dist/_packaging_entrypoint_windows.py"
 @"
 from __future__ import annotations
 
-import os
-import sys
-
-ROOT = os.path.dirname(__file__)
-OBF_PARENT = os.path.join(ROOT, "obfuscated")
-if os.path.isdir(OBF_PARENT):
-    sys.path.insert(0, OBF_PARENT)
-
-from app import create_app  # noqa: E402
-
-app = create_app()
-
 if __name__ == "__main__":
-    from waitress import serve
+    from app.desktop import main
 
-    serve(app, host="127.0.0.1", port=int(os.environ.get("PORT", "5051")))
+    raise SystemExit(main())
 "@ | Set-Content -Encoding UTF8 $EntryPoint
 
 $DistExe = Join-Path $Root "dist/KUKANILEA.exe"
@@ -51,9 +39,12 @@ $Args = @(
     "--name", "KUKANILEA",
     "--windowed",
     "--onefile",
-    "--paths", $Root,
     "--paths", (Join-Path $Root "dist/obfuscated"),
+    "--paths", $Root,
     "--hidden-import", "kukanilea_core_v3_fixed",
+    "--hidden-import", "webview",
+    "--hidden-import", "webview.platforms.winforms",
+    "--hidden-import", "webview.platforms.edgechromium",
     "--add-data", "templates;templates",
     "--add-data", "static;static",
     $EntryPoint
