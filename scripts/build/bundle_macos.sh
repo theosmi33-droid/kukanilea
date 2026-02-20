@@ -21,6 +21,11 @@ if ! command -v pyinstaller >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! python -c "import webview" >/dev/null 2>&1; then
+  echo "pywebview not found. Install build tools first (pip install pywebview)." >&2
+  exit 1
+fi
+
 cat > "$ENTRYPOINT" <<'PY'
 from __future__ import annotations
 
