@@ -61,8 +61,43 @@ jobs:
       - name: Build app bundle
         run: bash scripts/build/bundle_macos.sh --skip-obfuscate
 
+      - name: Prepare signing keychain (optional)
+        if: ${{ github.event_name == 'release' && secrets.APPLE_CERT_P12_BASE64 != '' && secrets.APPLE_CERT_PASSWORD != '' && secrets.APPLE_SIGN_IDENTITY != '' }}
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/kukanilea-signing.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/kukanilea-signing.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "MACOS_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "MACOS_KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+          rm -f "$CERT_PATH"
+
+      - name: Sign app bundle (optional)
+        if: ${{ github.event_name == 'release' && secrets.APPLE_SIGN_IDENTITY != '' }}
+        env:
+          APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+        run: bash scripts/build/sign_macos.sh
+
       - name: Create DMG
         run: bash scripts/build/dmg_macos.sh
+
+      - name: Sign DMG (optional)
+        if: ${{ github.event_name == 'release' && secrets.APPLE_SIGN_IDENTITY != '' }}
+        env:
+          APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+        run: |
+          dmg_path="$(ls dist/KUKANILEA-*.dmg | head -n 1)"
+          if [ -n "$dmg_path" ]; then
+            codesign --force --sign "$APPLE_SIGN_IDENTITY" "$dmg_path"
+          fi
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -71,6 +106,10 @@ jobs:
           path: |
             dist/KUKANILEA.app
             dist/KUKANILEA-*.dmg
+
+      - name: Cleanup signing keychain (optional)
+        if: ${{ always() && env.MACOS_KEYCHAIN_PATH != '' }}
+        run: security delete-keychain "$MACOS_KEYCHAIN_PATH" || true
 
       - name: Upload DMG to release
         if: github.event_name == 'release'
