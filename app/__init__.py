@@ -5,7 +5,16 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Flask, abort, g, redirect, request, session, url_for
+from flask import (
+    Flask,
+    abort,
+    g,
+    redirect,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.exceptions import HTTPException
 
 from .ai import init_ai
@@ -87,6 +96,41 @@ def _wire_runtime_env(app: Flask) -> None:
     os.environ["KUKANILEA_AUTH_DB"] = str(app.config["AUTH_DB"])
     os.environ["DB_FILENAME"] = str(app.config["CORE_DB"])
     os.environ.setdefault("TOPHANDWERK_DB_FILENAME", str(app.config["CORE_DB"]))
+
+
+def _active_tab_from_path(path: str) -> str:
+    token = str(path or "").strip().lower()
+    if token.startswith("/tasks"):
+        return "tasks"
+    if token.startswith("/time"):
+        return "time"
+    if token.startswith("/assistant"):
+        return "assistant"
+    if token.startswith("/chat"):
+        return "chat"
+    if token.startswith("/postfach") or token.startswith("/mail"):
+        return "postfach"
+    if token.startswith("/crm"):
+        return "crm"
+    if token.startswith("/leads"):
+        return "leads"
+    if token.startswith("/knowledge"):
+        return "knowledge"
+    if token.startswith("/conversations"):
+        return "conversations"
+    if token.startswith("/workflows"):
+        return "workflows"
+    if token.startswith("/automation"):
+        return "automation"
+    if token.startswith("/autonomy"):
+        return "autonomy"
+    if token.startswith("/insights"):
+        return "insights"
+    if token.startswith("/license"):
+        return "license"
+    if token.startswith("/settings") or token.startswith("/dev/"):
+        return "settings"
+    return "upload"
 
 
 def create_app() -> Flask:
@@ -293,22 +337,64 @@ def create_app() -> Flask:
 
     logger = py_logging.getLogger("kukanilea")
 
+    def _render_html_error(status: int, title: str, message: str):
+        content = render_template_string(
+            """
+<div class="max-w-3xl mx-auto">
+  <div class="card p-6 rounded-2xl border">
+    <div class="text-xs muted mb-2">Fehler {{ status }}</div>
+    <h1 class="text-2xl font-semibold mb-2">{{ title }}</h1>
+    <p class="text-sm muted mb-4">{{ message }}</p>
+    <div class="flex flex-wrap gap-2">
+      <button type="button" class="btn btn-outline px-3 py-2 text-sm" onclick="window.location.reload()">Neu laden</button>
+      <button type="button" class="btn btn-outline px-3 py-2 text-sm" onclick="window.history.back()">Zurueck</button>
+      <a class="btn btn-primary px-3 py-2 text-sm" href="/">Dashboard</a>
+    </div>
+  </div>
+</div>
+            """,
+            status=int(status),
+            title=str(title or "Fehler"),
+            message=str(message or "Ein unerwarteter Fehler ist aufgetreten."),
+        )
+        active_tab = _active_tab_from_path(request.path or "/")
+        return web._render_base(content, active_tab=active_tab), int(status)
+
+    @app.errorhandler(HTTPException)
+    def _handle_http_exception(exc: HTTPException):
+        status = int(exc.code or 500)
+        if request.path.startswith("/api/"):
+            return json_error(
+                "http_error",
+                str(exc.description or exc.name or "Request fehlgeschlagen."),
+                status=status,
+            )
+        return _render_html_error(
+            status,
+            str(exc.name or "Fehler"),
+            str(exc.description or "Request fehlgeschlagen."),
+        )
+
     @app.errorhandler(Exception)
     def _handle_unexpected_error(exc):
-        if isinstance(exc, HTTPException):
-            return exc
         logger.exception(
             "unhandled_exception tenant_id=%s request_id=%s",
             getattr(g, "tenant_id", "-"),
             getattr(g, "request_id", "-"),
         )
-        return json_error(
-            "internal_error",
-            "Interner Fehler.",
-            status=500,
-            details={
-                "tenant_id": getattr(g, "tenant_id", ""),
-            },
+        if request.path.startswith("/api/"):
+            return json_error(
+                "internal_error",
+                "Interner Fehler.",
+                status=500,
+                details={
+                    "tenant_id": getattr(g, "tenant_id", ""),
+                },
+            )
+        return _render_html_error(
+            500,
+            "Interner Fehler",
+            "Die Aktion konnte nicht abgeschlossen werden.",
         )
 
     @app.after_request

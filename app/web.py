@@ -1101,18 +1101,31 @@ HTML_BASE = r"""<!doctype html>
     --shadow-soft:0 4px 16px rgba(15,23,42,.08);
   }
   *{ box-sizing:border-box; }
-  body{ margin:0; background:var(--bg); color:var(--text); }
-  .app-shell{ display:flex; min-height:100vh; }
+  body{ margin:0; background:var(--bg); color:var(--text); --nav-width:240px; }
+  body.nav-collapsed{ --nav-width:78px; }
+  .app-shell{ min-height:100vh; }
   .app-nav{
-    width:240px; background:var(--bg-elev); border-right:1px solid var(--border);
-    padding:24px 18px; position:sticky; top:0; height:100vh;
+    width:var(--nav-width); background:var(--bg-elev); border-right:1px solid var(--border);
+    padding:24px 18px; position:fixed; top:0; left:0; bottom:0; z-index:80; overflow-x:hidden;
+    transition:width .18s ease, transform .2s ease;
   }
   .app-nav .brand-mark{
     height:40px; width:40px; border-radius:16px; display:flex; align-items:center; justify-content:center;
     background:color-mix(in srgb, var(--accent-500) 24%, transparent);
     color:#fff;
   }
-  .app-main{ flex:1; display:flex; flex-direction:column; }
+  .brand-row{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .brand-text{ min-width:0; }
+  .nav-meta{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .nav-icon{ width:22px; text-align:center; flex:0 0 22px; }
+  .nav-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  body.nav-collapsed .brand-text,
+  body.nav-collapsed .nav-label,
+  body.nav-collapsed .nav-meta,
+  body.nav-collapsed #navCollapseHint{ display:none; }
+  body.nav-collapsed .app-nav{ padding-left:10px; padding-right:10px; }
+  body.nav-collapsed .nav-link{ justify-content:center; gap:0; }
+  .app-main{ margin-left:var(--nav-width); min-height:100vh; display:flex; flex-direction:column; transition:margin-left .18s ease; }
   .app-topbar{
     display:flex; justify-content:space-between; align-items:flex-start;
     padding:22px 28px; border-bottom:1px solid var(--border); background:var(--bg-elev);
@@ -1121,6 +1134,7 @@ HTML_BASE = r"""<!doctype html>
   .topbar-primary{ display:flex; align-items:center; gap:10px; }
   .topbar-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
   .mobile-nav-btn{ display:none; width:36px; height:36px; border-radius:10px; }
+  .nav-collapse-btn{ width:32px; height:32px; border-radius:10px; flex:0 0 32px; }
   .app-content{ padding:24px 28px; }
   .app-overlay{
     display:none;
@@ -1179,16 +1193,25 @@ HTML_BASE = r"""<!doctype html>
   .chat-section{ border-color:var(--border); }
   .chat-messages{ height:calc(100vh - 230px); }
   @media (max-width: 1120px){
+    body{ --nav-width:0px; }
     .mobile-nav-btn{ display:inline-flex; }
     .app-nav{
-      position:fixed; top:0; left:0; z-index:50; transform:translateX(-102%);
+      width:240px;
+      position:fixed; top:0; left:0; z-index:80; transform:translateX(-102%);
       transition:transform .2s ease; height:100vh; box-shadow:var(--shadow-soft);
     }
+    body.nav-collapsed .app-nav{ width:240px; }
+    body.nav-collapsed .brand-text,
+    body.nav-collapsed .nav-label,
+    body.nav-collapsed .nav-meta,
+    body.nav-collapsed #navCollapseHint{ display:initial; }
     .app-nav.open{ transform:translateX(0); }
     .app-topbar{
       padding:14px 16px; position:sticky; top:0; z-index:20; backdrop-filter:blur(6px);
     }
+    .app-main{ margin-left:0; }
     .app-content{ padding:16px; }
+    #navCollapse{ display:none; }
   }
 </style>
 </head>
@@ -1196,36 +1219,40 @@ HTML_BASE = r"""<!doctype html>
 <div class="app-shell">
   <div id="appNavOverlay" class="app-overlay"></div>
   <aside id="appNav" class="app-nav">
-    <div class="flex items-center gap-2 mb-6">
-      <div class="brand-mark">✦</div>
-      <div>
-        <div class="text-sm font-semibold">KUKANILEA</div>
-        <div class="text-[11px] muted">Agent Orchestra</div>
+    <div class="flex items-center justify-between gap-2 mb-6">
+      <div class="brand-row">
+        <div class="brand-mark">✦</div>
+        <div class="brand-text">
+          <div class="text-sm font-semibold">KUKANILEA</div>
+          <div class="text-[11px] muted">Agent Orchestra</div>
+        </div>
       </div>
+      <button id="navCollapse" class="btn btn-outline nav-collapse-btn" type="button" aria-label="Navigation minimieren">◀</button>
     </div>
     <nav class="space-y-2">
-      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">📥 Upload</a>
-      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">✅ Tasks</a>
-      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">⏱️ Time</a>
-      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
-      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
-      <a class="nav-link {{'active' if active_tab=='postfach' else ''}}" href="/postfach">📨 Postfach</a>
-      <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers">📈 CRM</a>
-      <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
-      <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">📚 Knowledge</a>
-      <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations">🧾 Conversations</a>
-      <a class="nav-link {{'active' if active_tab=='workflows' else ''}}" href="/workflows">🧭 Workflows</a>
-      <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation">⚙️ Automation</a>
-      <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health">🩺 Autonomy Health</a>
-      <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily">📊 Insights</a>
+      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/"><span class="nav-icon">📥</span><span class="nav-label">Upload</span></a>
+      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks"><span class="nav-icon">✅</span><span class="nav-label">Tasks</span></a>
+      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time"><span class="nav-icon">⏱️</span><span class="nav-label">Time</span></a>
+      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant"><span class="nav-icon">🧠</span><span class="nav-label">Assistant</span></a>
+      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat"><span class="nav-icon">💬</span><span class="nav-label">Chat</span></a>
+      <a class="nav-link {{'active' if active_tab=='postfach' else ''}}" href="/postfach"><span class="nav-icon">📨</span><span class="nav-label">Postfach</span></a>
+      <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers"><span class="nav-icon">📈</span><span class="nav-label">CRM</span></a>
+      <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox"><span class="nav-icon">📬</span><span class="nav-label">Leads</span></a>
+      <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge"><span class="nav-icon">📚</span><span class="nav-label">Knowledge</span></a>
+      <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations"><span class="nav-icon">🧾</span><span class="nav-label">Conversations</span></a>
+      <a class="nav-link {{'active' if active_tab=='workflows' else ''}}" href="/workflows"><span class="nav-icon">🧭</span><span class="nav-label">Workflows</span></a>
+      <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation"><span class="nav-icon">⚙️</span><span class="nav-label">Automation</span></a>
+      <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health"><span class="nav-icon">🩺</span><span class="nav-label">Autonomy Health</span></a>
+      <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily"><span class="nav-icon">📊</span><span class="nav-label">Insights</span></a>
       {% if roles in ['DEV', 'ADMIN'] %}
-      <a class="nav-link {{'active' if active_tab=='license' else ''}}" href="/license">🔐 Lizenz</a>
-      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
+      <a class="nav-link {{'active' if active_tab=='license' else ''}}" href="/license"><span class="nav-icon">🔐</span><span class="nav-label">Lizenz</span></a>
+      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings"><span class="nav-icon">🛠️</span><span class="nav-label">Settings</span></a>
       {% endif %}
     </nav>
-    <div class="mt-8 text-xs muted">
+    <div class="mt-8 text-xs muted nav-meta">
       Ablage: {{ablage}}
     </div>
+    <div id="navCollapseHint" class="mt-2 text-[11px] muted nav-meta">Navigation bleibt immer sichtbar.</div>
   </aside>
   <main class="app-main">
     <div class="app-topbar">
@@ -1243,6 +1270,8 @@ HTML_BASE = r"""<!doctype html>
         <span class="badge">Profile: {{ profile.name }}</span>
         <span class="badge">Live: <span id="healthLive">...</span></span>
         <span class="badge">Ready: <span id="healthReady">...</span></span>
+        <button id="goBack" class="btn btn-outline px-3 py-2 text-sm" type="button">Zurück</button>
+        <button id="reloadPage" class="btn btn-outline px-3 py-2 text-sm" type="button">Neu laden</button>
         {% if user and user != '-' %}
         <a class="btn btn-outline px-3 py-2 text-sm" href="/logout">Logout</a>
         {% endif %}
@@ -1340,6 +1369,14 @@ HTML_BASE = r"""<!doctype html>
   const nav = document.getElementById("appNav");
   const navToggle = document.getElementById("navToggle");
   const navOverlay = document.getElementById("appNavOverlay");
+  const navCollapse = document.getElementById("navCollapse");
+  const navCollapseKey = "ks_nav_collapsed";
+  function setCollapsed(collapsed){
+    document.body.classList.toggle("nav-collapsed", !!collapsed);
+    if(navCollapse){ navCollapse.textContent = collapsed ? "▶" : "◀"; }
+    localStorage.setItem(navCollapseKey, collapsed ? "1" : "0");
+  }
+  setCollapsed(localStorage.getItem(navCollapseKey) === "1");
   function closeNav(){
     nav?.classList.remove("open");
     navOverlay?.classList.remove("open");
@@ -1349,7 +1386,14 @@ HTML_BASE = r"""<!doctype html>
     navOverlay?.classList.toggle("open");
   }
   navToggle?.addEventListener("click", toggleNav);
+  navCollapse?.addEventListener("click", ()=>{
+    const next = !document.body.classList.contains("nav-collapsed");
+    setCollapsed(next);
+  });
   navOverlay?.addEventListener("click", closeNav);
+  nav?.querySelectorAll("a.nav-link").forEach((el)=> el.addEventListener("click", closeNav));
+  document.getElementById("goBack")?.addEventListener("click", ()=> window.history.back());
+  document.getElementById("reloadPage")?.addEventListener("click", ()=> window.location.reload());
 })();
 </script>
 
