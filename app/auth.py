@@ -10,8 +10,9 @@ from flask import abort, g, redirect, request, session, url_for
 
 from .db import AuthDB, Membership
 from .errors import json_error
+from .rbac import LEGACY_ROLE_ORDER, legacy_role_from_roles, normalize_role_name
 
-ROLE_ORDER = ["READONLY", "OPERATOR", "ADMIN", "DEV"]
+ROLE_ORDER = LEGACY_ROLE_ORDER
 
 
 def hash_password(password: str) -> str:
@@ -52,6 +53,8 @@ def _load_user(db: AuthDB) -> None:
     g.user = session.get("user")
     g.role = session.get("role")
     g.tenant_id = session.get("tenant_id")
+    g.roles = []
+    g.permissions = set()
     if g.user and not g.tenant_id:
         memberships = db.get_memberships(g.user)
         if memberships:
@@ -59,6 +62,20 @@ def _load_user(db: AuthDB) -> None:
             session["role"] = memberships[0].role
             g.role = memberships[0].role
             g.tenant_id = memberships[0].tenant_id
+    if g.user:
+        legacy = str(g.role or "").strip().upper()
+        roles = db.ensure_user_rbac_roles(g.user, legacy_role=legacy)
+        perms = db.get_effective_permissions_for_roles(roles)
+        g.roles = roles
+        g.permissions = perms
+        session["rbac_roles"] = roles
+        session["rbac_perms"] = sorted(perms)
+        effective_role = legacy_role_from_roles(roles, fallback=legacy or "READONLY")
+        session_role = str(session.get("role") or "").strip().upper()
+        if session_role not in ROLE_ORDER:
+            session_role = effective_role
+            session["role"] = session_role
+        g.role = session_role
 
 
 def login_user(username: str, role: str, tenant_id: str) -> None:
@@ -76,7 +93,35 @@ def current_user() -> Optional[str]:
 
 
 def current_role() -> str:
-    return session.get("role") or "READONLY"
+    role = str(session.get("role") or "").strip().upper()
+    if role in ROLE_ORDER:
+        return role
+    normalized = normalize_role_name(role)
+    return legacy_role_from_roles([normalized], fallback="READONLY")
+
+
+def current_roles() -> list[str]:
+    if getattr(g, "roles", None):
+        return list(g.roles)
+    rows = session.get("rbac_roles")
+    if isinstance(rows, list):
+        return [normalize_role_name(str(r or "")) for r in rows]
+    normalized = normalize_role_name(current_role())
+    return [normalized] if normalized else []
+
+
+def has_permission(permission: str) -> bool:
+    token = str(permission or "").strip()
+    if not token or not current_user():
+        return False
+    perms = getattr(g, "permissions", None)
+    if isinstance(perms, set):
+        return "*" in perms or token in perms
+    raw = session.get("rbac_perms")
+    if isinstance(raw, list):
+        perm_set = {str(p) for p in raw}
+        return "*" in perm_set or token in perm_set
+    return False
 
 
 def current_tenant() -> str:
@@ -125,9 +170,47 @@ def require_role(min_role: str):
     return decorator
 
 
+def require_permission(permission: str):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if not has_permission(permission):
+                if request.path.startswith("/api/"):
+                    return json_error("forbidden", "Nicht erlaubt.", status=403)
+                abort(403)
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def require_any_permission(permissions: list[str]):
+    needed = [str(p).strip() for p in permissions if str(p).strip()]
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if not any(has_permission(token) for token in needed):
+                if request.path.startswith("/api/"):
+                    return json_error("forbidden", "Nicht erlaubt.", status=403)
+                abort(403)
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def policy_allows(membership: Membership, required: str) -> bool:
     try:
-        role = membership.role if membership.role in ROLE_ORDER else "READONLY"
+        raw = str(membership.role or "").strip().upper()
+        if raw in ROLE_ORDER:
+            role = raw
+        else:
+            role = legacy_role_from_roles(
+                [normalize_role_name(raw)], fallback="READONLY"
+            )
         required_role = required if required in ROLE_ORDER else "READONLY"
         return ROLE_ORDER.index(role) >= ROLE_ORDER.index(required_role)
     except ValueError:

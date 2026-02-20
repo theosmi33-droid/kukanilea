@@ -206,12 +206,15 @@ from kukanilea.orchestrator import Orchestrator
 
 from .auth import (
     current_role,
+    current_roles,
     current_tenant,
     current_user,
+    has_permission,
     hash_password,
     login_required,
     login_user,
     logout_user,
+    require_permission,
     require_role,
     verify_password,
 )
@@ -550,6 +553,16 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
         )
         auth_db.upsert_membership(office_username, "KUKANILEA Dev", "OPERATOR", now)
         office_info = f"office password: {office_password}"
+    office_user = auth_db.get_user_by_email(office_email)
+    try:
+        auth_db.set_user_roles("admin", ["OWNER_ADMIN"], actor_roles=["DEV"])
+        auth_db.set_user_roles("dev", ["DEV"], actor_roles=["DEV"])
+        if office_user is not None:
+            auth_db.set_user_roles(
+                office_user.username, ["OFFICE"], actor_roles=["DEV"]
+            )
+    except Exception:
+        pass
     return f"Seeded users: admin/admin, dev/dev, {office_info}"
 
 
@@ -1088,18 +1101,31 @@ HTML_BASE = r"""<!doctype html>
     --shadow-soft:0 4px 16px rgba(15,23,42,.08);
   }
   *{ box-sizing:border-box; }
-  body{ margin:0; background:var(--bg); color:var(--text); }
-  .app-shell{ display:flex; min-height:100vh; }
+  body{ margin:0; background:var(--bg); color:var(--text); --nav-width:240px; }
+  body.nav-collapsed{ --nav-width:78px; }
+  .app-shell{ min-height:100vh; }
   .app-nav{
-    width:240px; background:var(--bg-elev); border-right:1px solid var(--border);
-    padding:24px 18px; position:sticky; top:0; height:100vh;
+    width:var(--nav-width); background:var(--bg-elev); border-right:1px solid var(--border);
+    padding:24px 18px; position:fixed; top:0; left:0; bottom:0; z-index:80; overflow-x:hidden;
+    transition:width .18s ease, transform .2s ease;
   }
   .app-nav .brand-mark{
     height:40px; width:40px; border-radius:16px; display:flex; align-items:center; justify-content:center;
     background:color-mix(in srgb, var(--accent-500) 24%, transparent);
     color:#fff;
   }
-  .app-main{ flex:1; display:flex; flex-direction:column; }
+  .brand-row{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .brand-text{ min-width:0; }
+  .nav-meta{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .nav-icon{ width:22px; text-align:center; flex:0 0 22px; }
+  .nav-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  body.nav-collapsed .brand-text,
+  body.nav-collapsed .nav-label,
+  body.nav-collapsed .nav-meta,
+  body.nav-collapsed #navCollapseHint{ display:none; }
+  body.nav-collapsed .app-nav{ padding-left:10px; padding-right:10px; }
+  body.nav-collapsed .nav-link{ justify-content:center; gap:0; }
+  .app-main{ margin-left:var(--nav-width); min-height:100vh; display:flex; flex-direction:column; transition:margin-left .18s ease; }
   .app-topbar{
     display:flex; justify-content:space-between; align-items:flex-start;
     padding:22px 28px; border-bottom:1px solid var(--border); background:var(--bg-elev);
@@ -1108,6 +1134,7 @@ HTML_BASE = r"""<!doctype html>
   .topbar-primary{ display:flex; align-items:center; gap:10px; }
   .topbar-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
   .mobile-nav-btn{ display:none; width:36px; height:36px; border-radius:10px; }
+  .nav-collapse-btn{ width:32px; height:32px; border-radius:10px; flex:0 0 32px; }
   .app-content{ padding:24px 28px; }
   .app-overlay{
     display:none;
@@ -1166,16 +1193,25 @@ HTML_BASE = r"""<!doctype html>
   .chat-section{ border-color:var(--border); }
   .chat-messages{ height:calc(100vh - 230px); }
   @media (max-width: 1120px){
+    body{ --nav-width:0px; }
     .mobile-nav-btn{ display:inline-flex; }
     .app-nav{
-      position:fixed; top:0; left:0; z-index:50; transform:translateX(-102%);
+      width:240px;
+      position:fixed; top:0; left:0; z-index:80; transform:translateX(-102%);
       transition:transform .2s ease; height:100vh; box-shadow:var(--shadow-soft);
     }
+    body.nav-collapsed .app-nav{ width:240px; }
+    body.nav-collapsed .brand-text,
+    body.nav-collapsed .nav-label,
+    body.nav-collapsed .nav-meta,
+    body.nav-collapsed #navCollapseHint{ display:initial; }
     .app-nav.open{ transform:translateX(0); }
     .app-topbar{
       padding:14px 16px; position:sticky; top:0; z-index:20; backdrop-filter:blur(6px);
     }
+    .app-main{ margin-left:0; }
     .app-content{ padding:16px; }
+    #navCollapse{ display:none; }
   }
 </style>
 </head>
@@ -1183,36 +1219,40 @@ HTML_BASE = r"""<!doctype html>
 <div class="app-shell">
   <div id="appNavOverlay" class="app-overlay"></div>
   <aside id="appNav" class="app-nav">
-    <div class="flex items-center gap-2 mb-6">
-      <div class="brand-mark">✦</div>
-      <div>
-        <div class="text-sm font-semibold">KUKANILEA</div>
-        <div class="text-[11px] muted">Agent Orchestra</div>
+    <div class="flex items-center justify-between gap-2 mb-6">
+      <div class="brand-row">
+        <div class="brand-mark">✦</div>
+        <div class="brand-text">
+          <div class="text-sm font-semibold">KUKANILEA</div>
+          <div class="text-[11px] muted">Agent Orchestra</div>
+        </div>
       </div>
+      <button id="navCollapse" class="btn btn-outline nav-collapse-btn" type="button" aria-label="Navigation minimieren">◀</button>
     </div>
     <nav class="space-y-2">
-      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">📥 Upload</a>
-      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">✅ Tasks</a>
-      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">⏱️ Time</a>
-      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
-      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
-      <a class="nav-link {{'active' if active_tab=='postfach' else ''}}" href="/postfach">📨 Postfach</a>
-      <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers">📈 CRM</a>
-      <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox">📬 Leads</a>
-      <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">📚 Knowledge</a>
-      <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations">🧾 Conversations</a>
-      <a class="nav-link {{'active' if active_tab=='workflows' else ''}}" href="/workflows">🧭 Workflows</a>
-      <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation">⚙️ Automation</a>
-      <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health">🩺 Autonomy Health</a>
-      <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily">📊 Insights</a>
+      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/"><span class="nav-icon">📥</span><span class="nav-label">Upload</span></a>
+      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks"><span class="nav-icon">✅</span><span class="nav-label">Tasks</span></a>
+      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time"><span class="nav-icon">⏱️</span><span class="nav-label">Time</span></a>
+      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant"><span class="nav-icon">🧠</span><span class="nav-label">Assistant</span></a>
+      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat"><span class="nav-icon">💬</span><span class="nav-label">Chat</span></a>
+      <a class="nav-link {{'active' if active_tab=='postfach' else ''}}" href="/postfach"><span class="nav-icon">📨</span><span class="nav-label">Postfach</span></a>
+      <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers"><span class="nav-icon">📈</span><span class="nav-label">CRM</span></a>
+      <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox"><span class="nav-icon">📬</span><span class="nav-label">Leads</span></a>
+      <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge"><span class="nav-icon">📚</span><span class="nav-label">Knowledge</span></a>
+      <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations"><span class="nav-icon">🧾</span><span class="nav-label">Conversations</span></a>
+      <a class="nav-link {{'active' if active_tab=='workflows' else ''}}" href="/workflows"><span class="nav-icon">🧭</span><span class="nav-label">Workflows</span></a>
+      <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation"><span class="nav-icon">⚙️</span><span class="nav-label">Automation</span></a>
+      <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health"><span class="nav-icon">🩺</span><span class="nav-label">Autonomy Health</span></a>
+      <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily"><span class="nav-icon">📊</span><span class="nav-label">Insights</span></a>
       {% if roles in ['DEV', 'ADMIN'] %}
-      <a class="nav-link {{'active' if active_tab=='license' else ''}}" href="/license">🔐 Lizenz</a>
-      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
+      <a class="nav-link {{'active' if active_tab=='license' else ''}}" href="/license"><span class="nav-icon">🔐</span><span class="nav-label">Lizenz</span></a>
+      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings"><span class="nav-icon">🛠️</span><span class="nav-label">Settings</span></a>
       {% endif %}
     </nav>
-    <div class="mt-8 text-xs muted">
+    <div class="mt-8 text-xs muted nav-meta">
       Ablage: {{ablage}}
     </div>
+    <div id="navCollapseHint" class="mt-2 text-[11px] muted nav-meta">Navigation bleibt immer sichtbar.</div>
   </aside>
   <main class="app-main">
     <div class="app-topbar">
@@ -1230,6 +1270,8 @@ HTML_BASE = r"""<!doctype html>
         <span class="badge">Profile: {{ profile.name }}</span>
         <span class="badge">Live: <span id="healthLive">...</span></span>
         <span class="badge">Ready: <span id="healthReady">...</span></span>
+        <button id="goBack" class="btn btn-outline px-3 py-2 text-sm" type="button">Zurück</button>
+        <button id="reloadPage" class="btn btn-outline px-3 py-2 text-sm" type="button">Neu laden</button>
         {% if user and user != '-' %}
         <a class="btn btn-outline px-3 py-2 text-sm" href="/logout">Logout</a>
         {% endif %}
@@ -1327,6 +1369,14 @@ HTML_BASE = r"""<!doctype html>
   const nav = document.getElementById("appNav");
   const navToggle = document.getElementById("navToggle");
   const navOverlay = document.getElementById("appNavOverlay");
+  const navCollapse = document.getElementById("navCollapse");
+  const navCollapseKey = "ks_nav_collapsed";
+  function setCollapsed(collapsed){
+    document.body.classList.toggle("nav-collapsed", !!collapsed);
+    if(navCollapse){ navCollapse.textContent = collapsed ? "▶" : "◀"; }
+    localStorage.setItem(navCollapseKey, collapsed ? "1" : "0");
+  }
+  setCollapsed(localStorage.getItem(navCollapseKey) === "1");
   function closeNav(){
     nav?.classList.remove("open");
     navOverlay?.classList.remove("open");
@@ -1336,7 +1386,14 @@ HTML_BASE = r"""<!doctype html>
     navOverlay?.classList.toggle("open");
   }
   navToggle?.addEventListener("click", toggleNav);
+  navCollapse?.addEventListener("click", ()=>{
+    const next = !document.body.classList.contains("nav-collapsed");
+    setCollapsed(next);
+  });
   navOverlay?.addEventListener("click", closeNav);
+  nav?.querySelectorAll("a.nav-link").forEach((el)=> el.addEventListener("click", closeNav));
+  document.getElementById("goBack")?.addEventListener("click", ()=> window.history.back());
+  document.getElementById("reloadPage")?.addEventListener("click", ()=> window.location.reload());
 })();
 </script>
 
@@ -8518,6 +8575,19 @@ HTML_SETTINGS = """
     </div>
   </div>
 
+  {% if can_manage_permissions %}
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Rollen & Berechtigungen</div>
+    <div class="text-sm">
+      <div>Zentrale Rechteverwaltung pro Rolle und Benutzer.</div>
+      <div class="muted text-xs mt-1">Serverseitig erzwungen (deny-by-default).</div>
+      <div class="mt-2">
+        <a class="underline" href="/settings/permissions">Berechtigungsmanager öffnen</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if role == "DEV" %}
   <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">In-Place Update (DEV)</div>
@@ -8680,6 +8750,85 @@ HTML_SETTINGS = """
   });
 })();
 </script>
+"""
+
+HTML_SETTINGS_PERMISSIONS = """
+<div class="grid gap-4">
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">Berechtigungen</div>
+    <div class="text-sm muted mb-3">
+      Serverseitige Rechteverwaltung (deny-by-default). Nur Owner Admin und DEV duerfen aendern.
+    </div>
+    <a href="/settings" class="underline text-sm">Zurueck zu Einstellungen</a>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-3">Rollen und Permissions</div>
+    {% for role in rbac_roles %}
+      {% set assigned = role_permissions.get(role.role_name, []) %}
+      <form method="post" action="{{ url_for('web.settings_permissions_role_update') }}" class="rounded-xl border p-3 mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="role_name" value="{{ role.role_name }}">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div>
+            <div class="text-sm font-semibold">{{ role.label }} <span class="muted">({{ role.role_name }})</span></div>
+            <div class="muted text-xs">{{ role.description }}</div>
+          </div>
+          {% if role.role_name == "DEV" and not can_edit_dev_roles %}
+            <span class="text-xs rounded-lg border px-2 py-1">Nur DEV editierbar</span>
+          {% endif %}
+        </div>
+        <div class="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+          {% for perm in rbac_permissions %}
+            <label class="text-xs flex items-center gap-2">
+              <input
+                type="checkbox"
+                name="perm_keys"
+                value="{{ perm.perm_key }}"
+                {{ "checked" if perm.perm_key in assigned else "" }}
+                {{ "disabled" if role.role_name == "DEV" and not can_edit_dev_roles else "" }}
+              />
+              <span>{{ perm.perm_key }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="mt-3">
+          <button
+            type="submit"
+            class="rounded-xl px-3 py-2 text-sm btn-primary"
+            {{ "disabled" if role.role_name == "DEV" and not can_edit_dev_roles else "" }}
+          >
+            Rolle speichern
+          </button>
+        </div>
+      </form>
+    {% endfor %}
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-3">Benutzerrollen</div>
+    <div class="grid gap-3">
+      {% for user in users_with_roles %}
+        <form method="post" action="{{ url_for('web.settings_permissions_user_update') }}" class="rounded-xl border p-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="username" value="{{ user.username }}">
+          <div class="text-sm font-semibold">{{ user.username }}</div>
+          <div class="muted text-xs mb-2">{{ user.email or "-" }}</div>
+          <select name="role_names" multiple class="w-full rounded-xl border px-3 py-2 text-xs bg-transparent min-h-[84px]">
+            {% for role in rbac_roles %}
+              <option value="{{ role.role_name }}" {{ "selected" if role.role_name in user.roles else "" }}>
+                {{ role.label }} ({{ role.role_name }})
+              </option>
+            {% endfor %}
+          </select>
+          <div class="mt-2">
+            <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary">Rollen speichern</button>
+          </div>
+        </form>
+      {% endfor %}
+    </div>
+  </div>
+</div>
 """
 
 
@@ -9686,7 +9835,10 @@ def postfach_thread_create_lead(thread_id: str):
 @login_required
 def settings_page():
     role = current_role()
-    show_admin_settings = role in {"ADMIN", "DEV"}
+    show_admin_settings = role in {"ADMIN", "DEV"} or has_permission(
+        "settings.manage_permissions"
+    )
+    can_manage_permissions = has_permission("settings.manage_permissions")
     auth_db: AuthDB = current_app.extensions["auth_db"]
     core_db = {
         "path": str(getattr(core, "DB_PATH", "")),
@@ -9743,6 +9895,7 @@ def settings_page():
             update_install_enabled=bool(
                 current_app.config.get("UPDATE_INSTALL_ENABLED", False)
             ),
+            can_manage_permissions=can_manage_permissions,
             idle_timeout_minutes=idle_timeout,
             idle_timeout_choices=[15, 30, 60, 120, 240, 480],
         ),
@@ -9766,6 +9919,92 @@ def set_idle_timeout():
     if current_role() in {"ADMIN", "DEV"}:
         return redirect(url_for("web.settings_page"))
     return redirect(url_for("web.index"))
+
+
+@bp.get("/settings/permissions")
+@login_required
+@require_permission("settings.manage_permissions")
+def settings_permissions_page():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    role_rows = auth_db.list_roles()
+    permission_rows = auth_db.list_permissions()
+    role_permissions = {
+        role: sorted(perms)
+        for role, perms in auth_db.list_all_role_permissions().items()
+    }
+    users_with_roles = auth_db.list_users_with_roles()
+    can_edit_dev_roles = "DEV" in {str(r) for r in current_roles()}
+    return _render_base(
+        render_template_string(
+            HTML_SETTINGS_PERMISSIONS,
+            rbac_roles=role_rows,
+            rbac_permissions=permission_rows,
+            role_permissions=role_permissions,
+            users_with_roles=users_with_roles,
+            can_edit_dev_roles=can_edit_dev_roles,
+        ),
+        active_tab="settings",
+    )
+
+
+@bp.post("/settings/permissions/role")
+@login_required
+@require_permission("settings.manage_permissions")
+def settings_permissions_role_update():
+    csrf_error = _csrf_guard(api=False)
+    if csrf_error:
+        return csrf_error
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    role_name = str(request.form.get("role_name") or "").strip().upper()
+    perm_keys = [str(v or "").strip() for v in request.form.getlist("perm_keys")]
+    try:
+        auth_db.set_role_permissions(
+            role_name,
+            perm_keys,
+            actor_roles=current_roles(),
+        )
+        _audit(
+            "rbac_role_permissions_update",
+            target=role_name,
+            meta={"perm_count": len(perm_keys)},
+        )
+        flash(f"Rollenrechte gespeichert: {role_name}", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    except Exception:
+        flash("Rollenrechte konnten nicht gespeichert werden.", "error")
+    return redirect(url_for("web.settings_permissions_page"))
+
+
+@bp.post("/settings/permissions/user")
+@login_required
+@require_permission("users.assign_roles")
+def settings_permissions_user_update():
+    csrf_error = _csrf_guard(api=False)
+    if csrf_error:
+        return csrf_error
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    username = str(request.form.get("username") or "").strip().lower()
+    role_names = [
+        str(v or "").strip().upper() for v in request.form.getlist("role_names")
+    ]
+    try:
+        auth_db.set_user_roles(
+            username,
+            role_names,
+            actor_roles=current_roles(),
+        )
+        _audit(
+            "rbac_user_roles_update",
+            target=username,
+            meta={"roles": role_names},
+        )
+        flash(f"Benutzerrollen gespeichert: {username}", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    except Exception:
+        flash("Benutzerrollen konnten nicht gespeichert werden.", "error")
+    return redirect(url_for("web.settings_permissions_page"))
 
 
 @bp.route("/dev/tenant", methods=["GET", "POST"])
