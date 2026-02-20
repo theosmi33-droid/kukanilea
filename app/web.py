@@ -556,6 +556,23 @@ def _now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
 
 
+def _session_idle_minutes(raw: object) -> int:
+    default_val = int(
+        current_app.config.get("SESSION_IDLE_TIMEOUT_DEFAULT_MINUTES", 60) or 60
+    )
+    min_val = int(current_app.config.get("SESSION_IDLE_TIMEOUT_MIN_MINUTES", 15) or 15)
+    max_val = int(
+        current_app.config.get("SESSION_IDLE_TIMEOUT_MAX_MINUTES", 480) or 480
+    )
+    if min_val > max_val:
+        min_val, max_val = max_val, min_val
+    try:
+        value = int(raw)
+    except Exception:
+        value = default_val
+    return max(min_val, min(max_val, value))
+
+
 def _normalize_email(value: str) -> str:
     return (value or "").strip().lower()
 
@@ -8394,6 +8411,24 @@ HTML_LICENSE = """
 HTML_SETTINGS = """
 <div class="grid gap-4">
   <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">Sitzung & Sicherheit</div>
+    <div class="text-sm muted mb-3">
+      Automatischer Logout bei Inaktivität. Zusaetzlich gilt eine maximale Sitzungsdauer von 8 Stunden.
+    </div>
+    <form method="post" action="{{ url_for('web.set_idle_timeout') }}" class="flex flex-wrap gap-2 items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="idle_timeout" class="text-sm">Inaktivitaets-Timeout</label>
+      <select id="idle_timeout" name="idle_timeout" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
+        {% for minutes in idle_timeout_choices %}
+          <option value="{{ minutes }}" {{ "selected" if idle_timeout_minutes == minutes else "" }}>{{ minutes }} Minuten</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary">Speichern</button>
+    </form>
+  </div>
+
+  {% if show_admin_settings %}
+  <div class="card p-4 rounded-2xl border">
     <div class="text-lg font-semibold mb-2">DEV Settings</div>
     <div class="grid gap-3 md:grid-cols-2 text-sm">
       <div>
@@ -8504,6 +8539,7 @@ HTML_SETTINGS = """
     </div>
     <div id="toolStatus" class="text-xs muted mt-2"></div>
   </div>
+  {% endif %}
 </div>
 
 <script>
@@ -9603,18 +9639,20 @@ def postfach_thread_create_lead(thread_id: str):
 @bp.get("/settings")
 @login_required
 def settings_page():
-    if current_role() not in {"ADMIN", "DEV"}:
-        return json_error("forbidden", "Nicht erlaubt.", status=403)
+    role = current_role()
+    show_admin_settings = role in {"ADMIN", "DEV"}
     auth_db: AuthDB = current_app.extensions["auth_db"]
-    if callable(getattr(core, "get_db_info", None)):
+    core_db = {
+        "path": str(getattr(core, "DB_PATH", "")),
+        "schema_version": "?",
+        "tenants": "?",
+    }
+    if show_admin_settings and callable(getattr(core, "get_db_info", None)):
         core_db = core.get_db_info()
-    else:
-        core_db = {
-            "path": str(getattr(core, "DB_PATH", "")),
-            "schema_version": "?",
-            "tenants": "?",
-        }
-    update_enabled = bool(current_app.config.get("UPDATE_CHECK_ENABLED", False))
+
+    update_enabled = show_admin_settings and bool(
+        current_app.config.get("UPDATE_CHECK_ENABLED", False)
+    )
     update_info: dict[str, Any] = {
         "enabled": update_enabled,
         "checked": False,
@@ -9641,6 +9679,7 @@ def settings_page():
                 "enabled": True,
                 "error": "update_check_failed",
             }
+    idle_timeout = _session_idle_minutes(session.get("idle_timeout_minutes"))
     return _render_base(
         render_template_string(
             HTML_SETTINGS,
@@ -9653,13 +9692,34 @@ def settings_page():
             profile=_get_profile(),
             import_root=str(current_app.config.get("IMPORT_ROOT", "")),
             update_info=update_info,
-            role=current_role(),
+            role=role,
+            show_admin_settings=show_admin_settings,
             update_install_enabled=bool(
                 current_app.config.get("UPDATE_INSTALL_ENABLED", False)
             ),
+            idle_timeout_minutes=idle_timeout,
+            idle_timeout_choices=[15, 30, 60, 120, 240, 480],
         ),
         active_tab="settings",
     )
+
+
+@bp.post("/settings/idle-timeout")
+@login_required
+def set_idle_timeout():
+    csrf_error = _csrf_guard(api=False)
+    if csrf_error:
+        return csrf_error
+    raw = request.form.get("idle_timeout", "60")
+    minutes = _session_idle_minutes(raw)
+    session["idle_timeout_minutes"] = minutes
+    flash(
+        f"Inaktivitaets-Timeout gespeichert: {minutes} Minuten.",
+        "success",
+    )
+    if current_role() in {"ADMIN", "DEV"}:
+        return redirect(url_for("web.settings_page"))
+    return redirect(url_for("web.index"))
 
 
 @bp.route("/dev/tenant", methods=["GET", "POST"])
