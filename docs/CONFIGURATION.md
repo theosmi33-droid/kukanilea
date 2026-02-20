@@ -101,6 +101,14 @@ Hinweis:
 - Verwaltung erfolgt im UI unter `/settings/permissions` (nur Owner Admin / DEV).
 - Legacy-Rollen werden automatisch auf RBAC-Rollen gemappt.
 
+## UI-Praeferenzen (pro User, serverseitig)
+
+- Theme (`light`/`dark`) und Sidebar-Minimierung werden pro User in der Auth-DB gespeichert (`auth_user_preferences`).
+- Schreibend ueber:
+  - `POST /settings/ui/theme` mit JSON `{"theme":"light|dark"}`
+  - `POST /settings/ui/sidebar` mit JSON `{"collapsed": true|false}`
+- Beim Rendern der App-Shell werden gespeicherte Werte als Server-Default geladen, lokale Browser-Preferences bleiben als schneller Client-Fallback aktiv.
+
 ## Lokale KI (Ollama)
 
 ### `OLLAMA_BASE_URL`
