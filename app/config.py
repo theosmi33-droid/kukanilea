@@ -100,6 +100,38 @@ class Config:
     OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     OLLAMA_MODEL = _env("OLLAMA_MODEL", "llama3.1:8b")
     OLLAMA_TIMEOUT = int(_env("OLLAMA_TIMEOUT", "300"))
+    AI_PROVIDER_ORDER = _env("KUKANILEA_AI_PROVIDER_ORDER", "ollama")
+    AI_PROVIDERS_JSON = _env("KUKANILEA_AI_PROVIDERS_JSON", "")
+    AI_PROVIDER_RETRIES = int(_env("KUKANILEA_AI_PROVIDER_RETRIES", "1"))
+    AI_HEALTH_TTL_SECONDS = int(_env("KUKANILEA_AI_HEALTH_TTL_SECONDS", "30"))
+    VLLM_BASE_URL = _env("KUKANILEA_VLLM_BASE_URL", "http://127.0.0.1:8000")
+    VLLM_MODEL = _env("KUKANILEA_VLLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+    VLLM_API_KEY = _env("KUKANILEA_VLLM_API_KEY", "")
+    VLLM_TIMEOUT = int(_env("KUKANILEA_VLLM_TIMEOUT", "60"))
+    LMSTUDIO_BASE_URL = _env("KUKANILEA_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234")
+    LMSTUDIO_MODEL = _env("KUKANILEA_LMSTUDIO_MODEL", "local-model")
+    LMSTUDIO_TIMEOUT = int(_env("KUKANILEA_LMSTUDIO_TIMEOUT", "60"))
+    GROQ_BASE_URL = _env("KUKANILEA_GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+    GROQ_MODEL = _env("KUKANILEA_GROQ_MODEL", "llama-3.3-70b-versatile")
+    GROQ_API_KEY = _env("KUKANILEA_GROQ_API_KEY", _env("GROQ_API_KEY", ""))
+    GROQ_TIMEOUT = int(_env("KUKANILEA_GROQ_TIMEOUT", "30"))
+    ANTHROPIC_BASE_URL = _env(
+        "KUKANILEA_ANTHROPIC_BASE_URL", "https://api.anthropic.com"
+    )
+    ANTHROPIC_MODEL = _env("KUKANILEA_ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+    ANTHROPIC_API_KEY = _env(
+        "KUKANILEA_ANTHROPIC_API_KEY", _env("ANTHROPIC_API_KEY", "")
+    )
+    ANTHROPIC_TIMEOUT = int(_env("KUKANILEA_ANTHROPIC_TIMEOUT", "60"))
+    GEMINI_BASE_URL = _env(
+        "KUKANILEA_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com"
+    )
+    GEMINI_MODEL = _env("KUKANILEA_GEMINI_MODEL", "gemini-1.5-flash")
+    GEMINI_API_KEY = _env(
+        "KUKANILEA_GEMINI_API_KEY",
+        _env("GEMINI_API_KEY", _env("GOOGLE_API_KEY", "")),
+    )
+    GEMINI_TIMEOUT = int(_env("KUKANILEA_GEMINI_TIMEOUT", "60"))
     MAIL_MODE = _env("MAIL_MODE", "outbox").strip().lower() or "outbox"
     DEV_LOCAL_EMAIL_CODES = _env("DEV_LOCAL_EMAIL_CODES", "0") in (
         "1",

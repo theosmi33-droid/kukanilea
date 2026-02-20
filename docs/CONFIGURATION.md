@@ -118,6 +118,105 @@ Hinweis:
 - Standard: `300`
 - Zweck: Request-Timeout fuer lokale LLM-Generierung
 
+## KI-Provider-Router (robuste Assistenz)
+
+### `KUKANILEA_AI_PROVIDER_ORDER`
+- Typ: CSV-Liste
+- Standard: `ollama`
+- Zweck: Reihenfolge der Provider fuer Failover
+- Erlaubte Werte:
+  - `vllm`
+  - `lmstudio`
+  - `ollama`
+  - `groq`
+  - `anthropic`
+  - `gemini`
+  - `openai_compat`
+  - `openai_compat_fallback`
+
+Empfehlung:
+```bash
+export KUKANILEA_AI_PROVIDER_ORDER="vllm,lmstudio,ollama,groq"
+```
+
+### `KUKANILEA_AI_PROVIDERS_JSON`
+- Typ: JSON-Array
+- Standard: leer (`""`)
+- Zweck: Vollstaendige Provider-Konfiguration inkl. Prioritaeten.
+- Hinweis: Wenn gesetzt, hat diese Variable Vorrang vor `KUKANILEA_AI_PROVIDER_ORDER`.
+
+### `KUKANILEA_AI_PROVIDER_RETRIES`
+- Typ: Integer
+- Standard: `1`
+- Zweck: Anzahl Wiederholungen pro Provider vor Failover.
+
+### `KUKANILEA_AI_HEALTH_TTL_SECONDS`
+- Typ: Integer
+- Standard: `30`
+- Zweck: TTL fuer gecachte Health-Checks.
+
+### `KUKANILEA_AI_PROVIDER_POLICY_JSON`
+- Typ: JSON-Objekt
+- Standard: leer (`""`)
+- Zweck: Serverseitige Mandanten-/Rollen-Policy fuer erlaubte Provider.
+- Beispiele fuer Keys:
+  - `default`, `tenants`, `roles`, `tenant_roles`
+  - Rule-Keys: `allow_providers`, `deny_providers`, `allow_local`, `allow_cloud`, `allowed_roles`, `blocked_roles`
+
+### vLLM
+- `KUKANILEA_VLLM_BASE_URL` (Standard `http://127.0.0.1:8000`)
+- `KUKANILEA_VLLM_MODEL`
+- `KUKANILEA_VLLM_API_KEY` (optional)
+- `KUKANILEA_VLLM_TIMEOUT` (Standard `60`)
+
+### LM Studio
+- `KUKANILEA_LMSTUDIO_BASE_URL` (Standard `http://127.0.0.1:1234`)
+- `KUKANILEA_LMSTUDIO_MODEL`
+- `KUKANILEA_LMSTUDIO_TIMEOUT` (Standard `60`)
+
+### Groq
+- `KUKANILEA_GROQ_BASE_URL` (Standard `https://api.groq.com/openai/v1`)
+- `KUKANILEA_GROQ_MODEL`
+- `KUKANILEA_GROQ_API_KEY` oder `GROQ_API_KEY`
+- `KUKANILEA_GROQ_TIMEOUT` (Standard `30`)
+
+### Anthropic
+- `KUKANILEA_ANTHROPIC_BASE_URL` (Standard `https://api.anthropic.com`)
+- `KUKANILEA_ANTHROPIC_MODEL` (Standard `claude-3-5-sonnet-latest`)
+- `KUKANILEA_ANTHROPIC_API_KEY` oder `ANTHROPIC_API_KEY`
+- `KUKANILEA_ANTHROPIC_TIMEOUT` (Standard `60`)
+
+### Gemini
+- `KUKANILEA_GEMINI_BASE_URL` (Standard `https://generativelanguage.googleapis.com`)
+- `KUKANILEA_GEMINI_MODEL` (Standard `gemini-1.5-flash`)
+- `KUKANILEA_GEMINI_API_KEY` oder `GEMINI_API_KEY` oder `GOOGLE_API_KEY`
+- `KUKANILEA_GEMINI_TIMEOUT` (Standard `60`)
+
+### OpenAI-kompatibel (generisch)
+- `KUKANILEA_OPENAI_COMPAT_BASE_URL`
+- `KUKANILEA_OPENAI_COMPAT_MODEL`
+- `KUKANILEA_OPENAI_COMPAT_API_KEY`
+- `KUKANILEA_OPENAI_COMPAT_TIMEOUT`
+
+Sekundaerer Fallback (optional):
+- `KUKANILEA_OPENAI_COMPAT_BASE_URL_FALLBACK`
+- `KUKANILEA_OPENAI_COMPAT_MODEL_FALLBACK`
+- `KUKANILEA_OPENAI_COMPAT_API_KEY_FALLBACK`
+- `KUKANILEA_OPENAI_COMPAT_TIMEOUT_FALLBACK`
+
+## Externe Quellen (DB-test als read-only Source Root)
+
+Fuer grosse Kundenordner (z. B. `~/Downloads/DB-test`) kann der Source-Scanner als read-only Quelle angebunden werden.
+Die Originaldateien werden dabei nicht veraendert; KUKANILEA schreibt nur in eigene Index-/Log-Tabellen.
+
+Beispiel:
+```bash
+python scripts/connect_source_root.py \
+  --source-root "/Users/<user>/Downloads/DB-test" \
+  --runs 3 \
+  --budget-ms 25000
+```
+
 ## Update-Checker (notify-only)
 
 ### `KUKANILEA_UPDATE_CHECK_ENABLED`

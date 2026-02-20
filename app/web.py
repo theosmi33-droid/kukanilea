@@ -70,6 +70,13 @@ from app.ai.ollama_client import ollama_is_available, ollama_list_models
 from app.ai.orchestrator import confirm_tool_call as ai_confirm_tool_call
 from app.ai.orchestrator import process_message as ai_process_message
 from app.ai.predictions import daily_report, predict_budget
+from app.ai.provider_router import (
+    is_any_provider_available,
+    provider_effective_policy,
+    provider_health_snapshot,
+    provider_order_from_env,
+    provider_specs_public,
+)
 from app.automation import (
     automation_rule_create,
     automation_rule_disable,
@@ -1073,6 +1080,7 @@ HTML_BASE = r"""<!doctype html>
 </script>
 <style>
   :root{
+    --font-sans:"SF Pro Text","SF Pro Display",-apple-system,BlinkMacSystemFont,"Inter","Roboto","Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;
     --bg:#0f172a;
     --bg-elev:#111827;
     --bg-panel:#172033;
@@ -3106,10 +3114,32 @@ def _mock_generate(prompt: str) -> str:
 @bp.get("/api/ai/status")
 @login_required
 def api_ai_status():
+    provider_order = provider_order_from_env()
+    provider_specs = provider_specs_public(
+        order=provider_order,
+        tenant_id=current_tenant(),
+        role=current_role(),
+    )
+    health = provider_health_snapshot(
+        order=provider_order,
+        tenant_id=current_tenant(),
+        role=current_role(),
+    )
+    effective_policy = provider_effective_policy(
+        tenant_id=current_tenant(),
+        role=current_role(),
+    )
+    any_available = bool(
+        is_any_provider_available(
+            order=provider_order,
+            tenant_id=current_tenant(),
+            role=current_role(),
+        )
+    )
     base_url = str(current_app.config.get("OLLAMA_BASE_URL") or "").strip() or None
-    available = bool(ollama_is_available(base_url=base_url, timeout_s=5))
+    ollama_available = bool(ollama_is_available(base_url=base_url, timeout_s=5))
     models: list[str] = []
-    if available:
+    if ollama_available:
         try:
             models = ollama_list_models(base_url=base_url, timeout_s=5)
         except Exception:
@@ -3117,9 +3147,17 @@ def api_ai_status():
     return jsonify(
         {
             "ok": True,
-            "available": available,
+            "available": any_available,
+            "ollama_available": ollama_available,
             "models": models,
             "model_default": str(current_app.config.get("OLLAMA_MODEL") or ""),
+            "provider_order": provider_order,
+            "provider_specs": provider_specs,
+            "provider_health": health.get("providers")
+            if isinstance(health, dict)
+            else [],
+            "provider_policy_effective": effective_policy,
+            "any_provider_available": any_available,
         }
     )
 
@@ -3149,6 +3187,7 @@ def api_ai_chat():
             user_id=str(current_user() or "system"),
             user_message=msg,
             read_only=bool(current_app.config.get("READ_ONLY", False)),
+            role=current_role(),
         )
     except Exception as exc:
         return json_error("ai_error", f"KI-Fehler: {exc}", status=500)
