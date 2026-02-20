@@ -8,6 +8,27 @@
 - Notify-only update checker (`app/update_checker.py`) with optional Settings integration.
 - Packaging and license-server documentation (`docs/packaging/*`, `LICENSE_SERVER.md`).
 
+## [v1.0.0-beta.2] - 2026-02-20
+
+### Added
+- Single-tenant lock with server-enforced tenant context and DEV-only tenant metadata override.
+- In-place update mechanism with atomic swap and rollback safeguards.
+- Server-side idle timeout (default 60 minutes) plus absolute session cap.
+- Self-hosted fonts and CSP enforcement to block external font origins.
+- RBAC permissions manager in settings for role and permission administration.
+
+### Changed
+- UI shell defaults to light theme for first-run and fallback rendering.
+- Route-level error responses now negotiate HTML for browser navigation and render inside the app shell.
+
+### Fixed
+- WebView/browser error flows no longer strand users on raw JSON blobs without navigation.
+- Error pages now include in-shell actions (`Neu laden`, `Zurueck`, `Dashboard`) and request-id display.
+
+### Security
+- Fail-safe error handling with public-safe messages and request-id correlation.
+- Continued deny-by-default enforcement for tenant isolation and protected routes.
+
 ## [v1.0.0-beta.1] - 2026-02-19
 
 ### Added

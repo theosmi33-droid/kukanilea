@@ -338,6 +338,7 @@ def create_app() -> Flask:
     logger = py_logging.getLogger("kukanilea")
 
     def _render_html_error(status: int, title: str, message: str):
+        request_id = str(getattr(g, "request_id", "unknown"))
         content = render_template_string(
             """
 <div class="max-w-3xl mx-auto">
@@ -345,6 +346,7 @@ def create_app() -> Flask:
     <div class="text-xs muted mb-2">Fehler {{ status }}</div>
     <h1 class="text-2xl font-semibold mb-2">{{ title }}</h1>
     <p class="text-sm muted mb-4">{{ message }}</p>
+    <div class="text-xs muted mb-4">Request-ID: <code>{{ request_id }}</code></div>
     <div class="flex flex-wrap gap-2">
       <button type="button" class="btn btn-outline px-3 py-2 text-sm" onclick="window.location.reload()">Neu laden</button>
       <button type="button" class="btn btn-outline px-3 py-2 text-sm" onclick="window.history.back()">Zurueck</button>
@@ -356,6 +358,7 @@ def create_app() -> Flask:
             status=int(status),
             title=str(title or "Fehler"),
             message=str(message or "Ein unerwarteter Fehler ist aufgetreten."),
+            request_id=request_id,
         )
         active_tab = _active_tab_from_path(request.path or "/")
         return web._render_base(content, active_tab=active_tab), int(status)

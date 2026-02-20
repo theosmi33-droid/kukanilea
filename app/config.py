@@ -41,6 +41,7 @@ class Config:
     BASE_DIR = Path(__file__).resolve().parent.parent
     PORT = int(_env("PORT", "5051"))
     SECRET_KEY = _env("KUKANILEA_SECRET", "kukanilea-dev-secret-change-me")
+    THEME_DEFAULT = _env("KUKANILEA_THEME_DEFAULT", "light").strip().lower() or "light"
     MAX_CONTENT_LENGTH = int(_env("KUKANILEA_MAX_UPLOAD", str(25 * 1024 * 1024)))
     MAX_EML_BYTES = int(_env("KUKA_MAX_EML_BYTES", str(10 * 1024 * 1024)))
 
