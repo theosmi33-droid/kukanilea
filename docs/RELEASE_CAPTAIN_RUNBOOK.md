@@ -12,11 +12,12 @@ Step-by-step execution guide for Beta/RC release readiness with evidence-driven 
 3. Validate macOS signing/notarization evidence when prerequisites exist.
 4. Validate Windows Authenticode evidence when prerequisites exist.
 5. Generate SBOM and vulnerability scan summary (`REPORT_SBOM.md`).
-6. Assemble evidence reports in one release package path.
-7. Confirm CI is green in two consecutive runs.
-8. Request final gatekeeper sign-off.
-9. Tag release and publish artifacts.
-10. Prepare rollback communication and fallback instructions.
+6. Generate build manifest and provenance evidence (`REPORT_PROVENANCE.md`).
+7. Assemble evidence reports in one release package path.
+8. Confirm CI is green in two consecutive runs.
+9. Request final gatekeeper sign-off.
+10. Tag release and publish artifacts.
+11. Prepare rollback communication and fallback instructions.
 
 ## Evidence Bundle (minimum)
 
@@ -28,6 +29,7 @@ Step-by-step execution guide for Beta/RC release readiness with evidence-driven 
 - `REPORT_RC_DISTRIBUTION_MACOS.md`
 - `REPORT_RC_DISTRIBUTION_WINDOWS.md`
 - `REPORT_SBOM.md`
+- `REPORT_PROVENANCE.md`
 
 ## Stop Rules
 

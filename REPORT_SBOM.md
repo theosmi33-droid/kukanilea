@@ -11,7 +11,8 @@ Status: BLOCKED
 ## Generator
 
 ```bash
-python scripts/generate_sbom.py --out output/sbom/sbom.json --with-pip-audit
+python scripts/generate_sbom.py --format cyclonedx --out output/sbom/sbom.cdx.json --with-pip-audit
+python scripts/generate_sbom.py --format spdx --out output/sbom/sbom.spdx.json
 ```
 
 ## Current Status
@@ -21,6 +22,7 @@ python scripts/generate_sbom.py --out output/sbom/sbom.json --with-pip-audit
 ## Evidence Section (to fill per release)
 
 - SBOM path:
+- SBOM format:
 - Generation timestamp:
 - Vulnerability summary:
 - Exceptions (if any):

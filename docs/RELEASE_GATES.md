@@ -32,6 +32,7 @@ Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
 | Performance / Stability | 15-20m smoke without blocker | 60m endurance without P1 | Reproducible load test with limits | BLOCKED | `REPORT_RC_ENDURANCE_60M.md` still sanity-only; 60m evidence pending | Engineering |
 | AI Availability (primary + fallback) | Primary and fallback work | Provider outage fallback without UI block | Offline-first + recovery runbook | PASS | `REPORT_AI_AVAILABILITY.md` | Engineering |
 | Supply Chain / SBOM | Dependency inventory generated | SBOM + vulnerability scan report attached | 0 unresolved High (or documented exceptions) | BLOCKED | `REPORT_SBOM.md` + generated artifact from `scripts/generate_sbom.py` | Engineering + Security |
+| Provenance / Build Integrity | Artifact hash manifest generated | Provenance statement attached | Verified provenance and digest chain for release artifacts | BLOCKED | `REPORT_PROVENANCE.md`, `scripts/generate_build_manifest.py`, `scripts/generate_provenance.py` | Engineering + Release Captain |
 
 ## Go / No-Go Rules
 
@@ -47,4 +48,5 @@ Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
 - Windows prerequisites: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_WINDOWS_PREREQUISITES.md`
 - Endurance evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_RC_ENDURANCE_60M.md`
 - Supply-chain evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_SBOM.md`
+- Provenance evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_PROVENANCE.md`
 - CRA/vulnerability process: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/CRA_READINESS.md`

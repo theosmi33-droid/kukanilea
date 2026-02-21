@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -45,17 +46,83 @@ def _run_pip_audit() -> dict[str, Any]:
     return payload
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate lightweight SBOM and scan metadata.")
-    parser.add_argument("--out", type=str, default="output/sbom/sbom.json")
-    parser.add_argument("--with-pip-audit", action="store_true")
-    args = parser.parse_args()
+def _to_cyclonedx(packages: list[dict[str, str]]) -> dict[str, Any]:
+    serial = f"urn:uuid:{uuid.uuid4()}"
+    components: list[dict[str, Any]] = []
+    for item in packages:
+        name = item["name"]
+        version = item["version"] or "unknown"
+        components.append(
+            {
+                "type": "library",
+                "name": name,
+                "version": version,
+                "purl": f"pkg:pypi/{name}@{version}",
+            }
+        )
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.6",
+        "serialNumber": serial,
+        "version": 1,
+        "metadata": {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "tools": [
+                {
+                    "vendor": "kukanilea",
+                    "name": "scripts/generate_sbom.py",
+                    "version": "1.0",
+                }
+            ],
+            "component": {"type": "application", "name": "kukanilea"},
+        },
+        "components": components,
+    }
 
-    out_path = Path(args.out).resolve()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    packages = _pip_freeze()
-    payload: dict[str, Any] = {
+def _to_spdx(packages: list[dict[str, str]]) -> dict[str, Any]:
+    document_namespace = f"https://kukanilea.local/spdx/{uuid.uuid4()}"
+    now = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    spdx_packages: list[dict[str, Any]] = []
+    relationships: list[dict[str, str]] = []
+    for item in packages:
+        name = item["name"]
+        version = item["version"] or "unknown"
+        spdx_id = f"SPDXRef-Package-{name.replace('.', '-').replace('_', '-')}"
+        spdx_packages.append(
+            {
+                "name": name,
+                "SPDXID": spdx_id,
+                "versionInfo": version,
+                "downloadLocation": "NOASSERTION",
+                "licenseConcluded": "NOASSERTION",
+                "licenseDeclared": "NOASSERTION",
+            }
+        )
+        relationships.append(
+            {
+                "spdxElementId": "SPDXRef-DOCUMENT",
+                "relationshipType": "DESCRIBES",
+                "relatedSpdxElement": spdx_id,
+            }
+        )
+    return {
+        "spdxVersion": "SPDX-2.3",
+        "dataLicense": "CC0-1.0",
+        "SPDXID": "SPDXRef-DOCUMENT",
+        "name": "kukanilea-sbom",
+        "documentNamespace": document_namespace,
+        "creationInfo": {
+            "created": now,
+            "creators": ["Tool: scripts/generate_sbom.py"],
+        },
+        "packages": spdx_packages,
+        "relationships": relationships,
+    }
+
+
+def _to_internal(packages: list[dict[str, str]]) -> dict[str, Any]:
+    return {
         "schema": "kukanilea.sbom.v1",
         "generated_at": datetime.now(UTC).isoformat(),
         "generator": "scripts/generate_sbom.py",
@@ -63,6 +130,30 @@ def main() -> int:
         "package_count": len(packages),
         "packages": packages,
     }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate lightweight SBOM and scan metadata.")
+    parser.add_argument("--out", type=str, default="output/sbom/sbom.json")
+    parser.add_argument("--with-pip-audit", action="store_true")
+    parser.add_argument(
+        "--format",
+        choices=["cyclonedx", "spdx", "internal"],
+        default="cyclonedx",
+        help="Output schema flavor.",
+    )
+    args = parser.parse_args()
+
+    out_path = Path(args.out).resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    packages = _pip_freeze()
+    if args.format == "spdx":
+        payload = _to_spdx(packages)
+    elif args.format == "internal":
+        payload = _to_internal(packages)
+    else:
+        payload = _to_cyclonedx(packages)
 
     if args.with_pip_audit:
         payload["pip_audit"] = _run_pip_audit()
