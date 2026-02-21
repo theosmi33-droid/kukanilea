@@ -28,12 +28,23 @@ def _set_core_db(tmp_path: Path, app=None) -> Path:
 
 def test_api_ai_status(monkeypatch) -> None:
     app = create_app()
-    app.config.update(TESTING=True, SECRET_KEY="test")
+    app.config.update(
+        TESTING=True,
+        SECRET_KEY="test",
+        OLLAMA_MODEL="llama3.2:3b",
+        OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b",
+    )
     client = app.test_client()
     _login(client)
 
     monkeypatch.setattr(webmod, "ollama_is_available", lambda **kwargs: True)
     monkeypatch.setattr(webmod, "is_any_provider_available", lambda **kwargs: True)
+    monkeypatch.setattr(
+        webmod,
+        "ai_load_bootstrap_state",
+        lambda config: {"status": "done", "ok": True},
+    )
+    monkeypatch.setattr(webmod, "ai_count_personal_notes", lambda **kwargs: 2)
     monkeypatch.setattr(
         webmod,
         "ollama_list_models",
@@ -46,6 +57,55 @@ def test_api_ai_status(monkeypatch) -> None:
     assert payload.get("any_provider_available") is True
     assert payload.get("ollama_available") is True
     assert "llama3.1:8b" in (payload.get("models") or [])
+    assert payload.get("model_fallbacks") == ["llama3.1:8b", "qwen2.5:3b"]
+    assert payload.get("bootstrap_state", {}).get("status") == "done"
+    assert payload.get("personal_memory_note_count") == 2
+    modelpack = payload.get("modelpack") or {}
+    assert modelpack.get("enabled") in {True, False}
+    assert "file" in modelpack
+    assert "exists" in modelpack
+
+
+def test_api_ai_modelpack_routes(monkeypatch, tmp_path: Path) -> None:
+    app = create_app()
+    app.config.update(
+        TESTING=True,
+        SECRET_KEY="test",
+        AI_BOOTSTRAP_MODELPACK_FILE=str(tmp_path / "offline-pack.tar.gz"),
+        AI_BOOTSTRAP_MODELPACK_EXPORT_DIR=str(tmp_path / "exports"),
+    )
+    client = app.test_client()
+    _login(client)
+    with client.session_transaction() as sess:
+        sess["role"] = "DEV"
+
+    monkeypatch.setattr(
+        webmod,
+        "ai_create_model_pack",
+        lambda **kwargs: {
+            "ok": True,
+            "pack_path": str(tmp_path / "exports" / "pack.tar.gz"),
+            "file_count": 3,
+            "total_bytes": 12,
+        },
+    )
+    monkeypatch.setattr(
+        webmod,
+        "ai_import_model_pack",
+        lambda **kwargs: {
+            "ok": True,
+            "pack_path": str(kwargs.get("pack_path") or ""),
+            "extracted_files": 3,
+        },
+    )
+
+    export_res = client.post("/api/ai/modelpack/export", json={})
+    assert export_res.status_code == 200
+    assert (export_res.get_json() or {}).get("ok") is True
+
+    import_res = client.post("/api/ai/modelpack/import", json={})
+    assert import_res.status_code == 200
+    assert (import_res.get_json() or {}).get("ok") is True
 
 
 def test_api_ai_chat_success(monkeypatch) -> None:
@@ -70,6 +130,30 @@ def test_api_ai_chat_success(monkeypatch) -> None:
     assert payload.get("status") == "ok"
     assert payload.get("message") == "Hallo von KI"
     assert payload.get("conversation_id") == "conv-123"
+
+
+def test_api_ai_personal_memory_routes(monkeypatch) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    client = app.test_client()
+    _login(client)
+
+    monkeypatch.setattr(
+        webmod,
+        "ai_list_personal_notes",
+        lambda **kwargs: [{"id": "n1", "note": "test"}],
+    )
+    monkeypatch.setattr(webmod, "ai_add_personal_note", lambda **kwargs: "n2")
+
+    get_res = client.get("/api/ai/personal-memory")
+    assert get_res.status_code == 200
+    get_payload = get_res.get_json() or {}
+    assert get_payload.get("count") == 1
+
+    post_res = client.post("/api/ai/personal-memory", json={"note": "Neue Notiz"})
+    assert post_res.status_code == 200
+    post_payload = post_res.get_json() or {}
+    assert post_payload.get("id") == "n2"
 
 
 def test_api_ai_confirm_tool_success(monkeypatch) -> None:

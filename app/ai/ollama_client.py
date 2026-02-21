@@ -74,9 +74,21 @@ def ollama_chat(
             json=payload,
             timeout=int(timeout_s or DEFAULT_OLLAMA_TIMEOUT_S),
         )
-        response.raise_for_status()
     except requests.RequestException as exc:
         raise OllamaUnavailable("ollama_chat_unreachable") from exc
+
+    if int(getattr(response, "status_code", 0)) >= 400:
+        error_text = ""
+        try:
+            error_payload = response.json()
+            if isinstance(error_payload, dict):
+                error_text = str(error_payload.get("error") or "").strip()
+        except Exception:
+            error_text = str(getattr(response, "text", "") or "").strip()
+        normalized = error_text.lower()
+        if "model" in normalized and "not found" in normalized:
+            raise OllamaBadResponse("ollama_model_not_found")
+        raise OllamaBadResponse(f"ollama_http_{int(response.status_code)}")
 
     try:
         data = response.json()

@@ -7,6 +7,7 @@ from typing import Optional
 from flask import Flask
 
 from .memory import ensure_ai_schema
+from .personal_memory import ensure_personal_memory_schema
 
 _SCHEDULER = None
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -42,6 +43,7 @@ def init_ai(app: Optional[Flask] = None) -> None:
     Heavy optional AI dependencies are only touched when KUKA_AI_ENABLE is truthy.
     """
     ensure_ai_schema()
+    ensure_personal_memory_schema()
     if not is_enabled():
         return
 

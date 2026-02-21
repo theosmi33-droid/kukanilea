@@ -57,9 +57,9 @@ def _launch_macos_ollama_app() -> bool:
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            check=False,
             shell=False,
-            timeout=10,
+            timeout=5,
+            check=False,
         )
         return res.returncode == 0
     except Exception:
@@ -166,3 +166,29 @@ def start_ollama_autostart_background() -> threading.Thread | None:
     )
     thread.start()
     return thread
+
+
+def pull_ollama_model(*, model: str, timeout_s: int = 1800) -> bool:
+    """Pull one model into local Ollama cache. Best-effort, returns success bool."""
+    model_name = str(model or "").strip()
+    if not model_name:
+        return False
+    ollama_bin = _find_ollama_binary()
+    if not ollama_bin:
+        return False
+
+    env = os.environ.copy()
+    env["OLLAMA_HOST"] = _base_url()
+    try:
+        res = subprocess.run(  # noqa: S603
+            [ollama_bin, "pull", model_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+            timeout=max(30, int(timeout_s)),
+            check=False,
+            env=env,
+        )
+        return res.returncode == 0
+    except Exception:
+        return False

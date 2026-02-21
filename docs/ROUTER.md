@@ -13,6 +13,7 @@ Implementierung: `/Users/gensuminguyen/Tophandwerk/kukanilea-git/app/ai/provider
 3. Prüfe Verfügbarkeit (Health-Check, TTL-cached)
 4. Wähle den ersten gesunden Provider nach Priorität
 5. Bei Fehler: nächster Provider
+6. Bei `ollama`: optional zuerst modellinterner Fallback ueber `KUKANILEA_OLLAMA_MODEL_FALLBACKS`
 
 ## Öffentliche API
 
@@ -39,3 +40,4 @@ Implementierung: `/Users/gensuminguyen/Tophandwerk/kukanilea-git/app/ai/provider
 - `provider_health`
 - `any_provider_available`
 - `available`/`models` (Ollama-spezifische Legacy-Felder)
+- `model_default`/`model_fallbacks` (konfigurierter Ollama-Modellplan)
