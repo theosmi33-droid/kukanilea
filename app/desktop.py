@@ -24,6 +24,16 @@ class _ServerHandle:
     port: int
 
 
+def _start_ollama_autostart() -> None:
+    try:
+        from .ollama_runtime import start_ollama_autostart_background
+
+        start_ollama_autostart_background()
+    except Exception:
+        # Ollama bootstrap is best-effort and must never block app launch.
+        return
+
+
 def _find_free_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -65,6 +75,7 @@ def _load_webview_module() -> Any:
 
 def run_native_desktop(*, title: str = "KUKANILEA", debug: bool = False) -> int:
     webview = _load_webview_module()
+    _start_ollama_autostart()
 
     requested_port = int(os.environ.get("KUKANILEA_DESKTOP_PORT", "0") or "0")
     port = requested_port if requested_port > 0 else _find_free_port()

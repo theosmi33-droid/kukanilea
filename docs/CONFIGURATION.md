@@ -126,6 +126,16 @@ Hinweis:
 - Standard: `300`
 - Zweck: Request-Timeout fuer lokale LLM-Generierung
 
+### `KUKANILEA_OLLAMA_AUTOSTART`
+- Typ: Bool (`0|1`)
+- Standard: `1`
+- Zweck: Startet Ollama beim nativen KUKANILEA-Desktop-Start automatisch, wenn Ollama nicht erreichbar ist.
+
+### `KUKANILEA_OLLAMA_AUTOSTART_TIMEOUT_SECONDS`
+- Typ: Integer (Sekunden)
+- Standard: `20`
+- Zweck: Maximale Wartezeit auf Ollama nach Autostart.
+
 ## KI-Provider-Router (robuste Assistenz)
 
 ### `KUKANILEA_AI_PROVIDER_ORDER`
