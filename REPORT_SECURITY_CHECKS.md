@@ -18,6 +18,17 @@ Output:
 <clean>
 ```
 
+## Block status evidence (Part 4 update start)
+Command:
+```bash
+git status --porcelain=v1
+```
+Output:
+```text
+?? REPORT_SECURITY_SCAN_REMEDIATION.md
+ M REPORT_BENCH_STABILITY.md
+```
+
 ## Evidence
 ### Security-focused pytest subset
 Command:
@@ -35,7 +46,8 @@ python -m app.devtools.security_scan
 ```
 Result:
 - PASS: 0 findings after hardening subprocess calls
-- Evidence: `/tmp/kuka_security_scan_bench.log`
+- Evidence: `/tmp/kuka_security_scan_after_current.log`
+- Detailed remediation: `REPORT_SECURITY_SCAN_REMEDIATION.md`
 
 ### Triage
 Command:
@@ -50,14 +62,14 @@ Result:
 | Gate target | Status | Reason | Evidence |
 |---|---|---|---|
 | Beta: no known P0 leaks | PASS | tenant/rbac/csp/session regressions pass; no P0 leak found in this run | security pytest subset |
-| RC: 0 open P0, 0 open High | PASS | security scan is clean in this run; targeted security regressions pass | `/tmp/kuka_security_scan_bench.log`, `/tmp/kuka_pytest_security_subset.log` |
+| RC: 0 open P0, 0 open High | PASS | security scan is clean in this run; targeted security regressions pass | `/tmp/kuka_security_scan_after_current.log`, `/tmp/kuka_pytest_security_subset.log`, `REPORT_SECURITY_SCAN_REMEDIATION.md` |
 | Prod: external security check + 0 High | FAIL | no external security assessment evidence in this run | n/a |
 
 ## How to verify
-1. Fix `app/ollama_runtime.py` scanner findings.
-2. Re-run `security_scan`, `triage`, and security subset tests.
-3. Execute explicit authz negative tests (role escalation, unauthorized route access).
-4. Attach logs with request IDs and CI links for release decision.
+1. Re-run `security_scan`, `triage`, and security subset tests.
+2. Execute explicit authz negative tests (role escalation, unauthorized route access).
+3. Attach logs with request IDs and CI links for release decision.
+4. Keep `REPORT_SECURITY_SCAN_REMEDIATION.md` updated when scanner rules/findings change.
 
 ## Findings table
 | Finding | Severity | Evidence | Repro | Suggested fix |
