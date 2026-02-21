@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from app.event_id_map import entity_id_int
@@ -11,6 +12,7 @@ from .audit import audit_tool_call
 from .confirm import sign_confirmation, verify_confirmation
 from .memory import list_recent_conversations, save_conversation
 from .ollama_client import DEFAULT_OLLAMA_MODEL, ollama_is_available
+from .personal_memory import add_user_note, render_user_memory_context
 from .provider_router import (
     chat_with_fallback,
     provider_order_from_env,
@@ -30,6 +32,10 @@ SYSTEM_PROMPT = (
     "Kein SQL, keine Secrets, keine Systemdateien. "
     "Bei Unsicherheit stelle Rueckfragen. "
     "Wenn Tools genutzt werden, fuehre sie praezise aus und antworte danach knapp."
+)
+_MEMORY_CMD_RE = re.compile(
+    r"^\s*(?:merke\s*dir|merk\s*dir|remember)\s*:\s*(?P<note>.+?)\s*$",
+    flags=re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -107,6 +113,39 @@ def process_message(
             "pending_confirmation": None,
         }
 
+    memory_match = _MEMORY_CMD_RE.match(message_clean)
+    if memory_match is not None:
+        note = str(memory_match.group("note") or "").strip()
+        if note:
+            note_id = add_user_note(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                note=note,
+                source="chat_command",
+            )
+            final_text = "Verstanden. Ich habe mir das fuer dich gemerkt."
+            conversation_id = save_conversation(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                user_message=message_clean,
+                assistant_response=final_text,
+                tools_used=["personal_memory.save"],
+            )
+            _append_conversation_event(
+                tenant_id=tenant_id,
+                conversation_id=conversation_id,
+                tool_count=1,
+            )
+            return {
+                "status": "ok",
+                "response": final_text,
+                "conversation_id": conversation_id,
+                "tool_used": ["personal_memory.save"],
+                "pending_confirmation": None,
+                "provider": "local_memory",
+                "memory_note_id": note_id,
+            }
+
     if not effective_specs:
         return {
             "status": "ai_disabled",
@@ -144,11 +183,17 @@ def process_message(
         if assistant_text:
             history_msgs.append({"role": "assistant", "content": assistant_text[:1200]})
 
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        *history_msgs,
-        {"role": "user", "content": message_clean},
-    ]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    personal_context = render_user_memory_context(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        limit=8,
+        max_chars=1400,
+    )
+    if personal_context:
+        messages.append({"role": "system", "content": personal_context})
+    messages.extend(history_msgs)
+    messages.append({"role": "user", "content": message_clean})
     tools = ollama_tools()
     used_tools: list[str] = []
     final_text = ""

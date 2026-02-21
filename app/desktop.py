@@ -34,6 +34,15 @@ def _start_ollama_autostart() -> None:
         return
 
 
+def _start_ai_bootstrap(config: dict[str, Any]) -> None:
+    try:
+        from .ai.provisioning import start_first_install_bootstrap_background
+
+        start_first_install_bootstrap_background(config)
+    except Exception:
+        return
+
+
 def _find_free_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -81,6 +90,10 @@ def run_native_desktop(*, title: str = "KUKANILEA", debug: bool = False) -> int:
     port = requested_port if requested_port > 0 else _find_free_port()
 
     handle = _start_http_server(port)
+    try:
+        _start_ai_bootstrap(handle.server.app.config)  # type: ignore[attr-defined]
+    except Exception:
+        pass
     url = f"http://127.0.0.1:{handle.port}/"
 
     if not _wait_until_ready(url):

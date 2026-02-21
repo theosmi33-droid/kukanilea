@@ -115,6 +115,58 @@ class Config:
     OLLAMA_AUTOSTART_TIMEOUT_SECONDS = int(
         _env("KUKANILEA_OLLAMA_AUTOSTART_TIMEOUT_SECONDS", "20")
     )
+    AI_BOOTSTRAP_ON_FIRST_RUN = _env("KUKANILEA_AI_BOOTSTRAP_ON_FIRST_RUN", "1") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+        "on",
+        "ON",
+    )
+    AI_BOOTSTRAP_PULL_MODELS = _env("KUKANILEA_AI_BOOTSTRAP_PULL_MODELS", "1") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+        "on",
+        "ON",
+    )
+    AI_BOOTSTRAP_MODEL_LIST = _env("KUKANILEA_AI_BOOTSTRAP_MODEL_LIST", "")
+    AI_BOOTSTRAP_MODEL_PULL_TIMEOUT_SECONDS = int(
+        _env("KUKANILEA_AI_BOOTSTRAP_MODEL_PULL_TIMEOUT_SECONDS", "1800")
+    )
+    AI_BOOTSTRAP_USE_MODELPACK = _env("KUKANILEA_AI_BOOTSTRAP_USE_MODELPACK", "1") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+        "on",
+        "ON",
+    )
+    AI_BOOTSTRAP_MODELPACK_FILE = Path(
+        _env(
+            "KUKANILEA_AI_BOOTSTRAP_MODELPACK_FILE",
+            str(USER_DATA_ROOT / "modelpacks" / "ollama-modelpack.tar.gz"),
+        )
+    )
+    AI_BOOTSTRAP_MODELPACK_EXPORT_DIR = Path(
+        _env(
+            "KUKANILEA_AI_BOOTSTRAP_MODELPACK_EXPORT_DIR",
+            str(USER_DATA_ROOT / "modelpacks"),
+        )
+    )
+    AI_BOOTSTRAP_STATE_FILE = Path(
+        _env(
+            "KUKANILEA_AI_BOOTSTRAP_STATE_FILE",
+            str(USER_DATA_ROOT / "ai_bootstrap_state.json"),
+        )
+    )
+    AI_MEMORY_DB = Path(
+        _env("KUKANILEA_AI_MEMORY_DB", str(USER_DATA_ROOT / "ai_memory.sqlite3"))
+    )
     AI_PROVIDER_ORDER = _env("KUKANILEA_AI_PROVIDER_ORDER", "ollama")
     AI_PROVIDERS_JSON = _env("KUKANILEA_AI_PROVIDERS_JSON", "")
     AI_PROVIDER_RETRIES = int(_env("KUKANILEA_AI_PROVIDER_RETRIES", "1"))
@@ -210,3 +262,11 @@ class Config:
         _env("KUKANILEA_IDLE_TIMEOUT_MAX_MINUTES", "480")
     )
     SESSION_IDLE_TOUCH_SECONDS = int(_env("KUKANILEA_IDLE_TOUCH_SECONDS", "60"))
+    UI_HEALTH_POLL_MS = int(_env("KUKANILEA_UI_HEALTH_POLL_MS", "60000"))
+    UI_STATUS_POLL_MS = int(_env("KUKANILEA_UI_STATUS_POLL_MS", "15000"))
+    UI_AI_STATUS_CLIENT_CACHE_MS = int(
+        _env("KUKANILEA_UI_AI_STATUS_CLIENT_CACHE_MS", "45000")
+    )
+    AI_STATUS_CACHE_TTL_SECONDS = int(
+        _env("KUKANILEA_AI_STATUS_CACHE_TTL_SECONDS", "15")
+    )
