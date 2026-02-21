@@ -193,6 +193,7 @@ from app.mail import (
 )
 from app.omni import get_event as omni_get_event
 from app.omni import list_events as omni_list_events
+from app.reporting import build_evidence_pack
 from app.security_ua_hash import ua_hmac_sha256_hex
 from app.tags import (
     tag_assign,
@@ -3658,6 +3659,32 @@ def api_intake_triage():
             "signals": [str(v) for v in (triage.get("signals") or [])],
         }
     )
+
+
+@bp.route("/api/reports/evidence-pack/<entity_id>", methods=["GET"])
+@login_required
+def api_reports_evidence_pack(entity_id: str):
+    entity_type = str(request.args.get("entity_type") or "lead").strip().lower()
+    try:
+        pack = build_evidence_pack(
+            tenant_id=str(current_tenant() or ""),
+            entity_type=entity_type,
+            entity_id=str(entity_id or ""),
+            limit=max(1, min(int(request.args.get("limit") or 250), 500)),
+        )
+    except ValueError:
+        return json_error(
+            "validation_error", "Ungültige Evidence-Pack Parameter.", status=400
+        )
+    except Exception as exc:
+        return json_error(
+            "evidence_pack_error", f"Evidence-Pack Fehler: {exc}", status=500
+        )
+    if not pack:
+        return json_error(
+            "not_found", "Evidence-Pack Entität nicht gefunden.", status=404
+        )
+    return jsonify({"ok": True, "evidence_pack": pack})
 
 
 @bp.post("/api/search")
