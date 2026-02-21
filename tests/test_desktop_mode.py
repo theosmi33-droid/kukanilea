@@ -49,15 +49,25 @@ def test_run_native_desktop_bootstrap_flow(monkeypatch) -> None:
     monkeypatch.setattr(desktop, "_load_webview_module", lambda: dummy_webview)
     monkeypatch.setattr(desktop, "_start_http_server", lambda port: dummy_handle)
     monkeypatch.setattr(desktop, "_wait_until_ready", lambda url: True)
-    called = {"autostart": 0}
+    called = {"autostart": 0, "stop": 0, "maintenance": 0}
     monkeypatch.setattr(
         desktop, "_start_ollama_autostart", lambda: called.__setitem__("autostart", 1)
+    )
+    monkeypatch.setattr(
+        desktop, "_stop_ollama_runtime", lambda: called.__setitem__("stop", 1)
+    )
+    monkeypatch.setattr(
+        desktop,
+        "_start_startup_maintenance",
+        lambda cfg: called.__setitem__("maintenance", 1),
     )
 
     rc = desktop.run_native_desktop(title="KUKANILEA Test", debug=False)
 
     assert rc == 0
     assert called["autostart"] == 1
+    assert called["maintenance"] == 1
+    assert called["stop"] == 1
     assert dummy_webview.started is True
     assert dummy_server.shutdown_called is True
     assert dummy_webview.created
@@ -78,8 +88,13 @@ def test_run_native_desktop_raises_when_not_ready(monkeypatch) -> None:
     monkeypatch.setattr(desktop, "_start_http_server", lambda port: dummy_handle)
     monkeypatch.setattr(desktop, "_wait_until_ready", lambda url: False)
     monkeypatch.setattr(desktop, "_start_ollama_autostart", lambda: None)
+    called = {"stop": 0}
+    monkeypatch.setattr(
+        desktop, "_stop_ollama_runtime", lambda: called.__setitem__("stop", 1)
+    )
 
     with pytest.raises(desktop.DesktopLaunchError):
         desktop.run_native_desktop(debug=False)
 
     assert dummy_server.shutdown_called is True
+    assert called["stop"] == 1

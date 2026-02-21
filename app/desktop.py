@@ -43,6 +43,24 @@ def _start_ai_bootstrap(config: dict[str, Any]) -> None:
         return
 
 
+def _start_startup_maintenance(config: dict[str, Any]) -> None:
+    try:
+        from .startup_maintenance import start_startup_maintenance_background
+
+        start_startup_maintenance_background(config)
+    except Exception:
+        return
+
+
+def _stop_ollama_runtime() -> None:
+    try:
+        from .ollama_runtime import stop_ollama_managed_runtime
+
+        stop_ollama_managed_runtime()
+    except Exception:
+        return
+
+
 def _find_free_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -90,8 +108,13 @@ def run_native_desktop(*, title: str = "KUKANILEA", debug: bool = False) -> int:
     port = requested_port if requested_port > 0 else _find_free_port()
 
     handle = _start_http_server(port)
+    app_config = getattr(getattr(handle.server, "app", None), "config", {}) or {}
     try:
-        _start_ai_bootstrap(handle.server.app.config)  # type: ignore[attr-defined]
+        _start_ai_bootstrap(app_config)  # type: ignore[arg-type]
+    except Exception:
+        pass
+    try:
+        _start_startup_maintenance(app_config)  # type: ignore[arg-type]
     except Exception:
         pass
     url = f"http://127.0.0.1:{handle.port}/"
@@ -101,6 +124,7 @@ def run_native_desktop(*, title: str = "KUKANILEA", debug: bool = False) -> int:
             handle.server.shutdown()
         finally:
             handle.thread.join(timeout=3)
+            _stop_ollama_runtime()
         raise DesktopLaunchError("Local app server did not become ready in time.")
 
     webview.create_window(
@@ -119,6 +143,7 @@ def run_native_desktop(*, title: str = "KUKANILEA", debug: bool = False) -> int:
             handle.server.shutdown()
         finally:
             handle.thread.join(timeout=3)
+            _stop_ollama_runtime()
 
     return 0
 

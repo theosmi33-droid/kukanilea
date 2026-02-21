@@ -3656,6 +3656,26 @@ def api_status():
     jobs = _job_tracker_snapshot()
     queue = _queue_status_snapshot()
     ocr = _ocr_status_snapshot(tenant_id)
+    startup_summary = {}
+    try:
+        from app.startup_maintenance import load_startup_maintenance_state
+
+        startup_state = load_startup_maintenance_state(current_app.config)
+        startup_summary = {
+            "status": str(startup_state.get("status") or ""),
+            "ok": bool(startup_state.get("ok", False)),
+            "finished_at": str(startup_state.get("finished_at") or ""),
+            "steps": [
+                {
+                    "name": str(step.get("name") or ""),
+                    "ok": bool(step.get("ok", False)),
+                }
+                for step in (startup_state.get("steps") or [])
+                if isinstance(step, dict)
+            ],
+        }
+    except Exception:
+        startup_summary = {}
     running_total = sum(1 for item in jobs.values() if item.get("state") == "running")
     running_total += int(queue.get("analyzing") or 0)
     running_total += int(ocr.get("processing") or 0)
@@ -3668,6 +3688,7 @@ def api_status():
             "jobs": jobs,
             "queue": queue,
             "ocr": ocr,
+            "startup_maintenance": startup_summary,
         }
     )
 

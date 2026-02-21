@@ -4,7 +4,7 @@ import logging
 import os
 import platform
 import shutil
-import subprocess
+import subprocess as sp
 import threading
 import time
 from pathlib import Path
@@ -13,6 +13,9 @@ import requests
 
 LOG = logging.getLogger(__name__)
 _TRUTHY = {"1", "true", "yes", "on"}
+_RUNTIME_LOCK = threading.Lock()
+_MANAGED_SERVE_PROCESS: sp.Popen | None = None
+_MANAGED_APP_LAUNCHED = False
 
 
 def _env_bool(name: str, default: str = "0") -> bool:
@@ -30,6 +33,10 @@ def _base_url() -> str:
 
 def _autostart_enabled() -> bool:
     return _env_bool("KUKANILEA_OLLAMA_AUTOSTART", "1")
+
+
+def _stop_on_exit_enabled() -> bool:
+    return _env_bool("KUKANILEA_OLLAMA_STOP_ON_EXIT", "1")
 
 
 def _autostart_timeout_seconds() -> int:
@@ -53,10 +60,10 @@ def _launch_macos_ollama_app() -> bool:
         return False
     cmd = ["open", "-g", "-a", "Ollama"]
     try:
-        res = subprocess.run(
+        res = sp.run(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=sp.DEVNULL,
+            stderr=sp.DEVNULL,
             shell=False,
             timeout=5,
             check=False,
@@ -66,37 +73,28 @@ def _launch_macos_ollama_app() -> bool:
         return False
 
 
-def _run_ollama_serve(ollama_bin: str) -> None:
-    try:
-        subprocess.run(
-            [ollama_bin, "serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            check=False,
-            shell=False,
-            timeout=24 * 60 * 60,
-            start_new_session=True,
-        )
-    except Exception:
-        LOG.debug("Ollama serve background process exited unexpectedly.", exc_info=True)
-
-
 def _launch_ollama_serve() -> bool:
+    global _MANAGED_SERVE_PROCESS
     ollama_bin = _find_ollama_binary()
     if not ollama_bin:
         return False
+    with _RUNTIME_LOCK:
+        if _MANAGED_SERVE_PROCESS is not None and _MANAGED_SERVE_PROCESS.poll() is None:
+            return True
     try:
-        thread = threading.Thread(
-            target=_run_ollama_serve,
-            args=(ollama_bin,),
-            name="kukanilea-ollama-serve",
-            daemon=True,
+        proc = sp.Popen(  # noqa: S603
+            [ollama_bin, "serve"],
+            stdout=sp.DEVNULL,
+            stderr=sp.DEVNULL,
+            stdin=sp.DEVNULL,
+            shell=False,
+            start_new_session=True,
         )
-        thread.start()
-        return True
     except Exception:
         return False
+    with _RUNTIME_LOCK:
+        _MANAGED_SERVE_PROCESS = proc
+        return True
 
 
 def _find_ollama_binary() -> str:
@@ -133,9 +131,14 @@ def ensure_ollama_running(
     if not _autostart_enabled():
         return False
 
-    launched = _launch_macos_ollama_app()
+    # Prefer managed `ollama serve` so we can tear it down when KUKANILEA exits.
+    launched = _launch_ollama_serve()
     if not launched:
-        launched = _launch_ollama_serve()
+        launched = _launch_macos_ollama_app()
+        if launched:
+            global _MANAGED_APP_LAUNCHED
+            with _RUNTIME_LOCK:
+                _MANAGED_APP_LAUNCHED = True
 
     if not launched:
         LOG.warning("Ollama autostart failed: no launch strategy available.")
@@ -168,6 +171,51 @@ def start_ollama_autostart_background() -> threading.Thread | None:
     return thread
 
 
+def stop_ollama_managed_runtime(*, timeout_s: int = 8) -> bool:
+    """Stop only Ollama processes started by this runtime."""
+    global _MANAGED_SERVE_PROCESS, _MANAGED_APP_LAUNCHED
+    stopped = False
+    if not _stop_on_exit_enabled():
+        return False
+
+    proc: sp.Popen | None
+    with _RUNTIME_LOCK:
+        proc = _MANAGED_SERVE_PROCESS
+        _MANAGED_SERVE_PROCESS = None
+    if proc is not None:
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=max(1, int(timeout_s)))
+                except Exception:
+                    proc.kill()
+                    proc.wait(timeout=2)
+                stopped = True
+        except Exception:
+            LOG.debug("Failed to stop managed Ollama serve process.", exc_info=True)
+
+    launched_app = False
+    with _RUNTIME_LOCK:
+        launched_app = bool(_MANAGED_APP_LAUNCHED)
+        _MANAGED_APP_LAUNCHED = False
+    if launched_app and platform.system().lower() == "darwin":
+        try:
+            res = sp.run(
+                ["osascript", "-e", 'tell application "Ollama" to quit'],
+                stdout=sp.DEVNULL,
+                stderr=sp.DEVNULL,
+                check=False,
+                shell=False,
+                timeout=5,
+            )
+            if res.returncode == 0:
+                stopped = True
+        except Exception:
+            LOG.debug("Failed to request Ollama.app shutdown.", exc_info=True)
+    return stopped
+
+
 def pull_ollama_model(*, model: str, timeout_s: int = 1800) -> bool:
     """Pull one model into local Ollama cache. Best-effort, returns success bool."""
     model_name = str(model or "").strip()
@@ -180,10 +228,10 @@ def pull_ollama_model(*, model: str, timeout_s: int = 1800) -> bool:
     env = os.environ.copy()
     env["OLLAMA_HOST"] = _base_url()
     try:
-        res = subprocess.run(  # noqa: S603
+        res = sp.run(  # noqa: S603
             [ollama_bin, "pull", model_name],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=sp.DEVNULL,
+            stderr=sp.DEVNULL,
             shell=False,
             timeout=max(30, int(timeout_s)),
             check=False,

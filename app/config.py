@@ -164,6 +164,23 @@ class Config:
             str(USER_DATA_ROOT / "ai_bootstrap_state.json"),
         )
     )
+    STARTUP_MAINTENANCE_ENABLED = _env(
+        "KUKANILEA_STARTUP_MAINTENANCE_ENABLED", "1"
+    ) in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+        "on",
+        "ON",
+    )
+    STARTUP_MAINTENANCE_STATE_FILE = Path(
+        _env(
+            "KUKANILEA_STARTUP_MAINTENANCE_STATE_FILE",
+            str(USER_DATA_ROOT / "startup_maintenance_state.json"),
+        )
+    )
     AI_MEMORY_DB = Path(
         _env("KUKANILEA_AI_MEMORY_DB", str(USER_DATA_ROOT / "ai_memory.sqlite3"))
     )
