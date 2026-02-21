@@ -17,7 +17,8 @@ ollama pull llama3.1:8b
 Umgebungsvariablen:
 ```bash
 export OLLAMA_BASE_URL="http://127.0.0.1:11434"
-export OLLAMA_MODEL="llama3.1:8b"
+export OLLAMA_MODEL="llama3.2:3b"
+export KUKANILEA_OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b"
 export OLLAMA_TIMEOUT="300"
 ```
 

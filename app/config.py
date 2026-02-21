@@ -99,6 +99,9 @@ class Config:
     )
     OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     OLLAMA_MODEL = _env("OLLAMA_MODEL", "llama3.1:8b")
+    OLLAMA_MODEL_FALLBACKS = _env(
+        "KUKANILEA_OLLAMA_MODEL_FALLBACKS", "llama3.2:3b,qwen2.5:3b"
+    )
     OLLAMA_TIMEOUT = int(_env("OLLAMA_TIMEOUT", "300"))
     OLLAMA_AUTOSTART = _env("KUKANILEA_OLLAMA_AUTOSTART", "1") in (
         "1",

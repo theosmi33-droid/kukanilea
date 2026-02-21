@@ -28,7 +28,11 @@ def _set_core_db(tmp_path: Path, app=None) -> Path:
 
 def test_api_ai_status(monkeypatch) -> None:
     app = create_app()
-    app.config.update(TESTING=True, SECRET_KEY="test")
+    app.config.update(
+        TESTING=True,
+        SECRET_KEY="test",
+        OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b",
+    )
     client = app.test_client()
     _login(client)
 
@@ -46,6 +50,7 @@ def test_api_ai_status(monkeypatch) -> None:
     assert payload.get("any_provider_available") is True
     assert payload.get("ollama_available") is True
     assert "llama3.1:8b" in (payload.get("models") or [])
+    assert payload.get("model_fallbacks") == ["llama3.1:8b", "qwen2.5:3b"]
 
 
 def test_api_ai_chat_success(monkeypatch) -> None:

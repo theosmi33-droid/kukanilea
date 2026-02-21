@@ -9,9 +9,10 @@ from app.ai.errors import OllamaBadResponse
 
 
 class _Resp:
-    def __init__(self, payload: Any, status_code: int = 200) -> None:
+    def __init__(self, payload: Any, status_code: int = 200, text: str = "") -> None:
         self._payload = payload
         self.status_code = status_code
+        self.text = text
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -43,3 +44,19 @@ def test_ollama_chat_requires_message_dict(monkeypatch: pytest.MonkeyPatch) -> N
     )
     with pytest.raises(OllamaBadResponse):
         ollama_client.ollama_chat(messages=[{"role": "user", "content": "hi"}])
+
+
+def test_ollama_chat_marks_model_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        ollama_client.requests,
+        "post",
+        lambda *args, **kwargs: _Resp(
+            {"error": "model 'missing-model' not found"},
+            status_code=404,
+        ),
+    )
+    with pytest.raises(OllamaBadResponse, match="ollama_model_not_found"):
+        ollama_client.ollama_chat(
+            messages=[{"role": "user", "content": "hi"}],
+            model="missing-model",
+        )

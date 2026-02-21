@@ -121,6 +121,16 @@ Hinweis:
 - Standard: `llama3.1:8b`
 - Zweck: Standardmodell fuer AI-Chat und Orchestrator
 
+### `KUKANILEA_OLLAMA_MODEL_FALLBACKS`
+- Typ: CSV-Liste
+- Standard: `llama3.2:3b,qwen2.5:3b`
+- Zweck: Lokale Modell-Fallback-Kette, wenn das Primaermodell fehlt/fehlschlaegt.
+- Beispiel:
+```bash
+export OLLAMA_MODEL="llama3.2:3b"
+export KUKANILEA_OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b"
+```
+
 ### `OLLAMA_TIMEOUT`
 - Typ: Integer (Sekunden)
 - Standard: `300`

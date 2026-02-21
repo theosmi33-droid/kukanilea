@@ -3366,6 +3366,14 @@ def _mock_generate(prompt: str) -> str:
 @bp.get("/api/ai/status")
 @login_required
 def api_ai_status():
+    configured_fallbacks = str(
+        current_app.config.get("OLLAMA_MODEL_FALLBACKS") or ""
+    ).strip()
+    fallback_models = [
+        part.strip()
+        for part in configured_fallbacks.split(",")
+        if str(part or "").strip()
+    ]
     provider_order = provider_order_from_env()
     provider_specs = provider_specs_public(
         order=provider_order,
@@ -3403,6 +3411,7 @@ def api_ai_status():
             "ollama_available": ollama_available,
             "models": models,
             "model_default": str(current_app.config.get("OLLAMA_MODEL") or ""),
+            "model_fallbacks": fallback_models,
             "provider_order": provider_order,
             "provider_specs": provider_specs,
             "provider_health": health.get("providers")
