@@ -123,6 +123,7 @@ from app.entity_links import (
 from app.entity_links.display import entity_display_title
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
+from app.insights import build_activation_report, record_activation_milestone
 from app.intake import triage_message
 from app.knowledge import (
     knowledge_email_ingest_eml,
@@ -2955,6 +2956,16 @@ def login():
                         target=user.username,
                         meta={"role": membership.role, "tenant": membership.tenant_id},
                     )
+                    try:
+                        record_activation_milestone(
+                            tenant_id=str(membership.tenant_id or ""),
+                            actor_user_id=str(user.username or ""),
+                            milestone="first_login",
+                            source="auth/login",
+                            request_id=str(getattr(g, "request_id", "")),
+                        )
+                    except Exception:
+                        pass
                     return redirect(nxt or url_for("web.index"))
             else:
                 error = "Login fehlgeschlagen."
@@ -3587,6 +3598,16 @@ def api_chat():
         )
 
     response = agent_answer(msg)
+    try:
+        record_activation_milestone(
+            tenant_id=str(current_tenant() or ""),
+            actor_user_id=str(current_user() or ""),
+            milestone="first_ai_summary",
+            source="ai/chat",
+            request_id=str(getattr(g, "request_id", "")),
+        )
+    except Exception:
+        pass
     if request.headers.get("HX-Request"):
         return render_template_string(
             "<div class='rounded-xl border border-slate-700 p-2 text-sm'>{{text}}</div>",
@@ -3884,6 +3905,17 @@ def api_tasks_create():
                 "task_status": "OPEN",
                 "source": "kanban_api",
             },
+        )
+    except Exception:
+        pass
+    try:
+        record_activation_milestone(
+            tenant_id=str(current_tenant() or ""),
+            actor_user_id=str(current_user() or ""),
+            milestone="first_task",
+            source="tasks/create",
+            request_id=str(getattr(g, "request_id", "")),
+            entity_ref=str(task_id),
         )
     except Exception:
         pass
@@ -4290,6 +4322,17 @@ def api_customers_create():
         item = customers_get(current_tenant(), cid)  # type: ignore
     except ValueError as exc:
         return _crm_error_response(exc, "Kunde konnte nicht angelegt werden.")
+    try:
+        record_activation_milestone(
+            tenant_id=str(current_tenant() or ""),
+            actor_user_id=str(current_user() or ""),
+            milestone="first_customer",
+            source="crm/customers_create",
+            request_id=str(getattr(g, "request_id", "")),
+            entity_ref=str(cid),
+        )
+    except Exception:
+        pass
     return jsonify(ok=True, customer=item)
 
 
@@ -7321,6 +7364,20 @@ def api_insights_daily():
     )
 
 
+@bp.get("/api/insights/activation")
+@login_required
+@require_role("OPERATOR")
+def api_insights_activation():
+    try:
+        item = build_activation_report(
+            str(current_tenant() or ""),
+            limit_users=max(1, min(int(request.args.get("limit") or 200), 1000)),
+        )
+    except ValueError:
+        return json_error("validation_error", "Ungültige Parameter.", status=400)
+    return jsonify({"ok": True, "item": item})
+
+
 def _entity_links_error(code: str, message: str, status: int = 400):
     if request.is_json or request.path.startswith("/api/"):
         return json_error(code, message, status=status)
@@ -8553,6 +8610,17 @@ def api_knowledge_notes_create():
         return json_error(
             "validation_error", "Notiz konnte nicht gespeichert werden.", status=400
         )
+    try:
+        record_activation_milestone(
+            tenant_id=str(current_tenant() or ""),
+            actor_user_id=str(current_user() or ""),
+            milestone="first_document",
+            source="knowledge/notes_create",
+            request_id=str(getattr(g, "request_id", "")),
+            entity_ref=str((note or {}).get("chunk_id") or ""),
+        )
+    except Exception:
+        pass
     return jsonify({"ok": True, "note": note})
 
 
