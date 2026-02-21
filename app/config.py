@@ -100,6 +100,18 @@ class Config:
     OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     OLLAMA_MODEL = _env("OLLAMA_MODEL", "llama3.1:8b")
     OLLAMA_TIMEOUT = int(_env("OLLAMA_TIMEOUT", "300"))
+    OLLAMA_AUTOSTART = _env("KUKANILEA_OLLAMA_AUTOSTART", "1") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+        "on",
+        "ON",
+    )
+    OLLAMA_AUTOSTART_TIMEOUT_SECONDS = int(
+        _env("KUKANILEA_OLLAMA_AUTOSTART_TIMEOUT_SECONDS", "20")
+    )
     AI_PROVIDER_ORDER = _env("KUKANILEA_AI_PROVIDER_ORDER", "ollama")
     AI_PROVIDERS_JSON = _env("KUKANILEA_AI_PROVIDERS_JSON", "")
     AI_PROVIDER_RETRIES = int(_env("KUKANILEA_AI_PROVIDER_RETRIES", "1"))
