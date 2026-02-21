@@ -146,6 +146,36 @@ export KUKANILEA_OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b"
 - Standard: `20`
 - Zweck: Maximale Wartezeit auf Ollama nach Autostart.
 
+### `KUKANILEA_AI_BOOTSTRAP_ON_FIRST_RUN`
+- Typ: Bool (`0|1`)
+- Standard: `1`
+- Zweck: Startet beim ersten App-Run ein AI-Bootstrap (Ollama + Modell-Prefetch + Personal-Memory-Schema).
+
+### `KUKANILEA_AI_BOOTSTRAP_PULL_MODELS`
+- Typ: Bool (`0|1`)
+- Standard: `1`
+- Zweck: Zieht konfigurierte Modelle (`OLLAMA_MODEL` + Fallbacks) automatisch.
+
+### `KUKANILEA_AI_BOOTSTRAP_MODEL_LIST`
+- Typ: CSV-Liste
+- Standard: leer (`""`)
+- Zweck: Erzwingt eine konkrete Modellliste fuer Erstinstallation; ueberschreibt Default+Fallback.
+
+### `KUKANILEA_AI_BOOTSTRAP_MODEL_PULL_TIMEOUT_SECONDS`
+- Typ: Integer (Sekunden)
+- Standard: `1800`
+- Zweck: Timeout je Modell-Pull im Erstinstallations-Bootstrap.
+
+### `KUKANILEA_AI_BOOTSTRAP_STATE_FILE`
+- Typ: Dateipfad
+- Standard: `~/Library/Application Support/KUKANILEA/ai_bootstrap_state.json`
+- Zweck: Persistenter Status des First-Install-Bootstraps (fuer Support/Diagnose).
+
+### `KUKANILEA_AI_MEMORY_DB`
+- Typ: Dateipfad
+- Standard: `~/Library/Application Support/KUKANILEA/ai_memory.sqlite3`
+- Zweck: Eigene lokale Personal-Memory-DB fuer benutzerindividuelle Assistenznotizen.
+
 ## KI-Provider-Router (robuste Assistenz)
 
 ### `KUKANILEA_AI_PROVIDER_ORDER`

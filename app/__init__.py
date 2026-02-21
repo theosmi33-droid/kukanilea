@@ -447,6 +447,13 @@ def create_app() -> Flask:
     except Exception:
         pass
     try:
+        if not bool(app.config.get("TESTING", False)):
+            from .ai.provisioning import start_first_install_bootstrap_background
+
+            start_first_install_bootstrap_background(app.config)
+    except Exception:
+        pass
+    try:
         cron_enabled = bool(app.config.get("AUTOMATION_CRON_ENABLED", True))
         should_start_reloader_proc = os.environ.get(
             "WERKZEUG_RUN_MAIN"

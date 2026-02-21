@@ -70,6 +70,9 @@ from app.ai.memory import add_feedback as ai_add_feedback
 from app.ai.ollama_client import ollama_is_available, ollama_list_models
 from app.ai.orchestrator import confirm_tool_call as ai_confirm_tool_call
 from app.ai.orchestrator import process_message as ai_process_message
+from app.ai.personal_memory import add_user_note as ai_add_personal_note
+from app.ai.personal_memory import count_user_notes as ai_count_personal_notes
+from app.ai.personal_memory import list_user_notes as ai_list_personal_notes
 from app.ai.predictions import daily_report, predict_budget
 from app.ai.provider_router import (
     is_any_provider_available,
@@ -78,6 +81,11 @@ from app.ai.provider_router import (
     provider_order_from_env,
     provider_specs_public,
 )
+from app.ai.provisioning import (
+    configured_ollama_models as ai_configured_ollama_models,
+)
+from app.ai.provisioning import load_bootstrap_state as ai_load_bootstrap_state
+from app.ai.provisioning import run_first_install_bootstrap as ai_run_bootstrap_now
 from app.automation import (
     automation_rule_create,
     automation_rule_disable,
@@ -3366,14 +3374,8 @@ def _mock_generate(prompt: str) -> str:
 @bp.get("/api/ai/status")
 @login_required
 def api_ai_status():
-    configured_fallbacks = str(
-        current_app.config.get("OLLAMA_MODEL_FALLBACKS") or ""
-    ).strip()
-    fallback_models = [
-        part.strip()
-        for part in configured_fallbacks.split(",")
-        if str(part or "").strip()
-    ]
+    fallback_models = ai_configured_ollama_models(current_app.config)[1:]
+    bootstrap_state = ai_load_bootstrap_state(current_app.config)
     provider_order = provider_order_from_env()
     provider_specs = provider_specs_public(
         order=provider_order,
@@ -3404,6 +3406,13 @@ def api_ai_status():
             models = ollama_list_models(base_url=base_url, timeout_s=5)
         except Exception:
             models = []
+    try:
+        personal_notes = ai_count_personal_notes(
+            tenant_id=current_tenant(),
+            user_id=str(current_user() or ""),
+        )
+    except Exception:
+        personal_notes = 0
     return jsonify(
         {
             "ok": True,
@@ -3412,6 +3421,7 @@ def api_ai_status():
             "models": models,
             "model_default": str(current_app.config.get("OLLAMA_MODEL") or ""),
             "model_fallbacks": fallback_models,
+            "model_bootstrap_plan": ai_configured_ollama_models(current_app.config),
             "provider_order": provider_order,
             "provider_specs": provider_specs,
             "provider_health": health.get("providers")
@@ -3419,8 +3429,52 @@ def api_ai_status():
             else [],
             "provider_policy_effective": effective_policy,
             "any_provider_available": any_available,
+            "bootstrap_state": bootstrap_state,
+            "personal_memory_note_count": int(personal_notes),
         }
     )
+
+
+@bp.get("/api/ai/personal-memory")
+@login_required
+def api_ai_personal_memory_list():
+    rows = ai_list_personal_notes(
+        tenant_id=current_tenant(),
+        user_id=str(current_user() or ""),
+        limit=50,
+    )
+    return jsonify({"ok": True, "notes": rows, "count": len(rows)})
+
+
+@bp.post("/api/ai/personal-memory")
+@login_required
+def api_ai_personal_memory_add():
+    payload = request.get_json(silent=True) or {}
+    note = str((payload.get("note") if isinstance(payload, dict) else "") or "").strip()
+    if not note:
+        return json_error("validation_error", "Notiz fehlt.", status=400)
+    if len(note) > 800:
+        return json_error(
+            "validation_error", "Notiz zu lang (max. 800 Zeichen).", status=400
+        )
+
+    note_id = ai_add_personal_note(
+        tenant_id=current_tenant(),
+        user_id=str(current_user() or ""),
+        note=note,
+        source="api",
+    )
+    return jsonify({"ok": True, "id": note_id})
+
+
+@bp.post("/api/ai/bootstrap/run")
+@login_required
+def api_ai_bootstrap_run():
+    role = current_role()
+    if role not in {"DEV", "OWNER_ADMIN"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
+    result = ai_run_bootstrap_now(current_app.config, force=True)
+    return jsonify({"ok": bool(result.get("ok")), "result": result})
 
 
 @bp.get("/api/status")

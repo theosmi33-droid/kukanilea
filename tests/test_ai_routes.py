@@ -31,6 +31,7 @@ def test_api_ai_status(monkeypatch) -> None:
     app.config.update(
         TESTING=True,
         SECRET_KEY="test",
+        OLLAMA_MODEL="llama3.2:3b",
         OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b",
     )
     client = app.test_client()
@@ -38,6 +39,12 @@ def test_api_ai_status(monkeypatch) -> None:
 
     monkeypatch.setattr(webmod, "ollama_is_available", lambda **kwargs: True)
     monkeypatch.setattr(webmod, "is_any_provider_available", lambda **kwargs: True)
+    monkeypatch.setattr(
+        webmod,
+        "ai_load_bootstrap_state",
+        lambda config: {"status": "done", "ok": True},
+    )
+    monkeypatch.setattr(webmod, "ai_count_personal_notes", lambda **kwargs: 2)
     monkeypatch.setattr(
         webmod,
         "ollama_list_models",
@@ -51,6 +58,8 @@ def test_api_ai_status(monkeypatch) -> None:
     assert payload.get("ollama_available") is True
     assert "llama3.1:8b" in (payload.get("models") or [])
     assert payload.get("model_fallbacks") == ["llama3.1:8b", "qwen2.5:3b"]
+    assert payload.get("bootstrap_state", {}).get("status") == "done"
+    assert payload.get("personal_memory_note_count") == 2
 
 
 def test_api_ai_chat_success(monkeypatch) -> None:
@@ -75,6 +84,30 @@ def test_api_ai_chat_success(monkeypatch) -> None:
     assert payload.get("status") == "ok"
     assert payload.get("message") == "Hallo von KI"
     assert payload.get("conversation_id") == "conv-123"
+
+
+def test_api_ai_personal_memory_routes(monkeypatch) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test")
+    client = app.test_client()
+    _login(client)
+
+    monkeypatch.setattr(
+        webmod,
+        "ai_list_personal_notes",
+        lambda **kwargs: [{"id": "n1", "note": "test"}],
+    )
+    monkeypatch.setattr(webmod, "ai_add_personal_note", lambda **kwargs: "n2")
+
+    get_res = client.get("/api/ai/personal-memory")
+    assert get_res.status_code == 200
+    get_payload = get_res.get_json() or {}
+    assert get_payload.get("count") == 1
+
+    post_res = client.post("/api/ai/personal-memory", json={"note": "Neue Notiz"})
+    assert post_res.status_code == 200
+    post_payload = post_res.get_json() or {}
+    assert post_payload.get("id") == "n2"
 
 
 def test_api_ai_confirm_tool_success(monkeypatch) -> None:

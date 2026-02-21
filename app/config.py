@@ -115,6 +115,37 @@ class Config:
     OLLAMA_AUTOSTART_TIMEOUT_SECONDS = int(
         _env("KUKANILEA_OLLAMA_AUTOSTART_TIMEOUT_SECONDS", "20")
     )
+    AI_BOOTSTRAP_ON_FIRST_RUN = _env("KUKANILEA_AI_BOOTSTRAP_ON_FIRST_RUN", "1") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+        "on",
+        "ON",
+    )
+    AI_BOOTSTRAP_PULL_MODELS = _env("KUKANILEA_AI_BOOTSTRAP_PULL_MODELS", "1") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+        "on",
+        "ON",
+    )
+    AI_BOOTSTRAP_MODEL_LIST = _env("KUKANILEA_AI_BOOTSTRAP_MODEL_LIST", "")
+    AI_BOOTSTRAP_MODEL_PULL_TIMEOUT_SECONDS = int(
+        _env("KUKANILEA_AI_BOOTSTRAP_MODEL_PULL_TIMEOUT_SECONDS", "1800")
+    )
+    AI_BOOTSTRAP_STATE_FILE = Path(
+        _env(
+            "KUKANILEA_AI_BOOTSTRAP_STATE_FILE",
+            str(USER_DATA_ROOT / "ai_bootstrap_state.json"),
+        )
+    )
+    AI_MEMORY_DB = Path(
+        _env("KUKANILEA_AI_MEMORY_DB", str(USER_DATA_ROOT / "ai_memory.sqlite3"))
+    )
     AI_PROVIDER_ORDER = _env("KUKANILEA_AI_PROVIDER_ORDER", "ollama")
     AI_PROVIDERS_JSON = _env("KUKANILEA_AI_PROVIDERS_JSON", "")
     AI_PROVIDER_RETRIES = int(_env("KUKANILEA_AI_PROVIDER_RETRIES", "1"))

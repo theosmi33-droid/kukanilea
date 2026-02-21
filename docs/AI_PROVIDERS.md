@@ -51,6 +51,11 @@ nicht installiert ist), bevor auf den naechsten Provider gewechselt wird.
 Ohne eigene Konfiguration nutzt KUKANILEA als Fallback standardmaessig:
 `llama3.2:3b,qwen2.5:3b`.
 
+Zusatz fuer Erstinstallation:
+- `KUKANILEA_AI_BOOTSTRAP_ON_FIRST_RUN=1`
+- `KUKANILEA_AI_BOOTSTRAP_PULL_MODELS=1`
+- Optional feste Liste: `KUKANILEA_AI_BOOTSTRAP_MODEL_LIST="llama3.2:3b,llama3.1:8b"`
+
 ## Cloud-Fallback (Groq)
 
 ```bash

@@ -20,7 +20,13 @@ export OLLAMA_BASE_URL="http://127.0.0.1:11434"
 export OLLAMA_MODEL="llama3.2:3b"
 export KUKANILEA_OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b"
 export OLLAMA_TIMEOUT="300"
+export KUKANILEA_AI_BOOTSTRAP_ON_FIRST_RUN="1"
+export KUKANILEA_AI_BOOTSTRAP_PULL_MODELS="1"
 ```
+
+Beim ersten Start zieht KUKANILEA automatisch das Primaermodell + Fallback-Modelle
+und schreibt den Status nach:
+`~/Library/Application Support/KUKANILEA/ai_bootstrap_state.json`
 
 ## Healthcheck
 ```bash
@@ -30,6 +36,9 @@ curl http://127.0.0.1:11434/api/tags
 In der App:
 - `GET /api/ai/status` pruefen
 - Chat ueber `/chat` oder Widget unten rechts nutzen
+- Optional fuer persoenliche Assistenz:
+  - `POST /api/ai/personal-memory` mit `{"note":"..."}` speichert Notizen pro Nutzer lokal.
+  - Chat-Kurzbefehl: `Merke dir: ...`
 
 ## Fail-Closed Verhalten
 - Wenn Ollama nicht erreichbar ist, bleibt die App funktionsfaehig.

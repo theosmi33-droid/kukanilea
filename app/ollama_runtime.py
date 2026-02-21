@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import threading
@@ -57,6 +58,8 @@ def _launch_macos_ollama_app() -> bool:
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            shell=False,
+            timeout=5,
             check=False,
         )
         return res.returncode == 0
@@ -68,15 +71,35 @@ def _launch_ollama_serve() -> bool:
     ollama_bin = _find_ollama_binary()
     if not ollama_bin:
         return False
+    system_name = platform.system().lower()
     try:
-        subprocess.Popen(  # noqa: S603
-            [ollama_bin, "serve"],
+        if system_name == "windows":
+            # Use detached start command and return immediately.
+            cmd = ["cmd", "/c", "start", "", ollama_bin, "serve"]
+            res = subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                shell=False,
+                timeout=8,
+                check=False,
+            )
+            return res.returncode == 0
+
+        # Unix fallback: spawn detached process in background via sh.
+        quoted = shlex.quote(ollama_bin)
+        shell_cmd = f"{quoted} serve >/dev/null 2>&1 &"
+        res = subprocess.run(
+            ["/bin/sh", "-c", shell_cmd],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
-            start_new_session=True,
+            shell=False,
+            timeout=8,
+            check=False,
         )
-        return True
+        return res.returncode == 0
     except Exception:
         return False
 
@@ -148,3 +171,29 @@ def start_ollama_autostart_background() -> threading.Thread | None:
     )
     thread.start()
     return thread
+
+
+def pull_ollama_model(*, model: str, timeout_s: int = 1800) -> bool:
+    """Pull one model into local Ollama cache. Best-effort, returns success bool."""
+    model_name = str(model or "").strip()
+    if not model_name:
+        return False
+    ollama_bin = _find_ollama_binary()
+    if not ollama_bin:
+        return False
+
+    env = os.environ.copy()
+    env["OLLAMA_HOST"] = _base_url()
+    try:
+        res = subprocess.run(  # noqa: S603
+            [ollama_bin, "pull", model_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+            timeout=max(30, int(timeout_s)),
+            check=False,
+            env=env,
+        )
+        return res.returncode == 0
+    except Exception:
+        return False
