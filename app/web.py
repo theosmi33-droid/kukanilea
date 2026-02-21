@@ -123,6 +123,7 @@ from app.entity_links import (
 from app.entity_links.display import entity_display_title
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
+from app.intake import triage_message
 from app.knowledge import (
     knowledge_email_ingest_eml,
     knowledge_email_sources_list,
@@ -3591,6 +3592,72 @@ def api_chat():
             text=str(response.get("text") or ""),
         )
     return jsonify(response)
+
+
+@bp.route("/api/intake/triage", methods=["POST"])
+@login_required
+def api_intake_triage():
+    payload = request.get_json(silent=True) or {}
+    text = (
+        (payload.get("text") if isinstance(payload, dict) else None)
+        or (payload.get("message") if isinstance(payload, dict) else None)
+        or request.form.get("text")
+        or request.form.get("message")
+        or ""
+    )
+    message = str(text or "").strip()
+    if not message:
+        return json_error("validation_error", "Text ist erforderlich.", status=400)
+    if len(message) > 10000:
+        return json_error("validation_error", "Text ist zu lang.", status=400)
+
+    metadata_raw = payload.get("metadata") if isinstance(payload, dict) else {}
+    metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
+
+    try:
+        triage = triage_message(message, metadata)
+    except ValueError:
+        return json_error("validation_error", "Text ist erforderlich.", status=400)
+
+    tenant_id = str(current_tenant() or "")
+    request_id = str(getattr(g, "request_id", ""))
+    actor = str(current_user() or "")
+    try:
+        event_append(
+            event_type="intake_triaged",
+            entity_type="intake",
+            entity_id=entity_id_int(
+                f"{tenant_id}:{request_id}:{triage.get('label')}:{len(message)}"
+            ),
+            payload={
+                "source": "intake/triage",
+                "tenant_id": tenant_id,
+                "actor_user_id": actor,
+                "request_id": request_id,
+                "label": str(triage.get("label") or "unknown"),
+                "confidence": float(triage.get("confidence") or 0.0),
+                "queue": str((triage.get("route") or {}).get("queue") or ""),
+                "owner_role": str((triage.get("route") or {}).get("owner_role") or ""),
+                "priority": str((triage.get("route") or {}).get("priority") or ""),
+                "text_len": len(message),
+                "metadata_keys": sorted(
+                    [str(k) for k in metadata.keys() if str(k or "").strip()]
+                )[:12],
+            },
+        )
+    except Exception:
+        pass
+
+    return jsonify(
+        {
+            "ok": True,
+            "label": str(triage.get("label") or "unknown"),
+            "confidence": float(triage.get("confidence") or 0.0),
+            "summary": str(triage.get("summary") or ""),
+            "route": triage.get("route") or {},
+            "signals": [str(v) for v in (triage.get("signals") or [])],
+        }
+    )
 
 
 @bp.post("/api/search")
