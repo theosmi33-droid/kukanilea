@@ -1085,6 +1085,8 @@ HTML_BASE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="manifest" href="/app.webmanifest">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/app-icon.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/app-icon.png') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
 <title>KUKANILEA Systems</title>
 <script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
@@ -8762,11 +8764,17 @@ def pwa_manifest():
         "theme_color": "#4f46e5",
         "icons": [
             {
+                "src": "/static/icons/app-icon.png",
+                "sizes": "1024x1024",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+            {
                 "src": "/static/icons/pwa-icon.svg",
                 "sizes": "any",
                 "type": "image/svg+xml",
                 "purpose": "any",
-            }
+            },
         ],
     }
     res = jsonify(payload)
@@ -8777,7 +8785,7 @@ def pwa_manifest():
 @bp.get("/sw.js")
 def pwa_service_worker():
     body = """const CACHE='kukanilea-crm-v1';
-const ASSETS=['/','/crm/customers','/crm/deals','/crm/quotes','/crm/emails/import','/app.webmanifest','/static/icons/pwa-icon.svg'];
+const ASSETS=['/','/crm/customers','/crm/deals','/crm/quotes','/crm/emails/import','/app.webmanifest','/static/icons/pwa-icon.svg','/static/icons/app-icon.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
 self.addEventListener('fetch',e=>{const req=e.request; if(req.method!=='GET'){return;} const isHtml=req.headers.get('accept')&&req.headers.get('accept').includes('text/html'); if(isHtml){e.respondWith(fetch(req).then(r=>{const copy=r.clone(); caches.open(CACHE).then(c=>c.put(req,copy)); return r;}).catch(()=>caches.match(req).then(r=>r||caches.match('/crm/customers')))); return;} e.respondWith(caches.match(req).then(r=>r||fetch(req).then(resp=>{const copy=resp.clone(); caches.open(CACHE).then(c=>c.put(req,copy)); return resp;})));});

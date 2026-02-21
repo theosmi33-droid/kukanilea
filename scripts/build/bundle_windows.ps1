@@ -55,6 +55,11 @@ $Args = @(
     $EntryPoint
 )
 
+$WinIcon = Join-Path $Root "assets/icon.ico"
+if (Test-Path $WinIcon) {
+    $Args += @("--icon", $WinIcon)
+}
+
 pyinstaller @Args
 
 if (!(Test-Path $DistExe)) {
