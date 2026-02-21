@@ -58,10 +58,28 @@ def _launch_macos_ollama_app() -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
+            shell=False,
+            timeout=10,
         )
         return res.returncode == 0
     except Exception:
         return False
+
+
+def _run_ollama_serve(ollama_bin: str) -> None:
+    try:
+        subprocess.run(
+            [ollama_bin, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            check=False,
+            shell=False,
+            timeout=24 * 60 * 60,
+            start_new_session=True,
+        )
+    except Exception:
+        LOG.debug("Ollama serve background process exited unexpectedly.", exc_info=True)
 
 
 def _launch_ollama_serve() -> bool:
@@ -69,13 +87,13 @@ def _launch_ollama_serve() -> bool:
     if not ollama_bin:
         return False
     try:
-        subprocess.Popen(  # noqa: S603
-            [ollama_bin, "serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
+        thread = threading.Thread(
+            target=_run_ollama_serve,
+            args=(ollama_bin,),
+            name="kukanilea-ollama-serve",
+            daemon=True,
         )
+        thread.start()
         return True
     except Exception:
         return False

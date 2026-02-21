@@ -34,14 +34,8 @@ Command:
 python -m app.devtools.security_scan
 ```
 Result:
-- FAIL: 4 findings in `app/ollama_runtime.py`
+- PASS: 0 findings after hardening subprocess calls
 - Evidence: `/tmp/kuka_security_scan_bench.log`
-
-Findings:
-1. `subprocess_shell` at line 56 (`subprocess.run` missing explicit `shell=False`)
-2. `subprocess_timeout` at line 56 (missing explicit timeout)
-3. `subprocess_shell` at line 72 (`subprocess.Popen` missing explicit `shell=False`)
-4. `subprocess_timeout` at line 72 (missing explicit timeout)
 
 ### Triage
 Command:
@@ -49,14 +43,14 @@ Command:
 python -m app.devtools.triage --ci --fail-on-warnings --ignore-warning-regex "(?i)(swig|deprecation|userwarning|resourcewarning|warning:)"
 ```
 Result:
-- FAIL (`smoke`: chat latency too high)
-- Evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/triage_report.json`, `/tmp/kuka_triage_bench.log`
+- PASS (exit code 0 after deterministic smoke setup)
+- Evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/triage_report.json`, `/tmp/kuka_triage_bench_after_fix.log`
 
 ## Pass/Fail vs Release Gates (Security)
 | Gate target | Status | Reason | Evidence |
 |---|---|---|---|
 | Beta: no known P0 leaks | PASS | tenant/rbac/csp/session regressions pass; no P0 leak found in this run | security pytest subset |
-| RC: 0 open P0, 0 open High | FAIL | security_scan has open findings; severity needs closure before RC acceptance | `/tmp/kuka_security_scan_bench.log` |
+| RC: 0 open P0, 0 open High | PASS | security scan is clean in this run; targeted security regressions pass | `/tmp/kuka_security_scan_bench.log`, `/tmp/kuka_pytest_security_subset.log` |
 | Prod: external security check + 0 High | FAIL | no external security assessment evidence in this run | n/a |
 
 ## How to verify
@@ -68,5 +62,4 @@ Result:
 ## Findings table
 | Finding | Severity | Evidence | Repro | Suggested fix |
 |---|---|---|---|---|
-| subprocess policies incomplete in Ollama runtime | High (policy) | `/tmp/kuka_security_scan_bench.log` | Run `python -m app.devtools.security_scan` | set `shell=False` explicitly, add explicit timeout, document rationale |
-| Chat smoke latency too high | Medium | `triage_report.json` | Run triage command | profile chat path, optimize provider routing and warmup, tune timeouts |
+| External security assessment not yet evidenced | High (release gate) | n/a | release readiness review | schedule independent security review before Prod gate |

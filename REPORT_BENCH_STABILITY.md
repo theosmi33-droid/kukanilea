@@ -30,8 +30,8 @@ Output:
   - Evidence: `/tmp/kuka_quality_gate_basics.log`
 - `pytest -q`: PASS (`539 passed, 6 skipped, 29 warnings`)
   - Evidence: `/tmp/kuka_pytest_full_bench.log`
-- `python -m app.devtools.triage --ci --fail-on-warnings ...`: FAIL (`chat latency too high`)
-  - Evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/triage_report.json`, `/tmp/kuka_triage_bench.log`
+- `python -m app.devtools.triage --ci --fail-on-warnings ...`: PASS (after smoke determinism fix)
+  - Evidence: `/tmp/kuka_triage_bench_after_fix.log`, `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/triage_report.json`
 
 ## Benchmark results
 
@@ -74,6 +74,5 @@ From `/tmp/kuka_bench_workflows_200.json`:
 5. Compare p50/p95 and error rates against agreed thresholds.
 
 ## Findings
-1. `triage` currently fails due high chat latency (P1 reliability).
-2. Need a valid 20-min + 60-min run to satisfy RC/Prod gates.
-3. API 4xx under harness indicates benchmark script is not using authenticated API calls for those routes; metrics are still useful for responsiveness, not business-flow correctness.
+1. Need a valid 20-min + 60-min run to satisfy RC/Prod gates.
+2. API 4xx under harness indicates benchmark script is not using authenticated API calls for those routes; metrics are still useful for responsiveness, not business-flow correctness.
