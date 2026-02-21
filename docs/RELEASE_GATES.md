@@ -30,6 +30,7 @@ Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
 | Compliance / Privacy | Asset/request inventory exists | Third-party/license inventory complete | Compliance checklist completed | BLOCKED | See `docs/COMPLIANCE_EU_DE_FOR_FEATURES.md` | Product + Compliance |
 | Performance / Stability | 15-20m smoke without blocker | 60m endurance without P1 | Reproducible load test with limits | BLOCKED | `REPORT_RC_ENDURANCE_60M.md` still sanity-only; 60m evidence pending | Engineering |
 | AI Availability (primary + fallback) | Primary and fallback work | Provider outage fallback without UI block | Offline-first + recovery runbook | PASS | `REPORT_AI_AVAILABILITY.md` | Engineering |
+| Supply Chain / SBOM | Dependency inventory generated | SBOM + vulnerability scan report attached | 0 unresolved High (or documented exceptions) | BLOCKED | `REPORT_SBOM.md` + generated artifact from `scripts/generate_sbom.py` | Engineering + Security |
 
 ## Go / No-Go Rules
 
@@ -44,3 +45,4 @@ Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
 - RC prerequisites: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_SIGNING_PREREQUISITES.md`
 - Windows prerequisites: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_WINDOWS_PREREQUISITES.md`
 - Endurance evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_RC_ENDURANCE_60M.md`
+- Supply-chain evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_SBOM.md`

@@ -97,8 +97,49 @@ Dieses Dokument operationalisiert EU/DE-Compliance für geplante Feature-Bereich
 - [ ] Audit-Evidence je Featureklasse (Logs, Screenshots, Testläufe) abgelegt.
 - [ ] Exportintegrität und Freigabehistorie reproduzierbar verifiziert.
 
+## E) Artifact Retention and Privacy
+### Scope
+- E2E traces, screenshots, and runtime logs can contain personal or tenant data.
+
+### Minimum policy
+- CI artifact retention max 7 days for volatile test artifacts.
+- Local debug artifacts must not be committed; store only in ignored paths.
+- Reports should reference artifact paths, not embed raw sensitive content.
+
+### Evidence to store
+- CI configuration showing retention window.
+- Proof that runtime artifact directories are ignored from git.
+- Sanitized issue reports for incidents containing screenshots/log excerpts.
+
+## F) Accessibility Baseline (EN 301 549 / WCAG mapping)
+### Scope
+- For public-sector or enterprise procurement, EN 301 549 alignment is expected.
+
+### Minimum baseline in current gates
+- Keyboard operability and focus sanity in core flows.
+- Programmatic status messages (`role=status` / `aria-live`) for async feedback.
+- Actionable error identification text for invalid user input.
+- Target-size checks for touch/click controls.
+
+### Evidence to store
+- UX gate report with pass/fail by criterion.
+- E2E evidence for keyboard/status/error behavior.
+- Documented list of open accessibility gaps and release impact.
+
+## G) GDPR by Default in Release Gate Terms
+### Operational criteria
+- Default logs avoid PII where not strictly needed.
+- RBAC and tenant isolation prevent unauthorized access.
+- Data export path is documented and reproducible.
+- Deletion/retention handling is tracked (implemented or explicitly BLOCKED with owner).
+
+### Gate status handling
+- If any mandatory privacy-by-default criterion lacks technical evidence, set gate to `BLOCKED` or `FAIL`.
+- RC/Prod remain `NO-GO` while mandatory privacy criteria are unresolved.
+
 ## Sources
 - GDPR Art. 6 (Lawfulness): [EUR-Lex Art. 6](https://eur-lex.europa.eu/eli/reg/2016/679/art_6/oj/eng)
 - Telekom/Datenschutz (DE): [Bundesnetzagentur TTDSG/Datenschutz](https://www.bundesnetzagentur.de/DE/Vportal/TK/Datenschutz/artikel.html)
 - Working Time Directive overview: [EU-OSHA Directive 2003/88/EC](https://osha.europa.eu/en/legislation/directives/directive-2003-88-ec)
 - Working Time Directive legal text: [EUR-Lex 2003/88/EC](https://eur-lex.europa.eu/eli/dir/2003/88/oj)
+- EN 301 549 overview: [AccessibleEU EN 301 549](https://accessible-eu-centre.ec.europa.eu/content-corner/digital-library/en-3015492021-accessibility-requirements-ict-products-and-services_en)
