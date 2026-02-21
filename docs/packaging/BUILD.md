@@ -72,7 +72,8 @@ Legacy commands still work and forward to the new scripts:
 
 ## Notes
 
-- If `assets/icon.icns` exists, it is used automatically.
+- If `assets/icon.icns` exists, the macOS bundle uses it automatically.
+- If `assets/icon.ico` exists, the Windows executable uses it automatically.
 - If `create-dmg` is unavailable, `hdiutil` is used.
 - For distribution outside trusted environments, add codesign/notarization.
 - Windows build currently ships a standalone `.exe` (no NSIS/MSI wrapper yet).

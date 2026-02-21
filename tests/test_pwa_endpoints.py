@@ -14,6 +14,10 @@ def test_manifest_endpoint() -> None:
     assert payload.get("start_url")
     assert payload.get("display") == "standalone"
     assert payload.get("icons")
+    icons = payload.get("icons") or []
+    assert any(
+        (icon or {}).get("src") == "/static/icons/app-icon.png" for icon in icons
+    )
 
 
 def test_service_worker_endpoint() -> None:
@@ -24,3 +28,4 @@ def test_service_worker_endpoint() -> None:
     assert res.status_code == 200
     text = res.get_data(as_text=True)
     assert "CACHE='kukanilea-crm-v1'" in text
+    assert "/static/icons/app-icon.png" in text
