@@ -137,6 +137,27 @@ class Config:
     AI_BOOTSTRAP_MODEL_PULL_TIMEOUT_SECONDS = int(
         _env("KUKANILEA_AI_BOOTSTRAP_MODEL_PULL_TIMEOUT_SECONDS", "1800")
     )
+    AI_BOOTSTRAP_USE_MODELPACK = _env("KUKANILEA_AI_BOOTSTRAP_USE_MODELPACK", "1") in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+        "on",
+        "ON",
+    )
+    AI_BOOTSTRAP_MODELPACK_FILE = Path(
+        _env(
+            "KUKANILEA_AI_BOOTSTRAP_MODELPACK_FILE",
+            str(USER_DATA_ROOT / "modelpacks" / "ollama-modelpack.tar.gz"),
+        )
+    )
+    AI_BOOTSTRAP_MODELPACK_EXPORT_DIR = Path(
+        _env(
+            "KUKANILEA_AI_BOOTSTRAP_MODELPACK_EXPORT_DIR",
+            str(USER_DATA_ROOT / "modelpacks"),
+        )
+    )
     AI_BOOTSTRAP_STATE_FILE = Path(
         _env(
             "KUKANILEA_AI_BOOTSTRAP_STATE_FILE",

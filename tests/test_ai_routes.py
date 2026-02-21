@@ -60,6 +60,52 @@ def test_api_ai_status(monkeypatch) -> None:
     assert payload.get("model_fallbacks") == ["llama3.1:8b", "qwen2.5:3b"]
     assert payload.get("bootstrap_state", {}).get("status") == "done"
     assert payload.get("personal_memory_note_count") == 2
+    modelpack = payload.get("modelpack") or {}
+    assert modelpack.get("enabled") in {True, False}
+    assert "file" in modelpack
+    assert "exists" in modelpack
+
+
+def test_api_ai_modelpack_routes(monkeypatch, tmp_path: Path) -> None:
+    app = create_app()
+    app.config.update(
+        TESTING=True,
+        SECRET_KEY="test",
+        AI_BOOTSTRAP_MODELPACK_FILE=str(tmp_path / "offline-pack.tar.gz"),
+        AI_BOOTSTRAP_MODELPACK_EXPORT_DIR=str(tmp_path / "exports"),
+    )
+    client = app.test_client()
+    _login(client)
+    with client.session_transaction() as sess:
+        sess["role"] = "DEV"
+
+    monkeypatch.setattr(
+        webmod,
+        "ai_create_model_pack",
+        lambda **kwargs: {
+            "ok": True,
+            "pack_path": str(tmp_path / "exports" / "pack.tar.gz"),
+            "file_count": 3,
+            "total_bytes": 12,
+        },
+    )
+    monkeypatch.setattr(
+        webmod,
+        "ai_import_model_pack",
+        lambda **kwargs: {
+            "ok": True,
+            "pack_path": str(kwargs.get("pack_path") or ""),
+            "extracted_files": 3,
+        },
+    )
+
+    export_res = client.post("/api/ai/modelpack/export", json={})
+    assert export_res.status_code == 200
+    assert (export_res.get_json() or {}).get("ok") is True
+
+    import_res = client.post("/api/ai/modelpack/import", json={})
+    assert import_res.status_code == 200
+    assert (import_res.get_json() or {}).get("ok") is True
 
 
 def test_api_ai_chat_success(monkeypatch) -> None:

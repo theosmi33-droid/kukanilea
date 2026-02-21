@@ -166,6 +166,21 @@ export KUKANILEA_OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b"
 - Standard: `1800`
 - Zweck: Timeout je Modell-Pull im Erstinstallations-Bootstrap.
 
+### `KUKANILEA_AI_BOOTSTRAP_USE_MODELPACK`
+- Typ: Bool (`0|1`)
+- Standard: `1`
+- Zweck: Nutzt optional ein lokales Offline-Modelpack (`.tar.gz`) im First-Install-Bootstrap.
+
+### `KUKANILEA_AI_BOOTSTRAP_MODELPACK_FILE`
+- Typ: Dateipfad
+- Standard: `~/Library/Application Support/KUKANILEA/modelpacks/ollama-modelpack.tar.gz`
+- Zweck: Pfad zu einem vorbereiteten Ollama-Modelpack fuer Offline-Installationen.
+
+### `KUKANILEA_AI_BOOTSTRAP_MODELPACK_EXPORT_DIR`
+- Typ: Verzeichnispfad
+- Standard: `~/Library/Application Support/KUKANILEA/modelpacks`
+- Zweck: Zielordner fuer exportierte Modelpacks (`POST /api/ai/modelpack/export`).
+
 ### `KUKANILEA_AI_BOOTSTRAP_STATE_FILE`
 - Typ: Dateipfad
 - Standard: `~/Library/Application Support/KUKANILEA/ai_bootstrap_state.json`

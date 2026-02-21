@@ -67,6 +67,8 @@ from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.retrieval_fts import upsert_external_fact
 from app.ai.knowledge import store_entity
 from app.ai.memory import add_feedback as ai_add_feedback
+from app.ai.modelpack import create_model_pack as ai_create_model_pack
+from app.ai.modelpack import import_model_pack as ai_import_model_pack
 from app.ai.ollama_client import ollama_is_available, ollama_list_models
 from app.ai.orchestrator import confirm_tool_call as ai_confirm_tool_call
 from app.ai.orchestrator import process_message as ai_process_message
@@ -3413,6 +3415,15 @@ def api_ai_status():
         )
     except Exception:
         personal_notes = 0
+    modelpack_file = Path(
+        str(current_app.config.get("AI_BOOTSTRAP_MODELPACK_FILE") or "")
+    ).expanduser()
+    modelpack_exists = bool(modelpack_file and modelpack_file.exists())
+    modelpack_size = (
+        int(modelpack_file.stat().st_size)
+        if modelpack_exists and modelpack_file.is_file()
+        else 0
+    )
     return jsonify(
         {
             "ok": True,
@@ -3431,6 +3442,14 @@ def api_ai_status():
             "any_provider_available": any_available,
             "bootstrap_state": bootstrap_state,
             "personal_memory_note_count": int(personal_notes),
+            "modelpack": {
+                "enabled": bool(
+                    current_app.config.get("AI_BOOTSTRAP_USE_MODELPACK", True)
+                ),
+                "file": str(modelpack_file),
+                "exists": modelpack_exists,
+                "size_bytes": modelpack_size,
+            },
         }
     )
 
@@ -3475,6 +3494,67 @@ def api_ai_bootstrap_run():
         return json_error("forbidden", "Nicht erlaubt.", status=403)
     result = ai_run_bootstrap_now(current_app.config, force=True)
     return jsonify({"ok": bool(result.get("ok")), "result": result})
+
+
+@bp.post("/api/ai/modelpack/export")
+@login_required
+def api_ai_modelpack_export():
+    role = current_role()
+    if role not in {"DEV", "OWNER_ADMIN"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
+
+    payload = request.get_json(silent=True) or {}
+    export_dir = Path(
+        str(
+            current_app.config.get("AI_BOOTSTRAP_MODELPACK_EXPORT_DIR")
+            or (current_app.config["USER_DATA_ROOT"] / "modelpacks")
+        )
+    ).expanduser()
+    export_dir.mkdir(parents=True, exist_ok=True)
+    default_name = datetime.now().strftime("ollama-modelpack-%Y%m%d-%H%M%S.tar.gz")
+    raw_path = str(
+        (payload.get("pack_path") if isinstance(payload, dict) else "") or ""
+    )
+    pack_path = (
+        Path(raw_path).expanduser() if raw_path.strip() else (export_dir / default_name)
+    )
+
+    try:
+        result = ai_create_model_pack(pack_path=pack_path)
+    except FileNotFoundError as exc:
+        return json_error("modelpack_error", str(exc), status=400)
+    except Exception as exc:
+        return json_error("modelpack_error", str(exc), status=500)
+    return jsonify({"ok": True, "result": result})
+
+
+@bp.post("/api/ai/modelpack/import")
+@login_required
+def api_ai_modelpack_import():
+    role = current_role()
+    if role not in {"DEV", "OWNER_ADMIN"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
+
+    payload = request.get_json(silent=True) or {}
+    raw_path = str(
+        (payload.get("pack_path") if isinstance(payload, dict) else "") or ""
+    )
+    if raw_path.strip():
+        pack_path = Path(raw_path).expanduser()
+    else:
+        pack_path = Path(
+            str(current_app.config.get("AI_BOOTSTRAP_MODELPACK_FILE") or "")
+        ).expanduser()
+
+    try:
+        result = ai_import_model_pack(pack_path=pack_path)
+    except FileNotFoundError as exc:
+        return json_error("modelpack_error", str(exc), status=400)
+    except ValueError as exc:
+        return json_error("modelpack_error", str(exc), status=400)
+    except Exception as exc:
+        return json_error("modelpack_error", str(exc), status=500)
+    return jsonify({"ok": True, "result": result})
 
 
 @bp.get("/api/status")
