@@ -137,9 +137,22 @@ Dieses Dokument operationalisiert EU/DE-Compliance für geplante Feature-Bereich
 - If any mandatory privacy-by-default criterion lacks technical evidence, set gate to `BLOCKED` or `FAIL`.
 - RC/Prod remain `NO-GO` while mandatory privacy criteria are unresolved.
 
+## H) CRA Readiness (Roadmap Gate)
+### Timeline anchors
+- CRA entered into force: 2024-12-10.
+- Reporting obligations start: 2026-09-11.
+- Main obligations apply: 2027-12-11.
+
+### Minimum preparation
+- Documented vulnerability intake and disclosure process.
+- Patch delivery process with supported-version policy.
+- Incident documentation that supports regulatory reporting timelines.
+- Security contact and coordinated disclosure channel available.
+
 ## Sources
 - GDPR Art. 6 (Lawfulness): [EUR-Lex Art. 6](https://eur-lex.europa.eu/eli/reg/2016/679/art_6/oj/eng)
 - Telekom/Datenschutz (DE): [Bundesnetzagentur TTDSG/Datenschutz](https://www.bundesnetzagentur.de/DE/Vportal/TK/Datenschutz/artikel.html)
 - Working Time Directive overview: [EU-OSHA Directive 2003/88/EC](https://osha.europa.eu/en/legislation/directives/directive-2003-88-ec)
 - Working Time Directive legal text: [EUR-Lex 2003/88/EC](https://eur-lex.europa.eu/eli/dir/2003/88/oj)
 - EN 301 549 overview: [AccessibleEU EN 301 549](https://accessible-eu-centre.ec.europa.eu/content-corner/digital-library/en-3015492021-accessibility-requirements-ict-products-and-services_en)
+- CRA overview and timeline: [EU CRA policy page](https://digital-strategy.ec.europa.eu/en/policies/cyber-resilience-act)

@@ -1,0 +1,6 @@
+Contact: mailto:security@kukanilea.local
+Contact: https://github.com/theosmi33-droid/kukanilea/security
+Policy: https://github.com/theosmi33-droid/kukanilea/blob/main/docs/VULNERABILITY_HANDLING_PROCESS.md
+Preferred-Languages: de, en
+Canonical: https://github.com/theosmi33-droid/kukanilea/blob/main/static/.well-known/security.txt
+Expires: 2027-12-31T23:59:59Z

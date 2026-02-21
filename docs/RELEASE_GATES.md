@@ -28,6 +28,7 @@ Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
 | Distribution Windows | Installer builds and launches | Authenticode verification evidence | Signed installer + stable SmartScreen behavior | BLOCKED | See `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_WINDOWS_PREREQUISITES.md` and Windows report template | Release Captain |
 | Update / Rollback | Manual update testable | Rollback demonstrably works | Signed manifest + rollback runbook | PASS | `REPORT_HARDENING_UPDATE_ROLLBACK.md` | Engineering |
 | Compliance / Privacy | Asset/request inventory exists | Third-party/license inventory complete | Compliance checklist completed | BLOCKED | See `docs/COMPLIANCE_EU_DE_FOR_FEATURES.md` | Product + Compliance |
+| CRA Readiness | Vulnerability intake and triage process defined | Reporting and patch process tested | CRA obligations operationalized | BLOCKED | `docs/CRA_READINESS.md`, `docs/VULNERABILITY_HANDLING_PROCESS.md`, `docs/INCIDENT_RESPONSE_72H.md` | Security + Product |
 | Performance / Stability | 15-20m smoke without blocker | 60m endurance without P1 | Reproducible load test with limits | BLOCKED | `REPORT_RC_ENDURANCE_60M.md` still sanity-only; 60m evidence pending | Engineering |
 | AI Availability (primary + fallback) | Primary and fallback work | Provider outage fallback without UI block | Offline-first + recovery runbook | PASS | `REPORT_AI_AVAILABILITY.md` | Engineering |
 | Supply Chain / SBOM | Dependency inventory generated | SBOM + vulnerability scan report attached | 0 unresolved High (or documented exceptions) | BLOCKED | `REPORT_SBOM.md` + generated artifact from `scripts/generate_sbom.py` | Engineering + Security |
@@ -46,3 +47,4 @@ Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
 - Windows prerequisites: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_WINDOWS_PREREQUISITES.md`
 - Endurance evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_RC_ENDURANCE_60M.md`
 - Supply-chain evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_SBOM.md`
+- CRA/vulnerability process: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/CRA_READINESS.md`
