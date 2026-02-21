@@ -13,11 +13,12 @@ Step-by-step execution guide for Beta/RC release readiness with evidence-driven 
 4. Validate Windows Authenticode evidence when prerequisites exist.
 5. Generate SBOM and vulnerability scan summary (`REPORT_SBOM.md`).
 6. Generate build manifest and provenance evidence (`REPORT_PROVENANCE.md`).
-7. Assemble evidence reports in one release package path.
-8. Confirm CI is green in two consecutive runs.
-9. Request final gatekeeper sign-off.
-10. Tag release and publish artifacts.
-11. Prepare rollback communication and fallback instructions.
+7. Build standardized evidence pack structure (`scripts/prepare_evidence_pack.py`).
+8. Assemble evidence reports in that release package path.
+9. Confirm CI is green in two consecutive runs.
+10. Request final gatekeeper sign-off.
+11. Tag release and publish artifacts.
+12. Prepare rollback communication and fallback instructions.
 
 ## Evidence Bundle (minimum)
 
@@ -30,6 +31,7 @@ Step-by-step execution guide for Beta/RC release readiness with evidence-driven 
 - `REPORT_RC_DISTRIBUTION_WINDOWS.md`
 - `REPORT_SBOM.md`
 - `REPORT_PROVENANCE.md`
+- `docs/EVIDENCE_PACK_SCHEMA.md`
 
 ## Stop Rules
 

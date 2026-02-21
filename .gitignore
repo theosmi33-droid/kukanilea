@@ -67,3 +67,4 @@ test-results/
 playwright-report/
 *.trace.zip
 *.webm
+evidence/

@@ -33,6 +33,8 @@ Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
 | AI Availability (primary + fallback) | Primary and fallback work | Provider outage fallback without UI block | Offline-first + recovery runbook | PASS | `REPORT_AI_AVAILABILITY.md` | Engineering |
 | Supply Chain / SBOM | Dependency inventory generated | SBOM + vulnerability scan report attached | 0 unresolved High (or documented exceptions) | BLOCKED | `REPORT_SBOM.md` + generated artifact from `scripts/generate_sbom.py` | Engineering + Security |
 | Provenance / Build Integrity | Artifact hash manifest generated | Provenance statement attached | Verified provenance and digest chain for release artifacts | BLOCKED | `REPORT_PROVENANCE.md`, `scripts/generate_build_manifest.py`, `scripts/generate_provenance.py` | Engineering + Release Captain |
+| Evidence Pack Completeness | Evidence folder schema present | Evidence pack assembled per RC | Full release pack archived for audit | BLOCKED | `docs/EVIDENCE_PACK_SCHEMA.md`, `scripts/prepare_evidence_pack.py` | Release Captain |
+| Cross-platform Parity | Scope-defined parity table exists | Mandatory flows validated for in-scope OS | Full parity for production target platforms | BLOCKED | `docs/CROSS_PLATFORM_PARITY_MATRIX.md` | QA + Release Captain |
 
 ## Go / No-Go Rules
 
@@ -50,3 +52,4 @@ Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
 - Supply-chain evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_SBOM.md`
 - Provenance evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_PROVENANCE.md`
 - CRA/vulnerability process: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/CRA_READINESS.md`
+- Evidence pack schema: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/EVIDENCE_PACK_SCHEMA.md`
