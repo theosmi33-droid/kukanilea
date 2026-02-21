@@ -1,0 +1,22 @@
+{
+  "dev": {
+    "ai_p95_ms": {
+      "max": 2000.0,
+      "severity": "warn"
+    },
+    "search_p95_ms": {
+      "max": 800.0,
+      "severity": "warn"
+    }
+  },
+  "ci": {
+    "ai_p95_ms": {
+      "max": 2200.0,
+      "severity": "fail"
+    },
+    "search_p95_ms": {
+      "max": 900.0,
+      "severity": "fail"
+    }
+  }
+}
