@@ -43,17 +43,17 @@ Command:
 ```bash
 python scripts/run_endurance_60m.py \
   --sanity \
-  --e2e-interval-seconds 60 \
-  --latency-interval-seconds 120 \
-  --latency-requests 8
+  --e2e-interval-seconds 90 \
+  --latency-interval-seconds 180 \
+  --latency-requests 6
 ```
 
 Result:
-- Started: `2026-02-21T22:00:41Z`
-- Ended: `2026-02-21T22:05:42Z`
-- Duration: `300.76s`
-- E2E iterations: `5/5 passed`, `0 failed`
-- Latency snapshots: `3`
+- Started: `2026-02-21T22:07:11Z`
+- Ended: `2026-02-21T22:12:11Z`
+- Duration: `300.70s`
+- E2E iterations: `4/4 passed`, `0 failed`
+- Latency snapshots: `2`
 - AI errors: `0`
 - Search errors: `0`
 - Sanity verdict: `PASS`
@@ -62,9 +62,8 @@ Latency snapshots:
 
 | Snapshot | AI p50 (ms) | AI p95 (ms) | Search p50 (ms) | Search p95 (ms) |
 |---|---:|---:|---:|---:|
-| 1 | 1.123 | 1.390 | 5.029 | 7.590 |
-| 2 | 1.083 | 1.305 | 4.623 | 8.474 |
-| 3 | 1.097 | 1.366 | 4.585 | 8.303 |
+| 1 | 1.095 | 1.406 | 5.303 | 9.355 |
+| 2 | 1.143 | 1.398 | 4.614 | 7.780 |
 
 ## 60-minute RC Evidence
 - Runner is ready.
