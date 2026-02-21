@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 import requests
 
@@ -64,7 +65,7 @@ def _launch_macos_ollama_app() -> bool:
 
 
 def _launch_ollama_serve() -> bool:
-    ollama_bin = shutil.which("ollama")
+    ollama_bin = _find_ollama_binary()
     if not ollama_bin:
         return False
     try:
@@ -78,6 +79,21 @@ def _launch_ollama_serve() -> bool:
         return True
     except Exception:
         return False
+
+
+def _find_ollama_binary() -> str:
+    found = shutil.which("ollama")
+    if found:
+        return found
+    candidates = (
+        "/opt/homebrew/opt/ollama/bin/ollama",
+        "/usr/local/opt/ollama/bin/ollama",
+        "/Applications/Ollama.app/Contents/Resources/ollama",
+    )
+    for candidate in candidates:
+        if Path(candidate).exists():
+            return candidate
+    return ""
 
 
 def _wait_until_ready(timeout_s: int) -> bool:

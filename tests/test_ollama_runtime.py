@@ -42,3 +42,14 @@ def test_ensure_ollama_running_falls_back_to_serve(monkeypatch) -> None:
     monkeypatch.setattr(rt, "_launch_ollama_serve", lambda: True)
     monkeypatch.setattr(rt.time, "sleep", lambda *_: None)
     assert rt.ensure_ollama_running(wait_for_ready=True, timeout_s=2) is True
+
+
+def test_find_ollama_binary_checks_common_paths(monkeypatch) -> None:
+    candidate = "/opt/homebrew/opt/ollama/bin/ollama"
+    monkeypatch.setattr(rt.shutil, "which", lambda *_: None)
+    monkeypatch.setattr(
+        rt.Path,
+        "exists",
+        lambda p: str(p) == candidate,
+    )
+    assert rt._find_ollama_binary() == candidate  # noqa: SLF001
