@@ -228,6 +228,28 @@ export KUKANILEA_AI_PROVIDER_ORDER="vllm,lmstudio,ollama,groq"
 - Standard: `30`
 - Zweck: TTL fuer gecachte Health-Checks.
 
+### `KUKANILEA_AI_STATUS_CACHE_TTL_SECONDS`
+- Typ: Integer
+- Standard: `15`
+- Zweck: Serverseitiger Cache fuer `GET /api/ai/status`, reduziert Polling-Last auf schwachen Geraeten.
+
+## UI Polling / Low-Resource
+
+### `KUKANILEA_UI_HEALTH_POLL_MS`
+- Typ: Integer (Millisekunden)
+- Standard: `60000`
+- Zweck: Polling-Intervall fuer Health-Badges im UI.
+
+### `KUKANILEA_UI_STATUS_POLL_MS`
+- Typ: Integer (Millisekunden)
+- Standard: `15000`
+- Zweck: Polling-Intervall fuer Job-/Queue-Status im UI.
+
+### `KUKANILEA_UI_AI_STATUS_CLIENT_CACHE_MS`
+- Typ: Integer (Millisekunden)
+- Standard: `45000`
+- Zweck: Browserseitiger Cache fuer `/api/ai/status` im Chat-Widget.
+
 ### `KUKANILEA_AI_PROVIDER_POLICY_JSON`
 - Typ: JSON-Objekt
 - Standard: leer (`""`)
