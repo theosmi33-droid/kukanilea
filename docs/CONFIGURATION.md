@@ -121,6 +121,16 @@ Hinweis:
 - Standard: `llama3.1:8b`
 - Zweck: Standardmodell fuer AI-Chat und Orchestrator
 
+### `KUKANILEA_OLLAMA_MODEL_FALLBACKS`
+- Typ: CSV-Liste
+- Standard: `llama3.2:3b,qwen2.5:3b`
+- Zweck: Lokale Modell-Fallback-Kette, wenn das Primaermodell fehlt/fehlschlaegt.
+- Beispiel:
+```bash
+export OLLAMA_MODEL="llama3.2:3b"
+export KUKANILEA_OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b"
+```
+
 ### `OLLAMA_TIMEOUT`
 - Typ: Integer (Sekunden)
 - Standard: `300`
@@ -135,6 +145,51 @@ Hinweis:
 - Typ: Integer (Sekunden)
 - Standard: `20`
 - Zweck: Maximale Wartezeit auf Ollama nach Autostart.
+
+### `KUKANILEA_AI_BOOTSTRAP_ON_FIRST_RUN`
+- Typ: Bool (`0|1`)
+- Standard: `1`
+- Zweck: Startet beim ersten App-Run ein AI-Bootstrap (Ollama + Modell-Prefetch + Personal-Memory-Schema).
+
+### `KUKANILEA_AI_BOOTSTRAP_PULL_MODELS`
+- Typ: Bool (`0|1`)
+- Standard: `1`
+- Zweck: Zieht konfigurierte Modelle (`OLLAMA_MODEL` + Fallbacks) automatisch.
+
+### `KUKANILEA_AI_BOOTSTRAP_MODEL_LIST`
+- Typ: CSV-Liste
+- Standard: leer (`""`)
+- Zweck: Erzwingt eine konkrete Modellliste fuer Erstinstallation; ueberschreibt Default+Fallback.
+
+### `KUKANILEA_AI_BOOTSTRAP_MODEL_PULL_TIMEOUT_SECONDS`
+- Typ: Integer (Sekunden)
+- Standard: `1800`
+- Zweck: Timeout je Modell-Pull im Erstinstallations-Bootstrap.
+
+### `KUKANILEA_AI_BOOTSTRAP_USE_MODELPACK`
+- Typ: Bool (`0|1`)
+- Standard: `1`
+- Zweck: Nutzt optional ein lokales Offline-Modelpack (`.tar.gz`) im First-Install-Bootstrap.
+
+### `KUKANILEA_AI_BOOTSTRAP_MODELPACK_FILE`
+- Typ: Dateipfad
+- Standard: `~/Library/Application Support/KUKANILEA/modelpacks/ollama-modelpack.tar.gz`
+- Zweck: Pfad zu einem vorbereiteten Ollama-Modelpack fuer Offline-Installationen.
+
+### `KUKANILEA_AI_BOOTSTRAP_MODELPACK_EXPORT_DIR`
+- Typ: Verzeichnispfad
+- Standard: `~/Library/Application Support/KUKANILEA/modelpacks`
+- Zweck: Zielordner fuer exportierte Modelpacks (`POST /api/ai/modelpack/export`).
+
+### `KUKANILEA_AI_BOOTSTRAP_STATE_FILE`
+- Typ: Dateipfad
+- Standard: `~/Library/Application Support/KUKANILEA/ai_bootstrap_state.json`
+- Zweck: Persistenter Status des First-Install-Bootstraps (fuer Support/Diagnose).
+
+### `KUKANILEA_AI_MEMORY_DB`
+- Typ: Dateipfad
+- Standard: `~/Library/Application Support/KUKANILEA/ai_memory.sqlite3`
+- Zweck: Eigene lokale Personal-Memory-DB fuer benutzerindividuelle Assistenznotizen.
 
 ## KI-Provider-Router (robuste Assistenz)
 
@@ -172,6 +227,28 @@ export KUKANILEA_AI_PROVIDER_ORDER="vllm,lmstudio,ollama,groq"
 - Typ: Integer
 - Standard: `30`
 - Zweck: TTL fuer gecachte Health-Checks.
+
+### `KUKANILEA_AI_STATUS_CACHE_TTL_SECONDS`
+- Typ: Integer
+- Standard: `15`
+- Zweck: Serverseitiger Cache fuer `GET /api/ai/status`, reduziert Polling-Last auf schwachen Geraeten.
+
+## UI Polling / Low-Resource
+
+### `KUKANILEA_UI_HEALTH_POLL_MS`
+- Typ: Integer (Millisekunden)
+- Standard: `60000`
+- Zweck: Polling-Intervall fuer Health-Badges im UI.
+
+### `KUKANILEA_UI_STATUS_POLL_MS`
+- Typ: Integer (Millisekunden)
+- Standard: `15000`
+- Zweck: Polling-Intervall fuer Job-/Queue-Status im UI.
+
+### `KUKANILEA_UI_AI_STATUS_CLIENT_CACHE_MS`
+- Typ: Integer (Millisekunden)
+- Standard: `45000`
+- Zweck: Browserseitiger Cache fuer `/api/ai/status` im Chat-Widget.
 
 ### `KUKANILEA_AI_PROVIDER_POLICY_JSON`
 - Typ: JSON-Objekt

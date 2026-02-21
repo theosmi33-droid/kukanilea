@@ -41,9 +41,22 @@ export KUKANILEA_LMSTUDIO_TIMEOUT=60
 
 ```bash
 export OLLAMA_BASE_URL="http://127.0.0.1:11434"
-export OLLAMA_MODEL="llama3.1:8b"
+export OLLAMA_MODEL="llama3.2:3b"
+export KUKANILEA_OLLAMA_MODEL_FALLBACKS="llama3.1:8b,qwen2.5:3b"
 export OLLAMA_TIMEOUT=300
 ```
+
+Hinweis: Bei `OllamaProviderClient` wird lokal modellweise gefailovert (z. B. wenn ein Modell
+nicht installiert ist), bevor auf den naechsten Provider gewechselt wird.
+Ohne eigene Konfiguration nutzt KUKANILEA als Fallback standardmaessig:
+`llama3.2:3b,qwen2.5:3b`.
+
+Zusatz fuer Erstinstallation:
+- `KUKANILEA_AI_BOOTSTRAP_ON_FIRST_RUN=1`
+- `KUKANILEA_AI_BOOTSTRAP_PULL_MODELS=1`
+- `KUKANILEA_AI_BOOTSTRAP_USE_MODELPACK=1` (optional, fuer Offline-Import)
+- `KUKANILEA_AI_BOOTSTRAP_MODELPACK_FILE=".../ollama-modelpack.tar.gz"`
+- Optional feste Liste: `KUKANILEA_AI_BOOTSTRAP_MODEL_LIST="llama3.2:3b,llama3.1:8b"`
 
 ## Cloud-Fallback (Groq)
 

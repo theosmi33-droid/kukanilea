@@ -67,9 +67,14 @@ from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.retrieval_fts import upsert_external_fact
 from app.ai.knowledge import store_entity
 from app.ai.memory import add_feedback as ai_add_feedback
+from app.ai.modelpack import create_model_pack as ai_create_model_pack
+from app.ai.modelpack import import_model_pack as ai_import_model_pack
 from app.ai.ollama_client import ollama_is_available, ollama_list_models
 from app.ai.orchestrator import confirm_tool_call as ai_confirm_tool_call
 from app.ai.orchestrator import process_message as ai_process_message
+from app.ai.personal_memory import add_user_note as ai_add_personal_note
+from app.ai.personal_memory import count_user_notes as ai_count_personal_notes
+from app.ai.personal_memory import list_user_notes as ai_list_personal_notes
 from app.ai.predictions import daily_report, predict_budget
 from app.ai.provider_router import (
     is_any_provider_available,
@@ -78,6 +83,11 @@ from app.ai.provider_router import (
     provider_order_from_env,
     provider_specs_public,
 )
+from app.ai.provisioning import (
+    configured_ollama_models as ai_configured_ollama_models,
+)
+from app.ai.provisioning import load_bootstrap_state as ai_load_bootstrap_state
+from app.ai.provisioning import run_first_install_bootstrap as ai_run_bootstrap_now
 from app.automation import (
     automation_rule_create,
     automation_rule_disable,
@@ -743,6 +753,16 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
     if theme_default not in {"light", "dark"}:
         theme_default = "light"
     nav_collapsed_default = False
+    health_poll_ms = max(
+        10000, int(current_app.config.get("UI_HEALTH_POLL_MS", 60000) or 60000)
+    )
+    status_poll_ms = max(
+        5000, int(current_app.config.get("UI_STATUS_POLL_MS", 15000) or 15000)
+    )
+    ai_status_client_cache_ms = max(
+        5000,
+        int(current_app.config.get("UI_AI_STATUS_CLIENT_CACHE_MS", 45000) or 45000),
+    )
     user_name = current_user() or "-"
     auth_db: AuthDB | None = current_app.extensions.get("auth_db")
     if auth_db and user_name != "-":
@@ -769,6 +789,9 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
         active_tab=active_tab,
         theme_default=theme_default,
         nav_collapsed_default=nav_collapsed_default,
+        health_poll_ms=health_poll_ms,
+        status_poll_ms=status_poll_ms,
+        ai_status_client_cache_ms=ai_status_client_cache_ms,
     )
 
 
@@ -1479,6 +1502,11 @@ HTML_BASE = r"""<!doctype html>
 
 <script>
 (function(){
+  window.__kukaHealthPollMs = Number({{ health_poll_ms|int }}) || 60000;
+  window.__kukaStatusPollMs = Number({{ status_poll_ms|int }}) || 15000;
+  window.__kukaAiStatusMaxAgeMs = Number({{ ai_status_client_cache_ms|int }}) || 45000;
+  window.__kukaAiStatusCache = window.__kukaAiStatusCache || null;
+
   function setNavBadge(id, value, showWhenZero=false){
     const el = document.getElementById(id);
     if(!el){ return; }
@@ -1532,8 +1560,8 @@ HTML_BASE = r"""<!doctype html>
 
   updateHealth();
   updateJobStatus();
-  setInterval(updateHealth, 30000);
-  setInterval(updateJobStatus, 5000);
+  setInterval(updateHealth, window.__kukaHealthPollMs);
+  setInterval(updateJobStatus, window.__kukaStatusPollMs);
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function(){
@@ -1673,12 +1701,25 @@ HTML_BASE = r"""<!doctype html>
       localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
     }catch(_){}
   }
-  async function _cwRefreshAiStatus(){
+  async function _cwFetchAiStatus(force=false){
+    const maxAgeMs = Number(window.__kukaAiStatusMaxAgeMs || 45000);
+    const now = Date.now();
+    if(!force && window.__kukaAiStatusCache && (now - Number(window.__kukaAiStatusCache.ts || 0)) < maxAgeMs){
+      return {ok: true, payload: window.__kukaAiStatusCache.payload || {}};
+    }
+    const r = await fetch('/api/ai/status', {method:'GET', headers:{'Accept':'application/json'}});
+    let j = {};
+    try{ j = await r.json(); }catch(_){}
+    if(r.ok){
+      window.__kukaAiStatusCache = {ts: now, payload: j};
+    }
+    return {ok: r.ok, payload: j};
+  }
+  async function _cwRefreshAiStatus(force=false){
     try{
-      const r = await fetch('/api/ai/status', {method:'GET', headers:{'Accept':'application/json'}});
-      let j = {};
-      try{ j = await r.json(); }catch(_){}
-      _cwAiAvailable = !!(r.ok && j && j.available);
+      const state = await _cwFetchAiStatus(force);
+      const j = state.payload || {};
+      _cwAiAvailable = !!(state.ok && j && j.available);
       if(_cw.status) _cw.status.textContent = _cwAiAvailable ? 'Bereit' : 'KI offline';
       if(_cw.send) _cw.send.disabled = !_cwAiAvailable;
       if(_cw.input) _cw.input.disabled = !_cwAiAvailable;
@@ -2757,12 +2798,25 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
     }catch(e){}
   }
-  async function _cwRefreshAiStatus(){
+  async function _cwFetchAiStatus(force=false){
+    const maxAgeMs = Number(window.__kukaAiStatusMaxAgeMs || 45000);
+    const now = Date.now();
+    if(!force && window.__kukaAiStatusCache && (now - Number(window.__kukaAiStatusCache.ts || 0)) < maxAgeMs){
+      return {ok: true, payload: window.__kukaAiStatusCache.payload || {}};
+    }
+    const r = await fetch('/api/ai/status', {method:'GET', headers:{'Accept':'application/json'}});
+    let j = {};
+    try{ j = await r.json(); }catch(e){}
+    if(r.ok){
+      window.__kukaAiStatusCache = {ts: now, payload: j};
+    }
+    return {ok: r.ok, payload: j};
+  }
+  async function _cwRefreshAiStatus(force=false){
     try{
-      const r = await fetch('/api/ai/status', {method:'GET', headers:{'Accept':'application/json'}});
-      let j = {};
-      try{ j = await r.json(); }catch(e){}
-      _cwAiAvailable = !!(r.ok && j && j.available);
+      const state = await _cwFetchAiStatus(force);
+      const j = state.payload || {};
+      _cwAiAvailable = !!(state.ok && j && j.available);
       if(_cw.status){
         if(_cwAiAvailable){
           _cw.status.textContent = 'Bereit';
@@ -3219,6 +3273,13 @@ _JOB_TRACKERS: dict[str, dict[str, Any]] = {
     "import": {},
     "llm": {},
 }
+_AI_STATUS_CACHE_LOCK = threading.Lock()
+_AI_STATUS_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _invalidate_ai_status_cache() -> None:
+    with _AI_STATUS_CACHE_LOCK:
+        _AI_STATUS_CACHE.clear()
 
 
 def _job_result_summary(result: Any) -> Any:
@@ -3366,26 +3427,44 @@ def _mock_generate(prompt: str) -> str:
 @bp.get("/api/ai/status")
 @login_required
 def api_ai_status():
+    tenant_id = current_tenant()
+    user_id = str(current_user() or "")
+    role = current_role()
+    cache_key = f"{tenant_id}|{user_id}|{role}"
+    ttl_s = max(0, int(current_app.config.get("AI_STATUS_CACHE_TTL_SECONDS", 15) or 15))
+    bypass_cache = current_app.config.get("TESTING", False) or request.args.get(
+        "fresh", ""
+    ) in {"1", "true", "yes"}
+    if (not bypass_cache) and ttl_s > 0:
+        with _AI_STATUS_CACHE_LOCK:
+            cached = _AI_STATUS_CACHE.get(cache_key)
+            if cached:
+                age = float(time.monotonic() - float(cached.get("ts", 0.0)))
+                if age <= ttl_s and isinstance(cached.get("payload"), dict):
+                    return jsonify(cached["payload"])
+
+    fallback_models = ai_configured_ollama_models(current_app.config)[1:]
+    bootstrap_state = ai_load_bootstrap_state(current_app.config)
     provider_order = provider_order_from_env()
     provider_specs = provider_specs_public(
         order=provider_order,
-        tenant_id=current_tenant(),
-        role=current_role(),
+        tenant_id=tenant_id,
+        role=role,
     )
     health = provider_health_snapshot(
         order=provider_order,
-        tenant_id=current_tenant(),
-        role=current_role(),
+        tenant_id=tenant_id,
+        role=role,
     )
     effective_policy = provider_effective_policy(
-        tenant_id=current_tenant(),
-        role=current_role(),
+        tenant_id=tenant_id,
+        role=role,
     )
     any_available = bool(
         is_any_provider_available(
             order=provider_order,
-            tenant_id=current_tenant(),
-            role=current_role(),
+            tenant_id=tenant_id,
+            role=role,
         )
     )
     base_url = str(current_app.config.get("OLLAMA_BASE_URL") or "").strip() or None
@@ -3396,22 +3475,155 @@ def api_ai_status():
             models = ollama_list_models(base_url=base_url, timeout_s=5)
         except Exception:
             models = []
-    return jsonify(
-        {
-            "ok": True,
-            "available": any_available,
-            "ollama_available": ollama_available,
-            "models": models,
-            "model_default": str(current_app.config.get("OLLAMA_MODEL") or ""),
-            "provider_order": provider_order,
-            "provider_specs": provider_specs,
-            "provider_health": health.get("providers")
-            if isinstance(health, dict)
-            else [],
-            "provider_policy_effective": effective_policy,
-            "any_provider_available": any_available,
-        }
+    try:
+        personal_notes = ai_count_personal_notes(
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+    except Exception:
+        personal_notes = 0
+    modelpack_file = Path(
+        str(current_app.config.get("AI_BOOTSTRAP_MODELPACK_FILE") or "")
+    ).expanduser()
+    modelpack_exists = bool(modelpack_file and modelpack_file.exists())
+    modelpack_size = (
+        int(modelpack_file.stat().st_size)
+        if modelpack_exists and modelpack_file.is_file()
+        else 0
     )
+    payload = {
+        "ok": True,
+        "available": any_available,
+        "ollama_available": ollama_available,
+        "models": models,
+        "model_default": str(current_app.config.get("OLLAMA_MODEL") or ""),
+        "model_fallbacks": fallback_models,
+        "model_bootstrap_plan": ai_configured_ollama_models(current_app.config),
+        "provider_order": provider_order,
+        "provider_specs": provider_specs,
+        "provider_health": health.get("providers") if isinstance(health, dict) else [],
+        "provider_policy_effective": effective_policy,
+        "any_provider_available": any_available,
+        "bootstrap_state": bootstrap_state,
+        "personal_memory_note_count": int(personal_notes),
+        "modelpack": {
+            "enabled": bool(current_app.config.get("AI_BOOTSTRAP_USE_MODELPACK", True)),
+            "file": str(modelpack_file),
+            "exists": modelpack_exists,
+            "size_bytes": modelpack_size,
+        },
+    }
+    if (not bypass_cache) and ttl_s > 0:
+        with _AI_STATUS_CACHE_LOCK:
+            _AI_STATUS_CACHE[cache_key] = {"ts": time.monotonic(), "payload": payload}
+    return jsonify(payload)
+
+
+@bp.get("/api/ai/personal-memory")
+@login_required
+def api_ai_personal_memory_list():
+    rows = ai_list_personal_notes(
+        tenant_id=current_tenant(),
+        user_id=str(current_user() or ""),
+        limit=50,
+    )
+    return jsonify({"ok": True, "notes": rows, "count": len(rows)})
+
+
+@bp.post("/api/ai/personal-memory")
+@login_required
+def api_ai_personal_memory_add():
+    payload = request.get_json(silent=True) or {}
+    note = str((payload.get("note") if isinstance(payload, dict) else "") or "").strip()
+    if not note:
+        return json_error("validation_error", "Notiz fehlt.", status=400)
+    if len(note) > 800:
+        return json_error(
+            "validation_error", "Notiz zu lang (max. 800 Zeichen).", status=400
+        )
+
+    note_id = ai_add_personal_note(
+        tenant_id=current_tenant(),
+        user_id=str(current_user() or ""),
+        note=note,
+        source="api",
+    )
+    _invalidate_ai_status_cache()
+    return jsonify({"ok": True, "id": note_id})
+
+
+@bp.post("/api/ai/bootstrap/run")
+@login_required
+def api_ai_bootstrap_run():
+    role = current_role()
+    if role not in {"DEV", "OWNER_ADMIN"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
+    result = ai_run_bootstrap_now(current_app.config, force=True)
+    _invalidate_ai_status_cache()
+    return jsonify({"ok": bool(result.get("ok")), "result": result})
+
+
+@bp.post("/api/ai/modelpack/export")
+@login_required
+def api_ai_modelpack_export():
+    role = current_role()
+    if role not in {"DEV", "OWNER_ADMIN"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
+
+    payload = request.get_json(silent=True) or {}
+    export_dir = Path(
+        str(
+            current_app.config.get("AI_BOOTSTRAP_MODELPACK_EXPORT_DIR")
+            or (current_app.config["USER_DATA_ROOT"] / "modelpacks")
+        )
+    ).expanduser()
+    export_dir.mkdir(parents=True, exist_ok=True)
+    default_name = datetime.now().strftime("ollama-modelpack-%Y%m%d-%H%M%S.tar.gz")
+    raw_path = str(
+        (payload.get("pack_path") if isinstance(payload, dict) else "") or ""
+    )
+    pack_path = (
+        Path(raw_path).expanduser() if raw_path.strip() else (export_dir / default_name)
+    )
+
+    try:
+        result = ai_create_model_pack(pack_path=pack_path)
+    except FileNotFoundError as exc:
+        return json_error("modelpack_error", str(exc), status=400)
+    except Exception as exc:
+        return json_error("modelpack_error", str(exc), status=500)
+    _invalidate_ai_status_cache()
+    return jsonify({"ok": True, "result": result})
+
+
+@bp.post("/api/ai/modelpack/import")
+@login_required
+def api_ai_modelpack_import():
+    role = current_role()
+    if role not in {"DEV", "OWNER_ADMIN"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
+
+    payload = request.get_json(silent=True) or {}
+    raw_path = str(
+        (payload.get("pack_path") if isinstance(payload, dict) else "") or ""
+    )
+    if raw_path.strip():
+        pack_path = Path(raw_path).expanduser()
+    else:
+        pack_path = Path(
+            str(current_app.config.get("AI_BOOTSTRAP_MODELPACK_FILE") or "")
+        ).expanduser()
+
+    try:
+        result = ai_import_model_pack(pack_path=pack_path)
+    except FileNotFoundError as exc:
+        return json_error("modelpack_error", str(exc), status=400)
+    except ValueError as exc:
+        return json_error("modelpack_error", str(exc), status=400)
+    except Exception as exc:
+        return json_error("modelpack_error", str(exc), status=500)
+    _invalidate_ai_status_cache()
+    return jsonify({"ok": True, "result": result})
 
 
 @bp.get("/api/status")
