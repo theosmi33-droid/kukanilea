@@ -454,6 +454,22 @@ def create_app() -> Flask:
     except Exception:
         pass
     try:
+        should_start_reloader_proc = os.environ.get(
+            "WERKZEUG_RUN_MAIN"
+        ) == "true" or not bool(app.debug)
+        is_pytest = "PYTEST_CURRENT_TEST" in os.environ
+        if (
+            bool(app.config.get("STARTUP_MAINTENANCE_ENABLED", True))
+            and not bool(app.config.get("TESTING", False))
+            and not is_pytest
+            and should_start_reloader_proc
+        ):
+            from .startup_maintenance import start_startup_maintenance_background
+
+            start_startup_maintenance_background(app.config)
+    except Exception:
+        pass
+    try:
         cron_enabled = bool(app.config.get("AUTOMATION_CRON_ENABLED", True))
         should_start_reloader_proc = os.environ.get(
             "WERKZEUG_RUN_MAIN"

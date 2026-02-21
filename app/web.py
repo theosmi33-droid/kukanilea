@@ -42,7 +42,7 @@ import sqlite3
 import threading
 import time
 import urllib.parse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, List, Tuple
 
@@ -133,6 +133,8 @@ from app.entity_links import (
 from app.entity_links.display import entity_display_title
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
+from app.insights import build_activation_report, record_activation_milestone
+from app.intake import triage_message
 from app.knowledge import (
     knowledge_email_ingest_eml,
     knowledge_email_sources_list,
@@ -202,6 +204,7 @@ from app.mail import (
 )
 from app.omni import get_event as omni_get_event
 from app.omni import list_events as omni_list_events
+from app.reporting import build_evidence_pack
 from app.security_ua_hash import ua_hmac_sha256_hex
 from app.tags import (
     tag_assign,
@@ -585,7 +588,7 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _session_idle_minutes(raw: object) -> int:
@@ -3007,6 +3010,16 @@ def login():
                         target=user.username,
                         meta={"role": membership.role, "tenant": membership.tenant_id},
                     )
+                    try:
+                        record_activation_milestone(
+                            tenant_id=str(membership.tenant_id or ""),
+                            actor_user_id=str(user.username or ""),
+                            milestone="first_login",
+                            source="auth/login",
+                            request_id=str(getattr(g, "request_id", "")),
+                        )
+                    except Exception:
+                        pass
                     return redirect(nxt or url_for("web.index"))
             else:
                 error = "Login fehlgeschlagen."
@@ -3052,8 +3065,10 @@ def register():
                 now = _now_iso()
                 code = _generate_numeric_code(6)
                 code_hash = _hash_code(code)
-                expires = (datetime.utcnow() + timedelta(minutes=15)).isoformat(
-                    timespec="seconds"
+                expires = (
+                    (datetime.now(timezone.utc) + timedelta(minutes=15))
+                    .replace(tzinfo=None)
+                    .isoformat(timespec="seconds")
                 )
                 username = _username_from_email(auth_db, email)
                 auth_db.create_user(
@@ -3134,8 +3149,10 @@ def forgot_password():
                 now = _now_iso()
                 if user:
                     code = _generate_numeric_code(6)
-                    expires = (datetime.utcnow() + timedelta(minutes=15)).isoformat(
-                        timespec="seconds"
+                    expires = (
+                        (datetime.now(timezone.utc) + timedelta(minutes=15))
+                        .replace(tzinfo=None)
+                        .isoformat(timespec="seconds")
                     )
                     auth_db.set_password_reset_code(
                         email, _hash_code(code), expires, now
@@ -3403,7 +3420,11 @@ def _ocr_status_snapshot(tenant_id: str) -> dict[str, Any]:
             stats["pending"] = int(row["pending_count"] or 0)
             stats["processing"] = int(row["processing_count"] or 0)
             stats["last_event_at"] = str(row["latest_event"] or "")
-        since = (datetime.utcnow() - timedelta(hours=24)).isoformat(timespec="seconds")
+        since = (
+            (datetime.now(timezone.utc) - timedelta(hours=24))
+            .replace(tzinfo=None)
+            .isoformat(timespec="seconds")
+        )
         failed_row = con.execute(
             """
             SELECT COUNT(*) AS c
@@ -3635,6 +3656,26 @@ def api_status():
     jobs = _job_tracker_snapshot()
     queue = _queue_status_snapshot()
     ocr = _ocr_status_snapshot(tenant_id)
+    startup_summary = {}
+    try:
+        from app.startup_maintenance import load_startup_maintenance_state
+
+        startup_state = load_startup_maintenance_state(current_app.config)
+        startup_summary = {
+            "status": str(startup_state.get("status") or ""),
+            "ok": bool(startup_state.get("ok", False)),
+            "finished_at": str(startup_state.get("finished_at") or ""),
+            "steps": [
+                {
+                    "name": str(step.get("name") or ""),
+                    "ok": bool(step.get("ok", False)),
+                }
+                for step in (startup_state.get("steps") or [])
+                if isinstance(step, dict)
+            ],
+        }
+    except Exception:
+        startup_summary = {}
     running_total = sum(1 for item in jobs.values() if item.get("state") == "running")
     running_total += int(queue.get("analyzing") or 0)
     running_total += int(ocr.get("processing") or 0)
@@ -3647,6 +3688,7 @@ def api_status():
             "jobs": jobs,
             "queue": queue,
             "ocr": ocr,
+            "startup_maintenance": startup_summary,
         }
     )
 
@@ -3797,12 +3839,114 @@ def api_chat():
         )
 
     response = agent_answer(msg)
+    try:
+        record_activation_milestone(
+            tenant_id=str(current_tenant() or ""),
+            actor_user_id=str(current_user() or ""),
+            milestone="first_ai_summary",
+            source="ai/chat",
+            request_id=str(getattr(g, "request_id", "")),
+        )
+    except Exception:
+        pass
     if request.headers.get("HX-Request"):
         return render_template_string(
             "<div class='rounded-xl border border-slate-700 p-2 text-sm'>{{text}}</div>",
             text=str(response.get("text") or ""),
         )
     return jsonify(response)
+
+
+@bp.route("/api/intake/triage", methods=["POST"])
+@login_required
+def api_intake_triage():
+    payload = request.get_json(silent=True) or {}
+    text = (
+        (payload.get("text") if isinstance(payload, dict) else None)
+        or (payload.get("message") if isinstance(payload, dict) else None)
+        or request.form.get("text")
+        or request.form.get("message")
+        or ""
+    )
+    message = str(text or "").strip()
+    if not message:
+        return json_error("validation_error", "Text ist erforderlich.", status=400)
+    if len(message) > 10000:
+        return json_error("validation_error", "Text ist zu lang.", status=400)
+
+    metadata_raw = payload.get("metadata") if isinstance(payload, dict) else {}
+    metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
+
+    try:
+        triage = triage_message(message, metadata)
+    except ValueError:
+        return json_error("validation_error", "Text ist erforderlich.", status=400)
+
+    tenant_id = str(current_tenant() or "")
+    request_id = str(getattr(g, "request_id", ""))
+    actor = str(current_user() or "")
+    try:
+        event_append(
+            event_type="intake_triaged",
+            entity_type="intake",
+            entity_id=entity_id_int(
+                f"{tenant_id}:{request_id}:{triage.get('label')}:{len(message)}"
+            ),
+            payload={
+                "source": "intake/triage",
+                "tenant_id": tenant_id,
+                "actor_user_id": actor,
+                "request_id": request_id,
+                "label": str(triage.get("label") or "unknown"),
+                "confidence": float(triage.get("confidence") or 0.0),
+                "queue": str((triage.get("route") or {}).get("queue") or ""),
+                "owner_role": str((triage.get("route") or {}).get("owner_role") or ""),
+                "priority": str((triage.get("route") or {}).get("priority") or ""),
+                "text_len": len(message),
+                "metadata_keys": sorted(
+                    [str(k) for k in metadata.keys() if str(k or "").strip()]
+                )[:12],
+            },
+        )
+    except Exception:
+        pass
+
+    return jsonify(
+        {
+            "ok": True,
+            "label": str(triage.get("label") or "unknown"),
+            "confidence": float(triage.get("confidence") or 0.0),
+            "summary": str(triage.get("summary") or ""),
+            "route": triage.get("route") or {},
+            "signals": [str(v) for v in (triage.get("signals") or [])],
+        }
+    )
+
+
+@bp.route("/api/reports/evidence-pack/<entity_id>", methods=["GET"])
+@login_required
+def api_reports_evidence_pack(entity_id: str):
+    entity_type = str(request.args.get("entity_type") or "lead").strip().lower()
+    try:
+        pack = build_evidence_pack(
+            tenant_id=str(current_tenant() or ""),
+            entity_type=entity_type,
+            entity_id=str(entity_id or ""),
+            limit=max(1, min(int(request.args.get("limit") or 250), 500)),
+        )
+    except ValueError:
+        return json_error(
+            "validation_error", "Ungültige Evidence-Pack Parameter.", status=400
+        )
+    except Exception as exc:
+        return json_error(
+            "evidence_pack_error", f"Evidence-Pack Fehler: {exc}", status=500
+        )
+    if not pack:
+        return json_error(
+            "not_found", "Evidence-Pack Entität nicht gefunden.", status=404
+        )
+    return jsonify({"ok": True, "evidence_pack": pack})
 
 
 @bp.post("/api/search")
@@ -4002,6 +4146,17 @@ def api_tasks_create():
                 "task_status": "OPEN",
                 "source": "kanban_api",
             },
+        )
+    except Exception:
+        pass
+    try:
+        record_activation_milestone(
+            tenant_id=str(current_tenant() or ""),
+            actor_user_id=str(current_user() or ""),
+            milestone="first_task",
+            source="tasks/create",
+            request_id=str(getattr(g, "request_id", "")),
+            entity_ref=str(task_id),
         )
     except Exception:
         pass
@@ -4408,6 +4563,17 @@ def api_customers_create():
         item = customers_get(current_tenant(), cid)  # type: ignore
     except ValueError as exc:
         return _crm_error_response(exc, "Kunde konnte nicht angelegt werden.")
+    try:
+        record_activation_milestone(
+            tenant_id=str(current_tenant() or ""),
+            actor_user_id=str(current_user() or ""),
+            milestone="first_customer",
+            source="crm/customers_create",
+            request_id=str(getattr(g, "request_id", "")),
+            entity_ref=str(cid),
+        )
+    except Exception:
+        pass
     return jsonify(ok=True, customer=item)
 
 
@@ -7439,6 +7605,20 @@ def api_insights_daily():
     )
 
 
+@bp.get("/api/insights/activation")
+@login_required
+@require_role("OPERATOR")
+def api_insights_activation():
+    try:
+        item = build_activation_report(
+            str(current_tenant() or ""),
+            limit_users=max(1, min(int(request.args.get("limit") or 200), 1000)),
+        )
+    except ValueError:
+        return json_error("validation_error", "Ungültige Parameter.", status=400)
+    return jsonify({"ok": True, "item": item})
+
+
 def _entity_links_error(code: str, message: str, status: int = 400):
     if request.is_json or request.path.startswith("/api/"):
         return json_error(code, message, status=status)
@@ -8671,6 +8851,17 @@ def api_knowledge_notes_create():
         return json_error(
             "validation_error", "Notiz konnte nicht gespeichert werden.", status=400
         )
+    try:
+        record_activation_milestone(
+            tenant_id=str(current_tenant() or ""),
+            actor_user_id=str(current_user() or ""),
+            milestone="first_document",
+            source="knowledge/notes_create",
+            request_id=str(getattr(g, "request_id", "")),
+            entity_ref=str((note or {}).get("chunk_id") or ""),
+        )
+    except Exception:
+        pass
     return jsonify({"ok": True, "note": note})
 
 

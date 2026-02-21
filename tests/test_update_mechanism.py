@@ -94,3 +94,10 @@ def test_rollback_restores_previous_build(tmp_path: Path) -> None:
     assert (app_dir / "Contents" / "MacOS" / "KUKANILEA").read_text(
         encoding="utf-8"
     ) == "old-build"
+
+
+def test_rollback_requires_existing_backup(tmp_path: Path) -> None:
+    app_dir = tmp_path / "KUKANILEA.app"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    with pytest.raises(UpdateError, match="Rollback-Backup"):
+        rollback_update(app_dir=app_dir)
