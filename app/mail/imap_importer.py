@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import ssl
-from datetime import datetime
+from datetime import datetime, timezone
 from email import message_from_bytes, policy
 from pathlib import Path
 from typing import Any
@@ -19,7 +19,7 @@ from app.knowledge import knowledge_redact_text
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _db(db_path: Path) -> sqlite3.Connection:

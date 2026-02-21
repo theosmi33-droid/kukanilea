@@ -43,6 +43,12 @@ Output:
 - `python -m app.devtools.triage --ci --fail-on-warnings ...`: PASS (after smoke determinism fix)
   - Evidence: `/tmp/kuka_triage_bench_after_fix.log`, `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/triage_report.json`
 
+## Post-hardening strict triage rerun
+- `python -m app.devtools.triage --ci --fail-on-warnings`: PASS (`exit_code=0`)
+- `python -m app.devtools.security_scan`: PASS (`count=0`)
+- Warning remediation applied:
+  - replaced `datetime.utcnow()` usage in `app/web.py` and `app/mail/imap_importer.py` with timezone-aware UTC clock handling to satisfy strict warning gate.
+
 ## Benchmark results
 
 ### UI stability load (5 min, validated run)

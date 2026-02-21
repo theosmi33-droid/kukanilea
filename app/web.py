@@ -42,7 +42,7 @@ import sqlite3
 import threading
 import time
 import urllib.parse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, List, Tuple
 
@@ -588,7 +588,7 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _session_idle_minutes(raw: object) -> int:
@@ -3065,8 +3065,10 @@ def register():
                 now = _now_iso()
                 code = _generate_numeric_code(6)
                 code_hash = _hash_code(code)
-                expires = (datetime.utcnow() + timedelta(minutes=15)).isoformat(
-                    timespec="seconds"
+                expires = (
+                    (datetime.now(timezone.utc) + timedelta(minutes=15))
+                    .replace(tzinfo=None)
+                    .isoformat(timespec="seconds")
                 )
                 username = _username_from_email(auth_db, email)
                 auth_db.create_user(
@@ -3147,8 +3149,10 @@ def forgot_password():
                 now = _now_iso()
                 if user:
                     code = _generate_numeric_code(6)
-                    expires = (datetime.utcnow() + timedelta(minutes=15)).isoformat(
-                        timespec="seconds"
+                    expires = (
+                        (datetime.now(timezone.utc) + timedelta(minutes=15))
+                        .replace(tzinfo=None)
+                        .isoformat(timespec="seconds")
                     )
                     auth_db.set_password_reset_code(
                         email, _hash_code(code), expires, now
@@ -3416,7 +3420,11 @@ def _ocr_status_snapshot(tenant_id: str) -> dict[str, Any]:
             stats["pending"] = int(row["pending_count"] or 0)
             stats["processing"] = int(row["processing_count"] or 0)
             stats["last_event_at"] = str(row["latest_event"] or "")
-        since = (datetime.utcnow() - timedelta(hours=24)).isoformat(timespec="seconds")
+        since = (
+            (datetime.now(timezone.utc) - timedelta(hours=24))
+            .replace(tzinfo=None)
+            .isoformat(timespec="seconds")
+        )
         failed_row = con.execute(
             """
             SELECT COUNT(*) AS c
