@@ -14,6 +14,23 @@ Define the minimum prerequisites to move Distribution evidence from `BLOCKED` to
   - App Store Connect API key workflow.
 - Built and signed `.app` and/or `.dmg` artifact.
 
+### Apple Setup (Step-by-step)
+
+1. Enroll in Apple Developer Program with organization/team context.
+2. Create a `Developer ID Application` certificate in Apple Developer portal or Xcode.
+3. Export/import certificate (and private key) into CI keychain or local signing machine.
+4. Configure `notarytool` credentials via one of these options:
+   - Apple ID + app-specific password (requires 2FA).
+   - App Store Connect API key (recommended for CI).
+5. Store credentials in keychain profile:
+   ```bash
+   xcrun notarytool store-credentials "<PROFILE_NAME>" \
+     --apple-id "<APPLE_ID_EMAIL>" \
+     --team-id "<TEAM_ID>" \
+     --password "<APP_SPECIFIC_PASSWORD>"
+   ```
+6. Reference stored profile in automation with `--keychain-profile "<PROFILE_NAME>"`.
+
 ### macOS Evidence Commands
 ```bash
 spctl --assess --type open --verbose <path_to_app_or_dmg>
@@ -27,6 +44,7 @@ xcrun stapler validate <path_to_app_or_dmg>
 - Build step signs artifact before notarization submission.
 - Post-notarization step staples ticket to artifact.
 - Verification step runs `spctl` and `stapler validate` and stores full logs as artifacts.
+- If CI fails with keychain prompt errors (`User interaction is not allowed`), use explicit keychain creation/unlock in non-interactive session.
 
 ## Windows Prerequisites
 
