@@ -3,6 +3,8 @@ name: ci
 on:
   push:
   pull_request:
+  schedule:
+    - cron: '0 2 * * *' # Nightly at 02:00 UTC
 
 permissions:
   contents: read
@@ -50,6 +52,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr tesseract-ocr-deu
+          tesseract --version
       - run: pytest -m "not e2e" -q
       - name: Security regression subset
         run: |

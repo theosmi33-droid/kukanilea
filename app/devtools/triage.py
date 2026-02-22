@@ -216,7 +216,7 @@ def _load_baseline_metrics(raw: Any) -> dict[str, float]:
     if isinstance(raw, dict):
         if isinstance(raw.get("metrics"), dict):
             return {k: float(v) for k, v in raw["metrics"].items()}
-        return {k: float(v) for k, v in raw.items() if isinstance(v, (int, float))}
+        return {k: float(v) for k, v in raw.items() if isinstance(v, int | float)}
     return {}
 
 

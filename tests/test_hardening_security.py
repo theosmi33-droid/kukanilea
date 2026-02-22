@@ -40,7 +40,9 @@ def _seed_user(app, *, username: str, role: str) -> None:
     auth_db.upsert_membership(username, "KUKANILEA", role, now)
 
 
-def _login(client, *, username: str = "dev", role: str = "OPERATOR", tenant: str = "KUKANILEA") -> None:
+def _login(
+    client, *, username: str = "dev", role: str = "OPERATOR", tenant: str = "KUKANILEA"
+) -> None:
     with client.session_transaction() as sess:
         sess["user"] = username
         sess["role"] = role
@@ -52,7 +54,9 @@ def _assert_request_id(response) -> None:
     assert rid, "Expected X-Request-Id response header"
 
 
-def test_unauthenticated_requests_are_denied_by_default(monkeypatch, tmp_path: Path) -> None:
+def test_unauthenticated_requests_are_denied_by_default(
+    monkeypatch, tmp_path: Path
+) -> None:
     app = _make_app(monkeypatch, tmp_path)
     client = app.test_client()
 

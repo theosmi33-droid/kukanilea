@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging as py_logging
 import os
 import sys
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from flask import (
@@ -26,6 +26,9 @@ from .db import AuthDB
 from .errors import json_error, wants_json_error
 from .license import load_runtime_license_state
 from .logging import init_request_logging
+from .observability import setup_observability
+from .observability.otel import setup_otel
+from .autonomy.healer import init_healer
 from .tenant.context import ensure_tenant_config, load_tenant_context
 
 _SESSION_TIMEOUT_PUBLIC_PATHS = {
@@ -159,7 +162,7 @@ def create_app() -> Flask:
     _wire_runtime_env(app)
 
     # Import blueprints after env/path wiring so legacy modules read correct paths.
-    from . import api, web
+    from . import api, web, ai_chat
 
     auth_db = AuthDB(app.config["AUTH_DB"])
     auth_db.init()
@@ -178,6 +181,10 @@ def create_app() -> Flask:
     app.config["TENANT_NAME"] = tenant_ctx.tenant_name
     init_auth(app, auth_db)
     init_request_logging(app)
+    
+    setup_observability(app)
+    setup_otel(app)
+    init_healer(app)
 
     license_state = load_runtime_license_state(
         license_path=app.config["LICENSE_PATH"],
@@ -435,6 +442,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(web.bp)
     app.register_blueprint(api.bp)
+    app.register_blueprint(ai_chat.bp)
     if web.db_init is not None:
         try:
             web.db_init()

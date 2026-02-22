@@ -216,9 +216,9 @@ def normalize_component(s: Any) -> str:
 def _to_jsonable(x: Any) -> Any:
     if isinstance(x, dict):
         return {str(k): _to_jsonable(v) for k, v in x.items()}
-    if isinstance(x, (list, tuple, set)):
+    if isinstance(x, list | tuple | set):
         return [_to_jsonable(v) for v in x]
-    if isinstance(x, (datetime, date)):
+    if isinstance(x, datetime | date):
         return x.isoformat()
     if isinstance(x, Decimal):
         return float(x)
@@ -226,7 +226,7 @@ def _to_jsonable(x: Any) -> Any:
         return str(x)
     if isinstance(x, bytes):
         return base64.b64encode(x).decode("ascii")
-    if x is None or isinstance(x, (str, int, float, bool)):
+    if x is None or isinstance(x, str | int | float | bool):
         return x
     return str(x)
 
@@ -3884,9 +3884,7 @@ def _store_entities(
 # ============================================================
 # INDEX / SEARCH
 # ============================================================
-def _index_tokens(
-    text: str, extra: list[str] | None = None, limit: int = 120
-) -> str:
+def _index_tokens(text: str, extra: list[str] | None = None, limit: int = 120) -> str:
     tokens: list[str] = []
     if extra:
         tokens.extend(extra)
@@ -6136,7 +6134,7 @@ def emails_import_eml(
     actor_user_id: int | None = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
-    if not isinstance(eml_bytes, (bytes, bytearray)) or not eml_bytes:
+    if not isinstance(eml_bytes, bytes | bytearray) or not eml_bytes:
         raise ValueError("validation_error")
 
     email_id = _crm_new_id()

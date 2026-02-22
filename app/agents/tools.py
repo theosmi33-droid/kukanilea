@@ -279,9 +279,9 @@ def _log_time_handler(
     if not callable(starter) or not callable(stopper):
         raise RuntimeError("time_tracking_unavailable")
 
-    started_at = (
-        datetime.now(UTC) - timedelta(minutes=args.minutes)
-    ).isoformat(timespec="seconds")
+    started_at = (datetime.now(UTC) - timedelta(minutes=args.minutes)).isoformat(
+        timespec="seconds"
+    )
     entry = starter(
         tenant_id=tenant_id,
         user=user,

@@ -62,7 +62,7 @@ def test_create_link_canonical_and_duplicate_symmetry(tmp_path: Path) -> None:
             "related",
             actor_user_id="dev",
         )
-        assert False, "expected duplicate"
+        raise AssertionError("expected duplicate")
     except ValueError as exc:
         assert str(exc) == "duplicate"
 
@@ -72,7 +72,7 @@ def test_self_link_rejected(tmp_path: Path) -> None:
     lead_id, _ = _seed_entities()
     try:
         create_link("TENANT_A", "lead", lead_id, "lead", lead_id, "related")
-        assert False, "expected validation_error"
+        raise AssertionError("expected validation_error")
     except ValueError as exc:
         assert str(exc) == "validation_error"
 
@@ -123,6 +123,6 @@ def test_read_only_blocks_core_mutations(tmp_path: Path) -> None:
             create_link(
                 "TENANT_A", "lead", lead_id, "knowledge_note", note_id, "related"
             )
-            assert False, "expected read_only"
+            raise AssertionError("expected read_only")
         except PermissionError as exc:
             assert str(exc) == "read_only"

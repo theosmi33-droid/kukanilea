@@ -186,7 +186,7 @@ class _Visitor(ast.NodeVisitor):
             )
 
     def visit_Compare(self, node: ast.Compare) -> None:
-        has_eq = any(isinstance(op, (ast.Eq, ast.NotEq)) for op in node.ops)
+        has_eq = any(isinstance(op, ast.Eq | ast.NotEq) for op in node.ops)
         if has_eq:
             targets = [node.left, *node.comparators]
             if any(_contains_sensitive_compare_name(item) for item in targets):

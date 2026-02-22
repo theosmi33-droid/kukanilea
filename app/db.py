@@ -376,10 +376,7 @@ class AuthDB:
 
     def _now_iso(self) -> str:
         return (
-            datetime.now(UTC)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
+            datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         )
 
     def _normalize_roles(self, roles: list[str]) -> list[str]:

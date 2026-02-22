@@ -19,12 +19,7 @@ def _canonical_json_bytes(value: dict[str, Any]) -> bytes:
 
 
 def _now_iso() -> str:
-    return (
-        datetime.now(UTC)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _parse_args() -> argparse.Namespace:

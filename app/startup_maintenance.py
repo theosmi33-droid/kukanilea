@@ -52,7 +52,7 @@ def _run_step(name: str, fn) -> dict[str, Any]:  # noqa: ANN001
             "ok": True,
             "secs": round(time.monotonic() - started, 3),
             "result": result
-            if isinstance(result, (dict, list, str, int, float, bool))
+            if isinstance(result, dict | list | str | int | float | bool)
             else str(result),
             "error": "",
         }

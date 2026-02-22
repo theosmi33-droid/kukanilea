@@ -46,6 +46,6 @@ def test_ontology_unknown_type(tmp_path: Path, monkeypatch) -> None:
 
     try:
         reg.get_entity("unknown", 1)
-        assert False, "expected ValueError"
+        raise AssertionError("expected ValueError")
     except ValueError as exc:
         assert str(exc) == "unknown_type"

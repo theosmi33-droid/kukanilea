@@ -3315,7 +3315,7 @@ def _job_result_summary(result: Any) -> Any:
             if key in result:
                 summary[key] = result.get(key)
         return summary or {"keys": sorted(result.keys())[:8]}
-    if isinstance(result, (str, int, float, bool)) or result is None:
+    if isinstance(result, str | int | float | bool) or result is None:
         return result
     return str(type(result).__name__)
 

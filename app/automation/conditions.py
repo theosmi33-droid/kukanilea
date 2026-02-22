@@ -24,7 +24,7 @@ def _has_value(value: Any) -> bool:
         return False
     if isinstance(value, str):
         return bool(value.strip())
-    if isinstance(value, (list, tuple, dict, set)):
+    if isinstance(value, list | tuple | dict | set):
         return len(value) > 0
     return True
 

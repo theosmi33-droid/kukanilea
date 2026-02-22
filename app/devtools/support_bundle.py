@@ -288,9 +288,7 @@ def write_support_bundle(
     tenant = str(tenant_id or "").strip() or "default"
     target_dir = Path(out_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    stage_dir = (
-        target_dir / f".stage-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
-    )
+    stage_dir = target_dir / f".stage-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
     stage_dir.mkdir(parents=True, exist_ok=True)
 
     core_db_path = resolve_core_db_path()

@@ -461,6 +461,33 @@ def _job_finish(
     _run_write_txn(_tx)
 
 
+def _preprocess_image(image_path: Path) -> Path:
+    """Preprocess image for better OCR results (grayscale, 300 DPI scaling)."""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return image_path
+
+    try:
+        with Image.open(image_path) as img:
+            # Convert to grayscale
+            img = ImageOps.grayscale(img)
+            
+            # Optional: Scale to 300 DPI equivalent if too small
+            # Simple heuristic: if width < 1000px, scale up 2x
+            if img.width < 1000:
+                img = img.resize((img.width * 2, img.height * 2), Image.Resampling.LANCZOS)
+            
+            # Save to temporary file
+            tmp_dir = Path(os.path.expanduser("~/.kukanilea/tmp/ocr"))
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = tmp_dir / f"pre_{uuid.uuid4().hex}.png"
+            img.save(tmp_path)
+            return tmp_path
+    except Exception:
+        return image_path
+
+
 def _run_tesseract(
     image_path: Path,
     lang: str,
@@ -481,6 +508,10 @@ def _run_tesseract(
     binary = Path(str(resolved.resolved_path or "")).expanduser()
     if not str(binary):
         return None, "tesseract_missing", 0, None
+
+    # Task 3: Image Preprocessing
+    processed_path = _preprocess_image(image_path)
+    use_path = processed_path if processed_path.exists() else image_path
 
     def _sanitize_stderr(text: str | None) -> str | None:
         if not text:
@@ -511,7 +542,7 @@ def _run_tesseract(
         lang_code: str,
         tess_dir: str | None,
     ) -> list[str]:
-        cmd = [str(binary_path), str(image), "stdout", "-l", lang_code]
+        cmd = [str(binary_path), str(use_path), "stdout", "-l", lang_code]
         if tess_dir:
             cmd.extend(["--tessdata-dir", str(tess_dir)])
         return cmd
@@ -521,7 +552,7 @@ def _run_tesseract(
     ) -> tuple[str | None, str | None, int, str | None]:
         cmd = _build_tesseract_cmd(
             binary_path=binary,
-            image=image_path,
+            image=use_path,
             lang_code=lang_code,
             tess_dir=tess_dir,
         )
@@ -597,6 +628,12 @@ def _run_tesseract(
                 return retry_text, None, retry_truncated, retry_stderr
             error_code = retry_error
             stderr_tail = retry_stderr
+    
+    # Cleanup Task 3
+    if use_path != image_path and use_path.exists():
+        with contextlib.suppress(Exception):
+            os.remove(use_path)
+            
     return text_out, error_code, truncated, stderr_tail
 
 

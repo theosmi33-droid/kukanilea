@@ -1,1 +1,1 @@
-from .views import router
+from .views import router as router

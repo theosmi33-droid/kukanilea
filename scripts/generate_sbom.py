@@ -1,6 +1,7 @@
-import json
 import datetime
+import json
 import os
+
 
 def generate_sbom():
     """
@@ -18,19 +19,20 @@ def generate_sbom():
             "component": {
                 "name": "Kukanilea",
                 "version": "0.1.0",
-                "type": "application"
-            }
+                "type": "application",
+            },
         },
         "components": [
             {"name": "fastapi", "version": "0.129.2", "type": "library"},
-            {"name": "htmx-py", "version": "latest", "type": "library"}
-        ]
+            {"name": "htmx-py", "version": "latest", "type": "library"},
+        ],
     }
-    
+
     os.makedirs("dist/evidence", exist_ok=True)
     with open("dist/evidence/sbom.cdx.json", "w") as f:
         json.dump(sbom, f, indent=4)
     print("SUCCESS: CycloneDX SBOM generated at dist/evidence/sbom.cdx.json")
+
 
 if __name__ == "__main__":
     generate_sbom()

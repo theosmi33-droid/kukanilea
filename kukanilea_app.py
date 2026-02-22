@@ -2,6 +2,7 @@
 kukanilea_app.py
 Zentrale Web-Applikation (FastAPI) mit globaler Error-Shell und HTMX-Integration.
 """
+
 import logging
 import sys
 import uuid
@@ -11,6 +12,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.ai_chat import router as ai_chat_router
 from app.autonomy.maintenance import check_integrity
 from app.crm import router as crm_router
 from app.database import init_db
@@ -20,7 +22,6 @@ from app.session import validate_session
 from app.tasks import router as tasks_router
 from app.ui.command_palette import router as ui_router
 from app.ui.onboarding import router as onboarding_router
-from app.ai_chat import router as ai_chat_router
 
 # Setup Secure Logging (Compliance: GDPR Art. 25)
 # Note: Full observability is initialized in startup_event

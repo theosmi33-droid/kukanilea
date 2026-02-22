@@ -1,28 +1,15 @@
-<div class="bg-white p-6 rounded-lg shadow-md flex flex-col h-[500px]">
-    <h2 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">KUKANILEA KI-Assistent</h2>
-    
-    <!-- Chat History -->
-    <div id="chat-history" class="flex-grow overflow-y-auto mb-4 p-2 space-y-4">
-        <div class="p-2 bg-gray-100 rounded text-sm text-gray-700">
-            KI: Hallo! Wie kann ich Sie heute bei Ihren Projekten unterstützen?
+<div class="card p-4 shadow-sm">
+    <div class="card-body">
+        <h5 class="card-title">KUKANILEA Assistant</h5>
+        <div id="chat-response" class="my-3 border p-2 rounded" style="min-height: 100px; background: #f9f9f9;">
+            <p class="text-muted small">Tippe z.B. "Aufgabe: Dachrinne prüfen"</p>
         </div>
+        
+        <form hx-post="/ai-chat/message" hx-target="#chat-response" hx-swap="innerHTML">
+            <div class="input-group">
+                <input type="text" name="message" class="form-control" placeholder="Wie kann ich helfen?" required>
+                <button class="btn btn-primary" type="submit">Senden</button>
+            </div>
+        </form>
     </div>
-
-    <!-- Message Input -->
-    <form hx-post="/ai-chat/message" hx-target="#chat-history" hx-swap="beforeend" hx-on::after-request="this.reset()" class="relative">
-        <input 
-            type="text" 
-            name="message" 
-            placeholder="Schreiben Sie eine Nachricht..." 
-            class="w-full border rounded-lg pl-4 pr-12 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
-            required
-        >
-        <button type="submit" class="absolute right-2 top-2 bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-        </button>
-    </form>
-    
-    <p class="text-[10px] text-gray-400 mt-2 text-center">
-        Hinweis: Alle KI-Aktionen erfordern eine manuelle Bestätigung (AI Act Art. 50 konform).
-    </p>
 </div>

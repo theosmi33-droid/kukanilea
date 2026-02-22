@@ -9,16 +9,20 @@ from dataclasses import dataclass
 from typing import Any
 
 import uvicorn
+
 from kukanilea_app import app
+
 
 class DesktopLaunchError(RuntimeError):
     """Raised when native desktop launch cannot continue."""
+
 
 @dataclass
 class _ServerHandle:
     thread: threading.Thread
     port: int
     should_exit: threading.Event
+
 
 def _find_free_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -29,9 +33,10 @@ def _find_free_port() -> int:
     finally:
         sock.close()
 
+
 def _start_http_server(port: int) -> _ServerHandle:
     should_exit = threading.Event()
-    
+
     def run_server():
         # Uvicorn programmatisch starten
         config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
@@ -44,6 +49,7 @@ def _start_http_server(port: int) -> _ServerHandle:
     thread.start()
     return _ServerHandle(thread=thread, port=port, should_exit=should_exit)
 
+
 def _wait_until_ready(url: str, timeout_seconds: int = 20) -> bool:
     deadline = time.time() + max(1, int(timeout_seconds))
     while time.time() < deadline:
@@ -54,6 +60,7 @@ def _wait_until_ready(url: str, timeout_seconds: int = 20) -> bool:
             time.sleep(0.2)
     return False
 
+
 def _load_webview_module() -> Any:
     try:
         import webview
@@ -63,7 +70,10 @@ def _load_webview_module() -> Any:
         ) from exc
     return webview
 
-def run_native_desktop(*, title: str = "KUKANILEA Business OS", debug: bool = False) -> int:
+
+def run_native_desktop(
+    *, title: str = "KUKANILEA Business OS", debug: bool = False
+) -> int:
     webview = _load_webview_module()
 
     requested_port = int(os.environ.get("KUKANILEA_DESKTOP_PORT", "0") or "0")
@@ -71,7 +81,7 @@ def run_native_desktop(*, title: str = "KUKANILEA Business OS", debug: bool = Fa
 
     # Start FastAPI Backend
     handle = _start_http_server(port)
-    
+
     url = f"http://127.0.0.1:{handle.port}/"
 
     if not _wait_until_ready(url):
@@ -94,6 +104,7 @@ def run_native_desktop(*, title: str = "KUKANILEA Business OS", debug: bool = Fa
         pass
 
     return 0
+
 
 def main() -> int:
     debug = str(os.environ.get("KUKANILEA_DESKTOP_DEBUG", "0")).strip() in {

@@ -101,7 +101,9 @@ def main() -> int:
         if now >= next_e2e:
             run_id = len(e2e_runs) + 1
             if playwright_installed:
-                result = _run_pytest_e2e(timeout_seconds=args.e2e_interval_seconds + 120)
+                result = _run_pytest_e2e(
+                    timeout_seconds=args.e2e_interval_seconds + 120
+                )
             else:
                 result = {
                     "command": [],
@@ -149,7 +151,10 @@ def main() -> int:
                 "search_errors": (report.get("search") or {}).get("errors"),
             }
             latency_runs.append(sample)
-            if int(sample["ai_errors"] or 0) > 0 or int(sample["search_errors"] or 0) > 0:
+            if (
+                int(sample["ai_errors"] or 0) > 0
+                or int(sample["search_errors"] or 0) > 0
+            ):
                 failures.append(
                     {
                         "type": "latency",

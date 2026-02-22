@@ -146,7 +146,7 @@ def embed_text(text: str) -> list[float]:
                 if (
                     isinstance(vectors, list)
                     and vectors
-                    and isinstance(vectors[0], (int, float))
+                    and isinstance(vectors[0], int | float)
                 ):
                     return [float(x) for x in vectors]
             if hasattr(ollama_mod, "embeddings"):

@@ -1877,7 +1877,9 @@ def appointment_request_to_ics(tenant_id: str, req_id: str) -> tuple[str, str]:
             dt = datetime.fromisoformat(str(requested))
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=UTC)
-            dtstart_line = f"DTSTART:{dt.astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')}\\r\\n"
+            dtstart_line = (
+                f"DTSTART:{dt.astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')}\\r\\n"
+            )
         except Exception:
             pass
     if not dtstart_line:

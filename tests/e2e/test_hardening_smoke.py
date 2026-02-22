@@ -125,7 +125,9 @@ def test_hardening_top_flows_smoke(
     assert moved.ok
     resolved = page.request.get(f"{base_url}/api/tasks?status=RESOLVED")
     assert resolved.ok
-    resolved_ids = {int(item.get("id") or 0) for item in (resolved.json() or {}).get("tasks") or []}
+    resolved_ids = {
+        int(item.get("id") or 0) for item in (resolved.json() or {}).get("tasks") or []
+    }
     assert task_id in resolved_ids
 
     nav.open("/tasks")
@@ -140,7 +142,9 @@ def test_hardening_top_flows_smoke(
     )
     assert note_created.ok
 
-    search = page.request.get(f"{base_url}/api/knowledge/search?q=Hardening%20Note%202026")
+    search = page.request.get(
+        f"{base_url}/api/knowledge/search?q=Hardening%20Note%202026"
+    )
     assert search.ok
     items = (search.json() or {}).get("items") or []
     assert items
@@ -187,4 +191,6 @@ def test_hardening_error_shell_navigation(page, base_url: str) -> None:
 
 @pytest.mark.e2e
 def test_command_palette_placeholder_stub() -> None:
-    pytest.skip("TODO: command palette/search UX benchmark test to be implemented with feature epic")
+    pytest.skip(
+        "TODO: command palette/search UX benchmark test to be implemented with feature epic"
+    )

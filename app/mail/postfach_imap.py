@@ -297,7 +297,7 @@ def sync_account(
                     if (
                         isinstance(part, tuple)
                         and len(part) >= 2
-                        and isinstance(part[1], (bytes, bytearray))
+                        and isinstance(part[1], bytes | bytearray)
                     ):
                         raw_bytes = bytes(part[1])
                         break

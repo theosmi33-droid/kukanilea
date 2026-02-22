@@ -86,7 +86,9 @@ def _seed_auth(auth_db: AuthDB) -> None:
     auth_db.upsert_membership("bench", "KUKANILEA", "DEV", now)
 
 
-def run_latency_suite(requests_count: int = 30, use_real_ai: bool = False) -> dict[str, Any]:
+def run_latency_suite(
+    requests_count: int = 30, use_real_ai: bool = False
+) -> dict[str, Any]:
     req_count = max(1, int(requests_count))
     with _isolated_env():
         app = create_app()
@@ -134,7 +136,9 @@ def run_latency_suite(requests_count: int = 30, use_real_ai: bool = False) -> di
             for idx in range(req_count):
                 _run_once(idx)
         else:
-            with patch("app.web.ai_process_message", side_effect=_mock_ai_process_message):
+            with patch(
+                "app.web.ai_process_message", side_effect=_mock_ai_process_message
+            ):
                 for idx in range(req_count):
                     _run_once(idx)
 
@@ -160,7 +164,9 @@ def run_latency_suite(requests_count: int = 30, use_real_ai: bool = False) -> di
     }
 
 
-def load_thresholds(path: str | Path | None = None) -> dict[str, dict[str, dict[str, Any]]]:
+def load_thresholds(
+    path: str | Path | None = None,
+) -> dict[str, dict[str, dict[str, Any]]]:
     if not path:
         return dict(DEFAULT_THRESHOLDS)
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
