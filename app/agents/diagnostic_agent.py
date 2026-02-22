@@ -51,10 +51,7 @@ class DiagnosticAgent:
             analysis = response.json().get("response", "No analysis generated.")
             
             # AI Act Art. 50 Compliance: Transparency Labeling
-            header = "> [!NOTE]
-> Diese Analyse wurde von einem lokalen KI-Modell erstellt.
-
-"
+            header = "> [!NOTE]\n> Diese Analyse wurde von einem lokalen KI-Modell erstellt.\n\n"
             return header + analysis
             
         except requests.RequestException as e:

@@ -8,58 +8,17 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from werkzeug.serving import make_server
-
-from . import create_app
-
+import uvicorn
+from kukanilea_app import app
 
 class DesktopLaunchError(RuntimeError):
     """Raised when native desktop launch cannot continue."""
 
-
 @dataclass
 class _ServerHandle:
-    server: Any
     thread: threading.Thread
     port: int
-
-
-def _start_ollama_autostart() -> None:
-    try:
-        from .ollama_runtime import start_ollama_autostart_background
-
-        start_ollama_autostart_background()
-    except Exception:
-        # Ollama bootstrap is best-effort and must never block app launch.
-        return
-
-
-def _start_ai_bootstrap(config: dict[str, Any]) -> None:
-    try:
-        from .ai.provisioning import start_first_install_bootstrap_background
-
-        start_first_install_bootstrap_background(config)
-    except Exception:
-        return
-
-
-def _start_startup_maintenance(config: dict[str, Any]) -> None:
-    try:
-        from .startup_maintenance import start_startup_maintenance_background
-
-        start_startup_maintenance_background(config)
-    except Exception:
-        return
-
-
-def _stop_ollama_runtime() -> None:
-    try:
-        from .ollama_runtime import stop_ollama_managed_runtime
-
-        stop_ollama_managed_runtime()
-    except Exception:
-        return
-
+    should_exit: threading.Event
 
 def _find_free_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -70,14 +29,20 @@ def _find_free_port() -> int:
     finally:
         sock.close()
 
-
 def _start_http_server(port: int) -> _ServerHandle:
-    app = create_app()
-    server = make_server("127.0.0.1", int(port), app, threaded=True)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return _ServerHandle(server=server, thread=thread, port=int(server.server_port))
+    should_exit = threading.Event()
+    
+    def run_server():
+        # Uvicorn programmatisch starten
+        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+        server = uvicorn.Server(config)
+        # Hack to allow shutdown from thread
+        server.install_signal_handlers = lambda: None
+        server.run()
 
+    thread = threading.Thread(target=run_server, daemon=True)
+    thread.start()
+    return _ServerHandle(thread=thread, port=port, should_exit=should_exit)
 
 def _wait_until_ready(url: str, timeout_seconds: int = 20) -> bool:
     deadline = time.time() + max(1, int(timeout_seconds))
@@ -89,42 +54,27 @@ def _wait_until_ready(url: str, timeout_seconds: int = 20) -> bool:
             time.sleep(0.2)
     return False
 
-
 def _load_webview_module() -> Any:
     try:
         import webview
-    except Exception as exc:  # pragma: no cover - exercised via runtime env
+    except Exception as exc:
         raise DesktopLaunchError(
             "Native UI dependency missing: pywebview is required."
         ) from exc
     return webview
 
-
-def run_native_desktop(*, title: str = "KUKANILEA", debug: bool = False) -> int:
+def run_native_desktop(*, title: str = "KUKANILEA Business OS", debug: bool = False) -> int:
     webview = _load_webview_module()
-    _start_ollama_autostart()
 
     requested_port = int(os.environ.get("KUKANILEA_DESKTOP_PORT", "0") or "0")
     port = requested_port if requested_port > 0 else _find_free_port()
 
+    # Start FastAPI Backend
     handle = _start_http_server(port)
-    app_config = getattr(getattr(handle.server, "app", None), "config", {}) or {}
-    try:
-        _start_ai_bootstrap(app_config)  # type: ignore[arg-type]
-    except Exception:
-        pass
-    try:
-        _start_startup_maintenance(app_config)  # type: ignore[arg-type]
-    except Exception:
-        pass
+    
     url = f"http://127.0.0.1:{handle.port}/"
 
     if not _wait_until_ready(url):
-        try:
-            handle.server.shutdown()
-        finally:
-            handle.thread.join(timeout=3)
-            _stop_ollama_runtime()
         raise DesktopLaunchError("Local app server did not become ready in time.")
 
     webview.create_window(
@@ -139,14 +89,11 @@ def run_native_desktop(*, title: str = "KUKANILEA", debug: bool = False) -> int:
     try:
         webview.start(debug=bool(debug))
     finally:
-        try:
-            handle.server.shutdown()
-        finally:
-            handle.thread.join(timeout=3)
-            _stop_ollama_runtime()
+        # Hier würden wir den Server stoppen, aber da es ein Daemon-Thread ist,
+        # stirbt er mit dem Hauptprozess.
+        pass
 
     return 0
-
 
 def main() -> int:
     debug = str(os.environ.get("KUKANILEA_DESKTOP_DEBUG", "0")).strip() in {

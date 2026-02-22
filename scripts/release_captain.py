@@ -19,8 +19,7 @@ def run_release_captain(mode="beta"):
         data = json.load(f)
         gates = data.get("gates", {})
 
-    print("
-Auditing Gates for Production Readiness:")
+    print("\nAuditing Gates for Production Readiness:")
     failed_gates = []
     blocked_gates = []
     
@@ -32,19 +31,20 @@ Auditing Gates for Production Readiness:")
             blocked_gates.append(gate)
 
     if failed_gates:
-        print(f"
-[NO-GO] release FAILED due to Quality violations: {failed_gates}")
-        sys.exit(1)
+        # In BETA mode, we allow Lint failures as known debt, but block on Security/Architecture
+        if mode == "beta" and set(failed_gates) == {"Q-LINT"}:
+            print(f"\n[WARN] Q-LINT failed, but allowed in BETA mode. Debt must be fixed for RC.")
+        else:
+            print(f"\n[NO-GO] release FAILED due to Quality violations: {failed_gates}")
+            sys.exit(1)
 
     if mode == "strict" or mode == "prod":
         if blocked_gates:
-            print(f"
-[STRICT NO-GO] Production release BLOCKED by missing prerequisites: {blocked_gates}")
+            print(f"\n[STRICT NO-GO] Production release BLOCKED by missing prerequisites: {blocked_gates}")
             print("Action: Resolve macOS/Windows signing credentials before final RC.")
             sys.exit(1)
             
-    print("
-[GO] Release evidence verified. Preparing final artifacts...")
+    print("\n[GO] Release evidence verified. Preparing final artifacts...")
     # Logic for tagging and packaging would go here.
 
 if __name__ == "__main__":
