@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.health.cli import report_to_jsonable
 from app.health.core import HealthRunner
@@ -24,7 +24,7 @@ def test_health_runner_order_is_deterministic_alphabetical() -> None:
 
 def test_health_json_is_stable_and_masks_tmp_paths() -> None:
     report = HealthReport(
-        ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ts=datetime(2026, 1, 1, tzinfo=UTC),
         mode="ci",
         ok=False,
         checks=[

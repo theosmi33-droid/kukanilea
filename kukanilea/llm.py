@@ -5,7 +5,7 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 
 def _env(key: str, default: str = "") -> str:
@@ -23,8 +23,8 @@ class LLMProvider:
     def generate(
         self,
         system_prompt: str,
-        messages: List[Dict[str, str]],
-        context: Dict[str, Any] | None = None,
+        messages: list[dict[str, str]],
+        context: dict[str, Any] | None = None,
     ) -> str:
         _ = context
         prompt = (
@@ -34,7 +34,7 @@ class LLMProvider:
         )
         return self.complete(prompt, temperature=0.0)
 
-    def rewrite_query(self, query: str) -> Dict[str, str]:
+    def rewrite_query(self, query: str) -> dict[str, str]:
         return {"intent": "unknown", "query": query}
 
     def summarize(self, text: str) -> str:
@@ -52,14 +52,14 @@ class MockProvider(LLMProvider):
     def generate(
         self,
         system_prompt: str,
-        messages: List[Dict[str, str]],
-        context: Dict[str, Any] | None = None,
+        messages: list[dict[str, str]],
+        context: dict[str, Any] | None = None,
     ) -> str:
         _ = context
         head = system_prompt.strip()[:80]
         return f"[mocked] {head} :: {len(messages)} messages"
 
-    def rewrite_query(self, query: str) -> Dict[str, str]:
+    def rewrite_query(self, query: str) -> dict[str, str]:
         text = query.lower().strip()
         intent = "unknown"
         if "öffne" in text or "open" in text or "zeige" in text:
@@ -89,14 +89,14 @@ class OllamaProvider(LLMProvider):
         except Exception:
             return False
 
-    def _get_json(self, path: str, timeout: float = 4.0) -> Dict[str, Any]:
+    def _get_json(self, path: str, timeout: float = 4.0) -> dict[str, Any]:
         req = urllib.request.Request(self.host + path, method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
     def _post_json(
-        self, path: str, payload: Dict[str, Any], timeout: float = 8.0
-    ) -> Dict[str, Any]:
+        self, path: str, payload: dict[str, Any], timeout: float = 8.0
+    ) -> dict[str, Any]:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             self.host + path,
@@ -122,8 +122,8 @@ class OllamaProvider(LLMProvider):
     def generate(
         self,
         system_prompt: str,
-        messages: List[Dict[str, str]],
-        context: Dict[str, Any] | None = None,
+        messages: list[dict[str, str]],
+        context: dict[str, Any] | None = None,
     ) -> str:
         if not self.available:
             raise RuntimeError("Ollama not available")
@@ -138,7 +138,7 @@ class OllamaProvider(LLMProvider):
         message = data.get("message", {})
         return str(message.get("content", "")).strip()
 
-    def rewrite_query(self, query: str) -> Dict[str, str]:
+    def rewrite_query(self, query: str) -> dict[str, str]:
         prompt = (
             "Du bist ein lokaler Assistent. Wandle die Nutzeranfrage in JSON um: "
             '{"intent": "...", "query": "..."} mit intent in '

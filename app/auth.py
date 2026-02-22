@@ -4,7 +4,6 @@ import functools
 import hashlib
 import hmac
 import secrets
-from typing import Optional
 
 from flask import abort, g, redirect, request, session, url_for
 
@@ -88,7 +87,7 @@ def logout_user() -> None:
     session.clear()
 
 
-def current_user() -> Optional[str]:
+def current_user() -> str | None:
     return session.get("user")
 
 

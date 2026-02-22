@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -27,7 +27,7 @@ def _make_app(monkeypatch, tmp_path):
 
 def _seed_user(app, *, username: str, role: str, email: str = "") -> None:
     auth_db = app.extensions["auth_db"]
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
     auth_db.upsert_user(username, hash_password("pw123456"), now)
     auth_db.upsert_membership(username, "KUKANILEA", "OPERATOR", now)
@@ -83,7 +83,7 @@ def test_dev_update_is_dev_only(monkeypatch, tmp_path) -> None:
 def test_owner_admin_uniqueness_enforced(monkeypatch, tmp_path) -> None:
     app = _make_app(monkeypatch, tmp_path)
     auth_db = app.extensions["auth_db"]
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
     auth_db.upsert_user("owner", hash_password("pw123456"), now)
     auth_db.upsert_membership("owner", "KUKANILEA", "ADMIN", now)
@@ -105,7 +105,7 @@ def test_owner_admin_unique_index_blocks_direct_duplicate_insert(
 ) -> None:
     app = _make_app(monkeypatch, tmp_path)
     auth_db = app.extensions["auth_db"]
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
     auth_db.upsert_user("owner", hash_password("pw123456"), now)
     auth_db.upsert_membership("owner", "KUKANILEA", "ADMIN", now)

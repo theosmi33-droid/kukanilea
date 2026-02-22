@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import smtplib
 import ssl
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import EmailMessage
 from email.utils import format_datetime, make_msgid
 
@@ -11,7 +11,7 @@ from . import postfach_store as store
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _smtp_auth_with_xoauth2(smtp, *, username: str, access_token: str):
@@ -64,7 +64,7 @@ def send_draft(
     msg["From"] = smtp_username or "noreply@kukanilea.local"
     msg["Subject"] = subject_plain or "KUKANILEA Postfach"
     msg["Message-ID"] = make_msgid(domain="kukanilea.local")
-    msg["Date"] = format_datetime(datetime.now(timezone.utc))
+    msg["Date"] = format_datetime(datetime.now(UTC))
     msg.set_content(body_plain)
 
     context = ssl.create_default_context()

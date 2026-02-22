@@ -5,7 +5,7 @@ import json
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from flask import current_app, has_app_context
 
@@ -109,9 +109,9 @@ def init_chroma() -> None:
         client.get_or_create_collection(name=_COLLECTION_NAME)
 
 
-def _stable_embedding(text: str, dim: int = 64) -> List[float]:
+def _stable_embedding(text: str, dim: int = 64) -> list[float]:
     data = hashlib.sha256((text or "").encode("utf-8")).digest()
-    values: List[float] = []
+    values: list[float] = []
     while len(values) < dim:
         for b in data:
             values.append((float(b) / 255.0) * 2.0 - 1.0)
@@ -121,7 +121,7 @@ def _stable_embedding(text: str, dim: int = 64) -> List[float]:
     return values
 
 
-def embed_text(text: str) -> List[float]:
+def embed_text(text: str) -> list[float]:
     """Return embedding vector via Ollama; fallback to deterministic local vector."""
     txt = (text or "").strip()
     if not txt:
@@ -172,7 +172,7 @@ def store_entity(
     entity_type: str,
     entity_id: int,
     text: str,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Store or update an entity embedding in the local KB."""
     entity_type = (entity_type or "").strip().lower()
@@ -223,7 +223,7 @@ def store_entity(
         con.close()
 
 
-def find_similar(query: str, n: int = 5) -> List[Dict[str, Any]]:
+def find_similar(query: str, n: int = 5) -> list[dict[str, Any]]:
     """Find semantically similar entities from local KB."""
     q = (query or "").strip()
     if not q:
@@ -241,7 +241,7 @@ def find_similar(query: str, n: int = 5) -> List[Dict[str, Any]]:
                 docs = (result.get("documents") or [[]])[0]
                 metas = (result.get("metadatas") or [[]])[0]
                 dists = (result.get("distances") or [[]])[0]
-                out: List[Dict[str, Any]] = []
+                out: list[dict[str, Any]] = []
                 for idx, item_id in enumerate(ids):
                     out.append(
                         {
@@ -279,7 +279,7 @@ def find_similar(query: str, n: int = 5) -> List[Dict[str, Any]]:
     finally:
         con.close()
 
-    scored: List[Dict[str, Any]] = []
+    scored: list[dict[str, Any]] = []
     for row in rows:
         txt = str(row["text"] or "")
         lower_txt = txt.lower()

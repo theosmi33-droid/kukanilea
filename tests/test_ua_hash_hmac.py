@@ -18,7 +18,7 @@ def test_ua_hmac_deterministic_and_keyed() -> None:
     assert h1 is not None
     assert h1 == h2
     assert len(h1) == 64
-    assert h1 != hashlib.sha256("UA/1.0".encode("utf-8")).hexdigest()
+    assert h1 != hashlib.sha256(b"UA/1.0").hexdigest()
 
 
 def test_ua_hmac_changes_with_other_key() -> None:

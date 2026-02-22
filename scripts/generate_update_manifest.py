@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,7 @@ def _canonical_json_bytes(value: dict[str, Any]) -> bytes:
 
 def _now_iso() -> str:
     return (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         .replace(microsecond=0)
         .isoformat()
         .replace("+00:00", "Z")

@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import ssl
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email import message_from_bytes, policy
 from pathlib import Path
 from typing import Any
@@ -19,7 +19,7 @@ from app.knowledge import knowledge_redact_text
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    return datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _db(db_path: Path) -> sqlite3.Connection:
@@ -190,7 +190,7 @@ def save_account(
     ensure_mail_schema(db_path)
     now = _now_iso()
     account_id = hashlib.sha256(
-        f"{tenant_id}|{imap_host}|{imap_username}".encode("utf-8")
+        f"{tenant_id}|{imap_host}|{imap_username}".encode()
     ).hexdigest()[:24]
     con = _db(db_path)
     try:
@@ -376,7 +376,7 @@ def sync_account(
                     received_at = _now_iso()
                     message_id = str(msg.get("message-id") or "")
                     row_id = hashlib.sha256(
-                        f"{tenant_id}|{account_id}|{uid}".encode("utf-8")
+                        f"{tenant_id}|{account_id}|{uid}".encode()
                     ).hexdigest()[:24]
                     con.execute(
                         """

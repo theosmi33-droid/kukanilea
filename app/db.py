@@ -4,9 +4,9 @@ import secrets
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 from .rbac import (
     LEGACY_ROLE_ORDER,
@@ -376,13 +376,13 @@ class AuthDB:
 
     def _now_iso(self) -> str:
         return (
-            datetime.now(timezone.utc)
+            datetime.now(UTC)
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")
         )
 
-    def _normalize_roles(self, roles: List[str]) -> List[str]:
+    def _normalize_roles(self, roles: list[str]) -> list[str]:
         normalized: list[str] = []
         for role in roles:
             token = normalize_role_name(role)
@@ -390,7 +390,7 @@ class AuthDB:
                 normalized.append(token)
         return normalized
 
-    def _actor_can_manage_owner(self, actor_roles: List[str] | None) -> bool:
+    def _actor_can_manage_owner(self, actor_roles: list[str] | None) -> bool:
         roles = {normalize_role_name(r) for r in (actor_roles or [])}
         return "DEV" in roles or "OWNER_ADMIN" in roles
 
@@ -466,7 +466,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def get_user(self, username: str) -> Optional[User]:
+    def get_user(self, username: str) -> User | None:
         con = self._db()
         try:
             row = con.execute(
@@ -489,7 +489,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def get_user_by_email(self, email: str) -> Optional[User]:
+    def get_user_by_email(self, email: str) -> User | None:
         con = self._db()
         try:
             row = con.execute(
@@ -512,7 +512,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def get_user_for_login(self, login: str) -> Optional[User]:
+    def get_user_for_login(self, login: str) -> User | None:
         token = (login or "").strip()
         if not token:
             return None
@@ -521,7 +521,7 @@ class AuthDB:
             return user
         return self.get_user_by_email(token.lower())
 
-    def get_memberships(self, username: str) -> List[Membership]:
+    def get_memberships(self, username: str) -> list[Membership]:
         con = self._db()
         try:
             rows = con.execute(
@@ -537,7 +537,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def list_users(self) -> List[dict[str, Any]]:
+    def list_users(self) -> list[dict[str, Any]]:
         con = self._db()
         try:
             rows = con.execute(
@@ -551,7 +551,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def list_roles(self) -> List[dict[str, Any]]:
+    def list_roles(self) -> list[dict[str, Any]]:
         con = self._db()
         try:
             self._ensure_rbac_schema(con)
@@ -567,7 +567,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def list_permissions(self) -> List[dict[str, Any]]:
+    def list_permissions(self) -> list[dict[str, Any]]:
         con = self._db()
         try:
             self._ensure_rbac_schema(con)
@@ -628,9 +628,9 @@ class AuthDB:
     def set_role_permissions(
         self,
         role_name: str,
-        perm_keys: List[str],
+        perm_keys: list[str],
         *,
-        actor_roles: List[str] | None = None,
+        actor_roles: list[str] | None = None,
     ) -> None:
         role = normalize_role_name(role_name)
         if role not in ROLE_DEFINITIONS:
@@ -668,7 +668,7 @@ class AuthDB:
 
     def list_user_roles(
         self, username: str, *, ensure_default: bool = True
-    ) -> List[str]:
+    ) -> list[str]:
         user = str(username or "").strip()
         if not user:
             return []
@@ -712,9 +712,9 @@ class AuthDB:
     def set_user_roles(
         self,
         username: str,
-        role_names: List[str],
+        role_names: list[str],
         *,
-        actor_roles: List[str] | None = None,
+        actor_roles: list[str] | None = None,
     ) -> None:
         user = str(username or "").strip()
         if not user:
@@ -764,7 +764,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def list_users_with_roles(self) -> List[dict[str, Any]]:
+    def list_users_with_roles(self) -> list[dict[str, Any]]:
         con = self._db()
         try:
             self._ensure_rbac_schema(con)
@@ -793,7 +793,7 @@ class AuthDB:
         roles = self.get_effective_roles(username, legacy_role=legacy_role)
         return self.get_effective_permissions_for_roles(roles)
 
-    def get_effective_permissions_for_roles(self, role_names: List[str]) -> set[str]:
+    def get_effective_permissions_for_roles(self, role_names: list[str]) -> set[str]:
         roles = self._normalize_roles(role_names)
         if not roles:
             return set()
@@ -815,7 +815,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def get_effective_roles(self, username: str, *, legacy_role: str = "") -> List[str]:
+    def get_effective_roles(self, username: str, *, legacy_role: str = "") -> list[str]:
         roles = self.list_user_roles(username, ensure_default=True)
         if roles:
             return roles
@@ -883,7 +883,7 @@ class AuthDB:
 
     def ensure_user_rbac_roles(
         self, username: str, *, legacy_role: str = ""
-    ) -> List[str]:
+    ) -> list[str]:
         return self.get_effective_roles(username, legacy_role=legacy_role)
 
     def user_has_permission(
@@ -932,7 +932,7 @@ class AuthDB:
 
     def get_user_by_email_verify_code(
         self, email: str, code_hash: str, now_iso: str
-    ) -> Optional[str]:
+    ) -> str | None:
         con = self._db()
         try:
             row = con.execute(
@@ -973,7 +973,7 @@ class AuthDB:
 
     def get_user_by_reset_code(
         self, email: str, code_hash: str, now_iso: str
-    ) -> Optional[str]:
+    ) -> str | None:
         con = self._db()
         try:
             row = con.execute(
@@ -1044,7 +1044,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def list_outbox(self, limit: int = 20) -> List[dict[str, Any]]:
+    def list_outbox(self, limit: int = 20) -> list[dict[str, Any]]:
         lim = max(1, min(int(limit or 20), 200))
         con = self._db()
         try:
@@ -1061,7 +1061,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def get_tenant(self, tenant_id: str) -> Optional[Tenant]:
+    def get_tenant(self, tenant_id: str) -> Tenant | None:
         con = self._db()
         try:
             row = con.execute(
@@ -1115,7 +1115,7 @@ class AuthDB:
         finally:
             con.close()
 
-    def list_chat_messages(self, *, tenant_id: str, limit: int = 50) -> List[dict]:
+    def list_chat_messages(self, *, tenant_id: str, limit: int = 50) -> list[dict]:
         con = self._db()
         try:
             rows = con.execute(

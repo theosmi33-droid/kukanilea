@@ -4,7 +4,7 @@ import hashlib
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from flask import current_app, has_app_context
@@ -49,7 +49,7 @@ def _tenant(tenant_id: str) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _is_read_only() -> bool:
@@ -246,7 +246,7 @@ def _select_rule_targets(
     max_targets: int,
 ) -> list[dict[str, Any]]:
     lim = max(1, min(int(max_targets), MAX_TARGETS_PER_RULE))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if condition_kind == "lead_overdue":
         cutoff = (now - timedelta(days=int(condition["days_overdue"]))).isoformat(
@@ -448,7 +448,7 @@ def _apply_action(
         )
     elif kind == "lead_set_response_due":
         due = (
-            datetime.now(timezone.utc) + timedelta(hours=int(action["hours_from_now"]))
+            datetime.now(UTC) + timedelta(hours=int(action["hours_from_now"]))
         ).isoformat(timespec="seconds")
         con.execute(
             "UPDATE leads SET response_due=?, updated_at=? WHERE tenant_id=? AND id=?",

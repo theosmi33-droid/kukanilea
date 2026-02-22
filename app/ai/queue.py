@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from threading import BoundedSemaphore
-from typing import Any, Callable
+from typing import Any
 
 
 class LLMQueue:

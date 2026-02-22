@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import kukanilea_core_v3_fixed as core
@@ -10,7 +10,7 @@ from app.knowledge.core import knowledge_policy_update
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _init_core(tmp_path: Path) -> None:

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Type
+from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -48,7 +49,7 @@ class SearchDocumentsArgs(BaseModel):
 class LogTimeArgs(BaseModel):
     minutes: int = Field(ge=1, le=1440)
     note: str = ""
-    project_id: Optional[int] = None
+    project_id: int | None = None
 
 
 class ExportAkteArgs(BaseModel):
@@ -122,9 +123,9 @@ class PostfachCreateTasksFromThreadArgs(BaseModel):
 @dataclass
 class ToolSpec:
     name: str
-    args_model: Type[BaseModel]
+    args_model: type[BaseModel]
     is_mutating: bool
-    handler: Callable[..., Dict[str, Any]]
+    handler: Callable[..., dict[str, Any]]
 
 
 def _core_web_module():
@@ -162,7 +163,7 @@ def _create_task_via_web(
 
 def _create_task_handler(
     *, tenant_id: str, user: str, args: CreateTaskArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     task_id = _create_task_via_web(
         tenant_id=tenant_id,
         user=user,
@@ -189,7 +190,7 @@ def _create_task_handler(
 
 def _search_contacts_handler(
     *, tenant_id: str, user: str, args: SearchContactsArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     db_path = Path(Config.CORE_DB)
     con = sqlite3.connect(str(db_path), timeout=30)
@@ -250,7 +251,7 @@ def _search_contacts_handler(
 
 def _search_documents_handler(
     *, tenant_id: str, user: str, args: SearchDocumentsArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     rows = knowledge_search(tenant_id=tenant_id, query=args.query, limit=args.limit)
     items = []
@@ -271,7 +272,7 @@ def _search_documents_handler(
 
 def _log_time_handler(
     *, tenant_id: str, user: str, args: LogTimeArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     web = _core_web_module()
     starter = getattr(web, "time_entry_start", None)
     stopper = getattr(web, "time_entry_stop", None)
@@ -279,7 +280,7 @@ def _log_time_handler(
         raise RuntimeError("time_tracking_unavailable")
 
     started_at = (
-        datetime.now(timezone.utc) - timedelta(minutes=args.minutes)
+        datetime.now(UTC) - timedelta(minutes=args.minutes)
     ).isoformat(timespec="seconds")
     entry = starter(
         tenant_id=tenant_id,
@@ -298,7 +299,7 @@ def _log_time_handler(
 
 def _export_akte_handler(
     *, tenant_id: str, user: str, args: ExportAkteArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     core_db = Path(Config.CORE_DB)
     if not core_db.exists():
         raise RuntimeError("core_db_missing")
@@ -321,7 +322,7 @@ def _export_akte_handler(
     payload = {
         "tenant_id": tenant_id,
         "exported_by": user,
-        "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "task": dict(row),
     }
     out.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -330,7 +331,7 @@ def _export_akte_handler(
 
 def _postfach_sync_handler(
     *, tenant_id: str, user: str, args: PostfachSyncArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     result = postfach_sync_account(
         Path(Config.CORE_DB),
@@ -346,7 +347,7 @@ def _postfach_sync_handler(
 
 def _postfach_list_threads_handler(
     *, tenant_id: str, user: str, args: PostfachListThreadsArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     rows = postfach_list_threads(
         Path(Config.CORE_DB),
@@ -360,7 +361,7 @@ def _postfach_list_threads_handler(
 
 def _postfach_get_thread_handler(
     *, tenant_id: str, user: str, args: PostfachGetThreadArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     data = postfach_get_thread(
         Path(Config.CORE_DB), tenant_id=tenant_id, thread_id=args.thread_id
@@ -372,7 +373,7 @@ def _postfach_get_thread_handler(
 
 def _postfach_draft_reply_handler(
     *, tenant_id: str, user: str, args: PostfachDraftReplyArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     thread_data = postfach_get_thread(
         Path(Config.CORE_DB), tenant_id=tenant_id, thread_id=args.thread_id
     )
@@ -414,7 +415,7 @@ def _postfach_draft_reply_handler(
 
 def _postfach_send_draft_handler(
     *, tenant_id: str, user: str, args: PostfachSendDraftArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     result = postfach_send_draft(
         Path(Config.CORE_DB),
@@ -429,7 +430,7 @@ def _postfach_send_draft_handler(
 
 def _postfach_link_entities_handler(
     *, tenant_id: str, user: str, args: PostfachLinkEntitiesArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     return postfach_link_entities(
         Path(Config.CORE_DB),
@@ -443,7 +444,7 @@ def _postfach_link_entities_handler(
 
 def _postfach_extract_structured_handler(
     *, tenant_id: str, user: str, args: PostfachExtractStructuredArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     return postfach_extract_structured(
         Path(Config.CORE_DB),
@@ -455,7 +456,7 @@ def _postfach_extract_structured_handler(
 
 def _postfach_extract_intake_handler(
     *, tenant_id: str, user: str, args: PostfachExtractIntakeArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _ = user
     return postfach_extract_intake(
         Path(Config.CORE_DB),
@@ -467,7 +468,7 @@ def _postfach_extract_intake_handler(
 
 def _postfach_create_followup_handler(
     *, tenant_id: str, user: str, args: PostfachCreateFollowupArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return postfach_create_followup_task(
         Path(Config.CORE_DB),
         tenant_id=tenant_id,
@@ -481,7 +482,7 @@ def _postfach_create_followup_handler(
 
 def _postfach_create_lead_from_thread_handler(
     *, tenant_id: str, user: str, args: PostfachCreateLeadFromThreadArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     data = postfach_get_thread(
         Path(Config.CORE_DB), tenant_id=tenant_id, thread_id=args.thread_id
     )
@@ -517,7 +518,7 @@ def _postfach_create_lead_from_thread_handler(
 
 def _postfach_create_case_from_thread_handler(
     *, tenant_id: str, user: str, args: PostfachCreateCaseFromThreadArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     data = postfach_get_thread(
         Path(Config.CORE_DB), tenant_id=tenant_id, thread_id=args.thread_id
     )
@@ -539,7 +540,7 @@ def _postfach_create_case_from_thread_handler(
 
 def _postfach_create_tasks_from_thread_handler(
     *, tenant_id: str, user: str, args: PostfachCreateTasksFromThreadArgs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     intake = postfach_extract_intake(
         Path(Config.CORE_DB),
         tenant_id=tenant_id,
@@ -664,7 +665,7 @@ def _postfach_specs() -> dict[str, ToolSpec]:
     return specs
 
 
-TOOL_REGISTRY: Dict[str, ToolSpec] = {
+TOOL_REGISTRY: dict[str, ToolSpec] = {
     "search_contacts": ToolSpec(
         name="search_contacts",
         args_model=SearchContactsArgs,
@@ -698,7 +699,7 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
     **_postfach_specs(),
 }
 
-TOOL_DESCRIPTIONS: Dict[str, str] = {
+TOOL_DESCRIPTIONS: dict[str, str] = {
     "search_contacts": "Sucht Kontakte (Name, E-Mail, Rolle, Kunde).",
     "search_documents": "Durchsucht redigierte Knowledge-Dokumente per Volltext.",
     "create_task": "Erstellt einen neuen Task.",
@@ -707,12 +708,12 @@ TOOL_DESCRIPTIONS: Dict[str, str] = {
 
 def dispatch(
     name: str,
-    args_dict: Dict[str, Any],
+    args_dict: dict[str, Any],
     *,
     read_only_flag: bool,
     tenant_id: str,
     user: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     tool = TOOL_REGISTRY.get(name)
     if not tool:
         return {

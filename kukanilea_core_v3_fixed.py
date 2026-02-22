@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 KUKANILEA Core (v2.4 - A2 Multi-Tenant + More Formats) — DROP-IN replacement
@@ -33,7 +32,7 @@ from email import policy
 from email.parser import BytesParser
 from email.utils import getaddresses, parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.eventlog.core import event_append
 
@@ -194,7 +193,7 @@ def _read_bytes(fp: Path) -> bytes:
 
 
 def _token() -> str:
-    raw = f"{time.time_ns()}:{os.getpid()}:{os.urandom(8).hex()}".encode("utf-8")
+    raw = f"{time.time_ns()}:{os.getpid()}:{os.urandom(8).hex()}".encode()
     return base64.urlsafe_b64encode(hashlib.sha256(raw).digest())[:22].decode("ascii")
 
 
@@ -232,7 +231,7 @@ def _to_jsonable(x: Any) -> Any:
     return str(x)
 
 
-def _payload(**kwargs: Any) -> Dict[str, Any]:
+def _payload(**kwargs: Any) -> dict[str, Any]:
     return {k: _to_jsonable(v) for k, v in kwargs.items()}
 
 
@@ -438,7 +437,7 @@ def _done_path(token: str) -> Path:
     return DONE_DIR / f"{token}.json"
 
 
-def read_pending(token: str) -> Optional[Dict[str, Any]]:
+def read_pending(token: str) -> dict[str, Any] | None:
     fp = _pending_path(token)
     if not fp.exists():
         return None
@@ -448,7 +447,7 @@ def read_pending(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def write_pending(token: str, payload: Dict[str, Any]) -> None:
+def write_pending(token: str, payload: dict[str, Any]) -> None:
     fp = _pending_path(token)
     _atomic_write_text(
         fp, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -463,8 +462,8 @@ def delete_pending(token: str) -> None:
         pass
 
 
-def list_pending() -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+def list_pending() -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     PENDING_DIR.mkdir(parents=True, exist_ok=True)
     for fp in sorted(
         PENDING_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
@@ -478,14 +477,14 @@ def list_pending() -> List[Dict[str, Any]]:
     return out
 
 
-def write_done(token: str, payload: Dict[str, Any]) -> None:
+def write_done(token: str, payload: dict[str, Any]) -> None:
     fp = _done_path(token)
     _atomic_write_text(
         fp, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
 
-def read_done(token: str) -> Optional[Dict[str, Any]]:
+def read_done(token: str) -> dict[str, Any] | None:
     fp = _done_path(token)
     if not fp.exists():
         return None
@@ -499,7 +498,7 @@ def read_done(token: str) -> Optional[Dict[str, Any]]:
 # SQLITE DB
 # ============================================================
 _DB_LOCK = threading.Lock()
-_FTS5_AVAILABLE: Optional[bool] = None
+_FTS5_AVAILABLE: bool | None = None
 
 
 def _db() -> sqlite3.Connection:
@@ -1895,7 +1894,7 @@ def rbac_assign_role(username: str, role: str) -> None:
             con.close()
 
 
-def rbac_get_user_roles(username: str) -> List[str]:
+def rbac_get_user_roles(username: str) -> list[str]:
     username = normalize_component(username).lower()
     if not username:
         return []
@@ -1918,7 +1917,7 @@ def audit_log(
     role: str,
     action: str,
     target: str = "",
-    meta: Optional[dict] = None,
+    meta: dict | None = None,
     tenant_id: str = "",
 ) -> None:
     user = normalize_component(user).lower()
@@ -1960,7 +1959,7 @@ def task_create(
     details: str = "",
     token: str = "",
     path: str = "",
-    meta: Optional[dict] = None,
+    meta: dict | None = None,
     created_by: str = "",
 ) -> int:
     tenant = normalize_component(tenant).lower()
@@ -2003,7 +2002,7 @@ def task_create(
 
 def task_list(
     *, tenant: str = "", status: str = "OPEN", limit: int = 200
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     tenant = normalize_component(tenant).lower()
     status = normalize_component(status).upper()
     limit = max(1, min(int(limit), 2000))
@@ -2120,7 +2119,7 @@ def time_project_create(
     budget_hours: int = 0,
     budget_cost: float = 0.0,
     created_by: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     name = normalize_component(name)
     description = (description or "").strip()
@@ -2183,7 +2182,7 @@ def time_project_create(
 
 def time_project_list(
     *, tenant_id: str, status: str = "ACTIVE"
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     tenant_id = _time_tenant(tenant_id)
     status = normalize_component(status).upper() or "ACTIVE"
     with _DB_LOCK:
@@ -2206,10 +2205,10 @@ def time_project_update_budget(
     *,
     tenant_id: str,
     project_id: int,
-    budget_hours: Optional[int] = None,
-    budget_cost: Optional[float] = None,
-    user_id: Optional[int] = None,
-) -> Dict[str, Any]:
+    budget_hours: int | None = None,
+    budget_cost: float | None = None,
+    user_id: int | None = None,
+) -> dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     project_id = int(project_id)
     user_id_norm = int(user_id) if user_id is not None else None
@@ -2274,8 +2273,8 @@ def time_project_update_budget(
 
 
 def _time_project_lookup(
-    con: sqlite3.Connection, tenant_id: str, project_id: Optional[int]
-) -> Optional[dict]:
+    con: sqlite3.Connection, tenant_id: str, project_id: int | None
+) -> dict | None:
     if project_id is None:
         return None
     row = con.execute(
@@ -2286,8 +2285,8 @@ def _time_project_lookup(
 
 
 def _task_lookup(
-    con: sqlite3.Connection, tenant_id: str, task_id: Optional[int]
-) -> Optional[dict]:
+    con: sqlite3.Connection, tenant_id: str, task_id: int | None
+) -> dict | None:
     if task_id is None:
         return None
     row = con.execute(
@@ -2301,12 +2300,12 @@ def time_entry_start(
     *,
     tenant_id: str,
     user: str,
-    project_id: Optional[int] = None,
-    task_id: Optional[int] = None,
-    user_id: Optional[int] = None,
+    project_id: int | None = None,
+    task_id: int | None = None,
+    user_id: int | None = None,
     note: str = "",
-    started_at: Optional[str] = None,
-) -> Dict[str, Any]:
+    started_at: str | None = None,
+) -> dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     user = normalize_component(user).lower()
     note = (note or "").strip()
@@ -2392,7 +2391,7 @@ def time_entry_start(
     return time_entry_get(tenant_id=tenant_id, entry_id=entry_id) or {}
 
 
-def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]:
+def time_entry_get(*, tenant_id: str, entry_id: int) -> dict[str, Any] | None:
     tenant_id = _time_tenant(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -2430,9 +2429,9 @@ def time_entry_stop(
     *,
     tenant_id: str,
     user: str,
-    entry_id: Optional[int] = None,
-    ended_at: Optional[str] = None,
-) -> Dict[str, Any]:
+    entry_id: int | None = None,
+    ended_at: str | None = None,
+) -> dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     user = normalize_component(user).lower()
     if not user:
@@ -2528,14 +2527,14 @@ def time_entry_update(
     *,
     tenant_id: str,
     entry_id: int,
-    project_id: Optional[int] = None,
-    task_id: Optional[int] = None,
-    user_id: Optional[int] = None,
-    start_at: Optional[str] = None,
-    end_at: Optional[str] = None,
-    note: Optional[str] = None,
+    project_id: int | None = None,
+    task_id: int | None = None,
+    user_id: int | None = None,
+    start_at: str | None = None,
+    end_at: str | None = None,
+    note: str | None = None,
     user: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     user = normalize_component(user).lower()
 
@@ -2627,7 +2626,7 @@ def time_entry_update(
 
 def time_entry_approve(
     *, tenant_id: str, entry_id: int, approved_by: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     approved_by = normalize_component(approved_by).lower()
     if not approved_by:
@@ -2667,17 +2666,17 @@ def time_entry_approve(
 def time_entries_list(
     *,
     tenant_id: str,
-    user: Optional[str] = None,
-    start_at: Optional[str] = None,
-    end_at: Optional[str] = None,
+    user: str | None = None,
+    start_at: str | None = None,
+    end_at: str | None = None,
     limit: int = 500,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     tenant_id = _time_tenant(tenant_id)
     user = normalize_component(user or "").lower()
     limit = max(1, min(int(limit), 2000))
 
     clauses = ["te.tenant_id=?"]
-    params: List[Any] = [tenant_id]
+    params: list[Any] = [tenant_id]
     if user:
         clauses.append("te.user=?")
         params.append(user)
@@ -2725,7 +2724,7 @@ def time_entries_list(
             con.close()
 
 
-def time_entries_summary_by_task(*, tenant_id: str, task_id: int) -> Dict[str, Any]:
+def time_entries_summary_by_task(*, tenant_id: str, task_id: int) -> dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -2754,7 +2753,7 @@ def time_entries_summary_by_task(*, tenant_id: str, task_id: int) -> Dict[str, A
 
 def time_entries_summary_by_project(
     *, tenant_id: str, project_id: int
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -2841,7 +2840,7 @@ def ai_prediction_add(
 def ai_insight_add(
     *,
     tenant_id: str,
-    project_id: Optional[int],
+    project_id: int | None,
     insight_type: str,
     title: str,
     message: str,
@@ -2875,9 +2874,9 @@ def ai_insight_add(
 def time_entries_export_csv(
     *,
     tenant_id: str,
-    user: Optional[str] = None,
-    start_at: Optional[str] = None,
-    end_at: Optional[str] = None,
+    user: str | None = None,
+    start_at: str | None = None,
+    end_at: str | None = None,
     limit: int = 2000,
 ) -> str:
     entries = time_entries_list(
@@ -2945,8 +2944,8 @@ def lock_prune_expired() -> int:
 
 
 def lock_acquire(
-    token: str, tenant: str, user: str, roles: List[str]
-) -> Dict[str, Any]:
+    token: str, tenant: str, user: str, roles: list[str]
+) -> dict[str, Any]:
     token = normalize_component(token)
     tenant = normalize_component(tenant).lower()
     user = normalize_component(user).lower()
@@ -3003,7 +3002,7 @@ def lock_acquire(
             con.close()
 
 
-def lock_heartbeat(token: str, user: str, roles: List[str]) -> Dict[str, Any]:
+def lock_heartbeat(token: str, user: str, roles: list[str]) -> dict[str, Any]:
     token = normalize_component(token)
     user = normalize_component(user).lower()
     roles_s = ",".join([normalize_component(r).upper() for r in (roles or [])])
@@ -3047,7 +3046,7 @@ def lock_heartbeat(token: str, user: str, roles: List[str]) -> Dict[str, Any]:
             con.close()
 
 
-def lock_release(token: str, user: str) -> Dict[str, Any]:
+def lock_release(token: str, user: str) -> dict[str, Any]:
     token = normalize_component(token)
     user = normalize_component(user).lower()
     if not token or not user:
@@ -3077,7 +3076,7 @@ def lock_release(token: str, user: str) -> Dict[str, Any]:
 # ============================================================
 # FOLDER HELPERS
 # ============================================================
-def parse_folder_fields(folder_name: str) -> Dict[str, str]:
+def parse_folder_fields(folder_name: str) -> dict[str, str]:
     folder_name = folder_name.strip()
     parts = folder_name.split("_")
     out = {"kdnr": "", "name": "", "addr": "", "plzort": ""}
@@ -3139,7 +3138,7 @@ def parse_folder_fields(folder_name: str) -> Dict[str, str]:
     return out
 
 
-def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
+def find_existing_customer_folders(base_path: Path, kdnr: str) -> list[Path]:
     """
     Tenant-aware search without changing signature:
     - First: search direct child dirs: <base_path>/<kdnr>_*
@@ -3152,7 +3151,7 @@ def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
     if not base_path.exists():
         return []
 
-    out: List[Path] = []
+    out: list[Path] = []
     prefix = f"{kdnr}_"
 
     try:
@@ -3181,12 +3180,12 @@ def find_existing_customer_folders(base_path: Path, kdnr: str) -> List[Path]:
 
 
 def best_match_object_folder(
-    existing: List[Path], addr: str, plzort: str
-) -> Tuple[Optional[Path], float]:
+    existing: list[Path], addr: str, plzort: str
+) -> tuple[Path | None, float]:
     addr_n = _norm_for_match(addr)
     plz_n = _norm_for_match(plzort)
 
-    best: Optional[Path] = None
+    best: Path | None = None
     best_score = 0.0
 
     for f in existing:
@@ -3207,11 +3206,11 @@ def best_match_object_folder(
 
 def detect_object_duplicates_for_kdnr(
     kdnr: str, threshold: float = DEFAULT_DUP_SIM_THRESHOLD
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     kdnr = normalize_component(kdnr)
     folders = find_existing_customer_folders(BASE_PATH, kdnr)
     names = [(f, _norm_for_match(f.name)) for f in folders]
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
 
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
@@ -3243,7 +3242,7 @@ def _extract_pdf_text(fp: Path) -> str:
         return ""
     try:
         reader = PdfReader(str(fp))
-        texts: List[str] = []
+        texts: list[str] = []
         for page in reader.pages[: max(1, OCR_MAX_PAGES)]:
             try:
                 t = page.extract_text() or ""
@@ -3261,7 +3260,7 @@ def _ocr_pdf(fp: Path) -> str:
         return ""
     try:
         doc = fitz.open(str(fp))
-        texts: List[str] = []
+        texts: list[str] = []
         for i in range(min(len(doc), OCR_MAX_PAGES)):
             page = doc.load_page(i)
             pix = page.get_pixmap(dpi=250)
@@ -3314,7 +3313,7 @@ def _extract_docx_text(fp: Path) -> str:
         return ""
 
 
-def _xlsx_shared_strings(z: zipfile.ZipFile) -> List[str]:
+def _xlsx_shared_strings(z: zipfile.ZipFile) -> list[str]:
     try:
         sxml = z.read("xl/sharedStrings.xml").decode("utf-8", errors="ignore")
     except Exception:
@@ -3327,7 +3326,7 @@ def _extract_xlsx_text(fp: Path) -> str:
     if openpyxl is not None:
         try:
             wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
-            lines: List[str] = []
+            lines: list[str] = []
             for ws in wb.worksheets[:3]:
                 lines.append(f"[Sheet] {ws.title}")
                 rcount = 0
@@ -3357,12 +3356,12 @@ def _extract_xlsx_text(fp: Path) -> str:
                 if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
             ]
             sheet_names = sorted(sheet_names)[:3]
-            out_lines: List[str] = []
+            out_lines: list[str] = []
             for sname in sheet_names:
                 xml = z.read(sname).decode("utf-8", errors="ignore")
                 out_lines.append(f"[SheetXML] {Path(sname).name}")
                 vals = re.findall(r"<v>(.*?)</v>", xml, flags=re.IGNORECASE | re.DOTALL)
-                cleaned: List[str] = []
+                cleaned: list[str] = []
                 for v in vals[: MAX_XLSX_ROWS * 3]:
                     v = re.sub(r"\s+", " ", v).strip()
                     if not v:
@@ -3403,7 +3402,7 @@ def _extract_csv_text(fp: Path) -> str:
         except Exception:
             dialect = csv.excel
         reader = csv.reader(sio, dialect)
-        lines: List[str] = []
+        lines: list[str] = []
         for r_i, row in enumerate(reader):
             if r_i >= MAX_CSV_ROWS:
                 break
@@ -3431,7 +3430,7 @@ def _extract_eml_text(fp: Path) -> str:
         except Exception:
             pass
 
-    parts_text: List[str] = []
+    parts_text: list[str] = []
 
     def add_text(t: str) -> None:
         t = (t or "").strip()
@@ -3514,7 +3513,7 @@ def _extract_json_text(fp: Path) -> str:
     except Exception:
         return _clip_text(raw.strip(), 50_000)
 
-    out: List[str] = []
+    out: list[str] = []
 
     def walk(x: Any, prefix: str = "") -> None:
         if isinstance(x, dict):
@@ -3554,7 +3553,7 @@ def _extract_msg_text(fp: Path) -> str:
     try:
         m = extract_msg.Message(str(fp))
         m.process()
-        parts: List[str] = []
+        parts: list[str] = []
         if getattr(m, "subject", None):
             parts.append(f"Subject: {m.subject}")
         if getattr(m, "sender", None):
@@ -3570,7 +3569,7 @@ def _extract_msg_text(fp: Path) -> str:
         return ""
 
 
-def _extract_text(fp: Path) -> Tuple[str, bool]:
+def _extract_text(fp: Path) -> tuple[str, bool]:
     """
     Returns (text, used_ocr)
     """
@@ -3684,8 +3683,8 @@ def _detect_doctype(text: str, filename: str) -> str:
     return best[0]
 
 
-def _find_kdnr_candidates(text: str) -> List[Tuple[str, float]]:
-    cands: List[str] = []
+def _find_kdnr_candidates(text: str) -> list[tuple[str, float]]:
+    cands: list[str] = []
     for m in re.finditer(
         r"(kunden[\s\-]*nr\.?\s*[:#]?\s*)(\d{3,})", text, flags=re.IGNORECASE
     ):
@@ -3700,20 +3699,20 @@ def _find_kdnr_candidates(text: str) -> List[Tuple[str, float]]:
                 continue
             cands.append(v)
 
-    freq: Dict[str, int] = {}
+    freq: dict[str, int] = {}
     for c in cands:
         freq[c] = freq.get(c, 0) + 1
 
     ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
-    out: List[Tuple[str, float]] = []
+    out: list[tuple[str, float]] = []
     for num, f in ranked[:8]:
         score = round(min(1.0, 0.55 + 0.1 * f), 2)
         out.append((num, score))
     return out
 
 
-def _find_dates(text: str) -> Tuple[str, List[Dict[str, Any]]]:
-    cands: List[Dict[str, Any]] = []
+def _find_dates(text: str) -> tuple[str, list[dict[str, Any]]]:
+    cands: list[dict[str, Any]] = []
 
     for m in re.finditer(r"\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})\b", text):
         raw = m.group(0)
@@ -3746,7 +3745,7 @@ def _find_dates(text: str) -> Tuple[str, List[Dict[str, Any]]]:
             best = d
 
     seen = set()
-    uniq: List[Dict[str, Any]] = []
+    uniq: list[dict[str, Any]] = []
     for c in cands:
         if c["date"] in seen:
             continue
@@ -3756,13 +3755,13 @@ def _find_dates(text: str) -> Tuple[str, List[Dict[str, Any]]]:
     return best, uniq[:12]
 
 
-def _find_name_addr_plzort(text: str) -> Tuple[List[str], List[str], List[str]]:
+def _find_name_addr_plzort(text: str) -> tuple[list[str], list[str], list[str]]:
     lines = [normalize_component(x) for x in (text or "").splitlines()]
     lines = [line for line in lines if line]
 
-    plzort: List[str] = []
-    addr: List[str] = []
-    name: List[str] = []
+    plzort: list[str] = []
+    addr: list[str] = []
+    name: list[str] = []
 
     for line in lines:
         m = re.search(r"\b(\d{5})\s+([A-Za-zÄÖÜäöüß\- ]{2,})\b", line)
@@ -3808,8 +3807,8 @@ def _normalize_entity(value: str) -> str:
     return re.sub(r"\\s+", " ", value.strip().lower())
 
 
-def extract_entities(text: str) -> List[Dict[str, Any]]:
-    entities: List[Dict[str, Any]] = []
+def extract_entities(text: str) -> list[dict[str, Any]]:
+    entities: list[dict[str, Any]] = []
     if not text:
         return entities
     emails = set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", text))
@@ -3886,9 +3885,9 @@ def _store_entities(
 # INDEX / SEARCH
 # ============================================================
 def _index_tokens(
-    text: str, extra: Optional[List[str]] = None, limit: int = 120
+    text: str, extra: list[str] | None = None, limit: int = 120
 ) -> str:
-    tokens: List[str] = []
+    tokens: list[str] = []
     if extra:
         tokens.extend(extra)
     if text:
@@ -3908,7 +3907,7 @@ def _index_tokens(
     return " ".join(cleaned)
 
 
-def _index_extract_fields(text: str, file_name: str) -> Dict[str, str]:
+def _index_extract_fields(text: str, file_name: str) -> dict[str, str]:
     names, addrs, plzort = _find_name_addr_plzort(text)
     entities = extract_entities(text)
     doc_number = ""
@@ -3928,7 +3927,7 @@ def _index_extract_fields(text: str, file_name: str) -> Dict[str, str]:
     }
 
 
-def _index_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
+def _index_put(con: sqlite3.Connection, row: dict[str, Any]) -> None:
     doc_id = str(row.get("doc_id", "") or "")
     if not doc_id:
         return
@@ -3972,7 +3971,7 @@ def _index_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
     )
 
 
-def _fts_put(con: sqlite3.Connection, row: Dict[str, Any]) -> None:
+def _fts_put(con: sqlite3.Connection, row: dict[str, Any]) -> None:
     if not (_has_fts5(con) and _table_exists(con, "docs_fts")):
         return
 
@@ -4132,7 +4131,7 @@ def assistant_search(
     limit: int = ASSISTANT_DEFAULT_LIMIT,
     role: str = "ADMIN",
     tenant_id: str = "",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Tenant note:
     - If you stored kdnr as "TENANT:1234", search by the same.
@@ -4154,7 +4153,7 @@ def assistant_search(
         con = _db()
         try:
             use_fts = _has_fts5(con) and _table_exists(con, "docs_fts")
-            rows: List[sqlite3.Row] = []
+            rows: list[sqlite3.Row] = []
 
             if use_fts:
                 tokens = [t for t in re.split(r"\\s+", query) if t]
@@ -4233,7 +4232,7 @@ def assistant_search(
                         if rows:
                             break
 
-            out: List[Dict[str, Any]] = []
+            out: list[dict[str, Any]] = []
             for r in rows:
                 doc_id = str(r["doc_id"])
                 vc = con.execute(
@@ -4259,7 +4258,7 @@ def assistant_search(
             con.close()
 
 
-def assistant_suggest(query: str, tenant_id: str = "", limit: int = 3) -> List[str]:
+def assistant_suggest(query: str, tenant_id: str = "", limit: int = 3) -> list[str]:
     try:
         from rapidfuzz import fuzz, process  # type: ignore
     except Exception:
@@ -4302,7 +4301,7 @@ def assistant_suggest(query: str, tenant_id: str = "", limit: int = 3) -> List[s
     return [m[0] for m in matches if m[1] >= 70]
 
 
-def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
+def index_run_full(base_path: Path | None = None) -> dict[str, Any]:
     base = Path(base_path) if base_path else BASE_PATH
     if not base.exists():
         return {
@@ -4425,7 +4424,7 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
     }
 
 
-def import_run(*, import_root: Path, user: str = "", role: str = "") -> Dict[str, Any]:
+def import_run(*, import_root: Path, user: str = "", role: str = "") -> dict[str, Any]:
     root = Path(import_root)
     if not root.exists():
         return {
@@ -4544,7 +4543,7 @@ def import_run(*, import_root: Path, user: str = "", role: str = "") -> Dict[str
     }
 
 
-def index_rebuild(base_path: Optional[Path] = None) -> Dict[str, Any]:
+def index_rebuild(base_path: Path | None = None) -> dict[str, Any]:
     with _DB_LOCK:
         con = _db()
         try:
@@ -4558,13 +4557,13 @@ def index_rebuild(base_path: Optional[Path] = None) -> Dict[str, Any]:
     return index_run_full(base_path=base_path)
 
 
-def index_warmup(tenant_id: str = "") -> Dict[str, Any]:
+def index_warmup(tenant_id: str = "") -> dict[str, Any]:
     tenant_id = normalize_component(tenant_id)
     with _DB_LOCK:
         con = _db()
         try:
             fts_enabled = _has_fts5(con)
-            tenants: List[str] = []
+            tenants: list[str] = []
             if tenant_id:
                 tenants = [tenant_id]
             elif _table_exists(con, "tenants"):
@@ -4591,7 +4590,7 @@ def set_db_path(new_path: Path) -> None:
     db_init()
 
 
-def get_db_info() -> Dict[str, Any]:
+def get_db_info() -> dict[str, Any]:
     with _DB_LOCK:
         con = _db()
         try:
@@ -4615,7 +4614,7 @@ def set_base_path(new_path: Path) -> None:
     BASE_PATH = Path(new_path)
 
 
-def get_profile() -> Dict[str, Any]:
+def get_profile() -> dict[str, Any]:
     name = _env("KUKANILEA_PROFILE", "").strip()
     if not name:
         name = f"db:{DB_PATH.stem}"
@@ -4626,7 +4625,7 @@ def get_profile() -> Dict[str, Any]:
     }
 
 
-def get_health_stats(tenant_id: str = "") -> Dict[str, Any]:
+def get_health_stats(tenant_id: str = "") -> dict[str, Any]:
     tenant_id = (
         _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
     )
@@ -4658,7 +4657,7 @@ def get_health_stats(tenant_id: str = "") -> Dict[str, Any]:
             con.close()
 
 
-def audit_list(*, tenant_id: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+def audit_list(*, tenant_id: str = "", limit: int = 200) -> list[dict[str, Any]]:
     tenant_id = normalize_component(tenant_id)
     limit = max(1, min(int(limit), 2000))
     with _DB_LOCK:
@@ -4692,7 +4691,7 @@ def analyze_to_pending(src: Path) -> str:
     tenant = _effective_tenant(_infer_tenant_from_path(src))
 
     t = _token()
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "status": "ANALYZING",
         "progress": 1.0,
         "progress_phase": "Init…",
@@ -4821,7 +4820,7 @@ def _compose_filename(
 ) -> str:
     code = _doctype_code(doctype)
     d = parse_excel_like_date(doc_date) or ""
-    parts: List[str] = [code]
+    parts: list[str] = [code]
     if d:
         parts.append(d)
     for x in [kdnr, name, addr, plzort]:
@@ -4844,9 +4843,9 @@ def _next_version_suffix(target_dir: Path, base_name: str, ext: str) -> str:
         n += 1
 
 
-def _source_allowlist_roots() -> List[Path]:
+def _source_allowlist_roots() -> list[Path]:
     roots = [EINGANG, BASE_PATH, PENDING_DIR, DONE_DIR]
-    out: List[Path] = []
+    out: list[Path] = []
     for root in roots:
         try:
             out.append(Path(root).resolve())
@@ -4909,8 +4908,8 @@ def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
 
 
 def resolve_source_path(
-    token: str, pending: Optional[Dict[str, Any]] = None, tenant_id: str = ""
-) -> Optional[Path]:
+    token: str, pending: dict[str, Any] | None = None, tenant_id: str = ""
+) -> Path | None:
     token = normalize_component(token)
     pending = pending or read_pending(token) or {}
     if not isinstance(pending, dict):
@@ -4996,7 +4995,7 @@ def _db_has_doc(doc_id: str) -> bool:
             con.close()
 
 
-def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path, bool]:
+def process_with_answers(src: Path, answers: dict[str, Any]) -> tuple[Path, Path, bool]:
     src = Path(src)
     if not src.exists():
         raise FileNotFoundError(src)
@@ -5182,7 +5181,7 @@ def _run_write_txn(fn):
 
 def _parse_money_to_cents(
     value: Any, *, field: str, allow_none: bool = False
-) -> Optional[int]:
+) -> int | None:
     if value is None or value == "":
         if allow_none:
             return None
@@ -5199,7 +5198,7 @@ def _parse_money_to_cents(
 
 def _cents_from_legacy(
     cents_value: Any, legacy_value: Any, *, nullable: bool = False
-) -> Optional[int]:
+) -> int | None:
     if cents_value is not None:
         try:
             cents_int = int(cents_value)
@@ -5241,7 +5240,7 @@ def _crm_require_contact(
 
 def _crm_require_deal(
     con: sqlite3.Connection, tenant_id: str, deal_id: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     row = con.execute(
         "SELECT * FROM deals WHERE tenant_id=? AND id=?",
         (tenant_id, deal_id),
@@ -5253,7 +5252,7 @@ def _crm_require_deal(
 
 def _crm_quote_items(
     con: sqlite3.Connection, tenant_id: str, quote_id: str
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     rows = con.execute(
         """
         SELECT id, quote_id, description, qty, unit_price_cents, line_total_cents, created_at, updated_at
@@ -5269,9 +5268,9 @@ def _crm_quote_items(
 def customers_create(
     tenant_id: str,
     name: str,
-    vat_id: Optional[str] = None,
-    notes: Optional[str] = None,
-    actor_user_id: Optional[int] = None,
+    vat_id: str | None = None,
+    notes: str | None = None,
+    actor_user_id: int | None = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
     customer_name = normalize_component(name)
@@ -5318,7 +5317,7 @@ def customers_create(
     return _run_write_txn(_tx)
 
 
-def customers_get(tenant_id: str, customer_id: str) -> Dict[str, Any]:
+def customers_get(tenant_id: str, customer_id: str) -> dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -5338,8 +5337,8 @@ def customers_list(
     tenant_id: str,
     limit: int = 100,
     offset: int = 0,
-    query: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    query: str | None = None,
+) -> list[dict[str, Any]]:
     tenant_id = _crm_tenant(tenant_id)
     lim = max(1, min(int(limit), 500))
     off = max(0, int(offset))
@@ -5377,14 +5376,14 @@ def customers_update(
     tenant_id: str,
     customer_id: str,
     *,
-    name: Optional[str] = None,
-    vat_id: Optional[str] = None,
-    notes: Optional[str] = None,
-    actor_user_id: Optional[int] = None,
-) -> Dict[str, Any]:
+    name: str | None = None,
+    vat_id: str | None = None,
+    notes: str | None = None,
+    actor_user_id: int | None = None,
+) -> dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
 
-    def _tx(con: sqlite3.Connection) -> Dict[str, Any]:
+    def _tx(con: sqlite3.Connection) -> dict[str, Any]:
         row = con.execute(
             "SELECT * FROM customers WHERE tenant_id=? AND id=?",
             (tenant_id, customer_id),
@@ -5441,11 +5440,11 @@ def contacts_create(
     tenant_id: str,
     customer_id: str,
     name: str,
-    email: Optional[str] = None,
-    phone: Optional[str] = None,
-    role: Optional[str] = None,
-    notes: Optional[str] = None,
-    actor_user_id: Optional[int] = None,
+    email: str | None = None,
+    phone: str | None = None,
+    role: str | None = None,
+    notes: str | None = None,
+    actor_user_id: int | None = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
     contact_name = normalize_component(name)
@@ -5495,7 +5494,7 @@ def contacts_create(
     return _run_write_txn(_tx)
 
 
-def contacts_list_by_customer(tenant_id: str, customer_id: str) -> List[Dict[str, Any]]:
+def contacts_list_by_customer(tenant_id: str, customer_id: str) -> list[dict[str, Any]]:
     tenant_id = _crm_tenant(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -5519,13 +5518,13 @@ def deals_create(
     customer_id: str,
     title: str,
     stage: str = "lead",
-    value_cents: Optional[int] = None,
+    value_cents: int | None = None,
     currency: str = "EUR",
-    notes: Optional[str] = None,
-    project_id: Optional[int] = None,
-    probability: Optional[int] = None,
-    expected_close_date: Optional[str] = None,
-    actor_user_id: Optional[int] = None,
+    notes: str | None = None,
+    project_id: int | None = None,
+    probability: int | None = None,
+    expected_close_date: str | None = None,
+    actor_user_id: int | None = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
     title_norm = normalize_component(title)
@@ -5604,8 +5603,8 @@ def deals_update_stage(
     tenant_id: str,
     deal_id: str,
     stage: str,
-    actor_user_id: Optional[int] = None,
-) -> Dict[str, Any]:
+    actor_user_id: int | None = None,
+) -> dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
     stage_norm = normalize_component(stage).lower()
     if stage_norm not in {
@@ -5618,7 +5617,7 @@ def deals_update_stage(
     }:
         raise ValueError("validation_error")
 
-    def _tx(con: sqlite3.Connection) -> Dict[str, Any]:
+    def _tx(con: sqlite3.Connection) -> dict[str, Any]:
         deal = _crm_require_deal(con, tenant_id, deal_id)
         con.execute(
             "UPDATE deals SET stage=?, updated_at=? WHERE tenant_id=? AND id=?",
@@ -5651,12 +5650,12 @@ def deals_update_stage(
 
 def deals_list(
     tenant_id: str,
-    stage: Optional[str] = None,
-    customer_id: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    stage: str | None = None,
+    customer_id: str | None = None,
+) -> list[dict[str, Any]]:
     tenant_id = _crm_tenant(tenant_id)
     clauses = ["tenant_id=?"]
-    params: List[Any] = [tenant_id]
+    params: list[Any] = [tenant_id]
     st = normalize_component(stage).lower()
     if st:
         clauses.append("stage=?")
@@ -5696,11 +5695,11 @@ def _next_quote_number(con: sqlite3.Connection, tenant_id: str) -> str:
 def quotes_create(
     tenant_id: str,
     customer_id: str,
-    deal_id: Optional[str] = None,
+    deal_id: str | None = None,
     currency: str = "EUR",
-    notes: Optional[str] = None,
-    quote_number: Optional[str] = None,
-    actor_user_id: Optional[int] = None,
+    notes: str | None = None,
+    quote_number: str | None = None,
+    actor_user_id: int | None = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
     quote_id = _crm_new_id()
@@ -5776,8 +5775,8 @@ def quotes_add_item(
     description: str,
     qty: float,
     unit_price_cents: int,
-    actor_user_id: Optional[int] = None,
-) -> Dict[str, Any]:
+    actor_user_id: int | None = None,
+) -> dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
     description_norm = normalize_component(description)
     if not description_norm:
@@ -5796,7 +5795,7 @@ def quotes_add_item(
     )
     item_id = _crm_new_id()
 
-    def _tx(con: sqlite3.Connection) -> Dict[str, Any]:
+    def _tx(con: sqlite3.Connection) -> dict[str, Any]:
         qrow = con.execute(
             "SELECT id FROM quotes WHERE tenant_id=? AND id=?",
             (tenant_id, quote_id),
@@ -5910,12 +5909,12 @@ def quotes_add_item(
 def quotes_recalculate_totals(
     tenant_id: str,
     quote_id: str,
-    tax_rate: Optional[float] = None,
-    actor_user_id: Optional[int] = None,
-) -> Dict[str, Any]:
+    tax_rate: float | None = None,
+    actor_user_id: int | None = None,
+) -> dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
 
-    def _tx(con: sqlite3.Connection) -> Dict[str, Any]:
+    def _tx(con: sqlite3.Connection) -> dict[str, Any]:
         qrow = con.execute(
             "SELECT * FROM quotes WHERE tenant_id=? AND id=?",
             (tenant_id, quote_id),
@@ -5988,7 +5987,7 @@ def quotes_recalculate_totals(
     return _run_write_txn(_tx)
 
 
-def quotes_get(tenant_id: str, quote_id: str) -> Dict[str, Any]:
+def quotes_get(tenant_id: str, quote_id: str) -> dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -6018,8 +6017,8 @@ def quotes_get(tenant_id: str, quote_id: str) -> Dict[str, Any]:
 def quotes_create_from_deal(
     tenant_id: str,
     deal_id: str,
-    actor_user_id: Optional[int] = None,
-) -> Dict[str, Any]:
+    actor_user_id: int | None = None,
+) -> dict[str, Any]:
     tenant_id = _crm_tenant(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -6131,10 +6130,10 @@ def quotes_create_from_deal(
 def emails_import_eml(
     tenant_id: str,
     eml_bytes: bytes,
-    customer_id: Optional[str] = None,
-    contact_id: Optional[str] = None,
-    source_notes: Optional[str] = None,
-    actor_user_id: Optional[int] = None,
+    customer_id: str | None = None,
+    contact_id: str | None = None,
+    source_notes: str | None = None,
+    actor_user_id: int | None = None,
 ) -> str:
     tenant_id = _crm_tenant(tenant_id)
     if not isinstance(eml_bytes, (bytes, bytearray)) or not eml_bytes:

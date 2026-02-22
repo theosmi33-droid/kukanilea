@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Thread
 
 import pytest
@@ -28,7 +28,7 @@ def e2e_app(tmp_path_factory: pytest.TempPathFactory):
     if webmod.db_init is not None:
         webmod.db_init()
 
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(UTC).isoformat(timespec="seconds")
     auth_db = app.extensions["auth_db"]
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
     if auth_db.get_user("e2e_admin") is None:

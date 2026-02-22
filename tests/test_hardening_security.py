@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import kukanilea_core_v3_fixed as core
-
 from app import create_app
 from app.auth import AuthDB, hash_password
 from app.config import Config
@@ -35,7 +34,7 @@ def _make_app(monkeypatch, tmp_path: Path, *, fixed_tenant_enforce: bool = True)
 
 def _seed_user(app, *, username: str, role: str) -> None:
     auth_db: AuthDB = app.extensions["auth_db"]
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(UTC).isoformat(timespec="seconds")
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
     auth_db.upsert_user(username, hash_password("pw123456"), now)
     auth_db.upsert_membership(username, "KUKANILEA", role, now)

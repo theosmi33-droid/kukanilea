@@ -1,41 +1,32 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "kukanilea"
-version = "1.0.0-beta.2"
-description = "Local-first KUKANILEA document and agent MVP"
-readme = "README.md"
-requires-python = ">=3.11,<3.13"
-dependencies = [
-  "flask",
-  "requests",
-  "python-dotenv",
-  "pydantic",
-  "rapidfuzz",
-  "waitress",
-  "platformdirs",
-  "cryptography",
+version = "0.1.0"
+description = "Local-first Business OS for operational teams"
+authors = [
+    { name = "Kukanilea Engineering", email = "engineering@kukanilea.local" }
 ]
-
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.packages.find]
-include = ["app*", "kukanilea*"]
-exclude = ["tests*", "archive*", "nousage*", "reports*", "instance*"]
-
-[tool.black]
-line-length = 88
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "jinja2",
+    "htmx-py",
+    "pydantic",
+    "sqlite3",
+]
 
 [tool.ruff]
 line-length = 88
-exclude = ["archive/legacy"]
+target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
-ignore = ["E501"]
+select = ["E", "F", "B", "S", "I", "UP"]
+ignore = ["S101"]  # S101: allow asserts in tests
 
-[tool.ruff.lint.isort]
-known-first-party = ["app", "kukanilea"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-ra -q"
+
+[tool.bandit]
+exclude_dirs = ["tests", "venv", ".venv", ".build_venv"]
+skips = ["B101"]  # B101: allow assert in non-production-only paths

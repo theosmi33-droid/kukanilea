@@ -4,7 +4,7 @@ import json
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import getaddresses
 from hashlib import sha256
 from pathlib import Path
@@ -55,7 +55,7 @@ def _is_read_only() -> bool:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _new_id() -> str:

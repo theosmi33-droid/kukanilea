@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging as py_logging
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import (
@@ -50,11 +50,11 @@ _SESSION_TIMEOUT_PUBLIC_PATHS = {
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _to_session_iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    return value.astimezone(UTC).replace(microsecond=0).isoformat()
 
 
 def _parse_session_iso(value: object) -> datetime | None:
@@ -69,8 +69,8 @@ def _parse_session_iso(value: object) -> datetime | None:
     except Exception:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _session_idle_minutes(app: Flask, raw: object) -> int:

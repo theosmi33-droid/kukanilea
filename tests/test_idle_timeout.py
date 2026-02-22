@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app import create_app
 
 
 def _iso_utc(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    return dt.astimezone(UTC).replace(microsecond=0).isoformat()
 
 
 def _login_session(client, *, role: str = "ADMIN") -> None:
@@ -22,7 +22,7 @@ def test_idle_timeout_default_60_logout() -> None:
     client = app.test_client()
     _login_session(client, role="ADMIN")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with client.session_transaction() as sess:
         sess["session_created_at"] = _iso_utc(now - timedelta(minutes=10))
         sess["last_activity"] = _iso_utc(now - timedelta(minutes=61))
@@ -67,7 +67,7 @@ def test_absolute_timeout_8h_logout() -> None:
     client = app.test_client()
     _login_session(client, role="ADMIN")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with client.session_transaction() as sess:
         sess["session_created_at"] = _iso_utc(now - timedelta(hours=9))
         sess["last_activity"] = _iso_utc(now - timedelta(minutes=1))

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 KUKANILEA Systems — Upload/UI v3 (Split-View + Theme + Local Chat)
@@ -42,9 +41,9 @@ import sqlite3
 import threading
 import time
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any
 
 from flask import (
     Blueprint,
@@ -400,7 +399,7 @@ HTML_LOGIN = ""  # will be overwritten later by the full template block
 
 def suggest_existing_folder(
     base_path: str, tenant: str, kdnr: str, name: str
-) -> Tuple[str, float]:
+) -> tuple[str, float]:
     """Heuristic: find an existing customer folder for this tenant."""
     try:
         root = Path(base_path) / tenant
@@ -495,7 +494,7 @@ def _resolve_doc_path(token: str, pending: dict | None = None) -> Path | None:
     return None
 
 
-def _allowlisted_dirs() -> List[Path]:
+def _allowlisted_dirs() -> list[Path]:
     base = Config.BASE_DIR
     instance_dir = base / "instance"
     core_db_dir = Path(getattr(core, "DB_PATH", instance_dir)).resolve().parent
@@ -521,8 +520,8 @@ def _is_allowlisted_path(path: Path) -> bool:
     return False
 
 
-def _list_allowlisted_db_files() -> List[Path]:
-    files: List[Path] = []
+def _list_allowlisted_db_files() -> list[Path]:
+    files: list[Path] = []
     for folder in _allowlisted_dirs():
         if not folder.exists():
             continue
@@ -533,7 +532,7 @@ def _list_allowlisted_db_files() -> List[Path]:
     return sorted({f.resolve() for f in files})
 
 
-def _list_allowlisted_base_paths() -> List[Path]:
+def _list_allowlisted_base_paths() -> list[Path]:
     candidates = {BASE_PATH.resolve()}
     base_dir = Config.BASE_DIR.resolve()
     data_dir = base_dir / "data"
@@ -588,7 +587,7 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    return datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _session_idle_minutes(raw: object) -> int:
@@ -687,7 +686,7 @@ def _is_allowed_ext(filename: str) -> bool:
         return False
 
 
-def _allowed_roots() -> List[Path]:
+def _allowed_roots() -> list[Path]:
     return [
         EINGANG.resolve(),
         BASE_PATH.resolve(),
@@ -940,7 +939,7 @@ def _csrf_guard(api: bool = True):
 
 
 def _core_db_path() -> Path:
-    return Path(str(getattr(core, "DB_PATH")))
+    return Path(str(core.DB_PATH))
 
 
 def _ensure_postfach_tables() -> None:
@@ -948,7 +947,7 @@ def _ensure_postfach_tables() -> None:
 
 
 def _crm_db_rows(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
-    con = sqlite3.connect(str(getattr(core, "DB_PATH")))
+    con = sqlite3.connect(str(core.DB_PATH))
     con.row_factory = sqlite3.Row
     try:
         rows = con.execute(sql, params).fetchall()
@@ -3066,7 +3065,7 @@ def register():
                 code = _generate_numeric_code(6)
                 code_hash = _hash_code(code)
                 expires = (
-                    (datetime.now(timezone.utc) + timedelta(minutes=15))
+                    (datetime.now(UTC) + timedelta(minutes=15))
                     .replace(tzinfo=None)
                     .isoformat(timespec="seconds")
                 )
@@ -3150,7 +3149,7 @@ def forgot_password():
                 if user:
                     code = _generate_numeric_code(6)
                     expires = (
-                        (datetime.now(timezone.utc) + timedelta(minutes=15))
+                        (datetime.now(UTC) + timedelta(minutes=15))
                         .replace(tzinfo=None)
                         .isoformat(timespec="seconds")
                     )
@@ -3421,7 +3420,7 @@ def _ocr_status_snapshot(tenant_id: str) -> dict[str, Any]:
             stats["processing"] = int(row["processing_count"] or 0)
             stats["last_event_at"] = str(row["latest_event"] or "")
         since = (
-            (datetime.now(timezone.utc) - timedelta(hours=24))
+            (datetime.now(UTC) - timedelta(hours=24))
             .replace(tzinfo=None)
             .isoformat(timespec="seconds")
         )
@@ -7863,7 +7862,7 @@ def _build_autotag_form_payload(
             return [str(v or "") for v in raw]
         return [str(raw)]
 
-    name = str((form.get("name") or "")).strip()
+    name = str(form.get("name") or "").strip()
     try:
         priority = int(form.get("priority") or 0)
     except Exception as exc:
@@ -8522,7 +8521,7 @@ def knowledge_settings_email_toggle_action():
     if bool(current_app.config.get("READ_ONLY", False)):
         return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
     payload = request.get_json(silent=True) if request.is_json else request.form
-    enabled = str((payload.get("enabled") if payload else "")).strip().lower() in {
+    enabled = str(payload.get("enabled") if payload else "").strip().lower() in {
         "1",
         "true",
         "on",
@@ -11892,15 +11891,10 @@ def tasks():
                 continue
             disabled = "disabled" if read_only else ""
             controls.append(
-                "<form method='post' action='/tasks/{tid}/move' class='inline'>"
-                "<input type='hidden' name='column' value='{target}'>"
-                "<button type='submit' {disabled} class='rounded-lg px-2 py-1 text-xs btn-outline'>{label}</button>"
-                "</form>".format(
-                    tid=tid,
-                    target=target_key,
-                    label=target_label,
-                    disabled=disabled,
-                )
+                f"<form method='post' action='/tasks/{tid}/move' class='inline'>"
+                f"<input type='hidden' name='column' value='{target_key}'>"
+                f"<button type='submit' {disabled} class='rounded-lg px-2 py-1 text-xs btn-outline'>{target_label}</button>"
+                "</form>"
             )
         controls_html = "".join(controls) or (
             "<span class='muted text-xs'>Kein Wechsel</span>"

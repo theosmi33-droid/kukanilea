@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import kukanilea_core_v3_fixed as legacy_core
@@ -12,11 +12,11 @@ from .core import _tenant, automation_latest_run
 def _today(day: str | None = None) -> str:
     if day:
         return str(day)
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _table_exists(con, table_name: str) -> bool:

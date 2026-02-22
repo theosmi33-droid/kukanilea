@@ -6,7 +6,7 @@ import re
 import sqlite3
 import tempfile
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +32,7 @@ DEFAULT_SCHEMA_TABLES = (
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _table_exists(con: sqlite3.Connection, table_name: str) -> bool:
@@ -289,7 +289,7 @@ def write_support_bundle(
     target_dir = Path(out_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     stage_dir = (
-        target_dir / f".stage-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        target_dir / f".stage-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
     )
     stage_dir.mkdir(parents=True, exist_ok=True)
 

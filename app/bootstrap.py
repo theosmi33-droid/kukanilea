@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .auth import hash_password
 from .db import AuthDB
@@ -10,7 +10,7 @@ from .db import AuthDB
 
 def _now_iso() -> str:
     return (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         .replace(microsecond=0)
         .isoformat()
         .replace("+00:00", "Z")

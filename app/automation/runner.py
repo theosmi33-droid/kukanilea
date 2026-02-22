@@ -4,9 +4,10 @@ import json
 import sqlite3
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import kukanilea_core_v3_fixed as core
 
@@ -48,7 +49,7 @@ CONTEXT_ALLOWLIST = {
 }
 
 _CRON_CHECKER_LOCK = threading.Lock()
-_CRON_CHECKER: "CronChecker | None" = None
+_CRON_CHECKER: CronChecker | None = None
 
 
 def _resolve_db_path(db_path: Path | str | None) -> Path:
@@ -95,7 +96,7 @@ def _payload_value(payload: Mapping[str, Any], *keys: str) -> str:
 
 def _now_minus_minutes_rfc3339(minutes: int) -> str:
     delta = max(1, int(minutes or 1))
-    ts = datetime.now(timezone.utc) - timedelta(minutes=delta)
+    ts = datetime.now(UTC) - timedelta(minutes=delta)
     return ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
@@ -408,9 +409,9 @@ def _build_cron_context(
 ) -> dict[str, str]:
     current = now_dt.replace(second=0, microsecond=0)
     if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
+        current = current.replace(tzinfo=UTC)
     else:
-        current = current.astimezone(timezone.utc)
+        current = current.astimezone(UTC)
     return {
         "event_id": "",
         "event_type": "cron.tick",
@@ -654,7 +655,7 @@ def process_cron_for_tenant(
     if not tenant:
         raise ValueError("validation_error")
     resolved_db = _resolve_db_path(db_path)
-    current = now_dt or datetime.now(timezone.utc)
+    current = now_dt or datetime.now(UTC)
     rules = _load_cron_rules(tenant, resolved_db)
     processed = 0
     matched = 0
@@ -733,7 +734,7 @@ class CronChecker(threading.Thread):
 
     def run(self) -> None:  # pragma: no cover - thread behavior
         while not self._stop_event.is_set():
-            tick = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            tick = datetime.now(UTC).replace(second=0, microsecond=0)
             for tenant_id in _list_tenants_with_cron_rules(self._db_path):
                 try:
                     process_cron_for_tenant(
