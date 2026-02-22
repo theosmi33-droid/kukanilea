@@ -1,0 +1,31 @@
+<!-- Snippets für KI-Vorschläge (EPIC 7) -->
+
+{% if action == 'create_task' %}
+<div class="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-4 animate-in fade-in duration-300">
+    <div class="flex items-center mb-2">
+        <span class="text-blue-600 mr-2">🤖</span>
+        <span class="text-xs font-bold text-blue-800 uppercase tracking-tight">KI-Vorschlag: Neue Aufgabe</span>
+    </div>
+    <p class="text-sm text-gray-700 mb-4">Soll ich die Aufgabe <strong>"{{ params.title }}"</strong> für Sie anlegen?</p>
+    
+    <div class="flex space-x-2">
+        <button 
+            hx-get="/tasks/" 
+            hx-target="#main-content"
+            class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-blue-700 transition">
+            Formular prüfen & speichern
+        </button>
+        <button 
+            onclick="this.parentElement.parentElement.remove()"
+            class="bg-white text-gray-500 border border-gray-300 px-3 py-1.5 rounded text-xs hover:bg-gray-50 transition">
+            Verwerfen
+        </button>
+    </div>
+</div>
+{% endif %}
+
+{% if action == 'unknown' %}
+<div class="p-3 bg-gray-50 border-l-4 border-gray-300 text-gray-600 text-sm italic mt-2">
+    KI: Ich habe Ihre Nachricht erhalten, konnte aber keinen eindeutigen Workflow zuordnen. Versuchen Sie es mit "Erstelle Aufgabe..."
+</div>
+{% endif %}
