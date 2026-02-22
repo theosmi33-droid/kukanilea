@@ -46,6 +46,10 @@ jobs:
       - run: python -m app.smoke
       - name: Security static scan
         run: python -m app.devtools.security_scan
+      - name: Install system dependencies (Tesseract)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-deu
       - run: pytest -m "not e2e" -q
       - name: Security regression subset
         run: |
