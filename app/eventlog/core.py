@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from flask import current_app, has_app_context
 
@@ -30,10 +30,10 @@ def _connect() -> sqlite3.Connection:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _stable_payload_json(payload: Dict[str, Any]) -> str:
+def _stable_payload_json(payload: dict[str, Any]) -> str:
     return json.dumps(
         payload or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
@@ -89,7 +89,7 @@ def event_append(
     event_type: str,
     entity_type: str,
     entity_id: int,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     *,
     con: sqlite3.Connection | None = None,
 ) -> int:
@@ -129,7 +129,7 @@ def event_append(
 
 def event_verify_chain(
     *, con: sqlite3.Connection | None = None
-) -> Tuple[bool, Optional[int], Optional[str]]:
+) -> tuple[bool, int | None, str | None]:
     if con is None:
         ensure_eventlog_schema()
     owns_connection = con is None

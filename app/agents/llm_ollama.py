@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -54,7 +54,7 @@ def chat(
     *,
     model: str | None = None,
     tools: list[dict[str, Any]] | None = None,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     payload: dict[str, Any] = {
         "model": str(model or _model()),
         "messages": list(messages or []),
@@ -71,7 +71,7 @@ def chat(
         return None
 
 
-def generate(prompt: str) -> Optional[str]:
+def generate(prompt: str) -> str | None:
     url = f"{_host()}/api/generate"
     payload = {"model": _model(), "prompt": prompt, "stream": False}
     try:

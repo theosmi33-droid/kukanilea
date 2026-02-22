@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import requests
 from flask import current_app, has_app_context
@@ -61,10 +61,10 @@ def _ensure_ai_tables(con: sqlite3.Connection) -> None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _llm_budget_summary(payload: Dict[str, Any]) -> str:
+def _llm_budget_summary(payload: dict[str, Any]) -> str:
     host = "http://127.0.0.1:11434"
     model = "phi3:instruct"
     if has_app_context():
@@ -91,7 +91,7 @@ def _llm_budget_summary(payload: Dict[str, Any]) -> str:
     return "KI-Analyse offline: Prognose basiert auf lokalen Vergleichsprojekten."
 
 
-def predict_budget(project_id: int, tenant_id: str = "") -> Dict[str, Any]:
+def predict_budget(project_id: int, tenant_id: str = "") -> dict[str, Any]:
     """Predict budget trajectory for a project using similar projects + optional LLM summary."""
     project_id = int(project_id)
     if project_id <= 0:
@@ -128,7 +128,7 @@ def predict_budget(project_id: int, tenant_id: str = "") -> Dict[str, Any]:
         query = f"{row['name']} {row['description'] or ''}".strip()
         similar = find_similar(query, n=5)
 
-        deviations: List[float] = []
+        deviations: list[float] = []
         for item in similar:
             md = item.get("metadata") or {}
             if not isinstance(md, dict):
@@ -195,7 +195,7 @@ def predict_budget(project_id: int, tenant_id: str = "") -> Dict[str, Any]:
         con.close()
 
 
-def daily_report(tenant_id: str = "") -> Dict[str, Any]:
+def daily_report(tenant_id: str = "") -> dict[str, Any]:
     """Run prediction for active projects and persist insights."""
     con = _connect()
     try:

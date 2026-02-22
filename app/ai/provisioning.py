@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from app.ai.ollama_client import ollama_list_models
 from app.ollama_runtime import ensure_ollama_running, pull_ollama_model
@@ -17,7 +18,7 @@ _BOOTSTRAP_THREAD: threading.Thread | None = None
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _truthy(value: object) -> bool:

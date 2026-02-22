@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import kukanilea_core_v3_fixed as core
@@ -44,7 +44,7 @@ def test_generate_daily_insights_claim_metrics_and_tenant_isolation(
     lead_claim("TENANT_A", lead_a1, actor_user_id="alice", ttl_seconds=600)
     lead_claim("TENANT_A", lead_a3, actor_user_id="alice", ttl_seconds=4000)
 
-    overdue = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(
+    overdue = (datetime.now(UTC) - timedelta(hours=2)).isoformat(
         timespec="seconds"
     )
     leads_assign("TENANT_A", lead_a2, "owner1", overdue, actor_user_id="owner1")

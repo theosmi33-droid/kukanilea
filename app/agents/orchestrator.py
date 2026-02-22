@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from flask import current_app, has_app_context
 
@@ -10,7 +10,7 @@ from app.auth import current_tenant, current_user
 from . import llm_ollama, prompts, retrieval_fts, tools
 
 
-def _facts_only_text(facts: List[Dict[str, Any]]) -> str:
+def _facts_only_text(facts: list[dict[str, Any]]) -> str:
     if not facts:
         return "Ich habe lokal keine passenden Fakten gefunden."
     lines = ["Ich habe lokal folgende Fakten gefunden:"]
@@ -22,13 +22,13 @@ def _facts_only_text(facts: List[Dict[str, Any]]) -> str:
 def _frozen_response(
     *,
     text: str,
-    facts: List[Dict[str, Any]],
-    action: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
+    facts: list[dict[str, Any]],
+    action: dict[str, Any] | None,
+) -> dict[str, Any]:
     return {"text": text, "facts": facts, "action": action}
 
 
-def _try_parse_action(raw: str) -> Optional[Dict[str, Any]]:
+def _try_parse_action(raw: str) -> dict[str, Any] | None:
     s = (raw or "").strip()
     if not s:
         return None
@@ -55,7 +55,7 @@ def _try_parse_action(raw: str) -> Optional[Dict[str, Any]]:
     return {"action": action_name, "args": args}
 
 
-def answer(user_msg: str) -> Dict[str, Any]:
+def answer(user_msg: str) -> dict[str, Any]:
     try:
         msg = (user_msg or "").strip()
         if not msg:

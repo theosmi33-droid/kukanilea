@@ -9,11 +9,12 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from flask import current_app, has_app_context
 
@@ -68,7 +69,7 @@ def _read_row(sql: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _now_iso() -> str:

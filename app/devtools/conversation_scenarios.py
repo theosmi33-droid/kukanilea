@@ -5,8 +5,9 @@ import contextlib
 import json
 import os
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import kukanilea_core_v3_fixed as legacy_core
 from app.config import Config
@@ -40,8 +41,8 @@ def _sandbox_db() -> Iterator[Path]:
     os.environ["KUKANILEA_CORE_DB"] = str(sandbox_db)
     os.environ["DB_FILENAME"] = str(sandbox_db)
     os.environ["TOPHANDWERK_DB_FILENAME"] = str(sandbox_db)
-    setattr(cfg, "CORE_DB", sandbox_db)
-    setattr(Config, "CORE_DB", sandbox_db)
+    cfg.CORE_DB = sandbox_db
+    Config.CORE_DB = sandbox_db
     try:
         legacy_core.set_db_path(sandbox_db)
     except Exception:
@@ -55,10 +56,10 @@ def _sandbox_db() -> Iterator[Path]:
         except Exception:
             legacy_core.DB_PATH = old_core_path
         if old_cfg_core is not None:
-            setattr(cfg, "CORE_DB", old_cfg_core)
-            setattr(Config, "CORE_DB", old_cfg_core)
+            cfg.CORE_DB = old_cfg_core
+            Config.CORE_DB = old_cfg_core
         if old_cfg_auth is not None:
-            setattr(cfg, "AUTH_DB", old_cfg_auth)
+            cfg.AUTH_DB = old_cfg_auth
         if old_env_core is None:
             os.environ.pop("KUKANILEA_CORE_DB", None)
         else:

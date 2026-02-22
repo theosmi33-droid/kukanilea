@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from flask import Blueprint, current_app, jsonify
 
@@ -50,7 +50,7 @@ def health():
 
 @bp.get("/health/live")
 def health_live():
-    return jsonify(ok=True, ts=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    return jsonify(ok=True, ts=datetime.now(UTC).isoformat(timespec="seconds"))
 
 
 @bp.get("/health/ready")

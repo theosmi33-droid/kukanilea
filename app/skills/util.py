@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 _ALLOWED_SKILL = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -24,7 +24,7 @@ def sha256_bytes(b: bytes) -> str:
 
 
 def utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def ensure_dir(path: Path) -> Path:

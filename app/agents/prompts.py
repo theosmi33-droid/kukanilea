@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 SYSTEM_PROMPT = (
     "Du bist ein lokaler KUKANILEA-Assistent. "
@@ -11,7 +11,7 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_prompt(user_msg: str, facts: List[Dict[str, Any]]) -> str:
+def build_prompt(user_msg: str, facts: list[dict[str, Any]]) -> str:
     lines = [SYSTEM_PROMPT, "", f"USER: {user_msg}", "", "FACTS:"]
     if not facts:
         lines.append("- (keine Fakten gefunden)")

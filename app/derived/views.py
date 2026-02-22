@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from flask import current_app, has_app_context
 
@@ -56,7 +56,7 @@ def ensure_derived_schema() -> None:
         con.close()
 
 
-def _payload(row: sqlite3.Row) -> Dict[str, Any]:
+def _payload(row: sqlite3.Row) -> dict[str, Any]:
     try:
         obj = json.loads(str(row["payload_json"] or "{}"))
         return obj if isinstance(obj, dict) else {}
@@ -78,7 +78,7 @@ def rebuild_active_timers() -> int:
             ORDER BY id ASC
             """
         ).fetchall()
-        active: Dict[int, Dict[str, Any]] = {}
+        active: dict[int, dict[str, Any]] = {}
         for row in rows:
             evt = str(row["event_type"] or "")
             payload = _payload(row)
@@ -185,7 +185,7 @@ def rebuild_budget_progress() -> int:
         con.close()
 
 
-def rebuild_all() -> Dict[str, int]:
+def rebuild_all() -> dict[str, int]:
     active = rebuild_active_timers()
     budgets = rebuild_budget_progress()
     return {"active_timers": active, "budget_rows": budgets}

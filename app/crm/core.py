@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Any, Dict, List
+from typing import Any
 
 _core = import_module("kukanilea_core_v3_fixed")
 
@@ -20,7 +20,7 @@ quotes_add_item = _core.quotes_add_item
 emails_import_eml = _core.emails_import_eml
 
 
-def deals_suggest_next_actions(tenant_id: str, deal_id: str) -> List[Dict[str, Any]]:
+def deals_suggest_next_actions(tenant_id: str, deal_id: str) -> list[dict[str, Any]]:
     """Default deterministic suggestions without AI dependency."""
     deal = _core.deals_list(tenant_id=tenant_id)
     current = next((d for d in deal if str(d.get("id")) == str(deal_id)), None)

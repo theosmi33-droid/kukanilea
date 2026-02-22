@@ -5,7 +5,7 @@ import imaplib
 import os
 import ssl
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email import message_from_bytes, policy
 from typing import Any
 
@@ -14,7 +14,7 @@ from . import postfach_store as store
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _extract_body_text(msg) -> tuple[str, bool]:

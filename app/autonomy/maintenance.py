@@ -5,7 +5,7 @@ import json
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +29,7 @@ def _tenant(tenant_id: str | None) -> str:
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _now_iso() -> str:
@@ -305,7 +305,7 @@ def _rotate_backups(target_dir: Path, keep_days: int) -> list[str]:
     removed: list[str] = []
     for fp in sorted(target_dir.glob("*.sqlite")):
         try:
-            mtime = datetime.fromtimestamp(fp.stat().st_mtime, tz=timezone.utc)
+            mtime = datetime.fromtimestamp(fp.stat().st_mtime, tz=UTC)
         except Exception:
             continue
         if mtime < cutoff:
@@ -436,7 +436,7 @@ def rotate_logs(
     errors = 0
     for gz in sorted(log_dir.glob("*.gz")):
         try:
-            mtime = datetime.fromtimestamp(gz.stat().st_mtime, tz=timezone.utc)
+            mtime = datetime.fromtimestamp(gz.stat().st_mtime, tz=UTC)
         except Exception:
             errors += 1
             continue
@@ -450,7 +450,7 @@ def rotate_logs(
 
     for fp in sorted(log_dir.glob("*.log")):
         try:
-            mtime = datetime.fromtimestamp(fp.stat().st_mtime, tz=timezone.utc)
+            mtime = datetime.fromtimestamp(fp.stat().st_mtime, tz=UTC)
         except Exception:
             errors += 1
             continue
@@ -619,7 +619,7 @@ def run_smoke_test(
         try:
             dt = datetime.fromisoformat(str(latest_scan["started_at"]))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             recent = (_now_utc() - dt) <= timedelta(days=7)
         except Exception:
             recent = False

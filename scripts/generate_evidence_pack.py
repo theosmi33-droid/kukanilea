@@ -5,10 +5,10 @@ Automatisiert die Erstellung des 'Release Evidence Pack' für den Release Captai
 Zuständig für: Unit-Tests, E2E, Perf, SBOM und Verifizierung.
 """
 
+import datetime
+import json
 import os
 import subprocess
-import json
-import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent

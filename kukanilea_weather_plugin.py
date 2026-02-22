@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 kukanilea_weather_plugin.py
 Minimal "tool" for the local chat: answers simple Berlin weather questions.

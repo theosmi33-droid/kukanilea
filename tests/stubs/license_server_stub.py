@@ -5,7 +5,6 @@ import json
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Optional
 
 
 @dataclass
@@ -67,11 +66,11 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 class LicenseServerStub:
-    def __init__(self, cfg: Optional[StubConfig] = None) -> None:
+    def __init__(self, cfg: StubConfig | None = None) -> None:
         self.cfg = cfg or StubConfig()
-        self.httpd: Optional[ThreadingHTTPServer] = None
-        self.thread: Optional[threading.Thread] = None
-        self.base_url: Optional[str] = None
+        self.httpd: ThreadingHTTPServer | None = None
+        self.thread: threading.Thread | None = None
+        self.base_url: str | None = None
 
     def start(self) -> str:
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)

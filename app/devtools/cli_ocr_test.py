@@ -5,7 +5,7 @@ import json
 import os
 import re
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -116,7 +116,7 @@ def _write_proof_bundle(
 
 
 def _default_bundle_dir(tenant: str) -> Path:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     safe_tenant = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(tenant or "default"))[:64]
     return Path("docs/devtools/support_bundles") / f"{stamp}-{safe_tenant}"
 

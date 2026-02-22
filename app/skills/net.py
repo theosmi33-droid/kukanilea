@@ -5,7 +5,6 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Optional
 
 
 class HttpError(RuntimeError):
@@ -14,7 +13,7 @@ class HttpError(RuntimeError):
         self.status_code = status_code
 
 
-def _requests_module() -> Optional[object]:
+def _requests_module() -> object | None:
     try:
         import requests  # type: ignore
 
@@ -28,7 +27,7 @@ def _mock_response(url: str) -> tuple[int, bytes] | None:
     if not fixture:
         return None
     try:
-        payload = json.loads(open(fixture, "r", encoding="utf-8").read())
+        payload = json.loads(open(fixture, encoding="utf-8").read())
         item = payload.get(url)
         if item is None:
             return 404, b""

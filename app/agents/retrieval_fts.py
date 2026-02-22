@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 
 from flask import current_app, has_app_context
 
@@ -70,7 +71,7 @@ def _get_meta(conn: sqlite3.Connection, key: str, default: str = "") -> str:
     return str(row["value"]) if row else default
 
 
-def ensure_schema(index_db_path: Optional[Path] = None) -> None:
+def ensure_schema(index_db_path: Path | None = None) -> None:
     path = index_db_path or get_index_db_path()
     con = _connect(path)
     try:
@@ -129,7 +130,7 @@ def _rowv(row: sqlite3.Row, key: str, default: Any = "") -> Any:
     return row[key] if key in row.keys() else default
 
 
-def _build_task_fact(row: sqlite3.Row) -> Tuple[str, Dict[str, Any]]:
+def _build_task_fact(row: sqlite3.Row) -> tuple[str, dict[str, Any]]:
     text = (
         f"Task #{row['id']} {row['title']} | status={_rowv(row, 'status', '')} | "
         f"severity={_rowv(row, 'severity', '')} | details={_rowv(row, 'details', '')}"
@@ -137,12 +138,12 @@ def _build_task_fact(row: sqlite3.Row) -> Tuple[str, Dict[str, Any]]:
     return text, {"kind": "task", "pk": int(row["id"])}
 
 
-def _build_time_project_fact(row: sqlite3.Row) -> Tuple[str, Dict[str, Any]]:
+def _build_time_project_fact(row: sqlite3.Row) -> tuple[str, dict[str, Any]]:
     text = f"Projekt #{row['id']} {_rowv(row, 'name', '')} | status={_rowv(row, 'status', '')}"
     return text, {"kind": "time_project", "pk": int(row["id"])}
 
 
-def _build_time_entry_fact(row: sqlite3.Row) -> Tuple[str, Dict[str, Any]]:
+def _build_time_entry_fact(row: sqlite3.Row) -> tuple[str, dict[str, Any]]:
     text = (
         f"Zeit #{row['id']} user={_rowv(row, 'user', '')} | start={_rowv(row, 'start_at', '')} | "
         f"dauer={_rowv(row, 'duration_seconds', 0)}s | note={_rowv(row, 'note', '')}"
@@ -150,7 +151,7 @@ def _build_time_entry_fact(row: sqlite3.Row) -> Tuple[str, Dict[str, Any]]:
     return text, {"kind": "time_entry", "pk": int(row["id"])}
 
 
-def _build_user_fact(row: sqlite3.Row) -> Tuple[str, Dict[str, Any]]:
+def _build_user_fact(row: sqlite3.Row) -> tuple[str, dict[str, Any]]:
     text = f"User {_rowv(row, 'username', '')}"
     return text, {"kind": "user", "pk": int(_rowv(row, "id", 0) or 0)}
 
@@ -161,9 +162,9 @@ def _upsert_fact(
     kind: str,
     pk: int,
     content: str,
-    meta: Dict[str, Any],
+    meta: dict[str, Any],
 ) -> None:
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(UTC).isoformat(timespec="seconds")
     conn.execute(
         """
         INSERT OR REPLACE INTO facts_meta(kind, pk, content, meta_json, updated_at)
@@ -187,7 +188,7 @@ def _delete_fact(conn: sqlite3.Connection, *, kind: str, pk: int) -> None:
 
 def _fetch_row_for_kind(
     kind: str, pk: int
-) -> Optional[Tuple[str, Dict[str, Any], str, int]]:
+) -> tuple[str, dict[str, Any], str, int] | None:
     core_path = _get_core_db_path()
     auth_path = _get_auth_db_path()
 
@@ -230,7 +231,7 @@ def _fetch_row_for_kind(
     return None
 
 
-def _iter_all_source_facts() -> Iterable[Tuple[str, int, str, Dict[str, Any]]]:
+def _iter_all_source_facts() -> Iterable[tuple[str, int, str, dict[str, Any]]]:
     core_path = _get_core_db_path()
     auth_path = _get_auth_db_path()
 
@@ -353,11 +354,11 @@ def process_queue(limit: int = 200) -> int:
         con.close()
 
 
-def _tokenize(query: str) -> List[str]:
+def _tokenize(query: str) -> list[str]:
     return [t.strip().lower() for t in query.split() if len(t.strip()) >= 2]
 
 
-def search(query: str, limit: int = 6) -> List[Dict[str, Any]]:
+def search(query: str, limit: int = 6) -> list[dict[str, Any]]:
     q = (query or "").strip()
     if not q:
         return []
@@ -366,7 +367,7 @@ def search(query: str, limit: int = 6) -> List[Dict[str, Any]]:
     con = _connect(get_index_db_path())
     try:
         _bootstrap_if_needed(con)
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         if _fts_enabled(con):
             terms = _tokenize(q)
             match_expr = " OR ".join(t.replace('"', "") for t in terms) or q
@@ -419,7 +420,7 @@ def search(query: str, limit: int = 6) -> List[Dict[str, Any]]:
 
 
 def upsert_external_fact(
-    kind: str, pk: int, content: str, meta: Dict[str, Any]
+    kind: str, pk: int, content: str, meta: dict[str, Any]
 ) -> None:
     """Upsert an external fact (e.g. archived document) into retrieval index."""
     if not kind or int(pk) <= 0:

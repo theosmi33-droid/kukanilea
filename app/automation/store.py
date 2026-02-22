@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import kukanilea_core_v3_fixed as core
 from app.event_id_map import entity_id_int
@@ -39,7 +40,7 @@ PENDING_STATUS_ALLOWLIST = {"pending", "confirmed", "failed", "executing"}
 
 def _now_rfc3339() -> str:
     return (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         .replace(microsecond=0)
         .isoformat()
         .replace("+00:00", "Z")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 CRON_FIELD_COUNT = 5
 CRON_MAX_EXPRESSION_LENGTH = 120
@@ -46,9 +46,9 @@ def cron_match(expression: str, dt: datetime) -> bool:
     minute, hour, day, month, weekday = parse_cron_expression(expression)
     current = dt.replace(second=0, microsecond=0)
     if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
+        current = current.replace(tzinfo=UTC)
     else:
-        current = current.astimezone(timezone.utc)
+        current = current.astimezone(UTC)
     current_weekday = (current.weekday() + 1) % 7
     return (
         (minute is None or minute == current.minute)
@@ -62,7 +62,7 @@ def cron_match(expression: str, dt: datetime) -> bool:
 def cron_minute_ref(dt: datetime) -> str:
     current = dt.replace(second=0, microsecond=0)
     if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
+        current = current.replace(tzinfo=UTC)
     else:
-        current = current.astimezone(timezone.utc)
+        current = current.astimezone(UTC)
     return current.strftime("%Y%m%d%H%M")

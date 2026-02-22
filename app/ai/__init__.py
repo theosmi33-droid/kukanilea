@@ -37,7 +37,7 @@ def ensure_ai_dependencies() -> None:
     )
 
 
-def init_ai(app: Optional[Flask] = None) -> None:
+def init_ai(app: Flask | None = None) -> None:
     """Initialize local AI services (knowledge base + optional scheduler).
 
     Heavy optional AI dependencies are only touched when KUKA_AI_ENABLE is truthy.

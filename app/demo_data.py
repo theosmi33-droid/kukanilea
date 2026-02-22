@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -112,7 +112,7 @@ DEMO_RULE_NAME = "DEMO: Dokument -> Aufgabe Rechnung pruefen"
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def _tenant_id_from_name(tenant_name: str) -> str:

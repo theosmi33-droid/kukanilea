@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def _safe_date(value: str | None) -> date | None:

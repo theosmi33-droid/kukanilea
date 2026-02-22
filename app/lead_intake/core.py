@@ -4,7 +4,7 @@ import json
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from flask import current_app, has_app_context
@@ -52,7 +52,7 @@ def _tenant(tenant_id: str) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _new_id() -> str:
@@ -134,7 +134,7 @@ def _parse_response_due(value: str | None) -> str | None:
     except Exception:
         raise ValueError("validation_error")
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat(timespec="seconds")
 
 
@@ -146,8 +146,8 @@ def _parse_iso(value: str | None) -> datetime | None:
     except Exception:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _clamp_claim_ttl(ttl_seconds: int | None) -> int:
@@ -338,7 +338,7 @@ def _lead_require_claim_or_free_tx(
     actor_user_id: str | None,
 ) -> None:
     now_iso = _now_iso()
-    now_dt = _parse_iso(now_iso) or datetime.now(timezone.utc)
+    now_dt = _parse_iso(now_iso) or datetime.now(UTC)
     row_any = _claim_row(con, tenant_id, lead_id)
     if not row_any:
         return
@@ -572,7 +572,7 @@ def lead_claim_get(tenant_id: str, lead_id: str) -> dict[str, Any] | None:
             row = _claim_row(con, t, lead_id)
             if not row:
                 return None
-            now_dt = _parse_iso(_now_iso()) or datetime.now(timezone.utc)
+            now_dt = _parse_iso(_now_iso()) or datetime.now(UTC)
             return _claim_details(dict(row), now_dt)
         finally:
             con.close()
@@ -589,7 +589,7 @@ def lead_claims_for_leads(
     with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
         con = legacy_core._db()  # type: ignore[attr-defined]
         try:
-            now_dt = _parse_iso(_now_iso()) or datetime.now(timezone.utc)
+            now_dt = _parse_iso(_now_iso()) or datetime.now(UTC)
             out: dict[str, dict[str, Any] | None] = {}
             for lead_id in uniq_ids:
                 row = _claim_row(con, t, lead_id)
@@ -617,7 +617,7 @@ def lead_claim(
         if not _lead_exists(con, t, lead_id):
             raise ValueError("not_found")
         now_iso = _now_iso()
-        now_dt = _parse_iso(now_iso) or datetime.now(timezone.utc)
+        now_dt = _parse_iso(now_iso) or datetime.now(UTC)
 
         existing_any = _claim_row(con, t, lead_id)
         if existing_any:
@@ -669,7 +669,7 @@ def lead_claim(
 
         claim_until = (
             (now_dt + timedelta(seconds=ttl))
-            .astimezone(timezone.utc)
+            .astimezone(UTC)
             .isoformat(timespec="seconds")
         )
         existing_final = _claim_row(con, t, lead_id)
@@ -1868,7 +1868,7 @@ def appointment_request_to_ics(tenant_id: str, req_id: str) -> tuple[str, str]:
         raise ValueError("not_found")
 
     lead = leads_get(tenant_id, str(item.get("lead_id") or "")) or {}
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dtstamp = now.strftime("%Y%m%dT%H%M%SZ")
     requested = item.get("requested_date")
     dtstart_line = ""
@@ -1876,8 +1876,8 @@ def appointment_request_to_ics(tenant_id: str, req_id: str) -> tuple[str, str]:
         try:
             dt = datetime.fromisoformat(str(requested))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            dtstart_line = f"DTSTART:{dt.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}\\r\\n"
+                dt = dt.replace(tzinfo=UTC)
+            dtstart_line = f"DTSTART:{dt.astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')}\\r\\n"
         except Exception:
             pass
     if not dtstart_line:

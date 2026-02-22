@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any
 
@@ -54,7 +54,7 @@ def _run_write_txn(fn):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _new_id() -> str:
@@ -155,13 +155,13 @@ def _parse_ics_dt(value: str | None) -> str | None:
         return None
     try:
         if DATE_ONLY_RE.match(raw):
-            dt = datetime.strptime(raw, "%Y%m%d").replace(tzinfo=timezone.utc)
+            dt = datetime.strptime(raw, "%Y%m%d").replace(tzinfo=UTC)
             return dt.isoformat(timespec="seconds")
         if DATE_TIME_Z_RE.match(raw):
-            dt = datetime.strptime(raw, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+            dt = datetime.strptime(raw, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
             return dt.isoformat(timespec="seconds")
         if DATE_TIME_RE.match(raw):
-            dt = datetime.strptime(raw, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
+            dt = datetime.strptime(raw, "%Y%m%dT%H%M%S").replace(tzinfo=UTC)
             return dt.isoformat(timespec="seconds")
     except Exception:
         return None

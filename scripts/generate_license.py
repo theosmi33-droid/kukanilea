@@ -20,7 +20,7 @@ def canonical_payload_bytes(payload: dict) -> bytes:
 
 
 def device_fingerprint() -> str:
-    raw = f"{uuid.getnode()}::{socket.gethostname()}".encode("utf-8")
+    raw = f"{uuid.getnode()}::{socket.gethostname()}".encode()
     import hashlib
 
     return hashlib.sha256(raw).hexdigest()

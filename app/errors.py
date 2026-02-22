@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from flask import g, jsonify, render_template_string, request
 
@@ -98,9 +98,9 @@ def _html_error_response(code: str, message: str, *, status: int):
 
 
 def error_envelope(
-    code: str, message: str, *, details: Dict[str, Any] | None = None
-) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
+    code: str, message: str, *, details: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "ok": False,
         "error": {
             "code": code,
@@ -116,13 +116,13 @@ def error_envelope(
 
 
 def error_payload(
-    code: str, message: str, *, details: Dict[str, Any] | None = None
-) -> Dict[str, Any]:
+    code: str, message: str, *, details: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return error_envelope(code, message, details=details)["error"]
 
 
 def json_error(
-    code: str, message: str, *, status: int = 400, details: Dict[str, Any] | None = None
+    code: str, message: str, *, status: int = 400, details: dict[str, Any] | None = None
 ):
     if not wants_json_error():
         return _html_error_response(code, message, status=status)

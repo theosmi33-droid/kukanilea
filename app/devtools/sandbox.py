@@ -22,7 +22,7 @@ def _resolve_config_object():
 
 def resolve_core_db_path() -> Path:
     cfg = _resolve_config_object()
-    return Path(str(getattr(cfg, "CORE_DB")))
+    return Path(str(cfg.CORE_DB))
 
 
 def _copy_db_with_sidecars(src: Path, dst: Path) -> None:

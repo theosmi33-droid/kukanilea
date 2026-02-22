@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email import policy
 from email.parser import BytesParser
 from email.utils import parsedate_to_datetime
@@ -18,7 +18,7 @@ WS_RE = re.compile(r"\s+")
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _to_utc_iso(raw_value: str) -> str:
@@ -30,8 +30,8 @@ def _to_utc_iso(raw_value: str) -> str:
         if parsed is None:
             return _now_iso()
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC).isoformat(timespec="seconds")
     except Exception:
         return _now_iso()
 

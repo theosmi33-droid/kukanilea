@@ -4,7 +4,7 @@ import base64
 import hashlib
 import json
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib import parse, request
 
@@ -12,11 +12,11 @@ ProviderConfig = dict[str, Any]
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+    return dt.astimezone(UTC).isoformat(timespec="seconds")
 
 
 def _scopes_google() -> list[str]:

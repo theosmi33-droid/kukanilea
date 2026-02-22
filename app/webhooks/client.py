@@ -6,8 +6,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from http import HTTPStatus
-from typing import Any, Mapping
+from typing import Any
 
 from app.config import Config
 

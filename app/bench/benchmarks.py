@@ -5,8 +5,8 @@ import sqlite3
 import statistics
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from app.bench.core import recompute_task_duration_benchmarks
 from app.eventlog.core import event_append, event_verify_chain

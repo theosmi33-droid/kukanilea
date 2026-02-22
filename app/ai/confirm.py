@@ -6,7 +6,7 @@ import hmac
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -37,11 +37,11 @@ def _secret() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    return dt.astimezone(UTC).replace(microsecond=0).isoformat()
 
 
 def _b64url(data: bytes) -> str:
@@ -160,8 +160,8 @@ def verify_confirmation(
     exp_token = exp_iso[:-1] + "+00:00" if exp_iso.endswith("Z") else exp_iso
     expires_at = datetime.fromisoformat(exp_token)
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if _now() > expires_at.astimezone(timezone.utc):
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if _now() > expires_at.astimezone(UTC):
         raise ValueError("token_expired")
 
     nonce = str(payload.get("nonce") or "").strip()

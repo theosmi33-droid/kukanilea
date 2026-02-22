@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Ed25519 public key used to validate offline license signatures.
 # Matching private key is kept internal and only used by scripts/generate_license.py.
@@ -36,7 +36,7 @@ class LicenseState:
     validated_online: bool = False
     last_validated: str = ""
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "plan": self.plan,
             "trial": self.trial,
@@ -52,16 +52,16 @@ class LicenseState:
         }
 
 
-def _canonical_payload_bytes(payload: Dict[str, Any]) -> bytes:
+def _canonical_payload_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
 def device_fingerprint() -> str:
-    raw = f"{uuid.getnode()}::{socket.gethostname()}".encode("utf-8")
+    raw = f"{uuid.getnode()}::{socket.gethostname()}".encode()
     return hashlib.sha256(raw).hexdigest()
 
 
-def _load_json(path: Path) -> Dict[str, Any]:
+def _load_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, dict):
@@ -162,7 +162,7 @@ def _validate_license_online(
     }
 
 
-def load_license(license_path: Path) -> Dict[str, Any]:
+def load_license(license_path: Path) -> dict[str, Any]:
     if not license_path.exists():
         return {"valid": False, "reason": "missing"}
 
@@ -205,7 +205,7 @@ def load_license(license_path: Path) -> Dict[str, Any]:
         return {"valid": False, "reason": f"invalid:{exc.__class__.__name__}"}
 
 
-def _ensure_trial(trial_path: Path) -> Dict[str, Any]:
+def _ensure_trial(trial_path: Path) -> dict[str, Any]:
     trial_path.parent.mkdir(parents=True, exist_ok=True)
     if trial_path.exists():
         try:
@@ -230,7 +230,7 @@ def load_runtime_license_state(
     validate_timeout_seconds: int = 10,
     validate_interval_days: int = 30,
     grace_days: int = 30,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     info = load_license(license_path)
     if info.get("valid"):
         expired = bool(info.get("expired", False))

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 Severity = Literal["ok", "warn", "fail"]
 HealthMode = Literal["ci", "runtime"]
@@ -13,9 +13,9 @@ class CheckResult:
     name: str
     ok: bool
     severity: Severity
-    reason: Optional[str] = None
-    remediation: Optional[str] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    remediation: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
     duration_s: float = 0.0
 
 
@@ -24,4 +24,4 @@ class HealthReport:
     ts: datetime
     mode: HealthMode
     ok: bool
-    checks: List[CheckResult] = field(default_factory=list)
+    checks: list[CheckResult] = field(default_factory=list)

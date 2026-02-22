@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from flask import current_app, has_app_context
 
@@ -51,11 +51,11 @@ class OntologyRegistry:
         type_name: str,
         table_name: str,
         pk_field: str = "id",
-        title_field: Optional[str] = None,
-        description_field: Optional[str] = None,
+        title_field: str | None = None,
+        description_field: str | None = None,
     ) -> None:
         self.ensure_schema()
-        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        ts = datetime.now(UTC).isoformat(timespec="seconds")
         with self._lock:
             con = self._connect()
             try:
@@ -89,7 +89,7 @@ class OntologyRegistry:
         finally:
             con.close()
 
-    def _fetch_type(self, type_name: str) -> Optional[dict]:
+    def _fetch_type(self, type_name: str) -> dict | None:
         self.ensure_schema()
         con = self._connect()
         try:
@@ -101,7 +101,7 @@ class OntologyRegistry:
         finally:
             con.close()
 
-    def get_entity(self, type_name: str, entity_id: int) -> Dict[str, Any]:
+    def get_entity(self, type_name: str, entity_id: int) -> dict[str, Any]:
         cfg = self._fetch_type(type_name)
         if not cfg:
             raise ValueError("unknown_type")

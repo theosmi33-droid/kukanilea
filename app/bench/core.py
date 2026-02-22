@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +10,7 @@ from app.config import Config
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _connect_core_db() -> sqlite3.Connection:

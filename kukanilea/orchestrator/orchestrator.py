@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 from kukanilea.agents import (
     AgentContext,
@@ -29,10 +29,10 @@ from .tool_registry import ToolRegistry
 @dataclass
 class OrchestratorResult:
     text: str
-    actions: List[Dict[str, Any]]
+    actions: list[dict[str, Any]]
     intent: str
-    data: Dict[str, Any]
-    suggestions: List[str]
+    data: dict[str, Any]
+    suggestions: list[str]
     ok: bool = True
     error: str | None = None
 
@@ -145,9 +145,9 @@ class Orchestrator:
         )
 
     def _apply_policy(
-        self, context: AgentContext, agent, actions: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        filtered: List[Dict[str, Any]] = []
+        self, context: AgentContext, agent, actions: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        filtered: list[dict[str, Any]] = []
         agent_tool_set = set(agent.tools or [])
         allowlisted_agent_tools = agent_tool_set.intersection(self.allowed_tools)
         if agent_tool_set and not allowlisted_agent_tools:
@@ -200,7 +200,7 @@ class Orchestrator:
         return filtered
 
     def _record_failure(
-        self, context: AgentContext, action: str, target: str, meta: Dict[str, Any]
+        self, context: AgentContext, action: str, target: str, meta: dict[str, Any]
     ) -> None:
         if callable(self.audit_log):
             self.audit_log(

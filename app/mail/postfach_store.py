@@ -7,7 +7,7 @@ import os
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,7 @@ except Exception as exc:  # pragma: no cover
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _db(db_path: Path) -> sqlite3.Connection:
@@ -756,10 +756,10 @@ def oauth_token_expired(expires_at: str, *, skew_seconds: int = 60) -> bool:
     try:
         dt = datetime.fromisoformat(raw)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
     except Exception:
         return True
-    return datetime.now(timezone.utc).timestamp() >= (dt.timestamp() - skew_seconds)
+    return datetime.now(UTC).timestamp() >= (dt.timestamp() - skew_seconds)
 
 
 def clear_oauth_token(
@@ -914,7 +914,7 @@ def store_message(
         f"{from_redacted} {to_redacted}", max_len=260
     )
     content_hash = hashlib.sha256(
-        (f"{message_id_clean or ''}|{subject_redacted}|{body_redacted}").encode("utf-8")
+        (f"{message_id_clean or ''}|{subject_redacted}|{body_redacted}").encode()
     ).hexdigest()
 
     raw_eml_blob = None

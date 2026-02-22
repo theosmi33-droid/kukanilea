@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
-from typing import Callable, List
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from app.health.model import CheckResult, HealthMode, HealthReport
 
@@ -19,7 +19,7 @@ class HealthRunner:
         self.strict = strict
         self.eventlog_limit = eventlog_limit
         self.timeout_s = timeout_s
-        self.checks: List[Callable[["HealthRunner"], CheckResult]] = []
+        self.checks: list[Callable[[HealthRunner], CheckResult]] = []
 
     def run(self) -> HealthReport:
         results: list[CheckResult] = []
@@ -54,7 +54,7 @@ class HealthRunner:
                 overall_ok = False
 
         return HealthReport(
-            ts=datetime.now(timezone.utc),
+            ts=datetime.now(UTC),
             mode=self.mode,
             ok=overall_ok,
             checks=results,

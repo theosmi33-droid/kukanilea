@@ -11,8 +11,9 @@ import tempfile
 import time
 import uuid
 import zlib
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import kukanilea_core_v3_fixed as legacy_core
 from app.devtools.ocr_policy import (
@@ -138,7 +139,7 @@ def _lookup_source_file_id(
 
 def _resolve_config_db_paths() -> tuple[Path, Path]:
     cfg = _resolve_config_object()
-    return Path(str(getattr(cfg, "CORE_DB"))), Path(str(getattr(cfg, "AUTH_DB")))
+    return Path(str(cfg.CORE_DB)), Path(str(cfg.AUTH_DB))
 
 
 def _detect_read_only() -> bool:
@@ -147,8 +148,8 @@ def _detect_read_only() -> bool:
 
         cfg = _resolve_config_object()
         state = load_runtime_license_state(
-            license_path=Path(str(getattr(cfg, "LICENSE_PATH"))),
-            trial_path=Path(str(getattr(cfg, "TRIAL_PATH"))),
+            license_path=Path(str(cfg.LICENSE_PATH)),
+            trial_path=Path(str(cfg.TRIAL_PATH)),
             trial_days=int(getattr(cfg, "TRIAL_DAYS", 14)),
         )
         return bool(state.get("read_only", False))
@@ -228,8 +229,8 @@ def _sandbox_context(
     cfg = _resolve_config_object()
     old_cfg_core = getattr(cfg, "CORE_DB", None)
     old_cfg_auth = getattr(cfg, "AUTH_DB", None)
-    setattr(cfg, "CORE_DB", sandbox_core_db)
-    setattr(cfg, "AUTH_DB", sandbox_auth_db)
+    cfg.CORE_DB = sandbox_core_db
+    cfg.AUTH_DB = sandbox_auth_db
 
     old_core_db_path = Path(str(legacy_core.DB_PATH))
     try:
@@ -251,9 +252,9 @@ def _sandbox_context(
         except Exception:
             legacy_core.DB_PATH = old_core_db_path
         if old_cfg_core is not None:
-            setattr(cfg, "CORE_DB", old_cfg_core)
+            cfg.CORE_DB = old_cfg_core
         if old_cfg_auth is not None:
-            setattr(cfg, "AUTH_DB", old_cfg_auth)
+            cfg.AUTH_DB = old_cfg_auth
         _restore_env(previous_env)
         if not keep_artifacts:
             cleanup_sandbox(work_dir)
@@ -272,8 +273,8 @@ def _db_override_context(db_path: Path) -> Iterator[dict[str, Any]]:
     cfg = _resolve_config_object()
     old_cfg_core = getattr(cfg, "CORE_DB", None)
     old_cfg_auth = getattr(cfg, "AUTH_DB", None)
-    setattr(cfg, "CORE_DB", override_db)
-    setattr(cfg, "AUTH_DB", current_auth_db)
+    cfg.CORE_DB = override_db
+    cfg.AUTH_DB = current_auth_db
 
     old_core_db_path = Path(str(legacy_core.DB_PATH))
     try:
@@ -295,9 +296,9 @@ def _db_override_context(db_path: Path) -> Iterator[dict[str, Any]]:
         except Exception:
             legacy_core.DB_PATH = old_core_db_path
         if old_cfg_core is not None:
-            setattr(cfg, "CORE_DB", old_cfg_core)
+            cfg.CORE_DB = old_cfg_core
         if old_cfg_auth is not None:
-            setattr(cfg, "AUTH_DB", old_cfg_auth)
+            cfg.AUTH_DB = old_cfg_auth
         _restore_env(previous_env)
 
 
