@@ -1,28 +1,22 @@
-## Summary
-- 
+# Description
+[Explain the purpose of this PR]
 
-## Why
-- 
+## Type of Change
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Documentation update
+- [ ] Refactoring
+- [ ] Release / Infrastructure
 
-## Scope
-- 
+## Evidence Checklist (Required for Release Captain)
+*Run `python3 scripts/generate_evidence_pack.py` before merging release branches.*
+
+- [ ] **Security:** 0 High CVEs confirmed (SBOM provided)
+- [ ] **Quality:** Unit Tests & Linter pass
+- [ ] **Stability:** E2E / Endurance run successful (if applicable)
+- [ ] **Compliance:** CRA Reporting Ready (for security fixes)
+- [ ] **UX/a11y:** EN 301 549 Baseline verified (for UI changes)
 
 ## Verification
-- [ ] python -m compileall -q .
-- [ ] ruff check . --fix
-- [ ] ruff format .
-- [ ] pytest -q
-- [ ] python -m app.devtools.triage --ci --fail-on-warnings --ignore-warning-regex "(?i)(swig|deprecation|userwarning|resourcewarning|warning:)"
-
-## Security / Compliance
-- [ ] No PII in eventlog payloads
-- [ ] `secrets.compare_digest()` used for token/code/hash comparisons
-- [ ] `subprocess` uses `shell=False` + timeout
-- [ ] READ_ONLY guard enforced for mutating routes
-
-## Review Checklist
-- [ ] I completed `docs/PR_REVIEW_CHECKLIST.md`
-
-## Rollout / Rollback
-- Rollout:
-- Rollback:
+- [ ] I have added tests that prove my fix is effective or that my feature works
+- [ ] I have updated the documentation accordingly
