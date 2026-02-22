@@ -32,6 +32,16 @@ def init_db():
         );
     """)
 
+    # EPIC 6: Branchen-Templates (Vertical Kits)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vertical TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content_json TEXT NOT NULL
+        );
+    """)
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {DB_PATH} with FTS5.")
