@@ -59,3 +59,11 @@ triage_report.json
 # keep tracked release scripts under scripts/build
 !scripts/build/
 !scripts/build/*.sh
+
+# runtime/e2e artifacts (non-deterministic)
+output/
+artifacts/e2e/
+test-results/
+playwright-report/
+*.trace.zip
+*.webm
