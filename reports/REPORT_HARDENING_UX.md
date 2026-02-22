@@ -1,24 +1,21 @@
-# REPORT_HARDENING_UX: EN 301 549 / WCAG Mapping
+# REPORT_HARDENING_UX: Accessibility & EU Compliance Mapping
 
-Dieser Report dient als Compliance-Nachweis für die Barrierefreiheit (Accessibility) von Kukanilea gemäß der Richtlinie EN 301 549 (V3.2.1) und WCAG 2.1 (Level AA).
+This report maps KUKANILEA UX components to the **WCAG 2.2** and **EN 301 549** standards.
 
 ## 1. Compliance Mapping Table
 
-| Kriterium | Beschreibung | Status | Nachweis |
-|-----------|--------------|--------|----------|
-| **WCAG 1.1.1** | Nicht-Text-Inhalt (Alt-Texte) | PASS | Icons & Bilder mit ARIA-Labels versehen |
-| **WCAG 2.1.1** | Tastaturbedienung | PASS | Volle Tab-Navigation, Fokus-Indikatoren |
-| **WCAG 2.4.7** | Fokus sichtbar | PASS | Kontraststarke Fokus-Rahmen in der Shell |
-| **WCAG 3.3.1** | Fehlererkennung | PASS | Klare Fehlermeldungen in Formularen |
-| **WCAG 4.1.3** | Statusmeldungen | PASS | Screenreader-Ankündigung bei Datenänderung |
+| Requirement | Standard | Status | Evidence / Artifact |
+|-------------|----------|--------|---------------------|
+| **Target Size (Min 24x24px)** | WCAG 2.2 (2.5.8) | **PASS** | Dashboard Button CSS Verified |
+| **Keyboard Nav (Login/CRUD)** | EN 301 549 (9.2.1.1) | **PASS** | `tests/test_e2e_keyboard.py` |
+| **Error UX (No dead ends)** | EN 301 549 (9.3.3.1) | **PASS** | `templates/error_shell.html` active |
+| **Status Messages** | WCAG 2.2 (4.1.3) | **PENDING** | Needs ARIA-live audit |
+| **AI Transparency** | AI Act Art. 50 | **PASS** | UI Disclaimer component ready |
 
-## 2. Hardening Maßnahmen (UX)
+## 2. Accessibility Hardening Actions
+- [x] Global Error Shell with recovery actions (EPIC 1).
+- [x] Session Idle Timeout notification (EPIC 3).
+- [ ] Automated Target-Size check in Playwright (Phase 4).
 
-*   **Fokus-Sicherung:** Automatischer Fokus auf den ersten interaktiven Bereich bei Dialogen.
-*   **Fehler-UX:** Deterministische Fehlercodes und menschlich lesbare Abhilfe-Vorschläge.
-*   **Kontrast:** Kontrastverhältnis von mindestens 4,5:1 für alle UI-Elemente.
-
-## 3. Offene Punkte (a11y-lite)
-
-*   [ ] Screenreader-Optimierung für komplexe Kanban-Ansichten.
-*   [ ] Kontinuierliches Audit der Kontrastwerte bei dynamischen Themes.
+## 3. Evidence Log
+- **2026-02-22:** Session Hygiene and PII-safe logging verified via `tests/test_compliance.py`.
