@@ -12,6 +12,7 @@ dependencies = [
     "htmx-py",
     "pydantic",
     "sqlite3",
+    "python-multipart",
 ]
 
 [tool.ruff]

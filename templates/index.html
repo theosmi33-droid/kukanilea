@@ -34,6 +34,21 @@
                 <p class="text-gray-500 mb-4">Volltextsuche in Dokumenten.</p>
                 <a href="/knowledge" class="text-blue-600 font-medium hover:underline">Öffnen &rarr;</a>
             </div>
+
+            <div class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition border-2 border-blue-100">
+                <h2 class="text-xl font-semibold text-blue-800 mb-4 flex items-center">
+                    KI-Assistent 
+                    <span class="ml-2 px-2 py-1 bg-blue-100 text-blue-600 text-[10px] rounded uppercase font-bold">Local</span>
+                </h2>
+                <p class="text-gray-500 mb-4">Projekt-Automatisierung via Sprache.</p>
+                <button 
+                    hx-get="/ai-chat/" 
+                    hx-target="#main-content" 
+                    hx-push-url="true"
+                    class="text-blue-600 font-medium hover:underline">
+                    Chat starten &rarr;
+                </button>
+            </div>
         </div>
     </main>
 </body>
