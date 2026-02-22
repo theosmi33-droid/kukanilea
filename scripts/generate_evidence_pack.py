@@ -15,10 +15,11 @@ PROJECT_ROOT = Path(__file__).parent.parent
 EVIDENCE_DIR = PROJECT_ROOT / "dist" / "evidence"
 DATE_STR = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-def run_step(name, command, cwd=PROJECT_ROOT):
+def run_step(name, command_args, cwd=PROJECT_ROOT):
     print(f"--- Running Step: {name} ---")
     try:
-        result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True, cwd=cwd)
+        # Use shell=False (list based) to fix B602 High issue
+        result = subprocess.run(command_args, check=True, capture_output=True, text=True, cwd=cwd)
         print(f"SUCCESS: {name}")
         return True, result.stdout
     except subprocess.CalledProcessError as e:
@@ -33,12 +34,12 @@ def main():
     }
 
     # 1. Unit & Integration Tests
-    success, output = run_step("Unit Tests", "pytest tests/ --junitxml=dist/evidence/unit_results.xml")
+    success, output = run_step("Unit Tests", ["pytest", "tests/", "--junitxml=dist/evidence/unit_results.xml"])
     summary["steps"]["unit_tests"] = "PASS" if success else "FAIL"
 
     # 2. SBOM Generation (CycloneDX)
     # Nutzt das vorhandene generate_sbom.py (falls vorhanden)
-    success, output = run_step("SBOM Generation", "python3 scripts/generate_sbom.py --format cyclonedx --output dist/evidence/sbom.cdx.json")
+    success, output = run_step("SBOM Generation", ["python3", "scripts/generate_sbom.py", "--format", "cyclonedx", "--output", "dist/evidence/sbom.cdx.json"])
     summary["steps"]["sbom"] = "PASS" if success else "FAIL"
 
     # 3. Perf/Endurance Check (60 min nightly runner stub)

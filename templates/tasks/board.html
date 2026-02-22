@@ -1,0 +1,32 @@
+<div class="bg-gray-100 p-6 rounded-lg shadow-inner">
+    <h2 class="text-2xl font-bold mb-6 text-gray-800">Aufgaben ({{ tenant_id }})</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Todo -->
+        <div class="bg-gray-200 p-4 rounded-lg">
+            <h3 class="font-bold mb-4 uppercase text-xs text-gray-500 tracking-widest">Zu erledigen</h3>
+            {% for task in tasks if task.status == 'todo' %}
+            <div class="bg-white p-4 rounded shadow mb-3 border-l-4 border-red-500">
+                <p class="text-sm font-medium">{{ task.title }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        <!-- In Progress -->
+        <div class="bg-gray-200 p-4 rounded-lg">
+            <h3 class="font-bold mb-4 uppercase text-xs text-gray-500 tracking-widest">In Arbeit</h3>
+            {% for task in tasks if task.status == 'inprogress' %}
+            <div class="bg-white p-4 rounded shadow mb-3 border-l-4 border-yellow-500">
+                <p class="text-sm font-medium">{{ task.title }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        <!-- Done -->
+        <div class="bg-gray-200 p-4 rounded-lg">
+            <h3 class="font-bold mb-4 uppercase text-xs text-gray-500 tracking-widest">Erledigt</h3>
+            {% for task in tasks if task.status == 'done' %}
+            <div class="bg-white p-4 rounded shadow mb-3 border-l-4 border-green-500">
+                <p class="text-sm font-medium line-through text-gray-400">{{ task.title }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
