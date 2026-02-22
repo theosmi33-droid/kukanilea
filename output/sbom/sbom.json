@@ -1,0 +1,651 @@
+{
+  "schema": "kukanilea.sbom.v1",
+  "generated_at": "2026-02-21T22:44:47.437378+00:00",
+  "generator": "scripts/generate_sbom.py",
+  "python": "3.12.0 (main, Jan 21 2026, 12:49:07) [Clang 17.0.0 (clang-1700.6.3.2)]",
+  "package_count": 159,
+  "packages": [
+    {
+      "name": "altgraph",
+      "version": "0.17.5"
+    },
+    {
+      "name": "annotated-doc",
+      "version": "0.0.4"
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.7.0"
+    },
+    {
+      "name": "anyio",
+      "version": "4.12.1"
+    },
+    {
+      "name": "APScheduler",
+      "version": "3.11.2"
+    },
+    {
+      "name": "attrs",
+      "version": "25.4.0"
+    },
+    {
+      "name": "backoff",
+      "version": "2.2.1"
+    },
+    {
+      "name": "bcrypt",
+      "version": "5.0.0"
+    },
+    {
+      "name": "black",
+      "version": "24.10.0"
+    },
+    {
+      "name": "blinker",
+      "version": "1.9.0"
+    },
+    {
+      "name": "boolean.py",
+      "version": "5.0"
+    },
+    {
+      "name": "bottle",
+      "version": "0.13.4"
+    },
+    {
+      "name": "build",
+      "version": "1.4.0"
+    },
+    {
+      "name": "CacheControl",
+      "version": "0.14.4"
+    },
+    {
+      "name": "certifi",
+      "version": "2026.1.4"
+    },
+    {
+      "name": "cffi",
+      "version": "2.0.0"
+    },
+    {
+      "name": "cfgv",
+      "version": "3.5.0"
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.4.4"
+    },
+    {
+      "name": "chromadb",
+      "version": "1.5.0"
+    },
+    {
+      "name": "click",
+      "version": "8.3.1"
+    },
+    {
+      "name": "cryptography",
+      "version": "46.0.5"
+    },
+    {
+      "name": "cyclonedx-python-lib",
+      "version": "11.6.0"
+    },
+    {
+      "name": "defusedxml",
+      "version": "0.7.1"
+    },
+    {
+      "name": "distlib",
+      "version": "0.4.0"
+    },
+    {
+      "name": "distro",
+      "version": "1.9.0"
+    },
+    {
+      "name": "dmgbuild",
+      "version": "1.6.7"
+    },
+    {
+      "name": "ds_store",
+      "version": "1.3.2"
+    },
+    {
+      "name": "durationpy",
+      "version": "0.10"
+    },
+    {
+      "name": "filelock",
+      "version": "3.24.2"
+    },
+    {
+      "name": "Flask",
+      "version": "3.1.2"
+    },
+    {
+      "name": "flatbuffers",
+      "version": "25.12.19"
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.2.0"
+    },
+    {
+      "name": "googleapis-common-protos",
+      "version": "1.72.0"
+    },
+    {
+      "name": "greenlet",
+      "version": "3.3.1"
+    },
+    {
+      "name": "grpcio",
+      "version": "1.78.0"
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0"
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.2.0"
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9"
+    },
+    {
+      "name": "httptools",
+      "version": "0.7.1"
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1"
+    },
+    {
+      "name": "huggingface_hub",
+      "version": "1.4.1"
+    },
+    {
+      "name": "identify",
+      "version": "2.6.16"
+    },
+    {
+      "name": "idna",
+      "version": "3.11"
+    },
+    {
+      "name": "importlib_metadata",
+      "version": "8.7.1"
+    },
+    {
+      "name": "importlib_resources",
+      "version": "6.5.2"
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.3.0"
+    },
+    {
+      "name": "itsdangerous",
+      "version": "2.2.0"
+    },
+    {
+      "name": "Jinja2",
+      "version": "3.1.6"
+    },
+    {
+      "name": "joblib",
+      "version": "1.5.3"
+    },
+    {
+      "name": "jsonschema",
+      "version": "4.26.0"
+    },
+    {
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1"
+    },
+    {
+      "name": "kubernetes",
+      "version": "35.0.0"
+    },
+    {
+      "name": "license-expression",
+      "version": "30.4.4"
+    },
+    {
+      "name": "mac_alias",
+      "version": "2.2.3"
+    },
+    {
+      "name": "macholib",
+      "version": "1.16.4"
+    },
+    {
+      "name": "markdown-it-py",
+      "version": "4.0.0"
+    },
+    {
+      "name": "MarkupSafe",
+      "version": "3.0.3"
+    },
+    {
+      "name": "mdurl",
+      "version": "0.1.2"
+    },
+    {
+      "name": "mmh3",
+      "version": "5.2.0"
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0"
+    },
+    {
+      "name": "msgpack",
+      "version": "1.1.2"
+    },
+    {
+      "name": "mypy_extensions",
+      "version": "1.1.0"
+    },
+    {
+      "name": "networkx",
+      "version": "3.6.1"
+    },
+    {
+      "name": "nodeenv",
+      "version": "1.10.0"
+    },
+    {
+      "name": "numpy",
+      "version": "2.4.2"
+    },
+    {
+      "name": "oauthlib",
+      "version": "3.3.1"
+    },
+    {
+      "name": "ollama",
+      "version": "0.6.1"
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.24.1"
+    },
+    {
+      "name": "opentelemetry-api",
+      "version": "1.39.1"
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-proto-common",
+      "version": "1.39.1"
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-proto-grpc",
+      "version": "1.39.1"
+    },
+    {
+      "name": "opentelemetry-proto",
+      "version": "1.39.1"
+    },
+    {
+      "name": "opentelemetry-sdk",
+      "version": "1.39.1"
+    },
+    {
+      "name": "opentelemetry-semantic-conventions",
+      "version": "0.60b1"
+    },
+    {
+      "name": "orjson",
+      "version": "3.11.7"
+    },
+    {
+      "name": "overrides",
+      "version": "7.7.0"
+    },
+    {
+      "name": "packageurl-python",
+      "version": "0.17.6"
+    },
+    {
+      "name": "packaging",
+      "version": "26.0"
+    },
+    {
+      "name": "pathspec",
+      "version": "1.0.4"
+    },
+    {
+      "name": "pillow",
+      "version": "12.1.1"
+    },
+    {
+      "name": "pip-api",
+      "version": "0.0.34"
+    },
+    {
+      "name": "pip-requirements-parser",
+      "version": "32.0.1"
+    },
+    {
+      "name": "pip_audit",
+      "version": "2.10.0"
+    },
+    {
+      "name": "platformdirs",
+      "version": "4.9.2"
+    },
+    {
+      "name": "playwright",
+      "version": "1.58.0"
+    },
+    {
+      "name": "pluggy",
+      "version": "1.6.0"
+    },
+    {
+      "name": "posthog",
+      "version": "5.4.0"
+    },
+    {
+      "name": "pre-commit",
+      "version": "3.8.0"
+    },
+    {
+      "name": "protobuf",
+      "version": "6.33.5"
+    },
+    {
+      "name": "proxy_tools",
+      "version": "0.1.0"
+    },
+    {
+      "name": "py-serializable",
+      "version": "2.1.0"
+    },
+    {
+      "name": "pyarmor",
+      "version": "9.2.3"
+    },
+    {
+      "name": "pyarmor.cli.core",
+      "version": "8.1.0"
+    },
+    {
+      "name": "pybase64",
+      "version": "1.4.3"
+    },
+    {
+      "name": "pycparser",
+      "version": "3.0"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.12.5"
+    },
+    {
+      "name": "pydantic_core",
+      "version": "2.41.5"
+    },
+    {
+      "name": "pyee",
+      "version": "13.0.1"
+    },
+    {
+      "name": "Pygments",
+      "version": "2.19.2"
+    },
+    {
+      "name": "pyinstaller",
+      "version": "6.19.0"
+    },
+    {
+      "name": "pyinstaller-hooks-contrib",
+      "version": "2026.1"
+    },
+    {
+      "name": "pyobjc-core",
+      "version": "12.1"
+    },
+    {
+      "name": "pyobjc-framework-Cocoa",
+      "version": "12.1"
+    },
+    {
+      "name": "pyobjc-framework-Quartz",
+      "version": "12.1"
+    },
+    {
+      "name": "pyobjc-framework-Security",
+      "version": "12.1"
+    },
+    {
+      "name": "pyobjc-framework-UniformTypeIdentifiers",
+      "version": "12.1"
+    },
+    {
+      "name": "pyobjc-framework-WebKit",
+      "version": "12.1"
+    },
+    {
+      "name": "pyparsing",
+      "version": "3.3.2"
+    },
+    {
+      "name": "PyPika",
+      "version": "0.51.1"
+    },
+    {
+      "name": "pyproject_hooks",
+      "version": "1.2.0"
+    },
+    {
+      "name": "pytest",
+      "version": "8.4.2"
+    },
+    {
+      "name": "pytest-base-url",
+      "version": "2.1.0"
+    },
+    {
+      "name": "pytest-playwright",
+      "version": "0.5.2"
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0"
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.2.1"
+    },
+    {
+      "name": "python-slugify",
+      "version": "8.0.4"
+    },
+    {
+      "name": "pywebview",
+      "version": "6.1"
+    },
+    {
+      "name": "PyYAML",
+      "version": "6.0.3"
+    },
+    {
+      "name": "RapidFuzz",
+      "version": "3.14.3"
+    },
+    {
+      "name": "referencing",
+      "version": "0.37.0"
+    },
+    {
+      "name": "regex",
+      "version": "2026.1.15"
+    },
+    {
+      "name": "requests",
+      "version": "2.32.5"
+    },
+    {
+      "name": "requests-oauthlib",
+      "version": "2.0.0"
+    },
+    {
+      "name": "rich",
+      "version": "14.3.2"
+    },
+    {
+      "name": "rpds-py",
+      "version": "0.30.0"
+    },
+    {
+      "name": "ruff",
+      "version": "0.6.9"
+    },
+    {
+      "name": "safetensors",
+      "version": "0.7.0"
+    },
+    {
+      "name": "scikit-learn",
+      "version": "1.8.0"
+    },
+    {
+      "name": "scipy",
+      "version": "1.17.0"
+    },
+    {
+      "name": "sentence-transformers",
+      "version": "5.2.3"
+    },
+    {
+      "name": "setuptools",
+      "version": "82.0.0"
+    },
+    {
+      "name": "shellingham",
+      "version": "1.5.4"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0"
+    },
+    {
+      "name": "sortedcontainers",
+      "version": "2.4.0"
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0"
+    },
+    {
+      "name": "tenacity",
+      "version": "9.1.4"
+    },
+    {
+      "name": "text-unidecode",
+      "version": "1.3"
+    },
+    {
+      "name": "threadpoolctl",
+      "version": "3.6.0"
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.22.2"
+    },
+    {
+      "name": "tomli",
+      "version": "2.4.0"
+    },
+    {
+      "name": "tomli_w",
+      "version": "1.2.0"
+    },
+    {
+      "name": "torch",
+      "version": "2.10.0"
+    },
+    {
+      "name": "tqdm",
+      "version": "4.67.3"
+    },
+    {
+      "name": "transformers",
+      "version": "5.2.0"
+    },
+    {
+      "name": "typer",
+      "version": "0.24.0"
+    },
+    {
+      "name": "typer-slim",
+      "version": "0.24.0"
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.2"
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.15.0"
+    },
+    {
+      "name": "tzlocal",
+      "version": "5.3.1"
+    },
+    {
+      "name": "urllib3",
+      "version": "2.6.3"
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.41.0"
+    },
+    {
+      "name": "uvloop",
+      "version": "0.22.1"
+    },
+    {
+      "name": "virtualenv",
+      "version": "20.36.1"
+    },
+    {
+      "name": "waitress",
+      "version": "3.0.2"
+    },
+    {
+      "name": "watchfiles",
+      "version": "1.1.1"
+    },
+    {
+      "name": "websocket-client",
+      "version": "1.9.0"
+    },
+    {
+      "name": "websockets",
+      "version": "16.0"
+    },
+    {
+      "name": "Werkzeug",
+      "version": "3.1.5"
+    },
+    {
+      "name": "zipp",
+      "version": "3.23.0"
+    }
+  ],
+  "pip_audit": {
+    "status": "issues_found_or_error",
+    "returncode": 1,
+    "stdout": "{\"dependencies\": [{\"name\": \"altgraph\", \"version\": \"0.17.5\", \"vulns\": []}, {\"name\": \"annotated-doc\", \"version\": \"0.0.4\", \"vulns\": []}, {\"name\": \"annotated-types\", \"version\": \"0.7.0\", \"vulns\": []}, {\"name\": \"anyio\", \"version\": \"4.12.1\", \"vulns\": []}, {\"name\": \"apscheduler\", \"version\": \"3.11.2\", \"vulns\": []}, {\"name\": \"attrs\", \"version\": \"25.4.0\", \"vulns\": []}, {\"name\": \"backoff\", \"version\": \"2.2.1\", \"vulns\": []}, {\"name\": \"bcrypt\", \"version\": \"5.0.0\", \"vulns\": []}, {\"name\": \"black\", \"version\": \"24.10.0\", \"vulns\": []}, {\"name\": \"blinker\", \"version\": \"1.9.0\", \"vulns\": []}, {\"name\": \"boolean-py\", \"version\": \"5.0\", \"vulns\": []}, {\"name\": \"bottle\", \"version\": \"0.13.4\", \"vulns\": []}, {\"name\": \"build\", \"version\": \"1.4.0\", \"vulns\": []}, {\"name\": \"cachecontrol\", \"version\": \"0.14.4\", \"vulns\": []}, {\"name\": \"certifi\", \"version\": \"2026.1.4\", \"vulns\": []}, {\"name\": \"cffi\", \"version\": \"2.0.0\", \"vulns\": []}, {\"name\": \"cfgv\", \"version\": \"3.5.0\", \"vulns\": []}, {\"name\": \"charset-normalizer\", \"version\": \"3.4.4\", \"vulns\": []}, {\"name\": \"chromadb\", \"version\": \"1.5.0\", \"vulns\": []}, {\"name\": \"click\", \"version\": \"8.3.1\", \"vulns\": []}, {\"name\": \"cryptography\", \"version\": \"46.0.5\", \"vulns\": []}, {\"name\": \"cyclonedx-python-lib\", \"version\": \"11.6.0\", \"vulns\": []}, {\"name\": \"defusedxml\", \"version\": \"0.7.1\", \"vulns\": []}, {\"name\": \"distlib\", \"version\": \"0.4.0\", \"vulns\": []}, {\"name\": \"distro\", \"version\": \"1.9.0\", \"vulns\": []}, {\"name\": \"dmgbuild\", \"version\": \"1.6.7\", \"vulns\": []}, {\"name\": \"ds-store\", \"version\": \"1.3.2\", \"vulns\": []}, {\"name\": \"durationpy\", \"version\": \"0.10\", \"vulns\": []}, {\"name\": \"filelock\", \"version\": \"3.24.2\", \"vulns\": []}, {\"name\": \"flask\", \"version\": \"3.1.2\", \"vulns\": []}, {\"name\": \"flatbuffers\", \"version\": \"25.12.19\", \"vulns\": []}, {\"name\": \"fsspec\", \"version\": \"2026.2.0\", \"vulns\": []}, {\"name\": \"googleapis-common-protos\", \"version\": \"1.72.0\", \"vulns\": []}, {\"name\": \"greenlet\", \"version\": \"3.3.1\", \"vulns\": []}, {\"name\": \"grpcio\", \"version\": \"1.78.0\", \"vulns\": []}, {\"name\": \"h11\", \"version\": \"0.16.0\", \"vulns\": []}, {\"name\": \"hf-xet\", \"version\": \"1.2.0\", \"vulns\": []}, {\"name\": \"httpcore\", \"version\": \"1.0.9\", \"vulns\": []}, {\"name\": \"httptools\", \"version\": \"0.7.1\", \"vulns\": []}, {\"name\": \"httpx\", \"version\": \"0.28.1\", \"vulns\": []}, {\"name\": \"huggingface-hub\", \"version\": \"1.4.1\", \"vulns\": []}, {\"name\": \"identify\", \"version\": \"2.6.16\", \"vulns\": []}, {\"name\": \"idna\", \"version\": \"3.11\", \"vulns\": []}, {\"name\": \"importlib-metadata\", \"version\": \"8.7.1\", \"vulns\": []}, {\"name\": \"importlib-resources\", \"version\": \"6.5.2\", \"vulns\": []}, {\"name\": \"iniconfig\", \"version\": \"2.3.0\", \"vulns\": []}, {\"name\": \"itsdangerous\", \"version\": \"2.2.0\", \"vulns\": []}, {\"name\": \"jinja2\", \"version\": \"3.1.6\", \"vulns\": []}, {\"name\": \"joblib\", \"version\": \"1.5.3\", \"vulns\": []}, {\"name\": \"jsonschema\", \"version\": \"4.26.0\", \"vulns\": []}, {\"name\": \"jsonschema-specifications\", \"version\": \"2025.9.1\", \"vulns\": []}, {\"name\": \"kubernetes\", \"version\": \"35.0.0\", \"vulns\": []}, {\"name\": \"license-expression\", \"version\": \"30.4.4\", \"vulns\": []}, {\"name\": \"mac-alias\", \"version\": \"2.2.3\", \"vulns\": []}, {\"name\": \"macholib\", \"version\": \"1.16.4\", \"vulns\": []}, {\"name\": \"markdown-it-py\", \"version\": \"4.0.0\", \"vulns\": []}, {\"name\": \"markupsafe\", \"version\": \"3.0.3\", \"vulns\": []}, {\"name\": \"mdurl\", \"version\": \"0.1.2\", \"vulns\": []}, {\"name\": \"mmh3\", \"version\": \"5.2.0\", \"vulns\": []}, {\"name\": \"mpmath\", \"version\": \"1.3.0\", \"vulns\": []}, {\"name\": \"msgpack\", \"version\": \"1.1.2\", \"vulns\": []}, {\"name\": \"mypy-extensions\", \"version\": \"1.1.0\", \"vulns\": []}, {\"name\": \"networkx\", \"version\": \"3.6.1\", \"vulns\": []}, {\"name\": \"nodeenv\", \"version\": \"1.10.0\", \"vulns\": []}, {\"name\": \"numpy\", \"version\": \"2.4.2\", \"vulns\": []}, {\"name\": \"oauthlib\", \"version\": \"3.3.1\", \"vulns\": []}, {\"name\": \"ollama\", \"version\": \"0.6.1\", \"vulns\": []}, {\"name\": \"onnxruntime\", \"version\": \"1.24.1\", \"vulns\": []}, {\"name\": \"opentelemetry-api\", \"version\": \"1.39.1\", \"vulns\": []}, {\"name\": \"opentelemetry-exporter-otlp-proto-common\", \"version\": \"1.39.1\", \"vulns\": []}, {\"name\": \"opentelemetry-exporter-otlp-proto-grpc\", \"version\": \"1.39.1\", \"vulns\": []}, {\"name\": \"opentelemetry-proto\", \"version\": \"1.39.1\", \"vulns\": []}, {\"name\": \"opentelemetry-sdk\", \"version\": \"1.39.1\", \"vulns\": []}, {\"name\": \"opentelemetry-semantic-conventions\", \"version\": \"0.60b1\", \"vulns\": []}, {\"name\": \"orjson\", \"version\": \"3.11.7\", \"vulns\": []}, {\"name\": \"overrides\", \"version\": \"7.7.0\", \"vulns\": []}, {\"name\": \"packageurl-python\", \"version\": \"0.17.6\", \"vulns\": []}, {\"name\": \"packaging\", \"version\": \"26.0\", \"vulns\": []}, {\"name\": \"pathspec\", \"version\": \"1.0.4\", \"vulns\": []}, {\"name\": \"pillow\", \"version\": \"12.1.1\", \"vulns\": []}, {\"name\": \"pip\", \"version\": \"23.2.1\", \"vulns\": [{\"id\": \"PYSEC-2023-228\", \"fix_versions\": [\"23.3\"], \"aliases\": [\"GHSA-mq26-g339-26xf\", \"BIT-pip-2023-5752\", \"CVE-2023-5752\"], \"description\": \"When installing a package from a Mercurial VCS URL, e.g. `pip install hg+...`, with pip prior to v23.3, the specified Mercurial revision could be used to inject arbitrary configuration options to the `hg clone` call (e.g. `--config`). Controlling the Mercurial configuration can modify how and which repository is installed. This vulnerability does not affect users who aren't installing from Mercurial.\"}, {\"id\": \"PYSEC-2023-228\", \"fix_versions\": [\"23.3\"], \"aliases\": [\"CVE-2023-5752\"], \"description\": \"When installing a package from a Mercurial VCS URL  (ie \\\"pip install  hg+...\\\") with pip prior to v23.3, the specified Mercurial revision could  be used to inject arbitrary configuration options to the \\\"hg clone\\\"  call (ie \\\"--config\\\"). Controlling the Mercurial configuration can modify  how and which repository is installed. This vulnerability does not  affect users who aren't installing from Mercurial. \"}, {\"id\": \"CVE-2025-8869\", \"fix_versions\": [\"25.3\"], \"aliases\": [\"BIT-pip-2025-8869\", \"GHSA-4xh5-x5gv-qwph\"], \"description\": \"When extracting a tar archive pip may not check symbolic links point into the extraction directory if the tarfile module doesn't implement PEP 706. Note that upgrading pip to a \\\"fixed\\\" version for this vulnerability doesn't fix all known vulnerabilities that are remediated by using a Python version that implements PEP 706. Note that this is a vulnerability in pip's fallback implementation of tar extraction for Python versions that don't implement PEP 706 and therefore are not secure to all vulnerabilities in the Python 'tarfile' module. If you're using a Python version that implements PEP 706 then pip doesn't use the \\\"vulnerable\\\" fallback code. Mitigations include upgrading to a version of pip that includes the fix, upgrading to a Python version that implements PEP 706 (Python >=3.9.17, >=3.10.12, >=3.11.4, or >=3.12), applying the linked patch, or inspecting source distributions (sdists) before installation as is already a best-practice.\"}, {\"id\": \"CVE-2026-1703\", \"fix_versions\": [\"26.0\"], \"aliases\": [\"BIT-pip-2026-1703\", \"GHSA-6vgw-5pg2-w6jp\"], \"description\": \"When pip is installing and extracting a maliciously crafted wheel archive, files may be extracted outside the installation directory. The path traversal is limited to prefixes of the installation directory, thus isn't able to inject or overwrite executable files in typical situations.\"}]}, {\"name\": \"pip-api\", \"version\": \"0.0.34\", \"vulns\": []}, {\"name\": \"pip-audit\", \"version\": \"2.10.0\", \"vulns\": []}, {\"name\": \"pip-requirements-parser\", \"version\": \"32.0.1\", \"vulns\": []}, {\"name\": \"platformdirs\", \"version\": \"4.9.2\", \"vulns\": []}, {\"name\": \"playwright\", \"version\": \"1.58.0\", \"vulns\": []}, {\"name\": \"pluggy\", \"version\": \"1.6.0\", \"vulns\": []}, {\"name\": \"posthog\", \"version\": \"5.4.0\", \"vulns\": []}, {\"name\": \"pre-commit\", \"version\": \"3.8.0\", \"vulns\": []}, {\"name\": \"protobuf\", \"version\": \"6.33.5\", \"vulns\": []}, {\"name\": \"proxy-tools\", \"version\": \"0.1.0\", \"vulns\": []}, {\"name\": \"py-serializable\", \"version\": \"2.1.0\", \"vulns\": []}, {\"name\": \"pyarmor\", \"version\": \"9.2.3\", \"vulns\": []}, {\"name\": \"pyarmor-cli-core\", \"version\": \"8.1.0\", \"vulns\": []}, {\"name\": \"pybase64\", \"version\": \"1.4.3\", \"vulns\": []}, {\"name\": \"pycparser\", \"version\": \"3.0\", \"vulns\": []}, {\"name\": \"pydantic\", \"version\": \"2.12.5\", \"vulns\": []}, {\"name\": \"pydantic-core\", \"version\": \"2.41.5\", \"vulns\": []}, {\"name\": \"pyee\", \"version\": \"13.0.1\", \"vulns\": []}, {\"name\": \"pygments\", \"version\": \"2.19.2\", \"vulns\": []}, {\"name\": \"pyinstaller\", \"version\": \"6.19.0\", \"vulns\": []}, {\"name\": \"pyinstaller-hooks-contrib\", \"version\": \"2026.1\", \"vulns\": []}, {\"name\": \"pyobjc-core\", \"version\": \"12.1\", \"vulns\": []}, {\"name\": \"pyobjc-framework-cocoa\", \"version\": \"12.1\", \"vulns\": []}, {\"name\": \"pyobjc-framework-quartz\", \"version\": \"12.1\", \"vulns\": []}, {\"name\": \"pyobjc-framework-security\", \"version\": \"12.1\", \"vulns\": []}, {\"name\": \"pyobjc-framework-uniformtypeidentifiers\", \"version\": \"12.1\", \"vulns\": []}, {\"name\": \"pyobjc-framework-webkit\", \"version\": \"12.1\", \"vulns\": []}, {\"name\": \"pyparsing\", \"version\": \"3.3.2\", \"vulns\": []}, {\"name\": \"pypika\", \"version\": \"0.51.1\", \"vulns\": []}, {\"name\": \"pyproject-hooks\", \"version\": \"1.2.0\", \"vulns\": []}, {\"name\": \"pytest\", \"version\": \"8.4.2\", \"vulns\": []}, {\"name\": \"pytest-base-url\", \"version\": \"2.1.0\", \"vulns\": []}, {\"name\": \"pytest-playwright\", \"version\": \"0.5.2\", \"vulns\": []}, {\"name\": \"python-dateutil\", \"version\": \"2.9.0.post0\", \"vulns\": []}, {\"name\": \"python-dotenv\", \"version\": \"1.2.1\", \"vulns\": []}, {\"name\": \"python-slugify\", \"version\": \"8.0.4\", \"vulns\": []}, {\"name\": \"pywebview\", \"version\": \"6.1\", \"vulns\": []}, {\"name\": \"pyyaml\", \"version\": \"6.0.3\", \"vulns\": []}, {\"name\": \"rapidfuzz\", \"version\": \"3.14.3\", \"vulns\": []}, {\"name\": \"referencing\", \"version\": \"0.37.0\", \"vulns\": []}, {\"name\": \"regex\", \"version\": \"2026.1.15\", \"vulns\": []}, {\"name\": \"requests\", \"version\": \"2.32.5\", \"vulns\": []}, {\"name\": \"requests-oauthlib\", \"version\": \"2.0.0\", \"vulns\": []}, {\"name\": \"rich\", \"version\": \"14.3.2\", \"vulns\": []}, {\"name\": \"rpds-py\", \"version\": \"0.30.0\", \"vulns\": []}, {\"name\": \"ruff\", \"version\": \"0.6.9\", \"vulns\": []}, {\"name\": \"safetensors\", \"version\": \"0.7.0\", \"vulns\": []}, {\"name\": \"scikit-learn\", \"version\": \"1.8.0\", \"vulns\": []}, {\"name\": \"scipy\", \"version\": \"1.17.0\", \"vulns\": []}, {\"name\": \"sentence-transformers\", \"version\": \"5.2.3\", \"vulns\": []}, {\"name\": \"setuptools\", \"version\": \"82.0.0\", \"vulns\": []}, {\"name\": \"shellingham\", \"version\": \"1.5.4\", \"vulns\": []}, {\"name\": \"six\", \"version\": \"1.17.0\", \"vulns\": []}, {\"name\": \"sortedcontainers\", \"version\": \"2.4.0\", \"vulns\": []}, {\"name\": \"sympy\", \"version\": \"1.14.0\", \"vulns\": []}, {\"name\": \"tenacity\", \"version\": \"9.1.4\", \"vulns\": []}, {\"name\": \"text-unidecode\", \"version\": \"1.3\", \"vulns\": []}, {\"name\": \"threadpoolctl\", \"version\": \"3.6.0\", \"vulns\": []}, {\"name\": \"tokenizers\", \"version\": \"0.22.2\", \"vulns\": []}, {\"name\": \"tomli\", \"version\": \"2.4.0\", \"vulns\": []}, {\"name\": \"tomli-w\", \"version\": \"1.2.0\", \"vulns\": []}, {\"name\": \"torch\", \"version\": \"2.10.0\", \"vulns\": []}, {\"name\": \"tqdm\", \"version\": \"4.67.3\", \"vulns\": []}, {\"name\": \"transformers\", \"version\": \"5.2.0\", \"vulns\": []}, {\"name\": \"typer\", \"version\": \"0.24.0\", \"vulns\": []}, {\"name\": \"typer-slim\", \"version\": \"0.24.0\", \"vulns\": []}, {\"name\": \"typing-extensions\", \"version\": \"4.15.0\", \"vulns\": []}, {\"name\": \"typing-inspection\", \"version\": \"0.4.2\", \"vulns\": []}, {\"name\": \"tzlocal\", \"version\": \"5.3.1\", \"vulns\": []}, {\"name\": \"urllib3\", \"version\": \"2.6.3\", \"vulns\": []}, {\"name\": \"uvicorn\", \"version\": \"0.41.0\", \"vulns\": []}, {\"name\": \"uvloop\", \"version\": \"0.22.1\", \"vulns\": []}, {\"name\": \"virtualenv\", \"version\": \"20.36.1\", \"vulns\": []}, {\"name\": \"waitress\", \"version\": \"3.0.2\", \"vulns\": []}, {\"name\": \"watchfiles\", \"version\": \"1.1.1\", \"vulns\": []}, {\"name\": \"websocket-client\", \"version\": \"1.9.0\", \"vulns\": []}, {\"name\": \"websockets\", \"version\": \"16.0\", \"vulns\": []}, {\"name\": \"werkzeug\", \"version\": \"3.1.5\", \"vulns\": []}, {\"name\": \"zipp\", \"version\": \"3.23.0\", \"vulns\": []}], \"fixes\": []}\n",
+    "stderr": "Found 4 known vulnerabilities in 1 package\n"
+  }
+}

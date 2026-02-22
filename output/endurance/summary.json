@@ -1,0 +1,114 @@
+{
+  "started_at": "2026-02-21T22:07:12.006106+00:00",
+  "ended_at": "2026-02-21T22:12:12+00:00",
+  "duration_seconds": 300.7,
+  "duration_minutes_configured": 5,
+  "playwright_installed": true,
+  "e2e_total_runs": 4,
+  "e2e_pass_runs": 4,
+  "e2e_skipped_runs": 0,
+  "e2e_fail_runs": 0,
+  "latency_total_runs": 2,
+  "latency_ai_error_runs": 0,
+  "latency_search_error_runs": 0,
+  "failures": [],
+  "artifacts": {
+    "summary_json": "/Users/gensuminguyen/Tophandwerk/kukanilea-bench/output/endurance/summary.json",
+    "latency_csv": "/Users/gensuminguyen/Tophandwerk/kukanilea-bench/output/endurance/latency.csv",
+    "e2e_failure_logs_dir": "/Users/gensuminguyen/Tophandwerk/kukanilea-bench/output/endurance/e2e_failures"
+  },
+  "e2e_runs": [
+    {
+      "command": [
+        "/Users/gensuminguyen/.pyenv/versions/3.12.0/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/e2e/test_hardening_smoke.py::test_hardening_top_flows_smoke",
+        "tests/e2e/test_hardening_smoke.py::test_hardening_error_shell_navigation"
+      ],
+      "returncode": 0,
+      "duration_ms": 10417.293,
+      "status": "pass",
+      "output": "..                                                                       [100%]\n2 passed in 9.80s\n",
+      "run_id": 1,
+      "ts": "2026-02-21T22:07:22+00:00",
+      "log_path": "/Users/gensuminguyen/Tophandwerk/kukanilea-bench/output/endurance/e2e_failures/e2e_iter_001.log"
+    },
+    {
+      "command": [
+        "/Users/gensuminguyen/.pyenv/versions/3.12.0/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/e2e/test_hardening_smoke.py::test_hardening_top_flows_smoke",
+        "tests/e2e/test_hardening_smoke.py::test_hardening_error_shell_navigation"
+      ],
+      "returncode": 0,
+      "duration_ms": 10883.777,
+      "status": "pass",
+      "output": "..                                                                       [100%]\n2 passed in 10.14s\n",
+      "run_id": 2,
+      "ts": "2026-02-21T22:08:52+00:00",
+      "log_path": "/Users/gensuminguyen/Tophandwerk/kukanilea-bench/output/endurance/e2e_failures/e2e_iter_002.log"
+    },
+    {
+      "command": [
+        "/Users/gensuminguyen/.pyenv/versions/3.12.0/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/e2e/test_hardening_smoke.py::test_hardening_top_flows_smoke",
+        "tests/e2e/test_hardening_smoke.py::test_hardening_error_shell_navigation"
+      ],
+      "returncode": 0,
+      "duration_ms": 11098.296,
+      "status": "pass",
+      "output": "..                                                                       [100%]\n2 passed in 10.16s\n",
+      "run_id": 3,
+      "ts": "2026-02-21T22:10:23+00:00",
+      "log_path": "/Users/gensuminguyen/Tophandwerk/kukanilea-bench/output/endurance/e2e_failures/e2e_iter_003.log"
+    },
+    {
+      "command": [
+        "/Users/gensuminguyen/.pyenv/versions/3.12.0/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/e2e/test_hardening_smoke.py::test_hardening_top_flows_smoke",
+        "tests/e2e/test_hardening_smoke.py::test_hardening_error_shell_navigation"
+      ],
+      "returncode": 0,
+      "duration_ms": 10908.905,
+      "status": "pass",
+      "output": "..                                                                       [100%]\n2 passed in 10.18s\n",
+      "run_id": 4,
+      "ts": "2026-02-21T22:11:53+00:00",
+      "log_path": "/Users/gensuminguyen/Tophandwerk/kukanilea-bench/output/endurance/e2e_failures/e2e_iter_004.log"
+    }
+  ],
+  "latency_runs": [
+    {
+      "run_id": 1,
+      "ts": "2026-02-21T22:07:22+00:00",
+      "mode": "mock_ai",
+      "ai_p50_ms": 1.095,
+      "ai_p95_ms": 1.406,
+      "ai_errors": 0,
+      "search_p50_ms": 5.303,
+      "search_p95_ms": 9.355,
+      "search_errors": 0
+    },
+    {
+      "run_id": 2,
+      "ts": "2026-02-21T22:10:23+00:00",
+      "mode": "mock_ai",
+      "ai_p50_ms": 1.143,
+      "ai_p95_ms": 1.398,
+      "ai_errors": 0,
+      "search_p50_ms": 4.614,
+      "search_p95_ms": 7.78,
+      "search_errors": 0
+    }
+  ]
+}

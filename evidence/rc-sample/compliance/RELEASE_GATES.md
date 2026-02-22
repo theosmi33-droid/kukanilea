@@ -1,0 +1,55 @@
+# RELEASE_GATES
+
+Date: 2026-02-21
+
+## Purpose
+Release gates define deterministic pass/fail criteria for Beta, RC, and Prod.
+
+## Status Definitions
+
+- `PASS`: Criterion met and evidence is present.
+- `FAIL`: Criterion tested and not met.
+- `BLOCKED`: Criterion cannot be executed due to missing prerequisite (must link prerequisite ticket/doc).
+
+## Severity Definitions
+
+- `P0`: Security leak, data loss, install/update blocker, or tenant isolation violation.
+- `P1`: Major degradation with user-facing impact.
+- `P2`: Non-blocking issue.
+
+## Acceptance Matrix
+
+| Gate | Beta | RC | Prod | Current Status | Evidence / Verify | Owner |
+|---|---|---|---|---|---|---|
+| Security (Tenant/RBAC/CSP/Session) | No known P0 leaks | 0 open P0, 0 open High | External security check + 0 High | PASS | Run CI gates + security reports in repository | Engineering + Security |
+| UX Core Flows (Top-20) | >=80% pass | >=95% pass | 100% pass for critical flows | BLOCKED | E2E expansion still pending (`tests/e2e/test_top20_flows.py`) | QA/UX |
+| Error UX (no dead ends) | Error pages provide reload/back/dashboard | + Request-ID consistently shown | + Support runbook verified | PASS | `tests/e2e/test_hardening_smoke.py`, `REPORT_HARDENING_E2E.md` | Engineering |
+| Distribution macOS | Installer builds and launches | Signing active + notarization evidence | Signed + notarized + stapled stable | BLOCKED | See `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_SIGNING_PREREQUISITES.md` and macOS report template | Release Captain |
+| Distribution Windows | Installer builds and launches | Authenticode verification evidence | Signed installer + stable SmartScreen behavior | BLOCKED | See `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_WINDOWS_PREREQUISITES.md` and Windows report template | Release Captain |
+| Update / Rollback | Manual update testable | Rollback demonstrably works | Signed manifest + rollback runbook | PASS | `REPORT_HARDENING_UPDATE_ROLLBACK.md` | Engineering |
+| Compliance / Privacy | Asset/request inventory exists | Third-party/license inventory complete | Compliance checklist completed | BLOCKED | See `docs/COMPLIANCE_EU_DE_FOR_FEATURES.md` | Product + Compliance |
+| CRA Readiness | Vulnerability intake and triage process defined | Reporting and patch process tested | CRA obligations operationalized | BLOCKED | `docs/CRA_READINESS.md`, `docs/VULNERABILITY_HANDLING_PROCESS.md`, `docs/INCIDENT_RESPONSE_72H.md` | Security + Product |
+| Performance / Stability | 15-20m smoke without blocker | 60m endurance without P1 | Reproducible load test with limits | BLOCKED | `REPORT_RC_ENDURANCE_60M.md` still sanity-only; 60m evidence pending | Engineering |
+| AI Availability (primary + fallback) | Primary and fallback work | Provider outage fallback without UI block | Offline-first + recovery runbook | PASS | `REPORT_AI_AVAILABILITY.md` | Engineering |
+| Supply Chain / SBOM | Dependency inventory generated | SBOM + vulnerability scan report attached | 0 unresolved High (or documented exceptions) | BLOCKED | `REPORT_SBOM.md` + generated artifact from `scripts/generate_sbom.py` | Engineering + Security |
+| Provenance / Build Integrity | Artifact hash manifest generated | Provenance statement attached | Verified provenance and digest chain for release artifacts | BLOCKED | `REPORT_PROVENANCE.md`, `scripts/generate_build_manifest.py`, `scripts/generate_provenance.py` | Engineering + Release Captain |
+| Evidence Pack Completeness | Evidence folder schema present | Evidence pack assembled per RC | Full release pack archived for audit | BLOCKED | `docs/EVIDENCE_PACK_SCHEMA.md`, `scripts/prepare_evidence_pack.py` | Release Captain |
+| Cross-platform Parity | Scope-defined parity table exists | Mandatory flows validated for in-scope OS | Full parity for production target platforms | BLOCKED | `docs/CROSS_PLATFORM_PARITY_MATRIX.md` | QA + Release Captain |
+
+## Go / No-Go Rules
+
+1. `NO-GO` if any `P0` is open.
+2. `NO-GO` if core flow Login/CRM/Tasks/Docs/AI is blocked on a target OS.
+3. `NO-GO` if update is shipped without reliable rollback path.
+4. `GO` only when all RC criteria are satisfied and two consecutive CI runs are green.
+5. `NO-GO` for RC/Prod while any mandatory gate is `BLOCKED` or `FAIL`.
+
+## References
+
+- RC prerequisites: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_SIGNING_PREREQUISITES.md`
+- Windows prerequisites: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/RC_WINDOWS_PREREQUISITES.md`
+- Endurance evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_RC_ENDURANCE_60M.md`
+- Supply-chain evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_SBOM.md`
+- Provenance evidence: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/REPORT_PROVENANCE.md`
+- CRA/vulnerability process: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/CRA_READINESS.md`
+- Evidence pack schema: `/Users/gensuminguyen/Tophandwerk/kukanilea-bench/docs/EVIDENCE_PACK_SCHEMA.md`

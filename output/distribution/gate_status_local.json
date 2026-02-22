@@ -1,0 +1,11 @@
+{
+  "overall": "BLOCKED",
+  "macos": {
+    "status": "BLOCKED",
+    "reason": "APPLE_SIGNING_READY not enabled"
+  },
+  "windows": {
+    "status": "BLOCKED",
+    "reason": "WINDOWS_SIGNING_READY not enabled"
+  }
+}

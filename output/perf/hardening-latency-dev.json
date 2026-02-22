@@ -1,0 +1,43 @@
+{
+  "report": {
+    "mode": "mock_ai",
+    "requests": 20,
+    "machine": {
+      "platform": "macOS-26.3-arm64-arm-64bit",
+      "python": "3.12.0"
+    },
+    "ai_chat": {
+      "errors": 0,
+      "p50_ms": 1.165,
+      "p95_ms": 1.265,
+      "avg_ms": 1.158
+    },
+    "search": {
+      "errors": 0,
+      "p50_ms": 5.279,
+      "p95_ms": 5.851,
+      "avg_ms": 5.435
+    }
+  },
+  "gate": {
+    "profile": "dev",
+    "checks": [
+      {
+        "metric": "ai_p95_ms",
+        "value": 1.265,
+        "max": 2000.0,
+        "severity": "warn",
+        "status": "PASS"
+      },
+      {
+        "metric": "search_p95_ms",
+        "value": 5.851,
+        "max": 800.0,
+        "severity": "warn",
+        "status": "PASS"
+      }
+    ],
+    "warn_count": 0,
+    "fail_count": 0
+  }
+}
