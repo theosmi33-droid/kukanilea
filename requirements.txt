@@ -20,3 +20,5 @@ anyio
 pytesseract
 Pillow
 zeroconf
+pymupdf
+psutil

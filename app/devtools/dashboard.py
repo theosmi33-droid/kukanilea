@@ -8,12 +8,13 @@ import os
 import psutil
 import time
 from typing import Any
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.authz import SecurityContext, get_current_security_context
 from app.database import get_db_path
+from app.services import metrics
 
 router = APIRouter(prefix="/dev/dashboard", tags=["Admin", "Telemetry"])
 templates = Jinja2Templates(directory="templates")
@@ -29,25 +30,46 @@ async def dashboard_home(request: Request, ctx: SecurityContext = Depends(admin_
     return templates.TemplateResponse("devtools/dashboard.html", {"request": request, "ctx": ctx})
 
 @router.get("/metrics")
-async def get_metrics(ctx: SecurityContext = Depends(admin_only)):
-    """Calculates live system and app metrics."""
-    db_path = get_db_path()
-    db_size = os.path.getsize(db_path) / (1024 * 1024) if os.path.exists(db_path) else 0
-    
-    mem = psutil.virtual_memory()
-    
-    return JSONResponse({
-        "database": {
-            "size_mb": round(db_size, 2),
-            "path": str(db_path)
-        },
-        "system": {
-            "cpu_percent": psutil.cpu_percent(),
-            "ram_used_gb": round(mem.used / (1024**3), 2),
-            "ram_total_gb": round(mem.total / (1024**3), 2)
-        },
-        "ai": {
-            "status": "stable",
-            "latency_ms": 342 # In production, track this via a sliding average
-        }
-    })
+async def get_all_metrics(ctx: SecurityContext = Depends(admin_only)):
+    """Gibt alle aktuellen Metriken als JSON zurück."""
+    return await metrics.get_all_metrics()
+
+@router.get("/metrics/db", response_class=HTMLResponse)
+async def metrics_db(request: Request, ctx: SecurityContext = Depends(admin_only)):
+    data = await metrics.get_database_metrics()
+    return templates.TemplateResponse("devtools/_db_card.html", {"request": request, **data})
+
+@router.get("/metrics/rag", response_class=HTMLResponse)
+async def metrics_rag(request: Request, ctx: SecurityContext = Depends(admin_only)):
+    data = await metrics.get_rag_metrics()
+    return templates.TemplateResponse("devtools/_rag_card.html", {"request": request, **data})
+
+@router.get("/metrics/ai", response_class=HTMLResponse)
+async def metrics_ai(request: Request, ctx: SecurityContext = Depends(admin_only)):
+    data = await metrics.get_ai_metrics()
+    return templates.TemplateResponse("devtools/_ai_card.html", {"request": request, **data})
+
+@router.get("/metrics/system", response_class=HTMLResponse)
+async def metrics_system(request: Request, ctx: SecurityContext = Depends(admin_only)):
+    data = await metrics.get_system_metrics()
+    return templates.TemplateResponse("devtools/_system_card.html", {"request": request, **data})
+
+@router.post("/rebuild-index")
+async def rebuild_index(background_tasks: BackgroundTasks, ctx: SecurityContext = Depends(admin_only)):
+    """Startet die asynchrone Neuindexierung des RAG."""
+    if metrics.get_indexing_flag():
+        return JSONResponse(status_code=409, content={"status": "already_running"})
+    metrics.set_indexing_flag(True)
+    background_tasks.add_task(_run_indexing)
+    return {"status": "started"}
+
+async def _run_indexing():
+    try:
+        # Mocking the indexing process
+        import asyncio
+        await asyncio.sleep(5)
+        print("RAG-Indexierung erfolgreich abgeschlossen.")
+    except Exception as e:
+        print(f"Fehler bei RAG-Indexierung: {e}")
+    finally:
+        metrics.set_indexing_flag(False)

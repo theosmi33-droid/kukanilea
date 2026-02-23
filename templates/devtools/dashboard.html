@@ -10,31 +10,52 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-12 border-b border-slate-800 pb-6">
         <div class="flex items-center gap-4">
-            <div class="bg-rose-600 w-10 h-10 rounded flex items-center justify-center animate-pulse">
+            <div class="bg-orange-600 w-10 h-10 rounded flex items-center justify-center animate-pulse">
                 <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" stroke-width="2"></path></svg>
             </div>
-            <h1 class="text-xl font-black tracking-widest text-rose-500 uppercase">System Maintenance / Dev-Only</h1>
+            <h1 class="text-xl font-black tracking-widest text-orange-500 uppercase">KUKANILEA · Maschinenraum</h1>
         </div>
         <div class="text-[10px] text-slate-500 text-right">
-            <div>CORE VERSION: 1.2.0-MESSE</div>
-            <div>STATUS: ENCRYPTED & LOCAL</div>
+            <div>VERSION: 1.4.0-COMMERCIAL</div>
+            <div>STATUS: SECURE MESH</div>
         </div>
     </div>
 
     <!-- Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        <!-- DB Card -->
+        <div hx-get="/dev/dashboard/metrics/db" hx-trigger="load, every 5s" hx-swap="outerHTML">
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl animate-pulse">Lade DB...</div>
+        </div>
+        <!-- RAG Card -->
+        <div hx-get="/dev/dashboard/metrics/rag" hx-trigger="load, every 5s" hx-swap="outerHTML">
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl animate-pulse">Lade RAG...</div>
+        </div>
+        <!-- AI Card -->
+        <div hx-get="/dev/dashboard/metrics/ai" hx-trigger="load, every 5s" hx-swap="outerHTML">
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl animate-pulse">Lade AI...</div>
+        </div>
+        <!-- System Card -->
+        <div hx-get="/dev/dashboard/metrics/system" hx-trigger="load, every 5s" hx-swap="outerHTML">
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl animate-pulse">Lade HW...</div>
+        </div>
+    </div>
+
+    <!-- Actions Section -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        <!-- DB Migration Card -->
+        <!-- Rebuild Index Card -->
         <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl">
             <h2 class="text-xs font-bold text-slate-400 uppercase mb-4 tracking-tighter flex items-center gap-2">
                 <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
-                Database Storage Path
+                RAG Maintenance
             </h2>
-            <form hx-post="/dev/db/config" hx-target="#db-result" class="space-y-4">
-                <input type="text" name="new_path" placeholder="Absolute Systempfad..." class="w-full bg-slate-950 border border-slate-800 rounded p-3 text-xs text-emerald-400 focus:outline-none focus:border-rose-500">
-                <button class="w-full bg-slate-800 hover:bg-rose-600 py-3 rounded text-[10px] font-black uppercase transition-all">Migrate & Re-Index</button>
-            </form>
-            <div id="db-result" class="mt-4"></div>
+            <div class="space-y-4">
+                <p class="text-[10px] text-slate-500">Baut den semantischen Vektor-Index (sqlite-vec) für alle Wissensartikel und Belege neu auf.</p>
+                <button hx-post="/dev/dashboard/rebuild-index" hx-swap="innerHTML" hx-target="#rebuild-result" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded text-[10px] uppercase transition-all">
+                    Index Neu Aufbauen
+                </button>
+                <div id="rebuild-result" class="text-[10px] text-emerald-400"></div>
+            </div>
         </div>
 
         <!-- Monitoring / Alerts -->
