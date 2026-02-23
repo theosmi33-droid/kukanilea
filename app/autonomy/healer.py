@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from flask import Flask, g, request, jsonify, render_template_string
+
+from flask import Flask, g, jsonify, render_template_string, request
 
 logger = logging.getLogger("kukanilea.healer")
 

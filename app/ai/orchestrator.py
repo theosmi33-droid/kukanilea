@@ -19,6 +19,7 @@ from .provider_router import (
     provider_specs_from_env,
 )
 from .queue import llm_queue
+from .security import wrap_with_salt
 from .tool_policy import validate_tool_call
 from .tools import execute_tool, ollama_tools
 
@@ -193,7 +194,15 @@ def process_message(
     if personal_context:
         messages.append({"role": "system", "content": personal_context})
     messages.extend(history_msgs)
-    messages.append({"role": "user", "content": message_clean})
+
+    # EPIC 7: Salted Sequence Tags integration
+    # Wrap user input to prevent prompt injection
+    salted_user_msg = wrap_with_salt(
+        instruction="Benutzereingabe für die Verarbeitung:",
+        user_input=message_clean
+    )
+    messages.append({"role": "user", "content": salted_user_msg})
+
     tools = ollama_tools()
     used_tools: list[str] = []
     final_text = ""

@@ -1,0 +1,5 @@
+STDOUT:
+{"json_report": "triage_report.json", "exit_code": 0}
+
+
+STDERR:

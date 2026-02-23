@@ -7,7 +7,6 @@ import time
 import uuid
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
 from flask import Flask, g, request
 

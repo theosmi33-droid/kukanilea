@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
 
 import kukanilea_core_v3_fixed as core
 from app.automation.runner import process_events_for_tenant
@@ -165,13 +166,13 @@ def test_eventlog_trigger_rate_limit_skips_excess_runs(
         {"tenant_id": "TENANT_A", "ref_id": "limit-2"},
     )
 
-    result = process_events_for_tenant("TENANT_A", db_path=db_path)
-    assert result["ok"] is True
-    assert int(result["processed"]) >= 2
-    assert int(result["matched"]) == 2
+    from app.automation.runner import LoopGuardError
+    with pytest.raises(LoopGuardError):
+        process_events_for_tenant("TENANT_A", db_path=db_path)
+    
     assert len(task_calls) == 1
 
     logs = list_execution_logs(tenant_id="TENANT_A", rule_id=rule_id, db_path=db_path)
     statuses = {str(row["status"]) for row in logs}
     assert "ok" in statuses
-    assert "rate_limited" in statuses
+    assert "loop_detected" in statuses

@@ -1,7 +1,6 @@
 import subprocess
 import sys
-import os
-from pathlib import Path
+
 
 def test_benchmark_smoke(tmp_path):
     db_path = tmp_path / "smoke.db"

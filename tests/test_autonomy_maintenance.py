@@ -5,6 +5,7 @@ from pathlib import Path
 
 import kukanilea_core_v3_fixed as core
 from app.autonomy.maintenance import run_backup_once
+from app.config import Config
 
 
 def _init_core(tmp_path: Path) -> None:
@@ -14,6 +15,7 @@ def _init_core(tmp_path: Path) -> None:
     core.PENDING_DIR = tmp_path / "pending"
     core.DONE_DIR = tmp_path / "done"
     core.db_init()
+    Config.CORE_DB = str(core.DB_PATH)
 
 
 def test_run_backup_once_creates_backup_and_event(tmp_path: Path, monkeypatch) -> None:

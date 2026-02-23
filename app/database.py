@@ -1,12 +1,29 @@
 import os
 import sqlite3
+import json
 from pathlib import Path
 
-DB_PATH = Path("instance/kukanilea.db")
+# EPIC 3: Dynamic Database Path Selection
+CONFIG_FILE = Path("instance/config.json")
+DEFAULT_DB_PATH = Path("instance/kukanilea.db")
 
+def get_db_path() -> Path:
+    """Returns the current database path from config or default."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                custom_path = data.get("database_path")
+                if custom_path:
+                    return Path(custom_path) / "kukanilea.db"
+        except Exception:
+            pass
+    return DEFAULT_DB_PATH
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    os.makedirs(db_path.parent, exist_ok=True)
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     # AUTO-REMEDIATION: Prevent "database is locked" under load
     conn.execute("PRAGMA busy_timeout = 5000;")
@@ -15,7 +32,8 @@ def get_db_connection():
 
 def init_db():
     """Initialisiert die SQLite-Datenbank mit FTS5-Unterstützung und Indizes."""
-    os.makedirs(DB_PATH.parent, exist_ok=True)
+    db_path = get_db_path()
+    os.makedirs(db_path.parent, exist_ok=True)
     conn = get_db_connection()
     cursor = conn.cursor()
 

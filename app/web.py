@@ -1115,6 +1115,7 @@ HTML_BASE = r"""<!doctype html>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
 <title>KUKANILEA Systems</title>
 <script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
 <script>
   const savedTheme = localStorage.getItem("ks_theme") || "{{ theme_default }}";
   const savedAccent = localStorage.getItem("ks_accent") || "indigo";
@@ -1299,7 +1300,12 @@ HTML_BASE = r"""<!doctype html>
   }
 </style>
 </head>
-<body data-app-shell="1">
+<body data-app-shell="1"
+      hx-on:htmx:send-error="document.getElementById('offline-banner').classList.remove('hidden')"
+      hx-on:htmx:before-request="document.getElementById('offline-banner').classList.add('hidden')">
+<div id="offline-banner" class="hidden bg-rose-600 text-white p-3 text-center sticky top-0 z-[5000] shadow-lg font-bold" role="alert" aria-live="assertive">
+    ⚠️ Keine Verbindung zum Server. Änderungen werden lokal gepuffert.
+</div>
 <div class="app-shell">
   <div id="appNavOverlay" class="app-overlay"></div>
   <aside id="appNav" class="app-nav">
@@ -1328,7 +1334,7 @@ HTML_BASE = r"""<!doctype html>
       <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation"><span class="nav-icon">⚙️</span><span class="nav-label">Automation</span></a>
       <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health"><span class="nav-icon">🩺</span><span class="nav-label">Autonomy Health</span><span id="navBadgeOcr" class="nav-mini-badge hidden">0</span></a>
       <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily"><span class="nav-icon">📊</span><span class="nav-label">Insights</span></a>
-      {% if roles in ['DEV', 'ADMIN'] %}
+      {% if roles in ['DEV', 'ADMIN', 'OWNER_ADMIN'] %}
       <a class="nav-link {{'active' if active_tab=='license' else ''}}" href="/license"><span class="nav-icon">🔐</span><span class="nav-label">Lizenz</span></a>
       <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings"><span class="nav-icon">🛠️</span><span class="nav-label">Settings</span></a>
       {% endif %}
@@ -8506,12 +8512,61 @@ def knowledge_delete_note_action(chunk_id: str):
 @login_required
 def knowledge_settings_page():
     policy = knowledge_policy_get(current_tenant())
+    
+    # EPIC 3: Get current DB path for UI
+    from app.database import CONFIG_FILE
+    db_path = ""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                db_path = data.get("database_path", "")
+        except Exception:
+            pass
+
     content = render_template(
         "knowledge/settings.html",
         policy=policy,
+        db_path=db_path,
         read_only=bool(current_app.config.get("READ_ONLY", False)),
     )
     return _render_base(content, active_tab="knowledge")
+
+
+@bp.post("/knowledge/settings/database-path")
+@login_required
+@require_role("ADMIN")
+def knowledge_settings_database_path():
+    if bool(current_app.config.get("READ_ONLY", False)):
+        return jsonify({"ok": False, "error": "Read-only mode active"}), 403
+    
+    payload = request.get_json(silent=True) or {}
+    new_path = payload.get("path")
+    if not new_path:
+        return jsonify({"ok": False, "error": "Path missing"}), 400
+
+    # 1. Persist to config.json
+    from app.database import CONFIG_FILE
+    try:
+        config_data = {}
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE, "r") as f:
+                config_data = json.load(f)
+        
+        config_data["database_path"] = new_path
+        
+        os.makedirs(CONFIG_FILE.parent, exist_ok=True)
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config_data, f, indent=4)
+            
+        # 2. Start/Restart Watchdog
+        from app.autonomy.indexer_watchdog import start_document_watcher
+        # Global state for observer would be better in a production app context
+        start_document_watcher(new_path)
+        
+        return jsonify({"ok": True, "path": new_path})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @bp.post("/knowledge/settings/email/toggle")

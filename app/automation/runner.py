@@ -52,6 +52,10 @@ _CRON_CHECKER_LOCK = threading.Lock()
 _CRON_CHECKER: CronChecker | None = None
 
 
+class LoopGuardError(RuntimeError):
+    """Raised when an automation rule triggers too frequently (potential loop)."""
+
+
 def _resolve_db_path(db_path: Path | str | None) -> Path:
     if db_path is None:
         return Path(core.DB_PATH)
@@ -261,7 +265,7 @@ def _process_rule_for_event(
     if not matched:
         return {"ok": True, "matched": False}
 
-    max_execs = int(rule.get("max_executions_per_minute") or 10)
+    max_execs = min(int(rule.get("max_executions_per_minute") or 5), 5)
     recent_count = count_execution_logs_since(
         tenant_id=tenant_id,
         rule_id=rule_id,
@@ -270,21 +274,16 @@ def _process_rule_for_event(
     )
     if recent_count >= max_execs:
         trigger_ref = f"{EVENTLOG_SOURCE}:{event_id}"
-        appended = append_execution_log(
+        append_execution_log(
             tenant_id=tenant_id,
             rule_id=rule_id,
             trigger_type=EVENTLOG_SOURCE,
             trigger_ref=trigger_ref,
-            status="rate_limited",
-            output_redacted=f"rate_limited:max={max_execs}",
+            status="loop_detected",
+            output_redacted=f"loop_guard:max={max_execs}",
             db_path=db_path,
         )
-        return {
-            "ok": True,
-            "matched": True,
-            "duplicate": bool(appended.get("duplicate")),
-            "rate_limited": True,
-        }
+        raise LoopGuardError(f"Automation loop detected for rule {rule_id} (tenant {tenant_id})")
 
     trigger_ref = f"{EVENTLOG_SOURCE}:{event_id}"
     appended = append_execution_log(
@@ -443,7 +442,7 @@ def _process_rule_for_cron(
         return {"ok": True, "matched": False}
 
     trigger_ref = f"{CRON_SOURCE}:{rule_id}:{cron_minute_ref(now_dt)}"
-    max_execs = int(rule.get("max_executions_per_minute") or 10)
+    max_execs = min(int(rule.get("max_executions_per_minute") or 5), 5)
     recent_count = count_execution_logs_since(
         tenant_id=tenant_id,
         rule_id=rule_id,
@@ -451,21 +450,16 @@ def _process_rule_for_cron(
         db_path=db_path,
     )
     if recent_count >= max_execs:
-        appended = append_execution_log(
+        append_execution_log(
             tenant_id=tenant_id,
             rule_id=rule_id,
             trigger_type=CRON_SOURCE,
             trigger_ref=trigger_ref,
-            status="rate_limited",
-            output_redacted=f"rate_limited:max={max_execs}",
+            status="loop_detected",
+            output_redacted=f"loop_guard:max={max_execs}",
             db_path=db_path,
         )
-        return {
-            "ok": True,
-            "matched": True,
-            "duplicate": bool(appended.get("duplicate")),
-            "rate_limited": True,
-        }
+        raise LoopGuardError(f"Automation loop detected for rule {rule_id} (tenant {tenant_id})")
 
     appended = append_execution_log(
         tenant_id=tenant_id,
@@ -593,6 +587,8 @@ def process_events_for_tenant(
                         "duplicates": duplicates,
                         "cursor": str(last_cursor),
                     }
+                except LoopGuardError:
+                    raise
                 except Exception:
                     return {
                         "ok": False,

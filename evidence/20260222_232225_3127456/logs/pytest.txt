@@ -1,0 +1,63 @@
+STDOUT:
+
+==================================== ERRORS ====================================
+____________________ ERROR collecting tests/test_ai_chat.py ____________________
+ImportError while importing test module '/Users/gensuminguyen/Tophandwerk/kukanilea-git/tests/test_ai_chat.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../.pyenv/versions/3.12.0/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_ai_chat.py:3: in <module>
+    from kukanilea_app import app
+kukanilea_app.py:15: in <module>
+    from app.ai_chat import router as ai_chat_router
+E   ImportError: cannot import name 'router' from 'app.ai_chat' (/Users/gensuminguyen/Tophandwerk/kukanilea-git/app/ai_chat/__init__.py)
+_________________ ERROR collecting tests/test_desktop_mode.py __________________
+ImportError while importing test module '/Users/gensuminguyen/Tophandwerk/kukanilea-git/tests/test_desktop_mode.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../.pyenv/versions/3.12.0/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_desktop_mode.py:5: in <module>
+    from app import desktop
+app/desktop.py:13: in <module>
+    from kukanilea_app import app
+kukanilea_app.py:15: in <module>
+    from app.ai_chat import router as ai_chat_router
+E   ImportError: cannot import name 'router' from 'app.ai_chat' (/Users/gensuminguyen/Tophandwerk/kukanilea-git/app/ai_chat/__init__.py)
+_________________ ERROR collecting tests/test_offline_proof.py _________________
+ImportError while importing test module '/Users/gensuminguyen/Tophandwerk/kukanilea-git/tests/test_offline_proof.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../.pyenv/versions/3.12.0/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_offline_proof.py:5: in <module>
+    from kukanilea_app import app
+kukanilea_app.py:15: in <module>
+    from app.ai_chat import router as ai_chat_router
+E   ImportError: cannot import name 'router' from 'app.ai_chat' (/Users/gensuminguyen/Tophandwerk/kukanilea-git/app/ai_chat/__init__.py)
+__________________ ERROR collecting tests/test_onboarding.py ___________________
+ImportError while importing test module '/Users/gensuminguyen/Tophandwerk/kukanilea-git/tests/test_onboarding.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../.pyenv/versions/3.12.0/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_onboarding.py:4: in <module>
+    from kukanilea_app import app
+kukanilea_app.py:15: in <module>
+    from app.ai_chat import router as ai_chat_router
+E   ImportError: cannot import name 'router' from 'app.ai_chat' (/Users/gensuminguyen/Tophandwerk/kukanilea-git/app/ai_chat/__init__.py)
+=========================== short test summary info ============================
+ERROR tests/test_ai_chat.py
+ERROR tests/test_desktop_mode.py
+ERROR tests/test_offline_proof.py
+ERROR tests/test_onboarding.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 4 errors during collection !!!!!!!!!!!!!!!!!!!!
+4 errors in 1.54s
+
+
+STDERR:

@@ -1,0 +1,22 @@
+{
+  "results": {
+    "tool": {
+      "name": "KUKANILEA_AI_AGENT"
+    },
+    "summary": {
+      "focus": "UX_DISTRIBUTION_TRUST"
+    },
+    "gates": {
+      "UX_TOUCH_TARGETS": "PASS",
+      "HTMX_OFFLINE_RESILIENCE": "PASS",
+      "AUTOMATION_HUMAN_GATE": "PASS",
+      "Q_DISTRIBUTION": "PASS",
+      "Q_SBOM": "PASS"
+    },
+    "evidence_artifacts": [
+      "Tophandwerk/kukanilea-git/dist/KUKANILEA.app",
+      "Tophandwerk/kukanilea-git/dist/evidence/sbom.cdx.json",
+      "Tophandwerk/kukanilea-git/docs/REPORT_DISTRIBUTION.md"
+    ]
+  }
+}

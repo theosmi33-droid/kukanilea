@@ -3,6 +3,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+
 def run_check(db_path, action="quick_check"):
     conn = sqlite3.connect(db_path)
     start_time = time.time()

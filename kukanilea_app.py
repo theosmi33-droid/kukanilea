@@ -108,9 +108,9 @@ async def global_exception_handler(request: Request, exc: Exception) -> HTMLResp
     # Niemals rohe Stacktraces an Nutzer
     err_msg = "Ein interner Systemfehler ist aufgetreten."
     return templates.TemplateResponse(
+        request,
         "error_shell.html",
         {
-            "request": request,
             "rid": rid,
             "error_msg": err_msg,
         },
@@ -121,7 +121,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> HTMLResp
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
-        "index.html", {"request": request, "title": "Dashboard"}
+        request, "index.html", {"title": "Dashboard"}
     )
 
 

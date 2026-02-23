@@ -13,13 +13,14 @@ from flask import (
     redirect,
     render_template_string,
     request,
-    session,
+    session as flask_session,
     url_for,
 )
 from werkzeug.exceptions import HTTPException
 
 from .ai import init_ai
 from .auth import init_auth
+from .autonomy.healer import init_healer
 from .bootstrap import is_localhost_addr, needs_bootstrap
 from .config import Config
 from .db import AuthDB
@@ -28,7 +29,6 @@ from .license import load_runtime_license_state
 from .logging import init_request_logging
 from .observability import setup_observability
 from .observability.otel import setup_otel
-from .autonomy.healer import init_healer
 from .tenant.context import ensure_tenant_config, load_tenant_context
 
 _SESSION_TIMEOUT_PUBLIC_PATHS = {
@@ -162,7 +162,7 @@ def create_app() -> Flask:
     _wire_runtime_env(app)
 
     # Import blueprints after env/path wiring so legacy modules read correct paths.
-    from . import api, web, ai_chat
+    from . import ai_chat, api, web
 
     auth_db = AuthDB(app.config["AUTH_DB"])
     auth_db.init()
@@ -268,8 +268,8 @@ def create_app() -> Flask:
         g.tenant_ctx = ctx
         g.tenant_id = ctx.tenant_id
         # Override any client/session tenant to enforce fixed installation tenant.
-        if session.get("tenant_id") != ctx.tenant_id:
-            session["tenant_id"] = ctx.tenant_id
+        if flask_session.get("tenant_id") != ctx.tenant_id:
+            flask_session["tenant_id"] = ctx.tenant_id
         return None
 
     @app.before_request
@@ -277,46 +277,46 @@ def create_app() -> Flask:
         path = (request.path or "").rstrip("/") or "/"
         if path.startswith("/static/") or path in _SESSION_TIMEOUT_PUBLIC_PATHS:
             return None
-        if not session.get("user"):
+        if not flask_session.get("user"):
             return None
 
         now = _utcnow()
-        session.permanent = True
+        flask_session.permanent = True
 
-        created_at = _parse_session_iso(session.get("session_created_at"))
+        created_at = _parse_session_iso(flask_session.get("session_created_at"))
         if created_at is None:
-            session["session_created_at"] = _to_session_iso(now)
+            flask_session["session_created_at"] = _to_session_iso(now)
             created_at = now
 
         absolute_cap = app.permanent_session_lifetime
         if not isinstance(absolute_cap, timedelta):
             absolute_cap = timedelta(hours=8)
         if now - created_at > absolute_cap:
-            session.clear()
+            flask_session.clear()
             return _session_timeout_response("maximale Sitzungsdauer erreicht")
 
-        last_activity = _parse_session_iso(session.get("last_activity"))
+        last_activity = _parse_session_iso(flask_session.get("last_activity"))
         if last_activity is None:
-            session["last_activity"] = _to_session_iso(now)
+            flask_session["last_activity"] = _to_session_iso(now)
             return None
 
-        idle_minutes = _session_idle_minutes(app, session.get("idle_timeout_minutes"))
+        idle_minutes = _session_idle_minutes(app, flask_session.get("idle_timeout_minutes"))
         try:
-            stored_idle = int(session.get("idle_timeout_minutes", idle_minutes))
+            stored_idle = int(flask_session.get("idle_timeout_minutes", idle_minutes))
         except Exception:
             stored_idle = None
         if stored_idle != idle_minutes:
-            session["idle_timeout_minutes"] = idle_minutes
+            flask_session["idle_timeout_minutes"] = idle_minutes
 
         if (now - last_activity).total_seconds() > float(idle_minutes * 60):
-            session.clear()
+            flask_session.clear()
             return _session_timeout_response("Inaktivität")
 
         touch_seconds = int(app.config.get("SESSION_IDLE_TOUCH_SECONDS", 60) or 60)
         if touch_seconds < 1:
             touch_seconds = 1
         if (now - last_activity).total_seconds() >= touch_seconds:
-            session["last_activity"] = _to_session_iso(now)
+            flask_session["last_activity"] = _to_session_iso(now)
         return None
 
     @app.before_request

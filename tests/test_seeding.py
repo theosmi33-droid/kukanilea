@@ -4,6 +4,7 @@ Evidence Test für das Vertical Kit Seeding (EPIC 6).
 """
 
 import uuid
+
 from app.database import DB_PATH, get_db_connection, init_db
 from app.seeder import apply_vertical_kit
 

@@ -9,6 +9,7 @@ from flask import Flask
 
 import kukanilea_core_v3_fixed as core
 from app.autonomy.maintenance import run_backup, verify_backup
+from app.config import Config
 
 
 def _init_core(tmp_path: Path) -> None:
@@ -18,6 +19,7 @@ def _init_core(tmp_path: Path) -> None:
     core.PENDING_DIR = tmp_path / "pending"
     core.DONE_DIR = tmp_path / "done"
     core.db_init()
+    Config.CORE_DB = str(core.DB_PATH)
 
 
 def test_backup_create_rotate_and_verify(tmp_path: Path, monkeypatch) -> None:

@@ -1,0 +1,3 @@
+mode,rows,duration_s,throughput_ops_sec,p50_ms
+batch,100,0.0001,1075268.79,N/A
+single,100,0.0013,77758.02,0.0103

@@ -9,6 +9,54 @@
   {% endif %}
 
   <div class="card p-4 space-y-2">
+    <div class="font-semibold">Lokaler Datenbank-Speicherort</div>
+    <div class="text-sm muted">Bestimme, wo deine Betriebsdaten lokal gespeichert werden. Alle neuen Dokumente in diesem Ordner werden automatisch indexiert.</div>
+    <div class="flex items-center gap-3">
+      <input type="text" id="db-path-input" class="input flex-1 px-3 py-2 text-sm" value="{{ db_path or 'Standard (instance/)' }}" readonly>
+      <button class="btn-outline px-3 py-2 text-sm" onclick="pickDatabaseFolder()">Ordner wählen</button>
+    </div>
+    <div id="db-path-status" class="text-xs"></div>
+  </div>
+
+  <script>
+    async function pickDatabaseFolder() {
+        const status = document.getElementById('db-path-status');
+        status.textContent = "Öffne Dialog...";
+        
+        // Nutze pywebview API falls vorhanden, sonst Fallback
+        let path = "";
+        try {
+            if (window.pywebview) {
+                path = await window.pywebview.api.open_folder_dialog();
+            } else {
+                status.textContent = "Ordner-Dialog nur in der Desktop-App verfügbar.";
+                return;
+            }
+        } catch (e) {
+            status.textContent = "Fehler beim Öffnen des Dialogs.";
+            return;
+        }
+
+        if (path) {
+            const res = await fetch('/knowledge/settings/database-path', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: path})
+            });
+            const data = await res.json();
+            if (data.ok) {
+                document.getElementById('db-path-input').value = path;
+                status.textContent = "Pfad gespeichert. Watchdog aktiv.";
+                status.classList.add('text-emerald-500');
+            } else {
+                status.textContent = "Fehler beim Speichern: " + data.error;
+                status.classList.add('text-rose-500');
+            }
+        }
+    }
+  </script>
+
+  <div class="card p-4 space-y-2">
     <div class="font-semibold">E-Mail Quelle (v0)</div>
     <div class="text-sm muted">Default ist AUS. E-Mail kann personenbezogene Daten enthalten. Inhalte werden redigiert, trotzdem nur explizit freigeben.</div>
     <form method="post" action="/knowledge/settings/email/toggle" class="flex items-center gap-3">

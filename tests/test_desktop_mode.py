@@ -40,10 +40,12 @@ def test_find_free_port_returns_positive_int() -> None:
 def test_run_native_desktop_bootstrap_flow(monkeypatch) -> None:
     dummy_webview = _DummyWebview()
     dummy_server = _DummyServer()
+    import threading
     dummy_handle = desktop._ServerHandle(  # noqa: SLF001
         server=dummy_server,
         thread=_DummyThread(),
         port=5123,
+        should_exit=threading.Event(),
     )
 
     monkeypatch.setattr(desktop, "_load_webview_module", lambda: dummy_webview)
@@ -78,10 +80,12 @@ def test_run_native_desktop_bootstrap_flow(monkeypatch) -> None:
 def test_run_native_desktop_raises_when_not_ready(monkeypatch) -> None:
     dummy_webview = _DummyWebview()
     dummy_server = _DummyServer()
+    import threading
     dummy_handle = desktop._ServerHandle(  # noqa: SLF001
         server=dummy_server,
         thread=_DummyThread(),
         port=5124,
+        should_exit=threading.Event(),
     )
 
     monkeypatch.setattr(desktop, "_load_webview_module", lambda: dummy_webview)

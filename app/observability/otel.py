@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import os
 import logging
+import os
+
 from flask import Flask
 
 logger = logging.getLogger("kukanilea.otel")
@@ -13,9 +14,12 @@ def setup_otel(app: Flask):
 
     try:
         from opentelemetry import trace
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
         from opentelemetry.instrumentation.flask import FlaskInstrumentor
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import (
+            BatchSpanProcessor,
+            ConsoleSpanExporter,
+        )
         
         # SOURCE: https://opentelemetry.io/docs/languages/python/exporters/
         # Console exporter is correct for local debug

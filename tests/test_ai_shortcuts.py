@@ -3,10 +3,12 @@ tests/test_ai_shortcuts.py
 Release Gate Q-SCAN: Verifiziert das Human-in-the-Loop AI Feature.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
+
 from app import create_app
-from app.database import get_db_connection, init_db, DB_PATH
-from unittest.mock import patch, MagicMock
+from app.database import DB_PATH, get_db_connection, init_db
 
 
 @pytest.fixture

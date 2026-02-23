@@ -1,15 +1,63 @@
-<div class="card p-4 shadow-sm">
-    <div class="card-body">
-        <h5 class="card-title">KUKANILEA Assistant</h5>
-        <div id="chat-response" class="my-3 border p-2 rounded" style="min-height: 100px; background: #f9f9f9;">
-            <p class="text-muted small">Tippe z.B. "Aufgabe: Dachrinne prüfen"</p>
+<div id="ai-chat-widget" class="flex flex-col h-full bg-slate-900 text-slate-100 border border-slate-700 rounded-xl overflow-hidden shadow-2xl">
+    <!-- Header -->
+    <div class="px-4 py-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            <span class="font-semibold text-sm">KUKANILEA Assistant</span>
         </div>
-        
-        <form hx-post="/ai-chat/message" hx-target="#chat-response" hx-swap="innerHTML">
-            <div class="input-group">
-                <input type="text" name="message" class="form-control" placeholder="Wie kann ich helfen?" required>
-                <button class="btn btn-primary" type="submit">Senden</button>
+        <div class="flex items-center gap-2" 
+             hx-get="/ai-chat/health" 
+             hx-trigger="every 10s" 
+             hx-target="#ai-status-text"
+             hx-on::after-request="const data = JSON.parse(event.detail.xhr.response); 
+                                   const dot = document.getElementById('ai-status-dot');
+                                   if(data.available) {
+                                       dot.classList.remove('bg-amber-500');
+                                       dot.classList.add('bg-emerald-500');
+                                   } else {
+                                       dot.classList.remove('bg-emerald-500');
+                                       dot.classList.add('bg-amber-500');
+                                   }">
+            <span id="ai-loading-indicator" class="htmx-indicator">
+                <span class="flex h-2 w-2 relative">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                </span>
+            </span>
+            <div id="ai-status-dot" class="h-2 w-2 rounded-full bg-slate-500 transition-colors duration-500"></div>
+            <span id="ai-status-text" class="text-[10px] uppercase tracking-wider text-slate-500">Ollama Status</span>
+        </div>
+    </div>
+
+    <!-- History -->
+    <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth min-h-[300px] max-h-[500px]">
+        <div class="flex gap-3">
+            <div class="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center">
+                <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
             </div>
+            <div class="bg-slate-800 rounded-2xl rounded-tl-none px-4 py-2 text-sm max-w-[85%] border border-slate-700">
+                Willkommen! Ich bin Ihr lokaler Assistent. Wie kann ich heute helfen?
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="p-3 bg-slate-800 border-t border-slate-700">
+        <form hx-post="/ai-chat/message" 
+              hx-target="#chat-history" 
+              hx-swap="beforeend"
+              hx-indicator="#ai-loading-indicator"
+              hx-on::after-request="this.reset(); document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;"
+              class="flex gap-2">
+            <input type="text" 
+                   name="message" 
+                   required
+                   placeholder="Frage stellen..." 
+                   class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[44px]">
+            <button type="submit" 
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors min-h-[44px] min-w-[60px]">
+                Senden
+            </button>
         </form>
     </div>
 </div>

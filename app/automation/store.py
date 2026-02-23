@@ -34,6 +34,7 @@ EXECUTION_STATUS_ALLOWLIST = {
     "failed",
     "pending",
     "rate_limited",
+    "loop_detected",
 }
 PENDING_STATUS_ALLOWLIST = {"pending", "confirmed", "failed", "executing"}
 

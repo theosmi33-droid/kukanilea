@@ -1,0 +1,70 @@
+STDOUT:
+app/autonomy/maintenance.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+   |
+ 1 | / import logging
+ 2 | | import sqlite3
+ 3 | | import time
+ 4 | | import os
+ 5 | | import json
+ 6 | | from datetime import UTC, datetime
+ 7 | | from pathlib import Path
+ 8 | | from flask import current_app, has_app_context
+ 9 | | 
+10 | | from app.database import get_db_connection
+11 | | import kukanilea_core_v3_fixed as legacy_core
+12 | | from app.eventlog.core import event_append
+13 | | 
+14 | | logger = logging.getLogger("kukanilea.maintenance")
+   | |_^ I001
+   |
+   = help: Organize imports
+
+app/autonomy/maintenance.py:3:8: F401 [*] `time` imported but unused
+  |
+1 | import logging
+2 | import sqlite3
+3 | import time
+  |        ^^^^ F401
+4 | import os
+5 | import json
+  |
+  = help: Remove unused import: `time`
+
+app/autonomy/maintenance.py:5:8: F401 [*] `json` imported but unused
+  |
+3 | import time
+4 | import os
+5 | import json
+  |        ^^^^ F401
+6 | from datetime import UTC, datetime
+7 | from pathlib import Path
+  |
+  = help: Remove unused import: `json`
+
+app/autonomy/maintenance.py:6:22: F401 [*] `datetime.UTC` imported but unused
+  |
+4 | import os
+5 | import json
+6 | from datetime import UTC, datetime
+  |                      ^^^ F401
+7 | from pathlib import Path
+8 | from flask import current_app, has_app_context
+  |
+  = help: Remove unused import
+
+app/autonomy/maintenance.py:6:27: F401 [*] `datetime.datetime` imported but unused
+  |
+4 | import os
+5 | import json
+6 | from datetime import UTC, datetime
+  |                           ^^^^^^^^ F401
+7 | from pathlib import Path
+8 | from flask import current_app, has_app_context
+  |
+  = help: Remove unused import
+
+Found 5 errors.
+[*] 5 fixable with the `--fix` option.
+
+
+STDERR:

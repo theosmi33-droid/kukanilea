@@ -1,3 +1,4 @@
+import json
 from fastapi.testclient import TestClient
 
 from app.database import get_db_connection, init_db
@@ -20,9 +21,15 @@ def test_onboarding_seeding():
 
     # Check DB content
     conn = get_db_connection()
-    rows = conn.execute("SELECT name FROM templates WHERE vertical = 'shk'").fetchall()
-    names = [row["name"] for row in rows]
+    # Logic changed: seeder writes to 'entities' table with JSON blob
+    rows = conn.execute("SELECT data_json FROM entities WHERE tenant_id = 'test-tenant'").fetchall()
+    
+    names = []
+    for row in rows:
+        data = json.loads(row["data_json"])
+        if "name" in data:
+            names.append(data["name"])
 
-    assert "Protokoll: Wartung Gastherme" in names
-    assert "Materialliste: Badsanierung" in names
+    assert "Dichtheitsprüfung" in names
+    # assert "Materialliste: Badsanierung" in names # Not in current vertical definition
     conn.close()

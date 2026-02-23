@@ -1,10 +1,13 @@
 import json
+from unittest.mock import MagicMock, patch
+
 import pytest
-from flask import Flask, g
-from app.observability import setup_observability
+from flask import Flask
+
 from app.autonomy.healer import init_healer, set_degraded_mode
 from app.autonomy.maintenance import check_integrity
-from unittest.mock import MagicMock, patch
+from app.observability import setup_observability
+
 
 @pytest.fixture
 def app():

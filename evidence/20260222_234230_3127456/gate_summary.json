@@ -1,0 +1,52 @@
+{
+  "run_id": "20260222_234230_3127456",
+  "mode": "beta",
+  "decision": "NO-GO",
+  "gates": {
+    "compileall": {
+      "state": "PASS",
+      "reason": ""
+    },
+    "ruff": {
+      "state": "PASS",
+      "reason": ""
+    },
+    "pytest": {
+      "state": "PASS",
+      "reason": ""
+    },
+    "security_scan": {
+      "state": "PASS",
+      "reason": ""
+    },
+    "triage_ci": {
+      "state": "PASS",
+      "reason": ""
+    },
+    "e2e_smoke": {
+      "state": "PASS",
+      "reason": ""
+    },
+    "perf_latency": {
+      "state": "PASS",
+      "reason": ""
+    },
+    "sbom": {
+      "state": "PASS",
+      "reason": ""
+    },
+    "distribution_macos": {
+      "state": "FAIL",
+      "reason": "Exit code 2"
+    },
+    "distribution_windows": {
+      "state": "FAIL",
+      "reason": "Exit code 255"
+    }
+  },
+  "artifacts": {
+    "evidence_dir": "evidence/20260222_234230_3127456",
+    "logs_dir": "evidence/20260222_234230_3127456/logs",
+    "reports": []
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "results": {
+    "tool": {
+      "name": "KUKANILEA_AI_AGENT"
+    },
+    "summary": {
+      "focus": "AI_CHAT_INTEGRATION"
+    },
+    "gates": {
+      "LOCAL_LLM_ISOLATION": "PASS",
+      "HTMX_CHAT_STREAMING": "PASS"
+    },
+    "evidence_artifacts": [
+      "app/ai_chat/engine.py",
+      "templates/ai_chat/interface.html",
+      "tests/test_ai_chat.py"
+    ]
+  }
+}
