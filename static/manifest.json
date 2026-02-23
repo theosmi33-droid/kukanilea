@@ -1,0 +1,21 @@
+{
+  "name": "KUKANILEA Mobile Edge",
+  "short_name": "KUKANILEA",
+  "description": "Das lokale Betriebssystem für das Handwerk.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0a09",
+  "theme_color": "#ea580c",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
