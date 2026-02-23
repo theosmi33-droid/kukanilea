@@ -16,34 +16,52 @@ from app.ai_chat.engine import ask_local_ai
 from app.ai_chat.intent_parser import parse_user_intent
 from app.ai.ollama_client import ollama_is_available
 
+from fastapi import APIRouter, Form, Request, UploadFile, File
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.concurrency import run_in_threadpool
+import shutil
+import os
+
+from app.ai_chat.engine import ask_local_ai
+from app.ai_chat.intent_parser import parse_user_intent
+from app.ai.ollama_client import ollama_is_available
+from app.autonomy.ocr import process_dirty_note
+
 router = APIRouter(prefix="/ai-chat", tags=["AI", "Chat"])
 templates = Jinja2Templates(directory="templates")
 
+# ... (health, transcribe routes)
 
-@router.get("/", response_class=HTMLResponse)
-async def chat_interface(request: Request) -> Any:
-    """Rendert das Haupt-Chat-Interface (FastAPI)."""
-    return templates.TemplateResponse(request, "ai_chat/interface.html", {})
+@router.post("/upload-vision", response_class=HTMLResponse)
+async def upload_vision(request: Request, file: UploadFile = File(...)) -> Any:
+    """Verarbeitet Bild-Uploads für lokale OCR-Extraktion."""
+    # 1. Save temp file
+    temp_path = f"instance/temp_{file.filename}"
+    os.makedirs("instance", exist_ok=True)
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # 2. Process via OCR + LLM (in threadpool)
+    result_json = await run_in_threadpool(process_dirty_note, temp_path)
+    
+    # Cleanup
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
 
+    # 3. Parse JSON result safely
+    import json
+    try:
+        data = json.loads(result_json) if isinstance(result_json, str) else result_json
+    except:
+        data = {"error": "Extraktion fehlgeschlagen", "raw": str(result_json)}
 
-@router.get("/health")
-async def ai_health() -> Any:
-    """Überprüft den Ladestatus des Modells / Ollama Verfügbarkeit."""
-    available = await run_in_threadpool(ollama_is_available)
-    return JSONResponse({
-        "status": "ready" if available else "loading",
-        "available": available
+    # 4. Render Partial
+    return templates.TemplateResponse(request, "ai_chat/partials/vision_result.html", {
+        "filename": file.filename,
+        "data": data
     })
 
-
-@router.post("/transcribe")
-async def transcribe_audio(request: Request) -> Any:
-    """Wandelt Audio-Blobs in Text um (v1.1 Mock)."""
-    # In v1.2: Integration mit lokaler Whisper-Instanz
-    return JSONResponse({"text": "Ich brauche ein Angebot für eine neue Heizungsanlage."})
-
-
-@router.post("/message", response_class=HTMLResponse)
 async def handle_message(request: Request, message: str = Form("")) -> Any:
     """Verarbeitet User-Messages via HTMX (FastAPI) ohne den Event-Loop zu blockieren."""
     return await _process_message_logic_async(request, message)
