@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>KUKANILEA · COMMAND CENTER</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body class="bg-slate-950 text-slate-200 font-mono p-8">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-12 border-b border-slate-800 pb-6">
+        <div class="flex items-center gap-4">
+            <div class="bg-rose-600 w-10 h-10 rounded flex items-center justify-center animate-pulse">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" stroke-width="2"></path></svg>
+            </div>
+            <h1 class="text-xl font-black tracking-widest text-rose-500 uppercase">System Maintenance / Dev-Only</h1>
+        </div>
+        <div class="text-[10px] text-slate-500 text-right">
+            <div>CORE VERSION: 1.2.0-MESSE</div>
+            <div>STATUS: ENCRYPTED & LOCAL</div>
+        </div>
+    </div>
+
+    <!-- Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        
+        <!-- DB Migration Card -->
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl">
+            <h2 class="text-xs font-bold text-slate-400 uppercase mb-4 tracking-tighter flex items-center gap-2">
+                <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
+                Database Storage Path
+            </h2>
+            <form hx-post="/dev/db/config" hx-target="#db-result" class="space-y-4">
+                <input type="text" name="new_path" placeholder="Absolute Systempfad..." class="w-full bg-slate-950 border border-slate-800 rounded p-3 text-xs text-emerald-400 focus:outline-none focus:border-rose-500">
+                <button class="w-full bg-slate-800 hover:bg-rose-600 py-3 rounded text-[10px] font-black uppercase transition-all">Migrate & Re-Index</button>
+            </form>
+            <div id="db-result" class="mt-4"></div>
+        </div>
+
+        <!-- Monitoring / Alerts -->
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl">
+            <h2 class="text-xs font-bold text-slate-400 uppercase mb-4 tracking-tighter flex items-center gap-2">
+                <span class="w-2 h-2 bg-rose-500 rounded-full"></span>
+                Security Alerts / AI Monitoring
+            </h2>
+            <div class="h-48 overflow-y-auto space-y-2 font-sans text-[10px]" hx-get="/dev/alerts" hx-trigger="load, every 10s">
+                <div class="p-2 bg-slate-950 border-l-2 border-slate-700 text-slate-500 italic">Lade Alarme...</div>
+            </div>
+        </div>
+
+        <!-- Stage 4 Watchdog -->
+        <div class="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-2">
+                    <span class="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
+                    Autonomy Stage 4: Indexing Watchdog
+                </h2>
+                <span class="text-[10px] text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">WATCHING</span>
+            </div>
+            <div class="bg-slate-950 p-4 rounded border border-slate-800 font-sans text-xs">
+                <div class="flex justify-between mb-2 pb-2 border-b border-slate-900">
+                    <span class="text-slate-500">Letztes Dokument:</span>
+                    <span class="text-slate-300">Lieferschein_Heizung_Müller.pdf</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">Status:</span>
+                    <span class="text-emerald-400 font-bold">SYMBOLS INDEXED / VEC STORED</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-12 text-center">
+        <a href="/" class="text-[9px] text-slate-600 hover:text-white uppercase tracking-[0.3em] underline transition-all">Exit Secure Session</a>
+    </div>
+</body>
+</html>

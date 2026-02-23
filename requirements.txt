@@ -17,3 +17,5 @@ apscheduler
 sqlite-vec
 sentence-transformers
 anyio
+pytesseract
+Pillow

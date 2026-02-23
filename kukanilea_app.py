@@ -127,6 +127,14 @@ async def index(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/messe", response_class=HTMLResponse)
+async def messe_landing(request: Request) -> HTMLResponse:
+    """Spezielle Landingpage für Messe-Präsentationen."""
+    return templates.TemplateResponse(
+        request, "messe_demo.html", {}
+    )
+
+
 @app.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok", "version": "0.1.0"}
