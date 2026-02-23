@@ -28,8 +28,9 @@ ALLOWLIST_ACTIONS = {
     "email_draft",
     "email_send",
     "webhook",
+    "ai_agent",
 }
-NON_DESTRUCTIVE_DIRECT = {"create_task", "create_followup"}
+NON_DESTRUCTIVE_DIRECT = {"create_task", "create_followup", "ai_agent"}
 EMAIL_ALLOWED_PLACEHOLDERS = {
     "customer_name",
     "event_type",
@@ -549,6 +550,37 @@ def _execute_email_send(
     }
 
 
+def _execute_ai_agent(
+    *,
+    tenant_id: str,
+    action_cfg: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    from app.agents.orchestrator import answer as agent_answer
+    
+    prompt_template = str(action_cfg.get("prompt_template") or action_cfg.get("prompt") or "").strip()
+    if not prompt_template:
+        return {"status": "failed", "error": "prompt_required"}
+    
+    # Simple rendering using the existing email renderer logic (placeholders)
+    prompt = _render_email_template_text(prompt_template, context)
+    
+    # Get role from config
+    role = str(action_cfg.get("agent_role") or "MASTER").upper()
+    
+    # Execute AI Agent Loop (v2 Orchestrator)
+    # This allows the AI to think and potentially execute tools (create_task, etc.)
+    agent_result = agent_answer(prompt, role=role)
+    
+    return {
+        "status": "ok", 
+        "result": {
+            "agent_thought": agent_result.get("text"),
+            "agent_action": agent_result.get("action")
+        }
+    }
+
+
 def execute_action(
     *,
     tenant_id: str,
@@ -650,6 +682,10 @@ def execute_action(
         )
     if action_type == "webhook":
         return execute_webhook_action(action_cfg=action_cfg, context=context)
+    if action_type == "ai_agent":
+        return _execute_ai_agent(
+            tenant_id=tenant, action_cfg=action_cfg, context=context
+        )
 
     return {
         "status": "failed",

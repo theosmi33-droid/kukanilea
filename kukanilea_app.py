@@ -19,12 +19,14 @@ from app.crm import router as crm_router
 from app.database import init_db
 from app.devtools.settings import router as dev_router
 from app.devtools.dashboard import router as dashboard_router
+from app.devtools.learning import router as learning_router
 from app.logging_utils import setup_secure_logging
 from app.observability import setup_observability
 from app.session import validate_session
 from app.tasks import router as tasks_router
 from app.ui.command_palette import router as ui_router
 from app.ui.onboarding import router as onboarding_router
+from app.agents.email_trigger import EmailTrigger
 
 # Setup Secure Logging (Compliance: GDPR Art. 25)
 # Note: Full observability is initialized in startup_event
@@ -34,6 +36,8 @@ app = FastAPI(title="KUKANILEA - Business OS", docs_url=None, redoc_url=None)
 
 # Global P2P Handle
 p2p_manager: KukanileaDiscovery | None = None
+# Global Email Trigger Handle
+email_trigger: EmailTrigger | None = None
 
 # Router integrieren
 app.include_router(crm_router)
@@ -43,11 +47,12 @@ app.include_router(onboarding_router)
 app.include_router(ai_chat_router)
 app.include_router(dev_router)
 app.include_router(dashboard_router)
+app.include_router(learning_router)
 
 
 @app.on_event("startup")
 async def startup_event():
-    global p2p_manager
+    global p2p_manager, email_trigger
     # 1. Observability aktivieren (GDPR-safe)
     logger = setup_observability()
     logger.info("KUKANILEA Boot Sequence initiated.")
@@ -79,13 +84,23 @@ async def startup_event():
     except Exception as e:
         logger.error(f"P2P Service failed to start: {e}")
 
+    # 5. Email Trigger (IMAP Listener)
+    try:
+        email_trigger = EmailTrigger()
+        await email_trigger.start()
+    except Exception as e:
+        logger.error(f"Email Trigger failed to start: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global p2p_manager
+    global p2p_manager, email_trigger
     if p2p_manager:
         p2p_manager.stop()
         logging.getLogger("kukanilea.p2p").info("P2P Discovery Service stopped.")
+    
+    if email_trigger:
+        await email_trigger.stop()
 
 
 # Templates

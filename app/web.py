@@ -3652,6 +3652,18 @@ def api_ai_modelpack_import():
     return jsonify({"ok": True, "result": result})
 
 
+@bp.get("/api/agent/notifications")
+@login_required
+def api_agent_notifications():
+    from app.database import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.execute("SELECT * FROM agent_notifications WHERE status='new' ORDER BY created_at DESC LIMIT 5")
+    rows = cursor.fetchall()
+    notifications = [dict(r) for r in rows]
+    conn.close()
+    return jsonify(ok=True, notifications=notifications)
+
+
 @bp.get("/api/status")
 @login_required
 def api_status():

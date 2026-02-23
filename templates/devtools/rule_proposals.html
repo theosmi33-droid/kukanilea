@@ -1,0 +1,31 @@
+{% extends "index.html" %}
+
+{% block content %}
+<div class="bg-stone-900 p-6 rounded-xl border border-stone-800 shadow-2xl">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-amber-500 uppercase tracking-tighter">KI Lernzentrum</h2>
+        <div class="flex space-x-4">
+            <button class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded uppercase transition-colors"
+                    hx-post="/dev/rules/trigger"
+                    hx-swap="none"
+                    onclick="this.innerText='Analysiere...'; setTimeout(() => this.innerText='Vorschläge generieren', 2000)">
+                Vorschläge generieren
+            </button>
+            <span class="px-2 py-1 bg-indigo-900/50 text-indigo-400 text-[10px] mono border border-indigo-500/30">HUMAN_IN_THE_LOOP</span>
+        </div>
+    </div>
+
+    <p class="text-xs text-stone-500 mb-6 italic">Hier werden Regelentwürfe angezeigt, die aus deinen Korrekturen generiert wurden. Keine Regel wird ohne deine Freigabe aktiv.</p>
+
+    <div class="space-y-4" id="rule-list">
+        {% include "devtools/_rule_list.html" %}
+    </div>
+
+    <div class="mt-8 pt-6 border-t border-stone-800">
+        <div class="flex items-center justify-between text-[10px] text-stone-600 mono">
+            <span>Integrität: Gesichert durch Salted Tags</span>
+            <span class="text-green-500">Observer Hybrid Aktiv</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
