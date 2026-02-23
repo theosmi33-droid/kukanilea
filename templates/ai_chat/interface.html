@@ -49,7 +49,16 @@
               hx-indicator="#ai-loading-indicator"
               hx-on::after-request="this.reset(); document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;"
               class="flex gap-2">
+            
+            <button type="button" 
+                    id="mic-btn"
+                    class="bg-slate-700 hover:bg-slate-600 text-slate-300 p-2 rounded-xl transition-all flex items-center justify-center min-w-[44px]">
+                <svg id="mic-icon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                <div id="mic-active" class="hidden w-3 h-3 bg-rose-500 rounded-full animate-pulse"></div>
+            </button>
+
             <input type="text" 
+                   id="chat-input"
                    name="message" 
                    required
                    placeholder="Frage stellen..." 
@@ -60,4 +69,59 @@
             </button>
         </form>
     </div>
+
+    <script>
+        (function() {
+            const micBtn = document.getElementById('mic-btn');
+            const micIcon = document.getElementById('mic-icon');
+            const micActive = document.getElementById('mic-active');
+            const chatInput = document.getElementById('chat-input');
+            let mediaRecorder;
+            let audioChunks = [];
+
+            micBtn.addEventListener('click', async () => {
+                if (!mediaRecorder || mediaRecorder.state === "inactive") {
+                    // Start Recording
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const formData = new FormData();
+                        formData.append('audio', audioBlob);
+
+                        micActive.classList.add('hidden');
+                        micIcon.classList.remove('hidden');
+                        chatInput.placeholder = "Transkribiere...";
+
+                        try {
+                            const response = await fetch('/ai-chat/transcribe', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            const data = await response.json();
+                            if (data.text) {
+                                chatInput.value = data.text;
+                                chatInput.focus();
+                            }
+                        } catch (e) {
+                            console.error("Transcription failed", e);
+                        } finally {
+                            chatInput.placeholder = "Frage stellen...";
+                        }
+                    };
+
+                    mediaRecorder.start();
+                    micIcon.classList.add('hidden');
+                    micActive.classList.remove('hidden');
+                } else {
+                    // Stop Recording
+                    mediaRecorder.stop();
+                    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                }
+            });
+        })();
+    </script>
 </div>

@@ -36,6 +36,13 @@ async def ai_health() -> Any:
     })
 
 
+@router.post("/transcribe")
+async def transcribe_audio(request: Request) -> Any:
+    """Wandelt Audio-Blobs in Text um (v1.1 Mock)."""
+    # In v1.2: Integration mit lokaler Whisper-Instanz
+    return JSONResponse({"text": "Ich brauche ein Angebot für eine neue Heizungsanlage."})
+
+
 @router.post("/message", response_class=HTMLResponse)
 async def handle_message(request: Request, message: str = Form("")) -> Any:
     """Verarbeitet User-Messages via HTMX (FastAPI) ohne den Event-Loop zu blockieren."""

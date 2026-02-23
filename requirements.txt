@@ -14,3 +14,6 @@ chromadb
 ollama
 sentence-transformers
 apscheduler
+sqlite-vec
+sentence-transformers
+anyio

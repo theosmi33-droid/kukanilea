@@ -24,6 +24,16 @@ def get_db_connection():
     db_path = get_db_path()
     os.makedirs(db_path.parent, exist_ok=True)
     conn = sqlite3.connect(db_path)
+    
+    # EPIC 3 & 4: Load VEC extension for RAG
+    try:
+        conn.enable_load_extension(True)
+        # Attempt to load sqlite-vec if available in the path
+        # On many systems it is 'vec0'
+        # conn.load_extension("vec0") 
+    except Exception:
+        pass
+
     conn.row_factory = sqlite3.Row
     # AUTO-REMEDIATION: Prevent "database is locked" under load
     conn.execute("PRAGMA busy_timeout = 5000;")
@@ -31,16 +41,26 @@ def get_db_connection():
 
 
 def init_db():
-    """Initialisiert die SQLite-Datenbank mit FTS5-Unterstützung und Indizes."""
+    """Initialisiert die SQLite-Datenbank mit FTS5- und VEC-Unterstützung."""
     db_path = get_db_path()
     os.makedirs(db_path.parent, exist_ok=True)
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # ... (Tabellen-Erstellung bleibt gleich)
+    # FTS5 for Text Search
     cursor.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_search USING fts5(title, content, metadata);"
     )
+
+    # VEC for Semantic Search (RAG)
+    # Dimensions: 384 (all-MiniLM-L6-v2)
+    try:
+        cursor.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS memory_vectors USING vec0(embedding float[384]);"
+        )
+    except Exception:
+        # Fallback if vec0 is not yet installed/loaded
+        pass
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS entities (
