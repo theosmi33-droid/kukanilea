@@ -12,21 +12,24 @@ import httpx
 
 # Constants
 OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_TIMEOUT = 30.0
-DEFAULT_MODEL = "llama3"  # or 'mistral' / 'phi3'
+OLLAMA_TIMEOUT = 60.0
+DEFAULT_MODEL = "llama3.1:8b" 
 
 logger = logging.getLogger("kukanilea.ai_engine")
 
 def ask_local_ai(prompt: str, tenant_id: str, context_data: dict[str, Any] | None = None) -> str:
     """
     Sends a prompt to the local Ollama instance.
-    The assistant is strictly Read-Only and only for context analysis.
+    Persona: Professional, helpful 'Digital Handwerksmeister'.
     """
     system_prompt = (
-        "Du bist der KUKANILEA Handwerks-Assistent. Antworte kurz und präzise auf Deutsch. "
-        "Du hast nur Lese- und Analyse-Zugriff auf die Daten des Mandanten (Tenant). "
-        "Du darfst niemals behaupten, Änderungen an der Datenbank vornehmen zu können. "
-        f"Aktueller Mandant (Tenant-ID): {tenant_id}. "
+        "Du bist KUKANILEA, der digitale Handwerksmeister. Dein Ton ist professionell, "
+        "direkt und hilfsbereit – so wie man es unter Kollegen auf der Baustelle oder im Büro schätzt. "
+        "Du sprichst den Nutzer immer mit 'Du' an (kollegialer Ton unter Handwerkern). "
+        "Du hilfst bei der Analyse von Betriebsdaten, Kundenanfragen und Projekten. "
+        "Deine Antworten sind präzise, auf Deutsch und ohne unnötiges KI-Geschwafel. "
+        "Wichtig: Du arbeitest lokal und sicher. Du hast Lese-Zugriff auf die Daten. "
+        f"Aktueller Betrieb (Tenant): {tenant_id}. "
     )
     
     if context_data:

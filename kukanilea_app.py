@@ -16,6 +16,7 @@ from app.ai_chat import router as ai_chat_router
 from app.autonomy.maintenance import check_integrity
 from app.crm import router as crm_router
 from app.database import init_db
+from app.devtools.settings import router as dev_router
 from app.logging_utils import setup_secure_logging
 from app.observability import setup_observability
 from app.session import validate_session
@@ -35,6 +36,7 @@ app.include_router(tasks_router)
 app.include_router(ui_router)
 app.include_router(onboarding_router)
 app.include_router(ai_chat_router)
+app.include_router(dev_router)
 
 
 @app.on_event("startup")
