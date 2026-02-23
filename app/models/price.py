@@ -21,3 +21,11 @@ class Price(Base):
             "valid_from": self.valid_from.isoformat() if self.valid_from else None,
             "valid_to": self.valid_to.isoformat() if self.valid_to else None,
         }
+
+class DocumentHash(Base):
+    __tablename__ = 'document_hashes'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    filepath = Column(String, nullable=False)
+    sha256_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

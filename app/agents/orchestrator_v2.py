@@ -231,8 +231,10 @@ class SecretaryAgent(BaseAgent):
             }
             reasoning = "Automatischer E-Mail Versand nach erfolgreicher Terminierung."
             # SST Schutz für E-Mail Inhalte (Schritt 5)
-            await self.call_tool("send_appointment_mail", mail_data, tenant_id, user_id, reasoning=reasoning)
-            return f"Termin wurde geplant und Bestätigungsmail versendet."
+            tool_res = await self.call_tool("send_appointment_mail", mail_data, tenant_id, user_id, reasoning=reasoning)
+            if validate_sequence(tool_res, self.session_salt):
+                return f"Termin wurde geplant und Bestätigungsmail versendet."
+            return "Sicherheitsfehler: Mail-Daten manipuliert."
 
         if "kunde" in input_text.lower():
             reasoning = "CRM Suche für Kundenidentifikation."
@@ -281,6 +283,12 @@ class OrchestratorV2:
         except Exception as e:
             audit.log_event(agent.role, "SYSTEM_ERROR", str(e), status='error')
             return f"Systemfehler: {str(e)}"
+
+    async def delegate_task_batch(self, user_inputs: List[str], tenant_id: str = "KUKANILEA", user_id: str = "system") -> List[str]:
+        """Verarbeitet mehrere Tasks parallel mittels asyncio.gather."""
+        tasks = [self.delegate_task(ui, tenant_id, user_id) for ui in user_inputs]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return [str(res) for res in results]
 
 # Singleton/Helper für Abwärtskompatibilität
 _orch_instance = None

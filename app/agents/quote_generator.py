@@ -83,4 +83,23 @@ class QuoteGenerator:
         story.append(Paragraph("Vielen Dank für Ihre Anfrage. Wir freuen uns auf eine Zusammenarbeit.", styles['Italic']))
 
         doc.build(story)
+        
+        # GoBD Immutability Hashing
+        import hashlib
+        from app.models.rule import get_sa_session
+        from app.models.price import DocumentHash
+        
+        with open(filepath, 'rb') as f:
+            file_hash = hashlib.sha256(f.read()).hexdigest()
+            
+        session = get_sa_session()
+        try:
+            hash_entry = DocumentHash(filepath=str(filepath), sha256_hash=file_hash)
+            session.add(hash_entry)
+            session.commit()
+        except Exception as e:
+            print(f"Fehler beim Speichern des GoBD Hashs: {e}")
+        finally:
+            session.close()
+
         return str(filepath)

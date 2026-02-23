@@ -94,13 +94,31 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    import asyncio
+    logger = logging.getLogger("kukanilea.app")
+    logger.info("Initiating graceful shutdown (Zombie-Hunter)...")
+    
     global p2p_manager, email_trigger
     if p2p_manager:
-        p2p_manager.stop()
-        logging.getLogger("kukanilea.p2p").info("P2P Discovery Service stopped.")
+        try:
+            p2p_manager.stop()
+            logger.info("P2P Discovery Service stopped.")
+        except Exception as e:
+            logger.error(f"Error stopping P2P: {e}")
     
     if email_trigger:
-        await email_trigger.stop()
+        try:
+            await email_trigger.stop()
+            logger.info("Email Trigger stopped.")
+        except Exception as e:
+            logger.error(f"Error stopping Email Trigger: {e}")
+            
+    # Terminate pending asyncio tasks to prevent zombies
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    [task.cancel() for task in tasks]
+    logger.info(f"Cancelled {len(tasks)} outstanding tasks.")
+    await asyncio.gather(*tasks, return_exceptions=True)
+    logger.info("Graceful shutdown complete.")
 
 
 # Templates

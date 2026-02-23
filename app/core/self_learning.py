@@ -117,3 +117,34 @@ def apply_approved_rule_to_playbook(proposal_id: int):
     
     session.close()
     return False
+
+def analyze_crash(traceback_text: str):
+    """
+    Traceback-Analyzer: Analysiert Systemabstürze und erstellt Patch-Vorschläge.
+    """
+    import logging
+    logger = logging.getLogger("kukanilea.self_learning")
+    logger.info("Analysiere System-Crash...")
+    
+    try:
+        from app.agents.orchestrator import answer as agent_answer
+        prompt = (
+            "Du bist ein Senior Python Developer und Debugging-Spezialist. "
+            "Ein kritischer Fehler ist in KUKANILEA aufgetreten. Analysiere den folgenden Stacktrace "
+            "und schlage einen konkreten Fix oder Workaround vor.\\n\\n"
+            f"TRACEBACK:\\n{traceback_text}\\n\\n"
+            "Erkläre die Ursache kurz und liefere den Code-Patch."
+        )
+        # Dummy result for prototyping
+        # result = agent_answer(prompt, role="MASTER")
+        suggestion = f"## Crash Analysis {datetime.utcnow().isoformat()}\\n**Traceback:**\\n```\\n{traceback_text}\\n```\\n**Vorschlag:**\\nCheck asyncio logic or DB locks.\\n---\\n"
+        
+        docs_dir = Path("docs/evolution")
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        fix_file = docs_dir / "fix_suggestions.md"
+        
+        with open(fix_file, "a", encoding="utf-8") as f:
+            f.write(suggestion)
+            
+    except Exception as e:
+        logger.error(f"Fehler bei Crash-Analyse: {e}")
