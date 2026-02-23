@@ -7,7 +7,9 @@ import platform
 def run_step(name, command):
     print(f"[*] Step: {name}...", end="", flush=True)
     try:
-        res = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        env = os.environ.copy()
+        env["PYENV_VERSION"] = "3.14.2"
+        res = subprocess.run(command, capture_output=True, text=True, timeout=60, env=env)
         if res.returncode == 0:
             print(" [PASS]")
             return True
@@ -22,14 +24,18 @@ def run_step(name, command):
 def main():
     print("=== KUKANILEA RC1 PRE-FLIGHT CHECK ===\n")
     
+    python_bin = "/Users/gensuminguyen/.pyenv/shims/python3.14"
+    pytest_bin = "/Users/gensuminguyen/.pyenv/shims/pytest"
+    
     # Check OS
     print(f"[INFO] OS: {platform.system()} {platform.release()}")
+    print(f"[INFO] Python: {python_bin}")
     
     # Steps
     steps = [
         ("Check Assets (Icon)", ["ls", "assets/icon.ico"]),
-        ("Security Tests (Salted Inference)", ["pytest", "tests/security/test_salted_inference.py"]),
-        ("SBOM Generation", ["python3", "scripts/generate_sbom.py"]),
+        ("Security Tests (Salted Inference)", [pytest_bin, "-W", "ignore", "tests/security/test_salted_inference.py"]),
+        ("SBOM Generation", [python_bin, "scripts/generate_sbom.py"]),
     ]
     
     all_pass = True

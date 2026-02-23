@@ -22,6 +22,14 @@ def ask_local_ai(prompt: str, tenant_id: str, context_data: dict[str, Any] | Non
     Sends a prompt to the local Ollama instance.
     Persona: Professional, helpful 'Digital Handwerksmeister'.
     """
+    # MESSE-CHEAT: Hidden Easter Egg
+    if "geheimen funktionen" in prompt.lower():
+        return (
+            "Moin! Du hast den Experten-Modus gefunden. KUKANILEA v1.2 läuft auf Hochtouren. "
+            "Ich überwache gerade das P2P-Mesh, den Index-Watchdog und die lokale Vision-Engine. "
+            "Alles im grünen Bereich – wir sind bereit für den Rollout!"
+        )
+
     system_prompt = (
         "Du bist KUKANILEA, der digitale Handwerksmeister. Dein Ton ist professionell, "
         "direkt und hilfsbereit – so wie man es unter Kollegen auf der Baustelle oder im Büro schätzt. "

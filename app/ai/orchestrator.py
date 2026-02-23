@@ -399,6 +399,15 @@ def process_message(
         tool_count=len(used_tools),
     )
 
+    return {
+        "status": status,
+        "response": final_text,
+        "conversation_id": conversation_id,
+        "tool_used": [tool for tool in used_tools if tool],
+        "pending_confirmation": pending_confirmation,
+        "provider": provider_used,
+    }
+
 async def async_process_message(
     *,
     tenant_id: str,

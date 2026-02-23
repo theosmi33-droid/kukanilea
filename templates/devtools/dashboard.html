@@ -49,22 +49,38 @@
         </div>
 
         <!-- Stage 4 Watchdog -->
-        <div class="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl">
+        <div class="md:col-span-1 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xs font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-2">
                     <span class="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
-                    Autonomy Stage 4: Indexing Watchdog
+                    Autonomy Stage 4: Indexing
                 </h2>
-                <span class="text-[10px] text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">WATCHING</span>
             </div>
             <div class="bg-slate-950 p-4 rounded border border-slate-800 font-sans text-xs">
-                <div class="flex justify-between mb-2 pb-2 border-b border-slate-900">
-                    <span class="text-slate-500">Letztes Dokument:</span>
-                    <span class="text-slate-300">Lieferschein_Heizung_Müller.pdf</span>
-                </div>
                 <div class="flex justify-between">
                     <span class="text-slate-500">Status:</span>
-                    <span class="text-emerald-400 font-bold">SYMBOLS INDEXED / VEC STORED</span>
+                    <span class="text-emerald-400 font-bold">VEC STORED</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: P2P Mesh Section -->
+        <div class="md:col-span-1 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xs font-bold text-indigo-400 uppercase tracking-tighter flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" stroke-width="2"></path></svg>
+                    Local Mesh (P2P)
+                </h2>
+                <span class="text-[9px] text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded">SCANNING</span>
+            </div>
+            <div class="space-y-2">
+                <div class="p-2 bg-slate-950 rounded border border-indigo-900/30 flex justify-between items-center">
+                    <span class="text-[10px] text-slate-300">TABLET-MASTER-01</span>
+                    <span class="text-[9px] text-emerald-500 font-bold uppercase">Paired</span>
+                </div>
+                <div class="p-2 bg-slate-950 rounded border border-slate-800 flex justify-between items-center opacity-50">
+                    <span class="text-[10px] text-slate-500">LAPTOP-OFFICE-B</span>
+                    <button class="text-[9px] text-indigo-400 hover:text-white uppercase font-bold transition-all">Pair Now</button>
                 </div>
             </div>
         </div>

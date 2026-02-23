@@ -127,5 +127,21 @@
             </div>
         </div>
     </div>
+
+    <!-- Footer -->
+    <footer class="p-8 mt-auto border-t border-slate-200 flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-[0.4em]">
+        <div>&copy; 2026 TOPHANDWERK ENGINEERING</div>
+        <div class="text-indigo-500">KUKANILEA v1.2.0-MESSE</div>
+    </footer>
+
+    <script>
+        // Secret Dev-Shortcut: CMD/CTRL + SHIFT + D
+        document.addEventListener('keydown', function(e) {
+            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
+                e.preventDefault();
+                window.location.href = "/dev/dashboard/";
+            }
+        });
+    </script>
 </body>
 </html>

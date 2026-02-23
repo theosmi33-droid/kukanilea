@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.ai_chat import router as ai_chat_router
 from app.autonomy.maintenance import check_integrity
+from app.autonomy.p2p import KukanileaDiscovery
 from app.crm import router as crm_router
 from app.database import init_db
 from app.devtools.settings import router as dev_router
@@ -31,6 +32,9 @@ setup_secure_logging()
 
 app = FastAPI(title="KUKANILEA - Business OS", docs_url=None, redoc_url=None)
 
+# Global P2P Handle
+p2p_manager: KukanileaDiscovery | None = None
+
 # Router integrieren
 app.include_router(crm_router)
 app.include_router(tasks_router)
@@ -43,6 +47,7 @@ app.include_router(dashboard_router)
 
 @app.on_event("startup")
 async def startup_event():
+    global p2p_manager
     # 1. Observability aktivieren (GDPR-safe)
     logger = setup_observability()
     logger.info("KUKANILEA Boot Sequence initiated.")
@@ -62,6 +67,25 @@ async def startup_event():
     # 3. Schema initialisieren (mit FTS5)
     init_db()
     logger.info("Database schema initialized and ready.")
+
+    # 4. P2P Mesh Discovery (v2.0 Autostart)
+    try:
+        import socket
+        hostname = socket.gethostname().split('.')[0]
+        p2p_manager = KukanileaDiscovery()
+        p2p_manager.advertise(f"KUKANILEA-{hostname}")
+        p2p_manager.find_peers()
+        logger.info(f"P2P Mesh Discovery active. Node name: KUKANILEA-{hostname}")
+    except Exception as e:
+        logger.error(f"P2P Service failed to start: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global p2p_manager
+    if p2p_manager:
+        p2p_manager.stop()
+        logging.getLogger("kukanilea.p2p").info("P2P Discovery Service stopped.")
 
 
 # Templates
