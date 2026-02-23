@@ -3717,6 +3717,11 @@ def api_ai_chat():
             "too_long", "Nachricht ist zu lang (max. 4000 Zeichen).", status=400
         )
 
+    # v1.2 Hidden Feature: Monitor for anomalies in background
+    from app.ai.monitoring import analyze_user_behavior
+    import threading
+    threading.Thread(target=analyze_user_behavior, args=(str(current_user() or "anon"), "chat_query", {"msg": msg})).start()
+
     try:
         result = ai_process_message(
             tenant_id=current_tenant(),
@@ -3816,6 +3821,12 @@ def api_ai_feedback():
             conversation_id=conversation_id,
             rating=rating,
         )
+        
+        # v1.2 Hidden Feature: Convert negative feedback to Dev-Task
+        if rating == "negative":
+            from app.ai.monitoring import _create_dev_task
+            _create_dev_task(f"User Feedback Negative: {conversation_id}", f"User {current_user()} marked conversation {conversation_id} as bad.")
+            
     except ValueError as exc:
         code = str(exc)
         if code == "not_found":
