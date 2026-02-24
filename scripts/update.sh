@@ -12,6 +12,13 @@ git checkout main
 echo "==> Rebasing onto origin/main"
 git pull --rebase --autostash origin main
 
+# SAFETY CHECK: Ensure instance directory (License & Config) is preserved
+if [ ! -d "instance" ]; then
+  echo "==> Creating instance directory (first run?)"
+  mkdir -p instance
+fi
+echo "==> Instance directory verified (License persistence active)"
+
 if [ ! -d ".venv" ]; then
   echo "==> Creating virtualenv (.venv)"
   python3 -m venv .venv

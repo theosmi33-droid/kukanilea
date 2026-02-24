@@ -1,129 +1,152 @@
-from __future__ import annotations
+"""
+Zentrales Error-Handling für KUKANILEA Gold.
+Maxime: Fail-Safe, Not Fail-Fast. Absolute Error-Boundary mit Request-IDs.
+"""
+import logging
+import traceback
+import uuid
+import hashlib
+import json
+from datetime import datetime, timezone
+from functools import wraps
+from flask import jsonify, render_template_string, request, g
 
-from typing import Any
+logger = logging.getLogger("kukanilea.errors")
 
-from flask import g, jsonify, render_template_string, request
+class KukaniMeaError(Exception):
+    """Base-Exception für alle kontrollierten KUKANILEA-Fehler."""
+    def __init__(self, message: str, error_code: str, details: dict = None):
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+        self.details = details or {}
+        # Gold Hardening: Eindeutige Request-ID pro Exception
+        self.request_id = str(uuid.uuid4())
+        self.timestamp = datetime.now(timezone.utc).isoformat()
 
+class ValidationError(KukaniMeaError):
+    def __init__(self, message: str, field: str = None):
+        super().__init__(message, 'validation_error', {'field': field})
 
-def _active_tab_from_path(path: str) -> str:
-    token = str(path or "").strip().lower()
-    if token.startswith("/tasks"):
-        return "tasks"
-    if token.startswith("/time"):
-        return "time"
-    if token.startswith("/assistant"):
-        return "assistant"
-    if token.startswith("/chat"):
-        return "chat"
-    if token.startswith("/postfach") or token.startswith("/mail"):
-        return "postfach"
-    if token.startswith("/crm"):
-        return "crm"
-    if token.startswith("/leads"):
-        return "leads"
-    if token.startswith("/knowledge"):
-        return "knowledge"
-    if token.startswith("/conversations"):
-        return "conversations"
-    if token.startswith("/workflows"):
-        return "workflows"
-    if token.startswith("/automation"):
-        return "automation"
-    if token.startswith("/autonomy"):
-        return "autonomy"
-    if token.startswith("/insights"):
-        return "insights"
-    if token.startswith("/license"):
-        return "license"
-    if token.startswith("/settings") or token.startswith("/dev/"):
-        return "settings"
-    return "upload"
+class PermissionDeniedError(KukaniMeaError):
+    def __init__(self, message: str = "Zugriff verweigert."):
+        super().__init__(message, 'forbidden')
 
+class ResourceNotFoundError(KukaniMeaError):
+    def __init__(self, resource_type: str, resource_id: str):
+        super().__init__(f"{resource_type} nicht gefunden.", 'not_found', {'id': resource_id})
 
-def wants_json_error() -> bool:
-    path = str(request.path or "")
-    if path.startswith("/api/"):
-        return True
+class SystemError(KukaniMeaError):
+    def __init__(self, message: str, original_exception: Exception = None):
+        super().__init__(message, 'system_error', {'exception': str(original_exception)})
 
-    # Browser navigations should prefer shell-based HTML errors.
-    if str(request.headers.get("Sec-Fetch-Mode") or "").lower() == "navigate":
-        return False
+def safe_execute(func):
+    """
+    Decorator: Fängt alle rohen Exceptions und wandelt sie in einen SystemError um.
+    Generiert anonymisierten Error-Fingerprint via SHA-256.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except KukaniMeaError:
+            raise
+        except Exception as e:
+            # Gold Hardening: Anonymisierter Fingerprint für Sentry/Logs
+            error_details = f"{type(e).__name__}: {str(e)} | {traceback.format_exc()}"
+            fingerprint = hashlib.sha256(error_details.encode('utf-8')).hexdigest()
+            
+            logger.critical(f"UNHANDLED EXCEPTION [{fingerprint[:12]}]: {e}")
+            logger.debug(traceback.format_exc())
+            
+            raise SystemError(
+                message=f"Ein interner Fehler ist aufgetreten (ID: {fingerprint[:8]}).",
+                original_exception=e
+            )
+    return wrapper
 
-    accept = request.accept_mimetypes
-    json_quality = float(accept["application/json"])
-    html_quality = float(accept["text/html"])
-    if json_quality > 0 and json_quality > html_quality:
-        return True
+def fail_safe(func):
+    """
+    Agent-Level Decorator: Fällt in einen sicheren Zustand (Read-Only) zurück,
+    anstatt den gesamten Agenten-Prozess zu terminieren.
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Agent-Level Failure in {func.__name__}: {e}. Falling back to safe-state.")
+            return "AGENT_SAFE_STATE: Die Aktion konnte aufgrund eines Systemfehlers nicht ausgeführt werden. (Read-Only Fallback)"
+    return wrapper
 
-    # XHR callers commonly expect JSON when HTML is not explicitly requested.
-    xrw = str(request.headers.get("X-Requested-With") or "").lower()
-    raw_accept = str(request.headers.get("Accept") or "").lower()
-    if (
-        xrw == "xmlhttprequest"
-        and "text/html" not in raw_accept
-        and ("application/json" in raw_accept or "*/*" in raw_accept)
-    ):
-        return True
+def handle_error(error: Exception):
+    """Zentraler Flask Error Handler mit Content-Negotiation."""
+    from werkzeug.exceptions import HTTPException
+    
+    if isinstance(error, KukaniMeaError):
+        rid = error.request_id
+        code = error.error_code
+        msg = error.message
+        status = _get_status_code(error)
+    elif isinstance(error, HTTPException):
+        rid = str(uuid.uuid4())
+        code = 'forbidden' if error.code == 403 else ('validation_error' if error.code == 400 else 'http_error')
+        msg = str(error.description or error.name)
+        status = error.code or 500
+    else:
+        rid = str(uuid.uuid4())
+        code = 'unknown_error'
+        msg = "Unerwarteter Systemfehler."
+        status = 500
 
-    return False
+    # Content-Negotiation
+    if request.path.startswith('/api/') or request.accept_mimetypes.best == 'application/json':
+        return jsonify({
+            'error': {'code': code, 'message': msg, 'request_id': rid, 'timestamp': datetime.now(timezone.utc).isoformat()}
+        }), status
+    else:
+        try:
+            from . import web
+            content = render_template_string(HTML_ERROR_INNER, error_code=code, message=msg, request_id=rid, status=status)
+            return web._render_base(content, active_tab="upload"), status
+        except Exception:
+            return render_template_string(HTML_ERROR_PAGE, error_code=code, message=msg, request_id=rid), status
 
+def _get_status_code(error: Exception) -> int:
+    if isinstance(error, ValidationError): return 400
+    if isinstance(error, PermissionDeniedError): return 403
+    if isinstance(error, ResourceNotFoundError): return 404
+    return 500
 
-def _html_error_response(code: str, message: str, *, status: int):
-    request_id = str(getattr(g, "request_id", "unknown"))
-    content = render_template_string(
-        """
-<div class="max-w-3xl mx-auto">
-  <div class="card p-6 rounded-2xl border">
-    <div class="text-xs muted mb-2">Fehler {{ status }}</div>
-    <h1 class="text-2xl font-semibold mb-2">{{ title }}</h1>
-    <p class="text-sm muted mb-4">{{ message }}</p>
-    <div class="text-xs muted mb-4">Request-ID: <code>{{ request_id }}</code></div>
-    <div class="flex flex-wrap gap-2">
-      <button type="button" class="btn btn-outline px-3 py-2 text-sm" onclick="window.location.reload()">Neu laden</button>
-      <button type="button" class="btn btn-outline px-3 py-2 text-sm" onclick="window.history.back()">Zurueck</button>
-      <a class="btn btn-primary px-3 py-2 text-sm" href="/">Dashboard</a>
+HTML_ERROR_INNER = """
+<div class="max-w-3xl mx-auto" data-app-shell="1">
+  <div class="card p-8 rounded-2xl border bg-white shadow-sm" style="border-left: 4px solid #ef4444;">
+    <h1 class="text-2xl font-bold mb-4" style="color: #991b1b;">⚠️ Vorgang unterbrochen ({{ status }})</h1>
+    <p class="text-lg mb-6"><strong>{{ message }}</strong></p>
+    <div class="bg-gray-50 p-4 rounded-lg text-sm text-gray-600 mb-8 border">
+        <p>Fehlercode: <code>{{ error_code }}</code></p>
+        <p>Request-ID: <code>{{ request_id }}</code></p>
+    </div>
+    <div class="flex gap-3">
+        <a href="/" class="btn btn-primary px-6 py-2">Dashboard</a>
+        <button onclick="window.history.back()" class="btn btn-outline px-6 py-2">Zurueck</button>
+        {% if status >= 500 %}
+        <a href="/support/diagnostic" class="btn btn-danger px-6 py-2">Diagnose-Paket erstellen</a>
+        {% endif %}
     </div>
   </div>
 </div>
-        """,
-        status=int(status),
-        title=str(code or "Fehler"),
-        message=str(message or "Die Aktion konnte nicht abgeschlossen werden."),
-        request_id=request_id,
-    )
-    from . import web
+"""
 
-    active_tab = _active_tab_from_path(request.path or "/")
-    return web._render_base(content, active_tab=active_tab), int(status)
-
-
-def error_envelope(
-    code: str, message: str, *, details: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "ok": False,
-        "error": {
-            "code": code,
-            "message": message,
-            "details": details or {},
-        },
-    }
-    request_id = getattr(g, "request_id", None)
-    if request_id:
-        payload["error"]["request_id"] = request_id
-        payload["error"]["details"].setdefault("request_id", request_id)
-    return payload
-
-
-def error_payload(
-    code: str, message: str, *, details: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    return error_envelope(code, message, details=details)["error"]
-
-
-def json_error(
-    code: str, message: str, *, status: int = 400, details: dict[str, Any] | None = None
-):
-    if not wants_json_error():
-        return _html_error_response(code, message, status=status)
-    return jsonify(error_envelope(code, message, details=details)), status
+HTML_ERROR_PAGE = """
+<!DOCTYPE html>
+<html lang="de">
+<body data-app-shell="1">
+    <div style="max-width:600px; margin:80px auto; font-family:sans-serif;">
+        <h1>⚠️ Fehler {{ status }}</h1>
+        <p>{{ message }}</p>
+        <small>ID: {{ request_id }}</small>
+    </div>
+</body>
+</html>
+"""

@@ -1103,6 +1103,21 @@ def _crm_contacts_list(tenant_id: str, customer_id: str) -> list[dict[str, Any]]
     return []
 
 
+@bp.route("/support/diagnostic", methods=["GET"])
+@login_required
+def support_diagnostic():
+    from app.services.diagnostic_exporter import diagnostic_exporter
+    from flask import send_file
+    import io
+    
+    dump_bytes = diagnostic_exporter.generate_dump()
+    return send_file(
+        io.BytesIO(dump_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"KUKANILEA_DIAGNOSTIC_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    )
+
 # -------- UI Templates ----------
 HTML_BASE = r"""<!doctype html>
 <html lang="de" data-theme="{{ theme_default }}">
@@ -1983,21 +1998,60 @@ HTML_RESET_PASSWORD = r"""
 </div>
 """
 
-HTML_DEV_TENANT = r"""
+@bp.route("/license/activate", methods=["GET", "POST"])
+@login_required
+@require_role("OWNER_ADMIN")
+def license_activate():
+    from app.core.license_manager import license_manager
+    error = None
+    success = None
+    hwid = license_manager.hardware_id
+    
+    if request.method == "POST":
+        key = request.form.get("license_key", "").strip()
+        if not key:
+            error = "Bitte einen Lizenzschlüssel eingeben."
+        else:
+            if license_manager.load_license(key):
+                success = "Lizenz erfolgreich aktiviert!"
+                _audit("license_activated")
+            else:
+                error = "Ungültiger Lizenzschlüssel oder Hardware-Mismatch."
+                
+    return _render_base(
+        render_template_string(HTML_ACTIVATE, hwid=hwid, error=error, success=success),
+        active_tab="license"
+    )
+
+HTML_ACTIVATE = r"""
 <div class="max-w-xl mx-auto mt-10">
-  <div class="card p-6">
-    <h1 class="text-2xl font-bold mb-2">DEV Tenant-Konfiguration</h1>
-    <p class="text-sm opacity-80 mb-4">Tenant-ID ist fixiert und kann nicht geändert werden.</p>
-    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
-    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
-    <form method="post" class="space-y-3">
+  <div class="card p-8 shadow-lg">
+    <h1 class="text-2xl font-bold mb-2">Systemaktivierung</h1>
+    <p class="text-sm muted mb-6">Bitte gib deinen Gold-Lizenzschlüssel ein, um den vollen Funktionsumfang freizuschalten.</p>
+    
+    <div class="bg-slate-50 p-4 rounded-xl border mb-6">
+        <label class="label">Deine Hardware-ID (HWID):</label>
+        <code class="text-xs select-all">{{ hwid }}</code>
+        <p class="text-[10px] muted mt-2">Sende diese ID an den Support, um einen Schlüssel zu erhalten.</p>
+    </div>
+
+    {% if error %}<div class="alert alert-error mb-4">{{ error }}</div>{% endif %}
+    {% if success %}<div class="alert alert-info mb-4">{{ success }}</div>{% endif %}
+
+    <form method="post" class="space-y-4">
       <div>
-        <label class="label">Tenant-ID (read-only)</label>
-        <input class="input w-full" value="{{ tenant_id }}" readonly>
+        <label class="label">Lizenzschlüssel (Base64)</label>
+        <textarea name="license_key" class="input w-full h-32 text-xs font-mono p-3" placeholder="..."></textarea>
       </div>
-      <div>
-        <label class="label">Tenant-Name</label>
-        <input class="input w-full" name="tenant_name" maxlength="120" value="{{ tenant_name }}" required>
+      <button class="btn btn-primary w-full py-3" type="submit">Aktivieren</button>
+    </form>
+    
+    <div class="mt-6 text-center">
+        <a href="/" class="text-sm underline muted">Zurück zum Dashboard</a>
+    </div>
+  </div>
+</div>
+"""
       </div>
       <button class="btn btn-primary w-full" type="submit">Tenant-Name speichern</button>
     </form>
@@ -9700,6 +9754,14 @@ HTML_SETTINGS = """
     <div id="toolStatus" class="text-xs muted mt-2"></div>
   </div>
   {% endif %}
+
+  <div class="card p-4 rounded-2xl border bg-warning-content/10">
+    <div class="text-sm font-semibold mb-2">Support & Diagnose</div>
+    <div class="text-xs muted mb-3">
+      Erstellen Sie ein anonymisiertes Diagnose-Paket für den Offline-Support. PII (Namen, E-Mails) werden automatisch maskiert.
+    </div>
+    <a href="/support/diagnostic" class="btn btn-outline btn-sm">Diagnostic Dump exportieren (.zip)</a>
+  </div>
 </div>
 
 <script>
@@ -11934,6 +11996,63 @@ def assistant():
         q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
     )
     return _render_base(html, active_tab="assistant")
+
+
+@bp.route("/api/voice/transcribe", methods=["POST"])
+@login_required
+def flask_transcribe_audio():
+    """Flask-basierter Endpunkt für mobile Sprachsteuerung."""
+    if "file" not in request.files:
+        return jsonify({"status": "error", "message": "Keine Datei gesendet."}), 400
+    
+    audio_file = request.files["file"]
+    temp_dir = "instance/voice_temp"
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, f"flask_voice_{secrets.token_hex(4)}_{audio_file.filename}")
+    
+    audio_file.save(temp_path)
+    
+    try:
+        from app.ai.voice_parser import voice_parser
+        from app.agents.orchestrator_v2 import delegate_task, wrap_with_salt
+        from app.agents.observer import ObserverAgent
+        import asyncio
+
+        # 1. Transkription
+        text = voice_parser.transcribe(temp_path)
+        if not text:
+            return jsonify({"status": "error", "message": "Sprache konnte nicht erkannt werden."}), 400
+
+        # 2. Observer Prüfung
+        observer = ObserverAgent()
+        allowed, reason = observer.validate_action("voice_command", {"text": text})
+        
+        if not allowed:
+            return jsonify({
+                "status": "draft",
+                "transcription": text,
+                "agent_response": f"Befehl als Entwurf markiert: {reason}",
+                "is_draft": True
+            })
+
+        # 3. Delegation
+        salted_voice_text = wrap_with_salt(text)
+        # Flask is sync, so we run async in loop
+        agent_response = asyncio.run(delegate_task(salted_voice_text, tenant_id=current_tenant(), user_id=current_user()))
+        
+        is_draft = "Sicherheitsblockade" in agent_response or "Human-in-the-loop" in agent_response
+        
+        return jsonify({
+            "status": "ok",
+            "transcription": text,
+            "agent_response": agent_response,
+            "is_draft": is_draft
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @bp.route("/tasks")
