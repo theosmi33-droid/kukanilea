@@ -60,7 +60,7 @@ def safe_execute(func):
             logger.debug(traceback.format_exc())
             
             raise SystemError(
-                message=f"Ein interner Fehler ist aufgetreten (ID: {fingerprint[:8]}).",
+                message=f"Ein interner Fehler ist aufgetreten: {str(e)} (ID: {fingerprint[:8]}).",
                 original_exception=e
             )
     return wrapper
@@ -117,6 +117,18 @@ def _get_status_code(error: Exception) -> int:
     if isinstance(error, PermissionDeniedError): return 403
     if isinstance(error, ResourceNotFoundError): return 404
     return 500
+
+def json_error(code: str, message: str, status: int = 400, details: dict = None):
+    """Hilfsfunktion für standardisierte JSON-Fehlermeldungen."""
+    return jsonify({
+        'error': {
+            'code': code,
+            'message': message,
+            'details': details or {},
+            'request_id': str(uuid.uuid4()),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+    }), status
 
 HTML_ERROR_INNER = """
 <div class="max-w-3xl mx-auto" data-app-shell="1">

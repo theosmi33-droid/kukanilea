@@ -8,8 +8,27 @@
     <meta name="theme-color" content="#ea580c">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/css/voice_control.css">
+    <link rel="stylesheet" href="/static/css/vision_camera.css">
+    <link rel="stylesheet" href="/static/css/toast.css">
+    <script src="/static/js/toast.js"></script>
+    <script src="/static/js/voice_recorder.js"></script>
+    <script src="/static/js/vision_camera.js"></script>
 </head>
 <body class="bg-slate-50 min-h-screen font-sans text-slate-900">
+    <!-- Camera Overlay -->
+    <div id="camera-overlay" class="hidden">
+        <div id="camera-preview"></div>
+        <div class="camera-controls">
+            <button id="camera-close" class="close-btn">✕</button>
+            <button id="camera-shutter" class="shutter-btn"></button>
+            <div style="width: 32px;"></div> <!-- Spacer -->
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
     <!-- Top Level Navigation (Stacked Layout) -->
     <nav class="bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center sticky top-0 z-40 shadow-sm">
         <div class="flex items-center gap-4">
@@ -141,6 +160,17 @@
             </div>
         </div>
     </main>
+
+    <!-- Vision Camera FAB -->
+    <button id="vision-camera-btn" class="camera-fab" title="Kamera-Analyse">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+    </button>
+
+    <!-- Voice Control FAB -->
+    <button id="voice-record-btn" class="voice-fab" title="Sprachsteuerung">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+    </button>
+    <div id="voice-status" class="voice-label hidden">Höre zu...</div>
 
     <!-- Floating Chat Toggle -->
     <div class="fixed bottom-8 right-8 z-50">

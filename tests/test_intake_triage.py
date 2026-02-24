@@ -44,7 +44,7 @@ def test_intake_triage_invoice_label(tmp_path: Path) -> None:
     assert payload.get("ok") is True
     assert payload.get("label") == "invoice"
     assert float(payload.get("confidence") or 0.0) >= 0.3
-    assert (payload.get("route") or {}).get("queue") == "billing_inbox"
+    assert (payload.get("route") or {}).get("queue") == "finance_inbox"
 
 
 def test_intake_triage_support_label(tmp_path: Path) -> None:

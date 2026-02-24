@@ -223,7 +223,15 @@ def _verify_signature(public_key: Any, payload: bytes, signature: bytes) -> bool
             return False
     if rsa is not None and isinstance(public_key, rsa.RSAPublicKey):
         try:
-            public_key.verify(signature, payload, padding.PKCS1v15(), hashes.SHA256())
+            public_key.verify(
+                signature,
+                payload,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
             return True
         except Exception:
             return False

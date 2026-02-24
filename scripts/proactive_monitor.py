@@ -21,11 +21,37 @@ from app.agents.orchestrator_v2 import delegate_task
 from app.core.identity_parser import IdentityParser
 from app.core.self_learning import propose_rule
 from app.agents.procurement import MaterialProcurement
+from app.agents.daily_report import DailyReportGenerator
 import asyncio
 
 # Globaler Cache für verarbeitete IDs
 PROCESSED_IDS = set()
+REPORT_DONE_DATE = None # Verhindert mehrfaches Generieren am selben Abend
 logger = logging.getLogger("kukanilea.monitor")
+
+def check_daily_report(conn):
+    """Triggert täglich um 18:00 Uhr die Erstellung des Bautagebuchs."""
+    global REPORT_DONE_DATE
+    now = datetime.now()
+    
+    # Check: Ist es 18:xx Uhr und haben wir heute noch keinen Report erstellt?
+    if now.hour == 18 and REPORT_DONE_DATE != now.date():
+        logger.info("🕒 18:00 Uhr erreicht. Starte autonomen Bautagebuch-Generator...")
+        try:
+            generator = DailyReportGenerator()
+            data = generator.gather_daily_data(now.date())
+            pdf_path = generator.generate_pdf_report(data)
+            logger.info(f"✅ Bautagebuch erfolgreich erstellt: {pdf_path}")
+            REPORT_DONE_DATE = now.date()
+            
+            # In Benachrichtigungen eintragen
+            conn.execute(
+                "INSERT INTO agent_notifications (tenant_id, role, message) VALUES (?, ?, ?)",
+                ("SYSTEM", "SECRETARY", f"Das tägliche Bautagebuch ({now.date()}) wurde erstellt und GoBD-konform versiegelt.")
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Fehler bei Bautagebuch-Erstellung: {e}")
 
 def check_procurement(conn):
     """Prüft täglich anstehende Termine der nächsten 7 Tage und triggert Materialbestellung."""
@@ -98,6 +124,7 @@ def monitor_loop():
             check_new_receipts(conn)
             check_self_learning(conn)
             check_procurement(conn)
+            check_daily_report(conn)
             conn.close()
         except Exception as e:
             logger.error(f"Fehler im Monitor: {e}")

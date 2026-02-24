@@ -9,7 +9,7 @@ import requests
 from .errors import OllamaBadResponse, OllamaUnavailable
 
 DEFAULT_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
+DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:1b")
 DEFAULT_OLLAMA_TIMEOUT_S = int(os.environ.get("OLLAMA_TIMEOUT", "300"))
 
 

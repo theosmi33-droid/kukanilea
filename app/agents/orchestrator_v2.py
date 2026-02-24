@@ -15,6 +15,7 @@ from app.core.identity_parser import IdentityParser
 from app.agents.observer import ObserverAgent
 from app.agents.tools import dispatch, TOOL_REGISTRY
 from app.core.audit_logger import AuditLogger
+from app.errors import fail_safe
 
 logger = logging.getLogger("kukanilea.orchestrator_v2")
 audit = AuditLogger()
@@ -30,6 +31,17 @@ def generate_session_salt() -> str:
 def wrap_tool_output(output: str, salt: str) -> str:
     """Schritt 2: Wickelt Tool-Ausgabe in SST-Tags ein."""
     return f"<salt_{salt}>{output}</salt_{salt}>"
+
+def wrap_with_salt(text: str, salt: str | None = None) -> str:
+    """Hilfsfunktion für SST-Einwicklung (Mandat: Salted Sequence Tags)."""
+    if salt is None:
+        # Falls kein Salt übergeben, nutze das des Singleton-Orchestrators oder generiere eins
+        global _orch_instance
+        if _orch_instance:
+            salt = _orch_instance.session_salt
+        else:
+            salt = generate_session_salt()
+    return f"<salt_{salt}>{text}</salt_{salt}>"
 
 def validate_sequence(wrapped_output: str, expected_salt: str) -> bool:
     """Schritt 3: Prüft die Integrität der SST-Sequenz."""
@@ -69,6 +81,14 @@ class BaseAgent(ABC):
 
     async def call_tool(self, tool_name: str, args: dict, tenant_id: str, user_id: str, reasoning: str = None) -> str:
         """Sicherer Tool-Aufruf mit SST, Zugriffskontrolle und XAI."""
+        from app.core.license_manager import license_manager
+        from app.errors import PermissionDeniedError
+        
+        # Lizenzprüfung auf Agenten-Ebene (Gold Hardening)
+        if not license_manager.validate_license():
+            audit.log_security_event("SYSTEM", f"Lizenz ungültig. Tool-Zugriff blockiert: {tool_name}")
+            raise PermissionDeniedError("System im Read-Only Modus. Bitte gültige Lizenz einspielen.")
+            
         # Zugriffskontrolle (Schritt 5: Exception bei unbefugtem Aufruf)
         if tool_name not in self.allowed_tools:
             audit.log_security_event(self.role, f"Unbefugter Tool-Zugriff: {tool_name}")
@@ -114,6 +134,7 @@ class MasterAgent(BaseAgent):
         from app.services.price_service import PriceService
         self.price_service = PriceService()
 
+    @fail_safe
     async def process(self, input_text: str, tenant_id: str, user_id: str) -> str:
         # Isolierter Memory Context (Debugging / The Monolith Purge)
         context_memory = {"task": input_text, "tenant": tenant_id}
@@ -178,15 +199,15 @@ class ControllerAgent(BaseAgent):
     def __init__(self):
         super().__init__("CONTROLLER")
         # Schritt 3: Exklusiv DATEV, OCR und Rechnungskontrolle
-        self.allowed_tools = ["datev_export", "datev_reconcile", "ocr_scan", "verify_supplier_invoice"]
+        self.allowed_tools = ["datev_export", "datev_reconcile", "ocr_scan", "verify_supplier_invoice", "vision_extract"]
 
+    @fail_safe
     async def process(self, input_text: str, tenant_id: str, user_id: str) -> str:
         # Isolierter Context
         context_memory = {"task": input_text, "tenant": tenant_id}
         
         if "rechnung" in input_text.lower() and "abgleich" in input_text.lower():
-            # In Echt würde hier das LLM die Order-ID und den OCR-Text extrahieren
-            # Wir simulieren den Tool-Aufruf mit SST Schutz (Schritt 6)
+            # ... (existing logic)
             recon_data = {
                 "order_id": "order_123",
                 "ocr_text": "RECHNUNG Müller GmbH, Zement 105.00 EUR"
@@ -201,9 +222,31 @@ class ControllerAgent(BaseAgent):
                 return f"Rechnungsabgleich durchgeführt. Validierte Ergebnisse liegen vor."
             return "Sicherheitsfehler: Rechnungsdaten manipuliert."
 
+        if "vision" in input_text.lower() or "bild" in input_text.lower():
+            # Spezialisierter Vision-Task für Controller (Gold Logic)
+            image_path = "tmp/vision_input.jpg" # Dummy path
+            
+            from app.ai.picoclaw_parser import picoclaw
+            from app.ai.vision_parser import vision_parser
+            
+            # 1. PicoClaw Micro-Inference (Target < 500ms)
+            extracted = picoclaw.extract_data(image_path)
+            confidence = extracted.get("confidence", 0.0)
+            
+            if confidence >= 0.8:
+                logger.info(f"PicoClaw erfolgreich (Conf: {confidence})")
+                res_str = json.dumps(extracted, ensure_ascii=False)
+                # SST Härtung & Output-Versiegelung
+                return wrap_tool_output(f"STRUKTURDATEN EXTRAHIERT: {res_str}", self.session_salt)
+            
+            # 2. Fallback auf Moondream2 (Qualitative Analyse)
+            logger.info(f"PicoClaw unklar (Conf: {confidence}). Starte Moondream Fallback...")
+            description = vision_parser.analyze_image(image_path)
+            return wrap_tool_output(f"SZENENBESCHREIBUNGEN (Fallback): {description}", self.session_salt)
+
         if "rechnung" in input_text.lower():
+            # ... (existing ocr_scan logic)
             reasoning = "OCR Extraktion für ankommende Rechnung."
-            # Tool-Ergebnis mit SST
             tool_res = await self.call_tool("ocr_scan", {"path": "tmp/invoice.pdf"}, tenant_id, user_id, reasoning=reasoning)
             if validate_sequence(tool_res, self.session_salt):
                 return f"Controller hat Beleg verarbeitet. Validierte Daten liegen vor."
@@ -216,6 +259,7 @@ class SecretaryAgent(BaseAgent):
         # Schritt 4: Exklusiv CRM, Email und Scheduler
         self.allowed_tools = ["crm_create_customer", "search_contacts", "postfach_sync", "postfach_send_draft", "schedule_appointment", "send_appointment_mail"]
 
+    @fail_safe
     async def process(self, input_text: str, tenant_id: str, user_id: str) -> str:
         # Isolierter Context
         context_memory = {"task": input_text, "tenant": tenant_id}
@@ -266,6 +310,12 @@ class OrchestratorV2:
         if any(x in low for x in ["rechnung", "datev", "ocr", "beleg"]): category = "controller"
         elif any(x in low for x in ["kunde", "termin", "mail", "crm"]): category = "secretary"
         
+        # Lizenzprüfung (Schritt 7)
+        from app.core.license_validator import license_validator
+        if category in ["controller", "secretary"] and not license_validator.validate():
+            audit.log_security_event("SYSTEM", "Lizenz ungültig. Spezial-Agenten deaktiviert.")
+            return "Lizenzfehler: Zugriff auf Controller- und Secretary-Funktionen verweigert. Bitte gültige Lizenz hinterlegen."
+
         agent = self.agents[category]
         logger.info(f"Task -> {agent.role} (Session Salt: {self.session_salt[:4]}...)")
         

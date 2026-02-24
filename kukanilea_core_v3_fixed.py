@@ -1823,6 +1823,13 @@ def db_init() -> None:
             _init_autonomy_tables(con)
             _init_conversation_tables(con)
 
+            # --- PRODUCTION READINESS INDICES (Chapter 6) ---
+            con.execute("CREATE INDEX IF NOT EXISTS idx_contacts_tenant ON contacts(tenant_id);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_tasks_tenant_plain ON tasks(tenant);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_docs_tenant_plain ON docs(tenant_id);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_contacts_tenant_name ON contacts(tenant_id, name COLLATE NOCASE);")
+
             row = con.execute("PRAGMA user_version").fetchone()
             cur_ver = int(row[0] if row else 0)
             if cur_ver < SCHEMA_VERSION:

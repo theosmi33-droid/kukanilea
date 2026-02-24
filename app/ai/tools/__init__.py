@@ -4,7 +4,7 @@ from typing import Any
 
 from app.agents import tools as agent_tools
 
-ALLOWED_TOOL_NAMES = ("search_contacts", "search_documents", "create_task")
+ALLOWED_TOOL_NAMES = ("search_contacts", "search_documents", "create_task", "web_search")
 
 
 def ollama_tools() -> list[dict[str, Any]]:

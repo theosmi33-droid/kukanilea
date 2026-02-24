@@ -28,7 +28,7 @@ class EmailTrigger:
         self.host = os.environ.get("KUKA_IMAP_HOST", "localhost")
         self.port = int(os.environ.get("KUKA_IMAP_PORT", "143"))
         self.user = os.environ.get("KUKA_IMAP_USER", "office@kukanilea.local")
-        self.password = os.environ.get("KUKA_IMAP_PASSWORD", "secret")
+        self.password = os.environ.get("KUKA_IMAP_PASSWORD") # Removed leaked hardcoded password
         self.use_ssl = os.environ.get("KUKA_IMAP_SSL", "0") == "1"
         self.temp_dir = Path(tempfile.gettempdir()) / "kukanilea_email_attachments"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -37,11 +37,7 @@ class EmailTrigger:
         """Sicherheit: Salted Tags gegen Injection in E-Mail-Inhalten."""
         salt = secrets.token_hex(4)
         tag = f"KUKA_MAIL_{salt}"
-        return f"
-<{tag}>
-{content}
-</{tag}>
-"
+        return f"\\n<{tag}>\\n{content}\\n</{tag}>\\n"
 
     async def start(self):
         if self.running:
@@ -104,12 +100,9 @@ class EmailTrigger:
                 
                 # Delegation an den Orchestrator
                 prompt = (
-                    f"EINGANGS-MAIL von: {from_}
-"
-                    f"BETREFF: {subject}
-"
-                    f"INHALT: {self._wrap_with_salt(body)}
-"
+                    f"EINGANGS-MAIL von: {from_}\\n"
+                    f"BETREFF: {subject}\\n"
+                    f"INHALT: {self._wrap_with_salt(body)}\\n"
                     f"ANHÄNGE: {', '.join(attachments) if attachments else 'Keine'}"
                 )
                 
@@ -119,7 +112,7 @@ class EmailTrigger:
 
                 # Mark as SEEN (standard imaplib behavior after fetch usually depends on server, 
                 # but we implicitly mark or could use STORE +FLAGS \Seen)
-                mail.store(num, '+FLAGS', '\Seen')
+                mail.store(num, '+FLAGS', '\\\\Seen')
 
             mail.close()
             mail.logout()

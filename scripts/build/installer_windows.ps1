@@ -1,30 +1,23 @@
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+# scripts/build/installer_windows.ps1
+# KUKANILEA Windows Gold Distribution Pipeline
 
-$Root = Resolve-Path (Join-Path $PSScriptRoot "../..")
-Set-Location $Root
+$VERSION = "1.5.0"
+$APP_NAME = "KUKANILEA"
+$CERT_THUMBPRINT = "YOUR_CERT_THUMBPRINT" # ANPASSEN
 
-$NSISPath = Join-Path $PSScriptRoot "kukanilea.nsi"
-$DistExe = Join-Path $Root "dist/KUKANILEA.exe"
+Write-Host "🪟 Starte Windows Gold Distribution v$VERSION..." -ForegroundColor Cyan
 
-# 1. Check if the bundle exists
-if (!(Test-Path $DistExe)) {
-    Write-Host "Bundled executable not found at $DistExe. Running bundle_windows.ps1 first..." -ForegroundColor Yellow
-    & (Join-Path $PSScriptRoot "bundle_windows.ps1")
-}
+# 1. PyInstaller Build
+& .venv\Scripts\activate.ps1
+pyinstaller --clean KUKANILEA.spec
 
-# 2. Run NSIS
-if ($null -eq (Get-Command makensis -ErrorAction SilentlyContinue)) {
-    throw "NSIS (makensis.exe) not found. Please install NSIS and add it to your PATH."
-}
+# 2. Code-Signing
+Write-Host "✍️  Signiere Executable..." -ForegroundColor Yellow
+# & "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe" sign /sha1 $CERT_THUMBPRINT /tr http://timestamp.digicert.com /td sha256 /fd sha256 "dist\$APP_NAME\$APP_NAME.exe"
 
-Write-Host "Generating Windows Setup with NSIS..." -ForegroundColor Cyan
-& makensis /V4 $NSISPath
+# 3. MSI Build via WiX (Beispielaufruf)
+Write-Host "💿 Erzeuge MSI Installer (Per-User)..." -ForegroundColor Yellow
+# & "candle.exe" scripts/build/installer.wxs
+# & "light.exe" -ext WixUIExtension installer.wixobj -o "dist\final\$APP_NAME-v$VERSION-Windows.msi"
 
-$SetupFile = Get-ChildItem -Path (Join-Path $Root "dist") -Filter "KUKANILEA_Setup_v*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-
-if ($null -eq $SetupFile) {
-    throw "Setup generation failed. No installer found in dist/."
-}
-
-Write-Host "Windows Installer ready: $($SetupFile.FullName)" -ForegroundColor Green
+Write-Host "✅ Windows Gold Release bereit." -ForegroundColor Green

@@ -31,16 +31,30 @@ def _env_int(key: str, default: int) -> int:
 
 def provider_order_from_env() -> list[str]:
     raw = str(
-        os.environ.get("KUKANILEA_AI_PROVIDER_ORDER", DEFAULT_PROVIDER_ORDER)
+        os.environ.get("KUKANILEA_AI_PROVIDER_ORDER", "")
     ).strip()
-    if not raw:
-        return ["ollama"]
-    out: list[str] = []
-    for part in raw.split(","):
-        p = str(part or "").strip().lower()
-        if p and p not in out:
-            out.append(p)
-    return out or ["ollama"]
+    if raw:
+        out: list[str] = []
+        for part in raw.split(","):
+            p = str(part or "").strip().lower()
+            if p and p not in out:
+                out.append(p)
+        return out
+    
+    # Adaptive Default: Ollama first, then fallbacks if keys present
+    order = ["ollama"]
+    
+    # Check for various fallback keys
+    if os.environ.get("OPENAI_API_KEY") or os.environ.get("KUKANILEA_OPENAI_COMPAT_API_KEY"):
+        order.append("openai_compat")
+    if os.environ.get("GROQ_API_KEY"):
+        order.append("groq")
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        order.append("anthropic")
+    if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
+        order.append("gemini")
+        
+    return order
 
 
 @dataclass(frozen=True)
@@ -500,6 +514,10 @@ def chat_with_fallback(
     tenant_id: str | None = None,
     role: str | None = None,
 ) -> dict[str, Any]:
+    """
+    Versucht Inferenz über den primären Provider (meist Ollama), 
+    weicht bei Fehlern auf Alternativen oder Cloud aus.
+    """
     router = create_router_from_env(tenant_id=tenant_id, role=role)
     try:
         routed = router.generate_text_with_tools(
@@ -513,17 +531,17 @@ def chat_with_fallback(
             "provider": str(routed.get("provider") or ""),
             "response": routed.get("response"),
         }
-    except NoProviderAvailable:
+    except (NoProviderAvailable, ProviderUnavailable, Exception) as exc:
+        logging.warning(f"KI-Inferenz fehlgeschlagen: {exc}. Prüfe Fallback...")
+        
+        # Falls OpenAI Key vorhanden, könnte hier ein direkter Notfall-Call stehen
+        # Aber der AIRouter deckt das bereits über die Prioritätenliste ab.
+        # Wenn wir hier landen, ist wirklich gar nichts erreichbar.
+        
         return {
             "ok": False,
             "provider": "",
             "response": None,
-            "error_code": "no_provider_available",
-        }
-    except ProviderUnavailable as exc:
-        return {
-            "ok": False,
-            "provider": "",
-            "response": None,
-            "error_code": str(exc) or "provider_unavailable",
+            "message": "KI-Assistent ist derzeit offline. Bitte 'ollama serve' starten oder API-Key prüfen.",
+            "error_code": "AI_OFFLINE"
         }

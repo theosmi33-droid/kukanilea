@@ -460,6 +460,32 @@ def _job_finish(
     _run_write_txn(_tx)
 
 
+def run_ocr(image_path: Path) -> str:
+    """
+    Führt OCR aus mit lückenloser Fehlerbehandlung (Graceful Degradation).
+    """
+    try:
+        import pytesseract
+        from PIL import Image
+        
+        # Prüfung der Binärdatei
+        resolved = resolve_tesseract_binary()
+        
+        if not resolved.exists or not resolved.executable:
+            logging.warning("Tesseract nicht installiert. Dokument wird ohne Volltext-Extraktion gespeichert.")
+            return "[OCR nicht verfügbar: Tesseract fehlt]"
+
+        pytesseract.pytesseract.tesseract_cmd = resolved.resolved_path
+        return pytesseract.image_to_string(Image.open(image_path))
+
+    except ImportError:
+        logging.error("Pillow oder pytesseract fehlen in der Umgebung.")
+        return "[OCR nicht verfügbar: Bibliotheken fehlen]"
+    except Exception as e:
+        logging.error(f"Unerwarteter OCR-Fehler: {e}")
+        return f"[OCR fehlgeschlagen: {str(e)[:50]}]"
+
+
 def _run_tesseract(
     image_path: Path,
     lang: str,
@@ -1112,9 +1138,23 @@ def process_dirty_note(image_path: str, tenant_id: str = "SYSTEM_OCR"):
             text = "\n---\n".join(full_text)
             logger.info(f"PDF OCR erfolgreich ({len(text)} Zeichen von {len(doc)} Seiten)")
         else:
-            # Standard OCR Extraktion für Bilder
-            text = pytesseract.image_to_string(Image.open(image_path))
-            logger.info(f"OCR Scan erfolgreich ({len(text)} Zeichen)")
+            # Standard OCR Extraktion für Bilder (mit Graceful Degradation)
+            try:
+                import pytesseract
+                from PIL import Image
+                
+                # Check if tesseract is actually available
+                resolved = resolve_tesseract_binary()
+                if not resolved.exists or not resolved.executable:
+                    logger.warning("Tesseract binary missing. OCR fallback active.")
+                    text = "[OCR nicht verfügbar - Tesseract fehlt]"
+                else:
+                    pytesseract.pytesseract.tesseract_cmd = resolved.resolved_path
+                    text = pytesseract.image_to_string(Image.open(image_path))
+                    logger.info(f"OCR Scan erfolgreich ({len(text)} Zeichen)")
+            except (ImportError, Exception) as e:
+                logger.error(f"OCR execution failed: {e}")
+                text = f"[OCR fehlgeschlagen: {str(e)[:50]}]"
 
         # 2. LLM Strukturierung
         prompt = (

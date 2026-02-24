@@ -49,7 +49,7 @@ _DEFAULT_ROUTE: dict[str, dict[str, str]] = {
         "queue": "support_inbox",
         "priority": "high",
     },
-    "invoice": {"owner_role": "OFFICE", "queue": "billing_inbox", "priority": "normal"},
+    "invoice": {"owner_role": "OFFICE", "queue": "finance_inbox", "priority": "normal"},
     "appointment": {
         "owner_role": "OFFICE",
         "queue": "scheduling_inbox",

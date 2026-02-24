@@ -14,10 +14,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.agents.orchestrator_v2 import delegate_task
 from app.services.price_service import PriceService
+from app.database import init_db
 
 logging.basicConfig(level=logging.WARNING)
 
 async def run_benchmark():
+    init_db()
     print("🚀 Starte Orchestrator V2 Benchmark...")
     
     # 1. Latenz-Messung

@@ -24,7 +24,8 @@ from .autonomy.healer import init_healer
 from .bootstrap import is_localhost_addr, needs_bootstrap
 from .config import Config
 from .db import AuthDB
-from .errors import json_error, wants_json_error
+from .errors import handle_error
+from .hardware_detection import init_hardware_detection
 from .license import load_runtime_license_state
 from .logging import init_request_logging
 from .observability import setup_observability
@@ -146,7 +147,15 @@ def _resource_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def create_app() -> Flask:
+def create_app(system_settings: dict | None = None) -> Flask:
+    # 0. Initialisierung mit Hardware-Limits falls übergeben
+    if system_settings:
+        # Hier könnten globale Limits in app.config oder os.environ geschrieben werden
+        import os
+        os.environ["KUKANILEA_ADAPTIVE_WORKERS"] = str(system_settings.get("worker_threads", 2))
+        os.environ["KUKANILEA_ADAPTIVE_DB_CACHE"] = str(system_settings.get("db_cache_size_mb", 128))
+        os.environ["KUKANILEA_ADAPTIVE_AI_MODEL"] = str(system_settings.get("ai_model", "llama3.2:3b"))
+
     resources = _resource_dir()
     app = Flask(
         __name__,
@@ -163,6 +172,27 @@ def create_app() -> Flask:
 
     # Import blueprints after env/path wiring so legacy modules read correct paths.
     from . import ai_chat, api, web
+    from .ui.onboarding_wizard import onboarding_bp
+    
+    app.register_blueprint(onboarding_bp)
+
+    @app.before_request
+    def _enforce_activation():
+        from .core.license_manager import license_manager
+        if request.endpoint and "onboarding" in request.endpoint:
+            return None
+        if request.path.startswith("/static/"):
+            return None
+        if not license_manager.is_valid():
+            if request.path.startswith("/api/"):
+                return json_error("license_invalid", "System nicht aktiviert.", status=402)
+            return redirect(url_for("onboarding.activate"))
+        return None
+
+    @app.context_processor
+    def _inject_license_status():
+        from .core.license_manager import license_manager
+        return {"license_valid": license_manager.is_valid()}
 
     auth_db = AuthDB(app.config["AUTH_DB"])
     auth_db.init()
@@ -359,68 +389,8 @@ def create_app() -> Flask:
 
     logger = py_logging.getLogger("kukanilea")
 
-    def _render_html_error(status: int, title: str, message: str):
-        request_id = str(getattr(g, "request_id", "unknown"))
-        content = render_template_string(
-            """
-<div class="max-w-3xl mx-auto">
-  <div class="card p-6 rounded-2xl border">
-    <div class="text-xs muted mb-2">Fehler {{ status }}</div>
-    <h1 class="text-2xl font-semibold mb-2">{{ title }}</h1>
-    <p class="text-sm muted mb-4">{{ message }}</p>
-    <div class="text-xs muted mb-4">Request-ID: <code>{{ request_id }}</code></div>
-    <div class="flex flex-wrap gap-2">
-      <button type="button" class="btn btn-outline px-3 py-2 text-sm" onclick="window.location.reload()">Neu laden</button>
-      <button type="button" class="btn btn-outline px-3 py-2 text-sm" onclick="window.history.back()">Zurueck</button>
-      <a class="btn btn-primary px-3 py-2 text-sm" href="/">Dashboard</a>
-    </div>
-  </div>
-</div>
-            """,
-            status=int(status),
-            title=str(title or "Fehler"),
-            message=str(message or "Ein unerwarteter Fehler ist aufgetreten."),
-            request_id=request_id,
-        )
-        active_tab = _active_tab_from_path(request.path or "/")
-        return web._render_base(content, active_tab=active_tab), int(status)
-
-    @app.errorhandler(HTTPException)
-    def _handle_http_exception(exc: HTTPException):
-        status = int(exc.code or 500)
-        if wants_json_error():
-            return json_error(
-                "http_error",
-                str(exc.description or exc.name or "Request fehlgeschlagen."),
-                status=status,
-            )
-        return _render_html_error(
-            status,
-            str(exc.name or "Fehler"),
-            str(exc.description or "Request fehlgeschlagen."),
-        )
-
-    @app.errorhandler(Exception)
-    def _handle_unexpected_error(exc):
-        logger.exception(
-            "unhandled_exception tenant_id=%s request_id=%s",
-            getattr(g, "tenant_id", "-"),
-            getattr(g, "request_id", "-"),
-        )
-        if wants_json_error():
-            return json_error(
-                "internal_error",
-                "Interner Fehler.",
-                status=500,
-                details={
-                    "tenant_id": getattr(g, "tenant_id", ""),
-                },
-            )
-        return _render_html_error(
-            500,
-            "Interner Fehler",
-            "Die Aktion konnte nicht abgeschlossen werden.",
-        )
+    from .errors import handle_error
+    app.errorhandler(Exception)(handle_error)
 
     @app.after_request
     def _set_security_headers(response):
@@ -431,7 +401,7 @@ def create_app() -> Flask:
                 "style-src 'self' 'unsafe-inline'",
                 "script-src 'self' 'unsafe-inline'",
                 "img-src 'self' data:",
-                "connect-src 'self'",
+                "connect-src 'self' http://127.0.0.1:11434",  # Nur Localhost (Ollama)
                 "base-uri 'self'",
                 "frame-ancestors 'none'",
                 "object-src 'none'",

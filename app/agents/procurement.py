@@ -22,11 +22,7 @@ class MaterialProcurement:
         """Sicherheit: Salted Tags gegen Injection in Artikelbeschreibungen."""
         salt = secrets.token_hex(4)
         tag = f"KUKA_PROC_{salt}"
-        return f"
-<{tag}>
-{content}
-</{tag}>
-"
+        return f"\\n<{tag}>\\n{content}\\n</{tag}>\\n"
 
     @retry_on_lock()
     def generate_material_order(self, quote_id: int) -> Dict[str, Any]:

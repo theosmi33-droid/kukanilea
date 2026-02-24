@@ -1,0 +1,24 @@
+version: "3.9"
+services:
+  kukanilea_core:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "5051:5051"
+    environment:
+      - PORT=5051
+      - KUKANILEA_SECRET=dev-secret-change-me
+      - KUKANILEA_TENANT_DEFAULT=KUKANILEA
+      # Enable offline fallback models if needed
+      - KUKANILEA_AI_PROVIDER_ORDER=ollama,openai_compat_fallback
+    volumes:
+      - ./data:/home/kukanilea/Library/Application Support/KUKANILEA
+      - ./instance:/app/instance
+    user: "1000:1000"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

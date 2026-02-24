@@ -1,13 +1,41 @@
-from __future__ import annotations
+"""
+Sicherheits-Layer für KUKANILEA.
+Fokus: Prompt-Injection-Prevention und Input-Sanitization.
+"""
+import bleach
+import re
+import logging
 
-import secrets
+logger = logging.getLogger("kukanilea.security")
 
-from flask import session
+def sanitize_user_input(text: str) -> str:
+    """
+    Bereinigt User-Input vor der Übergabe an das LLM.
+    Entfernt verdächtige Kontrollzeichen und HTML.
+    """
+    if not text: return ""
+    # 1. HTML-Tags entfernen (XSS Schutz)
+    text = bleach.clean(text, tags=[], strip=True)
+    # 2. Salted Sequence Tag Manipulation verhindern (SST Schutz)
+    text = re.sub(r"<salt_.*?>", "[REDACTED_TAG]", text)
+    # 3. Mehrfache Newlines normalisieren (Injection-Trick)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
-
-def get_csrf_token() -> str:
-    token = session.get("csrf_token")
-    if not token:
-        token = secrets.token_urlsafe(24)
-        session["csrf_token"] = token
-    return token
+def is_malicious_prompt(prompt: str) -> bool:
+    """
+    Prüft auf bekannte Prompt-Injection Patterns.
+    """
+    patterns = [
+        r"(ignore|forget) (all|previous|prior) (instructions|directions)",
+        r"system:.*admin",
+        r"you are now.*admin",
+        r"output the.*system prompt",
+        r"transfer.*data to",
+        r"delete all.*"
+    ]
+    for pattern in patterns:
+        if re.search(pattern, prompt, re.IGNORECASE):
+            logger.warning(f"Verdächtiges Pattern erkannt: {pattern}")
+            return True
+    return False

@@ -1,62 +1,31 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
+# scripts/build/bundle_macos.sh
+# KUKANILEA macOS Gold Distribution Pipeline
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+set -e
+
 APP_NAME="KUKANILEA"
-ENTRYPOINT="$ROOT_DIR/dist/_packaging_entrypoint.py"
-OBF_PARENT="$ROOT_DIR/dist/obfuscated"
-OBF_APP="$OBF_PARENT/app"
+VERSION="1.5.0"
+BUNDLE_ID="com.kukanilea.businessos"
+SIGNING_IDENTITY="Developer ID Application: Your Company (ID123)" # ANPASSEN
 
-if [ "${1:-}" != "--skip-obfuscate" ]; then
-  "$ROOT_DIR/scripts/build/obfuscate.sh"
+echo "🍎 Starte macOS Gold Distribution v$VERSION..."
+
+# 1. PyInstaller Build
+source .venv312/bin/activate
+pyinstaller --clean --noconfirm KUKANILEA.spec
+
+# 2. Hardened Runtime Signing
+echo "✍️  Signiere App Bundle (Hardened Runtime)..."
+if codesign --deep --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "dist/$APP_NAME.app" 2>/dev/null; then
+    echo "✅ Signierung erfolgreich."
+else
+    echo "⚠️  Signierung übersprungen (Identität nicht gefunden). Erzeuge un-signiertes Bundle."
 fi
 
-if [ ! -d "$OBF_APP" ]; then
-  echo "Missing $OBF_APP. Run scripts/build/obfuscate.sh first." >&2
-  exit 1
-fi
+# 3. Packaging DMG
+echo "💿 Erzeuge DMG Installer..."
+mkdir -p dist/final
+hdiutil create -volname "$APP_NAME Gold" -srcfolder "dist/$APP_NAME.app" -ov -format UDZO "dist/final/$APP_NAME-v$VERSION-macOS.dmg"
 
-if ! command -v pyinstaller >/dev/null 2>&1; then
-  echo "pyinstaller not found. Install build tools first." >&2
-  exit 1
-fi
-
-if ! python -c "import webview" >/dev/null 2>&1; then
-  echo "pywebview not found. Install build tools first (pip install pywebview)." >&2
-  exit 1
-fi
-
-cat > "$ENTRYPOINT" <<'PY'
-from __future__ import annotations
-
-if __name__ == "__main__":
-    from app.desktop import main
-
-    raise SystemExit(main())
-PY
-
-rm -rf "$ROOT_DIR/build/$APP_NAME" "$ROOT_DIR/dist/$APP_NAME" "$ROOT_DIR/dist/$APP_NAME.app"
-
-PYI_ARGS=(
-  --noconfirm
-  --clean
-  --windowed
-  --name "$APP_NAME"
-  --paths "$OBF_PARENT"
-  --paths "$ROOT_DIR"
-  --hidden-import kukanilea_core_v3_fixed
-  --hidden-import webview
-  --hidden-import webview.platforms.cocoa
-  --add-data "$ROOT_DIR/templates:templates"
-  --add-data "$ROOT_DIR/static:static"
-)
-
-if [ -f "$ROOT_DIR/assets/icon.icns" ]; then
-  PYI_ARGS+=(--icon "$ROOT_DIR/assets/icon.icns")
-fi
-
-PYI_ARGS+=("$ENTRYPOINT")
-
-pyinstaller "${PYI_ARGS[@]}"
-
-echo "Bundle ready: $ROOT_DIR/dist/$APP_NAME.app"
+echo "✅ macOS Gold Release bereit in dist/final/"

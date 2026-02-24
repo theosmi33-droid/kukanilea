@@ -24,7 +24,8 @@ class PriceService:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
-            # FTS5 Ähnlichkeitssuche
+            # FTS5 Ähnlichkeitssuche - Begriffe in Anführungszeichen setzen für Sonderzeichen
+            safe_query = f'"{description.replace('"', '""')}"*'
             cursor = conn.execute(
                 """
                 SELECT article_number, description, unit_price, rank 
@@ -33,7 +34,7 @@ class PriceService:
                 ORDER BY rank 
                 LIMIT 1
                 """,
-                (f"{description}*",)
+                (safe_query,)
             )
             row = cursor.fetchone()
             if row:

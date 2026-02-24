@@ -20,11 +20,7 @@ class InvoiceReconciliation:
         """Sicherheit: Salted Tags gegen Injection in OCR-Textblöcken."""
         salt = secrets.token_hex(4)
         tag = f"KUKA_OCR_{salt}"
-        return f"
-<{tag}>
-{content}
-</{tag}>
-"
+        return f"\\n<{tag}>\\n{content}\\n</{tag}>\\n"
 
     def verify_supplier_invoice(self, order_id: str, ocr_text: str) -> Dict[str, Any]:
         """

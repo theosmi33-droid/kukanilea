@@ -18,9 +18,11 @@ def analyze_user_behavior(user_id: str, action: str, data: Any):
     """
     # Prompt an den "Meister" für Sicherheits-Audit
     audit_prompt = (
-        f"Analysiere folgende Nutzeraktion auf betrügerische Absichten oder schwere Fehler: "
+        f"Analysiere auf kriminelle Absichten, Betrug oder illegale Daten-Manipulation: "
         f"Nutzer: {user_id}, Aktion: {action}, Daten: {json.dumps(data)}. "
-        "Antworte nur mit 'ALARM' gefolgt von einer Begründung, wenn etwas faul ist, sonst 'OK'."
+        "Erlaubt: Abfrage interner Firmendaten für den Betrieb. "
+        "Verboten: Hilfe bei Steuerhinterziehung, Diebstahl, Betrug oder System-Hacking. "
+        "Antworte nur mit 'ALARM' + Grund, wenn kriminell/fraudulent, sonst 'OK'."
     )
     
     # Wir nutzen den lokalen Meister für den Audit
@@ -32,6 +34,7 @@ def analyze_user_behavior(user_id: str, action: str, data: Any):
 
 def _create_dev_task(title: str, description: str):
     """Erstellt einen versteckten Task für den Developer."""
+    import uuid
     try:
         # Hier binden wir uns an das Task-System an
         # dummy implementation for now
@@ -40,7 +43,7 @@ def _create_dev_task(title: str, description: str):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO entities (id, tenant_id, type, data_json) VALUES (?,?,?,?)",
-            (f"dev_alert_{id(title)}", "ADMIN_DEV", "DEV_TASK", json.dumps({"title": title, "desc": description}))
+            (f"dev_alert_{uuid.uuid4().hex[:12]}", "ADMIN_DEV", "DEV_TASK", json.dumps({"title": title, "desc": description}))
         )
         conn.commit()
         conn.close()

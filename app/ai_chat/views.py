@@ -27,9 +27,120 @@ from app.ai_chat.engine import ask_local_ai
 from app.ai_chat.intent_parser import parse_user_intent
 from app.ai.ollama_client import ollama_is_available
 from app.autonomy.ocr import process_dirty_note
+from app.ai.voice_parser import voice_parser
+from app.ai.vision_parser import vision_parser
+from app.agents.orchestrator_v2 import delegate_task, wrap_with_salt
 
 router = APIRouter(prefix="/ai-chat", tags=["AI", "Chat"])
 templates = Jinja2Templates(directory="templates")
+
+@router.post("/vision-analyze", response_class=JSONResponse)
+async def analyze_site_image(request: Request, file: UploadFile = File(...)) -> Any:
+    """Endpunkt für mobile Bildanalyse. Analysiert Fotos lokal und triggert Reparaturplanung."""
+    # 1. Temporär speichern
+    temp_dir = "instance/vision_temp"
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, f"vision_{secrets.token_hex(4)}_{file.filename}")
+    
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    try:
+        # 2. Lokale Bildanalyse (Moondream)
+        description = await run_in_threadpool(vision_parser.analyze_image, temp_path)
+        
+        if not description or "Fehler" in description:
+            return JSONResponse({"status": "error", "message": "Bild konnte nicht analysiert werden."}, status_code=400)
+
+        # 3. Vorprüfung durch Observer (Analog zu Voice Command)
+        from app.agents.observer import ObserverAgent
+        observer = ObserverAgent()
+        # Wir nutzen 'voice_command' Action-Typ auch für Vision-Text Validierung
+        allowed, reason = observer.validate_action("voice_command", {"text": description})
+        
+        if not allowed:
+            return {
+                "status": "draft",
+                "description": description,
+                "agent_response": f"Bildanalyse als Entwurf markiert: {reason}",
+                "is_draft": True
+            }
+
+        # 4. Delegation an Orchestrator V2 (SST Härtung)
+        salted_vision_text = wrap_with_salt(f"BILDANALYSE VOR-ORT: {description}")
+        
+        agent_response = await delegate_task(salted_vision_text, tenant_id="MOBILE_VISION", user_id="meister_kamera")
+        
+        # 5. Sicherheit: Falls Orchestrator/Observer Veto einlegt
+        is_draft = "Sicherheitsblockade" in agent_response or "Human-in-the-loop" in agent_response
+        
+        return {
+            "status": "ok",
+            "description": description,
+            "agent_response": agent_response,
+            "is_draft": is_draft
+        }
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+    finally:
+        # 6. Sicherheit: Sofortige Löschroutine für DSGVO (Schritt 6)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+@router.post("/transcribe", response_class=JSONResponse)
+async def transcribe_audio(request: Request, file: UploadFile = File(...)) -> Any:
+    """Endpunkt für mobile Sprachsteuerung. Transkribiert Audio lokal und triggert Agenten."""
+    # 1. Temporär speichern
+    temp_dir = "instance/voice_temp"
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, f"voice_{secrets.token_hex(4)}_{file.filename}")
+    
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    try:
+        # 2. Lokale Transkription (im Threadpool da CPU-lastig)
+        text = await run_in_threadpool(voice_parser.transcribe, temp_path)
+        
+        if not text:
+            return JSONResponse({"status": "error", "message": "Sprache konnte nicht erkannt werden."}, status_code=400)
+
+        # 3. Vorprüfung durch Observer (Schritt 6)
+        from app.agents.observer import ObserverAgent
+        observer = ObserverAgent()
+        allowed, reason = observer.validate_action("voice_command", {"text": text})
+        
+        if not allowed:
+            # Als Entwurf markieren und Rückmeldung geben
+            return {
+                "status": "draft",
+                "transcription": text,
+                "agent_response": f"Befehl als Entwurf markiert: {reason}",
+                "is_draft": True
+            }
+
+        # 4. Delegation an Orchestrator V2 (SST wird intern in delegate_task/call_tool gehandhabt)
+        # Wir wickeln den Input hier zusätzlich in SST ein, um den "Voice Channel" zu markieren.
+        from app.agents.orchestrator_v2 import wrap_with_salt
+        # Hier nutzen wir das globale Salt des Orchestrators oder ein temporäres
+        salted_voice_text = wrap_with_salt(text)
+        
+        agent_response = await delegate_task(salted_voice_text, tenant_id="MOBILE_VOICE", user_id="meister_baustelle")
+        
+        # 5. Sicherheit: Falls Orchestrator/Observer Veto einlegt
+        is_draft = "Sicherheitsblockade" in agent_response or "Human-in-the-loop" in agent_response
+        
+        return {
+            "status": "ok",
+            "transcription": text,
+            "agent_response": agent_response,
+            "is_draft": is_draft
+        }
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 # ... (health, transcribe routes)
 

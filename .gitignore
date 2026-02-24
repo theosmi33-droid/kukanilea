@@ -5,6 +5,8 @@ venv/
 .env
 .DS_Store
 *.log
+instance/
+voice_temp/
 
 Tophandwerk_Eingang/
 Tophandwerk_Pending/
@@ -67,3 +69,6 @@ test-results/
 playwright-report/
 *.trace.zip
 *.webm
+\n# Deployment Hygiene\n.env\n*.db\n*.sqlite3\n*.sqlite3-shm\n*.sqlite3-wal\ntemp/\ntmp/\ninstance/\ndata/
+internal_vault/
+license_priv.pem

@@ -46,6 +46,10 @@ class SearchDocumentsArgs(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
+class WebSearchArgs(BaseModel):
+    query: str = Field(min_length=1, max_length=300)
+
+
 class LogTimeArgs(BaseModel):
     minutes: int = Field(ge=1, le=1440)
     note: str = ""
@@ -268,6 +272,48 @@ def _search_documents_handler(
             }
         )
     return {"count": len(items), "documents": items}
+
+
+def _web_search_handler(
+    *, tenant_id: str, user: str, args: WebSearchArgs
+) -> dict[str, Any]:
+    _ = (tenant_id, user)
+    import requests
+    from urllib.parse import quote_plus
+    
+    # DuckDuckGo Lite (HTML only, fast, no JS required)
+    url = f"https://duckduckgo.com/lite/?q={quote_plus(args.query)}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+    
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        text = resp.text
+        
+        # Simple extraction logic for results (lite version uses tables/links)
+        # We just grab the first few snippets to keep it lightweight
+        snippets = []
+        # Basic regex to find result descriptions in the lite version
+        # Results are usually in links with class 'result-link' or similar
+        # In 'lite', they are often in simple anchor tags or follow text.
+        # To keep it robust without bs4, we just take a chunk of the text or specific patterns.
+        import re
+        matches = re.findall(r'<a class=\'result-link\' href=\'(.*?)\'>(.*?)</a>.*?<td class=\'result-snippet\'>(.*?)</td>', text, re.DOTALL)
+        
+        for link, title, snippet in matches[:5]:
+            snippets.append({
+                "title": re.sub('<[^<]+?>', '', title).strip(),
+                "link": link,
+                "snippet": re.sub('<[^<]+?>', '', snippet).strip()
+            })
+            
+        if not snippets:
+            # Fallback: Just return some plain text if regex fails (DDG changed layout)
+            return {"query": args.query, "results": [], "info": "Raw search successful, but parsing failed. Layout might have changed."}
+            
+        return {"query": args.query, "results": snippets}
+    except Exception as e:
+        return {"error": f"Search failed: {str(e)}"}
 
 
 def _log_time_handler(
@@ -833,6 +879,12 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         is_mutating=False,
         handler=_search_documents_handler,
     ),
+    "web_search": ToolSpec(
+        name="web_search",
+        args_model=WebSearchArgs,
+        is_mutating=False,
+        handler=_web_search_handler,
+    ),
     "create_task": ToolSpec(
         name="create_task",
         args_model=CreateTaskArgs,
@@ -917,6 +969,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "search_contacts": "Sucht Kontakte (Name, E-Mail, Rolle, Kunde).",
     "search_documents": "Durchsucht redigierte Knowledge-Dokumente per Volltext.",
+    "web_search": "Sucht im Internet nach aktuellen Informationen via DuckDuckGo.",
     "create_task": "Erstellt einen neuen Task.",
     "crm_create_customer": "Erstellt einen neuen Kunden im CRM.",
     "calendar_add_entry": "Erstellt einen neuen Termin/Meeting im Kalender.",

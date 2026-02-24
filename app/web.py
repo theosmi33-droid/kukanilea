@@ -2052,12 +2052,6 @@ HTML_ACTIVATE = r"""
   </div>
 </div>
 """
-      </div>
-      <button class="btn btn-primary w-full" type="submit">Tenant-Name speichern</button>
-    </form>
-  </div>
-</div>
-"""
 
 
 HTML_DEV_UPDATE = r"""
@@ -3797,7 +3791,10 @@ def api_ai_chat():
             role=current_role(),
         )
     except Exception as exc:
-        return json_error("ai_error", f"KI-Fehler: {exc}", status=500)
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"AI Chat Error: {exc}\n{tb}")
+        return json_error("ai_error", f"KI-Fehler: {str(exc)}", status=500, details={"traceback": tb})
 
     tool_used = [str(v) for v in (result.get("tool_used") or []) if str(v).strip()]
     pending_confirmation = result.get("pending_confirmation")

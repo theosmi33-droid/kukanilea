@@ -156,6 +156,14 @@ class ObserverAgent:
             except:
                 pass
 
+        # 6. Schritt 6: Spezial-Check für Sprachbefehle (Unklarer Text)
+        if action_name == "voice_command":
+            text = args.get("text", "").lower()
+            # Kritische Schlüsselwörter oder sehr kurzer Text triggern Veto -> Draft
+            critical_words = ["löschen", "delete", "format", "reset", "überweisen"]
+            if any(word in text for word in critical_words) or len(text) < 5:
+                return False, "Sprachbefehl-Veto: Befehl kritisch oder unklar. Als Entwurf markiert."
+
         if action_name == "delete_entity":
             # Nur MASTER darf löschen (vereinfacht für Prototyp)
             return False, "Statische Grenze: Direktes Löschen untersagt."

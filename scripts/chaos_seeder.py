@@ -17,12 +17,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.agents.orchestrator_v2 import delegate_task
 from app.core.self_learning import log_correction
+from app.database import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chaos_seeder")
 
 class ChaosSeeder:
     def __init__(self, tasks_count: int = 50):
+        init_db() # Datenbank sicherstellen
         self.tasks_count = tasks_count
         self.stats = {
             "total": 0,
@@ -87,8 +89,7 @@ class ChaosSeeder:
         self._print_report(duration)
 
     def _print_report(self, duration: float):
-        print("
-" + "="*40)
+        print("\\n" + "="*40)
         print("📊 KUKANILEA RED TEAMING REPORT")
         print("="*40)
         print(f"Dauer          : {duration:.2f}s")
