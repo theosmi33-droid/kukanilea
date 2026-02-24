@@ -50,10 +50,12 @@ BVGLMMIknczeOwCXhp5X6yAS0YT7gyb+HF6JQHk0DHE4eqzae7VnjB8SbQ6WoFWz
 P1PJ2VICTJOqrxKNCzDDNR9J1cG2AX0vVl0DtKPj+G2RP7rfCRce+BiLpxNb7EHC
 Y2nO9HAKV//Fzi17D8+jZvkCAwEAAQ==
 -----END PUBLIC KEY-----"""
-        self.log_dir = Path("instance/logs") if Path("instance/logs").exists() else Path("logs")
+        self.log_file = Path("app.log")
+        self.tmp_dir = Path("tmp")
+        self.tmp_dir.mkdir(exist_ok=True)
 
     def _redact_text(self, text: str) -> str:
-        """Filtert PII aus Log-Texten."""
+        """Filtert PII aus Log-Texten (Emails, IPs, IBANs)."""
         redacted = text
         for label, pattern in PII_PATTERNS.items():
             redacted = re.sub(pattern, f"[REDACTED_{label.upper()}]", redacted)
@@ -62,22 +64,20 @@ Y2nO9HAKV//Fzi17D8+jZvkCAwEAAQ==
     def generate_dump(self, request_id: str = None) -> bytes:
         """
         Sammelt alle relevanten Diagnose-Daten, bereinigt sie und verpackt sie verschlüsselt.
-        Ablauf:
-        1. Sammeln der Daten in ein JSON.
-        2. Sammeln der Logfiles (letzte 5KB, sanitiert).
-        3. Erstellen eines unverschlüsselten ZIPs im Speicher.
-        4. Generieren eines Fernet-Keys (AES).
-        5. Verschlüsseln des ZIPs mit Fernet.
-        6. Verschlüsseln des Fernet-Keys mit RSA-Support-Key.
-        7. Rückgabe eines finalen Binär-Pakets [RSA_ENC_KEY_LEN (4 bytes)] + [RSA_ENC_KEY] + [FERNET_ENC_DATA].
         """
         request_id = request_id or str(uuid.uuid4())
+        
+        # Hardware & License info
+        hw_profile = detect_hardware()
+        # Mock license info for now (integrated later)
+        license_info = {"hwid": hw_profile.get("machine_id", "UNKNOWN"), "status": "GOLD_ACTIVE"}
+        
         dump_data = {
-            "version": "1.5.0-gold",
+            "version": "1.5.0-GOLD",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "request_id": request_id,
-            "hardware_profile": detect_hardware(),
-            "logs_summary": self._gather_logs(),
+            "hardware_profile": hw_profile,
+            "license": license_info,
             "db_status": self._gather_db_status()
         }
 
@@ -88,25 +88,23 @@ Y2nO9HAKV//Fzi17D8+jZvkCAwEAAQ==
             clean_json = json.dumps(dump_data, indent=2, ensure_ascii=False)
             zf.writestr("diagnostic_report.json", clean_json)
 
-            # Log Files
-            if self.log_dir.exists():
-                for logfile in self.log_dir.glob("*.log"):
-                    try:
-                        content = logfile.read_text()[-10000:] # Letzte 10KB
-                        zf.writestr(f"logs/{logfile.name}", self._redact_text(content))
-                    except Exception as e:
-                        logger.error(f"Could not include log {logfile}: {e}")
+            # Main App Log (last 500 lines)
+            if self.log_file.exists():
+                try:
+                    lines = self.log_file.read_text().splitlines()
+                    content = "\n".join(lines[-500:])
+                    zf.writestr("app.log", self._redact_text(content))
+                except Exception as e:
+                    logger.error(f"Could not include app.log: {e}")
 
         zip_data = zip_buffer.getvalue()
 
         # 2. Hybrid-Verschlüsselung
         try:
-            # Symmetrischer Key (Fernet/AES)
             fernet_key = Fernet.generate_key()
             f = Fernet(fernet_key)
             encrypted_data = f.encrypt(zip_data)
 
-            # Asymmetrische Verschlüsselung des Keys
             public_key = serialization.load_pem_public_key(self.support_pub_key_pem)
             encrypted_key = public_key.encrypt(
                 fernet_key,
@@ -117,15 +115,18 @@ Y2nO9HAKV//Fzi17D8+jZvkCAwEAAQ==
                 )
             )
 
-            # Finales Paket zusammenbauen
-            # Struktur: [KeyLength: 4 bytes] [EncryptedKey] [EncryptedPayload]
+            # [KeyLength: 4 bytes] [EncryptedKey] [EncryptedPayload]
             key_len = len(encrypted_key).to_bytes(4, byteorder='big')
-            return key_len + encrypted_key + encrypted_data
+            final_bundle = key_len + encrypted_key + encrypted_data
+            
+            # Save to tmp/ as well for record
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            (self.tmp_dir / f"diagnostik_{ts}.zip.enc").write_bytes(final_bundle)
+            
+            return final_bundle
 
         except Exception as e:
-            logger.critical(f"Encryption failed during diagnostic export: {e}")
-            # Fallback: Falls RSA fehlschlägt, geben wir ein unverschlüsseltes ZIP zurück (nur in DEV!)
-            # Aber für Gold-Release: Fehler werfen oder leeres Paket.
+            logger.critical(f"Encryption failed: {e}")
             return zip_data 
 
     def _gather_logs(self) -> list:
