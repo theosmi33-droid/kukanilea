@@ -1120,1101 +1120,176 @@ def support_diagnostic():
 
 # -------- UI Templates ----------
 HTML_BASE = r"""<!doctype html>
-<html lang="de" data-theme="{{ theme_default }}">
+<html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="manifest" href="/app.webmanifest">
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/app-icon.png') }}">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/app-icon.png') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
-<title>KUKANILEA Systems</title>
+<title>KUKANILEA Gold</title>
 <script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
-<script>
-  const savedTheme = localStorage.getItem("ks_theme") || "{{ theme_default }}";
-  const savedAccent = localStorage.getItem("ks_accent") || "indigo";
-  if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
-  else { document.documentElement.classList.remove("light"); }
-  document.documentElement.dataset.theme = savedTheme;
-  document.documentElement.dataset.accent = savedAccent;
-</script>
 <style>
   :root{
-    --font-sans:"SF Pro Text","SF Pro Display",-apple-system,BlinkMacSystemFont,"Inter","Roboto","Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;
-    --bg:#0f172a;
-    --bg-elev:#111827;
-    --bg-panel:#172033;
-    --border:rgba(148,163,184,.2);
-    --text:#e5e7eb;
-    --muted:#94a3b8;
-    --accent-500:#0ea5e9;
-    --accent-600:#0284c7;
-    --danger-500:#dc2626;
-    --danger-600:#b91c1c;
-    --warn-bg:rgba(245,158,11,.12);
-    --warn-border:rgba(245,158,11,.35);
-    --info-bg:rgba(14,165,233,.12);
-    --info-border:rgba(14,165,233,.35);
-    --error-bg:rgba(220,38,38,.12);
-    --error-border:rgba(220,38,38,.35);
-    --radius-lg:18px;
-    --radius-md:14px;
-    --radius-sm:10px;
-    --shadow:0 8px 30px rgba(15,23,42,.35);
-    --shadow-soft:0 4px 16px rgba(15,23,42,.2);
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --bg: #ffffff;
+    --text: #09090b;
+    --muted: #71717a;
+    --border: #f4f4f5;
+    --accent: #2563eb;
   }
-  html[data-accent="indigo"]{ --accent-500:#0ea5e9; --accent-600:#0284c7; }
-  html[data-accent="emerald"]{ --accent-500:#10b981; --accent-600:#059669; }
-  html[data-accent="amber"]{ --accent-500:#f59e0b; --accent-600:#d97706; }
-  .light body{
-    --bg:#f8fafc;
-    --bg-elev:#ffffff;
-    --bg-panel:#ffffff;
-    --border:rgba(71,85,105,.22);
-    --text:#0f172a;
-    --muted:#475569;
-    --shadow:0 8px 30px rgba(15,23,42,.12);
-    --shadow-soft:0 4px 16px rgba(15,23,42,.08);
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   }
-  *{ box-sizing:border-box; }
-  body{
-    margin:0; background:var(--bg); color:var(--text); --nav-width:240px;
-    --z-nav: 4000;
-    --z-overlay: 3900;
-    --z-topbar: 3000;
-    --z-chat: 3500;
+  .app-shell { display: flex; min-height: 100vh; flex-direction: column; }
+  .app-nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 40px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: rgba(255,255,255,0.8); backdrop-filter: blur(12px); z-index: 100;
   }
-  body.nav-collapsed{ --nav-width:78px; }
-  .app-shell{ min-height:100vh; }
-  .app-nav{
-    width:var(--nav-width); background:var(--bg-elev); border-right:1px solid var(--border);
-    padding:24px 18px; position:fixed; top:0; left:0; bottom:0; z-index:var(--z-nav); overflow-x:hidden;
-    transition:width .18s ease, transform .2s ease;
-    isolation:isolate;
+  .nav-logo { font-weight: 800; font-size: 1.2rem; text-transform: uppercase; letter-spacing: -0.02em; color: #000; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+  .nav-links { display: flex; gap: 32px; align-items: center; }
+  .nav-link { text-decoration: none; color: var(--muted); font-size: 0.85rem; font-weight: 600; transition: color 0.2s; }
+  .nav-link:hover, .nav-link.active { color: var(--text); }
+  .app-main { max-width: 1000px; margin: 0 auto; width: 100%; padding: 60px 40px; flex: 1; }
+  .floating-tools {
+    position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.8); backdrop-filter: blur(16px);
+    border: 1px solid var(--border); padding: 12px 24px; border-radius: 999px;
+    display: flex; gap: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.05); z-index: 200;
   }
-  .app-nav .brand-mark{
-    height:40px; width:40px; border-radius:16px; display:flex; align-items:center; justify-content:center;
-    background:color-mix(in srgb, var(--accent-500) 24%, transparent);
-    color:#fff;
+  .tool-btn { background: none; border: none; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: color 0.2s; }
+  .tool-btn:hover { color: #000; }
+  #chat-sidebar {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 450px;
+    background: #fff; border-left: 1px solid var(--border);
+    transform: translateX(100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 300; display: flex; flex-direction: column;
   }
-  .brand-row{ display:flex; align-items:center; gap:10px; min-width:0; }
-  .brand-text{ min-width:0; }
-  .nav-meta{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .nav-icon{ width:22px; text-align:center; flex:0 0 22px; }
-  .nav-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  body.nav-collapsed .brand-text,
-  body.nav-collapsed .nav-label,
-  body.nav-collapsed .nav-meta,
-  body.nav-collapsed #navCollapseHint{ display:none; }
-  body.nav-collapsed .app-nav{ padding-left:10px; padding-right:10px; }
-  body.nav-collapsed .nav-link{ justify-content:center; gap:0; }
-  .app-main{ margin-left:var(--nav-width); min-height:100vh; display:flex; flex-direction:column; transition:margin-left .18s ease; }
-  .app-topbar{
-    display:flex; justify-content:space-between; align-items:flex-start;
-    padding:22px 28px; border-bottom:1px solid var(--border); background:var(--bg-elev);
-    gap:16px;
-    position:sticky; top:0; z-index:var(--z-topbar);
-  }
-  .topbar-primary{ display:flex; align-items:center; gap:10px; }
-  .topbar-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-  .mobile-nav-btn{ display:none; width:36px; height:36px; border-radius:10px; }
-  .nav-collapse-btn{ width:32px; height:32px; border-radius:10px; flex:0 0 32px; }
-  .app-content{ padding:24px 28px; }
-  .app-overlay{
-    display:none;
-    position:fixed;
-    inset:0;
-    background:rgba(15,23,42,.55);
-    z-index:var(--z-overlay);
-  }
-  .app-overlay.open{ display:block; }
-  .nav-link{
-    display:flex; gap:12px; align-items:center; padding:10px 12px; border-radius:12px;
-    color:var(--muted); text-decoration:none; transition:all .15s ease;
-  }
-  .nav-link:hover{ background:rgba(148,163,184,.08); color:var(--text); }
-  .nav-link.active{
-    background:color-mix(in srgb, var(--accent-500) 18%, transparent);
-    color:var(--text);
-    border:1px solid color-mix(in srgb, var(--accent-500) 42%, transparent);
-  }
-  .badge{
-    font-size:11px; padding:3px 8px; border-radius:999px;
-    border:1px solid var(--border); color:var(--muted); white-space:nowrap;
-  }
-  .nav-mini-badge{
-    margin-left:auto;
-    min-width:18px;
-    height:18px;
-    padding:0 6px;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    border-radius:999px;
-    border:1px solid color-mix(in srgb, var(--accent-500) 45%, transparent);
-    background:color-mix(in srgb, var(--accent-500) 16%, transparent);
-    color:var(--text);
-    font-size:11px;
-    line-height:1;
-  }
-  .nav-mini-badge.hidden{ display:none !important; }
-  .card{ background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow); }
-  .btn{
-    display:inline-flex; align-items:center; justify-content:center;
-    text-decoration:none; border:1px solid transparent; border-radius:var(--radius-sm);
-    transition:all .15s ease; cursor:pointer; line-height:1.2;
-  }
-  .btn:disabled{ opacity:.55; cursor:not-allowed; }
-  .btn-primary{ background:var(--accent-600); color:white; border-color:var(--accent-600); }
-  .btn-primary:hover{ filter:brightness(1.04); }
-  .btn-outline{ border-color:var(--border); color:var(--text); background:transparent; }
-  .btn-outline:hover{ background:rgba(148,163,184,.1); }
-  .btn-danger{ background:var(--danger-600); color:white; border-color:var(--danger-600); }
-  .input{
-    background:transparent; border:1px solid var(--border);
-    border-radius:var(--radius-sm); color:var(--text);
-  }
-  .label{ display:block; font-size:12px; margin-bottom:4px; color:var(--muted); }
-  .muted{ color:var(--muted); }
-  .pill{
-    background:color-mix(in srgb, var(--accent-500) 15%, transparent);
-    color:var(--text); border:1px solid color-mix(in srgb, var(--accent-500) 24%, transparent);
-    padding:2px 8px; border-radius:999px; font-size:11px;
-  }
-  .alert{ border:1px solid var(--border); border-radius:12px; padding:12px; font-size:14px; }
-  .alert-info{ background:var(--info-bg); border-color:var(--info-border); }
-  .alert-warn{ background:var(--warn-bg); border-color:var(--warn-border); }
-  .alert-error{ background:var(--error-bg); border-color:var(--error-border); }
-  .table-shell{ border:1px solid var(--border); border-radius:14px; overflow:hidden; }
-  .table-head{ border-bottom:1px solid var(--border); }
-  .table-row{ border-bottom:1px solid color-mix(in srgb, var(--border) 75%, transparent); }
-  .chat-fab{ background:var(--accent-600); box-shadow:var(--shadow-soft); color:white; }
-  .chat-drawer{ background:var(--bg-elev); border-color:var(--border); box-shadow:var(--shadow); }
-  #chatWidgetBtn, #chatDrawer{ z-index:var(--z-chat) !important; }
-  .chat-section{ border-color:var(--border); }
-  .chat-messages{ height:calc(100vh - 230px); }
-  @media (max-width: 1120px){
-    body{ --nav-width:0px; }
-    .mobile-nav-btn{ display:inline-flex; }
-    .app-nav{
-      width:240px;
-      position:fixed; top:0; left:0; z-index:var(--z-nav); transform:translateX(-102%);
-      transition:transform .2s ease; height:100vh; box-shadow:var(--shadow-soft);
-    }
-    body.nav-collapsed .app-nav{ width:240px; }
-    body.nav-collapsed .brand-text,
-    body.nav-collapsed .nav-label,
-    body.nav-collapsed .nav-meta,
-    body.nav-collapsed #navCollapseHint{ display:initial; }
-    .app-nav.open{ transform:translateX(0); }
-    .app-topbar{ padding:14px 16px; backdrop-filter:blur(6px); }
-    .app-main{ margin-left:0; }
-    .app-content{ padding:16px; }
-    #navCollapse{ display:none; }
-  }
+  #chat-sidebar.open { transform: translateX(0); }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 </style>
 </head>
-<body data-app-shell="1"
-      hx-on:htmx:send-error="document.getElementById('offline-banner').classList.remove('hidden')"
-      hx-on:htmx:before-request="document.getElementById('offline-banner').classList.add('hidden')">
-<div id="offline-banner" class="hidden bg-rose-600 text-white p-3 text-center sticky top-0 z-[5000] shadow-lg font-bold" role="alert" aria-live="assertive">
-    ⚠️ Keine Verbindung zum Server. Änderungen werden lokal gepuffert.
-</div>
+<body class="light">
 <div class="app-shell">
-  <div id="appNavOverlay" class="app-overlay"></div>
-  <aside id="appNav" class="app-nav">
-    <div class="flex items-center justify-between gap-2 mb-6">
-      <div class="brand-row">
-        <div class="brand-mark">✦</div>
-        <div class="brand-text">
-          <div class="text-sm font-semibold">KUKANILEA</div>
-          <div class="text-[11px] muted">Agent Orchestra</div>
-        </div>
-      </div>
-      <button id="navCollapse" class="btn btn-outline nav-collapse-btn" type="button" aria-label="Navigation minimieren">◀</button>
+  <header class="app-nav">
+    <a href="/" class="nav-logo">
+      <div class="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white text-xs">K</div>
+      KUKANILEA
+    </a>
+    <div class="nav-links">
+      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">Aufgaben</a>
+      <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm">Kunden</a>
+      <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">Wissen</a>
+      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">System</a>
+      <div class="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-[10px] font-bold border border-zinc-200">{{ user[0].upper() if user else '?' }}</div>
     </div>
-    <nav class="space-y-2">
-      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/"><span class="nav-icon">📥</span><span class="nav-label">Upload</span><span id="navBadgeUpload" class="nav-mini-badge hidden">0</span></a>
-      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks"><span class="nav-icon">✅</span><span class="nav-label">Tasks</span></a>
-      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time"><span class="nav-icon">⏱️</span><span class="nav-label">Time</span></a>
-      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant"><span class="nav-icon">🧠</span><span class="nav-label">Assistant</span><span id="navBadgeLlm" class="nav-mini-badge hidden">0</span></a>
-      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat"><span class="nav-icon">💬</span><span class="nav-label">Chat</span></a>
-      <a class="nav-link {{'active' if active_tab=='postfach' else ''}}" href="/postfach"><span class="nav-icon">📨</span><span class="nav-label">Postfach</span></a>
-      <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm/customers"><span class="nav-icon">📈</span><span class="nav-label">CRM</span></a>
-      <a class="nav-link {{'active' if active_tab=='leads' else ''}}" href="/leads/inbox"><span class="nav-icon">📬</span><span class="nav-label">Leads</span></a>
-      <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge"><span class="nav-icon">📚</span><span class="nav-label">Knowledge</span></a>
-      <a class="nav-link {{'active' if active_tab=='conversations' else ''}}" href="/conversations"><span class="nav-icon">🧾</span><span class="nav-label">Conversations</span></a>
-      <a class="nav-link {{'active' if active_tab=='workflows' else ''}}" href="/workflows"><span class="nav-icon">🧭</span><span class="nav-label">Workflows</span></a>
-      <a class="nav-link {{'active' if active_tab=='automation' else ''}}" href="/automation"><span class="nav-icon">⚙️</span><span class="nav-label">Automation</span></a>
-      <a class="nav-link {{'active' if active_tab=='autonomy' else ''}}" href="/autonomy/health"><span class="nav-icon">🩺</span><span class="nav-label">Autonomy Health</span><span id="navBadgeOcr" class="nav-mini-badge hidden">0</span></a>
-      <a class="nav-link {{'active' if active_tab=='insights' else ''}}" href="/insights/daily"><span class="nav-icon">📊</span><span class="nav-label">Insights</span></a>
-      {% if roles in ['DEV', 'ADMIN', 'OWNER_ADMIN'] %}
-      <a class="nav-link {{'active' if active_tab=='license' else ''}}" href="/license"><span class="nav-icon">🔐</span><span class="nav-label">Lizenz</span></a>
-      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings"><span class="nav-icon">🛠️</span><span class="nav-label">Settings</span></a>
-      {% endif %}
-    </nav>
-    <div class="mt-8 text-xs muted nav-meta">
-      Ablage: {{ablage}}
-    </div>
-    <div id="navCollapseHint" class="mt-2 text-[11px] muted nav-meta">Navigation bleibt immer sichtbar.</div>
-  </aside>
+  </header>
+
   <main class="app-main">
-    <div class="app-topbar">
-      <div class="topbar-primary">
-        <button id="navToggle" class="btn btn-outline mobile-nav-btn px-2 py-2" type="button" aria-label="Navigation öffnen">☰</button>
-        <div>
-        <div class="text-lg font-semibold">Workspace</div>
-        <div class="text-xs muted">Upload → Review → Ablage</div>
-        </div>
-      </div>
-      <div class="topbar-actions">
-        <span class="badge">User: {{user}}</span>
-        <span class="badge">Role: {{roles}}</span>
-        <span class="badge">Tenant: {{tenant}}</span>
-        <span class="badge">Profile: {{ profile.name }}</span>
-        <span class="badge">Live: <span id="healthLive">...</span></span>
-        <span class="badge">Ready: <span id="healthReady">...</span></span>
-        <span class="badge">Jobs: <span id="jobsRunning">0</span></span>
-        <button id="goBack" class="btn btn-outline px-3 py-2 text-sm" type="button">Zurück</button>
-        <button id="reloadPage" class="btn btn-outline px-3 py-2 text-sm" type="button">Neu laden</button>
-        {% if user and user != '-' %}
-        <a class="btn btn-outline px-3 py-2 text-sm" href="/logout">Logout</a>
-        {% endif %}
-        <button id="accentBtn" class="btn btn-outline px-3 py-2 text-sm">Accent: <span id="accentLabel"></span></button>
-        <button id="themeBtn" class="btn btn-outline px-3 py-2 text-sm">Theme: <span id="themeLabel"></span></button>
-      </div>
+    {% if read_only %}
+    <div class="mb-8 p-4 bg-rose-50 text-rose-600 rounded-2xl text-sm font-bold border border-rose-100 flex items-center justify-between">
+      <span>Read-only Mode aktiv ({{license_reason}}). Schreibaktionen sind deaktiviert.</span>
+      <a href="/license" class="underline">Lizenz verwalten</a>
     </div>
-    <div class="app-content">
-      {% if read_only %}
-      <div class="mb-4 alert alert-error">
-        Read-only mode aktiv ({{license_reason}}). Schreibaktionen sind deaktiviert.
-        {% if roles in ['DEV', 'ADMIN'] %}
-        <a class="underline ml-1" href="/license">Lizenz verwalten</a>
-        {% endif %}
-      </div>
-      {% elif trial_active and trial_days_left <= 3 %}
-      <div class="mb-4 alert alert-warn">
-        Trial aktiv: noch {{trial_days_left}} Tage.
-      </div>
-      {% endif %}
-      {{ content|safe }}
-    </div>
+    {% endif %}
+    {{ content | safe }}
   </main>
-</div>
 
-<!-- Floating Chat Widget -->
-<div id="chatWidgetBtn" title="Chat" class="fixed bottom-6 right-6 z-50 cursor-pointer select-none">
-  <div class="chat-fab relative h-12 w-12 rounded-full flex items-center justify-center">
-    💬
-    <span id="chatUnread" class="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-500 hidden"></span>
+  <div class="floating-tools">
+    <button class="tool-btn" onclick="toggleChat()" title="KI Chat">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" stroke-width="2"></path></svg>
+    </button>
+    <div class="w-px h-4 bg-zinc-200"></div>
+    <button class="tool-btn" id="vision-camera-btn" title="Kamera">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" stroke-width="2"></path></svg>
+    </button>
+    <button class="tool-btn" id="voice-record-btn" title="Sprache">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" stroke-width="2"></path></svg>
+    </button>
   </div>
-</div>
 
-<div id="chatDrawer" class="chat-drawer fixed inset-y-0 right-0 z-50 hidden w-[420px] max-w-[92vw] border-l">
-  <div class="chat-section flex items-center justify-between px-4 py-3 border-b">
-    <div>
-      <div class="text-sm font-semibold">KUKANILEA Assistant</div>
-      <div class="text-xs muted">Tenant: {{tenant}}</div>
+  <aside id="chat-sidebar">
+    <div id="chat-container" class="h-full">
+      <div class="flex items-center justify-center h-full text-zinc-300 text-xs uppercase tracking-widest">Initialisiere...</div>
     </div>
-    <div class="flex items-center gap-2">
-      <span id="chatWidgetStatus" class="text-[11px] muted">Bereit</span>
-      <button id="chatWidgetClose" class="rounded-lg px-2 py-1 text-sm btn-outline">✕</button>
-    </div>
-  </div>
-  <div class="chat-section px-4 py-3 border-b">
-    <div class="flex flex-wrap gap-2">
-      <button class="chat-quick pill" data-q="suche rechnung">Suche Rechnung</button>
-      <button class="chat-quick pill" data-q="suche angebot">Suche Angebot</button>
-      <button class="chat-quick pill" data-q="zeige letzte uploads">Letzte Uploads</button>
-      <button class="chat-quick pill" data-q="hilfe">Hilfe</button>
-    </div>
-  </div>
-  <div id="chatWidgetMsgs" class="chat-messages flex-1 overflow-auto px-4 py-4 space-y-3 text-sm"></div>
-  <div class="chat-section border-t px-4 py-3 space-y-2">
-    <div class="flex gap-2">
-      <input id="chatWidgetKdnr" class="w-24 rounded-xl input px-3 py-2 text-sm" placeholder="KDNR" />
-      <input id="chatWidgetInput" class="flex-1 rounded-xl input px-3 py-2 text-sm" placeholder="Frag etwas…" />
-      <button id="chatWidgetSend" class="rounded-xl px-3 py-2 text-sm btn-primary">Senden</button>
-    </div>
-    <div class="flex items-center justify-between">
-      <button id="chatWidgetRetry" class="text-xs btn-outline px-3 py-1 hidden">Retry</button>
-      <button id="chatWidgetClear" class="text-xs btn-outline px-3 py-1">Clear</button>
-    </div>
-  </div>
+  </aside>
 </div>
 
 <script>
-(function(){
-  const btnTheme = document.getElementById("themeBtn");
-  const lblTheme = document.getElementById("themeLabel");
-  const btnAcc = document.getElementById("accentBtn");
-  const lblAcc = document.getElementById("accentLabel");
-  async function persistUiPref(path, payload){
-    try{
-      await fetch(path, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload || {})
-      });
-    }catch(_){
-      // no-op: UI should still remain responsive if persistence fails
+  function toggleChat() {
+    const sidebar = document.getElementById('chat-sidebar');
+    const container = document.getElementById('chat-container');
+    sidebar.classList.toggle('open');
+    if (sidebar.classList.contains('open') && !container.dataset.loaded) {
+      htmx.ajax('GET', '/ai-chat/', '#chat-container');
+      container.dataset.loaded = 'true';
     }
   }
-  function curTheme(){ return (localStorage.getItem("ks_theme") || "{{ theme_default }}"); }
-  function curAccent(){ return (localStorage.getItem("ks_accent") || "indigo"); }
-  function applyTheme(t, persist=true){
-    if(t === "light"){ document.documentElement.classList.add("light"); }
-    else { document.documentElement.classList.remove("light"); }
-    document.documentElement.dataset.theme = t;
-    localStorage.setItem("ks_theme", t);
-    lblTheme.textContent = t;
-    if(persist){
-      persistUiPref("/settings/ui/theme", {theme: t});
+  document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+      e.preventDefault();
+      window.location.href = "/dev/dashboard/";
     }
-  }
-  function applyAccent(a){
-    document.documentElement.dataset.accent = a;
-    localStorage.setItem("ks_accent", a);
-    lblAcc.textContent = a;
-  }
-  applyTheme(curTheme(), false);
-  applyAccent(curAccent());
-  btnTheme?.addEventListener("click", ()=>{ applyTheme(curTheme() === "dark" ? "light" : "dark"); });
-  btnAcc?.addEventListener("click", ()=>{
-    const order = ["indigo","emerald","amber"];
-    const i = order.indexOf(curAccent());
-    applyAccent(order[(i+1) % order.length]);
   });
-
-  const nav = document.getElementById("appNav");
-  const navToggle = document.getElementById("navToggle");
-  const navOverlay = document.getElementById("appNavOverlay");
-  const navCollapse = document.getElementById("navCollapse");
-  const navCollapseKey = "ks_nav_collapsed";
-  const serverNavCollapsed = {{ "true" if nav_collapsed_default else "false" }};
-  function setCollapsed(collapsed, persist=true){
-    document.body.classList.toggle("nav-collapsed", !!collapsed);
-    if(navCollapse){ navCollapse.textContent = collapsed ? "▶" : "◀"; }
-    localStorage.setItem(navCollapseKey, collapsed ? "1" : "0");
-    if(persist){
-      persistUiPref("/settings/ui/sidebar", {collapsed: !!collapsed});
-    }
-  }
-  const storedNavCollapsed = localStorage.getItem(navCollapseKey);
-  setCollapsed(storedNavCollapsed === null ? serverNavCollapsed : storedNavCollapsed === "1", false);
-  function closeNav(){
-    nav?.classList.remove("open");
-    navOverlay?.classList.remove("open");
-  }
-  function toggleNav(){
-    nav?.classList.toggle("open");
-    navOverlay?.classList.toggle("open");
-  }
-  navToggle?.addEventListener("click", toggleNav);
-  navCollapse?.addEventListener("click", ()=>{
-    const next = !document.body.classList.contains("nav-collapsed");
-    setCollapsed(next);
-  });
-  navOverlay?.addEventListener("click", closeNav);
-  nav?.querySelectorAll("a.nav-link").forEach((el)=> el.addEventListener("click", closeNav));
-  document.getElementById("goBack")?.addEventListener("click", ()=> window.history.back());
-  document.getElementById("reloadPage")?.addEventListener("click", ()=> window.location.reload());
-})();
 </script>
-
-<script>
-(function(){
-  window.__kukaHealthPollMs = Number({{ health_poll_ms|int }}) || 60000;
-  window.__kukaStatusPollMs = Number({{ status_poll_ms|int }}) || 15000;
-  window.__kukaAiStatusMaxAgeMs = Number({{ ai_status_client_cache_ms|int }}) || 45000;
-  window.__kukaAiStatusCache = window.__kukaAiStatusCache || null;
-
-  function setNavBadge(id, value, showWhenZero=false){
-    const el = document.getElementById(id);
-    if(!el){ return; }
-    const num = Number(value || 0);
-    if(!showWhenZero && !(num > 0)){
-      el.classList.add('hidden');
-      el.textContent = '0';
-      return;
-    }
-    el.classList.remove('hidden');
-    el.textContent = String(num);
-  }
-
-  async function updateHealth(){
-    try{
-      const l = await fetch('/api/health/live', {headers:{'Accept':'application/json'}});
-      document.getElementById('healthLive').textContent = l.ok ? 'OK' : 'DOWN';
-    }catch(_){
-      document.getElementById('healthLive').textContent = 'DOWN';
-    }
-    try{
-      const r = await fetch('/api/health/ready', {headers:{'Accept':'application/json'}});
-      document.getElementById('healthReady').textContent = r.ok ? 'OK' : 'NOT READY';
-    }catch(_){
-      document.getElementById('healthReady').textContent = 'NOT READY';
-    }
-  }
-
-  async function updateJobStatus(){
-    try{
-      const r = await fetch('/api/status', {headers:{'Accept':'application/json'}});
-      if(!r.ok){ return; }
-      const j = await r.json();
-      const queue = j.queue || {};
-      const ocr = j.ocr || {};
-      const jobs = j.jobs || {};
-      const total = Number(j.running_total || 0);
-      const runningEl = document.getElementById('jobsRunning');
-      if(runningEl){ runningEl.textContent = String(total); }
-
-      setNavBadge('navBadgeUpload', Number(queue.analyzing || 0), false);
-      const llmRunning = (jobs.llm && jobs.llm.state === 'running') ? 1 : 0;
-      const llmError = (jobs.llm && jobs.llm.state === 'error') ? 1 : 0;
-      setNavBadge('navBadgeLlm', llmRunning > 0 ? llmRunning : llmError, llmError > 0);
-      const ocrLoad = Number(ocr.pending || 0) + Number(ocr.processing || 0);
-      setNavBadge('navBadgeOcr', ocrLoad, false);
-    }catch(_){
-      // ignore transient polling failures
-    }
-  }
-
-  updateHealth();
-  updateJobStatus();
-  setInterval(updateHealth, window.__kukaHealthPollMs);
-  setInterval(updateJobStatus, window.__kukaStatusPollMs);
-
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function(){
-      navigator.serviceWorker.register('/sw.js').catch(function(){});
-    });
-  }
-})();
-</script>
-<script>
-(function(){
-  if(window.__kukaChatWidgetInit){ return; }
-  window.__kukaChatWidgetInit = true;
-
-  async function openToken(token){
-    if(!token) return;
-    try{
-      const res = await fetch('/api/open', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body: JSON.stringify({token})});
-      const data = await res.json();
-      if(!res.ok) return;
-      if(data && data.token){
-        window.location.href = '/review/' + data.token + '/kdnr';
-      }
-    }catch(_){}
-  }
-  async function copyToken(token){
-    if(!token) return;
-    try{ await navigator.clipboard.writeText(token); }catch(_){}
-  }
-
-  const _cw = {
-    btn: document.getElementById('chatWidgetBtn'),
-    drawer: document.getElementById('chatDrawer'),
-    close: document.getElementById('chatWidgetClose'),
-    msgs: document.getElementById('chatWidgetMsgs'),
-    input: document.getElementById('chatWidgetInput'),
-    send: document.getElementById('chatWidgetSend'),
-    kdnr: document.getElementById('chatWidgetKdnr'),
-    clear: document.getElementById('chatWidgetClear'),
-    status: document.getElementById('chatWidgetStatus'),
-    retry: document.getElementById('chatWidgetRetry'),
-    unread: document.getElementById('chatUnread'),
-    quick: Array.from(document.querySelectorAll('.chat-quick')),
-  };
-  if(!_cw.btn || !_cw.drawer){ return; }
-
-  let _cwLastBody = null;
-  let _cwAiAvailable = true;
-  function _cwAppend(role, text, actions, results, suggestions){
-    if(!_cw.msgs) return;
-    const wrap = document.createElement('div');
-    const isUser = role === 'you';
-    wrap.className = 'flex ' + (isUser ? 'justify-end' : 'justify-start');
-    const bubble = document.createElement('div');
-    bubble.className = (isUser
-      ? 'max-w-[85%] rounded-2xl px-3 py-2 text-white'
-      : 'max-w-[85%] rounded-2xl px-3 py-2 border') + ' card';
-    bubble.textContent = text;
-    if(actions && actions.length){
-      const list = document.createElement('div');
-      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
-      actions.forEach((action) => {
-        if(action.type === 'open_token' && action.token){
-          const btn = document.createElement('button');
-          btn.textContent = 'Öffnen ' + action.token.slice(0,10) + '…';
-          btn.className = 'rounded-full border px-2 py-1';
-          btn.addEventListener('click', () => openToken(action.token));
-          list.appendChild(btn);
-          const tokenBtn = document.createElement('button');
-          tokenBtn.textContent = 'Token ' + action.token.slice(0,10) + '…';
-          tokenBtn.className = 'rounded-full border px-2 py-1';
-          tokenBtn.addEventListener('click', () => copyToken(action.token));
-          list.appendChild(tokenBtn);
-        }
-      });
-      bubble.appendChild(list);
-    }
-    if(results && results.length){
-      const list = document.createElement('div');
-      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
-      results.forEach((row) => {
-        const token = row.token || row.doc_id || '';
-        const label = row.file_name || token || 'Dokument';
-        if(token){
-          const btn = document.createElement('button');
-          btn.textContent = label;
-          btn.className = 'rounded-full border px-2 py-1';
-          btn.addEventListener('click', () => openToken(token));
-          list.appendChild(btn);
-        }
-      });
-      bubble.appendChild(list);
-    }
-    if(suggestions && suggestions.length){
-      const list = document.createElement('div');
-      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
-      suggestions.forEach((s) => {
-        const btn = document.createElement('button');
-        btn.textContent = s;
-        btn.dataset.q = s;
-        btn.className = 'rounded-full border px-2 py-1 chat-suggestion';
-        list.appendChild(btn);
-      });
-      bubble.appendChild(list);
-    }
-    if(isUser){
-      bubble.style.background = 'var(--accent-600)';
-    }
-    wrap.appendChild(bubble);
-    _cw.msgs.appendChild(wrap);
-    _cw.msgs.scrollTop = _cw.msgs.scrollHeight;
-    if(_cw.unread && _cw.drawer?.classList.contains('hidden')){
-      _cw.unread.classList.remove('hidden');
-    }
-  }
-  function _cwLoad(){
-    try{
-      const k = localStorage.getItem('kukanilea_cw_kdnr') || '';
-      if(_cw.kdnr) _cw.kdnr.value = k;
-      const hist = JSON.parse(localStorage.getItem('kukanilea_cw_hist') || '[]');
-      if(_cw.msgs){
-        _cw.msgs.innerHTML = '';
-        hist.forEach(x => _cwAppend(x.role, x.text));
-      }
-    }catch(_){}
-  }
-  function _cwSave(){
-    try{
-      if(_cw.kdnr) localStorage.setItem('kukanilea_cw_kdnr', _cw.kdnr.value || '');
-      const hist = [];
-      if(_cw.msgs){
-        _cw.msgs.querySelectorAll('div.flex').forEach(row => {
-          const isUser = row.className.includes('justify-end');
-          const bubble = row.querySelector('div');
-          hist.push({role: isUser ? 'you' : 'assistant', text: bubble ? bubble.textContent : ''});
-        });
-      }
-      localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
-    }catch(_){}
-  }
-  async function _cwFetchAiStatus(force=false){
-    const maxAgeMs = Number(window.__kukaAiStatusMaxAgeMs || 45000);
-    const now = Date.now();
-    if(!force && window.__kukaAiStatusCache && (now - Number(window.__kukaAiStatusCache.ts || 0)) < maxAgeMs){
-      return {ok: true, payload: window.__kukaAiStatusCache.payload || {}};
-    }
-    const r = await fetch('/api/ai/status', {method:'GET', headers:{'Accept':'application/json'}});
-    let j = {};
-    try{ j = await r.json(); }catch(_){}
-    if(r.ok){
-      window.__kukaAiStatusCache = {ts: now, payload: j};
-    }
-    return {ok: r.ok, payload: j};
-  }
-  async function _cwRefreshAiStatus(force=false){
-    try{
-      const state = await _cwFetchAiStatus(force);
-      const j = state.payload || {};
-      _cwAiAvailable = !!(state.ok && j && j.available);
-      if(_cw.status) _cw.status.textContent = _cwAiAvailable ? 'Bereit' : 'KI offline';
-      if(_cw.send) _cw.send.disabled = !_cwAiAvailable;
-      if(_cw.input) _cw.input.disabled = !_cwAiAvailable;
-      if(!_cwAiAvailable && _cw.msgs && !_cw.msgs.dataset.aiNotice){
-        _cw.msgs.dataset.aiNotice = '1';
-        _cwAppend('assistant', 'KI-Assistent ist derzeit nicht verfuegbar. Bitte starte lokal `ollama serve`.');
-      }
-    }catch(_){
-      _cwAiAvailable = false;
-      if(_cw.status) _cw.status.textContent = 'KI offline';
-      if(_cw.send) _cw.send.disabled = true;
-      if(_cw.input) _cw.input.disabled = true;
-    }
-  }
-  async function _cwSend(){
-    if(!_cwAiAvailable){
-      _cwAppend('assistant', 'KI-Assistent ist offline. Starte `ollama serve` und versuche es erneut.');
-      return;
-    }
-    const q = (_cw.input && _cw.input.value ? _cw.input.value.trim() : '');
-    if(!q) return;
-    _cwAppend('you', q);
-    if(_cw.input) _cw.input.value = '';
-    _cwSave();
-    if(_cw.status) _cw.status.textContent = 'Denke…';
-    if(_cw.retry) _cw.retry.classList.add('hidden');
-    try{
-      const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
-      _cwLastBody = body;
-      const r = await fetch('/api/ai/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-      let j = {};
-      try{ j = await r.json(); }catch(_){}
-      if(!r.ok){
-        const msg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ('HTTP ' + r.status));
-        _cwAppend('assistant', 'Fehler: ' + msg);
-        if(_cw.status) _cw.status.textContent = 'Fehler';
-        if(_cw.retry) _cw.retry.classList.remove('hidden');
-        return;
-      }
-      _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || [], j.results || [], j.suggestions || []);
-      if(_cw.status) _cw.status.textContent = 'OK';
-      _cwSave();
-    }catch(e){
-      _cwAppend('assistant', 'Fehler: ' + (e && e.message ? e.message : e));
-      if(_cw.status) _cw.status.textContent = 'Fehler';
-      if(_cw.retry) _cw.retry.classList.remove('hidden');
-    }
-  }
-
-  if(_cw.msgs){
-    _cw.msgs.addEventListener('click', (e) => {
-      const btn = e.target.closest('.chat-suggestion');
-      if(!btn) return;
-      if(_cw.input) _cw.input.value = btn.dataset.q || '';
-      _cwSend();
-    });
-  }
-  _cw.btn.addEventListener('click', () => {
-    _cw.drawer.classList.toggle('hidden');
-    if(_cw.unread) _cw.unread.classList.add('hidden');
-    _cwLoad();
-    _cwRefreshAiStatus();
-    if(!_cw.drawer.classList.contains('hidden') && _cw.input) _cw.input.focus();
-  });
-  if(_cw.close) _cw.close.addEventListener('click', () => _cw.drawer.classList.add('hidden'));
-  if(_cw.send) _cw.send.addEventListener('click', _cwSend);
-  if(_cw.input) _cw.input.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); _cwSend(); }});
-  if(_cw.kdnr) _cw.kdnr.addEventListener('change', _cwSave);
-  if(_cw.clear) _cw.clear.addEventListener('click', () => { if(_cw.msgs) _cw.msgs.innerHTML=''; localStorage.removeItem('kukanilea_cw_hist'); _cwSave(); });
-  if(_cw.retry) _cw.retry.addEventListener('click', () => {
-    if(!_cwLastBody) return;
-    if(_cw.input) _cw.input.value = _cwLastBody.q || '';
-    _cwSend();
-  });
-  _cw.quick.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if(_cw.input) _cw.input.value = btn.dataset.q || '';
-      _cwSend();
-    });
-  });
-  _cwRefreshAiStatus();
-})();
-</script>
+<script src="{{ url_for('static', filename='js/toast.js') }}"></script>
+<script src="{{ url_for('static', filename='js/voice_recorder.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vision_camera.js') }}"></script>
 </body>
 </html>"""
 
-# ------------------------------
-# Login template
-# ------------------------------
-HTML_LOGIN = r"""
-<div class="max-w-md mx-auto mt-10">
-  <div class="card p-6">
-    <h1 class="text-2xl font-bold mb-2">Login</h1>
-    <p class="text-sm opacity-80 mb-4">Accounts: <b>admin</b>/<b>admin</b> (Tenant: KUKANILEA) • <b>dev</b>/<b>dev</b> (Tenant: KUKANILEA Dev)</p>
-    {% if error %}<div class="alert alert-error mb-3">{{ error }}</div>{% endif %}
-    <form method="post" class="space-y-3">
-      <div>
-        <label class="label">Username oder E-Mail</label>
-        <input class="input w-full" name="username" autocomplete="username" required>
-      </div>
-      <div>
-        <label class="label">Password</label>
-        <input class="input w-full" type="password" name="password" autocomplete="current-password" required>
-      </div>
-      <button class="btn btn-primary w-full" type="submit">Login</button>
-    </form>
-    <div class="mt-4 text-sm flex items-center justify-between">
-      <a class="underline" href="/register">Registrieren</a>
-      <a class="underline" href="/forgot-password">Passwort vergessen?</a>
-    </div>
-  </div>
-</div>
-"""
-
-HTML_BOOTSTRAP_START = r"""
-<div class="max-w-md mx-auto mt-10">
-  <div class="card p-6">
-    <h1 class="text-2xl font-bold mb-2">Initialer Bootstrap</h1>
-    <p class="text-sm opacity-80 mb-4">Noch kein Benutzer vorhanden. Erzeuge jetzt den ersten lokalen DEV-Zugang.</p>
-    <form method="post" class="space-y-3">
-      <button class="btn btn-primary w-full" type="submit">DEV-User erstellen</button>
-    </form>
-  </div>
-</div>
-"""
-
-HTML_BOOTSTRAP_DONE = r"""
-<div class="max-w-md mx-auto mt-10">
-  <div class="card p-6">
-    <h1 class="text-2xl font-bold mb-2">Bootstrap erfolgreich</h1>
-    <p class="text-sm opacity-80 mb-4">Die Zugangsdaten werden nur einmal angezeigt.</p>
-    <div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">
-      <div><strong>Username:</strong> <code id="bootstrapUsername">{{ credentials.username }}</code></div>
-      <div><strong>Passwort:</strong> <code id="bootstrapPassword">{{ credentials.password }}</code></div>
-      <div><strong>Tenant:</strong> <code id="bootstrapTenant">{{ credentials.tenant_id }}</code></div>
-    </div>
-    <a class="btn btn-primary w-full text-center" href="/login">Zum Login</a>
-  </div>
-</div>
-"""
-
-HTML_REGISTER = r"""
-<div class="max-w-md mx-auto mt-10">
-  <div class="card p-6">
-    <h1 class="text-2xl font-bold mb-2">Registrierung</h1>
-    <p class="text-sm opacity-80 mb-4">Offline-Flow: Bestätigungscode wird lokal in der Outbox abgelegt.</p>
-    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
-    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
-    {% if local_code %}<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm mb-3">Lokaler Verify-Code: <code id="localVerifyCode">{{ local_code }}</code></div>{% endif %}
-    <form method="post" class="space-y-3">
-      <div>
-        <label class="label">E-Mail</label>
-        <input class="input w-full" name="email" type="email" autocomplete="email" required>
-      </div>
-      <div>
-        <label class="label">Passwort</label>
-        <input class="input w-full" name="password" type="password" autocomplete="new-password" required>
-      </div>
-      <div>
-        <label class="label">Passwort bestätigen</label>
-        <input class="input w-full" name="password_confirm" type="password" autocomplete="new-password" required>
-      </div>
-      <button class="btn btn-primary w-full" type="submit">Account erstellen</button>
-    </form>
-    <div class="mt-4 text-sm flex items-center justify-between">
-      <a class="underline" href="/login">Zum Login</a>
-      <a class="underline" href="/verify-email">Code bestätigen</a>
-    </div>
-  </div>
-</div>
-"""
-
-HTML_VERIFY_EMAIL = r"""
-<div class="max-w-md mx-auto mt-10">
-  <div class="card p-6">
-    <h1 class="text-2xl font-bold mb-2">E-Mail bestätigen</h1>
-    <p class="text-sm opacity-80 mb-4">Gib die E-Mail und den 6-stelligen Code aus der lokalen Outbox ein.</p>
-    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
-    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
-    <form method="post" class="space-y-3">
-      <div>
-        <label class="label">E-Mail</label>
-        <input class="input w-full" name="email" type="email" autocomplete="email" required>
-      </div>
-      <div>
-        <label class="label">Code</label>
-        <input class="input w-full" name="code" inputmode="numeric" maxlength="12" required>
-      </div>
-      <button class="btn btn-primary w-full" type="submit">Bestätigen</button>
-    </form>
-    <div class="mt-4 text-sm flex items-center justify-between">
-      <a class="underline" href="/register">Registrieren</a>
-      <a class="underline" href="/login">Zum Login</a>
-    </div>
-  </div>
-</div>
-"""
-
-HTML_FORGOT_PASSWORD = r"""
-<div class="max-w-md mx-auto mt-10">
-  <div class="card p-6">
-    <h1 class="text-2xl font-bold mb-2">Passwort vergessen</h1>
-    <p class="text-sm opacity-80 mb-4">Wir erzeugen lokal einen Reset-Code und legen ihn in der Outbox ab.</p>
-    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
-    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
-    {% if local_code %}<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm mb-3">Lokaler Reset-Code: <code id="localResetCode">{{ local_code }}</code></div>{% endif %}
-    <form method="post" class="space-y-3">
-      <div>
-        <label class="label">E-Mail</label>
-        <input class="input w-full" name="email" type="email" autocomplete="email" required>
-      </div>
-      <button class="btn btn-primary w-full" type="submit">Reset-Code erzeugen</button>
-    </form>
-    <div class="mt-4 text-sm flex items-center justify-between">
-      <a class="underline" href="/reset-password">Reset ausführen</a>
-      <a class="underline" href="/login">Zum Login</a>
-    </div>
-  </div>
-</div>
-"""
-
-HTML_RESET_PASSWORD = r"""
-<div class="max-w-md mx-auto mt-10">
-  <div class="card p-6">
-    <h1 class="text-2xl font-bold mb-2">Passwort zurücksetzen</h1>
-    <p class="text-sm opacity-80 mb-4">Nutze E-Mail + Reset-Code aus der lokalen Outbox.</p>
-    {% if error %}<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm mb-3">{{ error }}</div>{% endif %}
-    {% if info %}<div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm mb-3">{{ info }}</div>{% endif %}
-    <form method="post" class="space-y-3">
-      <div>
-        <label class="label">E-Mail</label>
-        <input class="input w-full" name="email" type="email" autocomplete="email" required>
-      </div>
-      <div>
-        <label class="label">Reset-Code</label>
-        <input class="input w-full" name="code" inputmode="numeric" maxlength="12" required>
-      </div>
-      <div>
-        <label class="label">Neues Passwort</label>
-        <input class="input w-full" name="password" type="password" autocomplete="new-password" required>
-      </div>
-      <div>
-        <label class="label">Passwort bestätigen</label>
-        <input class="input w-full" name="password_confirm" type="password" autocomplete="new-password" required>
-      </div>
-      <button class="btn btn-primary w-full" type="submit">Passwort ändern</button>
-    </form>
-    <div class="mt-4 text-sm flex items-center justify-between">
-      <a class="underline" href="/forgot-password">Code erneut anfordern</a>
-      <a class="underline" href="/login">Zum Login</a>
-    </div>
-  </div>
-</div>
-"""
-
-@bp.route("/license/activate", methods=["GET", "POST"])
-@login_required
-@require_role("OWNER_ADMIN")
-def license_activate():
-    from app.core.license_manager import license_manager
-    error = None
-    success = None
-    hwid = license_manager.hardware_id
+HTML_INDEX = r"""
+<section class="mb-32 text-center pt-20">
+    <h1 class="text-5xl font-bold tracking-tight text-black mb-6">Wie kann ich heute <br/><span class="text-zinc-400">unterstützen?</span></h1>
     
-    if request.method == "POST":
-        key = request.form.get("license_key", "").strip()
-        if not key:
-            error = "Bitte einen Lizenzschlüssel eingeben."
-        else:
-            if license_manager.load_license(key):
-                success = "Lizenz erfolgreich aktiviert!"
-                _audit("license_activated")
-            else:
-                error = "Ungültiger Lizenzschlüssel oder Hardware-Mismatch."
-                
-    return _render_base(
-        render_template_string(HTML_ACTIVATE, hwid=hwid, error=error, success=success),
-        active_tab="license"
-    )
+    <div class="relative group mt-12 max-w-2xl mx-auto">
+        <div class="relative bg-zinc-50 border border-zinc-200 rounded-2xl p-2 flex items-center shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+            <input type="text" 
+                   id="hero-chat-input"
+                   placeholder="Frage stellen oder Aktion ausführen..." 
+                   class="flex-1 bg-transparent border-none px-6 py-4 text-lg focus:outline-none placeholder:text-zinc-300"
+                   onkeydown="if(event.key === 'Enter') { 
+                       const msg = this.value;
+                       if(msg.trim()) {
+                           toggleChat();
+                           setTimeout(() => {
+                               const chatIn = document.getElementById('chat-input');
+                               if(chatIn) { chatIn.value = msg; chatIn.dispatchEvent(new Event('input')); }
+                           }, 200);
+                           this.value = '';
+                       }
+                   }">
+            <button onclick="const input = document.getElementById('hero-chat-input'); if(input.value.trim()){ toggleChat(); setTimeout(() => { const chatIn = document.getElementById('chat-input'); if(chatIn){ chatIn.value = input.value; chatIn.dispatchEvent(new Event('input')); } input.value = ''; }, 200); }" 
+                    class="bg-black hover:bg-zinc-800 text-white p-4 rounded-xl transition-all shadow-lg active:scale-95">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </button>
+        </div>
+        <div class="mt-6 flex gap-3 justify-center overflow-x-auto no-scrollbar">
+            <button class="px-4 py-2 bg-white border border-zinc-200 rounded-full text-[10px] font-bold text-zinc-500 hover:border-black hover:text-black transition-all uppercase tracking-widest">Soll-Ist Vergleich</button>
+            <button class="px-4 py-2 bg-white border border-zinc-200 rounded-full text-[10px] font-bold text-zinc-500 hover:border-black hover:text-black transition-all uppercase tracking-widest">Offene Aufgaben</button>
+            <button class="px-4 py-2 bg-white border border-zinc-200 rounded-full text-[10px] font-bold text-zinc-500 hover:border-black hover:text-black transition-all uppercase tracking-widest">Materialbestellung</button>
+        </div>
+    </div>
+</section>
 
-HTML_ACTIVATE = r"""
-<div class="max-w-xl mx-auto mt-10">
-  <div class="card p-8 shadow-lg">
-    <h1 class="text-2xl font-bold mb-2">Systemaktivierung</h1>
-    <p class="text-sm muted mb-6">Bitte gib deinen Gold-Lizenzschlüssel ein, um den vollen Funktionsumfang freizuschalten.</p>
-    
-    <div class="bg-slate-50 p-4 rounded-xl border mb-6">
-        <label class="label">Deine Hardware-ID (HWID):</label>
-        <code class="text-xs select-all">{{ hwid }}</code>
-        <p class="text-[10px] muted mt-2">Sende diese ID an den Support, um einen Schlüssel zu erhalten.</p>
+<section class="grid grid-cols-1 md:grid-cols-2 gap-16 pb-20">
+    <div class="group cursor-pointer" onclick="window.location.href='/tasks'">
+        <div class="text-[9px] font-black text-blue-600 uppercase tracking-[0.3em] mb-4">Operations</div>
+        <h2 class="text-xl font-bold mb-2 group-hover:translate-x-1 transition-transform">Betrieb & Aufgaben</h2>
+        <p class="text-sm text-zinc-400 leading-relaxed">Steuern Sie Ihre Baustellen und verfolgen Sie den Fortschritt Ihrer Teams.</p>
     </div>
 
-    {% if error %}<div class="alert alert-error mb-4">{{ error }}</div>{% endif %}
-    {% if success %}<div class="alert alert-info mb-4">{{ success }}</div>{% endif %}
-
-    <form method="post" class="space-y-4">
-      <div>
-        <label class="label">Lizenzschlüssel (Base64)</label>
-        <textarea name="license_key" class="input w-full h-32 text-xs font-mono p-3" placeholder="..."></textarea>
-      </div>
-      <button class="btn btn-primary w-full py-3" type="submit">Aktivieren</button>
-    </form>
-    
-    <div class="mt-6 text-center">
-        <a href="/" class="text-sm underline muted">Zurück zum Dashboard</a>
+    <div class="group cursor-pointer" onclick="window.location.href='/knowledge'">
+        <div class="text-[9px] font-black text-blue-600 uppercase tracking-[0.3em] mb-4">Intelligence</div>
+        <h2 class="text-xl font-bold mb-2 group-hover:translate-x-1 transition-transform">Wissensdatenbank</h2>
+        <p class="text-sm text-zinc-400 leading-relaxed">Technische Details, Normen und Projektunterlagen durch lokale KI-Suche.</p>
     </div>
-  </div>
-</div>
+</section>
 """
-
-
-HTML_DEV_UPDATE = r"""
-<div class="max-w-3xl mx-auto mt-10">
-  <div class="card p-6 space-y-4">
-    <h1 class="text-2xl font-bold">DEV Update Center</h1>
-    <p class="text-sm opacity-80">In-Place Update per Atomic Swap. App-Dateien werden ersetzt, Daten bleiben im User-Data-Ordner.</p>
-
-    <div class="grid gap-2 text-sm md:grid-cols-2">
-      <div><span class="muted text-xs">Installierte Version</span><div><strong>{{ current_version }}</strong></div></div>
-      <div><span class="muted text-xs">Install-Pfad</span><div class="break-all">{{ app_dir }}</div></div>
-      <div><span class="muted text-xs">Daten-Pfad</span><div class="break-all">{{ data_dir }}</div></div>
-      <div><span class="muted text-xs">Install-Flow</span><div><strong>{{ "aktiv" if install_enabled else "deaktiviert" }}</strong></div></div>
-    </div>
-
-    {% if error %}
-      <div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm">{{ error }}</div>
-    {% endif %}
-    {% if info %}
-      <div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">{{ info }}</div>
-    {% endif %}
-
-    <div class="grid gap-3 md:grid-cols-3">
-      <form method="post" class="contents">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="action" value="check">
-        <button class="btn btn-outline w-full" type="submit">Check for Updates</button>
-      </form>
-      <form method="post" class="contents">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="action" value="install">
-        <button class="btn btn-primary w-full" type="submit" {% if not install_enabled %}disabled{% endif %}>Install Update</button>
-      </form>
-      <form method="post" class="contents">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="action" value="rollback">
-        <button class="btn btn-outline w-full" type="submit" {% if not install_enabled %}disabled{% endif %}>Rollback</button>
-      </form>
-    </div>
-
-    <div class="rounded-xl border p-3 text-sm">
-      <div class="font-semibold mb-1">Letzter Check</div>
-      {% if update_state.error %}
-        <div>Fehler: <code>{{ update_state.error }}</code></div>
-      {% elif update_state.checked %}
-        <div>Neueste Version: <strong>{{ update_state.latest_version or "-" }}</strong></div>
-        <div>Quelle: <strong>{{ "Signiertes Manifest" if update_state.manifest_used else "Release API" }}</strong></div>
-        <div>Installierbares Asset: <strong>{{ update_state.asset_name or "-" }}</strong></div>
-        {% if update_state.asset_url %}
-          <div class="break-all">Asset URL: {{ update_state.asset_url }}</div>
-        {% endif %}
-        {% if update_state.sha256 %}
-          <div>SHA256: <code>{{ update_state.sha256 }}</code></div>
-        {% endif %}
-        {% if update_state.signature_required %}
-          <div>Signaturpflicht: <strong>aktiv</strong></div>
-          <div>Signaturprüfung: <strong>{{ "OK" if update_state.signature_verified else "FEHLER" }}</strong></div>
-          {% if update_state.signature_key_id %}
-            <div>Signing-Key-ID: <code>{{ update_state.signature_key_id }}</code></div>
-          {% endif %}
-          {% if update_state.signature_error %}
-            <div>Signaturfehler: <code>{{ update_state.signature_error }}</code></div>
-          {% endif %}
-        {% endif %}
-      {% else %}
-        <div class="muted">Noch kein Check ausgeführt.</div>
-      {% endif %}
-    </div>
-  </div>
-</div>
-"""
-
-
-HTML_INDEX = r"""<div class="grid lg:grid-cols-2 gap-6">
-  <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
-    <div class="text-lg font-semibold mb-2">Datei hochladen</div>
-    <div class="muted text-sm mb-4">Upload → Analyse → Review öffnet automatisch.</div>
-    <form id="upform" class="space-y-3">
-      <input id="file" name="file" type="file"
-        class="block w-full text-sm input
-        file:mr-4 file:rounded-xl file:border-0 file:bg-slate-700 file:px-4 file:py-2
-        file:text-sm file:font-semibold file:text-white hover:file:bg-slate-600" />
-      <button id="btn" type="submit" class="rounded-xl px-4 py-2 font-semibold btn-primary">Hochladen</button>
-    </form>
-    <div class="mt-4">
-      <div class="text-xs muted mb-1" id="pLabel">0.0%</div>
-      <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden"><div id="bar" class="h-3 w-0" style="background:var(--accent-500)"></div></div>
-      <div class="text-slate-300 text-sm mt-3" id="status"></div>
-      <div class="muted text-xs mt-1" id="phase"></div>
-    </div>
-  </div>
-  <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
-    <div class="text-lg font-semibold mb-2">Review Queue</div>
-    {% if items %}
-      <div class="space-y-2">
-        {% for it in items %}
-          <div class="rounded-xl border border-slate-800 hover:border-slate-600 px-3 py-2">
-            <div class="flex items-center justify-between gap-2">
-              <a class="text-sm font-semibold underline accentText" href="/review/{{it}}/kdnr">Review öffnen</a>
-              <div class="muted text-xs">{{ (meta.get(it, {}).get('progress', 0.0) or 0.0) | round(1) }}%</div>
-            </div>
-            <div class="muted text-xs break-all">{{ meta.get(it, {}).get('filename','') }}</div>
-            <div class="muted text-[11px]">{{ meta.get(it, {}).get('progress_phase','') }}</div>
-            <div class="mt-2 flex gap-2">
-              <a class="rounded-xl px-3 py-2 text-xs btn-outline card" href="/file/{{it}}" target="_blank">Datei</a>
-              <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Pending wirklich löschen?')" style="display:inline;">
-                <button class="rounded-xl px-3 py-2 text-xs btn-outline card" type="submit">Delete</button>
-              </form>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="muted text-sm">Keine offenen Reviews.</div>
-    {% endif %}
-  </div>
-</div>
-<script>
-const form = document.getElementById("upform");
-const fileInput = document.getElementById("file");
-const bar = document.getElementById("bar");
-const pLabel = document.getElementById("pLabel");
-const status = document.getElementById("status");
-const phase = document.getElementById("phase");
-function setProgress(p){
-  const pct = Math.max(0, Math.min(100, p));
-  bar.style.width = pct + "%";
-  pLabel.textContent = pct.toFixed(1) + "%";
-}
-async function poll(token){
-  const res = await fetch("/api/progress/" + token, {cache:"no-store", credentials:"same-origin"});
-  const j = await res.json();
-  setProgress(j.progress || 0);
-  phase.textContent = j.progress_phase || "";
-  if(j.status === "READY"){ status.textContent = "Analyse fertig. Review öffnet…"; setTimeout(()=>{ window.location.href = "/review/" + token + "/kdnr"; }, 120); return; }
-  if(j.status === "ERROR"){ status.textContent = "Analyse-Fehler: " + (j.error || "unbekannt"); return; }
-  setTimeout(()=>poll(token), 450);
-}
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const f = fileInput.files[0];
-  if(!f){ status.textContent = "Bitte eine Datei auswählen."; return; }
-  const fd = new FormData();
-  fd.append("file", f);
-  const xhr = new XMLHttpRequest();
-  xhr.open("POST", "/upload", true);
-  xhr.upload.onprogress = (ev) => {
-    if(ev.lengthComputable){ setProgress((ev.loaded / ev.total) * 35); phase.textContent = "Upload…"; }
-  };
-  xhr.onload = () => {
-    if(xhr.status === 200){
-      const resp = JSON.parse(xhr.responseText);
-      status.textContent = "Upload OK. Analyse läuft…";
-      poll(resp.token);
-    } else {
-      try{ const j = JSON.parse(xhr.responseText || "{}"); status.textContent = "Fehler beim Upload: " + (j.error || ("HTTP " + xhr.status)); }
-      catch(e){ status.textContent = "Fehler beim Upload: HTTP " + xhr.status; }
-    }
-  };
-  xhr.onerror = () => { status.textContent = "Upload fehlgeschlagen (Netzwerk/Server)."; };
-  status.textContent = "Upload läuft…"; setProgress(0); phase.textContent = ""; xhr.send(fd);
-});
-</script>"""
 
 HTML_REVIEW_SPLIT = r"""<div class="grid lg:grid-cols-2 gap-4">
   <div class="card p-4 sticky top-6 h-fit">

@@ -15,151 +15,134 @@
     <script src="/static/js/voice_recorder.js"></script>
     <script src="/static/js/vision_camera.js"></script>
 </head>
-<body class="bg-slate-50 min-h-screen font-sans text-slate-900">
-    <!-- Camera Overlay -->
-    <div id="camera-overlay" class="hidden">
-        <div id="camera-preview"></div>
-        <div class="camera-controls">
-            <button id="camera-close" class="close-btn">✕</button>
-            <button id="camera-shutter" class="shutter-btn"></button>
-            <div style="width: 32px;"></div> <!-- Spacer -->
-        </div>
-    </div>
-
+<body class="bg-white min-h-screen font-sans text-zinc-900 selection:bg-blue-100">
     <!-- Toast Container -->
-    <div id="toast-container"></div>
+    <div id="toast-container" class="z-[100]"></div>
 
-    <!-- Top Level Navigation (Stacked Layout) -->
-    <nav class="bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center sticky top-0 z-40 shadow-sm">
-        <div class="flex items-center gap-4">
-            <div class="bg-indigo-600 text-white p-2 rounded-lg">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+    <!-- Navigation (Ultra Minimal) -->
+    <nav class="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-zinc-100 px-10 py-5 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             </div>
-            <div>
-                <div class="text-sm font-bold tracking-tight text-slate-800 uppercase">KUKANILEA</div>
-                <div class="text-[10px] text-slate-500 font-medium tracking-widest">BUSINESS OS 2026</div>
-            </div>
+            <span class="text-lg font-bold tracking-tight uppercase">Kukanilea</span>
         </div>
         
-        <div class="flex items-center gap-6">
-            <!-- AI Health Polling -->
-            <div class="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200"
-                 hx-get="/ai-chat/health" 
-                 hx-trigger="every 5s" 
-                 hx-swap="none"
+        <div class="flex items-center gap-10">
+            <!-- AI Status -->
+            <div class="flex items-center gap-2"
+                 hx-get="/ai-chat/health" hx-trigger="every 10s" hx-swap="none"
                  hx-on::after-request="const d = JSON.parse(event.detail.xhr.response); 
-                                       document.getElementById('nav-ai-dot').className = 'h-2 w-2 rounded-full ' + (d.available ? 'bg-emerald-500' : 'bg-amber-500');
-                                       document.getElementById('nav-ai-text').textContent = d.available ? 'KI Live' : 'Initialisiere...';">
-                <div id="nav-ai-dot" class="h-2 w-2 rounded-full bg-slate-400 transition-colors duration-1000"></div>
-                <span id="nav-ai-text" class="text-[11px] font-bold text-slate-600">Checking...</span>
+                                       document.getElementById('nav-ai-dot').className = 'h-1.5 w-1.5 rounded-full ' + (d.available ? 'bg-blue-500' : 'bg-zinc-300');">
+                <div id="nav-ai-dot" class="h-1.5 w-1.5 rounded-full bg-zinc-300 transition-all duration-500"></div>
+                <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">System Live</span>
             </div>
 
-            <!-- Account / Tenant Section -->
-            <div class="flex items-center gap-3 border-l border-slate-200 pl-6">
-                <div class="text-right hidden sm:block">
-                    <div class="text-[11px] font-bold text-slate-800 uppercase">Handwerksmeister</div>
-                    <div class="text-[10px] text-indigo-600 font-bold uppercase tracking-tighter">Tenant: KUKANILEA</div>
-                </div>
-                <div class="bg-slate-200 text-slate-600 p-2 rounded-full border border-slate-300">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+            <!-- Profile -->
+            <div class="flex items-center gap-4 cursor-pointer hover:opacity-70 transition-opacity">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-zinc-500">{{ user_display or 'Meister' }}</span>
+                <div class="w-8 h-8 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center overflow-hidden">
+                    <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
                 </div>
             </div>
         </div>
     </nav>
 
-    <main id="main-content" class="p-10 max-w-7xl mx-auto">
-        <div class="mb-10 flex justify-between items-end">
-            <div>
-                <h1 class="text-2xl font-black text-slate-900 tracking-tight">DASHBOARD</h1>
-                <div class="h-1 w-12 bg-indigo-600 mt-2 rounded-full"></div>
-            </div>
-            <!-- Visual Engagement: Meister-Erfahrung -->
-            <div class="w-64">
-                <div class="flex justify-between text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">
-                    <span>Meister-Erfahrung</span>
-                    <span>LVL 12</span>
-                </div>
-                <div class="h-2 w-full bg-slate-200 rounded-full overflow-hidden border border-slate-300">
-                    <div class="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 w-[65%] animate-pulse"></div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Bento Grid 2.0 -->
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
-            <!-- Agent Activity Feed (Proactive) -->
-            <div class="md:col-span-12 bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-2xl mb-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xs font-black text-emerald-500 uppercase tracking-widest flex items-center gap-2">
-                        <span class="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
-                        Proaktive Agenten-Aktivität
-                    </h2>
-                    <span class="text-[9px] text-slate-500 font-mono">AUTONOMY STAGE 4</span>
-                </div>
-                <div id="agent-feed" 
-                     hx-get="/api/agent/notifications" 
-                     hx-trigger="load, every 10s" 
-                     hx-swap="innerHTML"
-                     hx-on::after-request="const d = JSON.parse(event.detail.xhr.response); 
-                                           let html = '';
-                                           if (d.notifications.length === 0) {
-                                               html = '<div class=\"text-[10px] text-slate-600 italic\">Warte auf proaktive Ereignisse...</div>';
-                                           } else {
-                                               d.notifications.forEach(n => {
-                                                   html += `<div class=\"mb-3 p-3 bg-slate-950 rounded border-l-2 border-emerald-500\">
-                                                              <div class=\"flex justify-between text-[9px] text-slate-500 mb-1\">
-                                                                <span>ROLE: ${n.role}</span>
-                                                                <span>${n.created_at}</span>
-                                                              </div>
-                                                              <div class=\"text-[11px] text-slate-300\">${n.message}</div>
-                                                            </div>`;
-                                               });
-                                           }
-                                           this.innerHTML = html;">
-                    <div class="text-[10px] text-slate-600">Initialisiere Feed...</div>
-                </div>
-            </div>
-
-            <!-- CRM Card -->
-            <div class="md:col-span-4 bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all group">
-                <div class="text-indigo-600 mb-6 bg-indigo-50 w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                </div>
-                <h2 class="text-lg font-black text-slate-800 mb-2 uppercase tracking-tight">Kunden (CRM)</h2>
-                <p class="text-slate-500 text-sm leading-relaxed mb-6">Zentrale Verwaltung Ihrer Kontakte und Betriebsdaten.</p>
-                <a href="/crm" class="inline-flex items-center text-xs font-black text-indigo-600 uppercase tracking-widest hover:translate-x-1 transition-transform">
-                    Öffnen
-                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-                </a>
-            </div>
+    <main class="max-w-4xl mx-auto px-10 py-24">
+        <!-- Hero Interaction -->
+        <section class="mb-32">
+            <h1 class="text-5xl font-bold tracking-tight text-black mb-6">Wie kann ich heute <br/><span class="text-zinc-400">unterstützen?</span></h1>
             
-            <!-- Tasks Card -->
-            <div class="md:col-span-4 bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all group border-b-4 border-b-indigo-600">
-                <div class="text-indigo-600 mb-6 bg-indigo-50 w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+            <div class="relative group mt-12">
+                <div class="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur opacity-5 group-hover:opacity-10 transition duration-1000"></div>
+                <div class="relative bg-zinc-50 border border-zinc-200 rounded-2xl p-2 flex items-center shadow-sm">
+                    <input type="text" 
+                           id="hero-chat-input"
+                           placeholder="Frage stellen oder Aktion ausführen..." 
+                           class="flex-1 bg-transparent border-none px-6 py-4 text-lg focus:outline-none placeholder:text-zinc-400"
+                           onkeydown="if(event.key === 'Enter') { 
+                               const msg = this.value;
+                               if(msg.trim()) {
+                                   toggleChat();
+                                   document.getElementById('chat-input').value = msg;
+                                   this.value = '';
+                               }
+                           }">
+                    <button onclick="const input = document.getElementById('hero-chat-input'); if(input.value.trim()){ toggleChat(); document.getElementById('chat-input').value = input.value; input.value = ''; }" 
+                            class="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-xl transition-all shadow-lg shadow-blue-200 active:scale-95">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                    </button>
                 </div>
-                <h2 class="text-lg font-black text-slate-800 mb-2 uppercase tracking-tight">AUFGABEN</h2>
-                <p class="text-slate-500 text-sm leading-relaxed mb-6">Projekt-Tracking und SLA-Überwachung für den Betrieb.</p>
-                <a href="/tasks" class="inline-flex items-center text-xs font-black text-indigo-600 uppercase tracking-widest hover:translate-x-1 transition-transform">
-                    Öffnen
-                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-                </a>
+                <div class="mt-4 flex gap-3 overflow-x-auto no-scrollbar">
+                    <button class="whitespace-nowrap px-4 py-2 bg-white border border-zinc-200 rounded-full text-xs font-bold text-zinc-500 hover:border-blue-500 hover:text-blue-600 transition-all">Soll-Ist Vergleich</button>
+                    <button class="whitespace-nowrap px-4 py-2 bg-white border border-zinc-200 rounded-full text-xs font-bold text-zinc-500 hover:border-blue-500 hover:text-blue-600 transition-all">Offene Aufgaben</button>
+                    <button class="whitespace-nowrap px-4 py-2 bg-white border border-zinc-200 rounded-full text-xs font-bold text-zinc-500 hover:border-blue-500 hover:text-blue-600 transition-all">Materialbestellung prüfen</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Modules (Clean Grid) -->
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-12">
+            <div class="group cursor-pointer">
+                <div class="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-4">Operations</div>
+                <h2 class="text-xl font-bold mb-2 group-hover:text-blue-600 transition-colors">Betrieb & Aufgaben</h2>
+                <p class="text-sm text-zinc-500 leading-relaxed">Steuern Sie Ihre Baustellen und verfolgen Sie den Fortschritt Ihrer Teams in Echtzeit.</p>
+                <div class="mt-6 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-400 group-hover:text-blue-600 transition-all">
+                    <span>ZUM MODUL</span>
+                    <svg class="w-3 h-3 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 8l4 4m0 0l-4 4m4-4H3" stroke-width="3"></path></svg>
+                </div>
             </div>
 
-            <!-- Knowledge Card -->
-            <div class="md:col-span-4 bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all group">
-                <div class="text-indigo-600 mb-6 bg-indigo-50 w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+            <div class="group cursor-pointer">
+                <div class="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-4">Intelligence</div>
+                <h2 class="text-xl font-bold mb-2 group-hover:text-blue-600 transition-colors">Wissensdatenbank</h2>
+                <p class="text-sm text-zinc-500 leading-relaxed">Finden Sie technische Details, Normen und Projektunterlagen durch lokale KI-Suche.</p>
+                <div class="mt-6 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-400 group-hover:text-blue-600 transition-all">
+                    <span>DURCHSUCHEN</span>
+                    <svg class="w-3 h-3 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 8l4 4m0 0l-4 4m4-4H3" stroke-width="3"></path></svg>
                 </div>
-                <h2 class="text-lg font-black text-slate-800 mb-2 uppercase tracking-tight">WISSEN</h2>
-                <p class="text-slate-500 text-sm leading-relaxed mb-6">Volltextsuche in Dokumenten und betrieblichem Know-how.</p>
-                <a href="/knowledge" class="inline-flex items-center text-xs font-black text-indigo-600 uppercase tracking-widest hover:translate-x-1 transition-transform">
-                    Öffnen
-                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-                </a>
             </div>
-        </div>
+        </section>
     </main>
+
+    <!-- Floating UI -->
+    <div class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
+        <div class="bg-white/80 backdrop-blur-2xl border border-zinc-200 rounded-full px-6 py-3 flex items-center gap-8 shadow-2xl shadow-zinc-200">
+            <button id="vision-camera-btn" class="text-zinc-400 hover:text-black transition-colors" title="Kamera-Analyse">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" stroke-width="2"></path></svg>
+            </button>
+            <button id="voice-record-btn" class="text-zinc-400 hover:text-black transition-colors" title="Sprachsteuerung">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" stroke-width="2"></path></svg>
+            </button>
+            <div class="w-px h-4 bg-zinc-200"></div>
+            <button class="text-zinc-400 hover:text-black transition-colors" onclick="window.location.href='/settings'">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-width="2"></path></svg>
+            </button>
+        </div>
+    </div>
+    <div id="voice-status" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] font-bold px-4 py-2 rounded-full uppercase tracking-widest hidden animate-pulse">Höre zu...</div>
+
+    <!-- Chat Sidebar (Manus Style) -->
+    <div id="chat-container-wrapper" class="fixed top-0 right-0 h-full w-[450px] bg-white border-l border-zinc-100 shadow-2xl z-50 translate-x-full transition-transform duration-500 ease-out">
+        <div id="chat-container" class="h-full">
+            <!-- Content loaded via HTMX -->
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="px-10 py-12 border-t border-zinc-50 flex justify-between text-[10px] font-bold text-zinc-300 uppercase tracking-[0.3em]">
+        <div>&copy; 2026 TOPHANDWERK</div>
+        <div class="text-zinc-200">v1.5.0 GOLD RELEASE</div>
+    </footer>
+
+    <script>
+        function toggleChat() {
+            const wrapper = document.getElementById('chat-container-wrapper');
+            wrapper.classList.toggle('translate-x-full');
+        }
+        // ... (rest of service worker scripts)
+    </script>
+</body>
 
     <!-- Vision Camera FAB -->
     <button id="vision-camera-btn" class="camera-fab" title="Kamera-Analyse">
@@ -194,12 +177,21 @@
     </div>
 
     <!-- Footer -->
-    <footer class="p-8 mt-auto border-t border-slate-200 flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-[0.4em]">
-        <div>&copy; 2026 TOPHANDWERK ENGINEERING</div>
-        <div class="text-indigo-500">KUKANILEA v1.4.0-COMMERCIAL</div>
+    <footer class="px-10 py-12 border-t border-zinc-50 flex justify-between text-[10px] font-bold text-zinc-300 uppercase tracking-[0.3em]">
+        <div>&copy; 2026 TOPHANDWERK</div>
+        <div class="text-indigo-500">KUKANILEA v1.5.0 GOLD</div>
     </footer>
 
     <script>
+        function toggleChat() {
+            const wrapper = document.getElementById('chat-container-wrapper');
+            wrapper.classList.toggle('translate-x-full');
+            if (!wrapper.classList.contains('translate-x-full')) {
+                // Trigger HTMX load if needed
+                htmx.trigger('#chat-container', 'load');
+            }
+        }
+
         // Service Worker Registration for PWA
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -211,7 +203,7 @@
 
         // Secret Dev-Shortcut: CMD/CTRL + SHIFT + D
         document.addEventListener('keydown', function(e) {
-            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
+            if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
                 e.preventDefault();
                 window.location.href = "/dev/dashboard/";
             }
