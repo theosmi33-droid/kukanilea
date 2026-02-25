@@ -1,7 +1,0 @@
-STDOUT:
-SUCCESS: CycloneDX SBOM generated at dist/evidence/sbom.cdx.json
-
-
-STDERR:
-/Users/gensuminguyen/Tophandwerk/kukanilea-git/scripts/generate_sbom.py:18: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
-  "timestamp": datetime.datetime.utcnow().isoformat() + "Z",

@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 from .base import AgentContext, AgentResult, BaseAgent
 
@@ -19,7 +19,7 @@ except Exception:
 @dataclass
 class SearchHit:
     score: float
-    row: dict[str, Any]
+    row: Dict[str, Any]
 
 
 def _parse_doc_date(doc_date: str) -> datetime | None:
@@ -33,7 +33,7 @@ def _parse_doc_date(doc_date: str) -> datetime | None:
     return None
 
 
-def _score_hit(query: str, hit: dict[str, Any]) -> float:
+def _score_hit(query: str, hit: Dict[str, Any]) -> float:
     score = 0.0
     q = query.lower()
     file_name = str(hit.get("file_name", "")).lower()
@@ -56,8 +56,8 @@ def _score_hit(query: str, hit: dict[str, Any]) -> float:
     if doc_date:
         parsed = _parse_doc_date(doc_date)
         if parsed:
-            parsed = parsed.replace(tzinfo=UTC)
-            now_utc = datetime.now(UTC)
+            parsed = parsed.replace(tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
             days = (now_utc - parsed).days
             if days <= 90:
                 score += 1.2
@@ -100,7 +100,7 @@ class SearchAgent(BaseAgent):
                 suggestions=["suche rechnung", "suche angebot"],
             )
 
-        ranked: list[SearchHit] = []
+        ranked: List[SearchHit] = []
         for row in results:
             ranked.append(SearchHit(score=_score_hit(message, row), row=row))
         ranked.sort(key=lambda r: r.score, reverse=True)
@@ -128,7 +128,7 @@ class SearchAgent(BaseAgent):
 
     def search(
         self, message: str, context: AgentContext, limit: int = 8
-    ) -> tuple[list[dict[str, Any]], list[str]]:
+    ) -> tuple[List[Dict[str, Any]], List[str]]:
         query = message.strip()
         kdnr = context.kdnr
         kdnr_match = re.search(r"kdnr\s*(\d{3,})", query, re.IGNORECASE)
@@ -137,7 +137,7 @@ class SearchAgent(BaseAgent):
         if re.fullmatch(r"\d{3,6}", query):
             kdnr = query
 
-        results: list[dict[str, Any]] = []
+        results: List[Dict[str, Any]] = []
         if callable(getattr(self.core, "assistant_search", None)):
             results = self.core.assistant_search(
                 query=query,
@@ -150,12 +150,12 @@ class SearchAgent(BaseAgent):
         if not results and self._fs_scan_fallback_enabled():
             results = self._fs_scan(query, context)
 
-        suggestions: list[str] = []
+        suggestions: List[str] = []
         if not results:
             suggestions = self._did_you_mean(query, context)
         return results, suggestions
 
-    def _fs_scan(self, query: str, context: AgentContext) -> list[dict[str, Any]]:
+    def _fs_scan(self, query: str, context: AgentContext) -> List[Dict[str, Any]]:
         if not self._fs_scan_fallback_enabled():
             return []
         base = getattr(self.core, "BASE_PATH", None)
@@ -187,7 +187,7 @@ class SearchAgent(BaseAgent):
                 break
         return hits
 
-    def _did_you_mean(self, query: str, context: AgentContext) -> list[str]:
+    def _did_you_mean(self, query: str, context: AgentContext) -> List[str]:
         if callable(getattr(self.core, "assistant_suggest", None)):
             return self.core.assistant_suggest(query=query, tenant_id=context.tenant_id)
         if not self._fs_scan_fallback_enabled():

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from typing import Dict, Tuple
 
 
 @dataclass
 class RateLimiter:
     limit: int
     window_s: int
-    hits: dict[str, tuple[int, float]] = field(default_factory=dict)
+    hits: Dict[str, Tuple[int, float]] = field(default_factory=dict)
 
     def allow(self, key: str) -> bool:
         now = time.monotonic()

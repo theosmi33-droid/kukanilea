@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict, List
 
 
 @dataclass
 class AgentResult:
     text: str
-    actions: list[dict[str, Any]] = field(default_factory=list)
-    data: dict[str, Any] = field(default_factory=dict)
-    suggestions: list[str] = field(default_factory=list)
+    actions: List[Dict[str, Any]] = field(default_factory=list)
+    data: Dict[str, Any] = field(default_factory=dict)
+    suggestions: List[str] = field(default_factory=list)
     error: str | None = None
 
 
@@ -20,14 +20,14 @@ class AgentContext:
     role: str
     kdnr: str = ""
     token: str = ""
-    meta: dict[str, Any] = field(default_factory=dict)
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 class BaseAgent:
     name = "base"
     required_role = "READONLY"
     scope = "general"
-    tools: list[str] = []
+    tools: List[str] = []
 
     def can_handle(self, intent: str, message: str) -> bool:
         return False

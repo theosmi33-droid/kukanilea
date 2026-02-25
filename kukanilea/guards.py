@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from typing import Iterable, List, Tuple
 
 INJECTION_PATTERNS = [
     r"ignore (all|previous) (rules|instructions)",
@@ -20,9 +20,9 @@ INSTRUCTION_LINE = re.compile(
 )
 
 
-def detect_prompt_injection(text: str) -> tuple[bool, list[str]]:
+def detect_prompt_injection(text: str) -> Tuple[bool, List[str]]:
     lowered = text.lower()
-    matches: list[str] = []
+    matches: List[str] = []
     for pattern in INJECTION_PATTERNS:
         if re.search(pattern, lowered):
             matches.append(pattern)
@@ -31,7 +31,7 @@ def detect_prompt_injection(text: str) -> tuple[bool, list[str]]:
 
 def neutralize_untrusted_text(text: str, *, max_lines: int = 200) -> str:
     lines = (text or "").splitlines()
-    safe_lines: list[str] = []
+    safe_lines: List[str] = []
     for line in lines[:max_lines]:
         if INSTRUCTION_LINE.search(line):
             continue
@@ -39,9 +39,9 @@ def neutralize_untrusted_text(text: str, *, max_lines: int = 200) -> str:
     return "\n".join(safe_lines).strip()
 
 
-def build_safe_suggestions(items: Iterable[str]) -> list[str]:
+def build_safe_suggestions(items: Iterable[str]) -> List[str]:
     seen = set()
-    out: list[str] = []
+    out: List[str] = []
     for item in items:
         item = (item or "").strip()
         if not item or item in seen:

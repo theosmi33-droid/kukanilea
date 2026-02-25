@@ -1,52 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kukanilea"
 version = "0.1.0"
-description = "Local-first Business OS for operational teams"
-authors = [
-    { name = "Kukanilea Engineering", email = "engineering@kukanilea.local" }
-]
+description = "Local-first KUKANILEA document and agent MVP"
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "jinja2",
-    "htmx-py",
-    "pydantic",
-    "sqlite3",
-    "python-multipart",
+  "flask",
+  "requests",
+  "python-dotenv",
+  "pydantic",
+  "rapidfuzz",
+  "waitress",
+  "platformdirs",
+  "cryptography",
 ]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["app*", "kukanilea*"]
+exclude = ["tests*", "archive*", "nousage*", "reports*", "instance*"]
+
+[tool.black]
+line-length = 88
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+exclude = ["archive/legacy"]
 
 [tool.ruff.lint]
-select = ["E", "F", "B", "S", "I", "UP"]
-ignore = [
-    "S101", # allow asserts in tests
-    "E501", # ignore line length
-    "S608", # ignore SQL injection warnings for legacy FTS/DB code
-    "S110", # ignore try-except-pass
-    "S108", # ignore insecure temp file usage
-    "B008", # allow Depends() in function defaults (FastAPI standard)
-    "S310", # ignore URL open auditing
-    "S603", # ignore subprocess call auditing
-    "S607", # ignore partial executable paths
-    "B023", # ignore loop variable binding issues
-    "B904", # ignore raise from issues
-    "S112", # ignore try-except-continue
-    "S311", # allow random for non-cryptographic purposes
-    "S107", # allow hardcoded passwords in function defaults
-    "S105", # allow hardcoded password strings
-]
+select = ["E", "F", "I"]
+ignore = ["E501"]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S105", "S106"] # allow hardcoded secrets/passwords in tests
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-addopts = "-ra -q"
-
-[tool.bandit]
-exclude_dirs = ["tests", "venv", ".venv", ".build_venv", "dist"]
-skips = ["B101"]  # B101: allow assert in non-production-only paths
+[tool.ruff.lint.isort]
+known-first-party = ["app", "kukanilea"]

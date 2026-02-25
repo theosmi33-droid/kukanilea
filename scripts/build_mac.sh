@@ -1,28 +1,20 @@
-#!/bin/bash
-# KUKANILEA macOS Build Script (v1.5.0 Gold)
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "🛠 Starte macOS Build Prozess..."
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+APP_NAME="KUKANILEA"
+ENTRYPOINT="$ROOT_DIR/kukanilea_server.py"
 
-# 1. Environment vorbereiten
-if [ ! -d ".venv" ]; then
-    echo "[ERROR] Virtual Environment nicht gefunden!"
-    exit 1
-fi
+PY_BIN="${PYTHON:-python3}"
 
-source .venv/bin/activate
-pip install pyinstaller dmgbuild
+"$PY_BIN" -m pip install --upgrade pyinstaller waitress platformdirs cryptography
 
-# 2. PyInstaller ausführen
-echo "📦 Bündele Applikation via PyInstaller..."
-pyinstaller --clean KUKANILEA.spec
+pyinstaller \
+  --noconfirm \
+  --clean \
+  --name "$APP_NAME" \
+  --onefile \
+  --windowed \
+  "$ENTRYPOINT"
 
-# 3. Code-Signing (Placeholder)
-# codesign --deep --force --verify --verbose --sign "Developer ID Application: Your Name" dist/KUKANILEA.app
-
-# 4. DMG erstellen
-echo "💿 Erzeuge DMG Installer..."
-mkdir -p dist/dmg
-# dmgbuild nutzt oft ein JSON-Config File, hier vereinfacht via hdiutil falls kein dmgbuild config
-hdiutil create -volname "KUKANILEA-Gold" -srcfolder dist/KUKANILEA.app -ov -format UDZO dist/KUKANILEA-v1.5.0-macOS.dmg
-
-echo "[SUCCESS] Build abgeschlossen: dist/KUKANILEA-v1.5.0-macOS.dmg"
+echo "Build complete: $ROOT_DIR/dist/${APP_NAME}.app"

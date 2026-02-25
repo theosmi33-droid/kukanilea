@@ -1,9 +1,0 @@
-STDOUT:
-{
-  "ok": true,
-  "count": 0,
-  "findings": []
-}
-
-
-STDERR:

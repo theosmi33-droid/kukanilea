@@ -6,11 +6,8 @@ import statistics
 import time
 from pathlib import Path
 
-# OFFICIAL KUKANILEA DB BENCHMARK
-# SOURCE: https://www.sqlite.org/pragma.html
-# WAL + synchronous=NORMAL is consistent but may lose durability on power loss.
 
-def setup_db(db_path):
+def setup_db(db_path, rows):
     if os.path.exists(db_path):
         os.remove(db_path)
     
@@ -19,93 +16,140 @@ def setup_db(db_path):
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
     
-    conn.execute("CREATE TABLE benchmark (id INTEGER PRIMARY KEY, val TEXT);")
+    conn.execute("CREATE TABLE benchmark (id INTEGER PRIMARY KEY, data TEXT, val INTEGER);")
     conn.commit()
     return conn
 
-def benchmark_batch(conn, rows):
-    """Mode A: one transaction (BEGIN; many inserts; COMMIT)"""
-    start_time = time.perf_counter()
-    data = [(f"data_{i}",) for i in range(rows)]
-    conn.executemany("INSERT INTO benchmark (val) VALUES (?);", data)
-    conn.commit()
-    duration = time.perf_counter() - start_time
-    return duration
-
-def benchmark_single(conn, rows):
-    """Mode B: many transactions (commit per row)"""
-    start_time = time.perf_counter()
+def benchmark_write(conn, rows):
+    start_time = time.time()
     latencies = []
     for i in range(rows):
-        t0 = time.perf_counter()
-        conn.execute("INSERT INTO benchmark (val) VALUES (?);", (f"single_{i}",))
-        conn.commit()
-        latencies.append((time.perf_counter() - t0) * 1000)
+        item_start = time.time()
+        conn.execute("INSERT INTO benchmark (data, val) VALUES (?, ?);", (f"data_{i}", i))
+        if i % 100 == 0:
+            conn.commit()
+        latencies.append((time.time() - item_start) * 1000)
     
-    duration = time.perf_counter() - start_time
+    conn.commit()
+    duration = time.time() - start_time
     return duration, latencies
 
+def benchmark_read(conn, rows):
+    start_time = time.time()
+    latencies = []
+    for i in range(rows):
+        item_start = time.time()
+        cursor = conn.execute("SELECT * FROM benchmark WHERE id = ?;", (i + 1,))
+        cursor.fetchone()
+        latencies.append((time.time() - item_start) * 1000)
+    
+    duration = time.time() - start_time
+    return duration, latencies
+
+def get_stats(latencies):
+    if not latencies:
+        return 0, 0, 0, 0
+    latencies.sort()
+    p50 = statistics.median(latencies)
+    p95 = latencies[int(len(latencies) * 0.95)]
+    p99 = latencies[int(len(latencies) * 0.99)]
+    avg = sum(latencies) / len(latencies)
+    return avg, p50, p95, p99
+
 def main():
-    parser = argparse.ArgumentParser(description="KUKANILEA SQLite Benchmark")
-    parser.add_argument("--db", default="test_bench.db", help="Database path")
-    parser.add_argument("--rows", type=int, default=1000, help="Number of rows")
-    parser.add_argument("--out", default="evidence/bench", help="Output directory")
+    parser = argparse.ArgumentParser(description="SQLite Benchmarking tool")
+    parser.add_argument("--db", default="benchmark.sqlite3", help="Database path")
+    parser.add_argument("--rows", type=int, default=10000, help="Number of rows for benchmark")
+    parser.add_argument("--out", default="evidence/bench", help="Output directory for reports")
     args = parser.parse_args()
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    conn = setup_db(args.db)
+    conn = setup_db(args.db, args.rows)
     
-    # Mode A
-    batch_dur = benchmark_batch(conn, args.rows)
-    batch_tput = args.rows / batch_dur
+    # Get active PRAGMAs
+    journal_mode = conn.execute("PRAGMA journal_mode;").fetchone()[0]
+    synchronous = conn.execute("PRAGMA synchronous;").fetchone()[0]
+    busy_timeout = conn.execute("PRAGMA busy_timeout;").fetchone()[0]
 
-    # Mode B
-    single_dur, single_latencies = benchmark_single(conn, args.rows)
-    single_tput = args.rows / single_dur
-    p50 = statistics.median(single_latencies)
-    p95 = statistics.quantiles(single_latencies, n=20)[18] if len(single_latencies) >= 20 else p50
-    p99 = statistics.quantiles(single_latencies, n=100)[98] if len(single_latencies) >= 100 else p50
+    write_duration, write_latencies = benchmark_write(conn, args.rows)
+    read_duration, read_latencies = benchmark_read(conn, args.rows)
+    
+    w_avg, w_p50, w_p95, w_p99 = get_stats(write_latencies)
+    r_avg, r_p50, r_p95, r_p99 = get_stats(read_latencies)
 
-    # Report
-    report = f"""# SQLite DB Benchmark Report (KUKANILEA)
+    # Machine info
+    import platform
+    import sys
+    os_info = f"{platform.system()} {platform.release()}"
+    py_version = sys.version.split()[0]
+    sqlite_version = sqlite3.sqlite_version
 
-## Configuration
-- `journal_mode`: WAL
-- `synchronous`: NORMAL
-- `busy_timeout`: 5000ms
+    # Write CSV
+    csv_path = out_dir / "db_bench.csv"
+    with open(csv_path, "w", newline="") as csvfile:
+        fieldnames = ["operation", "avg_ms", "p50_ms", "p95_ms", "p99_ms", "throughput_ops_sec"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({
+            "operation": "write",
+            "avg_ms": f"{w_avg:.4f}",
+            "p50_ms": f"{w_p50:.4f}",
+            "p95_ms": f"{w_p95:.4f}",
+            "p99_ms": f"{w_p99:.4f}",
+            "throughput_ops_sec": f"{args.rows / write_duration:.2f}"
+        })
+        writer.writerow({
+            "operation": "read",
+            "avg_ms": f"{r_avg:.4f}",
+            "p50_ms": f"{r_p50:.4f}",
+            "p95_ms": f"{r_p95:.4f}",
+            "p99_ms": f"{r_p99:.4f}",
+            "throughput_ops_sec": f"{args.rows / read_duration:.2f}"
+        })
 
-> [!IMPORTANT]
-> **Compliance Note:** According to [sqlite.org](https://www.sqlite.org/pragma.html), WAL mode with `synchronous=NORMAL` is consistent (prevents corruption) but may lose durability across a power loss.
+    # Write Markdown Report
+    md_path = out_dir / "REPORT_DB_BENCHMARK.md"
+    report = f"""# SQLite DB Benchmark Report
 
-## Results ({args.rows} rows)
+## Environment
+- **OS**: {os_info}
+- **Python**: {py_version}
+- **SQLite**: {sqlite_version}
+- **Rows**: {args.rows}
 
-### Mode A: Batch Transaction (High Throughput)
-- Total Duration: {batch_dur:.4f}s
-- Throughput: {batch_tput:.2f} ops/sec
+## Configuration (PRAGMAs)
+- `journal_mode`: {journal_mode}
+- `synchronous`: {synchronous} (NORMAL is 1)
+- `busy_timeout`: {busy_timeout}
 
-### Mode B: Single Transaction (Commit per Row)
-- Total Duration: {single_dur:.4f}s
-- Throughput: {single_tput:.2f} ops/sec
-- Latency (ms):
-    - p50: {p50:.4f}
-    - p95: {p95:.4f}
-    - p99: {p99:.4f}
+## Results
+
+### Write Performance
+- **Total Duration**: {write_duration:.4f}s
+- **Throughput**: {args.rows / write_duration:.2f} ops/sec
+- **Latency**:
+    - Average: {w_avg:.4f} ms
+    - p50: {w_p50:.4f} ms
+    - p95: {w_p95:.4f} ms
+    - p99: {w_p99:.4f} ms
+
+### Read Performance
+- **Total Duration**: {read_duration:.4f}s
+- **Throughput**: {args.rows / read_duration:.2f} ops/sec
+- **Latency**:
+    - Average: {r_avg:.4f} ms
+    - p50: {r_p50:.4f} ms
+    - p95: {r_p95:.4f} ms
+    - p99: {r_p99:.4f} ms
 
 ---
-*Generated by scripts/benchmark_db.py*
+*Generated by scripts/benchmark_db.py on {time.strftime('%Y-%m-%d %H:%M:%S')}*
 """
-    (out_dir / "REPORT_DB_BENCHMARK.md").write_text(report)
-    
-    # CSV
-    with open(out_dir / "db_bench.csv", "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["mode", "rows", "duration_s", "throughput_ops_sec", "p50_ms"])
-        writer.writerow(["batch", args.rows, f"{batch_dur:.4f}", f"{batch_tput:.2f}", "N/A"])
-        writer.writerow(["single", args.rows, f"{single_dur:.4f}", f"{single_tput:.2f}", f"{p50:.4f}"])
+    md_path.write_text(report)
+    print(f"Benchmark complete. Report: {md_path}")
 
-    print(f"Benchmark complete. Evidence: {out_dir}")
     conn.close()
 
 if __name__ == "__main__":

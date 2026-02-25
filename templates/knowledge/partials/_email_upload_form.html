@@ -1,6 +1,0 @@
-<form class="card p-4 space-y-3" method="post" action="/knowledge/email/upload" enctype="multipart/form-data" hx-post="/knowledge/email/upload" hx-target="#emailUploadResult" hx-swap="innerHTML">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="text-sm muted">Nur .eml-Dateien. Inhalte werden redigiert gespeichert.</div>
-  <input class="input w-full px-3 py-2 text-sm" type="file" name="file" accept=".eml" {% if read_only or not policy.allow_email %}disabled{% endif %} required>
-  <button class="btn-primary px-3 py-2 text-sm" type="submit" {% if read_only or not policy.allow_email %}disabled{% endif %}>EML ingestieren</button>
-</form>

@@ -1,8 +1,0 @@
-{% macro banner(text, kind="info", extra="") -%}
-  {% set cls = {
-    'info': 'alert alert-info',
-    'warn': 'alert alert-warn',
-    'error': 'alert alert-error'
-  }[kind] if kind in ['info', 'warn', 'error'] else 'alert alert-info' %}
-  <div class="{{ cls }} {{ extra }}">{{ text }}</div>
-{%- endmacro %}

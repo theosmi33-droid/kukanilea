@@ -17,10 +17,6 @@ def main() -> None:
         os.environ["KUKANILEA_AUTH_DB"] = os.path.join(tmp_dir, "auth.db")
         os.environ["DB_FILENAME"] = os.path.join(tmp_dir, "core.db")
         os.environ["BASE_DIRNAME"] = "Kukanilea_Smoke"
-        # Keep smoke deterministic and fast in CI/dev triage:
-        # API contract is tested, but LLM inference is intentionally bypassed.
-        os.environ["OLLAMA_HOST"] = "http://127.0.0.1:9"
-        os.environ["OLLAMA_TIMEOUT"] = "1"
 
         app = create_app()
         with app.app_context():

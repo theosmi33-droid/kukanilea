@@ -1,5 +1,0 @@
-STDOUT:
-Benchmark complete. Evidence: /Users/gensuminguyen/Tophandwerk/kukanilea-git/evidence/20260222_232416_3127456/bench
-
-
-STDERR:

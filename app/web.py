@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 """
 KUKANILEA Systems — Upload/UI v3 (Split-View + Theme + Local Chat)
@@ -28,232 +29,45 @@ Notes:
 from __future__ import annotations
 
 import base64
-import hashlib
-import hmac
 import importlib
 import importlib.util
-import ipaddress
-import json
 import os
 import re
-import secrets
-import sqlite3
-import threading
 import time
-import urllib.parse
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import List, Tuple
 
 from flask import (
     Blueprint,
     abort,
     current_app,
-    flash,
-    g,
     jsonify,
     redirect,
-    render_template,
     render_template_string,
     request,
     send_file,
-    session,
     url_for,
 )
 
-from app.agents import answer as agent_answer
+from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
-from app.agents.retrieval_fts import upsert_external_fact
-from app.ai.knowledge import store_entity
-from app.ai.memory import add_feedback as ai_add_feedback
-from app.ai.modelpack import create_model_pack as ai_create_model_pack
-from app.ai.modelpack import import_model_pack as ai_import_model_pack
-from app.ai.ollama_client import ollama_is_available, ollama_list_models
-from app.ai.orchestrator import confirm_tool_call as ai_confirm_tool_call
-from app.ai.orchestrator import process_message as ai_process_message
-from app.ai.personal_memory import add_user_note as ai_add_personal_note
-from app.ai.personal_memory import count_user_notes as ai_count_personal_notes
-from app.ai.personal_memory import list_user_notes as ai_list_personal_notes
-from app.ai.predictions import daily_report, predict_budget
-from app.ai.provider_router import (
-    is_any_provider_available,
-    provider_effective_policy,
-    provider_health_snapshot,
-    provider_order_from_env,
-    provider_specs_public,
-)
-from app.ai.provisioning import (
-    configured_ollama_models as ai_configured_ollama_models,
-)
-from app.ai.provisioning import load_bootstrap_state as ai_load_bootstrap_state
-from app.ai.provisioning import run_first_install_bootstrap as ai_run_bootstrap_now
-from app.automation import (
-    automation_rule_create,
-    automation_rule_disable,
-    automation_rule_get,
-    automation_rule_list,
-    automation_rule_toggle,
-    automation_run_now,
-    builder_execute_action,
-    builder_execution_log_list,
-    builder_pending_action_confirm_once,
-    builder_pending_action_list,
-    builder_pending_action_set_status,
-    builder_rule_create,
-    builder_rule_get,
-    builder_rule_list,
-    builder_rule_update,
-    get_or_build_daily_insights,
-    process_cron_for_tenant,
-    process_events_for_tenant,
-    simulate_rule_for_tenant,
-)
-from app.automation.cron import parse_cron_expression
-from app.autonomy import (
-    autotag_rule_create,
-    autotag_rule_delete,
-    autotag_rule_toggle,
-    autotag_rules_list,
-    get_health_overview,
-    rotate_logs,
-    run_backup,
-    run_smoke_test,
-)
-from app.demo_data import generate_demo_data
-from app.entity_links import (
-    create_link as entity_link_create,
-)
-from app.entity_links import (
-    delete_link as entity_link_delete,
-)
-from app.entity_links import (
-    list_links_for_entity,
-)
-from app.entity_links.display import entity_display_title
-from app.event_id_map import entity_id_int
-from app.eventlog.core import event_append
-from app.insights import build_activation_report, record_activation_milestone
-from app.intake import triage_message
-from app.knowledge import (
-    knowledge_email_ingest_eml,
-    knowledge_email_sources_list,
-    knowledge_ics_ingest,
-    knowledge_ics_sources_list,
-    knowledge_note_create,
-    knowledge_note_delete,
-    knowledge_note_update,
-    knowledge_notes_list,
-    knowledge_policy_get,
-    knowledge_policy_update,
-    knowledge_search,
-)
-from app.lead_intake import (
-    appointment_request_to_ics,
-    appointment_requests_create,
-    appointment_requests_update_status,
-    call_logs_create,
-    lead_claim,
-    lead_claim_get,
-    lead_claims_auto_expire,
-    lead_claims_for_leads,
-    lead_convert_to_deal_quote,
-    lead_release_claim,
-    lead_timeline,
-    leads_add_note,
-    leads_assign,
-    leads_block_sender,
-    leads_create,
-    leads_get,
-    leads_inbox_counts,
-    leads_list,
-    leads_screen_accept,
-    leads_screen_ignore,
-    leads_set_priority,
-    leads_update_status,
-)
-from app.lead_intake.core import ConflictError
-from app.lead_intake.guard import require_lead_access
-from app.mail import (
-    ensure_postfach_schema,
-    postfach_build_authorization_url,
-    postfach_clear_oauth_token,
-    postfach_create_account,
-    postfach_create_draft,
-    postfach_create_followup_task,
-    postfach_email_encryption_ready,
-    postfach_exchange_code_for_tokens,
-    postfach_extract_intake,
-    postfach_extract_structured,
-    postfach_generate_oauth_state,
-    postfach_generate_pkce_pair,
-    postfach_get_account,
-    postfach_get_draft,
-    postfach_get_oauth_token,
-    postfach_get_thread,
-    postfach_link_entities,
-    postfach_list_accounts,
-    postfach_list_drafts_for_thread,
-    postfach_list_threads,
-    postfach_oauth_provider_config,
-    postfach_safety_check_draft,
-    postfach_save_oauth_token,
-    postfach_send_draft,
-    postfach_set_account_oauth_state,
-    postfach_sync_account,
-)
-from app.omni import get_event as omni_get_event
-from app.omni import list_events as omni_list_events
-from app.reporting import build_evidence_pack
-from app.ua_hash import ua_hmac_sha256_hex
-from app.tags import (
-    tag_assign,
-    tag_create,
-    tag_delete,
-    tag_list,
-    tag_unassign,
-    tag_update,
-    tags_for_entities,
-)
-from app.tenant.context import load_tenant_context, update_tenant_name
-from app.workflows import (
-    WORKFLOW_TEMPLATE_MARKER_PREFIX,
-    get_workflow_template,
-    list_workflow_templates,
-    workflow_template_marker,
-)
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
 from kukanilea.orchestrator import Orchestrator
 
 from .auth import (
     current_role,
-    current_roles,
     current_tenant,
     current_user,
-    has_permission,
     hash_password,
     login_required,
     login_user,
     logout_user,
-    require_permission,
     require_role,
-    verify_password,
 )
-from .bootstrap import bootstrap_dev_user, is_localhost_addr, needs_bootstrap
 from .config import Config
-from .db import AuthDB, Membership
+from .db import AuthDB
 from .errors import json_error
-from .license import load_license, load_runtime_license_state
-from .update import (
-    UpdateError,
-    check_for_installable_update,
-    download_update_asset,
-    get_app_dir,
-    get_data_dir,
-    install_update_from_archive,
-    rollback_update,
-)
-from .update_check import check_for_updates
-from .version import __version__
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
@@ -276,11 +90,20 @@ if werkzeug_spec:
 else:
     secure_filename = None  # type: ignore
 
-# -------- Core import (Gold Architecture) ----------
-try:
-    from app.core import logic as core
-except Exception as e:
-    raise RuntimeError(f"KUKANILEA core import failed: {e}")
+# -------- Core import (robust) ----------
+core = None
+_core_import_errors = []
+for mod in ("kukanilea_core_v3_fixed", "kukanilea_core_v3", "kukanilea_core"):
+    try:
+        core = __import__(mod)
+        break
+    except Exception as e:
+        _core_import_errors.append(f"{mod}: {e}")
+
+if core is None:
+    raise RuntimeError(
+        "KUKANILEA core import failed: " + " | ".join(_core_import_errors)
+    )
 
 
 def _core_get(name: str, default=None):
@@ -321,8 +144,6 @@ db_path_for_doc = _core_get("db_path_for_doc")
 
 # Optional tasks
 task_list = _core_get("task_list")
-task_create_fn = _core_get("task_create")
-task_set_status_fn = _core_get("task_set_status")
 task_resolve = _core_get("task_resolve")
 task_dismiss = _core_get("task_dismiss")
 
@@ -335,22 +156,6 @@ time_entry_list = _core_get("time_entries_list")
 time_entry_update = _core_get("time_entry_update")
 time_entry_approve = _core_get("time_entry_approve")
 time_entries_export_csv = _core_get("time_entries_export_csv")
-time_entries_summary_by_task = _core_get("time_entries_summary_by_task")
-time_entries_summary_by_project = _core_get("time_entries_summary_by_project")
-
-customers_create = _core_get("customers_create")
-customers_get = _core_get("customers_get")
-customers_list = _core_get("customers_list")
-customers_update = _core_get("customers_update")
-contacts_create = _core_get("contacts_create")
-contacts_list_by_customer = _core_get("contacts_list_by_customer")
-deals_create = _core_get("deals_create")
-deals_update_stage = _core_get("deals_update_stage")
-deals_list = _core_get("deals_list")
-quotes_create_from_deal = _core_get("quotes_create_from_deal")
-quotes_get = _core_get("quotes_get")
-quotes_add_item = _core_get("quotes_add_item")
-emails_import_eml = _core_get("emails_import_eml")
 
 # Guard minimum contract
 _missing = []
@@ -390,7 +195,7 @@ HTML_LOGIN = ""  # will be overwritten later by the full template block
 
 def suggest_existing_folder(
     base_path: str, tenant: str, kdnr: str, name: str
-) -> tuple[str, float]:
+) -> Tuple[str, float]:
     """Heuristic: find an existing customer folder for this tenant."""
     try:
         root = Path(base_path) / tenant
@@ -485,7 +290,7 @@ def _resolve_doc_path(token: str, pending: dict | None = None) -> Path | None:
     return None
 
 
-def _allowlisted_dirs() -> list[Path]:
+def _allowlisted_dirs() -> List[Path]:
     base = Config.BASE_DIR
     instance_dir = base / "instance"
     core_db_dir = Path(getattr(core, "DB_PATH", instance_dir)).resolve().parent
@@ -511,8 +316,8 @@ def _is_allowlisted_path(path: Path) -> bool:
     return False
 
 
-def _list_allowlisted_db_files() -> list[Path]:
-    files: list[Path] = []
+def _list_allowlisted_db_files() -> List[Path]:
+    files: List[Path] = []
     for folder in _allowlisted_dirs():
         if not folder.exists():
             continue
@@ -523,7 +328,7 @@ def _list_allowlisted_db_files() -> list[Path]:
     return sorted({f.resolve() for f in files})
 
 
-def _list_allowlisted_base_paths() -> list[Path]:
+def _list_allowlisted_base_paths() -> List[Path]:
     candidates = {BASE_PATH.resolve()}
     base_dir = Config.BASE_DIR.resolve()
     data_dir = base_dir / "data"
@@ -548,117 +353,7 @@ def _seed_dev_users(auth_db: AuthDB) -> str:
     auth_db.upsert_user("dev", hash_password("dev"), now)
     auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
     auth_db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
-    office_email = "theosmi33@gmail.com"
-    office_info = "office user unchanged"
-    if auth_db.get_user_by_email(office_email) is None:
-        office_password = secrets.token_urlsafe(12)
-        office_username = "office"
-        if auth_db.get_user(office_username) is not None:
-            office_username = f"office_{secrets.randbelow(1000)}"
-        auth_db.create_user(
-            username=office_username,
-            password_hash=hash_password(office_password),
-            created_at=now,
-            email=office_email,
-            email_verified=1,
-        )
-        auth_db.upsert_membership(office_username, "KUKANILEA Dev", "OPERATOR", now)
-        office_info = f"office password: {office_password}"
-    office_user = auth_db.get_user_by_email(office_email)
-    try:
-        auth_db.set_user_roles("admin", ["OWNER_ADMIN"], actor_roles=["DEV"])
-        auth_db.set_user_roles("dev", ["DEV"], actor_roles=["DEV"])
-        if office_user is not None:
-            auth_db.set_user_roles(
-                office_user.username, ["OFFICE"], actor_roles=["DEV"]
-            )
-    except Exception:
-        pass
-    return f"Seeded users: admin/admin, dev/dev, {office_info}"
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
-
-
-def _session_idle_minutes(raw: object) -> int:
-    default_val = int(
-        current_app.config.get("SESSION_IDLE_TIMEOUT_DEFAULT_MINUTES", 60) or 60
-    )
-    min_val = int(current_app.config.get("SESSION_IDLE_TIMEOUT_MIN_MINUTES", 15) or 15)
-    max_val = int(
-        current_app.config.get("SESSION_IDLE_TIMEOUT_MAX_MINUTES", 480) or 480
-    )
-    if min_val > max_val:
-        min_val, max_val = max_val, min_val
-    try:
-        value = int(raw)
-    except Exception:
-        value = default_val
-    return max(min_val, min(max_val, value))
-
-
-def _normalize_email(value: str) -> str:
-    return (value or "").strip().lower()
-
-
-def _redact_email(value: str) -> str:
-    email = _normalize_email(value)
-    if "@" not in email:
-        return "***"
-    local, domain = email.split("@", 1)
-    if not local:
-        return f"***@{domain}"
-    keep = local[:1]
-    return f"{keep}***@{domain}"
-
-
-def _ensure_default_membership(auth_db: AuthDB, username: str) -> Membership | None:
-    """Auto-heal legacy users without membership in fixed-tenant mode."""
-    uname = str(username or "").strip()
-    if not uname:
-        return None
-    if not bool(current_app.config.get("TENANT_FIXED", True)):
-        return None
-    tenant_id = str(current_app.config.get("TENANT_DEFAULT", "KUKANILEA")).strip()
-    if not tenant_id:
-        tenant_id = "KUKANILEA"
-    role = "OPERATOR"
-    if not bool(current_app.config.get("READ_ONLY", False)):
-        now = _now_iso()
-        auth_db.upsert_tenant(tenant_id, tenant_id, now)
-        auth_db.upsert_membership(uname, tenant_id, role, now)
-        memberships = auth_db.get_memberships(uname)
-        if memberships:
-            return memberships[0]
-    return Membership(username=uname, tenant_id=tenant_id, role=role)
-
-
-def _dev_local_email_codes_enabled() -> bool:
-    return bool(current_app.config.get("DEV_LOCAL_EMAIL_CODES", False))
-
-
-def _mail_mode_is_outbox() -> bool:
-    mode = str(current_app.config.get("MAIL_MODE", "outbox")).strip().lower()
-    return mode == "outbox"
-
-
-def _should_show_local_email_code() -> bool:
-    return (
-        _dev_local_email_codes_enabled()
-        and _mail_mode_is_outbox()
-        and is_localhost_addr(request.remote_addr)
-    )
-
-
-def _hash_code(value: str) -> str:
-    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
-
-
-def _generate_numeric_code(length: int = 6) -> str:
-    width = max(4, int(length or 6))
-    upper = 10**width
-    return str(secrets.randbelow(upper)).zfill(width)
+    return "Seeded users: admin/admin, dev/dev"
 
 
 def _safe_filename(name: str) -> str:
@@ -677,7 +372,7 @@ def _is_allowed_ext(filename: str) -> bool:
         return False
 
 
-def _allowed_roots() -> list[Path]:
+def _allowed_roots() -> List[Path]:
     return [
         EINGANG.resolve(),
         BASE_PATH.resolve(),
@@ -711,30 +406,8 @@ def _wizard_get(p: dict) -> dict:
     w.setdefault("name", "")
     w.setdefault("addr", "")
     w.setdefault("plzort", "")
-    w.setdefault("vendor_name", "")
-    w.setdefault("invoice_no", "")
-    w.setdefault("total_amount", "")
-    w.setdefault("net_amount", "")
-    w.setdefault("vat_amount", "")
-    w.setdefault("vat_valid", True)
     w.setdefault("doctype", "")
     w.setdefault("document_date", "")
-
-    # LLM Refinement Sync: Falls im Pending-Objekt (p) durch den _analyze_worker
-    # neue Felder gesetzt wurden, die im Wizard (w) noch fehlen, übernehmen wir sie.
-    if "vendor_name" in p and not w.get("vendor_name"):
-        w["vendor_name"] = p["vendor_name"]
-    if "invoice_no" in p and not w.get("invoice_no"):
-        w["invoice_no"] = p["invoice_no"]
-    if "total_amount" in p and not w.get("total_amount"):
-        w["total_amount"] = p["total_amount"]
-    if "net_amount" in p and not w.get("net_amount"):
-        w["net_amount"] = p["net_amount"]
-    if "vat_amount" in p and not w.get("vat_amount"):
-        w["vat_amount"] = p["vat_amount"]
-    if "vat_valid" in p:
-        w["vat_valid"] = p["vat_valid"]
-
     return w
 
 
@@ -762,88 +435,16 @@ def _card(kind: str, msg: str) -> str:
 
 def _render_base(content: str, active_tab: str = "upload") -> str:
     profile = _get_profile()
-    theme_default = (
-        str(current_app.config.get("THEME_DEFAULT", "light")).strip().lower()
-    )
-    if theme_default not in {"light", "dark"}:
-        theme_default = "light"
-    nav_collapsed_default = False
-    health_poll_ms = max(
-        10000, int(current_app.config.get("UI_HEALTH_POLL_MS", 60000) or 60000)
-    )
-    status_poll_ms = max(
-        5000, int(current_app.config.get("UI_STATUS_POLL_MS", 15000) or 15000)
-    )
-    ai_status_client_cache_ms = max(
-        5000,
-        int(current_app.config.get("UI_AI_STATUS_CLIENT_CACHE_MS", 45000) or 45000),
-    )
-    user_name = current_user() or "-"
-    auth_db: AuthDB | None = current_app.extensions.get("auth_db")
-    if auth_db and user_name != "-":
-        try:
-            prefs = auth_db.get_user_preferences(
-                user_name,
-                keys=["ui.theme", "ui.nav_collapsed"],
-            )
-            saved_theme = str(prefs.get("ui.theme", "")).strip().lower()
-            if saved_theme in {"light", "dark"}:
-                theme_default = saved_theme
-            saved_nav = str(prefs.get("ui.nav_collapsed", "")).strip().lower()
-            nav_collapsed_default = saved_nav in {"1", "true", "yes", "on"}
-        except Exception:
-            pass
     return render_template_string(
         HTML_BASE,
         content=content,
-        product_name=current_app.config.get("PRODUCT_NAME", "KUKANILEA"),
         ablage=str(BASE_PATH),
-        user=user_name,
+        user=current_user() or "-",
         roles=current_role(),
         tenant=current_tenant() or "-",
         profile=profile,
         active_tab=active_tab,
-        theme_default=theme_default,
-        nav_collapsed_default=nav_collapsed_default,
-        health_poll_ms=health_poll_ms,
-        status_poll_ms=status_poll_ms,
-        ai_status_client_cache_ms=ai_status_client_cache_ms,
     )
-
-
-def _apply_license_state_to_app(state: dict[str, Any]) -> None:
-    current_app.config["PLAN"] = state["plan"]
-    current_app.config["TRIAL"] = state["trial"]
-    current_app.config["TRIAL_DAYS_LEFT"] = state["trial_days_left"]
-    current_app.config["READ_ONLY"] = state["read_only"]
-    current_app.config["LICENSE_REASON"] = state["reason"]
-    current_app.config["LICENSE_GRACE_ACTIVE"] = bool(state.get("grace_active", False))
-    current_app.config["LICENSE_GRACE_DAYS_LEFT"] = int(
-        state.get("grace_days_left", 0) or 0
-    )
-    current_app.config["LICENSE_VALIDATED_ONLINE"] = bool(
-        state.get("validated_online", False)
-    )
-    current_app.config["LICENSE_LAST_VALIDATED"] = str(state.get("last_validated", ""))
-
-
-def _reload_runtime_license_state() -> dict[str, Any]:
-    state = load_runtime_license_state(
-        license_path=current_app.config["LICENSE_PATH"],
-        trial_path=current_app.config["TRIAL_PATH"],
-        trial_days=int(current_app.config.get("TRIAL_DAYS", 14)),
-        cache_path=current_app.config.get("LICENSE_CACHE_PATH"),
-        validate_url=str(current_app.config.get("LICENSE_VALIDATE_URL", "")),
-        validate_timeout_seconds=int(
-            current_app.config.get("LICENSE_VALIDATE_TIMEOUT_SECONDS", 10)
-        ),
-        validate_interval_days=int(
-            current_app.config.get("LICENSE_VALIDATE_INTERVAL_DAYS", 30)
-        ),
-        grace_days=int(current_app.config.get("LICENSE_GRACE_DAYS", 30)),
-    )
-    _apply_license_state_to_app(state)
-    return state
 
 
 def _get_profile() -> dict:
@@ -876,435 +477,322 @@ def _time_range_params(range_name: str, date_value: str) -> tuple[str, str]:
     return start_at, end_at
 
 
-def _clamp_page_size(raw: str | None, *, default: int = 25, max_size: int = 100) -> int:
-    try:
-        size = int(raw or default)
-    except Exception:
-        size = default
-    return max(1, min(size, max_size))
-
-
-def _clamp_page(raw: str | None, *, default: int = 1) -> int:
-    try:
-        page = int(raw or default)
-    except Exception:
-        page = default
-    return max(1, page)
-
-
-def _format_cents(value: int | None, currency: str = "EUR") -> str:
-    cents = int(value or 0)
-    sign = "-" if cents < 0 else ""
-    cents_abs = abs(cents)
-    amount = f"{cents_abs // 100}.{cents_abs % 100:02d}"
-    symbol = (
-        "€" if (currency or "EUR").upper() == "EUR" else (currency or "EUR").upper()
-    )
-    return f"{sign}{symbol}{amount}"
-
-
-def _is_htmx() -> bool:
-    return bool(request.headers.get("HX-Request"))
-
-
-def _ensure_csrf_token() -> str:
-    token = str(session.get("csrf_token") or "").strip()
-    if token:
-        return token
-    token = secrets.token_urlsafe(24)
-    session["csrf_token"] = token
-    return token
-
-
-@bp.app_context_processor
-def _inject_csrf_token() -> dict[str, Any]:
-    return {"csrf_token": _ensure_csrf_token()}
-
-
-def _csrf_error_response(api: bool = True):
-    rid = getattr(g, "request_id", "")
-    if api:
-        return (
-            jsonify({"ok": False, "error_code": "csrf_invalid", "request_id": rid}),
-            403,
-        )
-    return (
-        render_template(
-            "lead_intake/partials/_error.html",
-            message="CSRF-Validierung fehlgeschlagen.",
-            request_id=rid,
-        ),
-        403,
-    )
-
-
-def _csrf_guard(api: bool = True):
-    if request.method != "POST":
-        return None
-    # JSON API endpoints are protected via auth/session gates; CSRF is enforced
-    # for browser form submissions that mutate state.
-    if request.is_json:
-        return None
-    expected = _ensure_csrf_token()
-    provided = str(request.form.get("csrf_token") or "").strip()
-    if not expected or not provided or not hmac.compare_digest(expected, provided):
-        return _csrf_error_response(api=api)
-    return None
-
-
-def _core_db_path() -> Path:
-    return Path(str(core.DB_PATH))
-
-
-def _ensure_postfach_tables() -> None:
-    ensure_postfach_schema(_core_db_path())
-
-
-def _crm_db_rows(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
-    con = sqlite3.connect(str(core.DB_PATH))
-    con.row_factory = sqlite3.Row
-    try:
-        rows = con.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        con.close()
-
-
-def _crm_customer_get(tenant_id: str, customer_id: str) -> dict[str, Any] | None:
-    rows = _crm_db_rows(
-        """
-        SELECT id, tenant_id, name, vat_id, notes, created_at, updated_at
-        FROM customers
-        WHERE tenant_id=? AND id=?
-        LIMIT 1
-        """,
-        (tenant_id, customer_id),
-    )
-    return rows[0] if rows else None
-
-
-def _crm_deals_list(
-    tenant_id: str,
-    *,
-    stage: str | None = None,
-    query: str | None = None,
-    customer_id: str | None = None,
-) -> list[dict[str, Any]]:
-    clauses = ["d.tenant_id=?"]
-    params: list[Any] = [tenant_id]
-    if stage:
-        clauses.append("LOWER(d.stage)=LOWER(?)")
-        params.append(stage)
-    if customer_id:
-        clauses.append("d.customer_id=?")
-        params.append(customer_id)
-    q = (query or "").strip()
-    if q:
-        clauses.append(
-            "(LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(c.name,'')) LIKE LOWER(?))"
-        )
-        params.extend([f"%{q}%", f"%{q}%"])
-    where_sql = " AND ".join(clauses)
-    rows = _crm_db_rows(
-        f"""
-        SELECT d.id, d.customer_id, d.title, d.stage, d.value_cents, d.currency,
-               d.probability, d.expected_close_date, d.updated_at,
-               c.name AS customer_name
-        FROM deals d
-        LEFT JOIN customers c ON c.id=d.customer_id AND c.tenant_id=d.tenant_id
-        WHERE {where_sql}
-        ORDER BY d.updated_at DESC, d.id DESC
-        """,
-        tuple(params),
-    )
-    for row in rows:
-        row["value_text"] = _format_cents(
-            row.get("value_cents"), row.get("currency") or "EUR"
-        )
-    return rows
-
-
-def _crm_quotes_list(
-    tenant_id: str,
-    *,
-    status: str | None = None,
-    query: str | None = None,
-    customer_id: str | None = None,
-    page: int = 1,
-    page_size: int = 25,
-) -> tuple[list[dict[str, Any]], int]:
-    clauses = ["q.tenant_id=?"]
-    params: list[Any] = [tenant_id]
-    if status:
-        clauses.append("LOWER(q.status)=LOWER(?)")
-        params.append(status)
-    if customer_id:
-        clauses.append("q.customer_id=?")
-        params.append(customer_id)
-    qtext = (query or "").strip()
-    if qtext:
-        clauses.append(
-            "(LOWER(COALESCE(q.quote_number,'')) LIKE LOWER(?) OR LOWER(COALESCE(c.name,'')) LIKE LOWER(?))"
-        )
-        params.extend([f"%{qtext}%", f"%{qtext}%"])
-    where_sql = " AND ".join(clauses)
-    count_rows = _crm_db_rows(
-        f"SELECT COUNT(*) AS c FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id AND c.tenant_id=q.tenant_id WHERE {where_sql}",
-        tuple(params),
-    )
-    total = int((count_rows[0].get("c") if count_rows else 0) or 0)
-    offset = (page - 1) * page_size
-    rows = _crm_db_rows(
-        f"""
-        SELECT q.id, q.quote_number, q.customer_id, q.deal_id, q.status, q.currency,
-               q.subtotal_cents, q.tax_amount_cents, q.total_cents, q.created_at, q.updated_at,
-               c.name AS customer_name
-        FROM quotes q
-        LEFT JOIN customers c ON c.id=q.customer_id AND c.tenant_id=q.tenant_id
-        WHERE {where_sql}
-        ORDER BY q.created_at DESC, q.id DESC
-        LIMIT ? OFFSET ?
-        """,
-        tuple(params + [page_size, offset]),
-    )
-    for row in rows:
-        row["total_text"] = _format_cents(
-            row.get("total_cents"), row.get("currency") or "EUR"
-        )
-    return rows, total
-
-
-def _crm_emails_list(
-    tenant_id: str,
-    *,
-    customer_id: str | None = None,
-    page: int = 1,
-    page_size: int = 25,
-) -> tuple[list[dict[str, Any]], int]:
-    clauses = ["tenant_id=?"]
-    params: list[Any] = [tenant_id]
-    if customer_id:
-        clauses.append("customer_id=?")
-        params.append(customer_id)
-    where_sql = " AND ".join(clauses)
-    count_rows = _crm_db_rows(
-        f"SELECT COUNT(*) AS c FROM emails_cache WHERE {where_sql}",
-        tuple(params),
-    )
-    total = int((count_rows[0].get("c") if count_rows else 0) or 0)
-    offset = (page - 1) * page_size
-    rows = _crm_db_rows(
-        f"""
-        SELECT id, customer_id, contact_id, from_addr, to_addrs, subject, received_at,
-               SUBSTR(COALESCE(body_text,''),1,160) AS body_preview,
-               created_at
-        FROM emails_cache
-        WHERE {where_sql}
-        ORDER BY received_at DESC, created_at DESC, id DESC
-        LIMIT ? OFFSET ?
-        """,
-        tuple(params + [page_size, offset]),
-    )
-    return rows, total
-
-
-def _crm_contacts_list(tenant_id: str, customer_id: str) -> list[dict[str, Any]]:
-    if callable(contacts_list_by_customer):
-        try:
-            return contacts_list_by_customer(tenant_id, customer_id)  # type: ignore
-        except Exception:
-            return []
-    return []
-
-
-@bp.route("/support/diagnostic", methods=["GET"])
-@login_required
-def support_diagnostic():
-    from app.services.diagnostic_exporter import diagnostic_exporter
-    from flask import send_file
-    import io
-    
-    dump_bytes = diagnostic_exporter.generate_dump()
-    return send_file(
-        io.BytesIO(dump_bytes),
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"KUKANILEA_DIAGNOSTIC_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-    )
-
 # -------- UI Templates ----------
 HTML_BASE = r"""<!doctype html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="manifest" href="/app.webmanifest">
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/app-icon.png') }}">
-<link rel="stylesheet" href="/static/css/haptic.css">
-<title>{{ product_name }} Gold</title>
-<script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+<title>{{branding.app_name}} Systems</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  const savedTheme = localStorage.getItem("ks_theme") || "dark";
+  const savedAccent = localStorage.getItem("ks_accent") || "brand";
+  if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
+  document.documentElement.dataset.accent = savedAccent;
+</script>
 <style>
   :root{
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --bg: #ffffff;
-    --text: #09090b;
-    --muted: #71717a;
-    --border: #f4f4f5;
-    --accent: #2563eb;
+    --bg:#0b1220;
+    --bg-elev:#111a2c;
+    --bg-panel:#0f172a;
+    --border:rgba(148,163,184,.15);
+    --text:#e2e8f0;
+    --muted:#94a3b8;
+    --accent-500:{{branding.primary_color}};
+    --accent-600:{{branding.primary_color}};
+    --shadow:0 8px 30px rgba(15,23,42,.35);
+    --radius-lg:18px;
+    --radius-md:14px;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
+  html[data-accent="brand"]{ --accent-500:{{branding.primary_color}}; --accent-600:{{branding.primary_color}}; }
+  html[data-accent="indigo"]{ --accent-500:#6366f1; --accent-600:#4f46e5; }
+  html[data-accent="emerald"]{ --accent-500:#10b981; --accent-600:#059669; }
+  html[data-accent="amber"]{ --accent-500:#f59e0b; --accent-600:#d97706; }
+  .light body{
+    --bg:#f8fafc;
+    --bg-elev:#ffffff;
+    --bg-panel:#ffffff;
+    --border:rgba(148,163,184,.25);
+    --text:#0f172a;
+    --muted:#475569;
+    --shadow:0 8px 30px rgba(15,23,42,.12);
   }
-  .app-shell { display: flex; min-height: 100vh; flex-direction: column; }
-  .app-nav {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 20px 40px; border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; background: rgba(255,255,255,0.8); backdrop-filter: blur(12px); z-index: 100;
+  body{ background:var(--bg); color:var(--text); }
+  .app-shell{ display:flex; min-height:100vh; }
+  .app-nav{
+    width:240px; background:var(--bg-elev); border-right:1px solid var(--border);
+    padding:24px 18px; position:sticky; top:0; height:100vh;
   }
-  .nav-logo { font-weight: 800; font-size: 1.2rem; text-transform: uppercase; letter-spacing: -0.02em; color: #000; text-decoration: none; display: flex; align-items: center; gap: 8px; }
-  .nav-links { display: flex; gap: 32px; align-items: center; }
-  .nav-link { text-decoration: none; color: var(--muted); font-size: 0.85rem; font-weight: 600; transition: color 0.2s; }
-  .nav-link:hover, .nav-link.active { color: var(--text); }
-  .app-main { max-width: 1000px; margin: 0 auto; width: 100%; padding: 60px 40px; flex: 1; }
-  .floating-tools {
-    position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
-    background: rgba(255,255,255,0.8); backdrop-filter: blur(16px);
-    border: 1px solid var(--border); padding: 12px 24px; border-radius: 999px;
-    display: flex; gap: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.05); z-index: 200;
+  .app-main{ flex:1; display:flex; flex-direction:column; }
+  .app-topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:22px 28px; border-bottom:1px solid var(--border); background:var(--bg-elev);
   }
-  .tool-btn { background: none; border: none; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: color 0.2s; }
-  .tool-btn:hover { color: #000; }
-  #chat-sidebar {
-    position: fixed; top: 0; right: 0; bottom: 0; width: 450px;
-    background: #fff; border-left: 1px solid var(--border);
-    transform: translateX(100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    z-index: 300; display: flex; flex-direction: column;
+  .app-content{ padding:24px 28px; }
+  .nav-link{
+    display:flex; gap:12px; align-items:center; padding:10px 12px; border-radius:12px;
+    color:var(--muted); text-decoration:none; transition:all .15s ease;
   }
-  #chat-sidebar.open { transform: translateX(0); }
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .nav-link:hover{ background:rgba(148,163,184,.08); color:var(--text); }
+  .nav-link.active{ background:rgba(99,102,241,.15); color:var(--text); border:1px solid rgba(99,102,241,.25); }
+  .badge{ font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
+  .card{ background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow); }
+  .btn-primary{ background:var(--accent-600); color:white; border-radius:12px; }
+  .btn-outline{ border:1px solid var(--border); border-radius:12px; }
+  .input{ background:transparent; border:1px solid var(--border); border-radius:12px; }
+  .muted{ color:var(--muted); }
+  .pill{ background:rgba(99,102,241,.12); color:var(--text); border:1px solid rgba(99,102,241,.2); padding:2px 8px; border-radius:999px; font-size:11px; }
 </style>
 </head>
-<body class="light">
+<body>
 <div class="app-shell">
-  <header class="app-nav">
-    <a href="/" class="nav-logo">
-      <div class="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white text-xs">{{ product_name[0].upper() }}</div>
-      {{ product_name }}
-    </a>
-    <div class="nav-links">
-      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">Aufgaben</a>
-      <a class="nav-link {{'active' if active_tab=='crm' else ''}}" href="/crm">Kunden</a>
-      <a class="nav-link {{'active' if active_tab=='knowledge' else ''}}" href="/knowledge">Wissen</a>
-      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">System</a>
-      <div class="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-[10px] font-bold border border-zinc-200">{{ user[0].upper() if user else '?' }}</div>
+  <aside class="app-nav">
+    <div class="flex items-center gap-2 mb-6">
+      <div class="h-10 w-10 rounded-2xl flex items-center justify-center text-white" style="background:var(--accent-500);">✦</div>
+      <div>
+        <div class="text-sm font-semibold">{{branding.app_name}}</div>
+        <div class="text-[11px] muted">Agent Orchestra</div>
+      </div>
     </div>
-  </header>
-
-  <main class="app-main">
-    {% if read_only %}
-    <div class="mb-8 p-4 bg-rose-50 text-rose-600 rounded-2xl text-sm font-bold border border-rose-100 flex items-center justify-between">
-      <span>Read-only Mode aktiv ({{license_reason}}). Schreibaktionen sind deaktiviert.</span>
-      <a href="/license" class="underline">Lizenz verwalten</a>
-    </div>
-    {% endif %}
-    {{ content | safe }}
-  </main>
-
-  <div class="floating-tools">
-    <button class="tool-btn" onclick="toggleChat()" title="KI Chat">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" stroke-width="2"></path></svg>
-    </button>
-    <div class="w-px h-4 bg-zinc-200"></div>
-    <button class="tool-btn" id="vision-camera-btn" title="Kamera">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" stroke-width="2"></path></svg>
-    </button>
-    <button class="tool-btn" id="voice-record-btn" title="Sprache">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" stroke-width="2"></path></svg>
-    </button>
-  </div>
-
-  <aside id="chat-sidebar">
-    <div id="chat-container" class="h-full">
-      <div class="flex items-center justify-center h-full text-zinc-300 text-xs uppercase tracking-widest">Initialisiere...</div>
+    <nav class="space-y-2">
+      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">📥 Upload</a>
+      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">✅ Tasks</a>
+      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">⏱️ Time</a>
+      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
+      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
+      <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
+      {% if roles in ['DEV', 'ADMIN'] %}
+      <a class="nav-link {{'active' if active_tab=='mesh' else ''}}" href="/admin/mesh">📡 Mesh</a>
+      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
+      {% endif %}
+    </nav>
+    <div class="mt-8 text-xs muted">
+      Ablage: {{ablage}}
     </div>
   </aside>
+  <main class="app-main">
+    <div class="app-topbar">
+      <div>
+        <div class="text-lg font-semibold">Workspace</div>
+        <div class="text-xs muted">Upload → Review → Ablage</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="badge">User: {{user}}</span>
+        <span class="badge">Role: {{roles}}</span>
+        <span class="badge">Tenant: {{tenant}}</span>
+        <span class="badge">Profile: {{ profile.name }}</span>
+        {% if user and user != '-' %}
+        <a class="px-3 py-2 text-sm btn-outline" href="/logout">Logout</a>
+        {% endif %}
+        <button id="accentBtn" class="px-3 py-2 text-sm btn-outline">Accent: <span id="accentLabel"></span></button>
+        <button id="themeBtn" class="px-3 py-2 text-sm btn-outline">Theme: <span id="themeLabel"></span></button>
+      </div>
+    </div>
+    <div class="app-content">
+      {% if read_only %}
+      <div class="mb-4 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm">
+        Read-only mode aktiv ({{license_reason}}). Schreibaktionen sind deaktiviert.
+      </div>
+      {% elif trial_active and trial_days_left <= 3 %}
+      <div class="mb-4 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm">
+        Trial aktiv: noch {{trial_days_left}} Tage.
+      </div>
+      {% endif %}
+      {{ content|safe }}
+    </div>
+  </main>
+</div>
+
+<!-- Floating Chat Widget -->
+<div id="chatWidgetBtn" title="Chat" class="fixed bottom-6 right-6 z-50 cursor-pointer select-none">
+  <div class="relative h-12 w-12 rounded-full flex items-center justify-center" style="background:var(--accent-600); box-shadow:var(--shadow); color:white;">
+    💬
+    <span id="chatUnread" class="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-500 hidden"></span>
+  </div>
+</div>
+
+<div id="chatDrawer" class="fixed inset-y-0 right-0 z-50 hidden w-[420px] max-w-[92vw] border-l" style="background:var(--bg-elev); border-color:var(--border); box-shadow:var(--shadow);">
+  <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:var(--border);">
+    <div>
+      <div class="text-sm font-semibold">KUKANILEA Assistant</div>
+      <div class="text-xs muted">Tenant: {{tenant}}</div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="chatWidgetStatus" class="text-[11px] muted">Bereit</span>
+      <button id="chatWidgetClose" class="rounded-lg px-2 py-1 text-sm btn-outline">✕</button>
+    </div>
+  </div>
+  <div class="px-4 py-3 border-b" style="border-color:var(--border);">
+    <div class="flex flex-wrap gap-2">
+      <button class="chat-quick pill" data-q="suche rechnung">Suche Rechnung</button>
+      <button class="chat-quick pill" data-q="suche angebot">Suche Angebot</button>
+      <button class="chat-quick pill" data-q="zeige letzte uploads">Letzte Uploads</button>
+      <button class="chat-quick pill" data-q="hilfe">Hilfe</button>
+    </div>
+  </div>
+  <div id="chatWidgetMsgs" class="flex-1 overflow-auto px-4 py-4 space-y-3 text-sm" style="height: calc(100vh - 230px);"></div>
+  <div class="border-t px-4 py-3 space-y-2" style="border-color:var(--border);">
+    <div class="flex gap-2">
+      <input id="chatWidgetKdnr" class="w-24 rounded-xl input px-3 py-2 text-sm" placeholder="KDNR" />
+      <input id="chatWidgetInput" class="flex-1 rounded-xl input px-3 py-2 text-sm" placeholder="Frag etwas…" />
+      <button id="chatWidgetSend" class="rounded-xl px-3 py-2 text-sm btn-primary">Senden</button>
+    </div>
+    <div class="flex items-center justify-between">
+      <button id="chatWidgetRetry" class="text-xs btn-outline px-3 py-1 hidden">Retry</button>
+      <button id="chatWidgetClear" class="text-xs btn-outline px-3 py-1">Clear</button>
+    </div>
+  </div>
 </div>
 
 <script>
-  function toggleChat() {
-    const sidebar = document.getElementById('chat-sidebar');
-    const container = document.getElementById('chat-container');
-    sidebar.classList.toggle('open');
-    if (sidebar.classList.contains('open') && !container.dataset.loaded) {
-      htmx.ajax('GET', '/ai-chat/', '#chat-container');
-      container.dataset.loaded = 'true';
-    }
+(function(){
+  const btnTheme = document.getElementById("themeBtn");
+  const lblTheme = document.getElementById("themeLabel");
+  const btnAcc = document.getElementById("accentBtn");
+  const lblAcc = document.getElementById("accentLabel");
+  function curTheme(){ return (localStorage.getItem("ks_theme") || "dark"); }
+  function curAccent(){ return (localStorage.getItem("ks_accent") || "indigo"); }
+  function applyTheme(t){
+    if(t === "light"){ document.documentElement.classList.add("light"); }
+    else { document.documentElement.classList.remove("light"); }
+    localStorage.setItem("ks_theme", t);
+    lblTheme.textContent = t;
   }
-  document.addEventListener('keydown', function(e) {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
-      e.preventDefault();
-      window.location.href = "/dev/dashboard/";
-    }
+  function applyAccent(a){
+    document.documentElement.dataset.accent = a;
+    localStorage.setItem("ks_accent", a);
+    lblAcc.textContent = a;
+  }
+  applyTheme(curTheme());
+  applyAccent(curAccent());
+  btnTheme?.addEventListener("click", ()=>{ applyTheme(curTheme() === "dark" ? "light" : "dark"); });
+  btnAcc?.addEventListener("click", ()=>{
+    const order = ["indigo","emerald","amber"];
+    const i = order.indexOf(curAccent());
+    applyAccent(order[(i+1) % order.length]);
   });
+})();
 </script>
-<script src="{{ url_for('static', filename='js/toast.js') }}"></script>
-<script src="{{ url_for('static', filename='js/voice_recorder.js') }}"></script>
-<script src="{{ url_for('static', filename='js/vision_camera.js') }}"></script>
+
 </body>
 </html>"""
 
-HTML_INDEX = r"""
-<section class="mb-32 text-center pt-20">
-    <h1 class="text-5xl font-bold tracking-tight text-black mb-6">Wie kann ich heute <br/><span class="text-zinc-400">unterstützen?</span></h1>
-    
-    <div class="relative group mt-12 max-w-2xl mx-auto">
-        <div class="relative bg-zinc-50 border border-zinc-200 rounded-2xl p-2 flex items-center shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
-            <input type="text" 
-                   id="hero-chat-input"
-                   placeholder="Frage stellen oder Aktion ausführen..." 
-                   class="flex-1 bg-transparent border-none px-6 py-4 text-lg focus:outline-none placeholder:text-zinc-300"
-                   onkeydown="if(event.key === 'Enter') { 
-                       const msg = this.value;
-                       if(msg.trim()) {
-                           toggleChat();
-                           setTimeout(() => {
-                               const chatIn = document.getElementById('chat-input');
-                               if(chatIn) { chatIn.value = msg; chatIn.dispatchEvent(new Event('input')); }
-                           }, 200);
-                           this.value = '';
-                       }
-                   }">
-            <button onclick="const input = document.getElementById('hero-chat-input'); if(input.value.trim()){ toggleChat(); setTimeout(() => { const chatIn = document.getElementById('chat-input'); if(chatIn){ chatIn.value = input.value; chatIn.dispatchEvent(new Event('input')); } input.value = ''; }, 200); }" 
-                    class="bg-black hover:bg-zinc-800 text-white p-4 rounded-xl transition-all shadow-lg active:scale-95">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-            </button>
-        </div>
-        <div class="mt-6 flex gap-3 justify-center overflow-x-auto no-scrollbar">
-            <button class="px-4 py-2 bg-white border border-zinc-200 rounded-full text-[10px] font-bold text-zinc-500 hover:border-black hover:text-black transition-all uppercase tracking-widest">Soll-Ist Vergleich</button>
-            <button class="px-4 py-2 bg-white border border-zinc-200 rounded-full text-[10px] font-bold text-zinc-500 hover:border-black hover:text-black transition-all uppercase tracking-widest">Offene Aufgaben</button>
-            <button class="px-4 py-2 bg-white border border-zinc-200 rounded-full text-[10px] font-bold text-zinc-500 hover:border-black hover:text-black transition-all uppercase tracking-widest">Materialbestellung</button>
-        </div>
-    </div>
-</section>
-
-<section class="grid grid-cols-1 md:grid-cols-2 gap-16 pb-20">
-    <div class="group cursor-pointer" onclick="window.location.href='/tasks'">
-        <div class="text-[9px] font-black text-blue-600 uppercase tracking-[0.3em] mb-4">Operations</div>
-        <h2 class="text-xl font-bold mb-2 group-hover:translate-x-1 transition-transform">Betrieb & Aufgaben</h2>
-        <p class="text-sm text-zinc-400 leading-relaxed">Steuern Sie Ihre Baustellen und verfolgen Sie den Fortschritt Ihrer Teams.</p>
-    </div>
-
-    <div class="group cursor-pointer" onclick="window.location.href='/knowledge'">
-        <div class="text-[9px] font-black text-blue-600 uppercase tracking-[0.3em] mb-4">Intelligence</div>
-        <h2 class="text-xl font-bold mb-2 group-hover:translate-x-1 transition-transform">Wissensdatenbank</h2>
-        <p class="text-sm text-zinc-400 leading-relaxed">Technische Details, Normen und Projektunterlagen durch lokale KI-Suche.</p>
-    </div>
-</section>
+# ------------------------------
+# Login template
+# ------------------------------
+HTML_LOGIN = r"""
+<div class="max-w-md mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">Login</h1>
+    <p class="text-sm opacity-80 mb-4">Accounts: <b>admin</b>/<b>admin</b> (Tenant: KUKANILEA) • <b>dev</b>/<b>dev</b> (Tenant: KUKANILEA Dev)</p>
+    {% if error %}<div class="alert alert-error mb-3">{{ error }}</div>{% endif %}
+    <form method="post" class="space-y-3">
+      <div>
+        <label class="label">Username</label>
+        <input class="input w-full" name="username" autocomplete="username" required>
+      </div>
+      <div>
+        <label class="label">Password</label>
+        <input class="input w-full" type="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Login</button>
+    </form>
+  </div>
+</div>
 """
+
+
+HTML_INDEX = r"""<div class="grid lg:grid-cols-2 gap-6">
+  <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
+    <div class="text-lg font-semibold mb-2">Datei hochladen</div>
+    <div class="muted text-sm mb-4">Upload → Analyse → Review öffnet automatisch.</div>
+    <form id="upform" class="space-y-3">
+      <input id="file" name="file" type="file"
+        class="block w-full text-sm input
+        file:mr-4 file:rounded-xl file:border-0 file:bg-slate-700 file:px-4 file:py-2
+        file:text-sm file:font-semibold file:text-white hover:file:bg-slate-600" />
+      <button id="btn" type="submit" class="rounded-xl px-4 py-2 font-semibold btn-primary">Hochladen</button>
+    </form>
+    <div class="mt-4">
+      <div class="text-xs muted mb-1" id="pLabel">0.0%</div>
+      <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden"><div id="bar" class="h-3 w-0" style="background:var(--accent-500)"></div></div>
+      <div class="text-slate-300 text-sm mt-3" id="status"></div>
+      <div class="muted text-xs mt-1" id="phase"></div>
+    </div>
+  </div>
+  <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
+    <div class="text-lg font-semibold mb-2">Review Queue</div>
+    {% if items %}
+      <div class="space-y-2">
+        {% for it in items %}
+          <div class="rounded-xl border border-slate-800 hover:border-slate-600 px-3 py-2">
+            <div class="flex items-center justify-between gap-2">
+              <a class="text-sm font-semibold underline accentText" href="/review/{{it}}/kdnr">Review öffnen</a>
+              <div class="muted text-xs">{{ (meta.get(it, {}).get('progress', 0.0) or 0.0) | round(1) }}%</div>
+            </div>
+            <div class="muted text-xs break-all">{{ meta.get(it, {}).get('filename','') }}</div>
+            <div class="muted text-[11px]">{{ meta.get(it, {}).get('progress_phase','') }}</div>
+            <div class="mt-2 flex gap-2">
+              <a class="rounded-xl px-3 py-2 text-xs btn-outline card" href="/file/{{it}}" target="_blank">Datei</a>
+              <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Pending wirklich löschen?')" style="display:inline;">
+                <button class="rounded-xl px-3 py-2 text-xs btn-outline card" type="submit">Delete</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted text-sm">Keine offenen Reviews.</div>
+    {% endif %}
+  </div>
+</div>
+<script>
+const form = document.getElementById("upform");
+const fileInput = document.getElementById("file");
+const bar = document.getElementById("bar");
+const pLabel = document.getElementById("pLabel");
+const status = document.getElementById("status");
+const phase = document.getElementById("phase");
+function setProgress(p){
+  const pct = Math.max(0, Math.min(100, p));
+  bar.style.width = pct + "%";
+  pLabel.textContent = pct.toFixed(1) + "%";
+}
+async function poll(token){
+  const res = await fetch("/api/progress/" + token, {cache:"no-store", credentials:"same-origin"});
+  const j = await res.json();
+  setProgress(j.progress || 0);
+  phase.textContent = j.progress_phase || "";
+  if(j.status === "READY"){ status.textContent = "Analyse fertig. Review öffnet…"; setTimeout(()=>{ window.location.href = "/review/" + token + "/kdnr"; }, 120); return; }
+  if(j.status === "ERROR"){ status.textContent = "Analyse-Fehler: " + (j.error || "unbekannt"); return; }
+  setTimeout(()=>poll(token), 450);
+}
+form.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = fileInput.files[0];
+  if(!f){ status.textContent = "Bitte eine Datei auswählen."; return; }
+  const fd = new FormData();
+  fd.append("file", f);
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/upload", true);
+  xhr.upload.onprogress = (ev) => {
+    if(ev.lengthComputable){ setProgress((ev.loaded / ev.total) * 35); phase.textContent = "Upload…"; }
+  };
+  xhr.onload = () => {
+    if(xhr.status === 200){
+      const resp = JSON.parse(xhr.responseText);
+      status.textContent = "Upload OK. Analyse läuft…";
+      poll(resp.token);
+    } else {
+      try{ const j = JSON.parse(xhr.responseText || "{}"); status.textContent = "Fehler beim Upload: " + (j.error || ("HTTP " + xhr.status)); }
+      catch(e){ status.textContent = "Fehler beim Upload: HTTP " + xhr.status; }
+    }
+  };
+  xhr.onerror = () => { status.textContent = "Upload fehlgeschlagen (Netzwerk/Server)."; };
+  status.textContent = "Upload läuft…"; setProgress(0); phase.textContent = ""; xhr.send(fd);
+});
+</script>"""
 
 HTML_REVIEW_SPLIT = r"""<div class="grid lg:grid-cols-2 gap-4">
   <div class="card p-4 sticky top-6 h-fit">
@@ -1392,27 +880,6 @@ HTML_WIZARD = r"""<form method="post" class="space-y-3" autocomplete="off">
   </div>
   <div class="grid md:grid-cols-2 gap-3">
     <div>
-      <label class="muted text-xs">Aussteller (Firma)</label>
-      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input border-indigo-500/30" name="vendor_name" value="{{w.vendor_name}}" placeholder="z.B. Eisen-Karl GmbH"/>
-    </div>
-    <div class="grid grid-cols-2 gap-2">
-      <div>
-        <label class="muted text-xs">Rechnungs-Nr</label>
-        <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input border-indigo-500/30" name="invoice_no" value="{{w.invoice_no}}" placeholder="z.B. RE-2024-001"/>
-      </div>
-      <div>
-        <label class="muted text-xs">Gesamtbetrag (€)</label>
-        <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input border-indigo-500/30 {{ 'border-rose-500/50' if not w.vat_valid else '' }}" name="total_amount" value="{{w.total_amount}}" placeholder="z.B. 124.50"/>
-        {% if not w.vat_valid %}
-          <div class="text-[10px] text-rose-500 mt-1 font-bold">[VALIDATION_FAILED] Summe unplausibel</div>
-        {% elif w.total_amount %}
-          <div class="text-[10px] text-emerald-500 mt-1 font-bold">[VAT_OK] Mathematisch korrekt</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-  <div class="grid md:grid-cols-2 gap-3">
-    <div>
       <label class="muted text-xs">PLZ Ort</label>
       <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="plzort" value="{{w.plzort}}" placeholder="z.B. 16341 Panketal"/>
     </div>
@@ -1443,8 +910,6 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       <div class="mt-3 space-y-2">
         <label class="text-xs muted">Projekt</label>
         <select id="timeProject" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"></select>
-        <label class="text-xs muted">Task-ID (optional)</label>
-        <input id="timeTaskId" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. 42" />
         <label class="text-xs muted">Notiz</label>
         <input id="timeNote" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Baustelle Prüfen" />
         <div class="flex gap-2 pt-2">
@@ -1459,10 +924,6 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       <div class="mt-3 space-y-2">
         <input id="projectName" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Projektname" />
         <textarea id="projectDesc" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" rows="3" placeholder="Beschreibung (optional)"></textarea>
-        <div class="grid grid-cols-2 gap-2">
-          <input id="projectBudgetHours" type="number" min="0" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Budget h" />
-          <input id="projectBudgetCost" type="number" min="0" step="0.01" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Budget €" />
-        </div>
         <button id="projectCreate" class="px-4 py-2 text-sm btn-outline w-full">Anlegen</button>
         <div id="projectStatus" class="muted text-xs pt-1"></div>
       </div>
@@ -1485,11 +946,6 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       <div id="weekSummary" class="grid md:grid-cols-2 gap-3 mt-4"></div>
     </div>
     <div class="card p-4">
-      <div class="text-lg font-semibold">Budget-Fortschritt</div>
-      <div class="muted text-xs">Warnung ab 80% Verbrauch.</div>
-      <div id="projectBudget" class="mt-3 text-sm muted">Kein Projekt ausgewählt.</div>
-    </div>
-    <div class="card p-4">
       <div class="text-lg font-semibold">Einträge</div>
       <div class="muted text-xs">Klick auf „Bearbeiten“ für Korrekturen.</div>
       <div id="entryList" class="mt-4 space-y-3"></div>
@@ -1501,19 +957,15 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   const role = "{{role}}";
   const timeProject = document.getElementById("timeProject");
   const timeNote = document.getElementById("timeNote");
-  const timeTaskId = document.getElementById("timeTaskId");
   const timeStart = document.getElementById("timeStart");
   const timeStop = document.getElementById("timeStop");
   const timeStatus = document.getElementById("timeStatus");
   const projectName = document.getElementById("projectName");
   const projectDesc = document.getElementById("projectDesc");
-  const projectBudgetHours = document.getElementById("projectBudgetHours");
-  const projectBudgetCost = document.getElementById("projectBudgetCost");
   const projectCreate = document.getElementById("projectCreate");
   const projectStatus = document.getElementById("projectStatus");
   const weekDate = document.getElementById("weekDate");
   const weekSummary = document.getElementById("weekSummary");
-  const projectBudget = document.getElementById("projectBudget");
   const entryList = document.getElementById("entryList");
   const exportWeek = document.getElementById("exportWeek");
 
@@ -1521,47 +973,6 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     return `${h}h ${m}m`;
-  }
-
-  function toast(level, msg){
-    if(window.showToast){
-      window.showToast(level, msg);
-      return;
-    }
-    if(level === "error") alert(msg);
-  }
-
-  function renderBudget(summary){
-    if(!projectBudget) return;
-    if(!summary || !summary.project_id){
-      projectBudget.innerHTML = "<div class='muted text-sm'>Kein Projekt ausgewählt.</div>";
-      return;
-    }
-    const hPct = Math.max(0, Math.min(100, Number(summary.progress_hours_pct || 0)));
-    const cPct = Math.max(0, Math.min(100, Number(summary.progress_cost_pct || 0)));
-    const warn = summary.warning ? "<div class='text-amber-300 text-xs mt-2'>[WARN] Budget >80% erreicht</div>" : "";
-    projectBudget.innerHTML = `
-      <div class="text-sm font-semibold mb-2">${summary.project_name || "Projekt"}</div>
-      <div class="muted text-xs">Stunden: ${summary.spent_hours || 0} / ${summary.budget_hours || 0}</div>
-      <div class="w-full bg-slate-800 rounded-full h-2 mt-1"><div class="h-2 rounded-full" style="width:${hPct}%; background:${hPct >= 80 ? '#f59e0b' : 'var(--accent-500)'}"></div></div>
-      <div class="muted text-xs mt-2">Kosten: €${summary.spent_cost || 0} / €${summary.budget_cost || 0}</div>
-      <div class="w-full bg-slate-800 rounded-full h-2 mt-1"><div class="h-2 rounded-full" style="width:${cPct}%; background:${cPct >= 80 ? '#f59e0b' : 'var(--accent-500)'}"></div></div>
-      ${warn}`;
-  }
-
-  async function loadProjectBudget(){
-    const pid = parseInt(timeProject.value || "0", 10);
-    if(!pid){
-      renderBudget(null);
-      return;
-    }
-    const res = await fetch(`/api/time/project/${pid}`, {credentials:"same-origin"});
-    const data = await res.json();
-    if(!res.ok){
-      renderBudget(null);
-      return;
-    }
-    renderBudget(data.summary || null);
   }
 
   function setStatus(msg, isError){
@@ -1643,18 +1054,15 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
 
   async function startTimer(){
     setStatus("Starte…", false);
-    const payload = {project_id: timeProject.value || null, task_id: timeTaskId.value || null, note: timeNote.value || ""};
+    const payload = {project_id: timeProject.value || null, note: timeNote.value || ""};
     const res = await fetch("/api/time/start", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
     const data = await res.json();
     if(!res.ok){
       setStatus(data.error?.message || "Fehler beim Start.", true);
-      toast("error", data.error?.message || "Fehler beim Start.");
       return;
     }
-    toast("success", "Timer gestartet.");
     timeNote.value = "";
     await loadEntries();
-    await loadProjectBudget();
   }
 
   async function stopTimer(){
@@ -1663,32 +1071,24 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     const data = await res.json();
     if(!res.ok){
       setStatus(data.error?.message || "Fehler beim Stoppen.", true);
-      toast("error", data.error?.message || "Fehler beim Stoppen.");
       return;
     }
-    toast("success", "Timer gestoppt.");
     await loadEntries();
-    await loadProjectBudget();
   }
 
   async function createProject(){
     projectStatus.textContent = "Speichern…";
-    const payload = {name: projectName.value || "", description: projectDesc.value || "", budget_hours: parseInt(projectBudgetHours?.value || "0", 10) || 0, budget_cost: parseFloat(projectBudgetCost?.value || "0") || 0};
+    const payload = {name: projectName.value || "", description: projectDesc.value || ""};
     const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
     const data = await res.json();
     if(!res.ok){
       projectStatus.textContent = data.error?.message || "Fehler beim Anlegen.";
-      toast("error", projectStatus.textContent);
       return;
     }
     projectName.value = "";
     projectDesc.value = "";
-    if(projectBudgetHours) projectBudgetHours.value = "";
-    if(projectBudgetCost) projectBudgetCost.value = "";
     projectStatus.textContent = "Projekt angelegt.";
-    toast("success", "Projekt angelegt.");
     await loadProjects();
-    await loadProjectBudget();
   }
 
   entryList.addEventListener("click", async (e) => {
@@ -1721,11 +1121,10 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   timeStart.addEventListener("click", startTimer);
   timeStop.addEventListener("click", stopTimer);
   projectCreate.addEventListener("click", createProject);
-  timeProject.addEventListener("change", loadProjectBudget);
 
   const today = new Date().toISOString().slice(0, 10);
   weekDate.value = today;
-  loadProjects().then(loadEntries).then(loadProjectBudget);
+  loadProjects().then(loadEntries);
 })();
 </script>
 """
@@ -1734,7 +1133,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   <div class="flex items-center justify-between gap-2">
     <div>
       <div class="text-lg font-semibold">Local Chat</div>
-      <div class="muted text-sm">Tool-faehiger Chat mit lokalem Ollama-Orchestrator.</div>
+      <div class="muted text-sm">Tool-fähiger Chat mit Agent-Orchestrator (lokal, deterministisch).</div>
     </div>
   </div>
   <div class="mt-4 flex flex-col md:flex-row gap-2">
@@ -1782,7 +1181,6 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   window.openToken = openToken;
   window.copyToken = copyToken;
   function add(role, text, actions, results, suggestions){
-    if(!log) return;
     const d = document.createElement("div");
     d.className = "mb-3";
     let actionHtml = "";
@@ -1816,14 +1214,13 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     log.scrollTop = log.scrollHeight;
   }
   async function doSend(){
-    if(!q || !send) return;
     const msg = (q.value || "").trim();
     if(!msg) return;
     add("you", msg);
     q.value = "";
     send.disabled = true;
     try{
-      const res = await fetch("/api/ai/chat", {method:"POST", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr?.value||"").trim()})});
+      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
       const j = await res.json();
       if(!res.ok){
         const errMsg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ("HTTP " + res.status));
@@ -1833,20 +1230,16 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     }catch(e){ add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e)); }
     finally{ send.disabled = false; }
   }
-  if(log && q && send){
-    send.addEventListener("click", doSend);
-    q.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSend(); }});
-    log.addEventListener("click", (e) => {
-      const btn = e.target.closest(".chat-suggestion");
-      if(!btn) return;
-      q.value = btn.dataset.q || "";
-      doSend();
-    });
-  }
+  send.addEventListener("click", doSend);
+  q.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSend(); }});
+  log.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-suggestion");
+    if(!btn) return;
+    q.value = btn.dataset.q || "";
+    doSend();
+  });
 
   // ---- Floating Chat Widget ----
-  if(window.__kukaChatWidgetInit){ return; }
-  window.__kukaChatWidgetInit = true;
   const _cw = {
     btn: document.getElementById('chatWidgetBtn'),
     drawer: document.getElementById('chatDrawer'),
@@ -1862,7 +1255,6 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     quick: document.querySelectorAll('.chat-quick'),
   };
   let _cwLastBody = null;
-  let _cwAiAvailable = true;
   function _cwAppend(role, text, actions, results, suggestions){
     if(!_cw.msgs) return;
     const wrap = document.createElement('div');
@@ -1965,50 +1357,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
     }catch(e){}
   }
-  async function _cwFetchAiStatus(force=false){
-    const maxAgeMs = Number(window.__kukaAiStatusMaxAgeMs || 45000);
-    const now = Date.now();
-    if(!force && window.__kukaAiStatusCache && (now - Number(window.__kukaAiStatusCache.ts || 0)) < maxAgeMs){
-      return {ok: true, payload: window.__kukaAiStatusCache.payload || {}};
-    }
-    const r = await fetch('/api/ai/status', {method:'GET', headers:{'Accept':'application/json'}});
-    let j = {};
-    try{ j = await r.json(); }catch(e){}
-    if(r.ok){
-      window.__kukaAiStatusCache = {ts: now, payload: j};
-    }
-    return {ok: r.ok, payload: j};
-  }
-  async function _cwRefreshAiStatus(force=false){
-    try{
-      const state = await _cwFetchAiStatus(force);
-      const j = state.payload || {};
-      _cwAiAvailable = !!(state.ok && j && j.available);
-      if(_cw.status){
-        if(_cwAiAvailable){
-          _cw.status.textContent = 'Bereit';
-        }else{
-          _cw.status.textContent = 'KI offline';
-        }
-      }
-      if(_cw.send) _cw.send.disabled = !_cwAiAvailable;
-      if(_cw.input) _cw.input.disabled = !_cwAiAvailable;
-      if(!_cwAiAvailable && _cw.msgs && !_cw.msgs.dataset.aiNotice){
-        _cw.msgs.dataset.aiNotice = '1';
-        _cwAppend('assistant', 'KI-Assistent ist derzeit nicht verfuegbar. Bitte starte lokal `ollama serve`.');
-      }
-    }catch(e){
-      _cwAiAvailable = false;
-      if(_cw.status) _cw.status.textContent = 'KI offline';
-      if(_cw.send) _cw.send.disabled = true;
-      if(_cw.input) _cw.input.disabled = true;
-    }
-  }
   async function _cwSend(){
-    if(!_cwAiAvailable){
-      _cwAppend('assistant', 'KI-Assistent ist offline. Starte `ollama serve` und versuche es erneut.');
-      return;
-    }
     const q = (_cw.input && _cw.input.value ? _cw.input.value.trim() : '');
     if(!q) return;
     _cwAppend('you', q);
@@ -2019,7 +1368,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     try{
       const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
       _cwLastBody = body;
-      const r = await fetch('/api/ai/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
       let j = {};
       try{ j = await r.json(); }catch(e){}
       if(!r.ok){
@@ -2051,7 +1400,6 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       _cw.drawer.classList.toggle('hidden');
       if(_cw.unread) _cw.unread.classList.add('hidden');
       _cwLoad();
-      _cwRefreshAiStatus();
       if(!_cw.drawer.classList.contains('hidden') && _cw.input) _cw.input.focus();
     });
   }
@@ -2071,7 +1419,6 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       _cwSend();
     });
   });
-  _cwRefreshAiStatus();
   // ---- /Floating Chat Widget ----
 })();
 </script>"""
@@ -2086,19 +1433,12 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 def _guard_login():
     p = request.path or "/"
     if p.startswith("/static/") or p in [
-        "/bootstrap",
         "/login",
-        "/register",
-        "/verify-email",
-        "/forgot-password",
-        "/reset-password",
         "/health",
         "/auth/google/start",
         "/auth/google/callback",
         "/api/health",
         "/api/ping",
-        "/app.webmanifest",
-        "/sw.js",
     ]:
         return None
     if not current_user():
@@ -2110,34 +1450,6 @@ def _guard_login():
     return None
 
 
-@bp.route("/bootstrap", methods=["GET", "POST"])
-def bootstrap():
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    if not needs_bootstrap(auth_db):
-        return redirect(url_for("web.login"))
-    if not is_localhost_addr(request.remote_addr):
-        abort(403)
-    if request.method == "POST":
-        if bool(current_app.config.get("READ_ONLY", False)):
-            abort(403)
-        credentials = bootstrap_dev_user(
-            auth_db,
-            tenant_id=str(current_app.config.get("TENANT_DEFAULT", "KUKANILEA")),
-            tenant_name=str(
-                current_app.config.get(
-                    "TENANT_NAME", current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
-                )
-            ),
-        )
-        return _render_base(
-            render_template_string(HTML_BOOTSTRAP_DONE, credentials=credentials),
-            active_tab="upload",
-        )
-    return _render_base(
-        render_template_string(HTML_BOOTSTRAP_START), active_tab="upload"
-    )
-
-
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     auth_db: AuthDB = current_app.extensions["auth_db"]
@@ -2147,236 +1459,26 @@ def login():
         u = (request.form.get("username") or "").strip().lower()
         pw = (request.form.get("password") or "").strip()
         if not u or not pw:
-            error = "Bitte Login und Passwort eingeben."
+            error = "Bitte Username und Passwort eingeben."
         else:
-            user = auth_db.get_user_for_login(u)
-            if user and verify_password(pw, user.password_hash):
-                if user.email and not int(user.email_verified or 0):
-                    error = "E-Mail ist noch nicht verifiziert."
-                    return _render_base(
-                        render_template_string(HTML_LOGIN, error=error),
-                        active_tab="upload",
-                    )
+            user = auth_db.get_user(u)
+            if user and user.password_hash == hash_password(pw):
                 memberships = auth_db.get_memberships(u)
-                if not memberships and user.username != u:
-                    memberships = auth_db.get_memberships(user.username)
-                if not memberships:
-                    fallback = _ensure_default_membership(auth_db, user.username)
-                    if fallback:
-                        memberships = [fallback]
                 if not memberships:
                     error = "Keine Mandanten-Zuordnung gefunden."
                 else:
                     membership = memberships[0]
-                    login_user(user.username, membership.role, membership.tenant_id)
+                    login_user(u, membership.role, membership.tenant_id)
                     _audit(
                         "login",
-                        target=user.username,
+                        target=u,
                         meta={"role": membership.role, "tenant": membership.tenant_id},
                     )
-                    try:
-                        record_activation_milestone(
-                            tenant_id=str(membership.tenant_id or ""),
-                            actor_user_id=str(user.username or ""),
-                            milestone="first_login",
-                            source="auth/login",
-                            request_id=str(getattr(g, "request_id", "")),
-                        )
-                    except Exception:
-                        pass
                     return redirect(nxt or url_for("web.index"))
             else:
                 error = "Login fehlgeschlagen."
     return _render_base(
         render_template_string(HTML_LOGIN, error=error), active_tab="upload"
-    )
-
-
-def _username_from_email(auth_db: AuthDB, email: str) -> str:
-    base = re.sub(r"[^a-z0-9._-]+", "_", email.split("@", 1)[0].lower()).strip("_")
-    if not base:
-        base = "user"
-    candidate = base[:48]
-    idx = 1
-    while auth_db.get_user(candidate) is not None:
-        idx += 1
-        candidate = f"{base[:40]}_{idx}"
-    return candidate
-
-
-@bp.route("/register", methods=["GET", "POST"])
-def register():
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    error = ""
-    info = ""
-    local_code = ""
-    if request.method == "POST":
-        if bool(current_app.config.get("READ_ONLY", False)):
-            error = "Read-only mode aktiv."
-        else:
-            email = _normalize_email(request.form.get("email") or "")
-            password = (request.form.get("password") or "").strip()
-            password_confirm = (request.form.get("password_confirm") or "").strip()
-            if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-                error = "Bitte eine gültige E-Mail eingeben."
-            elif len(password) < 8:
-                error = "Passwort muss mindestens 8 Zeichen haben."
-            elif password != password_confirm:
-                error = "Passwörter stimmen nicht überein."
-            elif auth_db.get_user_by_email(email):
-                error = "E-Mail ist bereits registriert."
-            else:
-                now = _now_iso()
-                code = _generate_numeric_code(6)
-                code_hash = _hash_code(code)
-                expires = (
-                    (datetime.now(UTC) + timedelta(minutes=15))
-                    .replace(tzinfo=None)
-                    .isoformat(timespec="seconds")
-                )
-                username = _username_from_email(auth_db, email)
-                auth_db.create_user(
-                    username=username,
-                    password_hash=hash_password(password),
-                    created_at=now,
-                    email=email,
-                    email_verified=0,
-                )
-                auth_db.set_email_verification_code(username, code_hash, expires, now)
-                default_tenant = str(
-                    current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
-                )
-                auth_db.upsert_tenant(default_tenant, default_tenant, now)
-                auth_db.upsert_membership(username, default_tenant, "OPERATOR", now)
-                auth_db.add_outbox(
-                    tenant_id=default_tenant,
-                    kind="verify_email",
-                    recipient_redacted=_redact_email(email),
-                    subject="Bestätigungscode",
-                    body=f"Code: {code}",
-                    created_at=now,
-                )
-                info = "Registrierung gespeichert. Code in lokaler Outbox."
-                if _should_show_local_email_code():
-                    local_code = code
-    return _render_base(
-        render_template_string(
-            HTML_REGISTER, error=error, info=info, local_code=local_code
-        ),
-        active_tab="upload",
-    )
-
-
-@bp.route("/verify-email", methods=["GET", "POST"])
-def verify_email():
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    error = ""
-    info = ""
-    if request.method == "POST":
-        if bool(current_app.config.get("READ_ONLY", False)):
-            error = "Read-only mode aktiv."
-        else:
-            email = _normalize_email(request.form.get("email") or "")
-            code = (request.form.get("code") or "").strip()
-            if not email or not code:
-                error = "E-Mail und Code sind erforderlich."
-            else:
-                username = auth_db.get_user_by_email_verify_code(
-                    email, _hash_code(code), _now_iso()
-                )
-                if not username:
-                    error = "Code ungültig oder abgelaufen."
-                else:
-                    auth_db.mark_email_verified(username, _now_iso())
-                    info = "E-Mail bestätigt. Du kannst dich jetzt einloggen."
-    return _render_base(
-        render_template_string(HTML_VERIFY_EMAIL, error=error, info=info),
-        active_tab="upload",
-    )
-
-
-@bp.route("/forgot-password", methods=["GET", "POST"])
-def forgot_password():
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    error = ""
-    info = ""
-    local_code = ""
-    if request.method == "POST":
-        if bool(current_app.config.get("READ_ONLY", False)):
-            error = "Read-only mode aktiv."
-        else:
-            email = _normalize_email(request.form.get("email") or "")
-            if not email:
-                error = "Bitte E-Mail eingeben."
-            else:
-                user = auth_db.get_user_by_email(email)
-                now = _now_iso()
-                if user:
-                    code = _generate_numeric_code(6)
-                    expires = (
-                        (datetime.now(UTC) + timedelta(minutes=15))
-                        .replace(tzinfo=None)
-                        .isoformat(timespec="seconds")
-                    )
-                    auth_db.set_password_reset_code(
-                        email, _hash_code(code), expires, now
-                    )
-                    auth_db.add_outbox(
-                        tenant_id=str(
-                            current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
-                        ),
-                        kind="reset_password",
-                        recipient_redacted=_redact_email(email),
-                        subject="Reset-Code",
-                        body=f"Code: {code}",
-                        created_at=now,
-                    )
-                    if _should_show_local_email_code():
-                        local_code = code
-                info = "Wenn der Account existiert, wurde ein Reset-Code erzeugt."
-    return _render_base(
-        render_template_string(
-            HTML_FORGOT_PASSWORD, error=error, info=info, local_code=local_code
-        ),
-        active_tab="upload",
-    )
-
-
-@bp.route("/reset-password", methods=["GET", "POST"])
-def reset_password():
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    error = ""
-    info = ""
-    if request.method == "POST":
-        if bool(current_app.config.get("READ_ONLY", False)):
-            error = "Read-only mode aktiv."
-        else:
-            email = _normalize_email(request.form.get("email") or "")
-            code = (request.form.get("code") or "").strip()
-            password = (request.form.get("password") or "").strip()
-            password_confirm = (request.form.get("password_confirm") or "").strip()
-            if not email or not code:
-                error = "E-Mail und Code sind erforderlich."
-            elif len(password) < 8:
-                error = "Passwort muss mindestens 8 Zeichen haben."
-            elif password != password_confirm:
-                error = "Passwörter stimmen nicht überein."
-            else:
-                username = auth_db.get_user_by_reset_code(
-                    email, _hash_code(code), _now_iso()
-                )
-                if not username:
-                    error = "Code ungültig oder abgelaufen."
-                else:
-                    auth_db.reset_password(
-                        username=username,
-                        password_hash=hash_password(password),
-                        now_iso=_now_iso(),
-                    )
-                    info = "Passwort aktualisiert. Bitte einloggen."
-    return _render_base(
-        render_template_string(HTML_RESET_PASSWORD, error=error, info=info),
-        active_tab="upload",
     )
 
 
@@ -2391,18 +1493,18 @@ def google_start():
                 "info",
                 "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET.",
             ),
-            active_tab="postfach",
+            active_tab="mail",
         )
     return _render_base(
         _card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."),
-        active_tab="postfach",
+        active_tab="mail",
     )
 
 
 @bp.get("/auth/google/callback")
 def google_callback():
     return _render_base(
-        _card("info", "Google OAuth Callback (Stub)."), active_tab="postfach"
+        _card("info", "Google OAuth Callback (Stub)."), active_tab="mail"
     )
 
 
@@ -2447,566 +1549,9 @@ def _weather_adapter(message: str) -> str:
 ORCHESTRATOR = Orchestrator(core, weather_adapter=_weather_adapter)
 _DEV_STATUS = {"index": None, "scan": None, "llm": None, "db": None}
 
-_JOB_TRACKER_LOCK = threading.Lock()
-_JOB_TRACKERS: dict[str, dict[str, Any]] = {
-    "index": {},
-    "scan": {},
-    "import": {},
-    "llm": {},
-}
-_AI_STATUS_CACHE_LOCK = threading.Lock()
-_AI_STATUS_CACHE: dict[str, dict[str, Any]] = {}
-
-
-def _invalidate_ai_status_cache() -> None:
-    with _AI_STATUS_CACHE_LOCK:
-        _AI_STATUS_CACHE.clear()
-
-
-def _job_result_summary(result: Any) -> Any:
-    if isinstance(result, dict):
-        keep = (
-            "status",
-            "ok",
-            "message",
-            "imported",
-            "processed",
-            "count",
-            "intent",
-            "reason",
-        )
-        summary: dict[str, Any] = {}
-        for key in keep:
-            if key in result:
-                summary[key] = result.get(key)
-        return summary or {"keys": sorted(result.keys())[:8]}
-    if isinstance(result, str | int | float | bool) or result is None:
-        return result
-    return str(type(result).__name__)
-
-
-def _job_tracker_start(job_name: str) -> float:
-    started_monotonic = time.monotonic()
-    started_at = _now_iso()
-    with _JOB_TRACKER_LOCK:
-        slot = _JOB_TRACKERS.setdefault(job_name, {})
-        slot["state"] = "running"
-        slot["started_at"] = started_at
-        slot["finished_at"] = None
-        slot["last_error"] = ""
-        slot["last_duration_ms"] = None
-    return started_monotonic
-
-
-def _job_tracker_finish(
-    job_name: str,
-    started_monotonic: float,
-    *,
-    result: Any = None,
-    error: str = "",
-) -> None:
-    duration_ms = int(max(0.0, (time.monotonic() - started_monotonic) * 1000))
-    with _JOB_TRACKER_LOCK:
-        slot = _JOB_TRACKERS.setdefault(job_name, {})
-        slot["state"] = "error" if error else "idle"
-        slot["finished_at"] = _now_iso()
-        slot["last_duration_ms"] = duration_ms
-        slot["last_error"] = str(error or "")
-        slot["last_result"] = _job_result_summary(result)
-        slot["runs"] = int(slot.get("runs") or 0) + 1
-
-
-def _job_tracker_snapshot() -> dict[str, dict[str, Any]]:
-    with _JOB_TRACKER_LOCK:
-        out: dict[str, dict[str, Any]] = {}
-        for name, slot in _JOB_TRACKERS.items():
-            out[name] = {
-                "state": str(slot.get("state") or "idle"),
-                "started_at": str(slot.get("started_at") or ""),
-                "finished_at": str(slot.get("finished_at") or ""),
-                "last_duration_ms": (
-                    int(slot.get("last_duration_ms"))
-                    if slot.get("last_duration_ms") not in (None, "")
-                    else None
-                ),
-                "last_error": str(slot.get("last_error") or ""),
-                "last_result": slot.get("last_result"),
-                "runs": int(slot.get("runs") or 0),
-            }
-        return out
-
-
-def _queue_status_snapshot() -> dict[str, int]:
-    items_meta = list_pending() or []
-    stats = {"total": 0, "analyzing": 0, "ready": 0, "error": 0}
-    stats["total"] = len(items_meta)
-    for item in items_meta:
-        status = str(item.get("status") or "").strip().upper()
-        if status in {"ANALYZING", "RUNNING", "PENDING"}:
-            stats["analyzing"] += 1
-        elif status in {"DONE", "READY"}:
-            stats["ready"] += 1
-        elif status in {"ERROR", "FAILED"}:
-            stats["error"] += 1
-    return stats
-
-
-def _ocr_status_snapshot(tenant_id: str) -> dict[str, Any]:
-    tenant = _norm_tenant(tenant_id)
-    stats = {
-        "available": False,
-        "pending": 0,
-        "processing": 0,
-        "failed_24h": 0,
-        "last_event_at": "",
-    }
-    con = sqlite3.connect(str(_core_db_path()))
-    con.row_factory = sqlite3.Row
-    try:
-        tables = con.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='autonomy_ocr_jobs'"
-        ).fetchone()
-        if not tables:
-            return stats
-        stats["available"] = True
-        row = con.execute(
-            """
-            SELECT
-              SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count,
-              SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS processing_count,
-              MAX(COALESCE(finished_at, started_at, created_at, '')) AS latest_event
-            FROM autonomy_ocr_jobs
-            WHERE tenant_id=?
-            """,
-            (tenant,),
-        ).fetchone()
-        if row:
-            stats["pending"] = int(row["pending_count"] or 0)
-            stats["processing"] = int(row["processing_count"] or 0)
-            stats["last_event_at"] = str(row["latest_event"] or "")
-        since = (
-            (datetime.now(UTC) - timedelta(hours=24))
-            .replace(tzinfo=None)
-            .isoformat(timespec="seconds")
-        )
-        failed_row = con.execute(
-            """
-            SELECT COUNT(*) AS c
-            FROM autonomy_ocr_jobs
-            WHERE tenant_id=? AND status='failed' AND created_at>=?
-            """,
-            (tenant, since),
-        ).fetchone()
-        stats["failed_24h"] = int((failed_row["c"] if failed_row else 0) or 0)
-        return stats
-    except Exception:
-        return stats
-    finally:
-        con.close()
-
 
 def _mock_generate(prompt: str) -> str:
     return f"[mocked] {prompt.strip()[:200]}"
-
-
-@bp.get("/api/ai/status")
-@login_required
-def api_ai_status():
-    tenant_id = current_tenant()
-    user_id = str(current_user() or "")
-    role = current_role()
-    cache_key = f"{tenant_id}|{user_id}|{role}"
-    ttl_s = max(0, int(current_app.config.get("AI_STATUS_CACHE_TTL_SECONDS", 15) or 15))
-    bypass_cache = current_app.config.get("TESTING", False) or request.args.get(
-        "fresh", ""
-    ) in {"1", "true", "yes"}
-    if (not bypass_cache) and ttl_s > 0:
-        with _AI_STATUS_CACHE_LOCK:
-            cached = _AI_STATUS_CACHE.get(cache_key)
-            if cached:
-                age = float(time.monotonic() - float(cached.get("ts", 0.0)))
-                if age <= ttl_s and isinstance(cached.get("payload"), dict):
-                    return jsonify(cached["payload"])
-
-    fallback_models = ai_configured_ollama_models(current_app.config)[1:]
-    bootstrap_state = ai_load_bootstrap_state(current_app.config)
-    provider_order = provider_order_from_env()
-    provider_specs = provider_specs_public(
-        order=provider_order,
-        tenant_id=tenant_id,
-        role=role,
-    )
-    health = provider_health_snapshot(
-        order=provider_order,
-        tenant_id=tenant_id,
-        role=role,
-    )
-    effective_policy = provider_effective_policy(
-        tenant_id=tenant_id,
-        role=role,
-    )
-    any_available = bool(
-        is_any_provider_available(
-            order=provider_order,
-            tenant_id=tenant_id,
-            role=role,
-        )
-    )
-    base_url = str(current_app.config.get("OLLAMA_BASE_URL") or "").strip() or None
-    ollama_available = bool(ollama_is_available(base_url=base_url, timeout_s=5))
-    models: list[str] = []
-    if ollama_available:
-        try:
-            models = ollama_list_models(base_url=base_url, timeout_s=5)
-        except Exception:
-            models = []
-    try:
-        personal_notes = ai_count_personal_notes(
-            tenant_id=tenant_id,
-            user_id=user_id,
-        )
-    except Exception:
-        personal_notes = 0
-    modelpack_file = Path(
-        str(current_app.config.get("AI_BOOTSTRAP_MODELPACK_FILE") or "")
-    ).expanduser()
-    modelpack_exists = bool(modelpack_file and modelpack_file.exists())
-    modelpack_size = (
-        int(modelpack_file.stat().st_size)
-        if modelpack_exists and modelpack_file.is_file()
-        else 0
-    )
-    payload = {
-        "ok": True,
-        "available": any_available,
-        "ollama_available": ollama_available,
-        "models": models,
-        "model_default": str(current_app.config.get("OLLAMA_MODEL") or ""),
-        "model_fallbacks": fallback_models,
-        "model_bootstrap_plan": ai_configured_ollama_models(current_app.config),
-        "provider_order": provider_order,
-        "provider_specs": provider_specs,
-        "provider_health": health.get("providers") if isinstance(health, dict) else [],
-        "provider_policy_effective": effective_policy,
-        "any_provider_available": any_available,
-        "bootstrap_state": bootstrap_state,
-        "personal_memory_note_count": int(personal_notes),
-        "modelpack": {
-            "enabled": bool(current_app.config.get("AI_BOOTSTRAP_USE_MODELPACK", True)),
-            "file": str(modelpack_file),
-            "exists": modelpack_exists,
-            "size_bytes": modelpack_size,
-        },
-    }
-    if (not bypass_cache) and ttl_s > 0:
-        with _AI_STATUS_CACHE_LOCK:
-            _AI_STATUS_CACHE[cache_key] = {"ts": time.monotonic(), "payload": payload}
-    return jsonify(payload)
-
-
-@bp.get("/api/ai/personal-memory")
-@login_required
-def api_ai_personal_memory_list():
-    rows = ai_list_personal_notes(
-        tenant_id=current_tenant(),
-        user_id=str(current_user() or ""),
-        limit=50,
-    )
-    return jsonify({"ok": True, "notes": rows, "count": len(rows)})
-
-
-@bp.post("/api/ai/personal-memory")
-@login_required
-def api_ai_personal_memory_add():
-    payload = request.get_json(silent=True) or {}
-    note = str((payload.get("note") if isinstance(payload, dict) else "") or "").strip()
-    if not note:
-        return json_error("validation_error", "Notiz fehlt.", status=400)
-    if len(note) > 800:
-        return json_error(
-            "validation_error", "Notiz zu lang (max. 800 Zeichen).", status=400
-        )
-
-    note_id = ai_add_personal_note(
-        tenant_id=current_tenant(),
-        user_id=str(current_user() or ""),
-        note=note,
-        source="api",
-    )
-    _invalidate_ai_status_cache()
-    return jsonify({"ok": True, "id": note_id})
-
-
-@bp.post("/api/ai/bootstrap/run")
-@login_required
-def api_ai_bootstrap_run():
-    role = current_role()
-    if role not in {"DEV", "OWNER_ADMIN"}:
-        return json_error("forbidden", "Nicht erlaubt.", status=403)
-    result = ai_run_bootstrap_now(current_app.config, force=True)
-    _invalidate_ai_status_cache()
-    return jsonify({"ok": bool(result.get("ok")), "result": result})
-
-
-@bp.post("/api/ai/modelpack/export")
-@login_required
-def api_ai_modelpack_export():
-    role = current_role()
-    if role not in {"DEV", "OWNER_ADMIN"}:
-        return json_error("forbidden", "Nicht erlaubt.", status=403)
-
-    payload = request.get_json(silent=True) or {}
-    export_dir = Path(
-        str(
-            current_app.config.get("AI_BOOTSTRAP_MODELPACK_EXPORT_DIR")
-            or (current_app.config["USER_DATA_ROOT"] / "modelpacks")
-        )
-    ).expanduser()
-    export_dir.mkdir(parents=True, exist_ok=True)
-    default_name = datetime.now().strftime("ollama-modelpack-%Y%m%d-%H%M%S.tar.gz")
-    raw_path = str(
-        (payload.get("pack_path") if isinstance(payload, dict) else "") or ""
-    )
-    pack_path = (
-        Path(raw_path).expanduser() if raw_path.strip() else (export_dir / default_name)
-    )
-
-    try:
-        result = ai_create_model_pack(pack_path=pack_path)
-    except FileNotFoundError as exc:
-        return json_error("modelpack_error", str(exc), status=400)
-    except Exception as exc:
-        return json_error("modelpack_error", str(exc), status=500)
-    _invalidate_ai_status_cache()
-    return jsonify({"ok": True, "result": result})
-
-
-@bp.post("/api/ai/modelpack/import")
-@login_required
-def api_ai_modelpack_import():
-    role = current_role()
-    if role not in {"DEV", "OWNER_ADMIN"}:
-        return json_error("forbidden", "Nicht erlaubt.", status=403)
-
-    payload = request.get_json(silent=True) or {}
-    raw_path = str(
-        (payload.get("pack_path") if isinstance(payload, dict) else "") or ""
-    )
-    if raw_path.strip():
-        pack_path = Path(raw_path).expanduser()
-    else:
-        pack_path = Path(
-            str(current_app.config.get("AI_BOOTSTRAP_MODELPACK_FILE") or "")
-        ).expanduser()
-
-    try:
-        result = ai_import_model_pack(pack_path=pack_path)
-    except FileNotFoundError as exc:
-        return json_error("modelpack_error", str(exc), status=400)
-    except ValueError as exc:
-        return json_error("modelpack_error", str(exc), status=400)
-    except Exception as exc:
-        return json_error("modelpack_error", str(exc), status=500)
-    _invalidate_ai_status_cache()
-    return jsonify({"ok": True, "result": result})
-
-
-@bp.get("/api/agent/notifications")
-@login_required
-def api_agent_notifications():
-    from app.database import get_db_connection
-    conn = get_db_connection()
-    cursor = conn.execute("SELECT * FROM agent_notifications WHERE status='new' ORDER BY created_at DESC LIMIT 5")
-    rows = cursor.fetchall()
-    notifications = [dict(r) for r in rows]
-    conn.close()
-    return jsonify(ok=True, notifications=notifications)
-
-
-@bp.get("/api/status")
-@login_required
-def api_status():
-    tenant_id = current_tenant() or str(
-        current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
-    )
-    jobs = _job_tracker_snapshot()
-    queue = _queue_status_snapshot()
-    ocr = _ocr_status_snapshot(tenant_id)
-    startup_summary = {}
-    try:
-        from app.startup_maintenance import load_startup_maintenance_state
-
-        startup_state = load_startup_maintenance_state(current_app.config)
-        startup_summary = {
-            "status": str(startup_state.get("status") or ""),
-            "ok": bool(startup_state.get("ok", False)),
-            "finished_at": str(startup_state.get("finished_at") or ""),
-            "steps": [
-                {
-                    "name": str(step.get("name") or ""),
-                    "ok": bool(step.get("ok", False)),
-                }
-                for step in (startup_state.get("steps") or [])
-                if isinstance(step, dict)
-            ],
-        }
-    except Exception:
-        startup_summary = {}
-    running_total = sum(1 for item in jobs.values() if item.get("state") == "running")
-    running_total += int(queue.get("analyzing") or 0)
-    running_total += int(ocr.get("processing") or 0)
-    return jsonify(
-        {
-            "ok": True,
-            "as_of": _now_iso(),
-            "tenant_id": tenant_id,
-            "running_total": running_total,
-            "jobs": jobs,
-            "queue": queue,
-            "ocr": ocr,
-            "startup_maintenance": startup_summary,
-        }
-    )
-
-
-@bp.route("/api/ai/chat", methods=["POST"])
-@login_required
-def api_ai_chat():
-    payload = request.get_json(silent=True) or {}
-    msg = (
-        (payload.get("msg") if isinstance(payload, dict) else None)
-        or (payload.get("q") if isinstance(payload, dict) else None)
-        or request.form.get("msg")
-        or request.form.get("q")
-        or request.form.get("message")
-        or ""
-    ).strip()
-    if not msg:
-        return json_error("empty_query", "Leer.", status=400)
-    if len(msg) > 4000:
-        return json_error(
-            "too_long", "Nachricht ist zu lang (max. 4000 Zeichen).", status=400
-        )
-
-    # v1.2 Hidden Feature: Monitor for anomalies in background
-    from app.ai.monitoring import analyze_user_behavior
-    import threading
-    threading.Thread(target=analyze_user_behavior, args=(str(current_user() or "anon"), "chat_query", {"msg": msg})).start()
-
-    try:
-        result = ai_process_message(
-            tenant_id=current_tenant(),
-            user_id=str(current_user() or "system"),
-            user_message=msg,
-            read_only=bool(current_app.config.get("READ_ONLY", False)),
-            role=current_role(),
-        )
-    except Exception as exc:
-        import traceback
-        tb = traceback.format_exc()
-        logger.error(f"AI Chat Error: {exc}\n{tb}")
-        return json_error("ai_error", f"KI-Fehler: {str(exc)}", status=500, details={"traceback": tb})
-
-    tool_used = [str(v) for v in (result.get("tool_used") or []) if str(v).strip()]
-    pending_confirmation = result.get("pending_confirmation")
-    actions = [{"type": "tool_call", "name": name} for name in tool_used[:8]]
-    if isinstance(pending_confirmation, dict):
-        actions.append(
-            {
-                "type": "confirmation_required",
-                "name": str(pending_confirmation.get("tool_name") or ""),
-            }
-        )
-    response_text = str(result.get("response") or "")
-    out = {
-        "ok": True,
-        "status": str(result.get("status") or "error"),
-        "conversation_id": result.get("conversation_id"),
-        "tool_used": tool_used,
-        "pending_confirmation": pending_confirmation,
-        "response": response_text,
-        "message": response_text,
-        "actions": actions,
-        "results": [],
-        "suggestions": [],
-    }
-    if request.headers.get("HX-Request"):
-        return render_template_string(
-            "<div class='rounded-xl border border-slate-700 p-2 text-sm'>{{text}}</div>",
-            text=response_text,
-        )
-    return jsonify(out)
-
-
-@bp.route("/api/ai/confirm_tool", methods=["POST"])
-@login_required
-def api_ai_confirm_tool():
-    payload = request.get_json(silent=True) or {}
-    token = (
-        (payload.get("token") if isinstance(payload, dict) else None)
-        or request.form.get("token")
-        or ""
-    ).strip()
-    if not token:
-        return json_error("validation_error", "token fehlt.", status=400)
-
-    try:
-        result = ai_confirm_tool_call(
-            tenant_id=current_tenant(),
-            user_id=str(current_user() or "system"),
-            confirmation_token=token,
-            read_only=bool(current_app.config.get("READ_ONLY", False)),
-        )
-    except Exception as exc:
-        return json_error("ai_error", f"Bestaetigungsfehler: {exc}", status=500)
-
-    return jsonify(
-        {
-            "ok": result.get("status") != "error",
-            "status": str(result.get("status") or "error"),
-            "conversation_id": result.get("conversation_id"),
-            "tool_used": [str(v) for v in (result.get("tool_used") or [])],
-            "response": str(result.get("response") or ""),
-            "message": str(result.get("response") or ""),
-            "result": result.get("result") or {},
-        }
-    )
-
-
-@bp.route("/api/ai/feedback", methods=["POST"])
-@login_required
-def api_ai_feedback():
-    payload = request.get_json(silent=True) or {}
-    conversation_id = (
-        (payload.get("conversation_id") if isinstance(payload, dict) else None)
-        or request.form.get("conversation_id")
-        or ""
-    ).strip()
-    rating = (
-        (payload.get("rating") if isinstance(payload, dict) else None)
-        or request.form.get("rating")
-        or ""
-    ).strip()
-    if not conversation_id or rating not in {"positive", "negative"}:
-        return json_error("validation_error", "conversation_id/rating ungueltig.", 400)
-    try:
-        feedback_id = ai_add_feedback(
-            tenant_id=current_tenant(),
-            conversation_id=conversation_id,
-            rating=rating,
-        )
-        
-        # v1.2 Hidden Feature: Convert negative feedback to Dev-Task
-        if rating == "negative":
-            from app.ai.monitoring import _create_dev_task
-            _create_dev_task(f"User Feedback Negative: {conversation_id}", f"User {current_user()} marked conversation {conversation_id} as bad.")
-            
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return json_error("not_found", "Konversation nicht gefunden.", status=404)
-        return json_error("validation_error", "Feedback ungueltig.", status=400)
-    return jsonify({"ok": True, "feedback_id": feedback_id})
 
 
 @bp.route("/api/chat", methods=["POST"])
@@ -3023,120 +1568,11 @@ def api_chat():
 
     if not msg:
         return json_error("empty_query", "Leer.", status=400)
-    if len(msg) > 4000:
-        return json_error(
-            "too_long", "Nachricht ist zu lang (max. 4000 Zeichen).", status=400
-        )
 
     response = agent_answer(msg)
-    try:
-        record_activation_milestone(
-            tenant_id=str(current_tenant() or ""),
-            actor_user_id=str(current_user() or ""),
-            milestone="first_ai_summary",
-            source="ai/chat",
-            request_id=str(getattr(g, "request_id", "")),
-        )
-    except Exception:
-        pass
     if request.headers.get("HX-Request"):
-        return render_template_string(
-            "<div class='rounded-xl border border-slate-700 p-2 text-sm'>{{text}}</div>",
-            text=str(response.get("text") or ""),
-        )
+        return f"<div class='text-sm'>{response.get('text','')}</div>"
     return jsonify(response)
-
-
-@bp.route("/api/intake/triage", methods=["POST"])
-@login_required
-def api_intake_triage():
-    payload = request.get_json(silent=True) or {}
-    text = (
-        (payload.get("text") if isinstance(payload, dict) else None)
-        or (payload.get("message") if isinstance(payload, dict) else None)
-        or request.form.get("text")
-        or request.form.get("message")
-        or ""
-    )
-    message = str(text or "").strip()
-    if not message:
-        return json_error("validation_error", "Text ist erforderlich.", status=400)
-    if len(message) > 10000:
-        return json_error("validation_error", "Text ist zu lang.", status=400)
-
-    metadata_raw = payload.get("metadata") if isinstance(payload, dict) else {}
-    metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
-
-    try:
-        triage = triage_message(message, metadata)
-    except ValueError:
-        return json_error("validation_error", "Text ist erforderlich.", status=400)
-
-    tenant_id = str(current_tenant() or "")
-    request_id = str(getattr(g, "request_id", ""))
-    actor = str(current_user() or "")
-    try:
-        event_append(
-            event_type="intake_triaged",
-            entity_type="intake",
-            entity_id=entity_id_int(
-                f"{tenant_id}:{request_id}:{triage.get('label')}:{len(message)}"
-            ),
-            payload={
-                "source": "intake/triage",
-                "tenant_id": tenant_id,
-                "actor_user_id": actor,
-                "request_id": request_id,
-                "label": str(triage.get("label") or "unknown"),
-                "confidence": float(triage.get("confidence") or 0.0),
-                "queue": str((triage.get("route") or {}).get("queue") or ""),
-                "owner_role": str((triage.get("route") or {}).get("owner_role") or ""),
-                "priority": str((triage.get("route") or {}).get("priority") or ""),
-                "text_len": len(message),
-                "metadata_keys": sorted(
-                    [str(k) for k in metadata.keys() if str(k or "").strip()]
-                )[:12],
-            },
-        )
-    except Exception:
-        pass
-
-    return jsonify(
-        {
-            "ok": True,
-            "label": str(triage.get("label") or "unknown"),
-            "confidence": float(triage.get("confidence") or 0.0),
-            "summary": str(triage.get("summary") or ""),
-            "route": triage.get("route") or {},
-            "signals": [str(v) for v in (triage.get("signals") or [])],
-        }
-    )
-
-
-@bp.route("/api/reports/evidence-pack/<entity_id>", methods=["GET"])
-@login_required
-def api_reports_evidence_pack(entity_id: str):
-    entity_type = str(request.args.get("entity_type") or "lead").strip().lower()
-    try:
-        pack = build_evidence_pack(
-            tenant_id=str(current_tenant() or ""),
-            entity_type=entity_type,
-            entity_id=str(entity_id or ""),
-            limit=max(1, min(int(request.args.get("limit") or 250), 500)),
-        )
-    except ValueError:
-        return json_error(
-            "validation_error", "Ungültige Evidence-Pack Parameter.", status=400
-        )
-    except Exception as exc:
-        return json_error(
-            "evidence_pack_error", f"Evidence-Pack Fehler: {exc}", status=500
-        )
-    if not pack:
-        return json_error(
-            "not_found", "Evidence-Pack Entität nicht gefunden.", status=404
-        )
-    return jsonify({"ok": True, "evidence_pack": pack})
 
 
 @bp.post("/api/search")
@@ -3189,7 +1625,89 @@ def api_open():
     return jsonify(ok=True, token=new_token)
 
 
-@bp.post("/api/customer")
+@bp.route("/admin/mesh")
+@login_required
+@require_role(["DEV", "ADMIN"])
+def mesh():
+    # Simulate some mesh nodes for the UI demo
+    nodes = [
+        {"id": "HUB-ZIMA-01", "name": "Büro Hub", "type": "ZimaBlade", "status": "ONLINE", "ip": "192.168.1.50", "sync": "100%", "conflicts": 0},
+        {"id": "TABLET-GESELLE-01", "name": "Tablet Geselle", "type": "iPad/Web", "status": "ONLINE", "ip": "192.168.1.112", "sync": "98%", "conflicts": 3},
+        {"id": "LAPTOP-MEISTER", "name": "Meister Laptop", "type": "MacBook", "status": "OFFLINE", "ip": "192.168.1.10", "sync": "75%", "conflicts": 1},
+    ]
+    return _render_base(
+        render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh"
+    )
+
+
+HTML_MESH = r"""
+<div class="space-y-6">
+    <div class="flex justify-between items-end">
+        <div>
+            <h1 class="text-2xl font-bold">📡 Global Health Monitor</h1>
+            <p class="muted">P2P Mesh-Netzwerk & CRDT Sync Status</p>
+        </div>
+        <div class="badge px-4 py-2 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+            Mesh-Status: Stabil
+        </div>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6">
+        {% for node in nodes %}
+        <div class="card p-6 space-y-4">
+            <div class="flex justify-between items-start">
+                <div class="h-12 w-12 rounded-xl bg-slate-800 flex items-center justify-center text-xl">
+                    {{ '🖥️' if node.type == 'ZimaBlade' else '📱' if node.type == 'iPad/Web' else '💻' }}
+                </div>
+                <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-800 {{ 'text-emerald-500' if node.status == 'ONLINE' else 'text-rose-500' }}">
+                    {{ node.status }}
+                </span>
+            </div>
+            <div>
+                <h3 class="font-bold">{{ node.name }}</h3>
+                <p class="text-xs muted">{{ node.type }} • {{ node.ip }}</p>
+            </div>
+            <div class="pt-4 border-t border-slate-800 space-y-2">
+                <div class="flex justify-between text-xs">
+                    <span class="muted">Synchronisation</span>
+                    <span>{{ node.sync }}</span>
+                </div>
+                <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                    <div class="h-full bg-indigo-500" style="width: {{ node.sync }};"></div>
+                </div>
+                <div class="flex justify-between text-xs pt-2">
+                    <span class="muted">Automatische Konfliktlösungen (CRDT)</span>
+                    <span class="{{ 'text-amber-500 font-bold' if node.conflicts > 0 else 'muted' }}">{{ node.conflicts }}</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="card p-6">
+        <h3 class="font-bold mb-4">📜 Letzte Sync-Ereignisse</h3>
+        <div class="space-y-3">
+            <div class="flex items-center gap-4 text-sm p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                <div class="h-2 w-2 rounded-full bg-amber-500"></div>
+                <div class="flex-1">
+                    <span class="font-semibold">Konflikt gelöst:</span> Feld "customer_name" bei Kunde K123 (Hans Mueller)
+                </div>
+                <div class="text-xs muted">Vor 5 Min.</div>
+                <div class="badge">LWW-Logic</div>
+            </div>
+             <div class="flex items-center gap-4 text-sm p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                <div class="h-2 w-2 rounded-full bg-emerald-500"></div>
+                <div class="flex-1">
+                    <span class="font-semibold">Sync erfolgreich:</span> TABLET-GESELLE-01 → HUB-ZIMA-01
+                </div>
+                <div class="text-xs muted">Vor 12 Min.</div>
+                <div class="badge">1.2 MB</div>
+            </div>
+        </div>
+    </div>
+</div>
+"""
+
 @login_required
 @require_role("OPERATOR")
 def api_customer():
@@ -3218,185 +1736,15 @@ def api_customer():
     )
 
 
-_TASK_STATUS_BY_COLUMN = {
-    "todo": "OPEN",
-    "in_progress": "IN_PROGRESS",
-    "done": "RESOLVED",
-}
-_TASK_STATUSES_ALL = ("OPEN", "IN_PROGRESS", "RESOLVED", "DISMISSED")
-
-
-def _task_read_only_response(api: bool = True):
-    if api:
-        return json_error("read_only", "Read-only mode aktiv.", status=403)
-    return _render_base(
-        _card("error", "Read-only mode aktiv."), active_tab="tasks"
-    ), 403
-
-
-def _task_mutation_guard(api: bool = True):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _task_read_only_response(api=api)
-    return None
-
-
-def _task_status_from_input(value: str) -> str | None:
-    raw = (value or "").strip()
-    if not raw:
-        return None
-    col = raw.lower()
-    if col in _TASK_STATUS_BY_COLUMN:
-        return _TASK_STATUS_BY_COLUMN[col]
-    status = raw.upper()
-    if status == "DONE":
-        return "RESOLVED"
-    if status in _TASK_STATUSES_ALL:
-        return status
-    return None
-
-
-def _task_board_items(tenant_id: str) -> dict[str, list[dict]]:
-    if not callable(task_list):
-        return {"todo": [], "in_progress": [], "done": []}
-    todo = task_list(tenant=tenant_id, status="OPEN", limit=200)  # type: ignore
-    in_progress = task_list(tenant=tenant_id, status="IN_PROGRESS", limit=200)  # type: ignore
-    done = task_list(tenant=tenant_id, status="RESOLVED", limit=200)  # type: ignore
-    return {"todo": todo, "in_progress": in_progress, "done": done}
-
-
-def _task_find(tenant_id: str, task_id: int) -> dict | None:
-    if not callable(task_list):
-        return None
-    for status in _TASK_STATUSES_ALL:
-        items = task_list(tenant=tenant_id, status=status, limit=500)  # type: ignore
-        for item in items:
-            if int(item.get("id") or 0) == int(task_id):
-                return item
-    return None
-
-
 @bp.get("/api/tasks")
 @login_required
 def api_tasks():
-    status_raw = (request.args.get("status") or "OPEN").strip()
-    if not callable(task_list):
-        return jsonify(ok=True, tasks=[])
-    status_upper = status_raw.upper()
-    tenant_id = current_tenant()
-    if status_upper in {"ALL", "KANBAN"}:
-        tasks_all = []
-        for status in _TASK_STATUSES_ALL:
-            tasks_all.extend(task_list(tenant=tenant_id, status=status, limit=200))  # type: ignore
-        return jsonify(ok=True, tasks=tasks_all)
-    status = _task_status_from_input(status_raw) or "OPEN"
-    tasks = task_list(tenant=tenant_id, status=status, limit=200)  # type: ignore
+    status = (request.args.get("status") or "OPEN").strip().upper()
+    if callable(task_list):
+        tasks = task_list(tenant=current_tenant(), status=status, limit=200)  # type: ignore
+    else:
+        tasks = []
     return jsonify(ok=True, tasks=tasks)
-
-
-@bp.post("/api/tasks/create")
-@login_required
-@require_role("OPERATOR")
-def api_tasks_create():
-    if not callable(task_create_fn):
-        return json_error(
-            "feature_unavailable", "Tasks sind nicht verfügbar.", status=501
-        )
-    guarded = _task_mutation_guard(api=True)
-    if guarded:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    title = normalize_component(payload.get("title") or "")
-    if not title:
-        return json_error("title_missing", "Titel fehlt.", status=400)
-    severity = normalize_component(payload.get("severity") or "INFO").upper() or "INFO"
-    task_type = (
-        normalize_component(payload.get("task_type") or "GENERAL").upper() or "GENERAL"
-    )
-    details = str(payload.get("details") or "").strip()
-    task_id = task_create_fn(  # type: ignore
-        tenant=current_tenant(),
-        severity=severity,
-        task_type=task_type,
-        title=title,
-        details=details,
-        created_by=current_user() or "",
-    )
-    _audit(
-        "task_create",
-        target=str(task_id),
-        meta={"tenant_id": current_tenant(), "status": "OPEN", "source": "kanban_api"},
-    )
-    try:
-        event_append(
-            event_type="task_created",
-            entity_type="task",
-            entity_id=int(task_id),
-            payload={
-                "tenant_id": current_tenant(),
-                "task_status": "OPEN",
-                "source": "kanban_api",
-            },
-        )
-    except Exception:
-        pass
-    try:
-        record_activation_milestone(
-            tenant_id=str(current_tenant() or ""),
-            actor_user_id=str(current_user() or ""),
-            milestone="first_task",
-            source="tasks/create",
-            request_id=str(getattr(g, "request_id", "")),
-            entity_ref=str(task_id),
-        )
-    except Exception:
-        pass
-    return jsonify(ok=True, task_id=int(task_id), status="OPEN")
-
-
-@bp.post("/api/tasks/<int:task_id>/move")
-@login_required
-@require_role("OPERATOR")
-def api_tasks_move(task_id: int):
-    if not callable(task_set_status_fn):
-        return json_error(
-            "feature_unavailable", "Tasks sind nicht verfügbar.", status=501
-        )
-    guarded = _task_mutation_guard(api=True)
-    if guarded:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    status = _task_status_from_input(
-        payload.get("status") or payload.get("column") or ""
-    )
-    if not status:
-        return json_error("status_invalid", "Status ungültig.", status=400)
-    changed = task_set_status_fn(  # type: ignore
-        int(task_id),
-        status,
-        resolved_by=current_user() or "",
-        tenant=current_tenant(),
-    )
-    if not changed:
-        return json_error("task_not_found", "Task nicht gefunden.", status=404)
-    _audit(
-        "task_move",
-        target=str(task_id),
-        meta={"tenant_id": current_tenant(), "status": status, "source": "kanban_api"},
-    )
-    try:
-        event_append(
-            event_type="task_moved",
-            entity_type="task",
-            entity_id=int(task_id),
-            payload={
-                "tenant_id": current_tenant(),
-                "task_status": status,
-                "source": "kanban_api",
-            },
-        )
-    except Exception:
-        pass
-    return jsonify(ok=True, task_id=int(task_id), status=status)
 
 
 @bp.get("/api/audit")
@@ -3433,33 +1781,16 @@ def api_time_projects_create():
     payload = request.get_json(silent=True) or {}
     name = (payload.get("name") or "").strip()
     description = (payload.get("description") or "").strip()
-    budget_hours = int(payload.get("budget_hours") or 0)
-    budget_cost = float(payload.get("budget_cost") or 0.0)
     try:
         project = time_project_create(  # type: ignore
             tenant_id=current_tenant(),
             name=name,
             description=description,
-            budget_hours=budget_hours,
-            budget_cost=budget_cost,
             created_by=current_user() or "",
         )
     except ValueError as exc:
         return json_error(str(exc), "Projekt konnte nicht angelegt werden.", status=400)
     _rag_enqueue("time_project", int(project.get("id") or 0), "upsert")
-    try:
-        store_entity(
-            "project",
-            int(project.get("id") or 0),
-            f"{project.get('name', '')} {project.get('description', '')}",
-            {
-                "tenant_id": current_tenant(),
-                "budget_hours": int(project.get("budget_hours") or 0),
-                "budget_cost": float(project.get("budget_cost") or 0.0),
-            },
-        )
-    except Exception:
-        pass
     return jsonify(ok=True, project=project)
 
 
@@ -3473,15 +1804,12 @@ def api_time_start():
         )
     payload = request.get_json(silent=True) or {}
     project_id = payload.get("project_id")
-    task_id = payload.get("task_id")
     note = (payload.get("note") or "").strip()
     try:
         entry = time_entry_start(  # type: ignore
             tenant_id=current_tenant(),
             user=current_user() or "",
-            user_id=None,
             project_id=int(project_id) if project_id else None,
-            task_id=int(task_id) if task_id else None,
             note=note,
         )
     except ValueError as exc:
@@ -3510,59 +1838,6 @@ def api_time_stop():
         return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
     _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
-
-
-@bp.get("/api/time/task/<int:task_id>")
-@login_required
-def api_time_task(task_id: int):
-    if not callable(time_entries_summary_by_task):
-        return json_error(
-            "feature_unavailable", "Task-Zeitsummen sind nicht verfügbar.", status=501
-        )
-    try:
-        summary = time_entries_summary_by_task(
-            tenant_id=current_tenant(), task_id=int(task_id)
-        )  # type: ignore
-    except ValueError as exc:
-        return json_error(
-            str(exc), "Task-Summe konnte nicht geladen werden.", status=400
-        )
-    return jsonify(ok=True, summary=summary)
-
-
-@bp.post("/api/ai/daily-report")
-@login_required
-@require_role("DEV")
-def api_ai_daily_report():
-    try:
-        result = daily_report(tenant_id=current_tenant())
-    except Exception as exc:
-        return json_error(
-            "ai_report_failed", f"AI Report fehlgeschlagen: {exc}", status=500
-        )
-    return jsonify(ok=True, result=result)
-
-
-@bp.get("/api/time/project/<int:project_id>")
-@login_required
-def api_time_project_summary(project_id: int):
-    if not callable(time_entries_summary_by_project):
-        return json_error(
-            "feature_unavailable", "Projekt-Summen sind nicht verfügbar.", status=501
-        )
-    try:
-        summary = time_entries_summary_by_project(
-            tenant_id=current_tenant(), project_id=int(project_id)
-        )  # type: ignore
-    except ValueError as exc:
-        return json_error(
-            str(exc), "Projekt-Summe konnte nicht geladen werden.", status=400
-        )
-    try:
-        pred = predict_budget(int(project_id), tenant_id=current_tenant())
-    except Exception:
-        pred = None
-    return jsonify(ok=True, summary=summary, prediction=pred)
 
 
 @bp.get("/api/time/entries")
@@ -3615,8 +1890,6 @@ def api_time_entry_edit():
             project_id=(
                 int(payload.get("project_id")) if payload.get("project_id") else None
             ),
-            task_id=(int(payload.get("task_id")) if payload.get("task_id") else None),
-            user_id=(int(payload.get("user_id")) if payload.get("user_id") else None),
             start_at=(payload.get("start_at") or None),
             end_at=(payload.get("end_at") or None),
             note=payload.get("note"),
@@ -3680,4891 +1953,29 @@ def api_time_export():
     return response
 
 
-def _crm_error_response(
-    exc: Exception, default_message: str, *, not_found: bool = False
-):
-    code = str(exc)
-    status = 400
-    message = default_message
-    if code == "not_found":
-        status = 404
-        code = "not_found"
-        message = "Ressource nicht gefunden."
-    elif code == "db_locked":
-        status = 503
-        code = "db_locked"
-        message = "Datenbank ist gesperrt. Bitte erneut versuchen."
-    elif code == "duplicate":
-        status = 409
-        code = "duplicate"
-        message = "Doppelter Eintrag im Tenant."
-    elif code == "read_only":
-        status = 403
-        code = "read_only"
-    elif code in {
-        "validation_error",
-        "file_required",
-        "invalid_file_type",
-        "empty_file",
-    }:
-        status = 400
-    elif not_found:
-        status = 404
-        code = "not_found"
-    else:
-        code = "validation_error"
-    return json_error(code, message, status=status)
-
-
-def _validate_iso(value: str) -> bool:
-    try:
-        datetime.fromisoformat(value)
-        return True
-    except Exception:
-        return False
-
-
-@bp.get("/api/customers")
-@login_required
-def api_customers_list():
-    if not callable(customers_list):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    limit = int(request.args.get("limit") or 100)
-    offset = int(request.args.get("offset") or 0)
-    query = (request.args.get("query") or "").strip() or None
-    items = customers_list(current_tenant(), limit=limit, offset=offset, query=query)  # type: ignore
-    return jsonify(ok=True, customers=items)
-
-
-@bp.post("/api/customers")
-@login_required
-@require_role("OPERATOR")
-def api_customers_create():
-    if not callable(customers_create):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    payload = request.get_json(silent=True) or {}
-    try:
-        cid = customers_create(  # type: ignore
-            tenant_id=current_tenant(),
-            name=payload.get("name") or "",
-            vat_id=payload.get("vat_id"),
-            notes=payload.get("notes"),
-        )
-        item = customers_get(current_tenant(), cid)  # type: ignore
-    except ValueError as exc:
-        return _crm_error_response(exc, "Kunde konnte nicht angelegt werden.")
-    try:
-        record_activation_milestone(
-            tenant_id=str(current_tenant() or ""),
-            actor_user_id=str(current_user() or ""),
-            milestone="first_customer",
-            source="crm/customers_create",
-            request_id=str(getattr(g, "request_id", "")),
-            entity_ref=str(cid),
-        )
-    except Exception:
-        pass
-    return jsonify(ok=True, customer=item)
-
-
-@bp.get("/api/customers/<customer_id>")
-@login_required
-def api_customers_get(customer_id: str):
-    if not callable(customers_get):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    try:
-        item = customers_get(current_tenant(), customer_id)  # type: ignore
-    except ValueError as exc:
-        return _crm_error_response(exc, "Kunde nicht gefunden.", not_found=True)
-    return jsonify(ok=True, customer=item)
-
-
-@bp.put("/api/customers/<customer_id>")
-@login_required
-@require_role("OPERATOR")
-def api_customers_update(customer_id: str):
-    if not callable(customers_update):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    payload = request.get_json(silent=True) or {}
-    try:
-        item = customers_update(  # type: ignore
-            current_tenant(),
-            customer_id,
-            name=payload.get("name"),
-            vat_id=payload.get("vat_id"),
-            notes=payload.get("notes"),
-        )
-    except ValueError as exc:
-        return _crm_error_response(exc, "Kunde konnte nicht aktualisiert werden.")
-    return jsonify(ok=True, customer=item)
-
-
-@bp.get("/api/customers/<customer_id>/contacts")
-@login_required
-def api_contacts_list(customer_id: str):
-    if not callable(contacts_list_by_customer):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    try:
-        items = contacts_list_by_customer(current_tenant(), customer_id)  # type: ignore
-    except ValueError as exc:
-        return _crm_error_response(
-            exc, "Kontakte konnten nicht geladen werden.", not_found=True
-        )
-    return jsonify(ok=True, contacts=items)
-
-
-@bp.post("/api/contacts")
-@login_required
-@require_role("OPERATOR")
-def api_contacts_create():
-    if not callable(contacts_create):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    payload = request.get_json(silent=True) or {}
-    try:
-        cid = contacts_create(  # type: ignore
-            tenant_id=current_tenant(),
-            customer_id=payload.get("customer_id") or "",
-            name=payload.get("name") or "",
-            email=payload.get("email"),
-            phone=payload.get("phone"),
-            role=payload.get("role"),
-            notes=payload.get("notes"),
-        )
-    except ValueError as exc:
-        return _crm_error_response(exc, "Kontakt konnte nicht angelegt werden.")
-    return jsonify(ok=True, contact_id=cid)
-
-
-@bp.get("/api/deals")
-@login_required
-def api_deals_list():
-    if not callable(deals_list):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    stage = (request.args.get("stage") or "").strip() or None
-    customer_id = (request.args.get("customer_id") or "").strip() or None
-    items = deals_list(current_tenant(), stage=stage, customer_id=customer_id)  # type: ignore
-    return jsonify(ok=True, deals=items)
-
-
-@bp.post("/api/deals")
-@login_required
-@require_role("OPERATOR")
-def api_deals_create():
-    if not callable(deals_create):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    payload = request.get_json(silent=True) or {}
-    stage = (payload.get("stage") or "lead").strip().lower()
-    allowed_stage = {"lead", "qualified", "proposal", "negotiation", "won", "lost"}
-    if stage not in allowed_stage:
-        return json_error("validation_error", "Ungültiger Deal-Status.", status=400)
-    probability = payload.get("probability")
-    if probability is not None:
-        try:
-            prob_val = int(probability)
-        except Exception:
-            return json_error(
-                "validation_error", "Probability muss 0..100 sein.", status=400
-            )
-        if prob_val < 0 or prob_val > 100:
-            return json_error(
-                "validation_error", "Probability muss 0..100 sein.", status=400
-            )
-    expected_close = (payload.get("expected_close_date") or "").strip()
-    if expected_close and not _validate_iso(expected_close):
-        return json_error(
-            "validation_error", "expected_close_date muss ISO sein.", status=400
-        )
-    try:
-        did = deals_create(  # type: ignore
-            tenant_id=current_tenant(),
-            customer_id=payload.get("customer_id") or "",
-            title=payload.get("title") or "",
-            stage=stage,
-            value_cents=payload.get("value_cents"),
-            currency=payload.get("currency") or "EUR",
-            notes=payload.get("notes"),
-            project_id=(
-                int(payload.get("project_id")) if payload.get("project_id") else None
-            ),
-            probability=(int(probability) if probability is not None else None),
-            expected_close_date=(expected_close or None),
-        )
-    except ValueError as exc:
-        return _crm_error_response(exc, "Deal konnte nicht angelegt werden.")
-    return jsonify(ok=True, deal_id=did)
-
-
-@bp.put("/api/deals/<deal_id>/stage")
-@login_required
-@require_role("OPERATOR")
-def api_deals_stage(deal_id: str):
-    if not callable(deals_update_stage):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    payload = request.get_json(silent=True) or {}
-    stage = (payload.get("stage") or "").strip().lower()
-    if stage not in {"lead", "qualified", "proposal", "negotiation", "won", "lost"}:
-        return json_error("validation_error", "Ungültiger Deal-Status.", status=400)
-    try:
-        item = deals_update_stage(current_tenant(), deal_id, stage)  # type: ignore
-    except ValueError as exc:
-        return _crm_error_response(exc, "Deal-Status konnte nicht aktualisiert werden.")
-    return jsonify(ok=True, deal=item)
-
-
-@bp.post("/api/quotes/from-deal/<deal_id>")
-@login_required
-@require_role("OPERATOR")
-def api_quote_from_deal(deal_id: str):
-    if not callable(quotes_create_from_deal):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    try:
-        quote = quotes_create_from_deal(current_tenant(), deal_id)  # type: ignore
-    except ValueError as exc:
-        return _crm_error_response(exc, "Angebot konnte nicht erstellt werden.")
-    return jsonify(ok=True, quote=quote)
-
-
-@bp.get("/api/quotes/<quote_id>")
-@login_required
-def api_quote_get(quote_id: str):
-    if not callable(quotes_get):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    try:
-        quote = quotes_get(current_tenant(), quote_id)  # type: ignore
-    except ValueError as exc:
-        return _crm_error_response(exc, "Angebot nicht gefunden.", not_found=True)
-    return jsonify(ok=True, quote=quote)
-
-
-@bp.post("/api/quotes/<quote_id>/items")
-@login_required
-@require_role("OPERATOR")
-def api_quote_add_item(quote_id: str):
-    if not callable(quotes_add_item):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    payload = request.get_json(silent=True) or {}
-    try:
-        quote = quotes_add_item(  # type: ignore
-            tenant_id=current_tenant(),
-            quote_id=quote_id,
-            description=payload.get("description") or "",
-            qty=float(payload.get("qty") or 0),
-            unit_price_cents=int(payload.get("unit_price_cents") or 0),
-        )
-    except ValueError as exc:
-        return _crm_error_response(exc, "Position konnte nicht angelegt werden.")
-    return jsonify(ok=True, quote=quote)
-
-
-@bp.post("/api/emails/import")
-@login_required
-@require_role("OPERATOR")
-def api_emails_import():
-    if not callable(emails_import_eml):
-        return json_error(
-            "feature_unavailable", "E-Mail-Import ist nicht verfügbar.", status=501
-        )
-    f = request.files.get("file")
-    if f is None:
-        return json_error("validation_error", "Bitte .eml-Datei hochladen.", status=400)
-    filename = (f.filename or "").lower()
-    if not filename.endswith(".eml"):
-        return json_error(
-            "validation_error", "Nur .eml-Dateien sind erlaubt.", status=400
-        )
-
-    max_bytes = int(current_app.config.get("MAX_EML_BYTES", 10 * 1024 * 1024))
-    raw = f.read(max_bytes + 1) or b""
-    if not raw:
-        return json_error("validation_error", "Datei ist leer.", status=400)
-    if len(raw) > max_bytes:
-        return json_error(
-            "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
-        )
-
-    try:
-        email_id = emails_import_eml(  # type: ignore
-            tenant_id=current_tenant(),
-            eml_bytes=raw,
-            customer_id=(request.form.get("customer_id") or None),
-            contact_id=(request.form.get("contact_id") or None),
-            source_notes=(request.form.get("notes") or None),
-        )
-    except ValueError as exc:
-        return _crm_error_response(exc, "E-Mail konnte nicht importiert werden.")
-    return jsonify(ok=True, email_id=email_id)
-
-
-def _lead_read_only_response(api: bool = True):
-    rid = getattr(g, "request_id", "")
-    if api:
-        return (
-            jsonify({"ok": False, "error_code": "read_only", "request_id": rid}),
-            403,
-        )
-    return (
-        render_template(
-            "lead_intake/partials/_error.html",
-            message="Read-only mode aktiv. Schreibaktionen sind deaktiviert.",
-            request_id=rid,
-        ),
-        403,
-    )
-
-
-def _lead_mutation_guard(api: bool = True):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _lead_read_only_response(api=api)
-    return None
-
-
-def _lead_api_error(code: str, message: str, status: int = 400):
-    rid = getattr(g, "request_id", "")
-    return (
-        jsonify(
-            {
-                "ok": False,
-                "error": {
-                    "code": code,
-                    "message": message,
-                    "details": {},
-                    "request_id": rid,
-                },
-            }
-        ),
-        status,
-    )
-
-
-_LEAD_COLLISION_ROUTE_KEYS = {
-    "lead_claim",
-    "lead_claim_force",
-    "lead_claim_release",
-    "lead_screen_accept",
-    "lead_screen_ignore",
-    "lead_priority",
-    "lead_assign",
-    "lead_convert",
-}
-
-_LEAD_COLLISION_ENDPOINT_KEYS = {
-    "web.leads_claim_action": "lead_claim",
-    "web.leads_claim_force_action": "lead_claim_force",
-    "web.leads_claim_release_action": "lead_claim_release",
-    "web.leads_screen_accept_action": "lead_screen_accept",
-    "web.leads_screen_ignore_action": "lead_screen_ignore",
-    "web.leads_priority_action": "lead_priority",
-    "web.leads_assign_action": "lead_assign",
-    "web.api_leads_claim": "lead_claim",
-    "web.api_leads_release_claim": "lead_claim_release",
-    "web.api_leads_screen_accept": "lead_screen_accept",
-    "web.api_leads_screen_ignore": "lead_screen_ignore",
-    "web.api_leads_priority": "lead_priority",
-    "web.api_leads_assign": "lead_assign",
-    "web.leads_convert_action": "lead_convert",
-    "web.api_leads_convert": "lead_convert",
-}
-
-
-def _lead_collision_route_key(route_key: str | None = None) -> str:
-    candidate = str(route_key or "").strip().lower()
-    if not candidate:
-        endpoint = str(getattr(request, "endpoint", "") or "")
-        candidate = _LEAD_COLLISION_ENDPOINT_KEYS.get(endpoint, "")
-    if candidate in _LEAD_COLLISION_ROUTE_KEYS:
-        return candidate
-    return "lead_claim"
-
-
-def _lead_user_agent_hash() -> str:
-    ua = str(request.headers.get("User-Agent") or "")
-    hashed = ua_hmac_sha256_hex(ua)
-    return str(hashed or "")
-
-
-def _emit_lead_claim_collision(
-    details: dict[str, Any] | None,
-    *,
-    route_key: str | None = None,
-) -> None:
-    d = details or {}
-    lead_id = str(d.get("lead_id") or "").strip()
-    if not lead_id:
-        return
-    claimed_by = str(d.get("claimed_by") or "").strip()
-    try:
-        with core._DB_LOCK:  # type: ignore[attr-defined]
-            con = core._db()  # type: ignore[attr-defined]
-            try:
-                event_append(
-                    event_type="lead_claim_collision",
-                    entity_type="lead",
-                    entity_id=entity_id_int(lead_id),
-                    payload={
-                        "schema_version": 1,
-                        "source": "web/lead_claim_guard",
-                        "actor_user_id": current_user() or None,
-                        "tenant_id": current_tenant(),
-                        "data": {
-                            "lead_id": lead_id,
-                            "claimed_by_user_id": claimed_by,
-                            "route_key": _lead_collision_route_key(route_key),
-                            "ua_hash": _lead_user_agent_hash(),
-                        },
-                    },
-                    con=con,
-                )
-                con.commit()
-            finally:
-                con.close()
-    except Exception:
-        # collision metrics are best-effort and must not break response flow
-        return
-
-
-def _lead_claim_conflict_message(details: dict[str, Any] | None) -> str:
-    d = details or {}
-    by = str(d.get("claimed_by") or "jemand")
-    until = str(d.get("claimed_until") or "")
-    suffix = f" bis {until}" if until else ""
-    return f"Lead ist derzeit von {by} geclaimt{suffix}."
-
-
-def _lead_claim_error_response(
-    exc: Exception,
-    *,
-    api: bool,
-    fallback_message: str,
-    status: int = 409,
-    route_key: str | None = None,
-):
-    code = str(exc)
-    details = getattr(exc, "details", {}) if hasattr(exc, "details") else {}
-    if code == "lead_claimed":
-        _emit_lead_claim_collision(details, route_key=route_key)
-        msg = _lead_claim_conflict_message(details)
-        if api:
-            return _lead_api_error("lead_claimed", msg, status)
-        return (
-            render_template(
-                "lead_intake/partials/_claim_error.html",
-                message=msg,
-                request_id=getattr(g, "request_id", ""),
-            ),
-            status,
-        )
-    if code == "not_owner":
-        msg = "Nur der Claim-Owner kann diese Aktion ausführen."
-        if api:
-            return _lead_api_error("not_owner", msg, status)
-        return (
-            render_template(
-                "lead_intake/partials/_claim_error.html",
-                message=msg,
-                request_id=getattr(g, "request_id", ""),
-            ),
-            status,
-        )
-    if api:
-        return _lead_api_error("validation_error", fallback_message, 400)
-    return (
-        render_template(
-            "lead_intake/partials/_claim_error.html",
-            message=fallback_message,
-            request_id=getattr(g, "request_id", ""),
-        ),
-        400,
-    )
-
-
-def _decorate_leads_with_claims(
-    tenant_id: str, leads: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    ids = [str(r.get("id") or "") for r in leads if str(r.get("id") or "")]
-    claim_map = lead_claims_for_leads(tenant_id, ids) if ids else {}
-    out: list[dict[str, Any]] = []
-    for row in leads:
-        rid = str(row.get("id") or "")
-        claim = claim_map.get(rid) if claim_map else None
-        next_row = dict(row)
-        next_row["claim"] = claim
-        out.append(next_row)
-    return out
-
-
-def _lead_tab_filters(tab: str, user_id: str) -> dict[str, Any]:
-    t = (tab or "all").strip().lower()
-    if t == "screening":
-        return {"status": "screening"}
-    if t == "priority":
-        return {"priority_only": True}
-    if t == "assigned":
-        return {"assigned_to": user_id}
-    if t == "due_today":
-        return {"due_mode": "today"}
-    if t == "overdue":
-        return {"due_mode": "overdue"}
-    if t == "blocked":
-        return {"blocked_only": True}
-    return {}
-
-
-def _lead_rows_for_request(
-    tenant_id: str, tab: str, user_id: str
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    status = (request.args.get("status") or "").strip().lower() or None
-    source = (request.args.get("source") or "").strip().lower() or None
-    q = (request.args.get("q") or "").strip() or None
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    offset = (page - 1) * page_size
-
-    kwargs = _lead_tab_filters(tab, user_id)
-    rows = leads_list(
-        tenant_id,
-        status=status,
-        source=source,
-        q=q,
-        limit=page_size,
-        offset=offset,
-        priority_only=bool(kwargs.get("priority_only", False)),
-        pinned_only=bool(kwargs.get("pinned_only", False)),
-        assigned_to=kwargs.get("assigned_to"),
-        due_mode=kwargs.get("due_mode"),
-        blocked_only=bool(kwargs.get("blocked_only", False)),
-    )
-    meta = {
-        "status": status or "",
-        "source": source or "",
-        "q": q or "",
-        "page": page,
-        "page_size": page_size,
-        "has_more": len(rows) == page_size,
-        "tab": tab,
-    }
-    return _decorate_leads_with_claims(tenant_id, rows), meta
-
-
-@bp.get("/leads/inbox")
-@login_required
-def leads_inbox_page():
-    tenant_id = current_tenant()
-    tab = (request.args.get("tab") or "screening").strip().lower()
-    if tab not in {
-        "screening",
-        "priority",
-        "assigned",
-        "due_today",
-        "overdue",
-        "blocked",
-        "all",
-    }:
-        tab = "screening"
-    user_id = current_user() or ""
-    try:
-        leads, meta = _lead_rows_for_request(tenant_id, tab, user_id)
-    except ValueError:
-        leads, meta = (
-            [],
-            {
-                "status": "",
-                "source": "",
-                "q": "",
-                "page": 1,
-                "page_size": 25,
-                "has_more": False,
-                "tab": tab,
-            },
-        )
-
-    counts = leads_inbox_counts(tenant_id, user_id)
-    content = render_template(
-        "lead_intake/inbox.html",
-        leads=leads,
-        counts=counts,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-        **meta,
-    )
-    return _render_base(content, active_tab="leads")
-
-
-@bp.get("/leads/new")
-@login_required
-def leads_new_page():
-    content = render_template(
-        "lead_intake/lead_form.html",
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="leads")
-
-
-@bp.get("/leads/<lead_id>")
-@login_required
-def lead_detail_page(lead_id: str):
-    tenant_id = current_tenant()
-    lead = leads_get(tenant_id, lead_id)
-    if not lead:
-        return _lead_api_error("not_found", "Lead nicht gefunden.", status=404)
-    timeline = lead_timeline(tenant_id, lead_id, limit=100)
-    claim = lead_claim_get(tenant_id, lead_id)
-    content = render_template(
-        "lead_intake/lead_detail.html",
-        lead=lead,
-        timeline=timeline,
-        claim=claim,
-        current_user_id=current_user() or "",
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-        link_entity_type="lead",
-        link_entity_id=lead_id,
-    )
-    return _render_base(content, active_tab="leads")
-
-
-@bp.get("/leads/<lead_id>/convert")
-@login_required
-def lead_convert_page(lead_id: str):
-    tenant_id = current_tenant()
-    lead = leads_get(tenant_id, lead_id)
-    if not lead:
-        return _lead_api_error("not_found", "Lead nicht gefunden.", status=404)
-    claim = lead_claim_get(tenant_id, lead_id)
-    content = render_template(
-        "lead_intake/lead_convert_confirm.html",
-        lead=lead,
-        claim=claim,
-        current_user_id=current_user() or "",
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="leads")
-
-
-@bp.get("/leads/_table")
-@login_required
-def leads_table_partial():
-    tenant_id = current_tenant()
-    tab = (request.args.get("tab") or "screening").strip().lower()
-    user_id = current_user() or ""
-    try:
-        leads, meta = _lead_rows_for_request(tenant_id, tab, user_id)
-    except ValueError:
-        leads, meta = (
-            [],
-            {
-                "status": "",
-                "source": "",
-                "q": "",
-                "page": 1,
-                "page_size": 25,
-                "has_more": False,
-                "tab": tab,
-            },
-        )
-    return render_template("lead_intake/partials/_table.html", leads=leads, **meta)
-
-
-@bp.get("/leads/_timeline/<lead_id>")
-@login_required
-def lead_timeline_partial(lead_id: str):
-    tenant_id = current_tenant()
-    timeline = lead_timeline(tenant_id, lead_id, limit=100)
-    return render_template("lead_intake/partials/_timeline.html", timeline=timeline)
-
-
-@bp.get("/leads/_status/<lead_id>")
-@login_required
-def lead_status_partial(lead_id: str):
-    tenant_id = current_tenant()
-    lead = leads_get(tenant_id, lead_id)
-    if not lead:
-        return render_template(
-            "lead_intake/partials/_status.html",
-            lead={
-                "id": lead_id,
-                "status": "unknown",
-                "priority": "normal",
-                "pinned": 0,
-                "assigned_to": None,
-                "response_due": None,
-            },
-        )
-    return render_template("lead_intake/partials/_status.html", lead=lead)
-
-
-@bp.get("/leads/_claim/<lead_id>")
-@login_required
-def lead_claim_partial(lead_id: str):
-    tenant_id = current_tenant()
-    lead = leads_get(tenant_id, lead_id)
-    if not lead:
-        return (
-            render_template(
-                "lead_intake/partials/_claim_error.html",
-                message="Lead nicht gefunden.",
-                request_id=getattr(g, "request_id", ""),
-            ),
-            404,
-        )
-    claim = lead_claim_get(tenant_id, lead_id)
-    return render_template(
-        "lead_intake/partials/_claim_panel.html",
-        lead=lead,
-        claim=claim,
-        current_user_id=current_user() or "",
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-
-
-def _lead_payload() -> dict[str, Any]:
-    if request.is_json:
-        return request.get_json(silent=True) or {}
-    return {k: v for k, v in request.form.items()}
-
-
-@bp.post("/leads")
-@login_required
-@require_role("OPERATOR")
-def leads_create_action():
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        lead_id = leads_create(
-            tenant_id=current_tenant(),
-            source=(payload.get("source") or "manual"),
-            contact_name=(payload.get("contact_name") or ""),
-            contact_email=(payload.get("contact_email") or ""),
-            contact_phone=(payload.get("contact_phone") or ""),
-            subject=(payload.get("subject") or ""),
-            message=(payload.get("message") or ""),
-            customer_id=(payload.get("customer_id") or None),
-            notes=(payload.get("notes") or None),
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_mutation_guard(api=not _is_htmx())
-        if code == "not_found":
-            return _lead_api_error("not_found", "Kunde nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        if _is_htmx():
-            return (
-                render_template(
-                    "lead_intake/partials/_error.html",
-                    message="Ungültige Lead-Daten.",
-                    request_id=getattr(g, "request_id", ""),
-                ),
-                400,
-            )
-        return _lead_api_error("validation_error", "Ungültige Lead-Daten.", 400)
-
-    if _is_htmx():
-        return redirect(url_for("web.lead_detail_page", lead_id=lead_id))
-    return jsonify({"ok": True, "lead_id": lead_id})
-
-
-@bp.post("/leads/<lead_id>/status")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_status")
-def leads_status_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        leads_update_status(
-            current_tenant(),
-            lead_id,
-            payload.get("status") or "",
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_mutation_guard(api=not _is_htmx())
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültiger Status.", 400)
-
-    if _is_htmx():
-        return lead_status_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/<lead_id>/convert")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_convert")
-def leads_convert_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    mapping = {
-        "deal_title": payload.get("deal_title") or "",
-        "customer_name": payload.get("customer_name") or "",
-        "use_subject_title": str(payload.get("use_subject_title") or "").strip().lower()
-        in {"1", "true", "on", "yes"},
-        "use_contact_name": str(payload.get("use_contact_name") or "").strip().lower()
-        in {"1", "true", "on", "yes"},
-    }
-    try:
-        out = lead_convert_to_deal_quote(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or None,
-            mapping=mapping,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=not _is_htmx(),
-            fallback_message="Konvertierung fehlgeschlagen.",
-            status=409,
-            route_key="lead_convert",
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_mutation_guard(api=not _is_htmx())
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        if _is_htmx():
-            return (
-                render_template(
-                    "lead_intake/partials/_claim_error.html",
-                    message="Konvertierung fehlgeschlagen.",
-                    request_id=getattr(g, "request_id", ""),
-                ),
-                400,
-            )
-        return _lead_api_error("validation_error", "Konvertierung fehlgeschlagen.", 400)
-
-    quote_id = str(out.get("quote_id") or "")
-    if _is_htmx() or not request.is_json:
-        if quote_id:
-            return redirect(url_for("web.crm_quote_detail", quote_id=quote_id))
-        return redirect(url_for("web.lead_detail_page", lead_id=lead_id))
-    return jsonify({"ok": True, **out})
-
-
-@bp.post("/leads/<lead_id>/claim")
-@login_required
-@require_role("OPERATOR")
-def leads_claim_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    ttl_seconds = payload.get("ttl_seconds") or request.args.get("ttl_seconds") or 900
-    try:
-        lead_claim(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or "",
-            ttl_seconds=int(ttl_seconds),
-            force=False,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=not _is_htmx(),
-            fallback_message="Lead kann nicht geclaimt werden.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Claim fehlgeschlagen.", 400)
-    if _is_htmx():
-        return lead_claim_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/<lead_id>/claim/force")
-@login_required
-@require_role("OPERATOR")
-def leads_claim_force_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    ttl_seconds = payload.get("ttl_seconds") or request.args.get("ttl_seconds") or 900
-    try:
-        lead_claim(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or "",
-            ttl_seconds=int(ttl_seconds),
-            force=True,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=not _is_htmx(),
-            fallback_message="Force-Claim fehlgeschlagen.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Force-Claim fehlgeschlagen.", 400)
-    if _is_htmx():
-        return lead_claim_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/<lead_id>/release")
-@login_required
-@require_role("OPERATOR")
-def leads_claim_release_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    try:
-        lead_release_claim(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or "",
-            reason="manual",
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=not _is_htmx(),
-            fallback_message="Claim kann nicht freigegeben werden.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Claim nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Claim-Release fehlgeschlagen.", 400)
-    if _is_htmx():
-        return lead_claim_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/claims/expire-now")
-@login_required
-@require_role("OPERATOR")
-def leads_claims_expire_now_action():
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        count = lead_claims_auto_expire(
-            current_tenant(),
-            max_actions=int(payload.get("max_actions") or 200),
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Expire fehlgeschlagen.", 400)
-    if _is_htmx():
-        return redirect(url_for("web.leads_inbox_page"))
-    if request.is_json or request.path.startswith("/api/"):
-        return jsonify({"ok": True, "expired": count})
-    return redirect(url_for("web.leads_inbox_page"))
-
-
-@bp.post("/leads/<lead_id>/screen/accept")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_screen_accept")
-def leads_screen_accept_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    try:
-        leads_screen_accept(
-            current_tenant(), lead_id, actor_user_id=current_user() or None
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=not _is_htmx(),
-            fallback_message="Aktion fehlgeschlagen.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Aktion fehlgeschlagen.", 400)
-    if _is_htmx():
-        return lead_status_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/<lead_id>/screen/ignore")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_screen_ignore")
-def leads_screen_ignore_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        leads_screen_ignore(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or None,
-            reason=payload.get("reason") or None,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=not _is_htmx(),
-            fallback_message="Aktion fehlgeschlagen.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Aktion fehlgeschlagen.", 400)
-    if _is_htmx():
-        return lead_status_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/<lead_id>/priority")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_priority")
-def leads_priority_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    pinned = (
-        1
-        if str(payload.get("pinned") or "0").strip().lower()
-        in {"1", "true", "on", "yes"}
-        else 0
-    )
-    try:
-        leads_set_priority(
-            current_tenant(),
-            lead_id,
-            payload.get("priority") or "normal",
-            pinned,
-            actor_user_id=current_user() or None,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=not _is_htmx(),
-            fallback_message="Ungültige Priorität.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Priorität.", 400)
-    if _is_htmx():
-        return lead_status_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/<lead_id>/assign")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_assign")
-def leads_assign_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        leads_assign(
-            current_tenant(),
-            lead_id,
-            payload.get("assigned_to") or None,
-            payload.get("response_due") or None,
-            actor_user_id=current_user() or None,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=not _is_htmx(),
-            fallback_message="Ungültige Zuweisung.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Zuweisung.", 400)
-    if _is_htmx():
-        return lead_status_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/blocklist/add")
-@login_required
-@require_role("OPERATOR")
-def leads_blocklist_add_action():
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        leads_block_sender(
-            current_tenant(),
-            payload.get("kind") or "",
-            payload.get("value") or "",
-            actor_user_id=current_user() or None,
-            reason=payload.get("reason") or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültiger Blocklist-Eintrag.", 400)
-    if _is_htmx():
-        tenant_id = current_tenant()
-        tab = (request.args.get("tab") or "screening").strip().lower()
-        leads, meta = _lead_rows_for_request(tenant_id, tab, current_user() or "")
-        return render_template("lead_intake/partials/_table.html", leads=leads, **meta)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/<lead_id>/note")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_note_add")
-def leads_note_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        leads_add_note(
-            current_tenant(),
-            lead_id,
-            payload.get("note_text") or payload.get("note") or "",
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Notiz.", 400)
-
-    if _is_htmx():
-        return lead_timeline_partial(lead_id)
-    return jsonify({"ok": True})
-
-
-@bp.post("/leads/<lead_id>/call-log")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_call_log_create")
-def leads_call_log_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        call_id = call_logs_create(
-            current_tenant(),
-            lead_id,
-            payload.get("caller_name") or "",
-            payload.get("caller_phone") or "",
-            payload.get("direction") or "inbound",
-            int(payload.get("duration_seconds"))
-            if payload.get("duration_seconds")
-            else None,
-            payload.get("notes"),
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Call-Log Daten.", 400)
-
-    if _is_htmx():
-        return lead_timeline_partial(lead_id)
-    return jsonify({"ok": True, "call_log_id": call_id})
-
-
-@bp.post("/leads/<lead_id>/appointment")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_appointment_create")
-def leads_appointment_action(lead_id: str):
-    guarded = _lead_mutation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = _lead_payload()
-    try:
-        req_id = appointment_requests_create(
-            current_tenant(),
-            lead_id,
-            payload.get("requested_date") or None,
-            payload.get("notes") or None,
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Termin-Anfrage.", 400)
-
-    if _is_htmx():
-        return lead_timeline_partial(lead_id)
-    return jsonify({"ok": True, "appointment_request_id": req_id})
-
-
-@bp.get("/api/leads")
-@login_required
-def api_leads_list():
-    try:
-        tab = (request.args.get("tab") or "all").strip().lower()
-        filters = _lead_tab_filters(tab, current_user() or "")
-        rows = leads_list(
-            current_tenant(),
-            status=(request.args.get("status") or None),
-            source=(request.args.get("source") or None),
-            q=(request.args.get("q") or None),
-            limit=min(int(request.args.get("limit") or 50), 200),
-            offset=max(int(request.args.get("offset") or 0), 0),
-            priority_only=bool(filters.get("priority_only", False)),
-            pinned_only=bool(filters.get("pinned_only", False)),
-            assigned_to=filters.get("assigned_to"),
-            due_mode=filters.get("due_mode"),
-            blocked_only=bool(filters.get("blocked_only", False)),
-        )
-    except ValueError:
-        return _lead_api_error("validation_error", "Ungültige Filter.", 400)
-    return jsonify({"ok": True, "items": rows})
-
-
-@bp.post("/api/leads")
-@login_required
-@require_role("OPERATOR")
-def api_leads_create():
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        lead_id = leads_create(
-            tenant_id=current_tenant(),
-            source=(payload.get("source") or "manual"),
-            contact_name=(payload.get("contact_name") or ""),
-            contact_email=(payload.get("contact_email") or ""),
-            contact_phone=(payload.get("contact_phone") or ""),
-            subject=(payload.get("subject") or ""),
-            message=(payload.get("message") or ""),
-            customer_id=(payload.get("customer_id") or None),
-            notes=(payload.get("notes") or None),
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response(api=True)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Kunde nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Lead-Daten.", 400)
-    return jsonify({"ok": True, "lead_id": lead_id})
-
-
-@bp.get("/api/leads/<lead_id>")
-@login_required
-def api_leads_get(lead_id: str):
-    row = leads_get(current_tenant(), lead_id)
-    if not row:
-        return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-    return jsonify({"ok": True, "item": row})
-
-
-@bp.post("/api/leads/<lead_id>/convert")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_convert")
-def api_leads_convert(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    mapping = {
-        "deal_title": payload.get("deal_title") or "",
-        "customer_name": payload.get("customer_name") or "",
-        "use_subject_title": bool(payload.get("use_subject_title", False)),
-        "use_contact_name": bool(payload.get("use_contact_name", False)),
-    }
-    try:
-        out = lead_convert_to_deal_quote(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or None,
-            mapping=mapping,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=True,
-            fallback_message="Konvertierung fehlgeschlagen.",
-            status=409,
-            route_key="lead_convert",
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response(api=True)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Konvertierung fehlgeschlagen.", 400)
-    return jsonify({"ok": True, **out})
-
-
-@bp.post("/api/leads/<lead_id>/claim")
-@login_required
-@require_role("OPERATOR")
-def api_leads_claim(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        claim = lead_claim(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or "",
-            ttl_seconds=int(payload.get("ttl_seconds") or 900),
-            force=bool(payload.get("force", False)),
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=True,
-            fallback_message="Claim fehlgeschlagen.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Claim fehlgeschlagen.", 400)
-    return jsonify({"ok": True, "claim": claim})
-
-
-@bp.post("/api/leads/<lead_id>/release")
-@login_required
-@require_role("OPERATOR")
-def api_leads_release_claim(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        lead_release_claim(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or "",
-            reason=str(payload.get("reason") or "manual"),
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=True,
-            fallback_message="Claim-Release fehlgeschlagen.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Claim nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Claim-Release fehlgeschlagen.", 400)
-    return jsonify({"ok": True})
-
-
-@bp.post("/api/leads/claims/expire-now")
-@login_required
-@require_role("OPERATOR")
-def api_leads_claims_expire_now():
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        count = lead_claims_auto_expire(
-            current_tenant(),
-            max_actions=int(payload.get("max_actions") or 200),
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Expire fehlgeschlagen.", 400)
-    return jsonify({"ok": True, "expired": count})
-
-
-@bp.put("/api/leads/<lead_id>/status")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_status")
-def api_leads_status(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        leads_update_status(
-            current_tenant(),
-            lead_id,
-            payload.get("status") or "",
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response(api=True)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültiger Status.", 400)
-    return jsonify({"ok": True})
-
-
-@bp.post("/api/leads/<lead_id>/screen/accept")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_screen_accept")
-def api_leads_screen_accept(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    try:
-        leads_screen_accept(
-            current_tenant(), lead_id, actor_user_id=current_user() or None
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=True,
-            fallback_message="Aktion fehlgeschlagen.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Aktion fehlgeschlagen.", 400)
-    return jsonify({"ok": True})
-
-
-@bp.post("/api/leads/<lead_id>/screen/ignore")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_screen_ignore")
-def api_leads_screen_ignore(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        leads_screen_ignore(
-            current_tenant(),
-            lead_id,
-            actor_user_id=current_user() or None,
-            reason=payload.get("reason") or None,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=True,
-            fallback_message="Aktion fehlgeschlagen.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Aktion fehlgeschlagen.", 400)
-    return jsonify({"ok": True})
-
-
-@bp.put("/api/leads/<lead_id>/priority")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_priority")
-def api_leads_priority(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        leads_set_priority(
-            current_tenant(),
-            lead_id,
-            payload.get("priority") or "normal",
-            int(payload.get("pinned") or 0),
-            actor_user_id=current_user() or None,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=True,
-            fallback_message="Ungültige Priorität.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Priorität.", 400)
-    return jsonify({"ok": True})
-
-
-@bp.put("/api/leads/<lead_id>/assign")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_assign")
-def api_leads_assign(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        leads_assign(
-            current_tenant(),
-            lead_id,
-            payload.get("assigned_to") or None,
-            payload.get("response_due") or None,
-            actor_user_id=current_user() or None,
-        )
-    except ConflictError as exc:
-        return _lead_claim_error_response(
-            exc,
-            api=True,
-            fallback_message="Ungültige Zuweisung.",
-            status=409,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Zuweisung.", 400)
-    return jsonify({"ok": True})
-
-
-@bp.post("/api/leads/blocklist")
-@login_required
-@require_role("OPERATOR")
-def api_leads_blocklist_add():
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        block_id = leads_block_sender(
-            current_tenant(),
-            payload.get("kind") or "",
-            payload.get("value") or "",
-            actor_user_id=current_user() or None,
-            reason=payload.get("reason") or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültiger Blocklist-Eintrag.", 400)
-    return jsonify({"ok": True, "block_id": block_id})
-
-
-@bp.post("/api/leads/<lead_id>/note")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_note_add")
-def api_leads_note(lead_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        leads_add_note(
-            current_tenant(),
-            lead_id,
-            payload.get("note_text") or payload.get("note") or "",
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response(api=True)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Notiz.", 400)
-    return jsonify({"ok": True})
-
-
-@bp.post("/api/call-logs")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_call_log_create", lead_id_kw="lead_id")
-def api_call_logs_create():
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        call_id = call_logs_create(
-            current_tenant(),
-            payload.get("lead_id") or None,
-            payload.get("caller_name") or "",
-            payload.get("caller_phone") or "",
-            payload.get("direction") or "inbound",
-            int(payload.get("duration_seconds"))
-            if payload.get("duration_seconds")
-            else None,
-            payload.get("notes"),
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response(api=True)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Call-Log Daten.", 400)
-    return jsonify({"ok": True, "call_log_id": call_id})
-
-
-@bp.post("/api/appointment-requests")
-@login_required
-@require_role("OPERATOR")
-@require_lead_access("leads_appointment_create", lead_id_kw="lead_id")
-def api_appointment_requests_create():
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        req_id = appointment_requests_create(
-            current_tenant(),
-            payload.get("lead_id") or "",
-            payload.get("requested_date") or None,
-            payload.get("notes") or None,
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response(api=True)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Lead nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültige Termin-Anfrage.", 400)
-    return jsonify({"ok": True, "appointment_request_id": req_id})
-
-
-@bp.put("/api/appointment-requests/<req_id>/status")
-@login_required
-@require_role("OPERATOR")
-def api_appointment_requests_status(req_id: str):
-    guarded = _lead_mutation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        appointment_requests_update_status(
-            current_tenant(),
-            req_id,
-            payload.get("status") or "",
-            actor_user_id=current_user() or None,
-        )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "read_only":
-            return _lead_read_only_response(api=True)
-        if code == "not_found":
-            return _lead_api_error("not_found", "Termin-Anfrage nicht gefunden.", 404)
-        if code == "db_locked":
-            return _lead_api_error("db_locked", "Datenbank gesperrt.", 503)
-        return _lead_api_error("validation_error", "Ungültiger Termin-Status.", 400)
-    return jsonify({"ok": True})
-
-
-@bp.get("/api/appointment-requests/<req_id>/ics")
-@login_required
-def api_appointment_request_ics(req_id: str):
-    try:
-        ics, fname = appointment_request_to_ics(current_tenant(), req_id)
-    except ValueError:
-        return _lead_api_error("not_found", "Termin-Anfrage nicht gefunden.", 404)
-    resp = current_app.response_class(ics, mimetype="text/calendar; charset=utf-8")
-    resp.headers["Content-Disposition"] = f'attachment; filename="{fname}"'
-    return resp
-
-
-@bp.get("/appointments/<req_id>/ics")
-@login_required
-def appointment_request_ics_alias(req_id: str):
-    return api_appointment_request_ics(req_id)
-
-
-def _automation_error(code: str, message: str, status: int = 400):
-    rid = getattr(g, "request_id", "")
-    return (
-        jsonify(
-            {
-                "ok": False,
-                "error": {
-                    "code": code,
-                    "message": message,
-                    "details": {},
-                    "request_id": rid,
-                },
-            }
-        ),
-        status,
-    )
-
-
-def _automation_read_only_response(api: bool = True):
-    rid = getattr(g, "request_id", "")
-    if api:
-        return jsonify({"ok": False, "error_code": "read_only", "request_id": rid}), 403
-    return (
-        render_template(
-            "lead_intake/partials/_error.html",
-            message="Read-only mode aktiv. Schreibaktionen sind deaktiviert.",
-            request_id=rid,
-        ),
-        403,
-    )
-
-
-def _automation_guard(api: bool = True):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _automation_read_only_response(api=api)
-    csrf = _csrf_guard(api=api)
-    if csrf is not None:
-        return csrf
-    return None
-
-
-_RULE_IMPORT_ALLOWED_KEYS = {
-    "name",
-    "description",
-    "is_enabled",
-    "max_executions_per_minute",
-    "triggers",
-    "conditions",
-    "actions",
-}
-_RULE_COMPONENT_ALLOWED_KEYS = {
-    "type",
-    "trigger_type",
-    "condition_type",
-    "action_type",
-    "config",
-    "config_json",
-}
-_BUILDER_TRIGGER_ALLOWLIST = {"eventlog", "cron"}
-_BUILDER_ACTION_ALLOWLIST = {
-    "create_task",
-    "create_postfach_draft",
-    "create_followup",
-    "email_draft",
-    "email_send",
-    "webhook",
-}
-_BUILDER_EMAIL_ALLOWED_PLACEHOLDERS = {
-    "customer_name",
-    "event_type",
-    "trigger_ref",
-    "thread_id",
-    "entity_id",
-    "tenant_id",
-}
-_BUILDER_EMAIL_SUBJECT_MAX_LENGTH = 255
-_BUILDER_EMAIL_BODY_MAX_LENGTH = 20000
-_BUILDER_TEMPLATE_VAR_PATTERN = re.compile(r"\{([a-zA-Z0-9_]+)\}")
-_BUILDER_TEMPLATE_VAR_DOUBLE_PATTERN = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
-
-
-def _split_recipients_csv(raw: Any) -> list[str]:
-    if isinstance(raw, list):
-        parts = [str(item or "").strip() for item in raw]
-    else:
-        text = str(raw or "")
-        normalized = text.replace(";", ",").replace("\n", ",")
-        parts = [part.strip() for part in normalized.split(",")]
-    out: list[str] = []
-    seen: set[str] = set()
-    for value in parts:
-        if not value:
-            continue
-        lower = value.lower()
-        if "@" not in lower or "." not in lower.rsplit("@", 1)[-1]:
-            continue
-        if lower in seen:
-            continue
-        seen.add(lower)
-        out.append(lower)
-    return out
-
-
-def _split_ids_csv(raw: Any) -> list[str]:
-    if isinstance(raw, list):
-        parts = [str(item or "").strip() for item in raw]
-    else:
-        text = str(raw or "")
-        normalized = text.replace(";", ",").replace("\n", ",")
-        parts = [part.strip() for part in normalized.split(",")]
-    out: list[str] = []
-    seen: set[str] = set()
-    for value in parts:
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        out.append(value)
-    return out
-
-
-def _extract_builder_template_vars(template: str) -> set[str]:
-    text = str(template or "")
-    names = set(_BUILDER_TEMPLATE_VAR_PATTERN.findall(text))
-    names.update(_BUILDER_TEMPLATE_VAR_DOUBLE_PATTERN.findall(text))
-    return {str(name or "").strip() for name in names if str(name or "").strip()}
-
-
-def _builder_template_vars_allowed(template: str) -> bool:
-    names = _extract_builder_template_vars(template)
-    return names.issubset(_BUILDER_EMAIL_ALLOWED_PLACEHOLDERS)
-
-
-def _builder_webhook_allowed_domains() -> set[str]:
-    configured = getattr(Config, "WEBHOOK_ALLOWED_DOMAINS_LIST", None)
-    if isinstance(configured, list):
-        return {str(v).strip().lower() for v in configured if str(v).strip()}
-    raw = str(getattr(Config, "WEBHOOK_ALLOWED_DOMAINS", "") or "")
-    return {part.strip().lower() for part in raw.split(",") if part.strip()}
-
-
-def _builder_webhook_url_allowed(url: str) -> bool:
-    parsed = urllib.parse.urlparse(str(url or "").strip())
-    if parsed.scheme.lower() != "https":
-        return False
-    if parsed.username or parsed.password:
-        return False
-    host = str(parsed.hostname or "").strip().lower()
-    if not host or host in {"localhost", "127.0.0.1", "::1"}:
-        return False
-    try:
-        ipaddress.ip_address(host)
-        return False
-    except ValueError:
-        pass
-    allowed = _builder_webhook_allowed_domains()
-    return bool(allowed and host in allowed)
-
-
-def _normalize_rule_component_for_import(item: Any, *, type_key: str) -> dict[str, Any]:
-    if not isinstance(item, dict):
-        raise ValueError("validation_error")
-    unknown = set(item.keys()) - _RULE_COMPONENT_ALLOWED_KEYS
-    if unknown:
-        raise ValueError("validation_error")
-    ctype = str(item.get(type_key) or item.get("type") or "").strip()
-    if not ctype:
-        raise ValueError("validation_error")
-    if "config" in item:
-        cfg = item.get("config")
-    elif "config_json" in item:
-        raw = item.get("config_json")
-        cfg = json.loads(str(raw or "{}")) if not isinstance(raw, dict) else raw
-    else:
-        cfg = {}
-    if not isinstance(cfg, dict):
-        raise ValueError("validation_error")
-    ctype_lower = ctype.lower()
-    if type_key == "trigger_type":
-        if ctype_lower not in _BUILDER_TRIGGER_ALLOWLIST:
-            raise ValueError("validation_error")
-        if ctype_lower == "cron":
-            cron_expr = str(cfg.get("cron") or "").strip()
-            if not cron_expr:
-                raise ValueError("validation_error")
-            parse_cron_expression(cron_expr)
-            cfg = {"cron": cron_expr}
-    if type_key == "action_type":
-        if ctype_lower not in _BUILDER_ACTION_ALLOWLIST:
-            raise ValueError("validation_error")
-        if ctype_lower == "email_draft":
-            allowed_keys = {
-                "to",
-                "subject",
-                "body_template",
-                "body",
-                "requires_confirm",
-                "account_id",
-                "attachments",
-            }
-            if set(cfg.keys()) - allowed_keys:
-                raise ValueError("validation_error")
-            recipients = _split_recipients_csv(cfg.get("to"))
-            subject = str(cfg.get("subject") or "").strip()
-            body_template = str(
-                cfg.get("body_template") or cfg.get("body") or ""
-            ).strip()
-            account_id = str(cfg.get("account_id") or "").strip()
-            attachments = _split_ids_csv(cfg.get("attachments"))
-            if not recipients:
-                raise ValueError("validation_error")
-            if (
-                not subject
-                or not body_template
-                or len(subject) > _BUILDER_EMAIL_SUBJECT_MAX_LENGTH
-                or len(body_template) > _BUILDER_EMAIL_BODY_MAX_LENGTH
-                or not _builder_template_vars_allowed(body_template)
-            ):
-                raise ValueError("validation_error")
-            cfg = {
-                "to": recipients,
-                "subject": subject,
-                "body_template": body_template,
-                "requires_confirm": True,
-            }
-            if account_id:
-                cfg["account_id"] = account_id
-            if attachments:
-                cfg["attachments"] = attachments
-        if ctype_lower == "email_send":
-            allowed_keys = {
-                "to",
-                "subject",
-                "body_template",
-                "body",
-                "requires_confirm",
-                "account_id",
-                "attachments",
-            }
-            if set(cfg.keys()) - allowed_keys:
-                raise ValueError("validation_error")
-            recipients = _split_recipients_csv(cfg.get("to"))
-            subject = str(cfg.get("subject") or "").strip()
-            body_template = str(
-                cfg.get("body_template") or cfg.get("body") or ""
-            ).strip()
-            account_id = str(cfg.get("account_id") or "").strip()
-            attachments = _split_ids_csv(cfg.get("attachments"))
-            if not recipients or not subject or not body_template:
-                raise ValueError("validation_error")
-            if (
-                len(subject) > _BUILDER_EMAIL_SUBJECT_MAX_LENGTH
-                or len(body_template) > _BUILDER_EMAIL_BODY_MAX_LENGTH
-                or not _builder_template_vars_allowed(body_template)
-            ):
-                raise ValueError("validation_error")
-            cfg = {
-                "to": recipients,
-                "subject": subject,
-                "body_template": body_template,
-                "requires_confirm": True,
-            }
-            if account_id:
-                cfg["account_id"] = account_id
-            if attachments:
-                cfg["attachments"] = attachments
-        if ctype_lower == "webhook":
-            allowed_keys = {"url", "method", "body_template", "headers"}
-            if set(cfg.keys()) - allowed_keys:
-                raise ValueError("validation_error")
-            url_value = str(cfg.get("url") or "").strip()
-            method = str(cfg.get("method") or "POST").strip().upper()
-            body_template = str(cfg.get("body_template") or "{}")
-            headers = cfg.get("headers") or {}
-            if (
-                not url_value
-                or method != "POST"
-                or not _builder_webhook_url_allowed(url_value)
-                or not isinstance(headers, dict)
-            ):
-                raise ValueError("validation_error")
-            for key in headers:
-                lowered = str(key or "").strip().lower()
-                if (
-                    not lowered
-                    or "auth" in lowered
-                    or "token" in lowered
-                    or lowered in {"cookie", "set-cookie"}
-                ):
-                    raise ValueError("validation_error")
-            cfg = {
-                "url": url_value,
-                "method": "POST",
-                "body_template": body_template,
-                "headers": {str(k): str(v)[:300] for k, v in headers.items()},
-            }
-    return {type_key: ctype, "config": cfg}
-
-
-def _normalize_rule_import_payload(payload: Any) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise ValueError("validation_error")
-    unknown = set(payload.keys()) - _RULE_IMPORT_ALLOWED_KEYS
-    if unknown:
-        raise ValueError("validation_error")
-    name = str(payload.get("name") or "").strip()
-    if not name:
-        raise ValueError("validation_error")
-    description = str(payload.get("description") or "").strip()
-    max_per_minute = int(payload.get("max_executions_per_minute") or 10)
-    if max_per_minute < 1 or max_per_minute > 10000:
-        raise ValueError("validation_error")
-
-    out = {
-        "name": name,
-        "description": description,
-        "is_enabled": False,
-        "max_executions_per_minute": max_per_minute,
-        "triggers": [],
-        "conditions": [],
-        "actions": [],
-    }
-    for key, type_key in (
-        ("triggers", "trigger_type"),
-        ("conditions", "condition_type"),
-        ("actions", "action_type"),
-    ):
-        raw_list = payload.get(key) or []
-        if not isinstance(raw_list, list):
-            raise ValueError("validation_error")
-        out[key] = [
-            _normalize_rule_component_for_import(item, type_key=type_key)
-            for item in raw_list
-        ]
-    return out
-
-
-def _export_rule_payload(rule: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "name": str(rule.get("name") or ""),
-        "description": str(rule.get("description") or ""),
-        "is_enabled": bool(rule.get("is_enabled")),
-        "max_executions_per_minute": int(rule.get("max_executions_per_minute") or 10),
-        "triggers": [
-            {"trigger_type": str(t.get("type") or ""), "config": t.get("config") or {}}
-            for t in (rule.get("triggers") or [])
-            if isinstance(t, dict)
-        ],
-        "conditions": [
-            {
-                "condition_type": str(c.get("type") or ""),
-                "config": c.get("config") or {},
-            }
-            for c in (rule.get("conditions") or [])
-            if isinstance(c, dict)
-        ],
-        "actions": [
-            {"action_type": str(a.get("type") or ""), "config": a.get("config") or {}}
-            for a in (rule.get("actions") or [])
-            if isinstance(a, dict)
-        ],
-    }
-
-
-def _workflow_template_key_from_description(description: str) -> str:
-    text = str(description or "")
-    pattern = re.compile(
-        r"\[" + re.escape(WORKFLOW_TEMPLATE_MARKER_PREFIX) + r"([a-z0-9_]+)\]"
-    )
-    match = pattern.search(text.lower())
-    if not match:
-        return ""
-    return str(match.group(1) or "").strip()
-
-
-def _workflow_summaries(tenant_id: str) -> list[dict[str, Any]]:
-    rows = builder_rule_list(tenant_id=tenant_id)
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        rule_id = str(row.get("id") or "").strip()
-        if not rule_id:
-            continue
-        description = str(row.get("description") or "")
-        template_key = _workflow_template_key_from_description(description)
-        if not template_key:
-            continue
-        logs = builder_execution_log_list(
-            tenant_id=tenant_id, rule_id=rule_id, limit=50
-        )
-        out.append(
-            {
-                **row,
-                "template_key": template_key,
-                "run_count": len(logs),
-                "last_status": str(logs[0].get("status") or "") if logs else "",
-                "last_started_at": str(logs[0].get("started_at") or "") if logs else "",
-            }
-        )
-    return out
-
-
-def _workflow_install_rule(tenant_id: str, template_key: str) -> str:
-    existing = _workflow_summaries(tenant_id)
-    for row in existing:
-        if str(row.get("template_key") or "") == template_key:
-            return str(row.get("id") or "")
-
-    tpl = get_workflow_template(template_key)
-    if not tpl:
-        raise ValueError("not_found")
-    payload = _normalize_rule_import_payload(tpl.get("rule_payload") or {})
-    desc = str(payload.get("description") or "").strip()
-    marker = workflow_template_marker(template_key)
-    payload["description"] = f"{desc}\n{marker}" if desc else marker
-    return builder_rule_create(
-        tenant_id=tenant_id,
-        name=str(payload["name"]),
-        description=str(payload["description"]),
-        is_enabled=False,
-        max_executions_per_minute=int(payload["max_executions_per_minute"]),
-        triggers=list(payload.get("triggers") or []),
-        conditions=list(payload.get("conditions") or []),
-        actions=list(payload.get("actions") or []),
-    )
-
-
-@bp.get("/automation/rules")
-@login_required
-@require_role("OPERATOR")
-def automation_rules_page():
-    rows = automation_rule_list(current_tenant())
-    content = render_template(
-        "automation/rules.html",
-        rules=rows,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="automation")
-
-
-@bp.get("/automation/rules/new")
-@login_required
-@require_role("OPERATOR")
-def automation_rule_new_page():
-    content = render_template(
-        "automation/rule_new.html",
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="automation")
-
-
-@bp.post("/automation/rules/create")
-@login_required
-@require_role("OPERATOR")
-def automation_rule_create_action():
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    try:
-        rule_id = automation_rule_create(
-            tenant_id=current_tenant(),
-            name=str(payload.get("name") or ""),
-            scope=str(payload.get("scope") or "leads"),
-            condition_kind=str(payload.get("condition_kind") or ""),
-            condition_json=str(payload.get("condition_json") or "{}"),
-            action_list_json=str(payload.get("action_list_json") or "[]"),
-            created_by=current_user() or "system",
-        )
-    except PermissionError:
-        return _automation_read_only_response(api=not _is_htmx())
-    except ValueError as exc:
-        code = str(exc)
-        if code == "db_locked":
-            return _automation_error("db_locked", "Datenbank gesperrt.", 503)
-        return _automation_error("validation_error", "Regel ungültig.", 400)
-    if _is_htmx():
-        return redirect(url_for("web.automation_rule_detail_page", rule_id=rule_id))
-    return jsonify({"ok": True, "rule_id": rule_id})
-
-
-@bp.get("/automation/rules/<rule_id>")
-@login_required
-@require_role("OPERATOR")
-def automation_rule_detail_page(rule_id: str):
-    row = automation_rule_get(current_tenant(), rule_id)
-    if not row:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    content = render_template(
-        "automation/rule_detail.html",
-        rule=row,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="automation")
-
-
-@bp.post("/automation/rules/<rule_id>/toggle")
-@login_required
-@require_role("OPERATOR")
-def automation_rule_toggle_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    enabled = str(payload.get("enabled") or "1").strip().lower() in {
-        "1",
-        "true",
-        "on",
-        "yes",
-    }
-    try:
-        automation_rule_toggle(
-            current_tenant(), rule_id, enabled, current_user() or "system"
-        )
-    except PermissionError:
-        return _automation_read_only_response(api=not _is_htmx())
-    except ValueError:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    if _is_htmx():
-        return redirect(url_for("web.automation_rule_detail_page", rule_id=rule_id))
-    return jsonify({"ok": True})
-
-
-@bp.post("/automation/rules/<rule_id>/delete")
-@login_required
-@require_role("OPERATOR")
-def automation_rule_delete_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    try:
-        automation_rule_disable(current_tenant(), rule_id, current_user() or "system")
-    except PermissionError:
-        return _automation_read_only_response(api=not _is_htmx())
-    except ValueError:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    if _is_htmx():
-        return redirect(url_for("web.automation_rules_page"))
-    return jsonify({"ok": True})
-
-
-@bp.post("/automation/run-now")
-@login_required
-@require_role("OPERATOR")
-def automation_run_now_action():
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    max_actions = int(payload.get("max_actions") or 50)
-    try:
-        run_id = automation_run_now(
-            current_tenant(), current_user() or "system", max_actions=max_actions
-        )
-    except PermissionError:
-        return _automation_read_only_response(api=not _is_htmx())
-    except ValueError as exc:
-        code = str(exc)
-        if code == "db_locked":
-            return _automation_error("db_locked", "Datenbank gesperrt.", 503)
-        return _automation_error(
-            "validation_error", "Automation-Run fehlgeschlagen.", 400
-        )
-    if _is_htmx():
-        return redirect(url_for("web.automation_rules_page"))
-    return jsonify({"ok": True, "run_id": run_id})
-
-
-@bp.get("/workflows")
-@login_required
-@require_role("OPERATOR")
-def workflows_page():
-    templates = list_workflow_templates()
-    installed_rows = _workflow_summaries(current_tenant())
-    installed_by_key = {
-        str(row.get("template_key") or ""): row for row in installed_rows
-    }
-    content = render_template(
-        "workflows/list.html",
-        templates=templates,
-        installed_rows=installed_rows,
-        installed_by_key=installed_by_key,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="workflows")
-
-
-@bp.get("/workflows/<rule_id>")
-@login_required
-@require_role("OPERATOR")
-def workflows_detail_page(rule_id: str):
-    rule = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
-    if not rule:
-        return _automation_error("not_found", "Workflow nicht gefunden.", 404)
-    logs = builder_execution_log_list(
-        tenant_id=current_tenant(),
-        rule_id=rule_id,
-        limit=100,
-    )
-    template_key = _workflow_template_key_from_description(
-        str(rule.get("description") or "")
-    )
-    content = render_template(
-        "workflows/detail.html",
-        rule=rule,
-        logs=logs,
-        template_key=template_key,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="workflows")
-
-
-@bp.post("/workflows/install/<template_key>")
-@login_required
-@require_role("OPERATOR")
-def workflows_install_action(template_key: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    try:
-        rule_id = _workflow_install_rule(current_tenant(), template_key)
-    except ValueError as exc:
-        if str(exc) == "not_found":
-            return _automation_error("not_found", "Template nicht gefunden.", 404)
-        return _automation_error("validation_error", "Template ungueltig.", 400)
-    if _is_htmx():
-        return redirect(url_for("web.workflows_detail_page", rule_id=rule_id))
-    if request.is_json:
-        return jsonify({"ok": True, "rule_id": rule_id})
-    return redirect(url_for("web.workflows_detail_page", rule_id=rule_id))
-
-
-@bp.post("/workflows/<rule_id>/toggle")
-@login_required
-@require_role("OPERATOR")
-def workflows_toggle_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    enabled = str(payload.get("enabled") or "1").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    row = builder_rule_update(
-        tenant_id=current_tenant(),
-        rule_id=rule_id,
-        patch={"is_enabled": enabled},
-    )
-    if not row:
-        return _automation_error("not_found", "Workflow nicht gefunden.", 404)
-    if _is_htmx():
-        return redirect(url_for("web.workflows_detail_page", rule_id=rule_id))
-    if request.is_json:
-        return jsonify({"ok": True, "rule": row})
-    return redirect(url_for("web.workflows_page"))
-
-
-@bp.get("/automation")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_page():
-    rows = builder_rule_list(tenant_id=current_tenant())
-    content = render_template(
-        "automation/index.html",
-        rules=rows,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="automation")
-
-
-@bp.post("/automation/import")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_import_action():
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    try:
-        raw = payload.get("rule_json")
-        parsed = raw if isinstance(raw, dict) else json.loads(str(raw or "{}"))
-        normalized = _normalize_rule_import_payload(parsed)
-        rule_id = builder_rule_create(
-            tenant_id=current_tenant(),
-            name=normalized["name"],
-            description=normalized["description"],
-            is_enabled=False,
-            max_executions_per_minute=normalized["max_executions_per_minute"],
-            triggers=normalized["triggers"],
-            conditions=normalized["conditions"],
-            actions=normalized["actions"],
-        )
-    except Exception:
-        return _automation_error(
-            "validation_error",
-            "Import fehlgeschlagen. JSON prüfen.",
-            400,
-        )
-    if _is_htmx():
-        return redirect(
-            url_for("web.automation_builder_rule_detail_page", rule_id=rule_id)
-        )
-    return jsonify({"ok": True, "rule_id": rule_id})
-
-
-@bp.get("/automation/pending")
-@login_required
-@require_role("OPERATOR")
-def automation_pending_page():
-    items = builder_pending_action_list(tenant_id=current_tenant(), limit=200)
-    content = render_template(
-        "automation/pending.html",
-        items=items,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="automation")
-
-
-@bp.post("/automation/pending/<pending_id>/confirm")
-@login_required
-@require_role("OPERATOR")
-def automation_pending_confirm_action(pending_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    if current_role() not in {"ADMIN", "DEV"}:
-        return _automation_error(
-            "forbidden",
-            "Bestätigen ist nur für ADMIN/DEV erlaubt.",
-            403,
-        )
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    ack = str(
-        payload.get("safety_ack") or payload.get("user_confirmed") or ""
-    ).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if not ack:
-        return _automation_error("confirm_required", "Bestätigung erforderlich.", 400)
-    token = str(payload.get("confirm_token") or "").strip()
-    if not token:
-        return _automation_error(
-            "confirm_token_required", "Bestätigungs-Token fehlt.", 400
-        )
-    item = builder_pending_action_confirm_once(
-        tenant_id=current_tenant(),
-        pending_id=pending_id,
-        confirm_token=token,
-    )
-    if not item:
-        return _automation_error(
-            "confirm_replay_blocked",
-            "Bestätigung ungültig oder bereits verwendet.",
-            403,
-        )
-
-    try:
-        action_cfg = json.loads(str(item.get("action_config") or "{}"))
-        context_snapshot = json.loads(str(item.get("context_snapshot") or "{}"))
-    except Exception:
-        return _automation_error(
-            "validation_error", "Pending Action ist ungültig.", 400
-        )
-
-    result = builder_execute_action(
-        tenant_id=current_tenant(),
-        rule_id=str(item.get("rule_id") or ""),
-        action_config=action_cfg,
-        context=context_snapshot,
-        user_confirmed=True,
-    )
-    status = str(result.get("status") or "").strip().lower()
-    if status == "failed":
-        builder_pending_action_set_status(
-            tenant_id=current_tenant(),
-            pending_id=pending_id,
-            status="failed",
-        )
-        return _automation_error(
-            "action_failed", "Action konnte nicht ausgeführt werden.", 400
-        )
-    if _is_htmx():
-        return redirect(url_for("web.automation_pending_page"))
-    return jsonify({"ok": True, "result": result})
-
-
-@bp.post("/automation/run")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_run_action():
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    event_result = process_events_for_tenant(current_tenant())
-    if not bool(event_result.get("ok")):
-        return _automation_error(
-            "runner_failed",
-            "Automation-Runner konnte nicht ausgeführt werden.",
-            400,
-        )
-    cron_result = process_cron_for_tenant(current_tenant())
-    if not bool(cron_result.get("ok")):
-        return _automation_error(
-            "runner_failed",
-            "Automation-Runner konnte nicht ausgeführt werden.",
-            400,
-        )
-    result = {"eventlog": event_result, "cron": cron_result}
-    if _is_htmx():
-        return redirect(url_for("web.automation_builder_page"))
-    return jsonify({"ok": True, "result": result})
-
-
-@bp.post("/automation/<rule_id>/simulate")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_simulate_rule_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    raw_event_id = str(payload.get("event_id") or "").strip()
-    ev_id = int(raw_event_id) if raw_event_id.isdigit() else None
-    result = simulate_rule_for_tenant(
-        current_tenant(),
-        rule_id,
-        event_id=ev_id,
-    )
-    if not bool(result.get("ok")) and str(result.get("reason") or "") not in {
-        "condition_false",
-        "trigger_not_matched",
-    }:
-        return _automation_error(
-            "simulation_failed",
-            "Simulation fehlgeschlagen.",
-            400,
-        )
-    if _is_htmx():
-        return redirect(
-            url_for("web.automation_builder_rule_logs_page", rule_id=rule_id)
-        )
-    return jsonify({"ok": True, "result": result})
-
-
-@bp.get("/automation/<rule_id>/logs")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_rule_logs_page(rule_id: str):
-    rule = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
-    if not rule:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    logs = builder_execution_log_list(
-        tenant_id=current_tenant(),
-        rule_id=rule_id,
-        limit=200,
-    )
-    content = render_template(
-        "automation/logs.html",
-        rule=rule,
-        logs=logs,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="automation")
-
-
-@bp.get("/automation/<rule_id>")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_rule_detail_page(rule_id: str):
-    rule = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
-    if not rule:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    content = render_template(
-        "automation/rule_detail_builder.html",
-        rule=rule,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-        webhook_allowed_domains=sorted(_builder_webhook_allowed_domains()),
-    )
-    return _render_base(content, active_tab="automation")
-
-
-@bp.post("/automation/<rule_id>/trigger/cron")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_add_cron_trigger_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    cron_expr = str(payload.get("cron_expression") or "").strip()
-    if not cron_expr:
-        return _automation_error("validation_error", "Cron-Ausdruck fehlt.", 400)
-    try:
-        parse_cron_expression(cron_expr)
-    except ValueError:
-        return _automation_error("validation_error", "Cron-Ausdruck ungültig.", 400)
-
-    existing = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
-    if not existing:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    triggers = [
-        {"trigger_type": str(t.get("type") or ""), "config": t.get("config") or {}}
-        for t in (existing.get("triggers") or [])
-        if isinstance(t, dict)
-    ]
-    triggers.append({"trigger_type": "cron", "config": {"cron": cron_expr}})
-    updated = builder_rule_update(
-        tenant_id=current_tenant(),
-        rule_id=rule_id,
-        patch={"triggers": triggers},
-    )
-    if not updated:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    return redirect(url_for("web.automation_builder_rule_detail_page", rule_id=rule_id))
-
-
-@bp.post("/automation/<rule_id>/action/email-draft")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_add_email_draft_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    recipients = _split_recipients_csv(payload.get("to"))
-    subject = str(payload.get("subject") or "").strip()
-    body_template = str(payload.get("body_template") or "").strip()
-    if not recipients or not subject or not body_template:
-        return _automation_error(
-            "validation_error", "Empfänger, Betreff und Inhalt sind Pflicht.", 400
-        )
-    if (
-        len(subject) > _BUILDER_EMAIL_SUBJECT_MAX_LENGTH
-        or len(body_template) > _BUILDER_EMAIL_BODY_MAX_LENGTH
-        or not _builder_template_vars_allowed(body_template)
-    ):
-        return _automation_error(
-            "validation_error", "E-Mail-Template ist ungültig.", 400
-        )
-    attachments_raw = str(payload.get("attachments") or "").strip()
-    attachments = [
-        part.strip()
-        for part in attachments_raw.replace(";", ",").split(",")
-        if part.strip()
-    ]
-
-    existing = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
-    if not existing:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-
-    actions = [
-        {"action_type": str(a.get("type") or ""), "config": a.get("config") or {}}
-        for a in (existing.get("actions") or [])
-        if isinstance(a, dict)
-    ]
-    action_cfg: dict[str, Any] = {
-        "to": recipients,
-        "subject": subject,
-        "body_template": body_template,
-        "requires_confirm": True,
-    }
-    account_id = str(payload.get("account_id") or "").strip()
-    if account_id:
-        action_cfg["account_id"] = account_id
-    if attachments:
-        action_cfg["attachments"] = attachments
-    actions.append({"action_type": "email_draft", "config": action_cfg})
-    updated = builder_rule_update(
-        tenant_id=current_tenant(),
-        rule_id=rule_id,
-        patch={"actions": actions},
-    )
-    if not updated:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    return redirect(url_for("web.automation_builder_rule_detail_page", rule_id=rule_id))
-
-
-@bp.post("/automation/<rule_id>/action/email-send")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_add_email_send_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    recipients = _split_recipients_csv(payload.get("to"))
-    subject = str(payload.get("subject") or "").strip()
-    body_template = str(payload.get("body_template") or "").strip()
-    if not recipients or not subject or not body_template:
-        return _automation_error(
-            "validation_error",
-            "Empfänger, Betreff und Body sind Pflicht.",
-            400,
-        )
-    if (
-        len(subject) > _BUILDER_EMAIL_SUBJECT_MAX_LENGTH
-        or len(body_template) > _BUILDER_EMAIL_BODY_MAX_LENGTH
-        or not _builder_template_vars_allowed(body_template)
-    ):
-        return _automation_error(
-            "validation_error", "E-Mail-Template ist ungültig.", 400
-        )
-    attachments = _split_ids_csv(payload.get("attachments"))
-    account_id = str(payload.get("account_id") or "").strip()
-
-    existing = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
-    if not existing:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-
-    actions = [
-        {"action_type": str(a.get("type") or ""), "config": a.get("config") or {}}
-        for a in (existing.get("actions") or [])
-        if isinstance(a, dict)
-    ]
-    action_cfg: dict[str, Any] = {
-        "to": recipients,
-        "subject": subject,
-        "body_template": body_template,
-        "requires_confirm": True,
-    }
-    if account_id:
-        action_cfg["account_id"] = account_id
-    if attachments:
-        action_cfg["attachments"] = attachments
-
-    actions.append({"action_type": "email_send", "config": action_cfg})
-    updated = builder_rule_update(
-        tenant_id=current_tenant(),
-        rule_id=rule_id,
-        patch={"actions": actions},
-    )
-    if not updated:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    return redirect(url_for("web.automation_builder_rule_detail_page", rule_id=rule_id))
-
-
-@bp.post("/automation/<rule_id>/action/webhook")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_add_webhook_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    url_value = str(payload.get("url") or "").strip()
-    method = str(payload.get("method") or "POST").strip().upper()
-    body_template = str(payload.get("body_template") or "{}")
-    headers_raw = str(payload.get("headers_json") or "").strip()
-    if not headers_raw:
-        headers_raw = "{}"
-    try:
-        headers_cfg = json.loads(headers_raw)
-    except Exception:
-        return _automation_error("validation_error", "Headers-JSON ist ungültig.", 400)
-    if not isinstance(headers_cfg, dict):
-        return _automation_error("validation_error", "Headers-JSON ist ungültig.", 400)
-    if method != "POST":
-        return _automation_error("validation_error", "Nur POST ist erlaubt.", 400)
-    if not _builder_webhook_url_allowed(url_value):
-        return _automation_error(
-            "validation_error",
-            "Webhook-URL nicht erlaubt (HTTPS + Allowlist).",
-            400,
-        )
-    for key in headers_cfg:
-        lowered = str(key or "").strip().lower()
-        if (
-            not lowered
-            or "auth" in lowered
-            or "token" in lowered
-            or lowered in {"cookie", "set-cookie"}
-        ):
-            return _automation_error(
-                "validation_error",
-                "Unsichere Header sind nicht erlaubt.",
-                400,
-            )
-
-    existing = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
-    if not existing:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-
-    actions = [
-        {"action_type": str(a.get("type") or ""), "config": a.get("config") or {}}
-        for a in (existing.get("actions") or [])
-        if isinstance(a, dict)
-    ]
-    actions.append(
-        {
-            "action_type": "webhook",
-            "config": {
-                "url": url_value,
-                "method": "POST",
-                "body_template": body_template,
-                "headers": {str(k): str(v)[:300] for k, v in headers_cfg.items()},
-            },
-        }
-    )
-    updated = builder_rule_update(
-        tenant_id=current_tenant(),
-        rule_id=rule_id,
-        patch={"actions": actions},
-    )
-    if not updated:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    return redirect(url_for("web.automation_builder_rule_detail_page", rule_id=rule_id))
-
-
-@bp.get("/automation/<rule_id>/export")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_rule_export_action(rule_id: str):
-    rule = builder_rule_get(tenant_id=current_tenant(), rule_id=rule_id)
-    if not rule:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    return jsonify({"ok": True, "item": _export_rule_payload(rule)})
-
-
-@bp.post("/automation/<rule_id>/toggle")
-@login_required
-@require_role("OPERATOR")
-def automation_builder_rule_toggle_action(rule_id: str):
-    guarded = _automation_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    enabled = str(payload.get("enabled") or "1").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    row = builder_rule_update(
-        tenant_id=current_tenant(),
-        rule_id=rule_id,
-        patch={"is_enabled": enabled},
-    )
-    if not row:
-        return _automation_error("not_found", "Regel nicht gefunden.", 404)
-    if _is_htmx():
-        return redirect(
-            url_for("web.automation_builder_rule_detail_page", rule_id=rule_id)
-        )
-    return jsonify({"ok": True, "rule": row})
-
-
-@bp.get("/insights/daily")
-@login_required
-@require_role("OPERATOR")
-def insights_daily_page():
-    day = (request.args.get("day") or "").strip() or None
-    data = get_or_build_daily_insights(current_tenant(), day)
-    content = render_template("automation/insights_daily.html", data=data)
-    return _render_base(content, active_tab="insights")
-
-
-def _autonomy_error(code: str, message: str, status: int = 400):
-    if request.is_json or request.path.startswith("/api/"):
-        return json_error(code, message, status=status)
-    if _is_htmx():
-        return (
-            render_template(
-                "autonomy/partials/_errors.html",
-                message=message,
-                kind="error",
-            ),
-            status,
-        )
-    return (
-        _render_base(
-            f'<div class="card p-4"><h2 class="text-lg font-semibold">Autonomy Health</h2><p class="muted mt-2">{message}</p></div>',
-            active_tab="autonomy",
-        ),
-        status,
-    )
-
-
-def _autonomy_guard(api: bool = True):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        if api:
-            return json_error("read_only", "Read-only mode aktiv.", status=403)
-        return (
-            render_template(
-                "autonomy/partials/_errors.html",
-                message="Read-only mode aktiv.",
-                kind="error",
-            ),
-            403,
-        )
-    return None
-
-
-@bp.get("/autonomy/health")
-@login_required
-@require_role("OPERATOR")
-def autonomy_health_page():
-    data = get_health_overview(current_tenant(), history_limit=25)
-    policy = knowledge_policy_get(current_tenant())
-    content = render_template(
-        "autonomy/health.html",
-        data=data,
-        ocr_enabled=bool(int(policy.get("allow_ocr", 0))),
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="autonomy")
-
-
-@bp.post("/autonomy/health/backup")
-@login_required
-@require_role("OPERATOR")
-def autonomy_health_backup_action():
-    guarded = _autonomy_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    result = run_backup(current_tenant(), actor_user_id=current_user() or None)
-    if not bool(result.get("ok")):
-        return _autonomy_error(
-            "maintenance_error",
-            "Backup konnte nicht erstellt werden.",
-            status=500,
-        )
-    if request.is_json:
-        return jsonify({"ok": True, "result": result})
-    return redirect(url_for("web.autonomy_health_page"))
-
-
-@bp.post("/autonomy/health/rotate-logs")
-@login_required
-@require_role("OPERATOR")
-def autonomy_health_rotate_logs_action():
-    guarded = _autonomy_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    result = rotate_logs(current_tenant(), actor_user_id=current_user() or None)
-    if not bool(result.get("ok")):
-        return _autonomy_error(
-            "maintenance_error",
-            "Log-Rotation fehlgeschlagen.",
-            status=500,
-        )
-    if request.is_json:
-        return jsonify({"ok": True, "result": result})
-    return redirect(url_for("web.autonomy_health_page"))
-
-
-@bp.post("/autonomy/health/smoke-test")
-@login_required
-@require_role("OPERATOR")
-def autonomy_health_smoke_test_action():
-    guarded = _autonomy_guard(api=not _is_htmx())
-    if guarded is not None:
-        return guarded
-    result = run_smoke_test(current_tenant(), actor_user_id=current_user() or None)
-    if request.is_json:
-        return jsonify({"ok": bool(result.get("ok")), "result": result})
-    return redirect(url_for("web.autonomy_health_page"))
-
-
-@bp.get("/api/automation/rules")
-@login_required
-@require_role("OPERATOR")
-def api_automation_rules():
-    return jsonify({"ok": True, "items": automation_rule_list(current_tenant())})
-
-
-@bp.post("/api/automation/run-now")
-@login_required
-@require_role("OPERATOR")
-def api_automation_run_now():
-    guarded = _automation_guard(api=True)
-    if guarded is not None:
-        return guarded
-    payload = request.get_json(silent=True) or {}
-    try:
-        run_id = automation_run_now(
-            current_tenant(),
-            current_user() or "system",
-            max_actions=int(payload.get("max_actions") or 50),
-        )
-    except PermissionError:
-        return _automation_read_only_response(api=True)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "db_locked":
-            return _automation_error("db_locked", "Datenbank gesperrt.", 503)
-        return _automation_error(
-            "validation_error", "Automation-Run fehlgeschlagen.", 400
-        )
-    return jsonify({"ok": True, "run_id": run_id})
-
-
-@bp.get("/api/insights/daily")
-@login_required
-@require_role("OPERATOR")
-def api_insights_daily():
-    day = (request.args.get("day") or "").strip() or None
-    return jsonify(
-        {"ok": True, "item": get_or_build_daily_insights(current_tenant(), day)}
-    )
-
-
-@bp.get("/api/insights/activation")
-@login_required
-@require_role("OPERATOR")
-def api_insights_activation():
-    try:
-        item = build_activation_report(
-            str(current_tenant() or ""),
-            limit_users=max(1, min(int(request.args.get("limit") or 200), 1000)),
-        )
-    except ValueError:
-        return json_error("validation_error", "Ungültige Parameter.", status=400)
-    return jsonify({"ok": True, "item": item})
-
-
-def _entity_links_error(code: str, message: str, status: int = 400):
-    if request.is_json or request.path.startswith("/api/"):
-        return json_error(code, message, status=status)
-    return (
-        render_template(
-            "entity_links/partials/_errors.html",
-            message=message,
-            code=code,
-            request_id=getattr(g, "request_id", ""),
-        ),
-        status,
-    )
-
-
-@bp.get("/entity-links/<entity_type>/<entity_id>")
-@login_required
-def entity_links_partial(entity_type: str, entity_id: str):
-    link_type = (request.args.get("link_type") or "").strip().lower() or None
-    try:
-        links = list_links_for_entity(
-            current_tenant(),
-            entity_type,
-            entity_id,
-            link_type=link_type,
-            limit=min(int(request.args.get("limit") or 25), 25),
-            offset=max(int(request.args.get("offset") or 0), 0),
-        )
-    except ValueError:
-        return _entity_links_error("validation_error", "Ungültige Link-Parameter.", 400)
-
-    rendered_links: list[dict[str, Any]] = []
-    with core._DB_LOCK:  # type: ignore[attr-defined]
-        con = core._db()  # type: ignore[attr-defined]
-        try:
-            for row in links[:25]:
-                display = entity_display_title(
-                    con,
-                    current_tenant(),
-                    str(row.get("other_type") or ""),
-                    str(row.get("other_id") or ""),
-                )
-                rendered_links.append({**row, "display": display})
-        finally:
-            con.close()
-
-    return render_template(
-        "entity_links/partials/_links_list.html",
-        links=rendered_links,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-
-
-@bp.post("/entity-links/create")
-@login_required
-@require_role("OPERATOR")
-def entity_links_create_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _entity_links_error("read_only", "Read-only mode aktiv.", 403)
-
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    left_type = (payload.get("left_type") if payload else "") or ""
-    left_id = (payload.get("left_id") if payload else "") or ""
-    right_type = (payload.get("right_type") if payload else "") or ""
-    right_id = (payload.get("right_id") if payload else "") or ""
-    link_type = (payload.get("link_type") if payload else "") or "related"
-
-    try:
-        entity_link_create(
-            current_tenant(),
-            left_type,
-            left_id,
-            right_type,
-            right_id,
-            link_type,
-            actor_user_id=current_user() or None,
-        )
-    except PermissionError:
-        return _entity_links_error("read_only", "Read-only mode aktiv.", 403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "duplicate":
-            return _entity_links_error("duplicate", "Link existiert bereits.", 409)
-        if code == "entity_not_found":
-            return _entity_links_error(
-                "entity_not_found", "Entität nicht gefunden.", 404
-            )
-        if code == "db_locked":
-            return _entity_links_error("db_locked", "Datenbank gesperrt.", 503)
-        return _entity_links_error("validation_error", "Ungültige Link-Daten.", 400)
-
-    context_type = (payload.get("context_entity_type") if payload else "") or left_type
-    context_id = (payload.get("context_entity_id") if payload else "") or left_id
-
-    if _is_htmx():
-        return entity_links_partial(str(context_type), str(context_id))
-    return jsonify({"ok": True})
-
-
-@bp.post("/entity-links/<link_id>/delete")
-@login_required
-@require_role("OPERATOR")
-def entity_links_delete_action(link_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _entity_links_error("read_only", "Read-only mode aktiv.", 403)
-
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    context_type = (payload.get("context_entity_type") if payload else "") or ""
-    context_id = (payload.get("context_entity_id") if payload else "") or ""
-
-    try:
-        entity_link_delete(
-            current_tenant(), link_id, actor_user_id=current_user() or None
-        )
-    except PermissionError:
-        return _entity_links_error("read_only", "Read-only mode aktiv.", 403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _entity_links_error("not_found", "Link nicht gefunden.", 404)
-        if code == "db_locked":
-            return _entity_links_error("db_locked", "Datenbank gesperrt.", 503)
-        return _entity_links_error("validation_error", "Löschen fehlgeschlagen.", 400)
-
-    if _is_htmx() and context_type and context_id:
-        return entity_links_partial(str(context_type), str(context_id))
-    return jsonify({"ok": True})
-
-
-def _conversations_error(code: str, message: str, status: int = 400):
-    if request.is_json or request.path.startswith("/api/"):
-        return json_error(code, message, status=status)
-    return (
-        _render_base(
-            f'<div class="card p-4"><h2 class="text-lg font-semibold">Conversations</h2><p class="muted mt-2">{message}</p></div>',
-            active_tab="conversations",
-        ),
-        status,
-    )
-
-
-@bp.get("/conversations")
-@login_required
-def conversations_page():
-    channel = (request.args.get("channel") or "").strip().lower() or None
-    limit = _clamp_page_size(request.args.get("limit"), default=25)
-    if limit > 50:
-        limit = 50
-    try:
-        events = omni_list_events(current_tenant(), channel=channel, limit=limit)
-    except ValueError:
-        return _conversations_error(
-            "validation_error", "Ungültiger Filter für Conversations.", status=400
-        )
-    content = render_template(
-        "omni/inbox.html",
-        events=events,
-        channel=(channel or ""),
-        limit=limit,
-    )
-    return _render_base(content, active_tab="conversations")
-
-
-@bp.get("/conversations/<event_id>")
-@login_required
-def conversations_detail_page(event_id: str):
-    try:
-        event = omni_get_event(current_tenant(), event_id)
-    except ValueError:
-        return _conversations_error("validation_error", "Ungültige Event-ID.", 400)
-    if not event:
-        return _conversations_error("not_found", "Conversation nicht gefunden.", 404)
-    content = render_template("omni/event_detail.html", event=event)
-    return _render_base(content, active_tab="conversations")
-
-
-def _knowledge_error(code: str, message: str, status: int = 400):
-    if request.is_json or request.path.startswith("/api/"):
-        return json_error(code, message, status=status)
-    return (
-        _render_base(
-            f'<div class="card p-4"><h2 class="text-lg font-semibold">Knowledge</h2><p class="muted mt-2">{message}</p></div>',
-            active_tab="knowledge",
-        ),
-        status,
-    )
-
-
-def _tags_error(code: str, message: str, status: int = 400):
-    if request.is_json or request.path.startswith("/api/"):
-        return json_error(code, message, status=status)
-    if _is_htmx():
-        return (
-            render_template(
-                "tags/partials/_errors.html",
-                message=message,
-                kind="error",
-            ),
-            status,
-        )
-    return (
-        _render_base(
-            f'<div class="card p-4"><h2 class="text-lg font-semibold">Tags</h2><p class="muted mt-2">{message}</p></div>',
-            active_tab="knowledge",
-        ),
-        status,
-    )
-
-
-def _autotag_error(code: str, message: str, status: int = 400):
-    if request.is_json or request.path.startswith("/api/"):
-        return json_error(code, message, status=status)
-    if _is_htmx():
-        return (
-            render_template(
-                "autonomy/partials/_errors.html",
-                message=message,
-                kind="error",
-            ),
-            status,
-        )
-    return (
-        _render_base(
-            f'<div class="card p-4"><h2 class="text-lg font-semibold">Auto-Tagging</h2><p class="muted mt-2">{message}</p></div>',
-            active_tab="knowledge",
-        ),
-        status,
-    )
-
-
-def _build_autotag_form_payload(
-    form,
-) -> tuple[str, int, dict[str, Any], list[dict[str, Any]]]:
-    def _values(key: str) -> list[str]:
-        if hasattr(form, "getlist"):
-            return [str(v or "") for v in form.getlist(key)]
-        raw = form.get(key) if isinstance(form, dict) else None
-        if raw is None:
-            return []
-        if isinstance(raw, list):
-            return [str(v or "") for v in raw]
-        return [str(raw)]
-
-    name = str(form.get("name") or "").strip()
-    try:
-        priority = int(form.get("priority") or 0)
-    except Exception as exc:
-        raise ValueError("validation_error") from exc
-    priority = max(-100, min(priority, 100))
-
-    conds: list[dict[str, Any]] = []
-    filename_glob = str(form.get("filename_glob") or "").strip()
-    if filename_glob:
-        conds.append({"type": "filename_glob", "pattern": filename_glob})
-
-    ext_in = [
-        str(v or "").strip().lower() for v in _values("ext_in") if str(v or "").strip()
-    ]
-    if ext_in:
-        conds.append({"type": "ext_in", "values": ext_in[:10]})
-
-    doctype_token = str(form.get("doctype_token") or "").strip().lower()
-    if doctype_token:
-        conds.append(
-            {
-                "type": "meta_token_in",
-                "key": "doctype",
-                "values": [doctype_token],
-            }
-        )
-
-    if not conds:
-        raise ValueError("validation_error")
-    if len(conds) == 1:
-        condition_obj: dict[str, Any] = conds[0]
-    else:
-        condition_obj = {"all": conds}
-
-    actions: list[dict[str, Any]] = []
-    tag_names = [
-        str(v or "").strip() for v in _values("add_tag") if str(v or "").strip()
-    ]
-    for tag_name in tag_names[:3]:
-        actions.append({"type": "add_tag", "tag_name": tag_name})
-
-    set_doctype_token = str(form.get("set_doctype_token") or "").strip().lower()
-    if set_doctype_token:
-        actions.append({"type": "set_doctype", "token": set_doctype_token})
-
-    set_correspondent_token = (
-        str(form.get("set_correspondent_token") or "").strip().lower()
-    )
-    if set_correspondent_token:
-        actions.append({"type": "set_correspondent", "token": set_correspondent_token})
-
-    if not actions:
-        raise ValueError("validation_error")
-    return name, priority, condition_obj, actions
-
-
-def _autotag_rule_summary(row: dict[str, Any]) -> dict[str, Any]:
-    item = dict(row)
-    cond_types: list[str] = []
-    action_types: list[str] = []
-    try:
-        cond = json.loads(str(item.get("condition_json") or "{}"))
-        acts = json.loads(str(item.get("action_json") or "[]"))
-
-        def _walk_cond(node: Any) -> None:
-            if not isinstance(node, dict):
-                return
-            if "all" in node and isinstance(node["all"], list):
-                for c in node["all"]:
-                    _walk_cond(c)
-                return
-            if "any" in node and isinstance(node["any"], list):
-                for c in node["any"]:
-                    _walk_cond(c)
-                return
-            ctype = str(node.get("type") or "")
-            if ctype:
-                cond_types.append(ctype)
-
-        _walk_cond(cond)
-        if isinstance(acts, list):
-            for action in acts:
-                if isinstance(action, dict):
-                    atype = str(action.get("type") or "")
-                    if atype:
-                        action_types.append(atype)
-    except Exception:
-        pass
-
-    item["condition_types"] = sorted(set(cond_types))
-    item["action_types"] = sorted(set(action_types))
-    return item
-
-
-@bp.get("/knowledge")
-@login_required
-def knowledge_search_page():
-    if hasattr(current_app, "limiter"):
-        @current_app.limiter.limit("60 per minute")
-        def _limited_search():
-            return _knowledge_search_page_logic()
-        return _limited_search()
-    return _knowledge_search_page_logic()
-
-def _knowledge_search_page_logic():
-    tenant_id = current_tenant()
-    q = (request.args.get("q") or "").strip()
-    source_type = (request.args.get("source_type") or "").strip().lower() or None
-    owner_only = (request.args.get("owner_only") or "").strip() in {
-        "1",
-        "true",
-        "on",
-        "yes",
-    }
-    limit = _clamp_page_size(request.args.get("limit"), default=10)
-    if limit > 25:
-        limit = 25
-
-    results: list[dict[str, Any]] = []
-    if q:
-        try:
-            results = knowledge_search(
-                tenant_id=tenant_id,
-                query=q,
-                owner_user_id=(current_user() if owner_only else None),
-                source_type=source_type,
-                limit=limit,
-            )
-        except ValueError:
-            results = []
-
-    all_tags = tag_list(tenant_id, limit=200, offset=0, include_usage=False)
-    chunk_ids = [str(r.get("chunk_id") or "") for r in results if r.get("chunk_id")]
-    entity_tags = (
-        tags_for_entities(tenant_id, "knowledge_chunk", chunk_ids) if chunk_ids else {}
-    )
-
-    content = render_template(
-        "knowledge/search.html",
-        q=q,
-        source_type=source_type or "",
-        owner_only=owner_only,
-        results=results,
-        tags_by_entity=entity_tags,
-        all_tags=all_tags,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.get("/knowledge/_results")
-@login_required
-def knowledge_results_partial():
-    if hasattr(current_app, "limiter"):
-        @current_app.limiter.limit("60 per minute")
-        def _limited_results():
-            return _knowledge_results_partial_logic()
-        return _limited_results()
-    return _knowledge_results_partial_logic()
-
-def _knowledge_results_partial_logic():
-    tenant_id = current_tenant()
-    q = (request.args.get("q") or "").strip()
-    source_type = (request.args.get("source_type") or "").strip().lower() or None
-    owner_only = (request.args.get("owner_only") or "").strip() in {
-        "1",
-        "true",
-        "on",
-        "yes",
-    }
-    limit = _clamp_page_size(request.args.get("limit"), default=10)
-    if limit > 25:
-        limit = 25
-
-    results: list[dict[str, Any]] = []
-    if q:
-        try:
-            results = knowledge_search(
-                tenant_id=tenant_id,
-                query=q,
-                owner_user_id=(current_user() if owner_only else None),
-                source_type=source_type,
-                limit=limit,
-            )
-        except ValueError:
-            results = []
-
-    all_tags = tag_list(tenant_id, limit=200, offset=0, include_usage=False)
-    chunk_ids = [str(r.get("chunk_id") or "") for r in results if r.get("chunk_id")]
-    entity_tags = (
-        tags_for_entities(tenant_id, "knowledge_chunk", chunk_ids) if chunk_ids else {}
-    )
-
-    return render_template(
-        "knowledge/partials/_results.html",
-        results=results,
-        tags_by_entity=entity_tags,
-        all_tags=all_tags,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-
-
-@bp.get("/tags")
-@login_required
-def tags_page():
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=50)
-    if page_size > 200:
-        page_size = 200
-    offset = (page - 1) * page_size
-    rows = tag_list(
-        current_tenant(),
-        limit=page_size,
-        offset=offset,
-        include_usage=True,
-    )
-    content = render_template(
-        "tags/list.html",
-        tags=rows,
-        page=page,
-        page_size=page_size,
-        has_more=(len(rows) == page_size),
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.post("/tags/create")
-@login_required
-@require_role("OPERATOR")
-def tags_create_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    try:
-        row = tag_create(
-            current_tenant(),
-            name=((payload.get("name") if payload else "") or ""),
-            color=((payload.get("color") if payload else "") or None),
-            actor_user_id=current_user() or None,
-        )
-    except PermissionError:
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "duplicate":
-            return _tags_error("duplicate", "Tag existiert bereits.", status=409)
-        if code == "limit_exceeded":
-            return _tags_error("limit_exceeded", "Tag-Limit erreicht.", status=400)
-        return _tags_error("validation_error", "Tag konnte nicht erstellt werden.", 400)
-
-    if _is_htmx():
-        return render_template("tags/partials/_tag_row.html", tag=row)
-    if not request.is_json:
-        return redirect(url_for("web.tags_page"))
-    return jsonify({"ok": True, "tag": row})
-
-
-@bp.post("/tags/<tag_id>/update")
-@login_required
-@require_role("OPERATOR")
-def tags_update_action(tag_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    try:
-        row = tag_update(
-            current_tenant(),
-            tag_id=tag_id,
-            name=(payload.get("name") if payload and "name" in payload else None),
-            color=(payload.get("color") if payload and "color" in payload else None),
-            actor_user_id=current_user() or None,
-        )
-    except PermissionError:
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _tags_error("not_found", "Tag nicht gefunden.", status=404)
-        if code == "duplicate":
-            return _tags_error("duplicate", "Tag existiert bereits.", status=409)
-        return _tags_error(
-            "validation_error", "Tag konnte nicht aktualisiert werden.", 400
-        )
-
-    if _is_htmx():
-        return render_template("tags/partials/_tag_row.html", tag=row)
-    if not request.is_json:
-        return redirect(url_for("web.tags_page"))
-    return jsonify({"ok": True, "tag": row})
-
-
-@bp.post("/tags/<tag_id>/delete")
-@login_required
-@require_role("OPERATOR")
-def tags_delete_action(tag_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    try:
-        tag_delete(current_tenant(), tag_id, actor_user_id=current_user() or None)
-    except PermissionError:
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _tags_error("not_found", "Tag nicht gefunden.", status=404)
-        return _tags_error("validation_error", "Tag konnte nicht gelöscht werden.", 400)
-
-    if _is_htmx():
-        return ""
-    if not request.is_json:
-        return redirect(url_for("web.tags_page"))
-    return jsonify({"ok": True})
-
-
-@bp.post("/tags/assign")
-@login_required
-@require_role("OPERATOR")
-def tags_assign_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    try:
-        row = tag_assign(
-            current_tenant(),
-            entity_type=((payload.get("entity_type") if payload else "") or ""),
-            entity_id=((payload.get("entity_id") if payload else "") or ""),
-            tag_id=((payload.get("tag_id") if payload else "") or ""),
-            actor_user_id=current_user() or None,
-        )
-    except PermissionError:
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "duplicate":
-            return _tags_error("duplicate", "Tag bereits zugeordnet.", status=409)
-        if code == "not_found":
-            return _tags_error("not_found", "Tag nicht gefunden.", status=404)
-        if code == "limit_exceeded":
-            return _tags_error(
-                "limit_exceeded", "Zu viele Tags für dieses Objekt.", 400
-            )
-        return _tags_error(
-            "validation_error", "Tag konnte nicht zugeordnet werden.", 400
-        )
-
-    next_url = (payload.get("next") if payload else "") or ""
-    if next_url and not str(next_url).startswith("/"):
-        next_url = ""
-    if next_url and not request.is_json:
-        return redirect(str(next_url))
-    return jsonify({"ok": True, "assignment": row})
-
-
-@bp.post("/tags/unassign")
-@login_required
-@require_role("OPERATOR")
-def tags_unassign_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    try:
-        tag_unassign(
-            current_tenant(),
-            entity_type=((payload.get("entity_type") if payload else "") or ""),
-            entity_id=((payload.get("entity_id") if payload else "") or ""),
-            tag_id=((payload.get("tag_id") if payload else "") or ""),
-            actor_user_id=current_user() or None,
-        )
-    except PermissionError:
-        return _tags_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _tags_error("not_found", "Zuordnung nicht gefunden.", status=404)
-        return _tags_error("validation_error", "Tag konnte nicht entfernt werden.", 400)
-
-    next_url = (payload.get("next") if payload else "") or ""
-    if next_url and not str(next_url).startswith("/"):
-        next_url = ""
-    if next_url and not request.is_json:
-        return redirect(str(next_url))
-    return jsonify({"ok": True})
-
-
-@bp.get("/autonomy/autotag/rules")
-@login_required
-@require_role("OPERATOR")
-def autotag_rules_page():
-    tenant_id = current_tenant()
-    rules = [_autotag_rule_summary(r) for r in autotag_rules_list(tenant_id)]
-    all_tags = tag_list(tenant_id, limit=500, offset=0, include_usage=False)
-    content = render_template(
-        "autonomy/autotag_rules.html",
-        rules=rules,
-        all_tags=all_tags,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.get("/autonomy/autotag/rules/new")
-@login_required
-@require_role("OPERATOR")
-def autotag_rule_new_page():
-    tenant_id = current_tenant()
-    all_tags = tag_list(tenant_id, limit=500, offset=0, include_usage=False)
-    content = render_template(
-        "autonomy/autotag_rule_form.html",
-        all_tags=all_tags,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-        defaults={"priority": 0, "enabled": True},
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.post("/autonomy/autotag/rules/create")
-@login_required
-@require_role("OPERATOR")
-def autotag_rule_create_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    try:
-        name, priority, condition_obj, actions = _build_autotag_form_payload(payload)
-        enabled = str(payload.get("enabled") or "1").strip().lower() not in {
-            "0",
-            "false",
-            "off",
-            "no",
-        }
-        row = autotag_rule_create(
-            current_tenant(),
-            name=name,
-            priority=priority,
-            condition_obj=condition_obj,
-            action_list=actions,
-            actor_user_id=current_user() or None,
-            enabled=enabled,
-        )
-    except PermissionError:
-        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "duplicate":
-            return _autotag_error(
-                "duplicate", "Regelname existiert bereits.", status=409
-            )
-        if code == "limit_exceeded":
-            return _autotag_error("limit_exceeded", "Regellimit erreicht.", status=400)
-        return _autotag_error(
-            "validation_error", "Regel konnte nicht erstellt werden.", status=400
-        )
-
-    if request.is_json:
-        return jsonify({"ok": True, "rule": _autotag_rule_summary(row)})
-    return redirect(url_for("web.autotag_rules_page"))
-
-
-@bp.post("/autonomy/autotag/rules/<rule_id>/toggle")
-@login_required
-@require_role("OPERATOR")
-def autotag_rule_toggle_action(rule_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = (
-        request.form if not request.is_json else (request.get_json(silent=True) or {})
-    )
-    enabled_raw = str(payload.get("enabled") or "").strip().lower()
-    enabled = enabled_raw in {"1", "true", "on", "yes"}
-    try:
-        row = autotag_rule_toggle(
-            current_tenant(),
-            rule_id,
-            enabled=enabled,
-            actor_user_id=current_user() or None,
-        )
-    except PermissionError:
-        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _autotag_error("not_found", "Regel nicht gefunden.", status=404)
-        return _autotag_error(
-            "validation_error", "Regel konnte nicht umgeschaltet werden.", status=400
-        )
-
-    if request.is_json:
-        return jsonify({"ok": True, "rule": _autotag_rule_summary(row)})
-    return redirect(url_for("web.autotag_rules_page"))
-
-
-@bp.post("/autonomy/autotag/rules/<rule_id>/delete")
-@login_required
-@require_role("OPERATOR")
-def autotag_rule_delete_action(rule_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
-    try:
-        autotag_rule_delete(
-            current_tenant(), rule_id, actor_user_id=current_user() or None
-        )
-    except PermissionError:
-        return _autotag_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _autotag_error("not_found", "Regel nicht gefunden.", status=404)
-        return _autotag_error(
-            "validation_error", "Regel konnte nicht gelöscht werden.", status=400
-        )
-
-    if request.is_json:
-        return jsonify({"ok": True})
-    return redirect(url_for("web.autotag_rules_page"))
-
-
-@bp.get("/knowledge/notes")
-@login_required
-def knowledge_notes_page():
-    tenant_id = current_tenant()
-    owner = current_user() or ""
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    if page_size > 25:
-        page_size = 25
-    offset = (page - 1) * page_size
-
-    notes = knowledge_notes_list(
-        tenant_id, owner_user_id=owner, limit=page_size, offset=offset
-    )
-    selected_note_id = (request.args.get("note_id") or "").strip()
-    if not selected_note_id and notes:
-        selected_note_id = str(notes[0].get("chunk_id") or "")
-    content = render_template(
-        "knowledge/notes_list.html",
-        notes=notes,
-        page=page,
-        page_size=page_size,
-        has_more=(len(notes) == page_size),
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-        selected_note_id=selected_note_id,
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.get("/knowledge/notes/new")
-@login_required
-def knowledge_new_note_page():
-    content = render_template(
-        "knowledge/note_form.html",
-        mode="create",
-        note={},
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.post("/knowledge/notes/create")
-@login_required
-@require_role("OPERATOR")
-def knowledge_create_note_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    try:
-        note = knowledge_note_create(
-            tenant_id=current_tenant(),
-            owner_user_id=current_user() or "",
-            title=(payload.get("title") if payload else "") or "",
-            body=(payload.get("body") if payload else "") or "",
-            tags=(payload.get("tags") if payload else "") or None,
-        )
-    except PermissionError:
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "policy_blocked":
-            return _knowledge_error(
-                "policy_blocked", "Quelle laut Policy deaktiviert.", status=403
-            )
-        return _knowledge_error(
-            "validation_error", "Notiz konnte nicht gespeichert werden.", status=400
-        )
-    if _is_htmx():
-        return redirect(url_for("web.knowledge_notes_page"))
-    return jsonify({"ok": True, "note": note})
-
-
-@bp.post("/knowledge/notes/<chunk_id>/edit")
-@login_required
-@require_role("OPERATOR")
-def knowledge_edit_note_action(chunk_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    try:
-        note = knowledge_note_update(
-            tenant_id=current_tenant(),
-            chunk_id=chunk_id,
-            owner_user_id=current_user() or "",
-            title=(payload.get("title") if payload else "") or "",
-            body=(payload.get("body") if payload else "") or "",
-            tags=(payload.get("tags") if payload else "") or None,
-        )
-    except PermissionError:
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _knowledge_error("not_found", "Notiz nicht gefunden.", status=404)
-        if code == "forbidden":
-            return _knowledge_error(
-                "forbidden", "Keine Berechtigung für diese Notiz.", status=403
-            )
-        return _knowledge_error(
-            "validation_error", "Notiz konnte nicht aktualisiert werden.", status=400
-        )
-    if _is_htmx():
-        return redirect(url_for("web.knowledge_notes_page"))
-    return jsonify({"ok": True, "note": note})
-
-
-@bp.post("/knowledge/notes/<chunk_id>/delete")
-@login_required
-@require_role("OPERATOR")
-def knowledge_delete_note_action(chunk_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    try:
-        knowledge_note_delete(
-            tenant_id=current_tenant(),
-            chunk_id=chunk_id,
-            owner_user_id=current_user() or "",
-        )
-    except PermissionError:
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "not_found":
-            return _knowledge_error("not_found", "Notiz nicht gefunden.", status=404)
-        if code == "forbidden":
-            return _knowledge_error(
-                "forbidden", "Keine Berechtigung für diese Notiz.", status=403
-            )
-        return _knowledge_error(
-            "validation_error", "Notiz konnte nicht gelöscht werden.", status=400
-        )
-    if _is_htmx():
-        return redirect(url_for("web.knowledge_notes_page"))
-    return jsonify({"ok": True})
-
-
-@bp.get("/knowledge/settings")
-@login_required
-def knowledge_settings_page():
-    policy = knowledge_policy_get(current_tenant())
-    
-    # EPIC 3: Get current DB path for UI
-    from app.database import CONFIG_FILE
-    db_path = ""
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-                db_path = data.get("database_path", "")
-        except Exception:
-            pass
-
-    content = render_template(
-        "knowledge/settings.html",
-        policy=policy,
-        db_path=db_path,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.post("/knowledge/settings/database-path")
-@login_required
-@require_role("ADMIN")
-def knowledge_settings_database_path():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return jsonify({"ok": False, "error": "Read-only mode active"}), 403
-    
-    payload = request.get_json(silent=True) or {}
-    new_path = payload.get("path")
-    if not new_path:
-        return jsonify({"ok": False, "error": "Path missing"}), 400
-
-    # 1. Persist to config.json
-    from app.database import CONFIG_FILE
-    try:
-        config_data = {}
-        if CONFIG_FILE.exists():
-            with open(CONFIG_FILE, "r") as f:
-                config_data = json.load(f)
-        
-        config_data["database_path"] = new_path
-        
-        os.makedirs(CONFIG_FILE.parent, exist_ok=True)
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config_data, f, indent=4)
-            
-        # 2. Start/Restart Watchdog
-        from app.autonomy.indexer_watchdog import start_document_watcher
-        # Global state for observer would be better in a production app context
-        start_document_watcher(new_path)
-        
-        return jsonify({"ok": True, "path": new_path})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@bp.post("/knowledge/settings/email/toggle")
-@login_required
-@require_role("OPERATOR")
-def knowledge_settings_email_toggle_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    enabled = str(payload.get("enabled") if payload else "").strip().lower() in {
-        "1",
-        "true",
-        "on",
-        "yes",
-    }
-    try:
-        policy = knowledge_policy_update(
-            current_tenant(),
-            actor_user_id=current_user() or "",
-            allow_email=enabled,
-        )
-    except PermissionError:
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError:
-        return _knowledge_error(
-            "validation_error", "Ungültige Policy-Konfiguration.", status=400
-        )
-
-    if _is_htmx():
-        return render_template(
-            "knowledge/partials/_errors.html",
-            message=(
-                "E-Mail Quelle aktiviert." if enabled else "E-Mail Quelle deaktiviert."
-            ),
-            kind="ok",
-        )
-    return jsonify({"ok": True, "policy": policy})
-
-
-@bp.get("/knowledge/email/upload")
-@login_required
-def knowledge_email_upload_page():
-    policy = knowledge_policy_get(current_tenant())
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    rows, total = knowledge_email_sources_list(
-        current_tenant(), page=page, page_size=page_size
-    )
-    content = render_template(
-        "knowledge/email_upload.html",
-        policy=policy,
-        emails=rows,
-        total=total,
-        page=page,
-        page_size=page_size,
-        has_more=(len(rows) == page_size),
-        max_eml_bytes=int(
-            current_app.config.get("KNOWLEDGE_EMAIL_MAX_BYTES", 2 * 1024 * 1024)
-        ),
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.post("/knowledge/email/upload")
-@login_required
-@require_role("OPERATOR")
-def knowledge_email_upload_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-
-    policy = knowledge_policy_get(current_tenant())
-    if not int(policy.get("allow_email", 0)):
-        return _knowledge_error(
-            "policy_blocked", "E-Mail Quelle ist deaktiviert.", status=403
-        )
-
-    f = request.files.get("file")
-    if f is None:
-        return _knowledge_error(
-            "file_required", "Bitte .eml-Datei hochladen.", status=400
-        )
-    filename = (f.filename or "").strip().lower()
-    if not filename.endswith(".eml"):
-        return _knowledge_error(
-            "invalid_file_type", "Nur .eml-Dateien sind erlaubt.", status=400
-        )
-
-    max_bytes = int(
-        current_app.config.get("KNOWLEDGE_EMAIL_MAX_BYTES", 2 * 1024 * 1024)
-    )
-    raw = f.read(max_bytes + 1) or b""
-    if not raw:
-        return _knowledge_error("empty_file", "Datei ist leer.", status=400)
-    if len(raw) > max_bytes:
-        return _knowledge_error(
-            "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
-        )
-
-    try:
-        result = knowledge_email_ingest_eml(
-            tenant_id=current_tenant(),
-            actor_user_id=current_user() or None,
-            eml_bytes=raw,
-            filename_hint=(f.filename or ""),
-        )
-    except PermissionError:
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "policy_blocked":
-            return _knowledge_error(
-                "policy_blocked", "E-Mail Quelle ist deaktiviert.", status=403
-            )
-        if code == "payload_too_large":
-            return _knowledge_error(
-                "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
-            )
-        if code == "parse_error":
-            return _knowledge_error(
-                "parse_error", "EML konnte nicht verarbeitet werden.", status=400
-            )
-        if code == "db_locked":
-            return _knowledge_error("db_locked", "Datenbank ist gesperrt.", status=503)
-        return _knowledge_error(
-            "validation_error", "Upload fehlgeschlagen.", status=400
-        )
-
-    if _is_htmx():
-        return render_template(
-            "knowledge/partials/_email_ingest_result.html", result=result
-        )
-    return jsonify({"ok": True, "result": result})
-
-
-@bp.get("/knowledge/ics/upload")
-@login_required
-def knowledge_ics_upload_page():
-    policy = knowledge_policy_get(current_tenant())
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    rows, total = knowledge_ics_sources_list(
-        current_tenant(), page=page, page_size=page_size
-    )
-    content = render_template(
-        "knowledge/ics_upload.html",
-        policy=policy,
-        items=rows,
-        total=total,
-        page=page,
-        page_size=page_size,
-        has_more=(len(rows) == page_size),
-        max_ics_bytes=int(
-            current_app.config.get("KNOWLEDGE_ICS_MAX_BYTES", 256 * 1024)
-        ),
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="knowledge")
-
-
-@bp.post("/knowledge/ics/upload")
-@login_required
-@require_role("OPERATOR")
-def knowledge_ics_upload_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-
-    policy = knowledge_policy_get(current_tenant())
-    if not int(policy.get("allow_calendar", 0)):
-        return _knowledge_error(
-            "policy_blocked", "Kalender-Quelle ist deaktiviert.", status=403
-        )
-
-    f = request.files.get("file")
-    if f is None:
-        return _knowledge_error(
-            "file_required", "Bitte .ics-Datei hochladen.", status=400
-        )
-    filename = (f.filename or "").strip().lower()
-    if not filename.endswith(".ics"):
-        return _knowledge_error(
-            "invalid_file_type", "Nur .ics-Dateien sind erlaubt.", status=400
-        )
-
-    max_bytes = int(current_app.config.get("KNOWLEDGE_ICS_MAX_BYTES", 256 * 1024))
-    raw = f.read(max_bytes + 1) or b""
-    if not raw:
-        return _knowledge_error("empty_file", "Datei ist leer.", status=400)
-    if len(raw) > max_bytes:
-        return _knowledge_error(
-            "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
-        )
-
-    try:
-        result = knowledge_ics_ingest(
-            tenant_id=current_tenant(),
-            actor_user_id=current_user() or None,
-            ics_bytes=raw,
-            filename_hint=(f.filename or ""),
-        )
-    except PermissionError:
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "policy_blocked":
-            return _knowledge_error(
-                "policy_blocked", "Kalender-Quelle ist deaktiviert.", status=403
-            )
-        if code == "payload_too_large":
-            return _knowledge_error(
-                "payload_too_large", "Datei überschreitet das Upload-Limit.", status=413
-            )
-        if code == "db_locked":
-            return _knowledge_error("db_locked", "Datenbank ist gesperrt.", status=503)
-        return _knowledge_error(
-            "validation_error", "Upload fehlgeschlagen.", status=400
-        )
-
-    if _is_htmx():
-        return render_template(
-            "knowledge/partials/_ics_ingest_result.html", result=result
-        )
-    return jsonify({"ok": True, "result": result})
-
-
-@bp.post("/knowledge/settings/save")
-@login_required
-@require_role("OPERATOR")
-def knowledge_settings_save_action():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    flag_keys = [
-        "allow_manual",
-        "allow_tasks",
-        "allow_projects",
-        "allow_documents",
-        "allow_leads",
-        "allow_email",
-        "allow_calendar",
-        "allow_ocr",
-        "allow_customer_pii",
-    ]
-    flags: dict[str, bool] = {}
-    for key in flag_keys:
-        val = payload.get(key) if payload else None
-        flags[key] = str(val).strip().lower() in {"1", "true", "on", "yes"}
-
-    try:
-        policy = knowledge_policy_update(
-            current_tenant(),
-            actor_user_id=current_user() or "",
-            **flags,
-        )
-    except PermissionError:
-        return _knowledge_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError:
-        return _knowledge_error(
-            "validation_error", "Ungültige Policy-Konfiguration.", status=400
-        )
-
-    if _is_htmx():
-        return render_template(
-            "knowledge/partials/_errors.html",
-            message="Einstellungen gespeichert.",
-            kind="ok",
-        )
-    return jsonify({"ok": True, "policy": policy})
-
-
-@bp.get("/api/knowledge/search")
-@login_required
-def api_knowledge_search():
-    q = (request.args.get("q") or "").strip()
-    source_type = (request.args.get("source_type") or "").strip().lower() or None
-    owner_only = (request.args.get("owner_only") or "").strip() in {
-        "1",
-        "true",
-        "on",
-        "yes",
-    }
-    limit = _clamp_page_size(request.args.get("limit"), default=10)
-    if limit > 25:
-        limit = 25
-    try:
-        rows = knowledge_search(
-            tenant_id=current_tenant(),
-            query=q,
-            owner_user_id=(current_user() if owner_only else None),
-            source_type=source_type,
-            limit=limit,
-        )
-    except ValueError:
-        return json_error("validation_error", "Ungültige Suchanfrage.", status=400)
-    return jsonify({"ok": True, "items": rows})
-
-
-@bp.get("/api/knowledge/notes")
-@login_required
-def api_knowledge_notes_list():
-    limit = _clamp_page_size(request.args.get("limit"), default=25)
-    if limit > 25:
-        limit = 25
-    offset = max(0, int(request.args.get("offset") or 0))
-    notes = knowledge_notes_list(
-        tenant_id=current_tenant(),
-        owner_user_id=current_user() or "",
-        limit=limit,
-        offset=offset,
-    )
-    return jsonify({"ok": True, "items": notes})
-
-
-@bp.post("/api/knowledge/notes")
-@login_required
-@require_role("OPERATOR")
-def api_knowledge_notes_create():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return json_error("read_only", "Read-only mode aktiv.", status=403)
-    payload = request.get_json(silent=True) or {}
-    try:
-        note = knowledge_note_create(
-            tenant_id=current_tenant(),
-            owner_user_id=current_user() or "",
-            title=(payload.get("title") or ""),
-            body=(payload.get("body") or ""),
-            tags=(payload.get("tags") or None),
-        )
-    except PermissionError:
-        return json_error("read_only", "Read-only mode aktiv.", status=403)
-    except ValueError as exc:
-        if str(exc) == "policy_blocked":
-            return json_error(
-                "policy_blocked", "Quelle laut Policy deaktiviert.", status=403
-            )
-        return json_error(
-            "validation_error", "Notiz konnte nicht gespeichert werden.", status=400
-        )
-    try:
-        record_activation_milestone(
-            tenant_id=str(current_tenant() or ""),
-            actor_user_id=str(current_user() or ""),
-            milestone="first_document",
-            source="knowledge/notes_create",
-            request_id=str(getattr(g, "request_id", "")),
-            entity_ref=str((note or {}).get("chunk_id") or ""),
-        )
-    except Exception:
-        pass
-    return jsonify({"ok": True, "note": note})
-
-
-@bp.get("/crm/customers")
-@login_required
-def crm_customers_page():
-    tenant_id = current_tenant()
-    q = (request.args.get("q") or "").strip()
-    sort = (request.args.get("sort") or "name").strip().lower()
-    if sort not in {"name", "since", "updated"}:
-        sort = "name"
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    offset = (page - 1) * page_size
-    rows = (
-        customers_list(tenant_id, limit=page_size, offset=offset, query=q)
-        if callable(customers_list)
-        else []
-    )  # type: ignore
-    if sort == "name":
-        rows = sorted(
-            rows, key=lambda r: ((r.get("name") or "").lower(), str(r.get("id") or ""))
-        )
-    elif sort == "since":
-        rows = sorted(
-            rows,
-            key=lambda r: (str(r.get("created_at") or ""), str(r.get("id") or "")),
-            reverse=True,
-        )
-    else:
-        rows = sorted(
-            rows,
-            key=lambda r: (str(r.get("updated_at") or ""), str(r.get("id") or "")),
-            reverse=True,
-        )
-    has_more = len(rows) == page_size
-    content = render_template(
-        "crm/customers.html",
-        customers=rows,
-        q=q,
-        sort=sort,
-        page=page,
-        page_size=page_size,
-        has_more=has_more,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="crm")
-
-
-@bp.get("/crm/_customers_table")
-@login_required
-def crm_customers_table_partial():
-    tenant_id = current_tenant()
-    q = (request.args.get("q") or "").strip()
-    sort = (request.args.get("sort") or "name").strip().lower()
-    if sort not in {"name", "since", "updated"}:
-        sort = "name"
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    offset = (page - 1) * page_size
-    rows = (
-        customers_list(tenant_id, limit=page_size, offset=offset, query=q)
-        if callable(customers_list)
-        else []
-    )  # type: ignore
-    if sort == "name":
-        rows = sorted(
-            rows, key=lambda r: ((r.get("name") or "").lower(), str(r.get("id") or ""))
-        )
-    elif sort == "since":
-        rows = sorted(
-            rows,
-            key=lambda r: (str(r.get("created_at") or ""), str(r.get("id") or "")),
-            reverse=True,
-        )
-    else:
-        rows = sorted(
-            rows,
-            key=lambda r: (str(r.get("updated_at") or ""), str(r.get("id") or "")),
-            reverse=True,
-        )
-    return render_template(
-        "crm/partials/customers_table.html",
-        customers=rows,
-        q=q,
-        sort=sort,
-        page=page,
-        page_size=page_size,
-        has_more=(len(rows) == page_size),
-    )
-
-
-@bp.get("/crm/customers/<customer_id>")
-@login_required
-def crm_customer_detail(customer_id: str):
-    tenant_id = current_tenant()
-    customer = _crm_customer_get(tenant_id, customer_id)
-    if not customer:
-        return json_error("not_found", "Kunde nicht gefunden.", status=404)
-    active_tab = (request.args.get("tab") or "contacts").strip().lower()
-    if active_tab not in {"contacts", "deals", "quotes", "emails"}:
-        active_tab = "contacts"
-    content = render_template(
-        "crm/customer_detail.html",
-        customer=customer,
-        active_subtab=active_tab,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="crm")
-
-
-@bp.get("/crm/_customer_contacts/<customer_id>")
-@login_required
-def crm_customer_contacts_partial(customer_id: str):
-    tenant_id = current_tenant()
-    contacts = _crm_contacts_list(tenant_id, customer_id)
-    return render_template("crm/partials/customer_contacts.html", contacts=contacts)
-
-
-@bp.get("/crm/_customer_deals/<customer_id>")
-@login_required
-def crm_customer_deals_partial(customer_id: str):
-    tenant_id = current_tenant()
-    deals = _crm_deals_list(tenant_id, customer_id=customer_id)
-    return render_template("crm/partials/customer_deals.html", deals=deals)
-
-
-@bp.get("/crm/_customer_quotes/<customer_id>")
-@login_required
-def crm_customer_quotes_partial(customer_id: str):
-    tenant_id = current_tenant()
-    rows, total = _crm_quotes_list(
-        tenant_id, customer_id=customer_id, page=1, page_size=100
-    )
-    return render_template(
-        "crm/partials/customer_quotes.html", quotes=rows, total=total
-    )
-
-
-@bp.get("/crm/_customer_emails/<customer_id>")
-@login_required
-def crm_customer_emails_partial(customer_id: str):
-    tenant_id = current_tenant()
-    rows, total = _crm_emails_list(
-        tenant_id, customer_id=customer_id, page=1, page_size=100
-    )
-    return render_template(
-        "crm/partials/customer_emails.html", emails=rows, total=total
-    )
-
-
-@bp.get("/crm/deals")
-@login_required
-def crm_deals_page():
-    tenant_id = current_tenant()
-    q = (request.args.get("q") or "").strip()
-    stages = ["lead", "qualified", "proposal", "negotiation", "won", "lost"]
-    grouped = {
-        stage: _crm_deals_list(tenant_id, stage=stage, query=q) for stage in stages
-    }
-    content = render_template(
-        "crm/deals.html",
-        grouped=grouped,
-        stages=stages,
-        q=q,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="crm")
-
-
-@bp.get("/crm/_deals_pipeline")
-@login_required
-def crm_deals_pipeline_partial():
-    tenant_id = current_tenant()
-    q = (request.args.get("q") or "").strip()
-    stage_filter = (request.args.get("stage") or "").strip().lower()
-    stages = ["lead", "qualified", "proposal", "negotiation", "won", "lost"]
-    if stage_filter and stage_filter in stages:
-        grouped = {
-            stage_filter: _crm_deals_list(tenant_id, stage=stage_filter, query=q)
-        }
-    else:
-        grouped = {
-            stage: _crm_deals_list(tenant_id, stage=stage, query=q) for stage in stages
-        }
-    return render_template(
-        "crm/partials/deals_pipeline.html",
-        grouped=grouped,
-        stages=stages,
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-
-
-@bp.get("/crm/quotes")
-@login_required
-def crm_quotes_page():
-    tenant_id = current_tenant()
-    q = (request.args.get("q") or "").strip()
-    status = (request.args.get("status") or "").strip().lower() or None
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    rows, total = _crm_quotes_list(
-        tenant_id, status=status, query=q, page=page, page_size=page_size
-    )
-    content = render_template(
-        "crm/quotes.html",
-        quotes=rows,
-        total=total,
-        page=page,
-        page_size=page_size,
-        q=q,
-        status=status or "",
-    )
-    return _render_base(content, active_tab="crm")
-
-
-@bp.get("/crm/_quotes_table")
-@login_required
-def crm_quotes_table_partial():
-    tenant_id = current_tenant()
-    q = (request.args.get("q") or "").strip()
-    status = (request.args.get("status") or "").strip().lower() or None
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    rows, total = _crm_quotes_list(
-        tenant_id, status=status, query=q, page=page, page_size=page_size
-    )
-    return render_template(
-        "crm/partials/quotes_table.html",
-        quotes=rows,
-        total=total,
-        page=page,
-        page_size=page_size,
-        q=q,
-        status=status or "",
-    )
-
-
-@bp.get("/crm/quotes/<quote_id>")
-@login_required
-def crm_quote_detail(quote_id: str):
-    if not callable(quotes_get):
-        return json_error("feature_unavailable", "CRM ist nicht verfügbar.", status=501)
-    try:
-        quote = quotes_get(current_tenant(), quote_id)  # type: ignore
-    except Exception:
-        return json_error("not_found", "Angebot nicht gefunden.", status=404)
-    for item in quote.get("items", []):
-        item["unit_price_text"] = _format_cents(
-            item.get("unit_price_cents"), quote.get("currency") or "EUR"
-        )
-        item["line_total_text"] = _format_cents(
-            item.get("line_total_cents"), quote.get("currency") or "EUR"
-        )
-    quote["subtotal_text"] = _format_cents(
-        quote.get("subtotal_cents"), quote.get("currency") or "EUR"
-    )
-    quote["tax_text"] = _format_cents(
-        quote.get("tax_amount_cents") or quote.get("tax_cents"),
-        quote.get("currency") or "EUR",
-    )
-    quote["total_text"] = _format_cents(
-        quote.get("total_cents"), quote.get("currency") or "EUR"
-    )
-    content = render_template(
-        "crm/quote_detail.html",
-        quote=quote,
-        quote_items=quote.get("items", []),
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-        link_entity_type="quote",
-        link_entity_id=quote_id,
-    )
-    return _render_base(content, active_tab="crm")
-
-
-@bp.get("/crm/emails/import")
-@login_required
-def crm_emails_import_page():
-    tenant_id = current_tenant()
-    page = _clamp_page(request.args.get("page"))
-    page_size = _clamp_page_size(request.args.get("page_size"), default=25)
-    emails, total = _crm_emails_list(tenant_id, page=page, page_size=page_size)
-    content = render_template(
-        "crm/emails_import.html",
-        emails=emails,
-        total=total,
-        page=page,
-        page_size=page_size,
-        max_eml_bytes=int(current_app.config.get("MAX_EML_BYTES", 10 * 1024 * 1024)),
-        read_only=bool(current_app.config.get("READ_ONLY", False)),
-    )
-    return _render_base(content, active_tab="crm")
-
-
-@bp.get("/app.webmanifest")
-def pwa_manifest():
-    payload = {
-        "name": "KUKANILEA CRM",
-        "short_name": "KUKANILEA",
-        "start_url": "/crm/customers",
-        "display": "standalone",
-        "background_color": "#0b1220",
-        "theme_color": "#4f46e5",
-        "icons": [
-            {
-                "src": "/static/icons/app-icon.png",
-                "sizes": "1024x1024",
-                "type": "image/png",
-                "purpose": "any maskable",
-            },
-            {
-                "src": "/static/icons/pwa-icon.svg",
-                "sizes": "any",
-                "type": "image/svg+xml",
-                "purpose": "any",
-            },
-        ],
-    }
-    res = jsonify(payload)
-    res.headers["Content-Type"] = "application/manifest+json"
-    return res
-
-
-@bp.get("/sw.js")
-def pwa_service_worker():
-    body = """const CACHE='kukanilea-crm-v1';
-const ASSETS=['/','/crm/customers','/crm/deals','/crm/quotes','/crm/emails/import','/app.webmanifest','/static/icons/pwa-icon.svg','/static/icons/app-icon.png'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
-self.addEventListener('fetch',e=>{const req=e.request; if(req.method!=='GET'){return;} const isHtml=req.headers.get('accept')&&req.headers.get('accept').includes('text/html'); if(isHtml){e.respondWith(fetch(req).then(r=>{const copy=r.clone(); caches.open(CACHE).then(c=>c.put(req,copy)); return r;}).catch(()=>caches.match(req).then(r=>r||caches.match('/crm/customers')))); return;} e.respondWith(caches.match(req).then(r=>r||fetch(req).then(resp=>{const copy=resp.clone(); caches.open(CACHE).then(c=>c.put(req,copy)); return resp;})));});
-"""
-    resp = current_app.response_class(body, mimetype="application/javascript")
-    resp.headers["Cache-Control"] = "no-cache"
-    return resp
-
-
 # ==============================
 # Mail Agent Tab (Template/Mock workflow)
 # ==============================
 HTML_MAIL = """
 <div class="grid gap-4">
   <div class="card p-4 rounded-2xl border">
-    <div class="flex items-center justify-between gap-3">
+    <div class="flex items-center justify-between">
       <div>
-        <div class="text-lg font-semibold">Mailbox (IMAP v0)</div>
-        <div class="text-sm opacity-80">On-demand Sync ohne neue Dependencies. OAuth bleibt optional/später.</div>
+        <div class="text-lg font-semibold">Google Mail (Stub)</div>
+        <div class="text-sm opacity-80">OAuth Platzhalter – keine echte Verbindung in dieser Version.</div>
       </div>
       <div class="text-right text-xs opacity-70">
-        Google OAuth: {{ 'konfiguriert' if google_configured else 'nicht konfiguriert' }}
+        Status: {{ 'konfiguriert' if google_configured else 'nicht konfiguriert' }}
       </div>
     </div>
-    {% if read_only %}
-      <div class="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm">
-        READ_ONLY aktiv: Account-Anlage und Sync sind deaktiviert.
-      </div>
-    {% endif %}
-  </div>
-
-  <div class="grid gap-4 lg:grid-cols-3">
-    <div class="lg:col-span-2 card p-4 rounded-2xl border">
-      <div class="text-base font-semibold mb-3">Inbox</div>
-
-      <form method="post" action="/mail/accounts/add" class="grid gap-2 md:grid-cols-6 mb-4">
-        <input name="label" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" placeholder="Label" required {% if read_only %}disabled{% endif %} />
-        <input name="imap_host" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" placeholder="imap.example.com" required {% if read_only %}disabled{% endif %} />
-        <input name="imap_port" type="number" value="993" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" required {% if read_only %}disabled{% endif %} />
-        <input name="imap_username" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" placeholder="user@example.com" required {% if read_only %}disabled{% endif %} />
-        <input name="imap_password" type="password" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" placeholder="Passwort" {% if read_only %}disabled{% endif %} />
-        <button class="rounded-xl px-3 py-2 text-sm btn-primary md:col-span-1" type="submit" {% if read_only %}disabled{% endif %}>Account speichern</button>
-      </form>
-
-      {% if accounts %}
-      <form method="post" action="/mail/accounts/sync" class="grid gap-2 md:grid-cols-6 mb-4">
-        <select name="account_id" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-2" required {% if read_only %}disabled{% endif %}>
-          {% for a in accounts %}
-            <option value="{{a.id}}" {{'selected' if selected_account_id==a.id else ''}}>{{a.label}} · {{a.imap_host}}</option>
-          {% endfor %}
-        </select>
-        <input name="imap_password" type="password" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-2" placeholder="Passwort (optional, falls gespeichert)" {% if read_only %}disabled{% endif %} />
-        <input name="limit" type="number" min="1" max="200" value="50" class="rounded-xl border px-3 py-2 text-sm bg-transparent md:col-span-1" {% if read_only %}disabled{% endif %} />
-        <button class="rounded-xl px-3 py-2 text-sm btn-outline md:col-span-1" type="submit" {% if read_only %}disabled{% endif %}>Sync</button>
-      </form>
-      {% endif %}
-
-      {% if mail_status %}
-      <div class="rounded-xl border border-slate-700 bg-slate-950/40 p-3 text-sm mb-3">{{ mail_status }}</div>
-      {% endif %}
-
-      <div class="overflow-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-left muted">
-              <th class="py-2 pr-2">Betreff</th>
-              <th class="py-2 pr-2">Von</th>
-              <th class="py-2 pr-2">Datum</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for m in messages %}
-            <tr class="border-t border-slate-800">
-              <td class="py-2 pr-2">
-                <a class="underline" href="/mail?message_id={{m.id}}{% if selected_account_id %}&account_id={{selected_account_id}}{% endif %}">{{m.subject_redacted}}</a>
-              </td>
-              <td class="py-2 pr-2">{{m.from_redacted}}</td>
-              <td class="py-2 pr-2">{{m.received_at}}</td>
-            </tr>
-            {% else %}
-            <tr><td colspan="3" class="py-3 muted">Noch keine synchronisierten Mails.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card p-4 rounded-2xl border">
-      <div class="text-base font-semibold mb-2">Detail</div>
-      {% if mail_detail %}
-        <div class="text-xs muted mb-1">Von</div>
-        <div class="text-sm mb-2">{{mail_detail.from_redacted}}</div>
-        <div class="text-xs muted mb-1">An</div>
-        <div class="text-sm mb-2">{{mail_detail.to_redacted}}</div>
-        <div class="text-xs muted mb-1">Betreff</div>
-        <div class="text-sm mb-2">{{mail_detail.subject_redacted}}</div>
-        <div class="text-xs muted mb-1">Inhalt</div>
-        <pre class="text-xs whitespace-pre-wrap rounded-xl border border-slate-800 p-3 max-h-80 overflow-auto">{{mail_detail.body_text_redacted}}</pre>
-      {% else %}
-        <div class="text-sm muted">Nachricht in der Inbox auswählen.</div>
-      {% endif %}
-      <div class="mt-4 border-t border-slate-800 pt-3">
-        <div class="text-base font-semibold mb-2">Outbox (lokal)</div>
-        <div class="space-y-2">
-          {% for row in outbox %}
-            <div class="rounded-xl border border-slate-800 p-2">
-              <div class="text-xs muted">{{row.created_at}} · {{row.kind}}</div>
-              <div class="text-xs">{{row.recipient_redacted}}</div>
-              <div class="text-sm">{{row.body}}</div>
-            </div>
-          {% else %}
-            <div class="text-sm muted">Keine Outbox-Einträge.</div>
-          {% endfor %}
-        </div>
-      </div>
+    <div class="mt-3 flex gap-2">
+      <a class="rounded-xl px-4 py-2 text-sm btn-outline" href="/auth/google/start">Connect Google</a>
+      <span class="text-xs opacity-70">Setze GOOGLE_CLIENT_ID/SECRET um den Flow zu aktivieren.</span>
     </div>
   </div>
-
   <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-1">Mail Agent (Compose)</div>
-    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM.</div>
+    <div class="text-lg font-semibold mb-1">Mail Agent</div>
+    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM. Keine Drittanbieter-Links.</div>
 
     <div class="grid gap-3 md:grid-cols-2">
       <div>
@@ -8575,6 +1986,7 @@ HTML_MAIL = """
         <label class="block text-xs opacity-70 mb-1">Betreff (optional)</label>
         <input id="m_subj" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Mangel: Defekte Fliesenlieferung" />
       </div>
+
       <div>
         <label class="block text-xs opacity-70 mb-1">Ton</label>
         <select id="m_tone" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent">
@@ -8593,6 +2005,7 @@ HTML_MAIL = """
           <option value="detailliert">Detailliert</option>
         </select>
       </div>
+
       <div class="md:col-span-2">
         <label class="block text-xs opacity-70 mb-1">Kontext / Stichpunkte</label>
         <textarea id="m_ctx" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent h-32" placeholder="z.B. Bitte Fotos an Händler schicken, Rabatt anfragen, Lieferung vom ... (Details)"></textarea>
@@ -8699,118 +2112,8 @@ HTML_MAIL = """
 </script>
 """
 
-HTML_LICENSE = """
-<div class="grid gap-4">
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-2">Lizenzstatus</div>
-    <div class="grid gap-2 text-sm md:grid-cols-2">
-      <div><span class="muted text-xs">Plan</span><div><strong>{{ plan }}</strong></div></div>
-      <div><span class="muted text-xs">Read-only</span><div><strong>{{ "ja" if read_only else "nein" }}</strong></div></div>
-      <div><span class="muted text-xs">Grund</span><div>{{ license_reason or "-" }}</div></div>
-      <div><span class="muted text-xs">Trial Resttage</span><div>{{ trial_days_left }}</div></div>
-      <div><span class="muted text-xs">Grace aktiv</span><div>{{ "ja" if license_grace_active else "nein" }}{% if license_grace_active %} ({{ license_grace_days_left }} Tage){% endif %}</div></div>
-      <div><span class="muted text-xs">Letzte Online-Validierung</span><div>{{ license_last_validated or "-" }}</div></div>
-    </div>
-    {% if notice %}
-    <div class="mt-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">{{ notice }}</div>
-    {% endif %}
-    {% if error %}
-    <div class="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm">{{ error }}</div>
-    {% endif %}
-  </div>
-
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-sm font-semibold mb-2">Lizenz aktivieren</div>
-    <div class="muted text-xs mb-3">Hier eine signierte Lizenz als JSON einfügen (aus dem Ausstellungsprozess).</div>
-    <form method="post" action="/license" class="grid gap-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <textarea name="license_json" rows="12" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder='{"customer_id":"...","plan":"PRO","issued":"YYYY-MM-DD","expiry":"YYYY-MM-DD","signature":"..."}'></textarea>
-      <div class="flex items-center gap-2">
-        <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary">Lizenz speichern und prüfen</button>
-      </div>
-    </form>
-  </div>
-</div>
-"""
-
 HTML_SETTINGS = """
 <div class="grid gap-4">
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-2">Sitzung & Sicherheit</div>
-    <div class="text-sm muted mb-3">
-      Automatischer Logout bei Inaktivität. Zusaetzlich gilt eine maximale Sitzungsdauer von 8 Stunden.
-    </div>
-    <form method="post" action="{{ url_for('web.set_idle_timeout') }}" class="flex flex-wrap gap-2 items-center">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label for="idle_timeout" class="text-sm">Inaktivitaets-Timeout</label>
-      <select id="idle_timeout" name="idle_timeout" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
-        {% for minutes in idle_timeout_choices %}
-          <option value="{{ minutes }}" {{ "selected" if idle_timeout_minutes == minutes else "" }}>{{ minutes }} Minuten</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary">Speichern</button>
-    </form>
-  </div>
-
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-2">Global Mesh Monitor</div>
-    <div class="text-sm muted mb-3">
-      Zentrales Fleet-Dashboard für alle verbundenen KUKANILEA-Knoten und P2P-Peers.
-      Überwachen Sie Hardware-Telemetrie und Sync-Status in Echtzeit.
-    </div>
-    <a href="/admin/mesh" class="rounded-xl px-4 py-2 text-sm btn-primary inline-block">Cockpit öffnen</a>
-  </div>
-
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-2">Team-Status (Mesh-Sync)</div>
-    <div class="text-sm muted mb-4">
-      Andere KUKANILEA-Instanzen im lokalen WLAN werden hier automatisch angezeigt. 
-      Daten werden ohne Cloud direkt zwischen den Geräten synchronisiert.
-    </div>
-    <div id="p2p-peer-list" hx-get="/api/p2p/peers" hx-trigger="load, every 5s">
-      <div class="flex items-center gap-2 text-xs text-zinc-400">
-        <div class="w-2 h-2 rounded-full bg-zinc-300 animate-pulse"></div>
-        Suche nach Team-Mitgliedern...
-      </div>
-    </div>
-  </div>
-
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-2">DATEV Export</div>
-    <div class="text-sm muted mb-3">
-      Erstellen Sie einen Buchungsstapel (CSV + Beleg-Bündel) für Ihren Steuerberater.
-    </div>
-    <form method="get" action="/api/datev/export" class="flex flex-wrap gap-2 items-center">
-      <select name="month" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
-        <option value="1">Januar</option>
-        <option value="2">Februar</option>
-        <!-- ... weitere Monate ... -->
-      </select>
-      <input type="number" name="year" value="2026" class="rounded-xl border px-3 py-2 text-sm bg-transparent w-24">
-      <button type="submit" class="rounded-xl px-4 py-2 text-sm btn-primary">Export generieren</button>
-    </form>
-  </div>
-
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-2">Mobile Koppelung</div>
-    <div class="flex flex-col md:flex-row gap-6 items-start">
-      <div class="flex-1 text-sm muted">
-        Scannen Sie diesen QR-Code mit Ihrem Smartphone im gleichen WLAN, um KUKANILEA Mobile zu starten. 
-        Kein App-Store nötig (PWA).
-        <ul class="mt-2 list-disc list-inside space-y-1">
-          <li>Belege direkt auf der Baustelle fotografieren</li>
-          <li>Sofortiger, sicherer Upload ins Büro</li>
-          <li>Keine Cloud, 100% lokal über Ihr Netzwerk</li>
-        </ul>
-      </div>
-      <div class="p-4 bg-white rounded-2xl border shadow-sm flex flex-col items-center">
-        <img src="data:image/png;base64,{{pairing_qr}}" alt="Mobile Pairing QR" class="w-48 h-48 mb-2">
-        <div class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">WLAN Pairing Aktiv</div>
-      </div>
-    </div>
-  </div>
-
-  {% if show_admin_settings %}
   <div class="card p-4 rounded-2xl border">
     <div class="text-lg font-semibold mb-2">DEV Settings</div>
     <div class="grid gap-3 md:grid-cols-2 text-sm">
@@ -8831,61 +2134,6 @@ HTML_SETTINGS = """
       </div>
     </div>
   </div>
-
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-sm font-semibold mb-2">Release Update Check</div>
-    <div class="text-sm">
-      <div>Aktuell installiert: <strong>{{ update_info.current_version }}</strong></div>
-      {% if not update_info.enabled %}
-        <div class="muted text-xs mt-1">Update-Check ist deaktiviert (`KUKANILEA_UPDATE_CHECK_ENABLED=0`).</div>
-      {% elif update_info.error %}
-        <div class="text-xs mt-1">Prüfung fehlgeschlagen ({{ update_info.error }}).</div>
-      {% elif update_info.update_available %}
-        <div class="mt-1">
-          Neue Version verfügbar: <strong>{{ update_info.latest_version }}</strong>
-          {% if update_info.download_url %}
-            <a class="underline ml-1" href="{{ update_info.download_url }}" target="_blank" rel="noopener">Release öffnen</a>
-          {% endif %}
-        </div>
-      {% elif update_info.checked %}
-        <div class="muted text-xs mt-1">Keine neuere Version gefunden.</div>
-      {% else %}
-        <div class="muted text-xs mt-1">Noch nicht geprüft.</div>
-      {% endif %}
-    </div>
-  </div>
-
-  {% if can_manage_permissions %}
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-sm font-semibold mb-2">Rollen & Berechtigungen</div>
-    <div class="text-sm">
-      <div>Zentrale Rechteverwaltung pro Rolle und Benutzer.</div>
-      <div class="muted text-xs mt-1">Serverseitig erzwungen (deny-by-default).</div>
-      <div class="mt-2">
-        <a class="underline" href="/settings/permissions">Berechtigungsmanager öffnen</a>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
-  {% if role == "DEV" %}
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-sm font-semibold mb-2">In-Place Update (DEV)</div>
-    <div class="text-sm">
-      <div>Atomarer App-Swap mit Rollback (Datenverzeichnis bleibt unverändert).</div>
-      <div class="muted text-xs mt-1">
-        {% if update_install_enabled %}
-          Install-Flow aktiviert.
-        {% else %}
-          Install-Flow deaktiviert (`KUKANILEA_UPDATE_INSTALL_ENABLED=0`).
-        {% endif %}
-      </div>
-      <div class="mt-2">
-        <a class="underline" href="/dev/update">Update Center öffnen</a>
-      </div>
-    </div>
-  </div>
-  {% endif %}
 
   <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">DB wechseln (Allowlist)</div>
@@ -8924,25 +2172,37 @@ HTML_SETTINGS = """
   </div>
 
   <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Partner Branding (White-Label)</div>
+    <form action="/settings/branding" method="POST" class="grid gap-3 text-sm">
+      <div class="grid gap-1">
+        <label class="muted text-[10px] uppercase font-bold">Anzeigename</label>
+        <input name="app_name" value="{{ branding.app_name }}" class="rounded-xl border px-3 py-2 bg-transparent" />
+      </div>
+      <div class="grid gap-1">
+        <label class="muted text-[10px] uppercase font-bold">Primärfarbe (Hex)</label>
+        <div class="flex gap-2">
+          <input type="color" name="primary_color" value="{{ branding.primary_color }}" class="h-10 w-10 rounded-lg bg-transparent border-0 cursor-pointer" />
+          <input name="primary_color_text" id="pColorText" value="{{ branding.primary_color }}" class="rounded-xl border px-3 py-2 bg-transparent flex-1" oninput="document.getElementsByName('primary_color')[0].value = this.value" />
+        </div>
+      </div>
+      <div class="grid gap-1">
+        <label class="muted text-[10px] uppercase font-bold">Footer Text</label>
+        <input name="footer_text" value="{{ branding.footer_text }}" class="rounded-xl border px-3 py-2 bg-transparent" />
+      </div>
+      <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary self-start mt-2">Branding speichern</button>
+    </form>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">Tools</div>
     <div class="flex flex-wrap gap-2">
       <button id="seedUsers" class="rounded-xl px-3 py-2 text-sm btn-outline">Seed Dev Users</button>
-      <button id="loadDemoData" class="rounded-xl px-3 py-2 text-sm btn-outline">Load Demo Data</button>
       <button id="rebuildIndex" class="rounded-xl px-3 py-2 text-sm btn-outline">Rebuild Index</button>
       <button id="fullScan" class="rounded-xl px-3 py-2 text-sm btn-outline">Full Scan</button>
       <button id="repairDrift" class="rounded-xl px-3 py-2 text-sm btn-outline">Repair Drift Scan</button>
       <button id="testLLM" class="rounded-xl px-3 py-2 text-sm btn-outline">Test LLM</button>
     </div>
     <div id="toolStatus" class="text-xs muted mt-2"></div>
-  </div>
-  {% endif %}
-
-  <div class="card p-4 rounded-2xl border bg-warning-content/10">
-    <div class="text-sm font-semibold mb-2">Support & Diagnose</div>
-    <div class="text-xs muted mb-3">
-      Erstellen Sie ein anonymisiertes Diagnose-Paket für den Offline-Support. PII (Namen, E-Mails) werden automatisch maskiert.
-    </div>
-    <a href="/support/diagnostic" class="btn btn-outline btn-sm">Diagnostic Dump exportieren (.zip)</a>
   </div>
 </div>
 
@@ -8967,13 +2227,6 @@ HTML_SETTINGS = """
     status.textContent = 'Seeding...';
     try{
       const j = await postJson('/api/dev/seed-users');
-      status.textContent = j.message || 'OK';
-    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
-  });
-  document.getElementById('loadDemoData')?.addEventListener('click', async () => {
-    status.textContent = 'Demo-Daten werden geladen...';
-    try{
-      const j = await postJson('/api/dev/load-demo-data');
       status.textContent = j.message || 'OK';
     }catch(e){ status.textContent = 'Fehler: ' + e.message; }
   });
@@ -9040,85 +2293,6 @@ HTML_SETTINGS = """
 </script>
 """
 
-HTML_SETTINGS_PERMISSIONS = """
-<div class="grid gap-4">
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-2">Berechtigungen</div>
-    <div class="text-sm muted mb-3">
-      Serverseitige Rechteverwaltung (deny-by-default). Nur Owner Admin und DEV duerfen aendern.
-    </div>
-    <a href="/settings" class="underline text-sm">Zurueck zu Einstellungen</a>
-  </div>
-
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-sm font-semibold mb-3">Rollen und Permissions</div>
-    {% for role in rbac_roles %}
-      {% set assigned = role_permissions.get(role.role_name, []) %}
-      <form method="post" action="{{ url_for('web.settings_permissions_role_update') }}" class="rounded-xl border p-3 mb-3">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="role_name" value="{{ role.role_name }}">
-        <div class="flex items-center justify-between gap-2 mb-2">
-          <div>
-            <div class="text-sm font-semibold">{{ role.label }} <span class="muted">({{ role.role_name }})</span></div>
-            <div class="muted text-xs">{{ role.description }}</div>
-          </div>
-          {% if role.role_name == "DEV" and not can_edit_dev_roles %}
-            <span class="text-xs rounded-lg border px-2 py-1">Nur DEV editierbar</span>
-          {% endif %}
-        </div>
-        <div class="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-          {% for perm in rbac_permissions %}
-            <label class="text-xs flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="perm_keys"
-                value="{{ perm.perm_key }}"
-                {{ "checked" if perm.perm_key in assigned else "" }}
-                {{ "disabled" if role.role_name == "DEV" and not can_edit_dev_roles else "" }}
-              />
-              <span>{{ perm.perm_key }}</span>
-            </label>
-          {% endfor %}
-        </div>
-        <div class="mt-3">
-          <button
-            type="submit"
-            class="rounded-xl px-3 py-2 text-sm btn-primary"
-            {{ "disabled" if role.role_name == "DEV" and not can_edit_dev_roles else "" }}
-          >
-            Rolle speichern
-          </button>
-        </div>
-      </form>
-    {% endfor %}
-  </div>
-
-  <div class="card p-4 rounded-2xl border">
-    <div class="text-sm font-semibold mb-3">Benutzerrollen</div>
-    <div class="grid gap-3">
-      {% for user in users_with_roles %}
-        <form method="post" action="{{ url_for('web.settings_permissions_user_update') }}" class="rounded-xl border p-3">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="username" value="{{ user.username }}">
-          <div class="text-sm font-semibold">{{ user.username }}</div>
-          <div class="muted text-xs mb-2">{{ user.email or "-" }}</div>
-          <select name="role_names" multiple class="w-full rounded-xl border px-3 py-2 text-xs bg-transparent min-h-[84px]">
-            {% for role in rbac_roles %}
-              <option value="{{ role.role_name }}" {{ "selected" if role.role_name in user.roles else "" }}>
-                {{ role.label }} ({{ role.role_name }})
-              </option>
-            {% endfor %}
-          </select>
-          <div class="mt-2">
-            <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary">Rollen speichern</button>
-          </div>
-        </form>
-      {% endfor %}
-    </div>
-  </div>
-</div>
-"""
-
 
 def _mail_prompt(to: str, subject: str, tone: str, length: str, context: str) -> str:
     return f"""Du bist ein deutscher Office-Assistent. Schreibe einen professionellen E-Mail-Entwurf.
@@ -9141,1043 +2315,50 @@ Kontext/Stichpunkte:
 """
 
 
-def _postfach_redirect(
-    *,
-    account_id: str = "",
-    thread_id: str = "",
-    draft_id: str = "",
-    status: str = "",
-    query: str = "",
-) -> str:
-    return url_for(
-        "web.postfach_page",
-        account_id=(account_id or "").strip(),
-        thread_id=(thread_id or "").strip(),
-        draft_id=(draft_id or "").strip(),
-        status=(status or "").strip(),
-        q=(query or "").strip(),
-    )
-
-
-def _postfach_oauth_redirect_uri() -> str:
-    configured = str(current_app.config.get("OAUTH_REDIRECT_BASE") or "").strip()
-    if configured:
-        return configured.rstrip("/") + "/postfach/accounts/oauth/callback"
-    base = str(request.host_url or "").rstrip("/")
-    return base + "/postfach/accounts/oauth/callback"
-
-
-def _postfach_oauth_client(provider: str) -> tuple[str, str]:
-    p = str(provider or "").strip().lower()
-    if p == "google":
-        return (
-            str(current_app.config.get("GOOGLE_CLIENT_ID") or "").strip(),
-            str(current_app.config.get("GOOGLE_CLIENT_SECRET") or "").strip(),
-        )
-    return (
-        str(current_app.config.get("MICROSOFT_CLIENT_ID") or "").strip(),
-        str(current_app.config.get("MICROSOFT_CLIENT_SECRET") or "").strip(),
-    )
-
-
-def _postfach_has_connected_oauth_token(tenant_id: str, account_id: str) -> bool:
-    token = postfach_get_oauth_token(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        account_id=account_id,
-    )
-    return bool(token and str(token.get("access_token") or "").strip())
-
-
-@bp.get("/postfach")
 @bp.get("/mail")
 @login_required
-def postfach_page():
-    if request.path == "/mail":
-        q = request.query_string.decode("utf-8", errors="ignore")
-        target = "/postfach"
-        if q:
-            target = f"{target}?{q}"
-        return redirect(target, code=302)
-
-    tenant_id = current_tenant()
-    _ensure_postfach_tables()
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    selected_account_id = (request.args.get("account_id") or "").strip()
-    selected_thread_id = (request.args.get("thread_id") or "").strip()
-    selected_draft_id = (request.args.get("draft_id") or "").strip()
-    postfach_status = (request.args.get("status") or "").strip()
-    query = (request.args.get("q") or "").strip()
-
-    accounts = postfach_list_accounts(_core_db_path(), tenant_id)
-    for row in accounts:
-        row["oauth_connected"] = _postfach_has_connected_oauth_token(
-            tenant_id, str(row.get("id") or "")
-        )
-    if not selected_account_id and accounts:
-        selected_account_id = str(accounts[0].get("id") or "")
-
-    threads: list[dict[str, Any]] = []
-    if selected_account_id:
-        threads = postfach_list_threads(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            account_id=selected_account_id,
-            filter_text=query,
-            limit=200,
-        )
-        if not selected_thread_id and threads:
-            selected_thread_id = str(threads[0].get("id") or "")
-
-    thread_data = (
-        postfach_get_thread(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            thread_id=selected_thread_id,
-        )
-        if selected_thread_id
-        else None
+def mail_page():
+    google_configured = bool(
+        current_app.config.get("GOOGLE_CLIENT_ID")
+        and current_app.config.get("GOOGLE_CLIENT_SECRET")
     )
-    drafts = (
-        postfach_list_drafts_for_thread(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            thread_id=selected_thread_id,
-            limit=20,
-        )
-        if selected_thread_id
-        else []
-    )
-
-    selected_draft = (
-        postfach_get_draft(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            draft_id=selected_draft_id,
-            include_plain=True,
-        )
-        if selected_draft_id
-        else None
-    )
-    if not selected_draft and drafts:
-        selected_draft = postfach_get_draft(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            draft_id=str(drafts[0].get("id") or ""),
-            include_plain=True,
-        )
-
-    outbox = auth_db.list_outbox(limit=20)
-    postfach_key_ready = bool(postfach_email_encryption_ready())
     return _render_base(
-        render_template(
-            "postfach/index.html",
-            accounts=accounts,
-            selected_account_id=selected_account_id,
-            threads=threads,
-            selected_thread_id=selected_thread_id,
-            thread_data=thread_data,
-            drafts=drafts,
-            selected_draft=selected_draft,
-            postfach_status=postfach_status,
-            postfach_key_ready=postfach_key_ready,
-            search_query=query,
-            outbox=outbox,
-        ),
-        active_tab="postfach",
+        render_template_string(HTML_MAIL, google_configured=google_configured),
+        active_tab="mail",
     )
 
 
-@bp.get("/postfach/thread/<thread_id>")
+@bp.post("/settings/branding")
 @login_required
-def postfach_thread_page(thread_id: str):
-    tenant_id = current_tenant()
-    _ensure_postfach_tables()
-    data = postfach_get_thread(
-        _core_db_path(), tenant_id=tenant_id, thread_id=thread_id
-    )
-    if not data:
-        return redirect(_postfach_redirect(status="Thread nicht gefunden."))
-    return _render_base(
-        render_template("postfach/thread.html", thread_data=data),
-        active_tab="postfach",
-    )
-
-
-@bp.get("/postfach/compose/<draft_id>")
-@login_required
-def postfach_compose_page(draft_id: str):
-    tenant_id = current_tenant()
-    _ensure_postfach_tables()
-    draft = postfach_get_draft(
-        _core_db_path(), tenant_id=tenant_id, draft_id=draft_id, include_plain=True
-    )
-    if not draft:
-        return redirect(_postfach_redirect(status="Entwurf nicht gefunden."))
-    return _render_base(
-        render_template("postfach/compose.html", draft=draft),
-        active_tab="postfach",
-    )
-
-
-@bp.post("/postfach/accounts/add")
-@bp.post("/mail/accounts/add")
-@login_required
-def postfach_account_add():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
-    tenant_id = current_tenant()
-    label = (request.form.get("label") or "").strip()
-    auth_mode = (request.form.get("auth_mode") or "password").strip().lower()
-    oauth_provider = (request.form.get("oauth_provider") or "").strip().lower()
-    imap_host = (request.form.get("imap_host") or "").strip()
-    imap_username = (request.form.get("imap_username") or "").strip()
-    smtp_host = (request.form.get("smtp_host") or "").strip()
-    smtp_username = (request.form.get("smtp_username") or "").strip()
-    secret_plain = (request.form.get("secret") or "").strip()
-    smtp_use_ssl = (request.form.get("smtp_use_ssl") or "1").strip() in {
-        "1",
-        "true",
-        "on",
-        "yes",
+def settings_branding_save():
+    data = request.form
+    new_branding = {
+        "app_name": data.get("app_name", "KUKANILEA"),
+        "primary_color": data.get("primary_color", "#0ea5e9"),
+        "footer_text": data.get("footer_text", "")
     }
+    
+    import json
+    with open(Config.BRANDING_FILE, "w") as f:
+        json.dump(new_branding, f, indent=2)
+        
+    return redirect(url_for("web.settings_page"))
 
-    try:
-        imap_port = int(request.form.get("imap_port") or 993)
-    except Exception:
-        imap_port = 993
-    try:
-        smtp_port = int(request.form.get("smtp_port") or 465)
-    except Exception:
-        smtp_port = 465
-
-    if auth_mode in {"oauth_google", "oauth_microsoft"} and not oauth_provider:
-        oauth_provider = "google" if auth_mode == "oauth_google" else "microsoft"
-    if auth_mode in {"oauth_google", "oauth_microsoft"} and not imap_host:
-        try:
-            cfg = postfach_oauth_provider_config(oauth_provider)
-            imap_host = str(cfg.get("imap_host") or "")
-            imap_port = int(cfg.get("imap_port") or imap_port)
-            smtp_host = str(cfg.get("smtp_host") or "")
-            smtp_port = int(cfg.get("smtp_port") or smtp_port)
-            if not smtp_use_ssl and oauth_provider == "google":
-                smtp_use_ssl = True
-        except Exception:
-            pass
-
-    if not label or not imap_host or not imap_username:
-        return redirect(_postfach_redirect(status="Pflichtfelder fehlen."))
-    if auth_mode == "password" and not secret_plain:
-        return redirect(_postfach_redirect(status="Pflichtfelder fehlen."))
-    if (
-        auth_mode in {"oauth_google", "oauth_microsoft"}
-        and not postfach_email_encryption_ready()
-    ):
-        return redirect(
-            _postfach_redirect(
-                status="EMAIL_ENCRYPTION_KEY fehlt. OAuth-Token koennen nicht sicher gespeichert werden."
-            )
-        )
-
-    try:
-        account_id = postfach_create_account(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            label=label,
-            imap_host=imap_host,
-            imap_port=imap_port,
-            imap_username=imap_username,
-            smtp_host=smtp_host,
-            smtp_port=smtp_port,
-            smtp_username=smtp_username,
-            smtp_use_ssl=smtp_use_ssl,
-            secret_plain=secret_plain,
-            auth_mode=auth_mode,
-            oauth_provider=oauth_provider or None,
-        )
-    except ValueError as exc:
-        reason = str(exc)
-        if reason == "email_encryption_key_missing":
-            return redirect(
-                _postfach_redirect(
-                    status="EMAIL_ENCRYPTION_KEY fehlt. Postfach-Operationen sind deaktiviert."
-                )
-            )
-        return redirect(
-            _postfach_redirect(
-                status=f"Account konnte nicht gespeichert werden ({reason})."
-            )
-        )
-
-    status = "Account gespeichert."
-    if auth_mode in {"oauth_google", "oauth_microsoft"}:
-        status = "OAuth-Account gespeichert. Bitte jetzt verbinden."
-    return redirect(_postfach_redirect(account_id=account_id, status=status))
-
-
-@bp.post("/postfach/accounts/oauth/start")
-@login_required
-def postfach_account_oauth_start():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    if not account_id:
-        return redirect(_postfach_redirect(status="Account fehlt."))
-    account = postfach_get_account(_core_db_path(), tenant_id, account_id)
-    if not account:
-        return redirect(_postfach_redirect(status="Account nicht gefunden."))
-    provider = str(account.get("oauth_provider") or "").strip().lower()
-    if not provider:
-        mode = str(account.get("auth_mode") or "").strip().lower()
-        provider = "google" if mode == "oauth_google" else "microsoft"
-    client_id, _client_secret = _postfach_oauth_client(provider)
-    if not client_id:
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                status=f"OAuth Client-ID fuer {provider} fehlt.",
-            )
-        )
-    state = postfach_generate_oauth_state()
-    verifier, challenge = postfach_generate_pkce_pair()
-    session["postfach_oauth_state"] = state
-    session["postfach_oauth_verifier"] = verifier
-    session["postfach_oauth_account_id"] = account_id
-    session["postfach_oauth_provider"] = provider
-    redirect_uri = _postfach_oauth_redirect_uri()
-    try:
-        auth_url = postfach_build_authorization_url(
-            provider=provider,
-            client_id=client_id,
-            redirect_uri=redirect_uri,
-            state=state,
-            code_challenge=challenge,
-            login_hint=str(account.get("imap_username") or "").strip() or None,
-        )
-    except Exception as exc:
-        postfach_set_account_oauth_state(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            account_id=account_id,
-            oauth_status="error",
-            oauth_last_error=f"oauth_start_failed:{exc}",
-            oauth_provider=provider,
-        )
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                status=f"OAuth Start fehlgeschlagen ({exc}).",
-            )
-        )
-    postfach_set_account_oauth_state(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        account_id=account_id,
-        oauth_status="pending",
-        oauth_last_error="",
-        oauth_provider=provider,
-    )
-    return redirect(auth_url)
-
-
-@bp.get("/postfach/accounts/oauth/callback")
-@login_required
-def postfach_account_oauth_callback():
-    tenant_id = current_tenant()
-    state = str(request.args.get("state") or "").strip()
-    code = str(request.args.get("code") or "").strip()
-    error = str(request.args.get("error") or "").strip()
-    expected_state = str(session.get("postfach_oauth_state") or "")
-    account_id = str(session.get("postfach_oauth_account_id") or "")
-    provider = str(session.get("postfach_oauth_provider") or "")
-    verifier = str(session.get("postfach_oauth_verifier") or "")
-
-    session.pop("postfach_oauth_state", None)
-    session.pop("postfach_oauth_account_id", None)
-    session.pop("postfach_oauth_provider", None)
-    session.pop("postfach_oauth_verifier", None)
-
-    if not account_id:
-        return redirect(
-            _postfach_redirect(status="OAuth Callback ohne Account-Kontext.")
-        )
-    if error:
-        postfach_set_account_oauth_state(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            account_id=account_id,
-            oauth_status="error",
-            oauth_last_error=f"oauth_callback_error:{error}",
-            oauth_provider=provider,
-        )
-        return redirect(
-            _postfach_redirect(account_id=account_id, status=f"OAuth Fehler: {error}")
-        )
-    if (
-        not state
-        or not expected_state
-        or not hmac.compare_digest(state, expected_state)
-    ):
-        postfach_set_account_oauth_state(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            account_id=account_id,
-            oauth_status="error",
-            oauth_last_error="oauth_state_mismatch",
-            oauth_provider=provider,
-        )
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                status="OAuth State ungueltig. Bitte erneut verbinden.",
-            )
-        )
-    if not code or not verifier:
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                status="OAuth Code/Verifier fehlt.",
-            )
-        )
-
-    client_id, client_secret = _postfach_oauth_client(provider)
-    if not client_id:
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                status="OAuth Client-Konfiguration fehlt.",
-            )
-        )
-    try:
-        tokens = postfach_exchange_code_for_tokens(
-            provider=provider,
-            client_id=client_id,
-            client_secret=client_secret or None,
-            code=code,
-            redirect_uri=_postfach_oauth_redirect_uri(),
-            code_verifier=verifier,
-        )
-        postfach_save_oauth_token(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            account_id=account_id,
-            provider=provider,
-            access_token=str(tokens.get("access_token") or ""),
-            refresh_token=str(tokens.get("refresh_token") or ""),
-            expires_at=str(tokens.get("expires_at") or ""),
-            scopes=[str(s) for s in (tokens.get("scopes") or [])],
-            token_type=str(tokens.get("token_type") or "Bearer"),
-        )
-        postfach_set_account_oauth_state(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            account_id=account_id,
-            oauth_status="connected",
-            oauth_last_error="",
-            oauth_provider=provider,
-            oauth_scopes=[str(s) for s in (tokens.get("scopes") or [])],
-        )
-    except Exception as exc:
-        postfach_set_account_oauth_state(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            account_id=account_id,
-            oauth_status="error",
-            oauth_last_error=f"oauth_exchange_failed:{exc}",
-            oauth_provider=provider,
-        )
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                status=f"OAuth Token-Austausch fehlgeschlagen ({exc}).",
-            )
-        )
-    return redirect(
-        _postfach_redirect(account_id=account_id, status="OAuth erfolgreich verbunden.")
-    )
-
-
-@bp.post("/postfach/accounts/oauth/disconnect")
-@login_required
-def postfach_account_oauth_disconnect():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    provider = (request.form.get("provider") or "").strip().lower() or None
-    if not account_id:
-        return redirect(_postfach_redirect(status="Account fehlt."))
-    postfach_clear_oauth_token(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        account_id=account_id,
-        provider=provider,
-    )
-    postfach_set_account_oauth_state(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        account_id=account_id,
-        oauth_status="not_connected",
-        oauth_last_error="",
-        oauth_provider=provider or None,
-    )
-    return redirect(
-        _postfach_redirect(account_id=account_id, status="OAuth Verbindung getrennt.")
-    )
-
-
-@bp.post("/postfach/accounts/sync")
-@bp.post("/mail/accounts/sync")
-@login_required
-def postfach_account_sync():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    if not account_id:
-        return redirect(_postfach_redirect(status="Account fehlt."))
-    try:
-        limit = int(request.form.get("limit") or 50)
-    except Exception:
-        limit = 50
-
-    result = postfach_sync_account(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        account_id=account_id,
-        limit=limit,
-    )
-    if bool(result.get("ok")):
-        status = (
-            f"Sync erfolgreich: {int(result.get('imported') or 0)} importiert, "
-            f"{int(result.get('duplicates') or 0)} Duplikate."
-        )
-    else:
-        status = f"Sync fehlgeschlagen: {result.get('reason')}"
-    return redirect(_postfach_redirect(account_id=account_id, status=status))
-
-
-@bp.post("/postfach/thread/<thread_id>/draft")
-@login_required
-def postfach_thread_draft(thread_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(
-            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
-        )
-    tenant_id = current_tenant()
-    data = postfach_get_thread(
-        _core_db_path(), tenant_id=tenant_id, thread_id=thread_id
-    )
-    if not data:
-        return redirect(_postfach_redirect(status="Thread nicht gefunden."))
-    thread = data["thread"]
-    messages = data.get("messages", [])
-    last_msg = messages[-1] if messages else {}
-    intent = (request.form.get("intent") or "antworten").strip()
-    tone = (request.form.get("tone") or "neutral").strip()
-    citations_required = (request.form.get("citations_required") or "").strip() in {
-        "1",
-        "true",
-        "on",
-        "yes",
-    }
-    body = (
-        "Guten Tag,\n\n"
-        f"vielen Dank fuer Ihre Nachricht. Wir haben Ihr Anliegen ({intent}) erhalten "
-        f"und bereiten eine Rueckmeldung im Ton '{tone}' vor.\n\n"
-        "Naechste Schritte:\n"
-        "- Eingang geprueft\n"
-        "- Anliegen intern priorisiert\n"
-        "- Rueckmeldung vorbereitet\n\n"
-        f"Quellenhinweise erforderlich: {'Ja' if citations_required else 'Nein'}\n"
-        f"Thread-ID: {thread_id}\n\n"
-        "Mit freundlichen Gruessen\nKUKANILEA Systems"
-    )
-    subject = str(
-        last_msg.get("subject_redacted") or thread.get("subject_redacted") or ""
-    )
-    to_value = str(last_msg.get("from_redacted") or "")
-    try:
-        draft_id = postfach_create_draft(
-            _core_db_path(),
-            tenant_id=tenant_id,
-            account_id=str(thread.get("account_id") or ""),
-            thread_id=thread_id,
-            to_value=to_value,
-            subject_value=f"Re: {subject}" if subject else "Re: Ihre Nachricht",
-            body_value=body,
-        )
-    except ValueError as exc:
-        return redirect(
-            _postfach_redirect(
-                account_id=str(thread.get("account_id") or ""),
-                thread_id=thread_id,
-                status=f"Entwurf fehlgeschlagen: {exc}",
-            )
-        )
-    return redirect(
-        _postfach_redirect(
-            account_id=str(thread.get("account_id") or ""),
-            thread_id=thread_id,
-            draft_id=draft_id,
-            status="Entwurf erstellt.",
-        )
-    )
-
-
-@bp.post("/postfach/drafts/send")
-@login_required
-def postfach_draft_send():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(_postfach_redirect(status="Read-only mode aktiv."))
-    tenant_id = current_tenant()
-    draft_id = (request.form.get("draft_id") or "").strip()
-    account_id = (request.form.get("account_id") or "").strip()
-    thread_id = (request.form.get("thread_id") or "").strip()
-    user_confirmed = (request.form.get("user_confirmed") or "").strip() in {
-        "1",
-        "true",
-        "on",
-        "yes",
-    }
-    safety_ack = (request.form.get("safety_ack") or "").strip() in {
-        "1",
-        "true",
-        "on",
-        "yes",
-    }
-    safety = postfach_safety_check_draft(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        draft_id=draft_id,
-    )
-    if (
-        bool(safety.get("ok"))
-        and int(safety.get("warning_count") or 0) > 0
-        and not safety_ack
-    ):
-        warnings = safety.get("warnings") or []
-        first_warning = str((warnings[0] or {}).get("message") or "Warnung")
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                thread_id=thread_id,
-                status=f"Sicherheitscheck: {first_warning} (bitte bestaetigen).",
-            )
-        )
-    result = postfach_send_draft(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        draft_id=draft_id,
-        user_confirmed=user_confirmed,
-    )
-    if not bool(result.get("ok")):
-        status = f"Versand blockiert: {result.get('reason')}"
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id, thread_id=thread_id, status=status
-            )
-        )
-    status = "Entwurf versendet."
-    return redirect(
-        _postfach_redirect(
-            account_id=account_id,
-            thread_id=str(result.get("thread_id") or thread_id),
-            status=status,
-        )
-    )
-
-
-@bp.post("/postfach/drafts/safety-check")
-@login_required
-def postfach_draft_safety_check():
-    tenant_id = current_tenant()
-    draft_id = (request.form.get("draft_id") or "").strip()
-    account_id = (request.form.get("account_id") or "").strip()
-    thread_id = (request.form.get("thread_id") or "").strip()
-    if not draft_id:
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id, thread_id=thread_id, status="Draft fehlt."
-            )
-        )
-    safety = postfach_safety_check_draft(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        draft_id=draft_id,
-    )
-    if not bool(safety.get("ok")):
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                thread_id=thread_id,
-                status=f"Sicherheitscheck fehlgeschlagen: {safety.get('reason')}",
-            )
-        )
-    count = int(safety.get("warning_count") or 0)
-    status = f"Sicherheitscheck: {count} Warnungen."
-    return redirect(
-        _postfach_redirect(
-            account_id=account_id, thread_id=thread_id, draft_id=draft_id, status=status
-        )
-    )
-
-
-@bp.post("/postfach/thread/<thread_id>/link")
-@login_required
-def postfach_thread_link(thread_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(
-            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
-        )
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    result = postfach_link_entities(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        thread_id=thread_id,
-        customer_id=(request.form.get("customer_id") or "").strip() or None,
-        project_id=(request.form.get("project_id") or "").strip() or None,
-        lead_id=(request.form.get("lead_id") or "").strip() or None,
-    )
-    return redirect(
-        _postfach_redirect(
-            account_id=account_id,
-            thread_id=thread_id,
-            status=f"Verknuepfungen erstellt: {int(result.get('links_created') or 0)}",
-        )
-    )
-
-
-@bp.post("/postfach/thread/<thread_id>/extract")
-@login_required
-def postfach_thread_extract(thread_id: str):
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    schema_name = (request.form.get("schema_name") or "default").strip()
-    result = postfach_extract_structured(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        thread_id=thread_id,
-        schema_name=schema_name,
-    )
-    if not bool(result.get("ok")):
-        status = f"Extraktion fehlgeschlagen: {result.get('reason')}"
-    else:
-        fields = result.get("fields") or {}
-        status = (
-            f"Extraktion ok (Schema={fields.get('schema')}, "
-            f"Zeilen={int(fields.get('line_count') or 0)})."
-        )
-    return redirect(
-        _postfach_redirect(account_id=account_id, thread_id=thread_id, status=status)
-    )
-
-
-@bp.post("/postfach/thread/<thread_id>/intake")
-@login_required
-def postfach_thread_intake(thread_id: str):
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    result = postfach_extract_intake(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        thread_id=thread_id,
-    )
-    if not bool(result.get("ok")):
-        status = f"Intake fehlgeschlagen: {result.get('reason')}"
-    else:
-        fields = result.get("fields") or {}
-        status = (
-            f"Intake extrahiert (Intent={fields.get('intent')}, "
-            f"Nachrichten={int(fields.get('message_count') or 0)})."
-        )
-    return redirect(
-        _postfach_redirect(account_id=account_id, thread_id=thread_id, status=status)
-    )
-
-
-@bp.post("/postfach/thread/<thread_id>/followup")
-@login_required
-def postfach_thread_followup(thread_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(
-            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
-        )
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    due_at = (request.form.get("due_at") or "").strip()
-    owner = (request.form.get("owner") or "").strip() or str(current_user() or "dev")
-    title = (request.form.get("title") or "").strip() or "Postfach Follow-up"
-    result = postfach_create_followup_task(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        thread_id=thread_id,
-        due_at=due_at,
-        owner=owner,
-        title=title,
-        created_by=str(current_user() or "dev"),
-    )
-    return redirect(
-        _postfach_redirect(
-            account_id=account_id,
-            thread_id=thread_id,
-            status=f"Follow-up Aufgabe erstellt (Task #{int(result.get('task_id') or 0)}).",
-        )
-    )
-
-
-@bp.post("/postfach/thread/<thread_id>/case")
-@login_required
-def postfach_thread_create_case(thread_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(
-            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
-        )
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    data = postfach_get_thread(
-        _core_db_path(), tenant_id=tenant_id, thread_id=thread_id
-    )
-    if not data:
-        return redirect(_postfach_redirect(status="Thread nicht gefunden."))
-    if not callable(task_create_fn):
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                thread_id=thread_id,
-                status="Task-System nicht verfuegbar.",
-            )
-        )
-    thread = data.get("thread") or {}
-    title = f"Case: {str(thread.get('subject_redacted') or thread_id)[:160]}"
-    try:
-        case_id = int(
-            task_create_fn(  # type: ignore[misc]
-                tenant=tenant_id,
-                severity="INFO",
-                task_type="CASE",
-                title=title,
-                details=f"Postfach Thread: {thread_id}",
-                created_by=str(current_user() or "dev"),
-            )
-        )
-    except Exception as exc:
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                thread_id=thread_id,
-                status=f"Case-Erzeugung fehlgeschlagen: {exc}",
-            )
-        )
-    return redirect(
-        _postfach_redirect(
-            account_id=account_id,
-            thread_id=thread_id,
-            status=f"Case erstellt (Task #{case_id}).",
-        )
-    )
-
-
-@bp.post("/postfach/thread/<thread_id>/tasks")
-@login_required
-def postfach_thread_create_tasks(thread_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(
-            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
-        )
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    intake = postfach_extract_intake(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        thread_id=thread_id,
-    )
-    if not bool(intake.get("ok")):
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                thread_id=thread_id,
-                status=f"Task-Intake fehlgeschlagen: {intake.get('reason')}",
-            )
-        )
-    fields = intake.get("fields") or {}
-    intent = str(fields.get("intent") or "general_inquiry")
-    task_ids: list[int] = []
-    if not callable(task_create_fn):
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                thread_id=thread_id,
-                status="Task-System nicht verfuegbar.",
-            )
-        )
-    try:
-        task_ids.append(
-            int(
-                task_create_fn(  # type: ignore[misc]
-                    tenant=tenant_id,
-                    severity="INFO",
-                    task_type="FOLLOWUP",
-                    title=f"Postfach Follow-up ({intent})",
-                    details=f"Thread: {thread_id}",
-                    created_by=str(current_user() or "dev"),
-                )
-            )
-        )
-        if intent in {"complaint", "quote_request"}:
-            task_ids.append(
-                int(
-                    task_create_fn(  # type: ignore[misc]
-                        tenant=tenant_id,
-                        severity="INFO",
-                        task_type="GENERAL",
-                        title=f"Postfach Klaerung ({intent})",
-                        details=f"Thread: {thread_id}",
-                        created_by=str(current_user() or "dev"),
-                    )
-                )
-            )
-    except Exception as exc:
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                thread_id=thread_id,
-                status=f"Task-Erzeugung fehlgeschlagen: {exc}",
-            )
-        )
-    return redirect(
-        _postfach_redirect(
-            account_id=account_id,
-            thread_id=thread_id,
-            status=f"Aufgaben erzeugt: {', '.join(str(t) for t in task_ids)}",
-        )
-    )
-
-
-@bp.post("/postfach/thread/<thread_id>/lead")
-@login_required
-def postfach_thread_create_lead(thread_id: str):
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return redirect(
-            _postfach_redirect(thread_id=thread_id, status="Read-only mode aktiv.")
-        )
-    tenant_id = current_tenant()
-    account_id = (request.form.get("account_id") or "").strip()
-    data = postfach_get_thread(
-        _core_db_path(), tenant_id=tenant_id, thread_id=thread_id
-    )
-    if not data:
-        return redirect(_postfach_redirect(status="Thread nicht gefunden."))
-    thread = data.get("thread") or {}
-    messages = data.get("messages") or []
-    newest = messages[-1] if messages else {}
-    subject = str(
-        thread.get("subject_redacted")
-        or newest.get("subject_redacted")
-        or "Neue Anfrage"
-    )
-    message = str(newest.get("redacted_text") or "Anfrage aus Postfach")
-    try:
-        lead_id = leads_create(
-            tenant_id=tenant_id,
-            source="email",
-            contact_name="Postfach Anfrage",
-            contact_email="postfach.request@kukanilea.local",
-            contact_phone="+490000000000",
-            subject=subject[:500],
-            message=message[:20000],
-            actor_user_id=str(current_user() or "dev"),
-        )
-    except ConflictError:
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id, thread_id=thread_id, status="Lead-Konflikt."
-            )
-        )
-    except Exception as exc:
-        return redirect(
-            _postfach_redirect(
-                account_id=account_id,
-                thread_id=thread_id,
-                status=f"Lead-Erzeugung fehlgeschlagen: {exc}",
-            )
-        )
-    postfach_link_entities(
-        _core_db_path(),
-        tenant_id=tenant_id,
-        thread_id=thread_id,
-        lead_id=lead_id,
-    )
-    return redirect(
-        _postfach_redirect(
-            account_id=account_id,
-            thread_id=thread_id,
-            status=f"Lead erstellt: {lead_id}",
-        )
-    )
-
-
-@bp.get("/admin/mesh")
-@login_required
-@require_role("ADMIN")
-def admin_mesh():
-    content = render_template("admin/mesh_monitor.html")
-    return _render_base(content, active_tab="settings")
 
 @bp.get("/settings")
 @login_required
 def settings_page():
-    role = current_role()
-    show_admin_settings = role in {"ADMIN", "DEV"} or has_permission(
-        "settings.manage_permissions"
-    )
-    can_manage_permissions = has_permission("settings.manage_permissions")
+    if current_role() not in {"ADMIN", "DEV"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
     auth_db: AuthDB = current_app.extensions["auth_db"]
-    
-    # Phase 6: Mobile Pairing QR
-    from app.core.network import generate_pairing_qr
-    pairing_qr = generate_pairing_qr()
-
-    core_db = {
-        "path": str(getattr(core, "DB_PATH", "")),
-        "schema_version": "?",
-        "tenants": "?",
-    }
-    if show_admin_settings and callable(getattr(core, "get_db_info", None)):
+    if callable(getattr(core, "get_db_info", None)):
         core_db = core.get_db_info()
-
-    update_enabled = show_admin_settings and bool(
-        current_app.config.get("UPDATE_CHECK_ENABLED", False)
-    )
-    update_info: dict[str, Any] = {
-        "enabled": update_enabled,
-        "checked": False,
-        "current_version": __version__,
-        "latest_version": "",
-        "download_url": "",
-        "update_available": False,
-        "error": "",
-    }
-    if update_enabled:
-        try:
-            update_info = check_for_updates(
-                __version__,
-                release_url=str(current_app.config.get("UPDATE_CHECK_URL", "")),
-                timeout_seconds=int(
-                    current_app.config.get("UPDATE_CHECK_TIMEOUT_SECONDS", 5)
-                ),
-            )
-            update_info["enabled"] = True
-            update_info["current_version"] = __version__
-        except Exception:
-            update_info = {
-                **update_info,
-                "enabled": True,
-                "error": "update_check_failed",
-            }
-    idle_timeout = _session_idle_minutes(session.get("idle_timeout_minutes"))
+    else:
+        core_db = {
+            "path": str(getattr(core, "DB_PATH", "")),
+            "schema_version": "?",
+            "tenants": "?",
+        }
     return _render_base(
         render_template_string(
             HTML_SETTINGS,
@@ -10189,473 +2370,8 @@ def settings_page():
             base_paths=[str(p) for p in _list_allowlisted_base_paths()],
             profile=_get_profile(),
             import_root=str(current_app.config.get("IMPORT_ROOT", "")),
-            update_info=update_info,
-            role=role,
-            show_admin_settings=show_admin_settings,
-            update_install_enabled=bool(
-                current_app.config.get("UPDATE_INSTALL_ENABLED", False)
-            ),
-            can_manage_permissions=can_manage_permissions,
-            idle_timeout_minutes=idle_timeout,
-            idle_timeout_choices=[15, 30, 60, 120, 240, 480],
-            pairing_qr=pairing_qr,
         ),
         active_tab="settings",
-    )
-
-
-@bp.get("/mobile/capture")
-def mobile_capture():
-    """Öffentlicher Endpunkt (im lokalen WLAN) für Kamera-Uploads."""
-    return render_template("mobile_capture.html")
-
-
-@bp.get("/api/datev/export")
-@login_required
-def datev_export():
-    """DATEV-Export-Download für das Büro."""
-    from app.services.export_service import export_service, init_export_service
-    if export_service is None:
-        init_export_service(str(getattr(core, "DB_PATH", "")))
-    
-    tenant = current_tenant() or "default"
-    now = datetime.now()
-    year = int(request.args.get("year", now.year))
-    month = int(request.args.get("month", now.month))
-    
-    zip_bytes = export_service.generate_datev_export(tenant, year, month)
-    if not zip_bytes:
-        return "Keine Daten für diesen Zeitraum gefunden.", 404
-    
-    _audit("datev_export", meta={"year": year, "month": month})
-    
-    from flask import send_file
-    return send_file(
-        io.BytesIO(zip_bytes),
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"DATEV_Export_{tenant}_{year}_{month:02d}.zip"
-    )
-
-
-@bp.post("/settings/idle-timeout")
-@login_required
-def set_idle_timeout():
-    csrf_error = _csrf_guard(api=False)
-    if csrf_error:
-        return csrf_error
-    raw = request.form.get("idle_timeout", "60")
-    minutes = _session_idle_minutes(raw)
-    session["idle_timeout_minutes"] = minutes
-    flash(
-        f"Inaktivitaets-Timeout gespeichert: {minutes} Minuten.",
-        "success",
-    )
-    if current_role() in {"ADMIN", "DEV"}:
-        return redirect(url_for("web.settings_page"))
-    return redirect(url_for("web.index"))
-
-
-@bp.post("/settings/ui/theme")
-@login_required
-def settings_ui_theme_update():
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    theme = str((payload or {}).get("theme", "")).strip().lower()
-    if theme not in {"light", "dark"}:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error_code": "validation_error",
-                    "message": "Ungültiges Theme.",
-                }
-            ),
-            400,
-        )
-    user_name = str(current_user() or "").strip().lower()
-    if not user_name:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error_code": "auth_required",
-                    "message": "Nicht eingeloggt.",
-                }
-            ),
-            401,
-        )
-    auth_db.set_user_preference(user_name, "ui.theme", theme)
-    return jsonify({"ok": True, "theme": theme})
-
-
-@bp.post("/settings/ui/sidebar")
-@login_required
-def settings_ui_sidebar_update():
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    payload = request.get_json(silent=True) if request.is_json else request.form
-    raw_collapsed = (payload or {}).get("collapsed", False)
-    if isinstance(raw_collapsed, bool):
-        collapsed = raw_collapsed
-    else:
-        collapsed = str(raw_collapsed).strip().lower() in {"1", "true", "yes", "on"}
-    user_name = str(current_user() or "").strip().lower()
-    if not user_name:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error_code": "auth_required",
-                    "message": "Nicht eingeloggt.",
-                }
-            ),
-            401,
-        )
-    auth_db.set_user_preference(
-        user_name, "ui.nav_collapsed", "1" if collapsed else "0"
-    )
-    return jsonify({"ok": True, "collapsed": collapsed})
-
-
-@bp.get("/settings/permissions")
-@login_required
-@require_permission("settings.manage_permissions")
-def settings_permissions_page():
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    role_rows = auth_db.list_roles()
-    permission_rows = auth_db.list_permissions()
-    role_permissions = {
-        role: sorted(perms)
-        for role, perms in auth_db.list_all_role_permissions().items()
-    }
-    users_with_roles = auth_db.list_users_with_roles()
-    can_edit_dev_roles = "DEV" in {str(r) for r in current_roles()}
-    return _render_base(
-        render_template_string(
-            HTML_SETTINGS_PERMISSIONS,
-            rbac_roles=role_rows,
-            rbac_permissions=permission_rows,
-            role_permissions=role_permissions,
-            users_with_roles=users_with_roles,
-            can_edit_dev_roles=can_edit_dev_roles,
-        ),
-        active_tab="settings",
-    )
-
-
-@bp.post("/settings/permissions/role")
-@login_required
-@require_permission("settings.manage_permissions")
-def settings_permissions_role_update():
-    csrf_error = _csrf_guard(api=False)
-    if csrf_error:
-        return csrf_error
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    role_name = str(request.form.get("role_name") or "").strip().upper()
-    perm_keys = [str(v or "").strip() for v in request.form.getlist("perm_keys")]
-    try:
-        auth_db.set_role_permissions(
-            role_name,
-            perm_keys,
-            actor_roles=current_roles(),
-        )
-        _audit(
-            "rbac_role_permissions_update",
-            target=role_name,
-            meta={"perm_count": len(perm_keys)},
-        )
-        flash(f"Rollenrechte gespeichert: {role_name}", "success")
-    except ValueError as exc:
-        flash(str(exc), "error")
-    except Exception:
-        flash("Rollenrechte konnten nicht gespeichert werden.", "error")
-    return redirect(url_for("web.settings_permissions_page"))
-
-
-@bp.post("/settings/permissions/user")
-@login_required
-@require_permission("users.assign_roles")
-def settings_permissions_user_update():
-    csrf_error = _csrf_guard(api=False)
-    if csrf_error:
-        return csrf_error
-    auth_db: AuthDB = current_app.extensions["auth_db"]
-    username = str(request.form.get("username") or "").strip().lower()
-    role_names = [
-        str(v or "").strip().upper() for v in request.form.getlist("role_names")
-    ]
-    try:
-        auth_db.set_user_roles(
-            username,
-            role_names,
-            actor_roles=current_roles(),
-        )
-        _audit(
-            "rbac_user_roles_update",
-            target=username,
-            meta={"roles": role_names},
-        )
-        flash(f"Benutzerrollen gespeichert: {username}", "success")
-    except ValueError as exc:
-        flash(str(exc), "error")
-    except Exception:
-        flash("Benutzerrollen konnten nicht gespeichert werden.", "error")
-    return redirect(url_for("web.settings_permissions_page"))
-
-
-@bp.route("/dev/tenant", methods=["GET", "POST"])
-@login_required
-@require_role("DEV")
-def dev_tenant_page():
-    if not is_localhost_addr(request.remote_addr):
-        return json_error("forbidden", "Nur localhost erlaubt.", status=403)
-
-    tenant_db_path = Path(current_app.config["TENANT_CONFIG_DB_PATH"])
-    error = ""
-    info = ""
-    if request.method == "POST":
-        if bool(current_app.config.get("READ_ONLY", False)):
-            error = "Read-only mode aktiv."
-        else:
-            tenant_name = (request.form.get("tenant_name") or "").strip()
-            if not tenant_name:
-                error = "Tenant-Name darf nicht leer sein."
-            else:
-                try:
-                    ctx = update_tenant_name(tenant_db_path, tenant_name)
-                    info = "Tenant-Name aktualisiert."
-                    current_app.config["TENANT_NAME"] = ctx.tenant_name
-                except Exception:
-                    error = "Tenant-Name konnte nicht gespeichert werden."
-
-    ctx = load_tenant_context(tenant_db_path)
-    if ctx is None:
-        return json_error(
-            "tenant_not_configured", "Tenant nicht konfiguriert.", status=403
-        )
-    return _render_base(
-        render_template_string(
-            HTML_DEV_TENANT,
-            tenant_id=ctx.tenant_id,
-            tenant_name=ctx.tenant_name,
-            error=error,
-            info=info,
-        ),
-        active_tab="settings",
-    )
-
-
-@bp.route("/dev/update", methods=["GET", "POST"])
-@login_required
-@require_role("DEV")
-def dev_update_page():
-    if not is_localhost_addr(request.remote_addr):
-        return json_error("forbidden", "Nur localhost erlaubt.", status=403)
-
-    install_enabled = bool(current_app.config.get("UPDATE_INSTALL_ENABLED", False))
-    app_dir = Path(current_app.config.get("UPDATE_APP_DIR") or get_app_dir()).resolve()
-    data_dir = Path(
-        current_app.config.get("USER_DATA_ROOT") or get_data_dir()
-    ).resolve()
-    download_dir = Path(
-        current_app.config.get("UPDATE_DOWNLOAD_DIR") or (data_dir / "updates")
-    ).resolve()
-    timeout_seconds = int(current_app.config.get("UPDATE_INSTALL_TIMEOUT_SECONDS", 30))
-    release_url = str(
-        current_app.config.get(
-            "UPDATE_INSTALL_URL", current_app.config.get("UPDATE_CHECK_URL", "")
-        )
-    ).strip()
-    manifest_url = str(current_app.config.get("UPDATE_MANIFEST_URL", "")).strip()
-    signing_required = bool(current_app.config.get("UPDATE_SIGNING_REQUIRED", False))
-    signing_public_key = str(
-        current_app.config.get("UPDATE_SIGNING_PUBLIC_KEY", "")
-    ).strip()
-    update_state: dict[str, Any] = {
-        "checked": False,
-        "update_available": False,
-        "latest_version": "",
-        "release_url": "",
-        "asset_name": "",
-        "asset_url": "",
-        "sha256": "",
-        "manifest_url": manifest_url,
-        "manifest_used": False,
-        "signature_required": signing_required,
-        "signature_verified": False,
-        "signature_key_id": "",
-        "signature_error": "",
-        "error": "",
-    }
-    error = ""
-    info = ""
-
-    if request.method == "POST":
-        csrf_error = _csrf_guard(api=False)
-        if csrf_error:
-            return csrf_error
-        action = str(request.form.get("action") or "").strip().lower()
-        try:
-            if action == "check":
-                update_state = check_for_installable_update(
-                    __version__,
-                    release_url=release_url,
-                    timeout_seconds=timeout_seconds,
-                    manifest_url=manifest_url,
-                    signing_required=signing_required,
-                    public_key_pem=signing_public_key,
-                )
-                if update_state.get("error"):
-                    error = f"Update-Check fehlgeschlagen ({update_state['error']})."
-                elif bool(update_state.get("update_available")):
-                    info = (
-                        "Installierbares Update gefunden: "
-                        f"{update_state.get('latest_version', '-')}"
-                    )
-                else:
-                    info = "Keine neue installierbare Version gefunden."
-            elif action == "install":
-                if not install_enabled:
-                    error = "Install-Flow ist deaktiviert."
-                elif bool(current_app.config.get("READ_ONLY", False)):
-                    error = "Read-only mode aktiv."
-                else:
-                    update_state = check_for_installable_update(
-                        __version__,
-                        release_url=release_url,
-                        timeout_seconds=timeout_seconds,
-                        manifest_url=manifest_url,
-                        signing_required=signing_required,
-                        public_key_pem=signing_public_key,
-                    )
-                    if update_state.get("error"):
-                        error = f"Update-Check fehlgeschlagen ({update_state.get('error')})."
-                    elif not bool(update_state.get("update_available")):
-                        info = "Keine neue installierbare Version gefunden."
-                    else:
-                        archive = download_update_asset(
-                            str(update_state.get("asset_url") or ""),
-                            download_dir=download_dir,
-                            timeout_seconds=timeout_seconds,
-                        )
-                        result = install_update_from_archive(
-                            archive,
-                            app_dir=app_dir,
-                            data_dir=data_dir,
-                            expected_sha256=str(update_state.get("sha256") or ""),
-                        )
-                        info = (
-                            "Update installiert. Backup: "
-                            f"{result.get('backup_dir', '')}"
-                        )
-            elif action == "rollback":
-                if not install_enabled:
-                    error = "Install-Flow ist deaktiviert."
-                else:
-                    rollback = rollback_update(app_dir=app_dir)
-                    info = (
-                        "Rollback abgeschlossen. Wiederhergestellt aus "
-                        f"{rollback.get('restored_from', '')}."
-                    )
-            else:
-                error = "Unbekannte Aktion."
-        except UpdateError as exc:
-            error = str(exc)
-        except Exception:
-            error = "Update-Aktion fehlgeschlagen."
-    else:
-        try:
-            update_state = check_for_installable_update(
-                __version__,
-                release_url=release_url,
-                timeout_seconds=timeout_seconds,
-                manifest_url=manifest_url,
-                signing_required=signing_required,
-                public_key_pem=signing_public_key,
-            )
-        except Exception:
-            update_state = {**update_state, "error": "check_failed"}
-
-    return _render_base(
-        render_template_string(
-            HTML_DEV_UPDATE,
-            current_version=__version__,
-            app_dir=str(app_dir),
-            data_dir=str(data_dir),
-            install_enabled=install_enabled,
-            update_state=update_state,
-            error=error,
-            info=info,
-        ),
-        active_tab="settings",
-    )
-
-
-@bp.route("/license", methods=["GET", "POST"])
-@login_required
-def license_page():
-    if current_role() not in {"ADMIN", "DEV"}:
-        return json_error("forbidden", "Nicht erlaubt.", status=403)
-
-    notice = ""
-    error = ""
-    if request.method == "POST":
-        csrf_error = _csrf_guard(api=False)
-        if csrf_error:
-            return csrf_error
-        blob = str(request.form.get("license_json") or "").strip()
-        if not blob:
-            error = "Lizenz-JSON fehlt."
-        else:
-            try:
-                payload = json.loads(blob)
-                if not isinstance(payload, dict):
-                    raise ValueError("JSON root must be object")
-            except Exception:
-                payload = None
-                error = "Lizenz-JSON ist ungültig."
-
-            if payload is not None:
-                license_path = Path(current_app.config["LICENSE_PATH"])
-                previous_text = (
-                    license_path.read_text(encoding="utf-8")
-                    if license_path.exists()
-                    else None
-                )
-                license_path.parent.mkdir(parents=True, exist_ok=True)
-                license_path.write_text(
-                    json.dumps(payload, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                info = load_license(license_path)
-                if not bool(info.get("valid")):
-                    if previous_text is None:
-                        try:
-                            license_path.unlink()
-                        except Exception:
-                            pass
-                    else:
-                        license_path.write_text(previous_text, encoding="utf-8")
-                    error = f"Lizenz ungültig ({info.get('reason') or 'invalid'})."
-                else:
-                    state = _reload_runtime_license_state()
-                    notice = (
-                        "Lizenz aktiviert. Plan: "
-                        f"{state.get('plan', 'PRO')} | Reason: {state.get('reason', 'ok')}"
-                    )
-                    _audit(
-                        "license_activate",
-                        target=str(state.get("plan", "PRO")),
-                        meta={
-                            "tenant_id": current_tenant(),
-                            "reason": str(state.get("reason", "ok")),
-                            "read_only": bool(state.get("read_only", False)),
-                        },
-                    )
-
-    return _render_base(
-        render_template_string(HTML_LICENSE, notice=notice, error=error),
-        active_tab="license",
     )
 
 
@@ -10669,127 +2385,71 @@ def api_seed_users():
     return jsonify(ok=True, message=msg)
 
 
-@bp.post("/api/dev/load-demo-data")
-@login_required
-@require_role("DEV")
-def api_load_demo_data():
-    if bool(current_app.config.get("READ_ONLY", False)):
-        return json_error("read_only", "Read-only mode aktiv.", status=403)
-    tenant_id = current_tenant() or str(
-        current_app.config.get("TENANT_DEFAULT", "KUKANILEA")
-    )
-    _ensure_postfach_tables()
-    summary = generate_demo_data(db_path=_core_db_path(), tenant_id=tenant_id)
-    _audit("demo_data_load", meta={"tenant_id": tenant_id, "summary": summary})
-    return jsonify(ok=True, message="Demo-Daten geladen.", summary=summary)
-
-
 @bp.post("/api/dev/rebuild-index")
 @login_required
 @require_role("DEV")
 def api_rebuild_index():
-    started = _job_tracker_start("index")
-    try:
-        if callable(getattr(core, "index_rebuild", None)):
-            result = core.index_rebuild()
-        elif callable(getattr(core, "index_run_full", None)):
-            result = core.index_run_full()
-        else:
-            _job_tracker_finish(
-                "index", started, error="indexing_not_available", result=None
-            )
-            return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
-        _DEV_STATUS["index"] = result
-        _job_tracker_finish("index", started, result=result)
-        _audit("rebuild_index", meta={"result": result})
-        return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
-    except Exception as exc:
-        _job_tracker_finish("index", started, error=str(exc), result=None)
-        raise
+    if callable(getattr(core, "index_rebuild", None)):
+        result = core.index_rebuild()
+    elif callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
+    _DEV_STATUS["index"] = result
+    _audit("rebuild_index", meta={"result": result})
+    return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
 
 
 @bp.post("/api/dev/full-scan")
 @login_required
 @require_role("DEV")
 def api_full_scan():
-    started = _job_tracker_start("scan")
-    try:
-        if callable(getattr(core, "index_run_full", None)):
-            result = core.index_run_full()
-        else:
-            _job_tracker_finish(
-                "scan", started, error="scan_not_available", result=None
-            )
-            return jsonify(ok=False, message="Scan nicht verfügbar."), 400
-        _DEV_STATUS["scan"] = result
-        _job_tracker_finish("scan", started, result=result)
-        _audit("full_scan", meta={"result": result})
-        return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
-    except Exception as exc:
-        _job_tracker_finish("scan", started, error=str(exc), result=None)
-        raise
+    if callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Scan nicht verfügbar."), 400
+    _DEV_STATUS["scan"] = result
+    _audit("full_scan", meta={"result": result})
+    return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
 
 
 @bp.post("/api/dev/repair-drift")
 @login_required
 @require_role("DEV")
 def api_repair_drift():
-    started = _job_tracker_start("scan")
-    try:
-        if callable(getattr(core, "index_run_full", None)):
-            result = core.index_run_full()
-        else:
-            _job_tracker_finish(
-                "scan", started, error="drift_scan_not_available", result=None
-            )
-            return jsonify(ok=False, message="Drift-Scan nicht verfügbar."), 400
-        _DEV_STATUS["scan"] = result
-        _job_tracker_finish("scan", started, result=result)
-        _audit("repair_drift", meta={"result": result})
-        return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
-    except Exception as exc:
-        _job_tracker_finish("scan", started, error=str(exc), result=None)
-        raise
+    if callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Drift-Scan nicht verfügbar."), 400
+    _DEV_STATUS["scan"] = result
+    _audit("repair_drift", meta={"result": result})
+    return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
 
 
 @bp.post("/api/dev/import/run")
 @login_required
 @require_role("DEV")
 def api_import_run():
-    started = _job_tracker_start("import")
     import_root = Path(str(current_app.config.get("IMPORT_ROOT", ""))).expanduser()
     if not str(import_root):
-        _job_tracker_finish("import", started, error="import_root_missing", result=None)
         return json_error("import_root_missing", "IMPORT_ROOT fehlt.", status=400)
     if not _is_allowlisted_path(import_root):
-        _job_tracker_finish(
-            "import", started, error="import_root_forbidden", result=None
-        )
         return json_error(
             "import_root_forbidden", "IMPORT_ROOT nicht erlaubt.", status=403
         )
     if not import_root.exists():
-        _job_tracker_finish("import", started, error="import_root_missing", result=None)
         return json_error(
             "import_root_missing", "IMPORT_ROOT existiert nicht.", status=400
         )
     if callable(getattr(core, "import_run", None)):
-        try:
-            result = core.import_run(
-                import_root=import_root,
-                user=str(current_user() or "dev"),
-                role=str(current_role()),
-            )
-        except Exception as exc:
-            _job_tracker_finish("import", started, error=str(exc), result=None)
-            raise
-    else:
-        _job_tracker_finish(
-            "import", started, error="import_not_available", result=None
+        result = core.import_run(
+            import_root=import_root,
+            user=str(current_user() or "dev"),
+            role=str(current_role()),
         )
+    else:
         return json_error("import_not_available", "Import nicht verfügbar.", status=400)
     _DEV_STATUS["scan"] = result
-    _job_tracker_finish("import", started, result=result)
     _audit("import_run", meta={"result": result, "root": str(import_root)})
     return jsonify(ok=True, message="Import abgeschlossen.", result=result)
 
@@ -10843,20 +2503,13 @@ def api_switch_base():
 @login_required
 @require_role("DEV")
 def api_test_llm():
-    started = _job_tracker_start("llm")
     payload = request.get_json(silent=True) or {}
     q = str(payload.get("q") or "suche rechnung")
     llm = getattr(ORCHESTRATOR, "llm", None)
     if not llm:
-        _job_tracker_finish("llm", started, error="llm_not_available", result=None)
         return jsonify(ok=False, message="LLM nicht verfügbar."), 400
-    try:
-        result = llm.rewrite_query(q)
-    except Exception as exc:
-        _job_tracker_finish("llm", started, error=str(exc), result=None)
-        raise
+    result = llm.rewrite_query(q)
     _DEV_STATUS["llm"] = result
-    _job_tracker_finish("llm", started, result=result)
     _audit("test_llm", meta={"result": result})
     return jsonify(ok=True, message=f"LLM: {llm.name}, intent={result.get('intent')}")
 
@@ -10901,20 +2554,8 @@ def api_mail_eml():
     return current_app.response_class(eml_bytes, mimetype="message/rfc822")
 
 
-@bp.route("/boot")
-def boot_screen():
-    return render_template("boot.html")
-
 @bp.route("/")
 def index():
-    from app.core.boot_sequence import get_boot_status
-    status = get_boot_status()
-    if not status.is_ready and not current_app.config.get("TESTING"):
-        return redirect(url_for("web.boot_screen"))
-
-    if not current_user():
-        return render_template("landing.html")
-    
     items_meta = list_pending() or []
     items = [x.get("_token") for x in items_meta if x.get("_token")]
     meta = {}
@@ -10933,28 +2574,9 @@ def index():
 
 @bp.route("/upload", methods=["POST"])
 def upload():
-    if hasattr(current_app, "limiter"):
-        @current_app.limiter.limit("20 per minute")
-        def _limited_upload():
-            return _upload_logic()
-        return _limited_upload()
-    return _upload_logic()
-
-def _upload_logic():
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(error="no_file"), 400
-    
-    # Phase 4: Malware Streaming Scan
-    from app.services.clamav_client import clamav
-    file_bytes = f.read()
-    f.seek(0) # Reset stream for saving later if clean
-    
-    is_safe, msg = clamav.scan_stream(file_bytes)
-    if not is_safe:
-        _audit("malware_detected", target=f.filename, meta={"malware": msg})
-        return jsonify(error="malware_detected", message=f"Malware gefunden: {msg}"), 406
-
     tenant = _norm_tenant(current_tenant() or "default")
     # tenant is fixed by license/account; no user input here.
     filename = _safe_filename(f.filename)
@@ -11087,12 +2709,6 @@ def review(token: str):
                 )
                 w["name"] = normalize_component(request.form.get("name") or "")
                 w["addr"] = normalize_component(request.form.get("addr") or "")
-                w["vendor_name"] = normalize_component(request.form.get("vendor_name") or "")
-                w["invoice_no"] = normalize_component(request.form.get("invoice_no") or "")
-                w["total_amount"] = normalize_component(request.form.get("total_amount") or "")
-                w["net_amount"] = normalize_component(request.form.get("net_amount") or "")
-                w["vat_amount"] = normalize_component(request.form.get("vat_amount") or "")
-                w["vat_valid"] = w.get("vat_valid", True) # Beibehalten aus p
                 w["plzort"] = normalize_component(request.form.get("plzort") or "")
                 w["use_existing"] = normalize_component(
                     request.form.get("use_existing") or ""
@@ -11111,36 +2727,10 @@ def review(token: str):
                             "use_existing": w.get("use_existing", ""),
                             "name": w.get("name") or "Kunde",
                             "addr": w.get("addr") or "Adresse",
-                            "vendor_name": w.get("vendor_name") or "",
-                            "invoice_no": w.get("invoice_no") or "",
-                            "total_amount": w.get("total_amount") or "",
-                            "net_amount": w.get("net_amount") or "",
-                            "vat_amount": w.get("vat_amount") or "",
-                            "vat_valid": w.get("vat_valid", True),
                             "plzort": w.get("plzort") or "PLZ Ort",
                             "doctype": w.get("doctype") or "SONSTIGES",
                             "document_date": w.get("document_date") or "",
                         }
-                        
-                        # Phase 6: Auto-Learning (Lerne aus Nutzerkorrekturen)
-                        try:
-                            from app.core.ocr_learning import record_correction
-                            # Wir vergleichen w (aktuelle Nutzer-Eingaben) 
-                            # mit dem was die KI ursprünglich geliefert hat (in p)
-                            orig_ki_data = {
-                                "vendor_name": p.get("vendor_name"),
-                                "invoice_no": p.get("invoice_no"),
-                                "total_amount": p.get("total_amount"),
-                                "doc_date": p.get("doc_date_suggested"),
-                                "doctype": p.get("doctype_suggested")
-                            }
-                            # OCR-Text für den Fingerabdruck
-                            ocr_text = p.get("extracted_text") or ""
-                            if ocr_text:
-                                record_correction(orig_ki_data, answers, ocr_text)
-                        except Exception as e:
-                            logger.error(f"Auto-Learning Fehler: {e}")
-
                         try:
                             folder, final_path, created_new = process_with_answers(
                                 Path(p.get("path", "")), answers
@@ -11148,42 +2738,6 @@ def review(token: str):
                             write_done(
                                 token, {"final_path": str(final_path), **answers}
                             )
-                            try:
-                                pk_like = int(
-                                    hashlib.sha256(token.encode("utf-8")).hexdigest()[
-                                        :12
-                                    ],
-                                    16,
-                                )
-                                fact_text = (
-                                    normalize_component(p.get("extracted_text") or "")
-                                    or f"{answers['doctype']} {Path(str(final_path)).name} KDNR {answers['kdnr']}"
-                                )
-                                upsert_external_fact(
-                                    "doc",
-                                    pk_like,
-                                    fact_text[:6000],
-                                    {
-                                        "path": str(final_path),
-                                        "doctype": answers["doctype"],
-                                        "kdnr": answers["kdnr"],
-                                        "token": token,
-                                    },
-                                )
-                                store_entity(
-                                    "document",
-                                    pk_like,
-                                    fact_text[:6000],
-                                    {
-                                        "tenant_id": current_tenant(),
-                                        "path": str(final_path),
-                                        "doctype": answers["doctype"],
-                                        "kdnr": answers["kdnr"],
-                                        "project_id": answers.get("kdnr", ""),
-                                    },
-                                )
-                            except Exception:
-                                pass
                             delete_pending(token)
                             return redirect(url_for("web.done_view", token=token))
                         except Exception as e:
@@ -11245,7 +2799,7 @@ def done_view(token: str):
 def assistant():
     # Ensure core searches within current tenant
     try:
-        from app.core import logic as _core
+        import kukanilea_core_v3_fixed as _core
 
         _core.TENANT_DEFAULT = current_tenant() or _core.TENANT_DEFAULT
     except Exception:
@@ -11290,398 +2844,23 @@ def assistant():
     return _render_base(html, active_tab="assistant")
 
 
-@bp.route("/api/voice/transcribe", methods=["POST"])
-@login_required
-def flask_transcribe_audio():
-    """Flask-basierter Endpunkt für mobile Sprachsteuerung."""
-    if "file" not in request.files:
-        return jsonify({"status": "error", "message": "Keine Datei gesendet."}), 400
-    
-    audio_file = request.files["file"]
-    temp_dir = "instance/voice_temp"
-    os.makedirs(temp_dir, exist_ok=True)
-    temp_path = os.path.join(temp_dir, f"flask_voice_{secrets.token_hex(4)}_{audio_file.filename}")
-    
-    audio_file.save(temp_path)
-    
-    try:
-        from app.ai.voice_parser import voice_parser
-        from app.agents.orchestrator_v2 import delegate_task, wrap_with_salt
-        from app.agents.observer import ObserverAgent
-        import asyncio
-
-        # 1. Transkription
-        text = voice_parser.transcribe(temp_path)
-        if not text:
-            return jsonify({"status": "error", "message": "Sprache konnte nicht erkannt werden."}), 400
-
-        # 2. Observer Prüfung
-        observer = ObserverAgent()
-        allowed, reason = observer.validate_action("voice_command", {"text": text})
-        
-        if not allowed:
-            return jsonify({
-                "status": "draft",
-                "transcription": text,
-                "agent_response": f"Befehl als Entwurf markiert: {reason}",
-                "is_draft": True
-            })
-
-        # 3. Delegation
-        salted_voice_text = wrap_with_salt(text)
-        # Flask is sync, so we run async in loop
-        agent_response = asyncio.run(delegate_task(salted_voice_text, tenant_id=current_tenant(), user_id=current_user()))
-        
-        is_draft = "Sicherheitsblockade" in agent_response or "Human-in-the-loop" in agent_response
-        
-        return jsonify({
-            "status": "ok",
-            "transcription": text,
-            "agent_response": agent_response,
-            "is_draft": is_draft
-        })
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
-
 @bp.route("/tasks")
-@login_required
 def tasks():
-    available = (
-        callable(task_list)
-        and callable(task_create_fn)
-        and callable(task_set_status_fn)
-    )
+    available = callable(task_list)
     if not available:
         html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
           <div class='text-lg font-semibold'>Tasks</div>
-          <div class='muted text-sm mt-2'>Tasks/Kanban sind im Core nicht verfügbar.</div>
+          <div class='muted text-sm mt-2'>Tasks sind im Core nicht verfügbar.</div>
         </div>"""
         return _render_base(html, active_tab="tasks")
-    board = _task_board_items(current_tenant())
-    read_only = bool(current_app.config.get("READ_ONLY", False))
-
-    def _render_card(item: dict, current_column: str) -> str:
-        tid = int(item.get("id") or 0)
-        title = normalize_component(item.get("title") or "")
-        sev = normalize_component(item.get("severity") or "")
-        ttype = normalize_component(item.get("task_type") or "")
-        move_targets = [
-            ("todo", "Todo"),
-            ("in_progress", "In Progress"),
-            ("done", "Done"),
-        ]
-        controls = []
-        for target_key, target_label in move_targets:
-            if target_key == current_column:
-                continue
-            disabled = "disabled" if read_only else ""
-            controls.append(
-                f"<form method='post' action='/tasks/{tid}/move' class='inline'>"
-                f"<input type='hidden' name='column' value='{target_key}'>"
-                f"<button type='submit' {disabled} class='rounded-lg px-2 py-1 text-xs btn-outline'>{target_label}</button>"
-                "</form>"
-            )
-        controls_html = "".join(controls) or (
-            "<span class='muted text-xs'>Kein Wechsel</span>"
-        )
-        return (
-            f"<div class='rounded-xl border border-slate-800 p-3 space-y-2'>"
-            f"<a class='block text-sm font-semibold hover:underline' href='/tasks/{tid}'>#{tid} {title}</a>"
-            f"<div class='muted text-xs'>Severity: {sev} · {ttype}</div>"
-            f"<div class='flex flex-wrap gap-1'>{controls_html}</div>"
-            f"</div>"
-        )
-
-    todo_cards = "".join(_render_card(t, "todo") for t in board["todo"])
-    progress_cards = "".join(
-        _render_card(t, "in_progress") for t in board["in_progress"]
-    )
-    done_cards = "".join(_render_card(t, "done") for t in board["done"])
-    create_disabled = "disabled" if read_only else ""
-
-    html = f"""
-    <div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card space-y-4'>
-      <div class='flex items-center justify-between'>
-        <div>
-          <div class='text-lg font-semibold'>Tasks Kanban</div>
-          <div class='muted text-xs mt-1'>Todo: {len(board["todo"])} · In Progress: {len(board["in_progress"])} · Done: {len(board["done"])}</div>
-        </div>
-        <a class='rounded-xl px-3 py-2 font-semibold btn-outline text-sm' href='/api/tasks?status=ALL'>API Preview</a>
-      </div>
-      <form method='post' action='/tasks/create' class='grid md:grid-cols-5 gap-2'>
-        <input name='title' class='rounded-xl border p-2 input md:col-span-2' placeholder='Task Titel' required>
-        <input name='task_type' class='rounded-xl border p-2 input' placeholder='Type (GENERAL)'>
-        <input name='severity' class='rounded-xl border p-2 input' placeholder='Severity (INFO)'>
-        <button type='submit' {create_disabled} class='rounded-xl px-4 py-2 font-semibold btn-primary'>Task anlegen</button>
-        <textarea name='details' class='rounded-xl border p-2 input md:col-span-5' rows='2' placeholder='Details (optional)'></textarea>
-      </form>
-      <div class='grid md:grid-cols-3 gap-3'>
-        <div class='rounded-xl border border-slate-800 p-3 space-y-2'>
-          <div class='text-sm font-semibold'>Todo</div>
-          {todo_cards or "<div class='muted text-sm'>Keine Tasks.</div>"}
-        </div>
-        <div class='rounded-xl border border-slate-800 p-3 space-y-2'>
-          <div class='text-sm font-semibold'>In Progress</div>
-          {progress_cards or "<div class='muted text-sm'>Keine Tasks.</div>"}
-        </div>
-        <div class='rounded-xl border border-slate-800 p-3 space-y-2'>
-          <div class='text-sm font-semibold'>Done</div>
-          {done_cards or "<div class='muted text-sm'>Keine Tasks.</div>"}
-        </div>
-      </div>
-      <div class='muted text-xs'>READ_ONLY: {"aktiv" if read_only else "aus"}</div>
-    </div>
-    """
-    return _render_base(html, active_tab="tasks")
-
-
-@bp.route("/tasks/create", methods=["POST"])
-@login_required
-@require_role("OPERATOR")
-def tasks_create():
-    if not callable(task_create_fn):
-        return _render_base(
-            _card("error", "Tasks sind nicht verfügbar."), active_tab="tasks"
-        )
-    guarded = _task_mutation_guard(api=False)
-    if guarded:
-        return guarded
-    title = normalize_component(request.form.get("title") or "")
-    if not title:
-        flash("Task Titel fehlt.", "error")
-        return redirect("/tasks")
-    severity = (
-        normalize_component(request.form.get("severity") or "INFO").upper() or "INFO"
-    )
-    task_type = (
-        normalize_component(request.form.get("task_type") or "GENERAL").upper()
-        or "GENERAL"
-    )
-    details = str(request.form.get("details") or "").strip()
-    task_id = task_create_fn(  # type: ignore
-        tenant=current_tenant(),
-        severity=severity,
-        task_type=task_type,
-        title=title,
-        details=details,
-        created_by=current_user() or "",
-    )
-    _audit(
-        "task_create",
-        target=str(task_id),
-        meta={"tenant_id": current_tenant(), "status": "OPEN", "source": "kanban_ui"},
-    )
     try:
-        event_append(
-            event_type="task_created",
-            entity_type="task",
-            entity_id=int(task_id),
-            payload={
-                "tenant_id": current_tenant(),
-                "task_status": "OPEN",
-                "source": "kanban_ui",
-            },
-        )
+        items = task_list(status="OPEN", limit=100)  # type: ignore
     except Exception:
-        pass
-    flash(f"Task #{int(task_id)} angelegt.", "success")
-    return redirect("/tasks")
-
-
-@bp.route("/tasks/<int:task_id>/move", methods=["POST"])
-@login_required
-@require_role("OPERATOR")
-def tasks_move(task_id: int):
-    if not callable(task_set_status_fn):
-        return _render_base(
-            _card("error", "Tasks sind nicht verfügbar."), active_tab="tasks"
-        )
-    guarded = _task_mutation_guard(api=False)
-    if guarded:
-        return guarded
-    target = request.form.get("column") or request.form.get("status") or ""
-    status = _task_status_from_input(target or "")
-    if not status:
-        flash("Ungültiger Status.", "error")
-        return redirect("/tasks")
-    changed = task_set_status_fn(  # type: ignore
-        int(task_id),
-        status,
-        resolved_by=current_user() or "",
-        tenant=current_tenant(),
-    )
-    if not changed:
-        flash("Task nicht gefunden.", "error")
-        return redirect("/tasks")
-    _audit(
-        "task_move",
-        target=str(task_id),
-        meta={"tenant_id": current_tenant(), "status": status, "source": "kanban_ui"},
-    )
-    try:
-        event_append(
-            event_type="task_moved",
-            entity_type="task",
-            entity_id=int(task_id),
-            payload={
-                "tenant_id": current_tenant(),
-                "task_status": status,
-                "source": "kanban_ui",
-            },
-        )
-    except Exception:
-        pass
-    flash(f"Task #{int(task_id)} -> {status}", "success")
-    return redirect("/tasks")
-
-
-@bp.route("/tasks/<int:task_id>")
-@login_required
-def task_detail(task_id: int):
-    if not callable(task_list):
-        return _render_base(
-            _card("error", "Tasks sind nicht verfügbar."), active_tab="tasks"
-        )
-    task = _task_find(current_tenant(), int(task_id))
-    if not task:
-        return _render_base(_card("error", "Task nicht gefunden."), active_tab="tasks")
-    read_only = bool(current_app.config.get("READ_ONLY", False))
-    status = normalize_component(task.get("status") or "OPEN").upper()
-
-    html = render_template_string(
-        """
-<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
-  <div class='text-lg font-semibold'>Task #{{task.id}} · {{task.title}}</div>
-  <div class='muted text-xs mt-1'>{{task.severity}} · {{task.task_type}} · Status: {{status}}</div>
-  <div class='text-sm mt-3 whitespace-pre-wrap'>{{task.details}}</div>
-  <div class='mt-3 flex flex-wrap gap-2'>
-    {% for key,label in move_targets %}
-      {% if key != current_column %}
-      <form method='post' action='/tasks/{{task.id}}/move' class='inline'>
-        <input type='hidden' name='column' value='{{key}}'>
-        <button type='submit' class='rounded-xl px-3 py-1 text-xs btn-outline' {% if read_only %}disabled{% endif %}>{{label}}</button>
-      </form>
-      {% endif %}
-    {% endfor %}
-  </div>
-  <div class='mt-4 grid md:grid-cols-2 gap-3'>
-    <div>
-      <label class='muted text-xs'>Projekt-ID (optional)</label>
-      <input id='taskProjectId' class='w-full rounded-xl border p-2 input' placeholder='z.B. 1'>
-    </div>
-    <div>
-      <label class='muted text-xs'>Notiz</label>
-      <input id='taskTimeNote' class='w-full rounded-xl border p-2 input' placeholder='Arbeitszeit erfassen'>
-    </div>
-  </div>
-  <div class='mt-3 flex gap-2'>
-    <button id='taskTimerStart' class='rounded-xl px-4 py-2 font-semibold btn-primary'>Timer starten</button>
-    <button id='taskTimerStop' class='rounded-xl px-4 py-2 font-semibold btn-outline'>Timer stoppen</button>
-    <a class='rounded-xl px-4 py-2 font-semibold btn-outline' href='/tasks'>Zurück</a>
-  </div>
-  <div id='taskTimerMsg' class='muted text-xs mt-2'>Bereit.</div>
-  <div class='mt-4 rounded-xl border border-slate-800 p-3'>
-    <div class='text-sm font-semibold'>Gebuchte Zeit</div>
-    <div id='taskBooked' class='muted text-sm mt-1'>Lade…</div>
-  </div>
-  <div class='mt-4 rounded-xl border border-slate-800 p-3'>
-    <div class='text-sm font-semibold mb-2'>Verknüpfungen</div>
-    <div id='taskEntityLinks' hx-get='/entity-links/task/{{task.id}}' hx-trigger='load' hx-swap='innerHTML'></div>
-  </div>
-</div>
-<script>
-(function(){
-  const taskId = {{task.id}};
-  const msg = document.getElementById('taskTimerMsg');
-  const booked = document.getElementById('taskBooked');
-  const projectId = document.getElementById('taskProjectId');
-  const note = document.getElementById('taskTimeNote');
-  const toast = (lvl, txt) => { if(window.showToast){ window.showToast(lvl, txt); } };
-
-  function setMsg(t, err){
-    msg.textContent = t;
-    msg.style.color = err ? '#f87171' : '';
-  }
-
-  async function refresh(){
-    const r = await fetch(`/api/time/task/${taskId}`, {credentials:'same-origin'});
-    const j = await r.json();
-    if(!r.ok){ booked.textContent = j.error?.message || 'Nicht verfügbar'; return; }
-    const s = j.summary || {};
-    booked.textContent = `${s.total_hours || 0}h (${s.total_seconds || 0}s) in ${s.total_entries || 0} Einträgen`;
-  }
-
-  async function start(){
-    setMsg('Starte Timer…', false);
-    const body = {
-      task_id: taskId,
-      project_id: projectId.value || null,
-      note: note.value || ''
-    };
-    const r = await fetch('/api/time/start', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      credentials:'same-origin',
-      body: JSON.stringify(body)
-    });
-    const j = await r.json();
-    if(!r.ok){
-      const m = j.error?.message || 'Start fehlgeschlagen';
-      setMsg(m, true);
-      toast('error', m);
-      return;
-    }
-    setMsg('Timer läuft.', false);
-    toast('success', 'Timer gestartet');
-    refresh();
-  }
-
-  async function stop(){
-    setMsg('Stoppe Timer…', false);
-    const r = await fetch('/api/time/stop', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      credentials:'same-origin',
-      body: JSON.stringify({})
-    });
-    const j = await r.json();
-    if(!r.ok){
-      const m = j.error?.message || 'Stop fehlgeschlagen';
-      setMsg(m, true);
-      toast('error', m);
-      return;
-    }
-    setMsg('Timer gestoppt.', false);
-    toast('success', 'Timer gestoppt');
-    refresh();
-  }
-
-  document.getElementById('taskTimerStart').addEventListener('click', start);
-  document.getElementById('taskTimerStop').addEventListener('click', stop);
-  refresh();
-})();
-</script>
-        """,
-        task=task,
-        status=status,
-        read_only=read_only,
-        current_column=(
-            "todo"
-            if status == "OPEN"
-            else "in_progress"
-            if status == "IN_PROGRESS"
-            else "done"
-        ),
-        move_targets=[
-            ("todo", "Todo"),
-            ("in_progress", "In Progress"),
-            ("done", "Done"),
-        ],
-    )
+        items = []
+    html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
+      <div class='text-lg font-semibold'>Tasks</div>
+      <div class='muted text-xs mt-1'>Offen: {n}</div>
+    </div>""".format(n=len(items))
     return _render_base(html, active_tab="tasks")
 
 

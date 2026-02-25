@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import logging
 import os
 
 from flask import Flask
 
-logger = logging.getLogger("kukanilea.otel")
 
-def setup_otel(app: Flask):
+def init_otel(app: Flask) -> None:
     enabled = os.environ.get("KUK_OTEL_ENABLED", "0") == "1"
     if not enabled:
         return
@@ -20,17 +18,13 @@ def setup_otel(app: Flask):
             BatchSpanProcessor,
             ConsoleSpanExporter,
         )
-        
-        # SOURCE: https://opentelemetry.io/docs/languages/python/exporters/
-        # Console exporter is correct for local debug
-        
-        provider = TracerProvider()
-        processor = BatchSpanProcessor(ConsoleSpanExporter())
-        provider.add_span_processor(processor)
-        trace.set_tracer_provider(provider)
-        
+
+        trace.set_tracer_provider(TracerProvider())
         FlaskInstrumentor().instrument_app(app)
-        logger.info("Local OpenTelemetry (Console) active.")
+
+        # Local only: Console exporter
+        span_processor = BatchSpanProcessor(ConsoleSpanExporter())
+        trace.get_tracer_provider().add_span_processor(span_processor)
         
     except ImportError:
-        logger.warning("OpenTelemetry packages missing. Skipping instrumentation.")
+        app.logger.warning("OpenTelemetry requested but dependencies (opentelemetry-sdk, opentelemetry-instrumentation-flask) not found.")

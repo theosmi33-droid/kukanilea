@@ -5,8 +5,6 @@ venv/
 .env
 .DS_Store
 *.log
-instance/
-voice_temp/
 
 Tophandwerk_Eingang/
 Tophandwerk_Pending/
@@ -55,20 +53,3 @@ __pycache__/
 build_release.log
 build/
 *.spec
-
-triage_report.json
-
-# keep tracked release scripts under scripts/build
-!scripts/build/
-!scripts/build/*.sh
-
-# runtime/e2e artifacts (non-deterministic)
-output/
-artifacts/e2e/
-test-results/
-playwright-report/
-*.trace.zip
-*.webm
-\n# Deployment Hygiene\n.env\n*.db\n*.sqlite3\n*.sqlite3-shm\n*.sqlite3-wal\ntemp/\ntmp/\ninstance/\ndata/
-internal_vault/
-license_priv.pem

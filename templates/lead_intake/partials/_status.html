@@ -1,7 +1,0 @@
-<div class="flex flex-wrap items-center gap-2 text-xs">
-  <span class="inline-flex rounded-full border border-zinc-600/50 px-2 py-0.5">{{ lead.status }}</span>
-  <span class="inline-flex rounded-full border border-zinc-600/50 px-2 py-0.5">prio: {{ lead.priority }}</span>
-  {% if lead.pinned %}<span class="inline-flex rounded-full border border-amber-500/50 px-2 py-0.5">📌 pinned</span>{% endif %}
-  <span class="inline-flex rounded-full border border-zinc-600/50 px-2 py-0.5">owner: {{ lead.assigned_to or '-' }}</span>
-  <span class="inline-flex rounded-full border border-zinc-600/50 px-2 py-0.5">due: {{ lead.response_due or '-' }}</span>
-</div>

@@ -1,3 +1,3 @@
-mode,rows,duration_s,throughput_ops_sec,p50_ms
-batch,1000,0.0008,1297016.88,N/A
-single,1000,0.0202,49557.49,0.0127
+operation,avg_ms,p50_ms,p95_ms,p99_ms,throughput_ops_sec
+write,0.0015,0.0010,0.0021,0.0284,546133.33
+read,0.0036,0.0031,0.0050,0.0141,265967.28

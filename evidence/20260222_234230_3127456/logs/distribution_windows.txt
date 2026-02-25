@@ -1,5 +1,0 @@
-STDOUT:
-
-
-STDERR:
-You must specify a key with which to sign.

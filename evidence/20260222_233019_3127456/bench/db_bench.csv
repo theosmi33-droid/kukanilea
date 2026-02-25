@@ -1,3 +1,0 @@
-mode,rows,duration_s,throughput_ops_sec,p50_ms
-batch,100,0.0001,873682.91,N/A
-single,100,0.0011,90290.03,0.0093

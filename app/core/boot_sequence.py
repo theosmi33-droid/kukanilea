@@ -1,113 +1,64 @@
-"""
-app/core/boot_sequence.py
-Verwaltet die Initialisierungs-Sequenz von KUKANILEA beim Systemstart.
-Meldet Fortschritte für das Boot-Erlebnis im Frontend.
-"""
+import json
+import subprocess
+import os
+import requests
+from pathlib import Path
 
-import time
-import logging
-import threading
-from typing import Dict, List, Any
-from datetime import datetime
-
-logger = logging.getLogger("kukanilea.boot")
-
-class BootStatus:
-    def __init__(self):
-        self.tasks = {
-            "HARDWARE_DETECTION": {"status": "pending", "label": "Hardware-Erkennung"},
-            "DB_MIGRATION": {"status": "pending", "label": "Datenbank-Abgleich"},
-            "FTS_OPTIMIZATION": {"status": "pending", "label": "Such-Indizes optimieren"},
-            "AI_MODELS": {"status": "pending", "label": "KI-Modelle laden"},
-            "AGENT_POOL": {"status": "pending", "label": "Agenten-Orchestrierung"},
-        }
-        self.is_ready = False
-        self.error = None
-
-    def update(self, task_id: str, status: str, error: str = None):
-        if task_id in self.tasks:
-            self.tasks[task_id]["status"] = status
-            if error:
-                self.tasks[task_id]["error"] = error
-        
-        # Check if all critical tasks are done
-        self.is_ready = all(t["status"] == "success" for t in self.tasks.values())
-
-    def get_progress(self) -> Dict[str, Any]:
-        return {
-            "tasks": self.tasks,
-            "is_ready": self.is_ready,
-            "error": self.error
-        }
-
-_global_boot_status = BootStatus()
-
-def get_boot_status():
-    return _global_boot_status
-
-def run_boot_sequence(app_config: Dict[str, Any]):
-    """Führt die Initialisierungsschritte im Hintergrund aus."""
-    global _global_boot_status
+def get_optimal_llm(use_case='general'):
+    """
+    Calls 'llmfit' to get the best model recommendation for the current hardware.
+    Fallbacks to a very small model if llmfit is missing or fails.
+    """
+    import platform
+    binary = "llmfit.exe" if platform.system() == "Windows" else "llmfit"
+    try:
+        # Check if llmfit is in PATH
+        result = subprocess.run(
+            [binary, 'recommend', '--json', '--use-case', use_case, '--limit', '1'],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            if data and len(data) > 0:
+                return data[0]['name']
+    except Exception as e:
+        print(f"llmfit error or missing: {e}")
     
-    # 1. Hardware Detection
+    # Fallback for old/limited hardware
+    return "qwen2.5:0.5b"
+
+def run_boot_sequence():
+    """
+    Initializes the system:
+    1. Detects hardware via llmfit.
+    2. Saves the profile.
+    3. Pulls the recommended model via Ollama if needed.
+    """
+    profile_path = Path("instance/hardware_profile.json")
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    model = get_optimal_llm()
+    profile = {
+        "recommended_model": model,
+        "boot_ts": os.path.getmtime(__file__) if os.path.exists(__file__) else 0
+    }
+    
+    with open(profile_path, "w") as f:
+        json.dump(profile, f)
+    
+    print(f"Hardware-Aware Boot: Recommended model is {model}")
+    
+    # Optional: Auto-pull model if connected to internet
     try:
-        _global_boot_status.update("HARDWARE_DETECTION", "running")
-        from app.core.hardware import get_hardware_specs
-        specs = get_hardware_specs()
-        logger.info(f"Boot: Hardware erkannt - {specs}")
-        _global_boot_status.update("HARDWARE_DETECTION", "success")
-    except Exception as e:
-        _global_boot_status.update("HARDWARE_DETECTION", "error", str(e))
+        response = requests.post(
+            "http://localhost:11434/api/pull",
+            json={"name": model, "stream": False},
+            timeout=5
+        )
+        if response.status_code == 200:
+            print(f"Model {model} is ready.")
+    except Exception:
+        print(f"Ollama not reachable or offline. Skipping auto-pull for {model}.")
 
-    # 2. DB Migration & Prep
-    try:
-        _global_boot_status.update("DB_MIGRATION", "running")
-        # Simuliere Migration für Gold v1.5.0
-        time.sleep(0.5) 
-        _global_boot_status.update("DB_MIGRATION", "success")
-    except Exception as e:
-        _global_boot_status.update("DB_MIGRATION", "error", str(e))
-
-    # 3. FTS5 Optimization
-    try:
-        _global_boot_status.update("FTS_OPTIMIZATION", "running")
-        from app.database import get_db_connection
-        con = get_db_connection()
-        fts_tables = ["knowledge_search", "article_search"]
-        for table in fts_tables:
-            try:
-                con.execute(f"INSERT INTO {table}({table}) VALUES('optimize');")
-            except: pass
-        con.commit()
-        con.close()
-        _global_boot_status.update("FTS_OPTIMIZATION", "success")
-    except Exception as e:
-        _global_boot_status.update("FTS_OPTIMIZATION", "error", str(e))
-
-    # 4. AI Models Preload
-    try:
-        _global_boot_status.update("AI_MODELS", "running")
-        # Wir triggern den Preload aus app/ai/__init__.py
-        from app.ai import init_ai
-        # init_ai(None) # Bereits in create_app, aber hier explizit für Status
-        time.sleep(1.0)
-        _global_boot_status.update("AI_MODELS", "success")
-    except Exception as e:
-        _global_boot_status.update("AI_MODELS", "error", str(e))
-
-    # 5. Agent Pool
-    try:
-        _global_boot_status.update("AGENT_POOL", "running")
-        # Initialisierung des Orchestrator V2 Agent Pools
-        from app.agents.orchestrator_v2 import delegate_task
-        time.sleep(0.5)
-        _global_boot_status.update("AGENT_POOL", "success")
-    except Exception as e:
-        _global_boot_status.update("AGENT_POOL", "error", str(e))
-
-    logger.info("Boot: System vollständig initialisiert.")
-
-def start_boot_background(app_config: Dict[str, Any]):
-    thread = threading.Thread(target=run_boot_sequence, args=(app_config,), daemon=True)
-    thread.start()
-    return thread
+if __name__ == "__main__":
+    run_boot_sequence()

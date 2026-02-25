@@ -5,7 +5,7 @@ app_path = os.path.join("dist", f"{application}.app")
 
 volume_name = application
 format = "UDZO"
-size = "3G"
+size = "300M"
 files = [app_path]
 icon_locations = {
     f"{application}.app": (140, 120),

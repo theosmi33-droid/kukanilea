@@ -1,6 +1,0 @@
-STDOUT:
-..s                                                                      [100%]
-2 passed, 1 skipped in 10.38s
-
-
-STDERR:

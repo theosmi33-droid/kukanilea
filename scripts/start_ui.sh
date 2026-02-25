@@ -14,4 +14,4 @@ source .venv/bin/activate
 pip -q install -U pip
 pip -q install -r requirements.txt
 
-python3 run.py
+python3 kukanilea_app.py
