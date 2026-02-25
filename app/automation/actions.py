@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-import kukanilea_core_v3_fixed as core
+from app.core import logic as core
 from app.mail import (
     postfach_create_draft,
     postfach_create_followup_task,
@@ -556,7 +556,7 @@ def _execute_ai_agent(
     action_cfg: Mapping[str, Any],
     context: Mapping[str, Any],
 ) -> dict[str, Any]:
-    from app.agents.orchestrator import answer as agent_answer
+    from app.agents import answer as agent_answer
     
     prompt_template = str(action_cfg.get("prompt_template") or action_cfg.get("prompt") or "").strip()
     if not prompt_template:

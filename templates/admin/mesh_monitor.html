@@ -1,0 +1,25 @@
+<div class="space-y-6 max-w-5xl mx-auto pt-6">
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <div class="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] mb-1">Global Mesh</div>
+      <h1 class="text-2xl font-bold">Fleet Cockpit</h1>
+    </div>
+    <div class="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-200 shadow-sm">
+      <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+      <span class="text-[10px] font-bold uppercase tracking-widest">Live Telemetrie</span>
+    </div>
+  </div>
+  
+  <p class="text-sm text-zinc-500 max-w-2xl leading-relaxed mb-6">
+    Überwachen Sie die Flotten-Telemetrie aller verbundenen KUKANILEA-Knoten im Zero-Cloud-Netzwerk.
+    Hardware-Vitalwerte und Heartbeats werden in Echtzeit aggregiert.
+  </p>
+  
+  <!-- HTMX Container -->
+  <div hx-get="/api/p2p/fleet/status" hx-trigger="load, every 5s" id="fleet-container">
+    <div class="card p-8 flex justify-center items-center text-zinc-400 text-sm border-dashed">
+      <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+      Lade Flotten-Telemetrie...
+    </div>
+  </div>
+</div>

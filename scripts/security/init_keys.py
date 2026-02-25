@@ -18,7 +18,7 @@ def init_vault():
     pub_path = cert_dir / "license_pub.pem"
     
     if priv_path.exists():
-        print("⚠️  Master-Keys existieren bereits. Abbruch aus Sicherheitsgründen.")
+        print("[WARNING]  Master-Keys existieren bereits. Abbruch aus Sicherheitsgründen.")
         return
 
     print("🔐 Generiere 4096-bit RSA Schlüsselpaar...")
@@ -44,7 +44,7 @@ def init_vault():
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         ))
         
-    print(f"✅ Master-Keys erfolgreich erstellt.")
+    print(f"[SUCCESS] Master-Keys erfolgreich erstellt.")
     print(f"   Vault: {priv_path}")
     print(f"   Certs: {pub_path}")
 

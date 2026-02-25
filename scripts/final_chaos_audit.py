@@ -62,10 +62,10 @@ def check_db_indices():
     if missing:
         logger.error(f"Folgende kritische Indizes fehlen: {missing}")
     else:
-        logger.info("✅ Alle kritischen Indizes verifiziert.")
+        logger.info("[SUCCESS] Alle kritischen Indizes verifiziert.")
 
 async def main():
-    logger.info("🚀 Starte KUKANILEA Final Chaos Audit v1.5.0-Gold")
+    logger.info("[START] Starte KUKANILEA Final Chaos Audit v1.5.0-Gold")
     
     # 1. DB Index Check
     check_db_indices()
@@ -75,7 +75,7 @@ async def main():
     users = [simulate_user_session(i) for i in range(1, 11)]
     await asyncio.gather(*users)
     
-    logger.info("✅ Chaos Audit abgeschlossen. 0.0% Halluzinationen bestätigt.")
+    logger.info("[SUCCESS] Chaos Audit abgeschlossen. 0.0% Halluzinationen bestätigt.")
 
 if __name__ == "__main__":
     asyncio.run(main())

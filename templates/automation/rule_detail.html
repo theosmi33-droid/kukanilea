@@ -16,11 +16,13 @@
 
     <div class="flex gap-2">
       <form method="post" action="/automation/rules/{{ rule.id }}/toggle">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="enabled" value="{{ 0 if rule.enabled else 1 }}">
         <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>{{ 'Disable' if rule.enabled else 'Enable' }}</button>
       </form>
       <form method="post" action="/automation/rules/{{ rule.id }}/delete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Disable rule</button>
       </form>

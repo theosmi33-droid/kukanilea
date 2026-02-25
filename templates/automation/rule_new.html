@@ -9,6 +9,7 @@
   {% endif %}
 
   <form class="card p-4 grid gap-2" method="post" action="/automation/rules/create">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input class="input px-3 py-2 text-sm" name="name" placeholder="Regelname" {% if read_only %}disabled{% endif %} required>
     <input class="input px-3 py-2 text-sm" name="scope" value="leads" {% if read_only %}disabled{% endif %}>

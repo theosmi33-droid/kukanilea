@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import kukanilea_core_v3_fixed as legacy_core
+from app.core import logic as legacy_core
 from app.devtools.ocr_policy import (
     ensure_watch_config_in_sandbox,
     get_policy_status,

@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-import kukanilea_core_v3_fixed as legacy_core
+from app.core import logic as legacy_core
 
 from .core import _tenant, automation_latest_run
 

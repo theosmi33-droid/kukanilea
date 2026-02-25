@@ -6,12 +6,12 @@ from typing import Any
 
 from flask import current_app, g, jsonify, render_template, request
 
-import kukanilea_core_v3_fixed as legacy_core
+from app.core import logic as legacy_core
 from app.auth import current_tenant, current_user
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 from app.lead_intake.core import ConflictError, lead_require_claim_or_free
-from app.security_ua_hash import ua_hmac_sha256_hex
+from app.ua_hash import ua_hmac_sha256_hex
 
 ALLOWED_ROUTE_KEYS = {
     "leads_status",

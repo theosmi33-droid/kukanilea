@@ -17,7 +17,7 @@ from typing import Any, Literal, Mapping
 
 from flask import current_app, has_app_context
 
-import kukanilea_core_v3_fixed as legacy_core
+from app.core import logic as legacy_core
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 from app.knowledge import knowledge_policy_get, knowledge_redact_text
@@ -1191,7 +1191,7 @@ def process_dirty_note(image_path: str, tenant_id: str = "SYSTEM_OCR"):
                 currency = data.get("currency", "EUR")
 
                 return {
-                    "text": f"Ich habe die Rechnung von **{vendor}** über **{total} {currency}** gelesen und automatisch in der Datenbank unter der ID `{entity_id}` gebucht. ✅",
+                    "text": f"Ich habe die Rechnung von **{vendor}** über **{total} {currency}** gelesen und automatisch in der Datenbank unter der ID `{entity_id}` gebucht. [SUCCESS]",
                     "data": data,
                     "event": "update-dashboard"
                 }

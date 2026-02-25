@@ -36,12 +36,14 @@
           <td class="px-3 py-2">
             <div class="flex items-center gap-2">
               <form method="post" action="/autonomy/autotag/rules/{{ rule.id }}/toggle">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="enabled" value="{{ 0 if rule.enabled else 1 }}">
                 <button class="btn-outline px-2 py-1 text-xs" type="submit" {% if read_only %}disabled{% endif %}>
                   {{ "Deaktivieren" if rule.enabled else "Aktivieren" }}
                 </button>
               </form>
               <form method="post" action="/autonomy/autotag/rules/{{ rule.id }}/delete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn-outline px-2 py-1 text-xs" type="submit" {% if read_only %}disabled{% endif %}>
                   Löschen
                 </button>

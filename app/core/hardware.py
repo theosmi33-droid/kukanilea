@@ -41,6 +41,19 @@ def get_hardware_specs():
             
     return specs
 
+def get_optimal_settings(hw: dict) -> dict:
+    """Berechnet die strikten Limits basierend auf der Hardware."""
+    settings = {}
+    settings['worker_threads'] = max(2, min(hw.get('cpu_count', 4) // 2, int(hw.get('ram_gb', 8))))
+    settings['db_cache_size_mb'] = max(64, min(512, int(hw.get('ram_gb', 8) * 1024 * 0.1)))
+    
+    if hw.get('ram_gb', 8) >= 12:
+        settings['ai_model'] = 'llama3.1:8b'
+    else:
+        settings['ai_model'] = 'llama3.2:3b'
+        
+    return settings
+
 def get_optimal_llm_config():
     specs = get_hardware_specs()
     # Base recommendation: Llama-3.1-8B Q4_K_M requires ~4.9 GB VRAM

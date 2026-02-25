@@ -1,23 +1,29 @@
-const CACHE_NAME = 'kukanilea-v1.4';
+/* 
+  KUKANILEA Service Worker 
+  Fokus: PWA-Deployment & Offline-Buffer für Baustellen-Szenarien.
+*/
+
+const CACHE_NAME = 'kukanilea-v1';
 const ASSETS = [
   '/',
   '/static/css/style.css',
-  '/static/manifest.json',
-  '/static/icons/icon-192x192.png'
+  '/static/css/haptic.css',
+  '/mobile/capture'
 ];
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
+self.addEventListener('install', (e) => {
+  e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS);
     })
   );
 });
 
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+self.addEventListener('fetch', (e) => {
+  // In der Gold-Edition: Cache-First für statische Assets, Network-First für API
+  e.respondWith(
+    fetch(e.request).catch(() => {
+      return caches.match(e.request);
     })
   );
 });

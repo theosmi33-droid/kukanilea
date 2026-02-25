@@ -7,6 +7,8 @@ from functools import wraps
 from pathlib import Path
 from sqlalchemy.exc import OperationalError
 
+logger = logging.getLogger("kukanilea.database")
+
 def retry_on_lock(max_retries: int = 5, delay: float = 0.1):
     """
     Decorator für SQLAlchemy-Operationen, die bei "database is locked" wiederholt werden.
@@ -64,11 +66,12 @@ def get_db_connection():
     # 2. Synchronous Normal: Viel schneller auf SSDs, trotzdem sicher im WAL-Mode
     conn.execute("PRAGMA synchronous=NORMAL;")
     # 3. Busy Timeout: Verhindert "Database is locked" bei Lastspitzen
-    conn.execute("PRAGMA busy_timeout = 5000;")
+    conn.execute("PRAGMA busy_timeout = 10000;")
     
     # 4. Dynamischer Cache (aus Hardware-Detection)
     cache_mb = os.environ.get("KUKANILEA_ADAPTIVE_DB_CACHE", "128")
-    conn.execute(f"PRAGMA cache_size = -{int(cache_mb) * 1024};")
+    cache_val = -int(cache_mb) * 1024
+    conn.execute("PRAGMA cache_size = %d;" % cache_val)
     
     # 5. Memory-Mapped I/O: Lädt Teile der DB direkt in den RAM
     conn.execute("PRAGMA mmap_size = 268435456;") # 256MB
@@ -82,16 +85,14 @@ def init_db():
     os.makedirs(db_path.parent, exist_ok=True)
     
     # 1. Initialize SQLAlchemy models FIRST
-    from app.models.rule import init_sa_db, get_sa_engine
+    from app.models.rule import Base, get_sa_engine
+    # Alle Modelle importieren damit Base sie kennt
     from app.core.audit_logger import AuditEntry
-    from app.services.caldav_sync import CalendarConnection
-    from app.models.price import Price, DocumentHash
-    try:
-        init_sa_db()
-        setup_sa_event_listeners(get_sa_engine())
-    except Exception as e:
-        print(f"SQLAlchemy initialization error: {e}")
-
+    
+    engine = get_sa_engine()
+    Base.metadata.create_all(engine)
+    setup_sa_event_listeners(engine)
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -120,21 +121,21 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_fallback_content ON knowledge_search_fallback(content);")
 
     # article_search relies on 'prices' table
-    try:
-        if fts5_enabled:
-            cursor.execute(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS article_search USING fts5(article_number, description, unit_price UNINDEXED, content='prices', tokenize='unicode61');"
-            )
-            
-            # Trigger to keep article_search in sync with prices
+    if fts5_enabled:
+        cursor.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS article_search USING fts5(article_number, description, unit_price UNINDEXED, content='prices', tokenize='unicode61');"
+        )
+        
+        # Trigger to keep article_search in sync with prices
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS prices_ai AFTER INSERT ON prices BEGIN
+              INSERT INTO article_search(rowid, article_number, description, unit_price) VALUES (new.id, new.article_number, new.description, new.unit_price);
+            END;
+        """)
+        # ... and so on
+    else:
+        try:
             cursor.execute("""
-                CREATE TRIGGER IF NOT EXISTS prices_ai AFTER INSERT ON prices BEGIN
-                  INSERT INTO article_search(rowid, article_number, description, unit_price) VALUES (new.id, new.article_number, new.description, new.unit_price);
-                END;
-            """)
-            # ... and so on
-        else:
-             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS article_search_fallback (
                     rowid INTEGER PRIMARY KEY,
                     article_number TEXT,
@@ -142,8 +143,8 @@ def init_db():
                     unit_price REAL
                 );
             """)
-    except Exception as e:
-        print(f"FTS5 Article Search error: {e}")
+        except Exception as e:
+            logger.error(f"FTS5 Article Search error: {e}")
 
     # VEC for Semantic Search (RAG)
     # Dimensions: 384 (all-MiniLM-L6-v2)
@@ -185,6 +186,18 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS update_status (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            last_checked TIMESTAMP,
+            latest_version TEXT,
+            update_available BOOLEAN DEFAULT 0,
+            update_downloaded BOOLEAN DEFAULT 0,
+            installer_path TEXT
+        )
+    """)
+    cursor.execute("INSERT OR IGNORE INTO update_status (id) VALUES (1)")
 
     # --- PRODUCTION READINESS INDICES (Chapter 6) ---
     
@@ -232,7 +245,7 @@ def init_db():
     conn.commit()
     conn.close()
     
-    print(f"Database initialized at {db_path} with FTS5 and WAL.")
+    logger.info(f"Database initialized at {db_path} with FTS5 and WAL.")
 
 def setup_sa_event_listeners(engine):
     """

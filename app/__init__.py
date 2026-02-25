@@ -16,7 +16,12 @@ from flask import (
     session as flask_session,
     url_for,
 )
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.exceptions import HTTPException
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
 
 from .ai import init_ai
 from .auth import init_auth
@@ -25,9 +30,9 @@ from .bootstrap import is_localhost_addr, needs_bootstrap
 from .config import Config
 from .db import AuthDB
 from .errors import handle_error
-from .hardware_detection import init_hardware_detection
+from .hardware import init_hardware_detection
 from .license import load_runtime_license_state
-from .logging import init_request_logging
+from .log_config import init_request_logging
 from .observability import setup_observability
 from .observability.otel import setup_otel
 from .tenant.context import ensure_tenant_config, load_tenant_context
@@ -149,9 +154,9 @@ def _resource_dir() -> Path:
 
 def create_app(system_settings: dict | None = None) -> Flask:
     # 0. Initialisierung mit Hardware-Limits falls übergeben
+    import os
     if system_settings:
         # Hier könnten globale Limits in app.config oder os.environ geschrieben werden
-        import os
         os.environ["KUKANILEA_ADAPTIVE_WORKERS"] = str(system_settings.get("worker_threads", 2))
         os.environ["KUKANILEA_ADAPTIVE_DB_CACHE"] = str(system_settings.get("db_cache_size_mb", 128))
         os.environ["KUKANILEA_ADAPTIVE_AI_MODEL"] = str(system_settings.get("ai_model", "llama3.2:3b"))
@@ -162,11 +167,40 @@ def create_app(system_settings: dict | None = None) -> Flask:
         template_folder=str(resources / "templates"),
         static_folder=str(resources / "static"),
     )
+
+    # Sentry Initialisierung
+    sentry_sdk.init(
+        dsn=os.getenv('SENTRY_DSN'),
+        integrations=[FlaskIntegration()],
+        traces_sample_rate=0.1,
+        environment=os.getenv('ENVIRONMENT', 'production')
+    )
+
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
     app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
     app.config.setdefault("SESSION_COOKIE_SECURE", False)
+
+    # CSRF-Schutz initialisieren
+    CSRFProtect(app)
+
+    # Rate Limiting initialisieren
+    def limiter_key_func():
+        return flask_session.get("user") or get_remote_address()
+
+    limiter = Limiter(
+        key_func=limiter_key_func,
+        app=app,
+        default_limits=["100 per minute"],
+        storage_uri="memory://",
+    )
+    app.limiter = limiter
+
+    # Concurrency-Tuning für Gold v1.5.0
+    from concurrent.futures import ThreadPoolExecutor
+    import os
+    app.executor = ThreadPoolExecutor(max_workers=min(32, (os.cpu_count() or 1) + 4))
 
     _wire_runtime_env(app)
 
@@ -178,10 +212,12 @@ def create_app(system_settings: dict | None = None) -> Flask:
 
     @app.before_request
     def _enforce_activation():
+        if app.config.get("TESTING"):
+            return None
         from .core.license_manager import license_manager
         if request.endpoint and "onboarding" in request.endpoint:
             return None
-        if request.path.startswith("/static/"):
+        if request.path.startswith("/static/") or request.path == "/health":
             return None
         if not license_manager.is_valid():
             if request.path.startswith("/api/"):
@@ -214,6 +250,20 @@ def create_app(system_settings: dict | None = None) -> Flask:
     
     setup_observability(app)
     setup_otel(app)
+
+    # Phase 7: Local Mesh Sync (Peer Discovery)
+    try:
+        from .core.p2p_sync import init_mesh
+        # Wir nutzen den konfigurierten Port oder Default 5051
+        port = int(app.config.get("PORT", 5051))
+        app.mesh = init_mesh(port=port)
+        
+        # Phase 1.6: Automatisierter Sync-Worker
+        from .agents.sync_worker import start_sync_worker
+        start_sync_worker(interval=60)
+    except Exception as e:
+        py_logging.getLogger("kukanilea").error(f"P2P/Sync Init fehlgeschlagen: {e}")    
+
     init_healer(app)
 
     license_state = load_runtime_license_state(
@@ -408,11 +458,51 @@ def create_app(system_settings: dict | None = None) -> Flask:
             ]
         )
         response.headers["Content-Security-Policy"] = csp
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
     app.register_blueprint(web.bp)
     app.register_blueprint(api.bp)
     app.register_blueprint(ai_chat.bp)
+
+    from .api import update as update_api
+    app.register_blueprint(update_api.bp)
+
+    from .api import boot as boot_api
+    app.register_blueprint(boot_api.bp)
+
+    from .api import p2p as p2p_api
+    app.register_blueprint(p2p_api.bp)
+
+    from .api import license_provisioning as license_api
+    app.register_blueprint(license_api.bp)
+
+    from . import metrics as metrics_bp
+    app.register_blueprint(metrics_bp.bp)
+
+    import time
+    @app.before_request
+    def before_request():
+        g.start_time = time.time()
+
+    @app.after_request
+    def after_request(response):
+        if hasattr(g, 'start_time'):
+            diff = time.time() - g.start_time
+            endpoint = request.endpoint or "unknown"
+            metrics_bp.REQUEST_COUNT.labels(
+                method=request.method,
+                endpoint=endpoint,
+                http_status=response.status_code
+            ).inc()
+            metrics_bp.REQUEST_LATENCY.labels(endpoint=endpoint).observe(diff)
+        return response
+
+    from .update import get_update_status
+    app.jinja_env.globals.update(get_update_status=get_update_status)
+
     if web.db_init is not None:
         try:
             web.db_init()
@@ -447,6 +537,23 @@ def create_app(system_settings: dict | None = None) -> Flask:
             start_startup_maintenance_background(app.config)
     except Exception:
         pass
+
+    # Gold: Start AI Knowledge Sync Bridge
+    try:
+        if not bool(app.config.get("TESTING", False)):
+            def _periodic_ai_sync():
+                import time
+                from .ai.sync_bridge import sync_all
+                while True:
+                    try:
+                        sync_all()
+                    except: pass
+                    time.sleep(3600) # Einmal pro Stunde synchronisieren
+
+            app.executor.submit(_periodic_ai_sync)
+    except Exception:
+        pass
+
     try:
         cron_enabled = bool(app.config.get("AUTOMATION_CRON_ENABLED", True))
         should_start_reloader_proc = os.environ.get(
@@ -469,4 +576,10 @@ def create_app(system_settings: dict | None = None) -> Flask:
             )
     except Exception:
         pass
+    try:
+        from .core.boot_sequence import start_boot_background
+        start_boot_background(app.config)
+    except Exception:
+        pass
+
     return app

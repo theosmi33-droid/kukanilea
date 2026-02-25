@@ -20,4 +20,4 @@ Write-Host "💿 Erzeuge MSI Installer (Per-User)..." -ForegroundColor Yellow
 # & "candle.exe" scripts/build/installer.wxs
 # & "light.exe" -ext WixUIExtension installer.wixobj -o "dist\final\$APP_NAME-v$VERSION-Windows.msi"
 
-Write-Host "✅ Windows Gold Release bereit." -ForegroundColor Green
+Write-Host "[SUCCESS] Windows Gold Release bereit." -ForegroundColor Green

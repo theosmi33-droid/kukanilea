@@ -54,6 +54,21 @@ def _load_user(db: AuthDB) -> None:
     g.tenant_id = session.get("tenant_id")
     g.roles = []
     g.permissions = set()
+
+    # Phase 9: Mesh-Authentifizierung (SIT Token Check)
+    mesh_token = request.headers.get("X-Mesh-Session") or request.args.get("mesh_token")
+    if not g.user and mesh_token:
+        from .core.auth.mesh_validator import verify_mesh_token
+        payload = verify_mesh_token(mesh_token)
+        if payload:
+            # Login-Zustand für diesen Request in g setzen
+            g.user = payload["name"]
+            g.role = payload["roles"][0] if payload["roles"] else "READONLY"
+            g.tenant_id = session.get("tenant_id") or "KUKANILEA"
+            g.roles = payload["roles"]
+            # Permanenter Login falls gewünscht (für diesen Knoten)
+            login_user(g.user, g.role, g.tenant_id)
+
     if g.user and not g.tenant_id:
         memberships = db.get_memberships(g.user)
         if memberships:

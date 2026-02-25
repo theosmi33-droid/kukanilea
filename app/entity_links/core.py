@@ -7,7 +7,7 @@ from typing import Any
 
 from flask import current_app, has_app_context
 
-import kukanilea_core_v3_fixed as legacy_core
+from app.core import logic as legacy_core
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 

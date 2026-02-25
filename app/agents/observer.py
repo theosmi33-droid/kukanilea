@@ -172,7 +172,7 @@ class ObserverAgent:
 
     def _llm_check(self, action_name: str, args: dict) -> tuple[bool, str]:
         """Komplexe Prüfung gegen BOUNDARIES.md via LLM."""
-        from app.agents.orchestrator import answer as agent_answer
+        from app.agents import answer as agent_answer
         
         boundaries_raw = self.parser.load_file_content("BOUNDARIES.md")
         # Schritt 2: Salted Sequence Tags anwenden
@@ -204,4 +204,4 @@ class ObserverAgent:
         """Protokolliert das Veto über self_learning."""
         context = f"Aktion: {action_name}, Args: {json.dumps(args)}"
         log_correction(f"VETO durch Observer: {reason}", context)
-        print(f"!!! OBSERVER VETO: {reason} !!!")
+        logger.warning(f"!!! OBSERVER VETO: {reason} !!!")

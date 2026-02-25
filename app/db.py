@@ -153,7 +153,8 @@ class AuthDB:
         ]
         for col, decl in wanted:
             if col not in existing:
-                con.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
+                sql = "ALTER TABLE users ADD COLUMN %s %s" % (col, decl)
+                con.execute(sql)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 
     def _ensure_rbac_schema(self, con: sqlite3.Connection) -> None:

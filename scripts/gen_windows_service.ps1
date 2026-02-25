@@ -2,7 +2,7 @@
 $ServiceName = "KUKANILEA"
 $WorkDir = "C:\\kukanilea"
 $PythonExe = "$WorkDir\\.venv\\Scripts\\python.exe"
-$Entry = "$WorkDir\\kukanilea_app.py"
+$Entry = "$WorkDir\\run.py"
 
 Write-Output "# Review and run in elevated PowerShell"
 Write-Output "sc.exe stop $ServiceName"

@@ -1,52 +1,26 @@
-# Licensing
+# KUKANILEA Lizenzierungsworkflow
 
-Stand: 2026-02-19
+Dieses Dokument beschreibt den Prozess zur Erstellung hardwaregebundener Lizenzen für KUKANILEA v1.5.0 Gold.
 
-## Modell
-- Trial: 14 Tage (konfigurierbar)
-- Lizenz: signierte lokale Lizenzdatei (`license.json`)
-- Online-Validierung: optional, standardmaessig alle 30 Tage
-- Grace: 30 Tage bei nicht erreichbarer Validierung
-- Enforcement: Nach Trial/Lizenzablauf oder invalidem Remote-Status laeuft die Instanz in `READ_ONLY`
+## Sicherheit
 
-## Aktivierung
-1. Als `ADMIN` oder `DEV` einloggen.
-2. Seite `/license` oeffnen.
-3. Signiertes Lizenz-JSON einfuegen und speichern.
-4. Die Instanz laedt den Laufzeitstatus neu (`PLAN`, `READ_ONLY`, `LICENSE_REASON`).
+- **Privater Schlüssel:** Der RSA-4096 Private Key (`internal_vault/license_priv.pem`) darf niemals das sichere Terminal (z.B. ZimaBlade) verlassen.
+- **Signatur:** Lizenzen werden mittels RSA-PSS Padding signiert, um Manipulationen auszuschließen.
 
-Hinweis:
-- Aktivierung ist auch im Read-only-Modus erlaubt (damit ein abgelaufener Trial ohne CLI wieder freigeschaltet werden kann).
+## Workflow zur Lizenzerstellung
 
-## Laufzeitverhalten
-- Schreiboperationen (`POST/PUT/PATCH/DELETE`) werden bei `READ_ONLY` global mit `403` geblockt.
-- Leseoperationen bleiben verfuegbar.
-- UI zeigt den aktuellen Lizenzstatus und den Grund (`LICENSE_REASON`).
-- Aktivierung ueber `/license` ist auch im Read-only-Modus erlaubt.
+1. **HWID erhalten:** Der Kunde sendet seine 64-stellige Hardware-ID (SHA-256 Hash).
+2. **Generierung starten:** Führen Sie das Skript im Root-Verzeichnis aus:
+   ```bash
+   python3 scripts/generate_license.py --hwid <KUNDEN_HWID> --days 365 --features all
+   ```
+3. **Auslieferung:** Die Datei `license.kukani` wird generiert und dem Kunden per E-Mail zugestellt.
+4. **Archivierung:** Ein Backup der Lizenz und des Hashes wird automatisch in `internal_vault/issued_licenses.db` gespeichert.
 
-## Online-Validierung / Grace
-- Wenn `KUKANILEA_LICENSE_VALIDATE_URL` gesetzt ist, validiert die App den signierten Payload periodisch.
-- Ist der Endpoint voruebergehend nicht erreichbar, wird das Grace-Fenster aus dem lokalen Cache genutzt.
-- Nach Ablauf von Grace wird auf `READ_ONLY` gewechselt.
+## Features
 
-## Lizenzserver-Prototyp (Phase 5)
-- Ein separater Referenzservice liegt unter `license_server/`.
-- Kompatibler Validation-Endpoint: `POST /api/v1/validate`
-- Admin-Upsert fuer Lizenzdaten: `POST /api/v1/licenses/upsert` (optional mit API-Token).
-- Setup und API-Details: `license_server/README.md`.
-
-## Security & Privacy
-- Hardware-Bindung nutzt einen gehashten Identifier aus `MAC + Hostname`.
-- Dieser Wert ist **pseudonymisiert** (Hash), aber **nicht anonym**.
-- Der Identifier dient nur zur Lizenzpruefung/Wiedererkennung und sollte nicht breit geloggt oder exportiert werden.
-- Bei Support/Bugreports keine Lizenzdateien, Keys oder Hardware-Identifier posten.
-
-## Relevante Umgebungsvariablen
-- `KUKANILEA_LICENSE_PATH`
-- `KUKANILEA_TRIAL_PATH`
-- `KUKANILEA_TRIAL_DAYS`
-- `KUKANILEA_LICENSE_VALIDATE_URL` (Alias: `LICENSE_SERVER_URL`)
-- `KUKANILEA_LICENSE_VALIDATE_TIMEOUT_SECONDS`
-- `KUKANILEA_LICENSE_VALIDATE_INTERVAL_DAYS`
-- `KUKANILEA_LICENSE_GRACE_DAYS`
-- `KUKANILEA_LICENSE_CACHE_PATH`
+Verfügbare Feature-Flags:
+- `vision_pro`: Erweiterte PicoClaw-Bildanalyse.
+- `voice_command`: Vollständige Sprachsteuerung.
+- `multi_user_10`: Unterstützung für bis zu 10 Benutzer.
+- `gobd_audit_ready`: Revisionssichere Archivierung.

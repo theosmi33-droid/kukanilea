@@ -26,7 +26,7 @@ def seed():
     except Exception as e:
         print(f"RBAC seeding warning: {e}")
         
-    print("✅ Seeding abgeschlossen.")
+    print("[SUCCESS] Seeding abgeschlossen.")
 
 if __name__ == "__main__":
     seed()

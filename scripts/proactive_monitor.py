@@ -41,7 +41,7 @@ def check_daily_report(conn):
             generator = DailyReportGenerator()
             data = generator.gather_daily_data(now.date())
             pdf_path = generator.generate_pdf_report(data)
-            logger.info(f"✅ Bautagebuch erfolgreich erstellt: {pdf_path}")
+            logger.info(f"[SUCCESS] Bautagebuch erfolgreich erstellt: {pdf_path}")
             REPORT_DONE_DATE = now.date()
             
             # In Benachrichtigungen eintragen

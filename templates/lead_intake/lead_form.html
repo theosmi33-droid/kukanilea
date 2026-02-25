@@ -11,6 +11,7 @@
   {% endif %}
 
   <form class="card p-4 grid gap-2 md:grid-cols-2" method="post" action="/leads">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <select class="input px-3 py-2 text-sm" name="source" {% if read_only %}disabled{% endif %}>
       {% for s in ['call','email','webform','manual'] %}
       <option value="{{ s }}" {% if s=='manual' %}selected{% endif %}>{{ s }}</option>

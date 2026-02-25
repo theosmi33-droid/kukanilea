@@ -31,6 +31,7 @@
           <td class="px-3 py-2">{{ row.created_at }}</td>
           <td class="px-3 py-2">
             <form method="post" action="/entity-links/{{ row.id }}/delete" hx-post="/entity-links/{{ row.id }}/delete" hx-target="#entityLinksPanel" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="context_entity_type" value="{{ entity_type }}">
               <input type="hidden" name="context_entity_id" value="{{ entity_id }}">
               <button class="btn-outline px-2 py-1 text-xs" type="submit" {% if read_only %}disabled{% endif %}>Entfernen</button>

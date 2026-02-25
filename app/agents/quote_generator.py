@@ -98,7 +98,7 @@ class QuoteGenerator:
             session.add(hash_entry)
             session.commit()
         except Exception as e:
-            print(f"Fehler beim Speichern des GoBD Hashs: {e}")
+            logger.error(f"Fehler beim Speichern des GoBD Hashs: {e}")
         finally:
             session.close()
 

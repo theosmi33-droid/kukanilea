@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import kukanilea_core_v3_fixed as legacy_core
+from app.core import logic as legacy_core
 from app.config import Config
 from app.devtools.sandbox import cleanup_sandbox, create_sandbox_copy
 from app.omni.hub import get_event, ingest_fixture, list_events

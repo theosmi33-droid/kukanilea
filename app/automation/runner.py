@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import kukanilea_core_v3_fixed as core
+from app.core import logic as core
 
 from .actions import run_rule_actions
 from .conditions import evaluate_conditions
@@ -66,7 +66,7 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(str(db_path), timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON;")
-    con.execute("PRAGMA busy_timeout=5000;")
+    con.execute("PRAGMA busy_timeout=10000;")
     return con
 
 

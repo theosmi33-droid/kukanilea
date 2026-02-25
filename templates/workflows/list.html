@@ -48,6 +48,7 @@
                 {{ button_link('Details', '/workflows/' ~ installed.id, kind='outline', size='sm') }}
               {% else %}
               <form method="post" action="/workflows/install/{{ tpl.key }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 {{ button_submit('Installieren', kind='primary', size='sm', disabled=read_only) }}
               </form>
@@ -86,6 +87,7 @@
             <td class="p-3">{{ row.last_status or "-" }}</td>
             <td class="p-3">
               <form method="post" action="/workflows/{{ row.id }}/toggle">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="enabled" value="{{ 0 if row.is_enabled else 1 }}">
                 {{ button_submit("Disable" if row.is_enabled else "Enable", kind='outline', size='sm', disabled=read_only) }}

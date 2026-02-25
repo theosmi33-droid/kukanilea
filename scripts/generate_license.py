@@ -24,7 +24,7 @@ def generate():
     
     priv_path = Path("internal_vault/license_priv.pem")
     if not priv_path.exists():
-        print("❌ Fehler: Vault nicht initialisiert.")
+        print("[ERROR] Fehler: Vault nicht initialisiert.")
         return
 
     # Payload vorbereiten
@@ -87,7 +87,7 @@ def generate():
         else:
             print("ℹ️ NAS /KUKANILEA-ENDKUNDE nicht gemountet. Nur lokale Kopie erstellt.")
         
-    print(f"✅ Lizenz für {args.hwid} generiert. Ablauf: {expiry}")
+    print(f"[SUCCESS] Lizenz für {args.hwid} generiert. Ablauf: {expiry}")
     print(f"💾 Datei: {args.out}")
 
 if __name__ == "__main__":

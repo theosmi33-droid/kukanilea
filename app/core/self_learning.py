@@ -60,7 +60,7 @@ async def propose_rule():
 
     # LLM-Aufruf über app.agents.orchestrator (Simuliert)
     # In der echten Implementierung würde hier der Orchestrator gerufen werden.
-    from app.agents.orchestrator import answer as agent_answer
+    from app.agents import answer as agent_answer
     
     prompt = (
         "Du bist der Kukanilea Observer. Analysiere das Nutzerfeedback in den folgenden Lektionen. "
@@ -91,7 +91,7 @@ async def propose_rule():
         
         return proposal_id
     except Exception as e:
-        print(f"Fehler bei Rule-Proposal: {e}")
+        logger.error(f"Fehler bei Rule-Proposal: {e}")
         return None
 
 def apply_approved_rule_to_playbook(proposal_id: int):
@@ -127,7 +127,7 @@ def analyze_crash(traceback_text: str):
     logger.info("Analysiere System-Crash...")
     
     try:
-        from app.agents.orchestrator import answer as agent_answer
+        from app.agents import answer as agent_answer
         prompt = (
             "Du bist ein Senior Python Developer und Debugging-Spezialist. "
             "Ein kritischer Fehler ist in KUKANILEA aufgetreten. Analysiere den folgenden Stacktrace "
@@ -148,3 +148,28 @@ def analyze_crash(traceback_text: str):
             
     except Exception as e:
         logger.error(f"Fehler bei Crash-Analyse: {e}")
+
+def pilot_observations(log_data: dict):
+    """
+    KI-Erkennung von Mustern in PII-maskierten Logs der Pilotkunden.
+    Beispiel: 'Scanner bricht auf Windows-Home immer ab'.
+    """
+    import logging
+    logger = logging.getLogger("kukanilea.self_learning")
+    
+    docs_dir = Path("docs/evolution")
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    obs_file = docs_dir / "pilot_observations.md"
+    
+    try:
+        # PII is already masked by Diagnostic Exporter
+        hw_profile = log_data.get("hw_profile", "Unknown")
+        issue = log_data.get("issue", "Unknown")
+        
+        entry = f"\\n### Observation {datetime.utcnow().isoformat()}\\nHW: {hw_profile}\\nISSUE: {issue}\\n---\\n"
+        with open(obs_file, "a", encoding="utf-8") as f:
+            f.write(entry)
+            
+        logger.info("Pilot observation recorded for self-learning analysis.")
+    except Exception as e:
+        logger.error(f"Error recording pilot observation: {e}")

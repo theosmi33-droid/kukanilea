@@ -1,0 +1,45 @@
+<div id="system-observer-badges" 
+     hx-get="/api/boot/system-health" 
+     hx-trigger="every 5s" 
+     hx-swap="innerHTML"
+     class="flex items-center gap-4">
+    <!-- Initial State (Skeleton) -->
+    <div class="flex items-center gap-2">
+        <div class="h-1.5 w-1.5 rounded-full bg-zinc-300"></div>
+        <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Ollama</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <div class="h-1.5 w-1.5 rounded-full bg-zinc-300"></div>
+        <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">OCR</span>
+    </div>
+</div>
+
+<script>
+    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+        if (evt.detail.target.id === 'system-observer-badges') {
+            const data = JSON.parse(evt.detail.xhr.response);
+            
+            const ollamaColor = data.ollama === 'online' ? 'bg-blue-500' : 'bg-red-500';
+            const ocrColor = data.ocr === 'ready' ? 'bg-emerald-500' : 'bg-amber-500';
+            
+            evt.detail.target.innerHTML = `
+                <div class="flex items-center gap-2" title="Ollama Server Status: ${data.ollama.toUpperCase()}">
+                    <div class="h-1.5 w-1.5 rounded-full ${ollamaColor} transition-colors duration-500"></div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">AI</span>
+                </div>
+                <div class="flex items-center gap-2" title="Tesseract OCR Status: ${data.ocr.toUpperCase()}">
+                    <div class="h-1.5 w-1.5 rounded-full ${ocrColor} transition-colors duration-500"></div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">OCR</span>
+                </div>
+                <div class="hidden md:flex items-center gap-2" title="DB Size: ${data.db.size_mb} MB">
+                    <div class="h-1.5 w-1.5 rounded-full bg-zinc-500"></div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">DB</span>
+                </div>
+                <div class="hidden lg:flex items-center gap-2" title="CPU: ${data.load.cpu_pct}% | RAM: ${data.load.ram_pct}%">
+                    <div class="h-1.5 w-1.5 rounded-full ${data.load.cpu_pct > 80 ? 'bg-red-500' : 'bg-zinc-500'}"></div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Load</span>
+                </div>
+            `;
+        }
+    });
+</script>

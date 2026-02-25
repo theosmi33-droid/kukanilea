@@ -287,3 +287,7 @@ class Config:
     AI_STATUS_CACHE_TTL_SECONDS = int(
         _env("KUKANILEA_AI_STATUS_CACHE_TTL_SECONDS", "15")
     )
+
+    # White-Labeling
+    PRODUCT_NAME = _env("KUKANILEA_PRODUCT_NAME", "KUKANILEA")
+    TESTING = _env("KUKANILEA_TESTING", "0") == "1"

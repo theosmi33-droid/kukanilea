@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.ai.ollama_client import ollama_list_models
-from app.ollama_runtime import ensure_ollama_running, pull_ollama_model
+from app.ollama import ensure_ollama_running, pull_ollama_model
 
 from .modelpack import import_model_pack
 from .personal_memory import ensure_personal_memory_schema

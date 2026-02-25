@@ -26,4 +26,4 @@ else
   echo "Hinweis: Ollama nicht installiert. KI-Funktionen bleiben deaktiviert."
 fi
 
-exec python kukanilea_app.py
+exec python run.py

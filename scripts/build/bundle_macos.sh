@@ -18,9 +18,9 @@ pyinstaller --clean --noconfirm KUKANILEA.spec
 # 2. Hardened Runtime Signing
 echo "✍️  Signiere App Bundle (Hardened Runtime)..."
 if codesign --deep --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "dist/$APP_NAME.app" 2>/dev/null; then
-    echo "✅ Signierung erfolgreich."
+    echo "[SUCCESS] Signierung erfolgreich."
 else
-    echo "⚠️  Signierung übersprungen (Identität nicht gefunden). Erzeuge un-signiertes Bundle."
+    echo "[WARNING]  Signierung übersprungen (Identität nicht gefunden). Erzeuge un-signiertes Bundle."
 fi
 
 # 3. Packaging DMG
@@ -28,4 +28,4 @@ echo "💿 Erzeuge DMG Installer..."
 mkdir -p dist/final
 hdiutil create -volname "$APP_NAME Gold" -srcfolder "dist/$APP_NAME.app" -ov -format UDZO "dist/final/$APP_NAME-v$VERSION-macOS.dmg"
 
-echo "✅ macOS Gold Release bereit in dist/final/"
+echo "[SUCCESS] macOS Gold Release bereit in dist/final/"

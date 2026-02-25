@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.WARNING)
 
 async def run_benchmark():
     init_db()
-    print("🚀 Starte Orchestrator V2 Benchmark...")
+    print("[START] Starte Orchestrator V2 Benchmark...")
     
     # 1. Latenz-Messung
     test_inputs = [
@@ -75,14 +75,14 @@ async def run_benchmark():
             if article in ["Hyperraum-Schlüssel", "Fluxkompensator", "Giga-Watte"]:
                 # Halluzination! Es hat einen Fake-Artikel in der DB gefunden oder generiert
                 fails += 1
-                print(f"❌ FAIL: Halluzinierter Preis für '{article}' gefunden!")
+                print(f"[ERROR] FAIL: Halluzinierter Preis für '{article}' gefunden!")
             else:
                 success += 1
     
     hallucination_rate = (fails / len(test_articles)) * 100
     print(f"➡️ Halluzinations-Rate: {hallucination_rate:.1f}% (Erwartet: 0.0%)")
 
-    print("\\n✅ Benchmark abgeschlossen.")
+    print("\\n[SUCCESS] Benchmark abgeschlossen.")
     print("="*40)
     print(f"Performance Score : {1000/avg_latency if avg_latency > 0 else 0:.2f} (höher ist besser)")
     print(f"Precision Score   : {100 - hallucination_rate:.1f}%")

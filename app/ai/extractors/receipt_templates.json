@@ -1,0 +1,42 @@
+{
+  "vendors": [
+    {
+      "name": "Würth",
+      "keywords": ["adolf würth", "würth group", "wuerth"],
+      "layout": {
+        "total_amount": "Gesamtbetrag",
+        "invoice_no": "Rechnungsnummer",
+        "date": "Datum"
+      }
+    },
+    {
+      "name": "Hilti",
+      "keywords": ["hilti deutschland", "hilti ag"],
+      "layout": {
+        "total_amount": "Rechnungsbetrag",
+        "invoice_no": "Belegnummer",
+        "date": "Belegdatum"
+      }
+    },
+    {
+      "name": "Hornbach",
+      "keywords": ["hornbach baumarkt", "hornbach ag"],
+      "layout": {
+        "total_amount": "Summe",
+        "invoice_no": "Beleg-Nr",
+        "date": "Datum"
+      }
+    },
+    {
+      "name": "Eisen-Karl",
+      "keywords": ["eisen-karl", "eisenkarl"],
+      "layout": {
+        "total_amount": "Endsumme",
+        "invoice_no": "Rechnungsnr",
+        "date": "Leistungsdatum"
+      }
+    }
+  ],
+  "vat_rates": [19, 7],
+  "currency_symbols": ["€", "EUR", "EURO"]
+}

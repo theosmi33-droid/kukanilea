@@ -61,7 +61,7 @@ from flask import (
     url_for,
 )
 
-from app.agents.orchestrator import answer as agent_answer
+from app.agents import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.retrieval_fts import upsert_external_fact
 from app.ai.knowledge import store_entity
@@ -204,7 +204,7 @@ from app.mail import (
 from app.omni import get_event as omni_get_event
 from app.omni import list_events as omni_list_events
 from app.reporting import build_evidence_pack
-from app.security_ua_hash import ua_hmac_sha256_hex
+from app.ua_hash import ua_hmac_sha256_hex
 from app.tags import (
     tag_assign,
     tag_create,
@@ -252,7 +252,7 @@ from .update import (
     install_update_from_archive,
     rollback_update,
 )
-from .update_checker import check_for_updates
+from .update_check import check_for_updates
 from .version import __version__
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
@@ -276,20 +276,11 @@ if werkzeug_spec:
 else:
     secure_filename = None  # type: ignore
 
-# -------- Core import (robust) ----------
-core = None
-_core_import_errors = []
-for mod in ("kukanilea_core_v3_fixed", "kukanilea_core_v3", "kukanilea_core"):
-    try:
-        core = __import__(mod)
-        break
-    except Exception as e:
-        _core_import_errors.append(f"{mod}: {e}")
-
-if core is None:
-    raise RuntimeError(
-        "KUKANILEA core import failed: " + " | ".join(_core_import_errors)
-    )
+# -------- Core import (Gold Architecture) ----------
+try:
+    from app.core import logic as core
+except Exception as e:
+    raise RuntimeError(f"KUKANILEA core import failed: {e}")
 
 
 def _core_get(name: str, default=None):
@@ -720,8 +711,30 @@ def _wizard_get(p: dict) -> dict:
     w.setdefault("name", "")
     w.setdefault("addr", "")
     w.setdefault("plzort", "")
+    w.setdefault("vendor_name", "")
+    w.setdefault("invoice_no", "")
+    w.setdefault("total_amount", "")
+    w.setdefault("net_amount", "")
+    w.setdefault("vat_amount", "")
+    w.setdefault("vat_valid", True)
     w.setdefault("doctype", "")
     w.setdefault("document_date", "")
+
+    # LLM Refinement Sync: Falls im Pending-Objekt (p) durch den _analyze_worker
+    # neue Felder gesetzt wurden, die im Wizard (w) noch fehlen, übernehmen wir sie.
+    if "vendor_name" in p and not w.get("vendor_name"):
+        w["vendor_name"] = p["vendor_name"]
+    if "invoice_no" in p and not w.get("invoice_no"):
+        w["invoice_no"] = p["invoice_no"]
+    if "total_amount" in p and not w.get("total_amount"):
+        w["total_amount"] = p["total_amount"]
+    if "net_amount" in p and not w.get("net_amount"):
+        w["net_amount"] = p["net_amount"]
+    if "vat_amount" in p and not w.get("vat_amount"):
+        w["vat_amount"] = p["vat_amount"]
+    if "vat_valid" in p:
+        w["vat_valid"] = p["vat_valid"]
+
     return w
 
 
@@ -783,6 +796,7 @@ def _render_base(content: str, active_tab: str = "upload") -> str:
     return render_template_string(
         HTML_BASE,
         content=content,
+        product_name=current_app.config.get("PRODUCT_NAME", "KUKANILEA"),
         ablage=str(BASE_PATH),
         user=user_name,
         roles=current_role(),
@@ -1126,7 +1140,8 @@ HTML_BASE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="manifest" href="/app.webmanifest">
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/app-icon.png') }}">
-<title>KUKANILEA Gold</title>
+<link rel="stylesheet" href="/static/css/haptic.css">
+<title>{{ product_name }} Gold</title>
 <script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
 <style>
@@ -1177,8 +1192,8 @@ HTML_BASE = r"""<!doctype html>
 <div class="app-shell">
   <header class="app-nav">
     <a href="/" class="nav-logo">
-      <div class="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white text-xs">K</div>
-      KUKANILEA
+      <div class="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white text-xs">{{ product_name[0].upper() }}</div>
+      {{ product_name }}
     </a>
     <div class="nav-links">
       <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">Aufgaben</a>
@@ -1377,6 +1392,27 @@ HTML_WIZARD = r"""<form method="post" class="space-y-3" autocomplete="off">
   </div>
   <div class="grid md:grid-cols-2 gap-3">
     <div>
+      <label class="muted text-xs">Aussteller (Firma)</label>
+      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input border-indigo-500/30" name="vendor_name" value="{{w.vendor_name}}" placeholder="z.B. Eisen-Karl GmbH"/>
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      <div>
+        <label class="muted text-xs">Rechnungs-Nr</label>
+        <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input border-indigo-500/30" name="invoice_no" value="{{w.invoice_no}}" placeholder="z.B. RE-2024-001"/>
+      </div>
+      <div>
+        <label class="muted text-xs">Gesamtbetrag (€)</label>
+        <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input border-indigo-500/30 {{ 'border-rose-500/50' if not w.vat_valid else '' }}" name="total_amount" value="{{w.total_amount}}" placeholder="z.B. 124.50"/>
+        {% if not w.vat_valid %}
+          <div class="text-[10px] text-rose-500 mt-1 font-bold">[VALIDATION_FAILED] Summe unplausibel</div>
+        {% elif w.total_amount %}
+          <div class="text-[10px] text-emerald-500 mt-1 font-bold">[VAT_OK] Mathematisch korrekt</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-3">
+    <div>
       <label class="muted text-xs">PLZ Ort</label>
       <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="plzort" value="{{w.plzort}}" placeholder="z.B. 16341 Panketal"/>
     </div>
@@ -1503,7 +1539,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     }
     const hPct = Math.max(0, Math.min(100, Number(summary.progress_hours_pct || 0)));
     const cPct = Math.max(0, Math.min(100, Number(summary.progress_cost_pct || 0)));
-    const warn = summary.warning ? "<div class='text-amber-300 text-xs mt-2'>⚠ Budget >80% erreicht</div>" : "";
+    const warn = summary.warning ? "<div class='text-amber-300 text-xs mt-2'>[WARN] Budget >80% erreicht</div>" : "";
     projectBudget.innerHTML = `
       <div class="text-sm font-semibold mb-2">${summary.project_name || "Projekt"}</div>
       <div class="muted text-xs">Stunden: ${summary.spent_hours || 0} / ${summary.budget_hours || 0}</div>
@@ -7115,6 +7151,14 @@ def _autotag_rule_summary(row: dict[str, Any]) -> dict[str, Any]:
 @bp.get("/knowledge")
 @login_required
 def knowledge_search_page():
+    if hasattr(current_app, "limiter"):
+        @current_app.limiter.limit("60 per minute")
+        def _limited_search():
+            return _knowledge_search_page_logic()
+        return _limited_search()
+    return _knowledge_search_page_logic()
+
+def _knowledge_search_page_logic():
     tenant_id = current_tenant()
     q = (request.args.get("q") or "").strip()
     source_type = (request.args.get("source_type") or "").strip().lower() or None
@@ -7163,6 +7207,14 @@ def knowledge_search_page():
 @bp.get("/knowledge/_results")
 @login_required
 def knowledge_results_partial():
+    if hasattr(current_app, "limiter"):
+        @current_app.limiter.limit("60 per minute")
+        def _limited_results():
+            return _knowledge_results_partial_logic()
+        return _limited_results()
+    return _knowledge_results_partial_logic()
+
+def _knowledge_results_partial_logic():
     tenant_id = current_tenant()
     q = (request.args.get("q") or "").strip()
     source_type = (request.args.get("source_type") or "").strip().lower() or None
@@ -8700,6 +8752,64 @@ HTML_SETTINGS = """
     </form>
   </div>
 
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">Global Mesh Monitor</div>
+    <div class="text-sm muted mb-3">
+      Zentrales Fleet-Dashboard für alle verbundenen KUKANILEA-Knoten und P2P-Peers.
+      Überwachen Sie Hardware-Telemetrie und Sync-Status in Echtzeit.
+    </div>
+    <a href="/admin/mesh" class="rounded-xl px-4 py-2 text-sm btn-primary inline-block">Cockpit öffnen</a>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">Team-Status (Mesh-Sync)</div>
+    <div class="text-sm muted mb-4">
+      Andere KUKANILEA-Instanzen im lokalen WLAN werden hier automatisch angezeigt. 
+      Daten werden ohne Cloud direkt zwischen den Geräten synchronisiert.
+    </div>
+    <div id="p2p-peer-list" hx-get="/api/p2p/peers" hx-trigger="load, every 5s">
+      <div class="flex items-center gap-2 text-xs text-zinc-400">
+        <div class="w-2 h-2 rounded-full bg-zinc-300 animate-pulse"></div>
+        Suche nach Team-Mitgliedern...
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">DATEV Export</div>
+    <div class="text-sm muted mb-3">
+      Erstellen Sie einen Buchungsstapel (CSV + Beleg-Bündel) für Ihren Steuerberater.
+    </div>
+    <form method="get" action="/api/datev/export" class="flex flex-wrap gap-2 items-center">
+      <select name="month" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
+        <option value="1">Januar</option>
+        <option value="2">Februar</option>
+        <!-- ... weitere Monate ... -->
+      </select>
+      <input type="number" name="year" value="2026" class="rounded-xl border px-3 py-2 text-sm bg-transparent w-24">
+      <button type="submit" class="rounded-xl px-4 py-2 text-sm btn-primary">Export generieren</button>
+    </form>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">Mobile Koppelung</div>
+    <div class="flex flex-col md:flex-row gap-6 items-start">
+      <div class="flex-1 text-sm muted">
+        Scannen Sie diesen QR-Code mit Ihrem Smartphone im gleichen WLAN, um KUKANILEA Mobile zu starten. 
+        Kein App-Store nötig (PWA).
+        <ul class="mt-2 list-disc list-inside space-y-1">
+          <li>Belege direkt auf der Baustelle fotografieren</li>
+          <li>Sofortiger, sicherer Upload ins Büro</li>
+          <li>Keine Cloud, 100% lokal über Ihr Netzwerk</li>
+        </ul>
+      </div>
+      <div class="p-4 bg-white rounded-2xl border shadow-sm flex flex-col items-center">
+        <img src="data:image/png;base64,{{pairing_qr}}" alt="Mobile Pairing QR" class="w-48 h-48 mb-2">
+        <div class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">WLAN Pairing Aktiv</div>
+      </div>
+    </div>
+  </div>
+
   {% if show_admin_settings %}
   <div class="card p-4 rounded-2xl border">
     <div class="text-lg font-semibold mb-2">DEV Settings</div>
@@ -10009,6 +10119,13 @@ def postfach_thread_create_lead(thread_id: str):
     )
 
 
+@bp.get("/admin/mesh")
+@login_required
+@require_role("ADMIN")
+def admin_mesh():
+    content = render_template("admin/mesh_monitor.html")
+    return _render_base(content, active_tab="settings")
+
 @bp.get("/settings")
 @login_required
 def settings_page():
@@ -10018,6 +10135,11 @@ def settings_page():
     )
     can_manage_permissions = has_permission("settings.manage_permissions")
     auth_db: AuthDB = current_app.extensions["auth_db"]
+    
+    # Phase 6: Mobile Pairing QR
+    from app.core.network import generate_pairing_qr
+    pairing_qr = generate_pairing_qr()
+
     core_db = {
         "path": str(getattr(core, "DB_PATH", "")),
         "schema_version": "?",
@@ -10076,8 +10198,43 @@ def settings_page():
             can_manage_permissions=can_manage_permissions,
             idle_timeout_minutes=idle_timeout,
             idle_timeout_choices=[15, 30, 60, 120, 240, 480],
+            pairing_qr=pairing_qr,
         ),
         active_tab="settings",
+    )
+
+
+@bp.get("/mobile/capture")
+def mobile_capture():
+    """Öffentlicher Endpunkt (im lokalen WLAN) für Kamera-Uploads."""
+    return render_template("mobile_capture.html")
+
+
+@bp.get("/api/datev/export")
+@login_required
+def datev_export():
+    """DATEV-Export-Download für das Büro."""
+    from app.services.export_service import export_service, init_export_service
+    if export_service is None:
+        init_export_service(str(getattr(core, "DB_PATH", "")))
+    
+    tenant = current_tenant() or "default"
+    now = datetime.now()
+    year = int(request.args.get("year", now.year))
+    month = int(request.args.get("month", now.month))
+    
+    zip_bytes = export_service.generate_datev_export(tenant, year, month)
+    if not zip_bytes:
+        return "Keine Daten für diesen Zeitraum gefunden.", 404
+    
+    _audit("datev_export", meta={"year": year, "month": month})
+    
+    from flask import send_file
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"DATEV_Export_{tenant}_{year}_{month:02d}.zip"
     )
 
 
@@ -10744,8 +10901,20 @@ def api_mail_eml():
     return current_app.response_class(eml_bytes, mimetype="message/rfc822")
 
 
+@bp.route("/boot")
+def boot_screen():
+    return render_template("boot.html")
+
 @bp.route("/")
 def index():
+    from app.core.boot_sequence import get_boot_status
+    status = get_boot_status()
+    if not status.is_ready and not current_app.config.get("TESTING"):
+        return redirect(url_for("web.boot_screen"))
+
+    if not current_user():
+        return render_template("landing.html")
+    
     items_meta = list_pending() or []
     items = [x.get("_token") for x in items_meta if x.get("_token")]
     meta = {}
@@ -10764,9 +10933,28 @@ def index():
 
 @bp.route("/upload", methods=["POST"])
 def upload():
+    if hasattr(current_app, "limiter"):
+        @current_app.limiter.limit("20 per minute")
+        def _limited_upload():
+            return _upload_logic()
+        return _limited_upload()
+    return _upload_logic()
+
+def _upload_logic():
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(error="no_file"), 400
+    
+    # Phase 4: Malware Streaming Scan
+    from app.services.clamav_client import clamav
+    file_bytes = f.read()
+    f.seek(0) # Reset stream for saving later if clean
+    
+    is_safe, msg = clamav.scan_stream(file_bytes)
+    if not is_safe:
+        _audit("malware_detected", target=f.filename, meta={"malware": msg})
+        return jsonify(error="malware_detected", message=f"Malware gefunden: {msg}"), 406
+
     tenant = _norm_tenant(current_tenant() or "default")
     # tenant is fixed by license/account; no user input here.
     filename = _safe_filename(f.filename)
@@ -10899,6 +11087,12 @@ def review(token: str):
                 )
                 w["name"] = normalize_component(request.form.get("name") or "")
                 w["addr"] = normalize_component(request.form.get("addr") or "")
+                w["vendor_name"] = normalize_component(request.form.get("vendor_name") or "")
+                w["invoice_no"] = normalize_component(request.form.get("invoice_no") or "")
+                w["total_amount"] = normalize_component(request.form.get("total_amount") or "")
+                w["net_amount"] = normalize_component(request.form.get("net_amount") or "")
+                w["vat_amount"] = normalize_component(request.form.get("vat_amount") or "")
+                w["vat_valid"] = w.get("vat_valid", True) # Beibehalten aus p
                 w["plzort"] = normalize_component(request.form.get("plzort") or "")
                 w["use_existing"] = normalize_component(
                     request.form.get("use_existing") or ""
@@ -10917,10 +11111,36 @@ def review(token: str):
                             "use_existing": w.get("use_existing", ""),
                             "name": w.get("name") or "Kunde",
                             "addr": w.get("addr") or "Adresse",
+                            "vendor_name": w.get("vendor_name") or "",
+                            "invoice_no": w.get("invoice_no") or "",
+                            "total_amount": w.get("total_amount") or "",
+                            "net_amount": w.get("net_amount") or "",
+                            "vat_amount": w.get("vat_amount") or "",
+                            "vat_valid": w.get("vat_valid", True),
                             "plzort": w.get("plzort") or "PLZ Ort",
                             "doctype": w.get("doctype") or "SONSTIGES",
                             "document_date": w.get("document_date") or "",
                         }
+                        
+                        # Phase 6: Auto-Learning (Lerne aus Nutzerkorrekturen)
+                        try:
+                            from app.core.ocr_learning import record_correction
+                            # Wir vergleichen w (aktuelle Nutzer-Eingaben) 
+                            # mit dem was die KI ursprünglich geliefert hat (in p)
+                            orig_ki_data = {
+                                "vendor_name": p.get("vendor_name"),
+                                "invoice_no": p.get("invoice_no"),
+                                "total_amount": p.get("total_amount"),
+                                "doc_date": p.get("doc_date_suggested"),
+                                "doctype": p.get("doctype_suggested")
+                            }
+                            # OCR-Text für den Fingerabdruck
+                            ocr_text = p.get("extracted_text") or ""
+                            if ocr_text:
+                                record_correction(orig_ki_data, answers, ocr_text)
+                        except Exception as e:
+                            logger.error(f"Auto-Learning Fehler: {e}")
+
                         try:
                             folder, final_path, created_new = process_with_answers(
                                 Path(p.get("path", "")), answers
@@ -11025,7 +11245,7 @@ def done_view(token: str):
 def assistant():
     # Ensure core searches within current tenant
     try:
-        import kukanilea_core_v3_fixed as _core
+        from app.core import logic as _core
 
         _core.TENANT_DEFAULT = current_tenant() or _core.TENANT_DEFAULT
     except Exception:

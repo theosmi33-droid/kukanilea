@@ -13,7 +13,7 @@ REPORT_DIR="$PROJECT_ROOT/reports/load_test_$(date +%Y%m%d_%H%M%S)"
 
 mkdir -p "$REPORT_DIR"
 
-echo "🚀 Starte KUKANILEA Load-Test gegen $TARGET_URL"
+echo "[START] Starte KUKANILEA Load-Test gegen $TARGET_URL"
 echo "👥 User: $USERS | Rate: $SPAWN_RATE | Dauer: $DURATION"
 
 # Locust im Headless-Mode starten
@@ -29,13 +29,13 @@ echo "👥 User: $USERS | Rate: $SPAWN_RATE | Dauer: $DURATION"
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "✅ Load-Test erfolgreich abgeschlossen."
+    echo "[SUCCESS] Load-Test erfolgreich abgeschlossen."
     echo "📊 Ergebnisse in $REPORT_DIR"
     echo "------------------------------------------------"
     tail -n +2 "$REPORT_DIR/results_stats.csv" | awk -F',' '{print $1 ": Median "$10"ms, P95 "$16"ms"}'
     echo "------------------------------------------------"
 else
-    echo "❌ Load-Test fehlgeschlagen oder Performance-Budget überschritten!"
+    echo "[ERROR] Load-Test fehlgeschlagen oder Performance-Budget überschritten!"
 fi
 
 exit $EXIT_CODE

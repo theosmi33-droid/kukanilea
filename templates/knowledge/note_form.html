@@ -9,6 +9,7 @@
   {% endif %}
 
   <form class="card p-4 space-y-3" method="post" action="/knowledge/notes/create">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input class="input w-full px-3 py-2 text-sm" type="text" name="title" value="{{ note.title or '' }}" maxlength="200" placeholder="Titel" {% if read_only %}disabled{% endif %} required>
     <textarea class="input w-full px-3 py-2 text-sm" name="body" rows="10" maxlength="8000" placeholder="Inhalt" {% if read_only %}disabled{% endif %} required>{{ note.body or '' }}</textarea>
     <input class="input w-full px-3 py-2 text-sm" type="text" name="tags" value="{{ note.tags or '' }}" maxlength="300" placeholder="Tags (optional)" {% if read_only %}disabled{% endif %}>

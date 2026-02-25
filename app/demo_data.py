@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import kukanilea_core_v3_fixed as core
+from app.core import logic as core
 from app.auth import hash_password
 from app.automation import store as automation_store
 from app.autonomy.source_scan import scan_sources_once, source_watch_config_update

@@ -123,7 +123,7 @@ def process_message(
                 note=note,
                 source="chat_command",
             )
-            final_text = "Verstanden. Ich habe mir das fuer dich gemerkt."
+            final_text = "[SUCCESS] Verstanden. Ich habe mir das fuer dich gemerkt."
             conversation_id = save_conversation(
                 tenant_id=tenant_id,
                 user_id=user_id,

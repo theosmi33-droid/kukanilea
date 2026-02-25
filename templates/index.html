@@ -6,16 +6,26 @@
     <title>{{ title }} - KUKANILEA</title>
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#ea580c">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+    <script>
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            evt.detail.headers['X-CSRFToken'] = "{{ csrf_token() }}";
+        });
+    </script>
     <link rel="stylesheet" href="/static/css/voice_control.css">
     <link rel="stylesheet" href="/static/css/vision_camera.css">
     <link rel="stylesheet" href="/static/css/toast.css">
+    <link rel="stylesheet" href="/static/css/haptic.css">
     <script src="/static/js/toast.js"></script>
     <script src="/static/js/voice_recorder.js"></script>
     <script src="/static/js/vision_camera.js"></script>
 </head>
 <body class="bg-white min-h-screen font-sans text-zinc-900 selection:bg-blue-100">
+    <!-- Update Banner -->
+    {% set update_status = get_update_status() %}
+    {% include '_update_banner.html' %}
+
     <!-- Toast Container -->
     <div id="toast-container" class="z-[100]"></div>
 
@@ -29,14 +39,8 @@
         </div>
         
         <div class="flex items-center gap-10">
-            <!-- AI Status -->
-            <div class="flex items-center gap-2"
-                 hx-get="/ai-chat/health" hx-trigger="every 10s" hx-swap="none"
-                 hx-on::after-request="const d = JSON.parse(event.detail.xhr.response); 
-                                       document.getElementById('nav-ai-dot').className = 'h-1.5 w-1.5 rounded-full ' + (d.available ? 'bg-blue-500' : 'bg-zinc-300');">
-                <div id="nav-ai-dot" class="h-1.5 w-1.5 rounded-full bg-zinc-300 transition-all duration-500"></div>
-                <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">System Live</span>
-            </div>
+            <!-- System Observer Badges -->
+            {% include '_status_badges.html' %}
 
             <!-- Profile -->
             <div class="flex items-center gap-4 cursor-pointer hover:opacity-70 transition-opacity">
@@ -83,7 +87,7 @@
 
         <!-- Modules (Clean Grid) -->
         <section class="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <div class="group cursor-pointer">
+            <div class="group cursor-pointer active:scale-95 transition-transform duration-150">
                 <div class="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-4">Operations</div>
                 <h2 class="text-xl font-bold mb-2 group-hover:text-blue-600 transition-colors">Betrieb & Aufgaben</h2>
                 <p class="text-sm text-zinc-500 leading-relaxed">Steuern Sie Ihre Baustellen und verfolgen Sie den Fortschritt Ihrer Teams in Echtzeit.</p>
@@ -93,7 +97,7 @@
                 </div>
             </div>
 
-            <div class="group cursor-pointer">
+            <div class="group cursor-pointer active:scale-95 transition-transform duration-150">
                 <div class="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-4">Intelligence</div>
                 <h2 class="text-xl font-bold mb-2 group-hover:text-blue-600 transition-colors">Wissensdatenbank</h2>
                 <p class="text-sm text-zinc-500 leading-relaxed">Finden Sie technische Details, Normen und Projektunterlagen durch lokale KI-Suche.</p>
@@ -108,14 +112,14 @@
     <!-- Floating UI -->
     <div class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
         <div class="bg-white/80 backdrop-blur-2xl border border-zinc-200 rounded-full px-6 py-3 flex items-center gap-8 shadow-2xl shadow-zinc-200">
-            <button id="vision-camera-btn" class="text-zinc-400 hover:text-black transition-colors" title="Kamera-Analyse">
+            <button id="vision-camera-btn" class="text-zinc-400 hover:text-black transition-all active:scale-90" title="Kamera-Analyse">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" stroke-width="2"></path></svg>
             </button>
-            <button id="voice-record-btn" class="text-zinc-400 hover:text-black transition-colors" title="Sprachsteuerung">
+            <button id="voice-record-btn" class="text-zinc-400 hover:text-black transition-all active:scale-90" title="Sprachsteuerung">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" stroke-width="2"></path></svg>
             </button>
             <div class="w-px h-4 bg-zinc-200"></div>
-            <button class="text-zinc-400 hover:text-black transition-colors" onclick="window.location.href='/settings'">
+            <button class="text-zinc-400 hover:text-black transition-all active:scale-90" onclick="window.location.href='/settings'">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-width="2"></path></svg>
             </button>
         </div>
@@ -126,6 +130,17 @@
     <div id="chat-container-wrapper" class="fixed top-0 right-0 h-full w-[450px] bg-white border-l border-zinc-100 shadow-2xl z-50 translate-x-full transition-transform duration-500 ease-out">
         <div id="chat-container" class="h-full">
             <!-- Content loaded via HTMX -->
+            <div class="p-10 space-y-8 htmx-indicator-only">
+                <div class="h-8 bg-zinc-100 rounded-lg w-1/2 animate-pulse"></div>
+                <div class="space-y-3">
+                    <div class="h-4 bg-zinc-100 rounded w-full animate-pulse"></div>
+                    <div class="h-4 bg-zinc-100 rounded w-5/6 animate-pulse"></div>
+                    <div class="h-4 bg-zinc-100 rounded w-4/6 animate-pulse"></div>
+                </div>
+                <div class="flex justify-end">
+                    <div class="h-12 bg-blue-50 rounded-2xl w-2/3 animate-pulse"></div>
+                </div>
+            </div>
         </div>
     </div>
 

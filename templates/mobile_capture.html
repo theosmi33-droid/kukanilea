@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>KUKANILEA Mobile Capture</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#6366f1">
+    <script src="/static/vendor/tailwindcss.min.js"></script>
+    <style>
+        body { background-color: #0f172a; color: white; font-family: sans-serif; }
+        .btn-capture {
+            width: 120px; height: 120px;
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            border-radius: 50%;
+            display: flex; items-center; justify-content: center;
+            box-shadow: 0 0 30px rgba(99, 102, 241, 0.4);
+            border: 4px solid rgba(255,255,255,0.2);
+            transition: all 0.2s;
+        }
+        .btn-capture:active { transform: scale(0.9); opacity: 0.8; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-6">
+    <div class="mb-12 text-center">
+        <div class="text-3xl font-black tracking-tighter uppercase mb-2">Kukanilea</div>
+        <div class="text-indigo-400 text-xs font-bold tracking-widest uppercase">Mobile Companion</div>
+    </div>
+
+    <div class="relative mb-12">
+        <input type="file" id="camera-input" accept="image/*" capture="environment" class="hidden">
+        <button onclick="document.getElementById('camera-input').click()" class="btn-capture">
+            <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" stroke-width="2"></path><path d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" stroke-width="2"></path></svg>
+        </button>
+    </div>
+
+    <div id="status" class="text-sm text-slate-400 font-medium text-center max-w-xs">
+        Tippen Sie auf den Button, um ein Foto vom Beleg zu machen und direkt an das Büro zu senden.
+    </div>
+
+    <div id="upload-progress" class="hidden mt-8 w-full max-w-xs bg-slate-800 rounded-full h-2 overflow-hidden">
+        <div id="progress-bar" class="bg-indigo-500 h-full w-0 transition-all duration-300"></div>
+    </div>
+
+    <script>
+        const input = document.getElementById('camera-input');
+        const status = document.getElementById('status');
+        const progress = document.getElementById('upload-progress');
+        const progressBar = document.getElementById('progress-bar');
+
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            status.innerText = 'Lade hoch...';
+            status.className = 'text-sm text-indigo-400 font-bold text-center';
+            progress.classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    progressBar.style.width = '100%';
+                    status.innerText = 'Erfolgreich gesendet! Beleg wird im Büro verarbeitet.';
+                    status.className = 'text-sm text-emerald-400 font-bold text-center';
+                    setTimeout(() => {
+                        progressBar.style.width = '0%';
+                        progress.classList.add('hidden');
+                        status.innerText = 'Tippen Sie auf den Button für den nächsten Beleg.';
+                        status.className = 'text-sm text-slate-400 font-medium text-center';
+                    }, 3000);
+                } else {
+                    const err = await response.json();
+                    throw new Error(err.message || 'Upload fehlgeschlagen');
+                }
+            } catch (err) {
+                status.innerText = 'Fehler: ' + err.message;
+                status.className = 'text-sm text-rose-500 font-bold text-center';
+                progress.classList.add('hidden');
+            }
+        };
+
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js');
+        }
+    </script>
+</body>
+</html>

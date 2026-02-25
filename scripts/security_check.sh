@@ -14,7 +14,7 @@ elif command -v detect-secrets &> /dev/null; then
     echo "detect-secrets gefunden. Scanne Repository..."
     detect-secrets scan --baseline .secrets.baseline
 else
-    echo "⚠️ Weder Trufflehog noch detect-secrets installiert."
+    echo "[WARNING] Weder Trufflehog noch detect-secrets installiert."
     echo "Bitte installiere eines der Tools (z.B. 'pip install detect-secrets' oder 'brew install trufflehog')."
     echo "Wir überspringen den automatischen Scan für jetzt."
 fi
@@ -22,9 +22,9 @@ fi
 # Einfacher manueller Grep als Fallback für die offensichtlichsten Fehler
 echo "Scanne nach 'password =' im Code..."
 if grep -rin "password[ ]*=[ ]*["'][^"']*["']" app/ | grep -v "test"; then
-    echo "❌ KRITISCH: Mögliches hardcoded Passwort gefunden!"
+    echo "[ERROR] KRITISCH: Mögliches hardcoded Passwort gefunden!"
     exit 1
 fi
 
-echo "✅ Security-Check bestanden."
+echo "[SUCCESS] Security-Check bestanden."
 exit 0

@@ -179,7 +179,7 @@ async def handle_message(request: Request, message: str = Form("")) -> Any:
 
 
 # --- Flask Implementation ---
-from flask import Blueprint, render_template, request, g, session
+from flask import Blueprint, render_template, request, g, session, current_app
 
 bp = Blueprint("ai_chat", __name__, url_prefix="/ai-chat")
 
@@ -193,6 +193,16 @@ def flask_chat_interface() -> Any:
 @bp.post("/message")
 def flask_handle_message() -> Any:
     """Verarbeitet User-Messages via HTMX (Flask)."""
+    # Rate limit applied via current_app.limiter in create_app
+    # but we can also use explicit decorator if available here
+    # or handle it globally.
+    if hasattr(current_app, "limiter"):
+        @current_app.limiter.limit("30 per minute")
+        def _limited_handle():
+            user_input = request.form.get("message", "").strip()
+            return _process_message_logic(None, user_input, is_flask=True)
+        return _limited_handle()
+    
     user_input = request.form.get("message", "").strip()
     return _process_message_logic(None, user_input, is_flask=True)
 

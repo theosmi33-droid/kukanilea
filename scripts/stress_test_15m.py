@@ -6,7 +6,7 @@ import time
 import httpx
 
 # Config
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:8002"
 TOTAL_REQUESTS = 5000
 CONCURRENCY = 50
 

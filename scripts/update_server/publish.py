@@ -37,12 +37,12 @@ def publish_update():
     
     priv_path = Path("internal_vault/license_priv.pem")
     if not priv_path.exists():
-        print("❌ Fehler: Private Key nicht gefunden (internal_vault/license_priv.pem).")
+        print("[ERROR] Fehler: Private Key nicht gefunden (internal_vault/license_priv.pem).")
         sys.exit(1)
 
     archive_path = Path(args.archive)
     if not archive_path.exists():
-        print(f"❌ Fehler: Update-Archiv {args.archive} existiert nicht.")
+        print(f"[ERROR] Fehler: Update-Archiv {args.archive} existiert nicht.")
         sys.exit(1)
 
     out_dir = Path(args.outdir)
@@ -109,7 +109,7 @@ def publish_update():
         import shutil
         shutil.copy2(archive_path, target_archive)
         
-    print(f"✅ Update Manifest erfolgreich signiert und generiert: {manifest_path}")
+    print(f"[SUCCESS] Update Manifest erfolgreich signiert und generiert: {manifest_path}")
     print(f"   Archiv SHA256: {file_sha256}")
     
     # Optional: NAS Spiegelung

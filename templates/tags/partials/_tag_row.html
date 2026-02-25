@@ -13,11 +13,13 @@
   <td class="px-3 py-2">{{ tag.usage_count if tag.usage_count is not none else 0 }}</td>
   <td class="px-3 py-2">
     <form class="inline-flex items-center gap-2" method="post" action="/tags/{{ tag.id }}/update">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input class="input px-2 py-1 text-xs" name="name" value="{{ tag.name }}" maxlength="64" {% if read_only %}disabled{% endif %}>
       <input class="input px-2 py-1 text-xs w-24" name="color" value="{{ tag.color or '' }}" maxlength="7" {% if read_only %}disabled{% endif %}>
       <button class="btn-outline px-2 py-1 text-xs" type="submit" {% if read_only %}disabled{% endif %}>Update</button>
     </form>
     <form class="inline" method="post" action="/tags/{{ tag.id }}/delete" onsubmit="return confirm('Tag löschen?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn-outline px-2 py-1 text-xs" type="submit" {% if read_only %}disabled{% endif %}>Löschen</button>
     </form>
   </td>

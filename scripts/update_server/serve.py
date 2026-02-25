@@ -27,7 +27,7 @@ class UpdateHandler(http.server.SimpleHTTPRequestHandler):
                 break
         
         if not self.source_dir:
-            print("❌ Fehler: Kein Update-Verzeichnis auf dem NAS gefunden!")
+            print("[ERROR] Fehler: Kein Update-Verzeichnis auf dem NAS gefunden!")
             sys.exit(1)
             
         super().__init__(*args, directory=str(self.source_dir), **kwargs)
@@ -38,7 +38,7 @@ class UpdateHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
 def run_server():
-    print(f"🚀 KUKANILEA Update-Server gestartet.")
+    print(f"[START] KUKANILEA Update-Server gestartet.")
     print(f"📂 Quelle: {Path().resolve()}")
     print(f"🌐 Adresse: http://localhost:{PORT}")
     print(f"🔗 NAS-Pfad: smb://192.168.0.2/KUKANILEA-ENDKUNDE/updates")

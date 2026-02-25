@@ -1,0 +1,26 @@
+# KUKANILEA Workshop Hub Deployment
+# Optimiert für ZimaBlade (Headless Server)
+
+services:
+  kukanilea-hub:
+    image: kukanilea-gold:latest
+    container_name: kukanilea_hub
+    restart: unless-stopped
+    network_mode: host # Notwendig für mDNS / Zeroconf Discovery
+    environment:
+      - PORT=5051
+      - KUKANILEA_MODE=hub
+      - KUKANILEA_NAS_PATH=/mnt/nas_vault
+    volumes:
+      - ./instance:/app/instance
+      - ./uploads:/app/uploads
+      - /mnt/zima_storage:/mnt/nas_vault:rw
+    read_only: true # Hardening: Root-Dateisystem ist schreibgeschützt
+    tmpfs:
+      - /tmp
+      - /run
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

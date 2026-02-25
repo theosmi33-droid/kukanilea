@@ -3,7 +3,7 @@ import re
 from urllib.parse import quote_plus
 
 def simulate_web_search(query):
-    print(f"🚀 Simuliere Suche für: '{query}'")
+    print(f"[START] Simuliere Suche für: '{query}'")
     url = f"https://duckduckgo.com/lite/?q={quote_plus(query)}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
@@ -21,16 +21,16 @@ def simulate_web_search(query):
             matches = re.findall(r'<a rel="nofollow" href="(.*?)">(.*?)</a>', text, re.DOTALL)
 
         if not matches:
-            print("⚠️ Keine Treffer via Regex.")
+            print("[WARNING] Keine Treffer via Regex.")
             return []
             
-        print(f"✅ {len(matches)} Ergebnisse gefunden.")
+        print(f"[SUCCESS] {len(matches)} Ergebnisse gefunden.")
         for i, (link, title) in enumerate(matches[:3]):
             clean_title = re.sub('<[^<]+?>', '', title).strip()
             print(f"  {i+1}. {clean_title}")
         return matches
     except Exception as e:
-        print(f"❌ Fehler: {e}")
+        print(f"[ERROR] Fehler: {e}")
         return []
 
 if __name__ == "__main__":

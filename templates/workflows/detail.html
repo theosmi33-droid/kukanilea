@@ -29,6 +29,7 @@
       <span class="badge">Actions: {{ rule.actions|length }}</span>
     </div>
     <form method="post" action="/workflows/{{ rule.id }}/toggle">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="enabled" value="{{ 0 if rule.is_enabled else 1 }}">
       {{ button_submit("Disable" if rule.is_enabled else "Enable", kind='outline', size='sm', disabled=read_only) }}

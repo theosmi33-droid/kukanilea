@@ -6,10 +6,10 @@ set -e
 
 APP_DIR="/opt/kukanilea"
 
-echo "🚀 Starting KUKANILEA Deployment..."
+echo "[START] Starting KUKANILEA Deployment..."
 
 if [ ! -d "$APP_DIR" ]; then
-  echo "❌ Error: App directory $APP_DIR not found."
+  echo "[ERROR] Error: App directory $APP_DIR not found."
   exit 1
 fi
 
@@ -24,4 +24,4 @@ docker-compose up -d --remove-orphans
 echo "🧹 Cleaning up old images..."
 docker image prune -f
 
-echo "✅ KUKANILEA is up and running!"
+echo "[SUCCESS] KUKANILEA is up and running!"

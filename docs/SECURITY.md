@@ -1,45 +1,25 @@
-# Security Notes
+# Security and Escalation
 
-## Session Management
+## Security Baseline
+- No PII in event payloads, logs, or telemetry.
+- No secrets in plain text persistence.
+- `subprocess` calls must use list argv, `shell=False`, explicit timeout.
+- Token/code/hash comparisons must use `secrets.compare_digest()`.
+- OCR/Mail text must be redacted before persistence.
 
-KUKANILEA erzwingt Session-Timeouts serverseitig:
+## Escalation Path
+1. Sofortkontakt
+- Bei kritischem Security-/Compliance-Risiko sofort Team informieren und PR/Issue mit `critical` label markieren.
 
-- Idle-Timeout: Standard 60 Minuten Inaktivitaet, pro User konfigurierbar (15 bis 480 Minuten).
-- Absolute Session-Lifetime: maximal 8 Stunden.
-- Session-Checks laufen im `before_request`-Pfad und gelten damit fuer Web- und API-Anfragen (ausser explizit oeffentliche Routen).
+2. 2h-Regel
+- Wenn nach 2 Stunden keine sichere Loesung klar ist: Pflicht-Meeting (Tech Lead + Product + Umsetzer).
 
-Konfigurierbar ueber:
+3. Merge-Sperre
+- Kritische Findings blockieren Merge bis dokumentierter Fix + Testnachweis vorliegt.
 
-- `KUKANILEA_SESSION_ABSOLUTE_TIMEOUT_HOURS`
-- `KUKANILEA_IDLE_TIMEOUT_DEFAULT_MINUTES`
-- `KUKANILEA_IDLE_TIMEOUT_MIN_MINUTES`
-- `KUKANILEA_IDLE_TIMEOUT_MAX_MINUTES`
-- `KUKANILEA_IDLE_TOUCH_SECONDS`
-
-Referenzen:
-
-- OWASP Session Management Cheat Sheet
-- OWASP ASVS / Broken Access Control Prinzipien (serverseitige Erzwingung)
-
-## Externe Ressourcen
-
-KUKANILEA verwendet keine extern gehosteten Google Fonts.
-Alle Schriften werden lokal aus `static/fonts/` ausgeliefert.
-
-Zusatzschutz:
-
-- Content Security Policy erzwingt `font-src 'self'`.
-- Browser blockieren dadurch jeden externen Font-Nachladeversuch.
-- Runtime-Assets enthalten keine Referenzen auf `fonts.googleapis.com` oder `fonts.gstatic.com`.
-
-## LLM Tool-Use Security
-
-Der lokale KI-Orchestrator erzwingt serverseitige Schutzmechanismen gegen Prompt-Injection:
-
-- Tool-Allowlist: nur freigegebene Tool-Namen werden akzeptiert.
-- Strikte Argumentvalidierung (`extra=\"forbid\"`): unbekannte/zusätzliche Felder werden verworfen.
-- Confirm-Gate für mutierende Tools: Schreibaktionen werden erst nach expliziter serverseitig verifizierter Bestätigung ausgeführt.
-- Replay-Schutz für Bestätigungstoken (einmalige Verwendung).
-- Audit-Events für Tool-Calls (`ai_tool_call`) mit redigierten Argumenten.
-
-Damit gilt: deny-by-default bei Tool-Aufrufen, keine stillen Mutationen durch Modell-Ausgaben.
+## Incident-Minimum
+- Was ist passiert?
+- Betroffener Scope (Tenant/Feature)
+- Risikoabschaetzung
+- Sofortmassnahmen
+- Dauerhafte Massnahme + Tests

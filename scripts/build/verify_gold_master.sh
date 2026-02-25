@@ -88,7 +88,7 @@ INSTALLER_HASH=$(shasum -a 256 "$INSTALLER_PATH" | cut -d' ' -f1 || echo "N/A")
 echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Status: VERIFIED | Version: $VERSION | Hash: $INSTALLER_HASH" >> "$LOG_FILE"
 
 echo "--------------------------------------------------------"
-echo -e "${GREEN}✅ GOLD MASTER INTEGRITY VERIFIED${NC}"
+echo -e "${GREEN}[SUCCESS] GOLD MASTER INTEGRITY VERIFIED${NC}"
 echo "Log updated: $LOG_FILE"
 echo "--------------------------------------------------------"
 echo "NEXT STEPS:"

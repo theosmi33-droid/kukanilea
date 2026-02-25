@@ -9,14 +9,14 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from app.agents.tools import _web_search_handler, WebSearchArgs
 
 def test_search():
-    print("🚀 Teste Web-Suche (DuckDuckGo Lite)...")
+    print("[START] Teste Web-Suche (DuckDuckGo Lite)...")
     args = WebSearchArgs(query="aktuelle benzinpreise deutschland")
     result = _web_search_handler(tenant_id="test", user="tester", args=args)
     
     if "error" in result:
-        print(f"❌ Fehler: {result['error']}")
+        print(f"[ERROR] Fehler: {result['error']}")
     else:
-        print(f"✅ Suche erfolgreich für: {result['query']}")
+        print(f"[SUCCESS] Suche erfolgreich für: {result['query']}")
         for i, res in enumerate(result.get("results", [])[:3]):
             print(f"  {i+1}. {res['title']}")
             

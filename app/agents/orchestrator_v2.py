@@ -8,17 +8,38 @@ import secrets
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional, Dict
+from typing import Any, List, Optional, Dict, Callable
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from app.core.identity_parser import IdentityParser
 from app.agents.observer import ObserverAgent
 from app.agents.tools import dispatch, TOOL_REGISTRY
 from app.core.audit_logger import AuditLogger
 from app.errors import fail_safe
+from app.ai.persona import persona_manager
+from app.ai.tools.web_search import web_search
 
 logger = logging.getLogger("kukanilea.orchestrator_v2")
 audit = AuditLogger()
+
+# ------------------------------------------------------------
+# Worker-Architektur (Phase 1.3)
+# ------------------------------------------------------------
+
+class WorkerRegistry:
+    """Zentrales Register für spezialisierte Worker-Agenten."""
+    def __init__(self):
+        self.workers: Dict[str, Callable] = {}
+
+    def register(self, task_type: str, handler: Callable):
+        self.workers[task_type] = handler
+        logger.info(f"Worker registriert für: {task_type}")
+
+    def get_handler(self, task_type: str) -> Optional[Callable]:
+        return self.workers.get(task_type)
+
+worker_registry = WorkerRegistry()
 
 # ------------------------------------------------------------
 # SST-Sicherheitslayer
@@ -129,13 +150,27 @@ class BaseAgent(ABC):
 class MasterAgent(BaseAgent):
     def __init__(self):
         super().__init__("MASTER")
-        # Master bekommt exklusiv das Quote-Tool + alles andere
-        self.allowed_tools = list(TOOL_REGISTRY.keys())
+        self.allowed_tools = list(TOOL_REGISTRY.keys()) + ["web_search"]
         from app.services.price_service import PriceService
         self.price_service = PriceService()
 
     @fail_safe
     async def process(self, input_text: str, tenant_id: str, user_id: str) -> str:
+        # 1. System Prompt laden (SOUL.md)
+        system_context = persona_manager.get_system_prompt()
+        
+        # 2. Agentic Logic: Brauchen wir das Web? (Heuristik)
+        needs_research = any(kw in input_text.lower() for kw in ["preis", "aktuell", "wetter", "nachrichten", "norm"])
+        
+        if needs_research and os.environ.get("KUKANILEA_ALLOW_INTERNET", "0") == "1":
+            audit.log_event(self.role, "WEB_SEARCH_TRIGGERED", {"query": input_text})
+            search_res = web_search(input_text, max_results=3)
+            search_context = json.dumps(search_res, ensure_ascii=False)
+            # Wir fügen die Suchergebnisse dem Input hinzu (RAG-Style)
+            enriched_input = f"{input_text}\n\nRECHERCHE-ERGEBNISSE AUS DEM INTERNET:\n{search_context}"
+        else:
+            enriched_input = input_text
+
         # Isolierter Memory Context (Debugging / The Monolith Purge)
         context_memory = {"task": input_text, "tenant": tenant_id}
 
@@ -293,8 +328,10 @@ class SecretaryAgent(BaseAgent):
 # ------------------------------------------------------------
 
 class OrchestratorV2:
+    """Der Master-Orchestrator (Director) für KUKANILEA Gold."""
     def __init__(self):
         self.session_salt = generate_session_salt()
+        self._executor = ThreadPoolExecutor(max_workers=15)
         self.agents = {
             "controller": ControllerAgent(),
             "secretary": SecretaryAgent(),
@@ -304,7 +341,16 @@ class OrchestratorV2:
             a.set_session_salt(self.session_salt)
 
     async def delegate_task(self, user_input: str, tenant_id: str = "KUKANILEA", user_id: str = "system") -> str:
-        # Klassifizierung
+        """Delegiert Aufgaben an spezialisierte Agenten und nutzt den Worker-Pool."""
+        # Phase 4: OWASP Guardrails & PIGuard Protection
+        from app.ai.guardrails import sanitize_and_wrap_input
+        is_safe, sanitized_input = sanitize_and_wrap_input(user_input)
+        
+        if not is_safe:
+            audit.log_security_event("SYSTEM", f"Prompt Injection blockiert: {user_input}")
+            return sanitized_input # Dies enthält die Fehlermeldung
+
+        # Klassifizierung (Wir nutzen die originale Eingabe für die Heuristik, geben dem Agenten aber den sanitized_input)
         category = "master"
         low = user_input.lower()
         if any(x in low for x in ["rechnung", "datev", "ocr", "beleg"]): category = "controller"
@@ -317,13 +363,19 @@ class OrchestratorV2:
             return "Lizenzfehler: Zugriff auf Controller- und Secretary-Funktionen verweigert. Bitte gültige Lizenz hinterlegen."
 
         agent = self.agents[category]
-        logger.info(f"Task -> {agent.role} (Session Salt: {self.session_salt[:4]}...)")
+        logger.info(f"Director -> {agent.role} (Session Salt: {self.session_salt[:4]}...)")
         
-        # Audit Log (Schritt 4)
+        # Audit Log
         audit.log_event("ORCHESTRATOR", "TASK_DELEGATION", {"input": user_input, "target": agent.role})
         
         try:
-            res = await agent.process(user_input, tenant_id, user_id)
+            # Task-Ausführung im Thread-Pool (Worker-Simulation)
+            loop = asyncio.get_event_loop()
+            res = await loop.run_in_executor(
+                self._executor, 
+                lambda: asyncio.run(agent.process(sanitized_input, tenant_id, user_id))
+            )
+            
             if "Sicherheitsfehler" in res:
                 audit.log_security_event(agent.role, f"Manipulation erkannt: {res}")
             return res

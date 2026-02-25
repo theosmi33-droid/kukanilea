@@ -54,8 +54,8 @@ class AuditLogger:
 
         safe_metadata = self.anonymize_payload(payload)
         
-        session = get_sa_session()
         try:
+            session = get_sa_session()
             entry = AuditEntry(
                 agent_name=agent_name,
                 action_type=action_type,
@@ -65,10 +65,10 @@ class AuditLogger:
             )
             session.add(entry)
             session.commit()
+            session.close()
         except Exception as e:
             logger.error(f"Audit-Logging fehlgeschlagen: {e}")
-        finally:
-            session.close()
+
 
     def export_training_data(self, output_path: str = "instance/training_data.jsonl"):
         """Evolutionary Tuning: Exportiert erfolgreiche Lösungswege anonymisiert für Fine-Tuning."""

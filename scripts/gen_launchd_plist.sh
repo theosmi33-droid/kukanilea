@@ -12,7 +12,7 @@ cat <<'PLIST'
     <array>
       <string>/usr/bin/env</string>
       <string>python3</string>
-      <string>/Users/USERNAME/Tophandwerk/kukanilea-git/kukanilea_app.py</string>
+      <string>/Users/USERNAME/Tophandwerk/kukanilea-git/run.py</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>

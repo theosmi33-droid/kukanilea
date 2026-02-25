@@ -1,4 +1,5 @@
 <form class="grid gap-2 md:grid-cols-4" method="post" action="/tags/create">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input class="input px-3 py-2" name="name" placeholder="Tag-Name" maxlength="64" {% if read_only %}disabled{% endif %} required>
   <input class="input px-3 py-2" name="color" placeholder="#3b82f6" maxlength="7" {% if read_only %}disabled{% endif %}>
   <div class="md:col-span-2">

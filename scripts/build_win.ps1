@@ -4,7 +4,7 @@ Write-Host "🛠 Starte Windows Build Prozess..." -ForegroundColor Cyan
 
 # 1. Environment vorbereiten
 if (!(Test-Path ".venv")) {
-    Write-Error "❌ Virtual Environment nicht gefunden!"
+    Write-Error "[ERROR] Virtual Environment nicht gefunden!"
     exit 1
 }
 
@@ -20,4 +20,4 @@ pyinstaller --clean KUKANILEA.spec
 
 # 4. MSI Installer (Placeholder für WiX oder InnoSetup)
 Write-Host "💿 Hinweis: Für ein fertiges MSI wird WiX Toolset oder InnoSetup empfohlen."
-Write-Host "✅ Binary verfügbar unter: dist\KUKANILEA\KUKANILEA.exe" -ForegroundColor Green
+Write-Host "[SUCCESS] Binary verfügbar unter: dist\KUKANILEA\KUKANILEA.exe" -ForegroundColor Green

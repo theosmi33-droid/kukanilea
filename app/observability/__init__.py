@@ -11,7 +11,7 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, g, request
 
 from app.config import get_data_dir
-from app.logging_utils import PIISafeFormatter
+from app.log_utils import PIISafeFormatter
 
 
 class JSONFormatter(PIISafeFormatter):

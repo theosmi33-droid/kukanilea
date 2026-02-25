@@ -5,6 +5,7 @@
   <td class="px-3 py-2">{{ note.updated_at or '-' }}</td>
   <td class="px-3 py-2">
     <form method="post" action="/knowledge/notes/{{ note.chunk_id }}/delete" onsubmit="return confirm('Notiz löschen?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn-outline px-2 py-1 text-xs" type="submit">Löschen</button>
     </form>
   </td>

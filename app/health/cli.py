@@ -67,7 +67,7 @@ def main() -> int:
 
     report = runner.run()
     for chk in report.checks:
-        status = "✅" if chk.ok else "❌" if chk.severity == "fail" else "⚠️"
+        status = "[SUCCESS]" if chk.ok else "[ERROR]" if chk.severity == "fail" else "[WARNING]"
         print(f"{status} {chk.name}: {chk.reason or ''}")
         if chk.remediation:
             print(f"    remediation: {chk.remediation}")

@@ -22,6 +22,7 @@
         {{ tag.name }}
         {% if not read_only %}
         <form method="post" action="/tags/unassign" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="entity_type" value="knowledge_chunk">
           <input type="hidden" name="entity_id" value="{{ entity_id }}">
           <input type="hidden" name="tag_id" value="{{ tag.id }}">
@@ -35,6 +36,7 @@
       {% if not read_only and entity_id and all_tags %}
       <div class="w-px h-3 bg-zinc-100 ml-2"></div>
       <form class="flex items-center gap-2 ml-2" method="post" action="/tags/assign">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="entity_type" value="knowledge_chunk">
         <input type="hidden" name="entity_id" value="{{ entity_id }}">
         <input type="hidden" name="next" value="{{ next_url }}">

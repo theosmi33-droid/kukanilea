@@ -79,7 +79,7 @@ def check_config_load(runner) -> CheckResult:
 
 def check_db_access(runner) -> CheckResult:
     if runner.mode == "ci":
-        import kukanilea_core_v3_fixed as core
+        from app.core import logic as core
 
         with tempfile.TemporaryDirectory(prefix="kuka_health_ci_db_") as tmp:
             tmp_path = Path(tmp)
@@ -236,7 +236,7 @@ def check_crm_tables(runner) -> CheckResult:
         from app.config import Config
 
         if runner.mode == "ci":
-            import kukanilea_core_v3_fixed as core
+            from app.core import logic as core
 
             with tempfile.TemporaryDirectory(prefix="kuka_health_crm_") as tmp:
                 old_db = core.DB_PATH

@@ -1,42 +1,86 @@
-# Beipackzettel für Ihren digitalen Meister: KUKANILEA v1.4
+# KUKANILEA Onboarding
 
-Willkommen bei **KUKANILEA**. Wir digitalisieren das Handwerk – lokal, sicher und ohne Cloud-Zwang.
+Stand: 2026-02-17
 
-## 🛠 Was ist KUKANILEA?
-KUKANILEA ist Ihr lokaler digitaler Assistent (der "Meister"), der direkt auf Ihrem Laptop oder Büro-Rechner arbeitet. Er hilft Ihnen dabei, den Papierkram zu bewältigen, damit Sie mehr Zeit für die Baustelle haben.
+## Mission
+KUKANILEA Systems baut eine lokale, sichere und praxisnahe Betriebsplattform fuer Handwerks- und Service-Teams.
 
-## 🚀 Die ersten Schritte
+## Business-Plan in Kurzform
+- Produkt: Offline-first Betriebsplattform (CRM, Tasks/Kanban, OCR, Inbox/Automation, Wissensbasis).
+- Zielgruppe: kleine und mittlere Teams mit hohem Dokumenten- und Kommunikationsaufkommen.
+- Nutzenversprechen: weniger manueller Aufwand, mehr Durchlaufgeschwindigkeit, nachvollziehbare Entscheidungen.
+- Monetarisierung: Lizenz-/Subscription-Modell pro Team/Tenant mit lokalem Betrieb als Kernangebot.
+- Go-to-market: Pilotgruppen (3-5 Teams), danach produktiver Rollout mit klaren DoD-Gates.
 
-### 1. Installation & Start
-- Öffnen Sie das Installationspaket (`KUKANILEA_Setup.exe` für Windows oder das DMG für macOS).
-- Starten Sie die App über das Icon auf Ihrem Desktop oder im Programme-Ordner.
-- **Hinweis:** Da KUKANILEA direkt auf Ihrer Hardware rechnet, kann der erste Start (Initialisierung der KI) bis zu 2 Minuten dauern.
+## Team und Rollen
+Siehe `TEAM_ROLES.md`.
 
-### 2. Lizenz aktivieren
-- Beim ersten Start werden Sie nach einem Lizenzschlüssel gefragt.
-- Geben Sie den Key ein, den Sie von uns erhalten haben (z.B. für die 14-Tage-Beta).
+## Systemkontext
+- Systemhandbuch (Snapshot, Architektur und Betriebsmodell): `docs/SYSTEMHANDBUCH_v1.md`
+- Product-Execution-Plan v2: `docs/PRODUCT_EXECUTION_PLAN_v2.md`
+- Marktforschungs-Workspace: `docs/market_research/README.md`
+- Pilotbetrieb: `docs/runbooks/pilot_v1.md`
+- Pilot-Feedback-Prozess: `docs/pilot_feedback.md`
 
-### 3. Den "Meister" nutzen (Chat)
-- Klicken Sie auf das Sprechblasen-Icon (unten rechts).
-- Sie können dem Meister Fragen stellen wie: *"Welche Aufgaben stehen heute an?"* oder *"Suche den Kontakt von Firma Müller"*.
-- **Offline-Garantie:** Alle Gespräche bleiben auf Ihrem Rechner. Schalten Sie ruhig das WLAN aus – der Meister arbeitet weiter.
+## Erwartungen an neue Kolleg:innen
+Du bist aktiv in vier Rollen:
+- Sparringpartner: Architekturen, Risiken, Trade-offs frueh challengen.
+- Ideengeber: konkrete Verbesserungen mit Aufwand/Nutzen-Begruendung.
+- Marktforscher: Wettbewerber, Standards und Nutzerfeedback faktenbasiert einordnen.
+- Qualitaetswaechter: neueste Standards einhalten, Normen/Gesetze/Regelungen in Umsetzung und Review durchsetzen.
 
-### 4. Dokumente & OCR (Der Zaubertrick)
-- Haben Sie ein PDF-Angebot oder ein Foto eines Lieferscheins?
-- Ziehen Sie die Datei einfach in das Chat-Fenster.
-- Der Meister liest das Dokument (OCR) und fragt Sie, ob er es direkt in die Datenbank buchen soll. Bestätigen Sie mit "Ja", und der Datensatz wird automatisch angelegt.
+Arbeitsstil:
+- schnell und praezise liefern
+- Entscheidungen messbar machen (Metriken, Tests, Repro-Schritte)
+- keine Behauptung ohne belegbare Grundlage
 
-## 📱 Mobile Nutzung (PWA)
-- Sie können KUKANILEA auch auf dem Smartphone nutzen (im gleichen WLAN).
-- Öffnen Sie den Browser auf Ihrem Handy und geben Sie die IP-Adresse Ihres Büro-Rechners ein (zu finden im Dashboard unter "Mesh").
-- Wählen Sie im Browser "Zum Home-Bildschirm hinzufügen", um die App wie eine normale Handy-App zu nutzen.
+## Technischer Start (Local Dev)
+```bash
+git clone https://github.com/theosmi33-droid/kukanilea.git
+cd kukanilea
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+python scripts/seed_dev_users.py
+python kukanilea_app.py
+```
 
-## ⚠️ Wichtige Hinweise für die Beta-Phase
-- **Keine Cloud:** Wenn Sie Ihren Rechner verlieren, sind die Daten weg. Machen Sie regelmäßige Backups der Datei `Tophandwerk_DB.sqlite3` in Ihrem Benutzerordner.
-- **Fehler melden:** Falls die KI ein Dokument falsch liest oder eine Frage nicht versteht, notieren Sie sich das bitte. Jedes Feedback hilft uns, den "Meister" besser zu trainieren.
+## Betriebsprinzipien
+- Offline-first, tenant-isoliert, default-safe.
+- READ_ONLY blockiert Mutationen.
+- Keine PII in Eventlog/Telemetry.
+- Keine neuen Dependencies ohne ADR.
+- Legacy-Schema nur phasenweise migrieren (siehe `docs/runbooks/text_id_migration_plan.md`).
+- Postfach (Phase 2): OAuth-ready fuer Google/Microsoft, TLS-only, Versand nur mit expliziter Bestaetigung (`user_confirmed` + Safety-Check).
+- Automation Builder (Phase 3/4): Eventlog- und Cron-Trigger, Conditions-Allowlist, pending Actions mit Confirm-Gate, Replay-Schutz, CSRF, per-Rule Rate-Limits, Dry-Run, safe Export/Import sowie Mail-/Webhook-Actions (`email_draft`, confirm-gated `email_send`, allowlist-basierte `webhook`) ohne Auto-Send (siehe `docs/AUTOMATION_BUILDER.md` und `docs/CONFIGURATION.md`).
 
-## 📞 Support & Feedback
-Bei Fragen oder Problemen wenden Sie sich bitte direkt an Ihren persönlichen Ansprechpartner oder nutzen Sie den Button "Feedback geben" in der App.
+## Weekly Cadence
+- Montag: Planung und Scope-Festlegung
+- Mittwoch: Risiko- und Blocker-Check
+- Freitag: Review, Kennzahlen, Next Actions
 
----
-*KUKANILEA – Handwerk trifft High-Tech.*
+Vorlage: `WEEKLY_TEMPLATE.md`
+
+## Automation Builder v1: Erste Schritte
+- Regeln anlegen und pruefen: `/automation`
+- Pending Actions pruefen/bestaetigen: `/automation/pending`
+- Details und Ausfuehrungslogs: `/automation/<rule_id>` und `/automation/<rule_id>/logs`
+- Technische Details, Sicherheitsgrenzen und Beispiel-JSON: `docs/AUTOMATION_BUILDER.md`
+
+## Pilot Quickstart
+```bash
+python scripts/seed_demo_data.py --tenant-name "DEMO AG"
+```
+
+Optionaler Reset der Demo-Daten:
+```bash
+python scripts/seed_demo_data.py --tenant-name "DEMO AG" --force
+```
+
+## Phase 2 Focus (Polish & Testing)
+- E2E browser tests: `tests/e2e/`
+- QA checklist: `docs/qa/testcases.md`
+- Bug bash guide: `docs/qa/bug_bash.md`
+- Performance baselines: `docs/performance/BENCHMARKS.md`
+- Workflow quick reference: `docs/WORKFLOWS.md`

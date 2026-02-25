@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import kukanilea_core_v3_fixed as core
+from app.core import logic as core
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 from app.knowledge import knowledge_redact_text
@@ -99,7 +99,8 @@ def decrypt_bytes(value: str) -> bytes:
 
 
 def _table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
-    rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
+    sql = "PRAGMA table_info(%s)" % table_name
+    rows = con.execute(sql).fetchall()
     return {str(r["name"]) for r in rows}
 
 
@@ -107,7 +108,8 @@ def _ensure_column(con: sqlite3.Connection, table: str, column_def: str) -> None
     col_name = str(column_def.split()[0]).strip()
     if col_name in _table_columns(con, table):
         return
-    con.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+    sql = "ALTER TABLE %s ADD COLUMN %s" % (table, column_def)
+    con.execute(sql)
 
 
 def _migrate_legacy_account_secrets(con: sqlite3.Connection) -> int:

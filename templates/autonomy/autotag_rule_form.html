@@ -13,6 +13,7 @@
   <div id="autotagErrors"></div>
 
   <form class="card p-4 space-y-3" method="post" action="/autonomy/autotag/rules/create">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="grid md:grid-cols-3 gap-3">
       <label class="block text-sm">
         <span class="muted">Regelname</span>

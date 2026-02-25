@@ -10,7 +10,7 @@ from typing import Any
 
 import uvicorn
 
-from kukanilea_app import app
+from app import create_app
 
 
 class DesktopLaunchError(RuntimeError):
@@ -37,6 +37,7 @@ def _find_free_port() -> int:
 
 def _start_http_server(port: int) -> _ServerHandle:
     should_exit = threading.Event()
+    app = create_app()
 
     # Uvicorn programmatisch starten
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
@@ -54,7 +55,7 @@ def _start_http_server(port: int) -> _ServerHandle:
 
 def _start_ollama_autostart() -> None:
     """Ensure Ollama is running before UI shows up."""
-    from app.ollama_runtime import ensure_ollama_running
+    from app.ollama import ensure_ollama_running
     
     # We don't block forever, but we try to start it. 
     # The UI will show an error if it fails later, but we give it a head start.
@@ -64,7 +65,7 @@ def _start_ollama_autostart() -> None:
 def _stop_ollama_runtime() -> None:
     """Stop only managed Ollama processes started by KUKANILEA."""
     try:
-        from app.ollama_runtime import stop_ollama_managed_runtime
+        from app.ollama import stop_ollama_managed_runtime
         stop_ollama_managed_runtime(timeout_s=5)
     except Exception:
         pass

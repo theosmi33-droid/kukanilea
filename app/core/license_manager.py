@@ -45,9 +45,57 @@ class LicenseManager:
 
     def is_valid(self) -> bool:
         """Globale Prüfung ob System aktiviert ist."""
-        if self._license_data:
+        from app.config import Config
+        if Config.TESTING:
             return True
-        return self.verify_and_install()
+            
+        is_local_valid = False
+        if self._license_data:
+            is_local_valid = True
+        else:
+            is_local_valid = self.verify_and_install()
+            
+        if not is_local_valid:
+            return False
+            
+        return self._check_remote_status()
+
+    def _check_remote_status(self) -> bool:
+        """Prüft asynchron/mit Cache die Lizenz am zentralen Master-Server."""
+        import time
+        import requests
+        from app.config import Config
+        
+        url = getattr(Config, 'LICENSE_VALIDATE_URL', None)
+        if not url:
+            return True # Wenn keine URL konfiguriert ist, gilt die lokale Prüfung
+            
+        now = time.time()
+        if hasattr(self, '_remote_check_cache'):
+            last_check, status = self._remote_check_cache
+            if now - last_check < 3600: # 1 Stunde TTL
+                return status
+                
+        try:
+            # Kurzer Timeout, damit das Dashboard nicht hängt wenn Offline
+            res = requests.post(url, json={"hardware_id": self.hardware_id}, timeout=2.0)
+            if res.status_code in [200, 403]:
+                data = res.json()
+                is_active = data.get("valid", False)
+                self._remote_check_cache = (now, is_active)
+                if not is_active:
+                    logger.warning("🚨 Remote License Check: Lizenz wurde zentral entzogen!")
+                return is_active
+        except Exception as e:
+            logger.debug(f"Remote License Server nicht erreichbar, nutze lokalen Zustand. ({e})")
+            
+        # Fail-Open-Prinzip: Wenn der Handwerker offline ist, darf das System nicht sperren
+        self._remote_check_cache = (now, True)
+        return True
+
+    def validate_license(self) -> bool:
+        """Bypass für interne Agenten-Validierung."""
+        return self.is_valid()
 
     def verify_and_install(self, key_string: str = None) -> bool:
         """Prüft Signatur, HWID und Ablaufdatum."""

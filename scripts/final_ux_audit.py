@@ -16,11 +16,11 @@ def run_ux_audit():
         if path.exists():
             content = path.read_text()
             if "backdrop-blur" in content or "Glass" in content or "bg-white/80" in content:
-                print(f"  ✅ {t}: Gold Glass Theme erkannt.")
+                print(f"  [SUCCESS] {t}: Gold Glass Theme erkannt.")
             else:
-                print(f"  ⚠️ {t}: Theme-Konsistenz prüfen.")
+                print(f"  [WARNING] {t}: Theme-Konsistenz prüfen.")
         else:
-            print(f"  ❌ {t} fehlt!")
+            print(f"  [ERROR] {t} fehlt!")
 
     statics = [
         "static/js/toast.js",
@@ -29,11 +29,11 @@ def run_ux_audit():
     ]
     for s in statics:
         if Path(s).exists():
-            print(f"  ✅ JS-Modul bereit: {s}")
+            print(f"  [SUCCESS] JS-Modul bereit: {s}")
         else:
-            print(f"  ❌ JS-Modul fehlt: {s}")
+            print(f"  [ERROR] JS-Modul fehlt: {s}")
 
-    print("\n🚀 UI/UX Audit Ergebnis: EXCELLENT")
+    print("\n[START] UI/UX Audit Ergebnis: EXCELLENT")
     print("Das System fühlt sich nun 'alive' und modern an.")
 
 if __name__ == "__main__":

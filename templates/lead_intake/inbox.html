@@ -3,6 +3,7 @@
     <h1 class="text-xl font-semibold">Leads Inbox</h1>
     <div class="flex gap-2">
       <form method="post" action="/leads/claims/expire-now">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn-outline px-3 py-2 text-sm" type="submit" {% if read_only %}disabled{% endif %}>Claims bereinigen</button>
       </form>
       <a class="btn-outline px-3 py-2 text-sm" href="/leads/new">Neuer Lead</a>

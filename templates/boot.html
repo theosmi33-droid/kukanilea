@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KUKANILEA - Systemstart</title>
+    <script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+    <link rel="stylesheet" href="/static/css/haptic.css">
+    <style>
+        @Library/Caches/puccinialin/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/web-sys-0.3.82/src/features/gen_CssKeyframesRule.rs fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.8s ease-out forwards;
+        }
+        .loader-bar {
+            height: 4px;
+            background: #3b82f6;
+            transition: width 0.4s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-[#0a0a0a] text-white min-h-screen flex items-center justify-center font-sans overflow-hidden">
+    <div class="max-w-md w-full px-10 text-center animate-fade-in">
+        <div class="mb-12 flex justify-center">
+            <div class="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/20">
+                <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </div>
+        </div>
+        
+        <h1 class="text-3xl font-black tracking-tighter uppercase mb-2">KUKANILEA</h1>
+        <p class="text-blue-500 font-bold tracking-[0.3em] text-[10px] uppercase mb-12">Sovereign Business AI</p>
+
+        <div id="boot-status" hx-get="/api/boot/status" hx-trigger="every 500ms" hx-swap="innerHTML">
+            <div class="space-y-4 text-left">
+                <div class="flex justify-between text-[10px] font-bold uppercase text-zinc-500 tracking-widest">
+                    <span>Initialisierung...</span>
+                    <span>0%</span>
+                </div>
+                <div class="w-full bg-zinc-800 rounded-full overflow-hidden">
+                    <div class="loader-bar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-16 text-zinc-600 text-[9px] font-bold uppercase tracking-[0.4em]">
+            &copy; 2026 TOPHANDWERK ENGINEERING
+        </div>
+    </div>
+
+    <script>
+        document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+            if (evt.detail.target.id === 'boot-status') {
+                const data = JSON.parse(evt.detail.xhr.response);
+                let html = '<div class="space-y-4 text-left">';
+                let successCount = 0;
+                let totalTasks = Object.keys(data.tasks).length;
+
+                for (const [id, task] of Object.entries(data.tasks)) {
+                    let statusColor = 'text-zinc-500';
+                    let dotColor = 'bg-zinc-800';
+                    
+                    if (task.status === 'running') {
+                        statusColor = 'text-blue-400';
+                        dotColor = 'bg-blue-500 animate-pulse';
+                    } else if (task.status === 'success') {
+                        statusColor = 'text-zinc-300';
+                        dotColor = 'bg-emerald-500';
+                        successCount++;
+                    } else if (task.status === 'error') {
+                        statusColor = 'text-red-500';
+                        dotColor = 'bg-red-500';
+                    }
+
+                    html += `
+                        <div class="flex items-center gap-3">
+                            <div class="w-1.5 h-1.5 rounded-full ${dotColor}"></div>
+                            <span class="text-[11px] font-bold tracking-wide ${statusColor}">${task.label}</span>
+                        </div>
+                    `;
+                }
+
+                let percent = Math.round((successCount / totalTasks) * 100);
+                html += `
+                    <div class="pt-4">
+                        <div class="flex justify-between text-[10px] font-bold uppercase text-zinc-500 tracking-widest mb-2">
+                            <span>System bereit in Kürze</span>
+                            <span>${percent}%</span>
+                        </div>
+                        <div class="w-full bg-zinc-800 rounded-full overflow-hidden">
+                            <div class="loader-bar" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                </div>`;
+
+                evt.detail.target.innerHTML = html;
+
+                if (data.is_ready) {
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

@@ -52,6 +52,22 @@ def init_ai(app: Flask | None = None) -> None:
 
     init_chroma()
 
+    # Gold: Preload specialized models in background to keep dashboard < 200ms
+    def _background_preload():
+        try:
+            from .picoclaw_parser import picoclaw
+            from .voice_parser import voice_parser
+            # Whisper Model load
+            voice_parser._get_model()
+        except:
+            pass
+
+    if app and hasattr(app, "executor"):
+        app.executor.submit(_background_preload)
+    else:
+        import threading
+        threading.Thread(target=_background_preload, daemon=True).start()
+
     if app is None:
         return
     if app.config.get("TESTING"):

@@ -78,11 +78,11 @@ def check_db_health():
         logger.error(f"Kritische Indizes fehlen: {missing}")
         return False
     
-    logger.info("✅ Alle kritischen Indizes (13+) sind aktiv.")
+    logger.info("[SUCCESS] Alle kritischen Indizes (13+) sind aktiv.")
     return True
 
 async def run_audit():
-    logger.info("🚀 STARTE KUKANILEA FINAL GOLD AUDIT v1.5.0")
+    logger.info("[START] STARTE KUKANILEA FINAL GOLD AUDIT v1.5.0")
     
     # 0. License Check
     if not license_manager.validate_license():
@@ -98,7 +98,7 @@ async def run_audit():
     await asyncio.gather(*users)
     
     total_time = time.perf_counter() - start_total
-    logger.info(f"✅ Audit abgeschlossen in {total_time:.2f}s.")
+    logger.info(f"[SUCCESS] Audit abgeschlossen in {total_time:.2f}s.")
     logger.info("Ergebnis: 0.0% Halluzinationen, 100% Error-Resilience bestätigt.")
 
 if __name__ == "__main__":

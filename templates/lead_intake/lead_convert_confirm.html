@@ -31,6 +31,7 @@
     </p>
 
     <form method="post" action="/leads/{{ lead.id }}/convert" class="grid gap-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="grid gap-3 md:grid-cols-2">
         <label class="grid gap-1 text-sm">
           Deal-Titel (optional)

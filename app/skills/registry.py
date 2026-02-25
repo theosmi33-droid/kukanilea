@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-import kukanilea_core_v3_fixed as core
+from app.core import logic as core
 from app.eventlog.core import event_append
 from app.skills.paths import active_root
 from app.skills.util import utcnow_iso

@@ -27,4 +27,4 @@ USER kukanilea
 ENV PORT=5051
 EXPOSE 5051
 
-CMD ["python", "kukanilea_server.py"]
+CMD ["python", "run.py", "--server", "--host", "0.0.0.0", "--port", "5051"]

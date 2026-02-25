@@ -5,7 +5,7 @@ echo "🛠 Starte macOS Build Prozess..."
 
 # 1. Environment vorbereiten
 if [ ! -d ".venv" ]; then
-    echo "❌ Virtual Environment nicht gefunden!"
+    echo "[ERROR] Virtual Environment nicht gefunden!"
     exit 1
 fi
 
@@ -25,4 +25,4 @@ mkdir -p dist/dmg
 # dmgbuild nutzt oft ein JSON-Config File, hier vereinfacht via hdiutil falls kein dmgbuild config
 hdiutil create -volname "KUKANILEA-Gold" -srcfolder dist/KUKANILEA.app -ov -format UDZO dist/KUKANILEA-v1.5.0-macOS.dmg
 
-echo "✅ Build abgeschlossen: dist/KUKANILEA-v1.5.0-macOS.dmg"
+echo "[SUCCESS] Build abgeschlossen: dist/KUKANILEA-v1.5.0-macOS.dmg"

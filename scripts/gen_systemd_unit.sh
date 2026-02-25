@@ -11,7 +11,7 @@ Type=simple
 WorkingDirectory=/opt/kukanilea
 Environment=PORT=5051
 Environment=KUKANILEA_SECRET=change-me
-ExecStart=/opt/kukanilea/.venv/bin/python /opt/kukanilea/kukanilea_app.py
+ExecStart=/opt/kukanilea/.venv/bin/python /opt/kukanilea/run.py
 Restart=always
 RestartSec=2
 User=kukanilea

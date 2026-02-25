@@ -133,7 +133,7 @@ def json_error(code: str, message: str, status: int = 400, details: dict = None)
 HTML_ERROR_INNER = """
 <div class="max-w-3xl mx-auto" data-app-shell="1">
   <div class="card p-8 rounded-2xl border bg-white shadow-sm" style="border-left: 4px solid #ef4444;">
-    <h1 class="text-2xl font-bold mb-4" style="color: #991b1b;">⚠️ Vorgang unterbrochen ({{ status }})</h1>
+    <h1 class="text-2xl font-bold mb-4" style="color: #991b1b;">[WARNING] Vorgang unterbrochen ({{ status }})</h1>
     <p class="text-lg mb-6"><strong>{{ message }}</strong></p>
     <div class="bg-gray-50 p-4 rounded-lg text-sm text-gray-600 mb-8 border">
         <p>Fehlercode: <code>{{ error_code }}</code></p>
@@ -155,7 +155,7 @@ HTML_ERROR_PAGE = """
 <html lang="de">
 <body data-app-shell="1">
     <div style="max-width:600px; margin:80px auto; font-family:sans-serif;">
-        <h1>⚠️ Fehler {{ status }}</h1>
+        <h1>[ERROR] Fehler {{ status }}</h1>
         <p>{{ message }}</p>
         <small>ID: {{ request_id }}</small>
     </div>
