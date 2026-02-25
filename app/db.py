@@ -33,7 +33,12 @@ class AuthDB:
     def _db(self) -> sqlite3.Connection:
         con = sqlite3.connect(str(self.path))
         con.row_factory = sqlite3.Row
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
         con.execute("PRAGMA foreign_keys=ON;")
+        con.execute("PRAGMA temp_store=MEMORY;")
+        con.execute("PRAGMA cache_size=-64000;")
+        con.execute("PRAGMA mmap_size=268435456;")
         return con
 
     def init(self) -> None:

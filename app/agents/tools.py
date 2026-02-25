@@ -48,7 +48,8 @@ def _create_task_handler(
     *, tenant_id: str, user: str, args: CreateTaskArgs
 ) -> Dict[str, Any]:
     web = _core_web_module()
-    creator = getattr(web, "task_create", None)
+    core_mod = getattr(web, "core", None)
+    creator = getattr(core_mod, "task_create", None)
     if not callable(creator):
         raise RuntimeError("task_create_unavailable")
     task_id = int(
@@ -69,8 +70,9 @@ def _log_time_handler(
     *, tenant_id: str, user: str, args: LogTimeArgs
 ) -> Dict[str, Any]:
     web = _core_web_module()
-    starter = getattr(web, "time_entry_start", None)
-    stopper = getattr(web, "time_entry_stop", None)
+    core_mod = getattr(web, "core", None)
+    starter = getattr(core_mod, "time_entry_start", None)
+    stopper = getattr(core_mod, "time_entry_stop", None)
     if not callable(starter) or not callable(stopper):
         raise RuntimeError("time_tracking_unavailable")
 

@@ -36,7 +36,12 @@ def _connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(path), timeout=30)
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL;")
+    con.execute("PRAGMA synchronous=NORMAL;")
     con.execute("PRAGMA foreign_keys=ON;")
+    con.execute("PRAGMA temp_store=MEMORY;")
+    con.execute("PRAGMA cache_size=-64000;")
+    con.execute("PRAGMA mmap_size=268435456;")
     return con
 
 
@@ -354,7 +359,9 @@ def process_queue(limit: int = 200) -> int:
 
 
 def _tokenize(query: str) -> List[str]:
-    return [t.strip().lower() for t in query.split() if len(t.strip()) >= 2]
+    import re
+    cleaned = re.sub(r'[^\w\s]', '', query)
+    return [t.strip().lower() for t in cleaned.split() if len(t.strip()) >= 2]
 
 
 def search(query: str, limit: int = 6) -> List[Dict[str, Any]]:
@@ -369,7 +376,9 @@ def search(query: str, limit: int = 6) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         if _fts_enabled(con):
             terms = _tokenize(q)
-            match_expr = " OR ".join(t.replace('"', "") for t in terms) or q
+            if not terms:
+                return []
+            match_expr = " OR ".join(f'"{t}"' for t in terms)
             rows = con.execute(
                 """
                 SELECT kind, pk, content, bm25(facts_fts) AS score
