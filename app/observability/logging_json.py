@@ -86,7 +86,6 @@ def init_json_logging(app: Flask) -> None:
         tenant_id = app.config.get("TENANT_DEFAULT", "-")
 
         log_extra = {
-            "request_id": rid,
             "route": request.path,
             "status_code": response.status_code,
             "duration_ms": duration_ms,
@@ -102,16 +101,119 @@ def init_json_logging(app: Flask) -> None:
     @app.errorhandler(Exception)
     def handle_exception(e):
         g.error_class = e.__class__.__name__
-        # Just return the error, don't raise here if we want log_request to catch it via after_request
-        # Actually, Flask's after_request DOES run after error handlers.
-        # But if we don't return a response, Flask will show a default 500.
-        from flask import jsonify
+        from flask import jsonify, render_template_string
 
-        response = jsonify(
-            {
-                "error": "Internal Server Error",
-                "request_id": getattr(g, "request_id", "-"),
-            }
-        )
-        response.status_code = 500
-        return response
+        request_id = getattr(g, "request_id", "-")
+
+        # Decision: JSON or HTML?
+        is_api = request.path.startswith(
+            "/api"
+        ) or "application/json" in request.headers.get("Accept", "")
+
+        if is_api:
+            response = jsonify(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "INTERNAL_SERVER_ERROR",
+                        "message": "Ein interner Fehler ist aufgetreten.",
+                        "details": {"request_id": request_id},
+                    },
+                }
+            )
+            response.status_code = 500
+            return response
+
+        # HTML Error Page for Browser
+        error_html = f"""
+        <!doctype html>
+        <html lang="de">
+        <head>
+            <meta charset="utf-8">
+            <title>Fehler - KUKANILEA</title>
+            <style>
+                body {{ font-family: sans-serif; background: #060b16; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+                .container {{ text-align: center; border: 1px solid rgba(255,255,255,0.1); padding: 40px; border-radius: 24px; background: rgba(30,41,59,0.4); backdrop-filter: blur(10px); max-width: 500px; }}
+                h1 {{ color: #38bdf8; margin-top: 0; }}
+                .rid {{ font-family: monospace; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; margin: 24px 0; border: 1px solid rgba(255,255,255,0.05); color: #94a3b8; }}
+                a {{ color: #38bdf8; text-decoration: none; font-weight: bold; }}
+                a:hover {{ text-decoration: underline; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Ups! Etwas lief schief.</h1>
+                <p>Ein interner Fehler ist aufgetreten. Bitte wenden Sie sich an den Support und geben Sie die folgende ID an:</p>
+                <div class="rid">{request_id}</div>
+                <a href="/">Zurück zum Dashboard</a>
+            </div>
+        </body>
+        </html>
+        """
+        return render_template_string(error_html), 500
+
+    @app.errorhandler(404)
+    def handle_404(e):
+        from flask import jsonify, render_template_string
+
+        request_id = getattr(g, "request_id", "-")
+        is_api = request.path.startswith(
+            "/api"
+        ) or "application/json" in request.headers.get("Accept", "")
+
+        if is_api:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": {
+                            "code": "NOT_FOUND",
+                            "message": "Die angeforderte Ressource wurde nicht gefunden.",
+                            "details": {"request_id": request_id},
+                        },
+                    }
+                ),
+                404,
+            )
+
+        error_html = """
+        <!doctype html>
+        <html lang="de">
+        <head><meta charset="utf-8"><title>404 - KUKANILEA</title>
+        <style>body{font-family:sans-serif;background:#060b16;color:white;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;} .container{text-align:center;border:1px solid rgba(255,255,255,0.1);padding:40px;border-radius:24px;background:rgba(30,41,59,0.4);} h1{color:#38bdf8;}</style>
+        </head><body><div class="container"><h1>404 - Nicht gefunden</h1><p>Diese Seite existiert nicht.</p><a href="/" style="color:#38bdf8;text-decoration:none;">Zurück zum Dashboard</a></div></body></html>
+        """
+        return render_template_string(error_html), 404
+
+    @app.errorhandler(403)
+    def handle_403(e):
+        from flask import jsonify, render_template_string
+
+        request_id = getattr(g, "request_id", "-")
+        is_api = request.path.startswith(
+            "/api"
+        ) or "application/json" in request.headers.get("Accept", "")
+
+        if is_api:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": {
+                            "code": "FORBIDDEN",
+                            "message": "Zugriff verweigert.",
+                            "details": {"request_id": request_id},
+                        },
+                    }
+                ),
+                403,
+            )
+
+        error_html = """
+        <!doctype html>
+        <html lang="de">
+        <head><meta charset="utf-8"><title>403 - KUKANILEA</title>
+        <style>body{font-family:sans-serif;background:#060b16;color:white;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;} .container{text-align:center;border:1px solid rgba(255,255,255,0.1);padding:40px;border-radius:24px;background:rgba(30,41,59,0.4);} h1{color:#ef4444;}</style>
+        </head><body><div class="container"><h1>403 - Zugriff verweigert</h1><p>Sie haben keine Berechtigung für diese Aktion.</p><a href="/" style="color:#38bdf8;text-decoration:none;">Zurück zum Dashboard</a></div></body></html>
+        """
+        return render_template_string(error_html), 403
