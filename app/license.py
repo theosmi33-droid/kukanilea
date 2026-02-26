@@ -56,12 +56,14 @@ def device_fingerprint() -> str:
     
     try:
         if platform.system() == "Darwin":
-            cmd = "ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)'"
-            out = subprocess.check_output(cmd, shell=True).decode()
-            hwid_parts.append(out.strip())
+            # Avoid shell=True for security
+            out = subprocess.check_output(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]).decode()
+            for line in out.splitlines():
+                if "IOPlatformUUID" in line:
+                    hwid_parts.append(line.strip())
+                    break
         elif platform.system() == "Windows":
-            cmd = "wmic csproduct get uuid"
-            out = subprocess.check_output(cmd, shell=True).decode()
+            out = subprocess.check_output(["wmic", "csproduct", "get", "uuid"]).decode()
             hwid_parts.append(out.strip())
     except Exception:
         pass

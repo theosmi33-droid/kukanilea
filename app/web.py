@@ -1550,6 +1550,10 @@ def _mock_generate(prompt: str) -> str:
 @bp.route("/api/chat", methods=["POST"])
 @login_required
 def api_chat():
+    from .rate_limit import chat_limiter
+    if not chat_limiter.allow(request.remote_addr):
+        return jsonify(error="too_many_requests", message="Rate limit exceeded. Please wait."), 429
+        
     payload = request.get_json(silent=True) or {}
     msg = (
         (payload.get("msg") if isinstance(payload, dict) else None)
@@ -1571,6 +1575,10 @@ def api_chat():
 @bp.post("/api/search")
 @login_required
 def api_search():
+    from .rate_limit import search_limiter
+    if not search_limiter.allow(request.remote_addr):
+        return jsonify(error="too_many_requests", message="Too many search requests."), 429
+        
     payload = request.get_json(silent=True) or {}
     query = (payload.get("query") or "").strip()
     kdnr = (payload.get("kdnr") or "").strip()
@@ -2548,6 +2556,10 @@ def index():
 
 @bp.route("/upload", methods=["POST"])
 def upload():
+    from .rate_limit import upload_limiter
+    if not upload_limiter.allow(request.remote_addr):
+        return jsonify(error="too_many_requests", message="Upload rate limit exceeded."), 429
+        
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(error="no_file"), 400

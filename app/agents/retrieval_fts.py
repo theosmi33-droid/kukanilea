@@ -350,8 +350,10 @@ def process_queue(limit: int = 200) -> int:
                 meta=meta,
             )
 
+        # Safe construction of placeholders for parameterized query
         placeholders = ",".join("?" for _ in ids)
-        con.execute(f"DELETE FROM rag_queue WHERE id IN ({placeholders})", ids)
+        sql = f"DELETE FROM rag_queue WHERE id IN ({placeholders})"
+        con.execute(sql, ids)
         con.commit()
         return len(ids)
     finally:
