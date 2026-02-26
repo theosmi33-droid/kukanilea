@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 from flask import Flask, request
 
@@ -21,7 +22,11 @@ def _wire_runtime_env(app: Flask) -> None:
     os.environ.setdefault("TOPHANDWERK_DB_FILENAME", str(app.config["CORE_DB"]))
 
 
+from .lifecycle import SystemState, manager
+
 def create_app() -> Flask:
+    boot_start = time.time()
+    manager.set_state(SystemState.BOOT, "Booting application context...")
     app = Flask(__name__)
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
@@ -31,17 +36,24 @@ def create_app() -> Flask:
 
     _wire_runtime_env(app)
 
+    manager.set_state(SystemState.INIT, "Initializing modules and databases...")
     # Import blueprints after env/path wiring so legacy modules read correct paths.
     from . import api, web
 
     auth_db = AuthDB(app.config["AUTH_DB"])
-    auth_db.init()
+    try:
+        auth_db.init()
+    except Exception as e:
+        manager.report_error(f"AuthDB Init Failed: {e}")
+        raise
+
     app.extensions["auth_db"] = auth_db
     init_auth(app, auth_db)
     init_request_logging(app)
     init_observability(app)
     init_autonomy(app)
 
+    manager.set_state(SystemState.INIT, "Loading license state...")
     license_state = load_runtime_license_state(
         license_path=app.config["LICENSE_PATH"],
         trial_path=app.config["TRIAL_PATH"],
@@ -52,22 +64,24 @@ def create_app() -> Flask:
     app.config["TRIAL_DAYS_LEFT"] = license_state["trial_days_left"]
     app.config["READ_ONLY"] = license_state["read_only"]
     app.config["LICENSE_REASON"] = license_state["reason"]
+    
+    # ... Context Processors and Headers ...
 
     @app.before_request
-    def _enforce_read_only():
-        if not app.config.get("READ_ONLY"):
+    def _check_system_ready():
+        # Prevent requests if system is in ERROR state, 
+        # but allow health checks and static files
+        p = request.path or "/"
+        if p.startswith("/static/") or p in ["/health", "/api/health"]:
             return None
-        if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
-            return json_error(
-                "read_only",
-                "Instanz ist schreibgeschuetzt (Lizenz/Trial).",
-                status=403,
-                details={
-                    "reason": app.config.get("LICENSE_REASON", "read_only"),
-                    "plan": app.config.get("PLAN", "TRIAL"),
-                },
-            )
+        
+        if manager.state == SystemState.ERROR:
+            return json_error("system_error", f"System is in ERROR state: {manager.details}", status=503)
         return None
+
+    @app.context_processor
+    def _lifecycle_context():
+        return {"system_state": manager.state.value, "system_details": manager.details}
 
     @app.context_processor
     def _branding_context():
@@ -75,8 +89,12 @@ def create_app() -> Flask:
 
     @app.context_processor
     def _license_context():
+        from .auth import current_role
+
+        is_dev = current_role() == "DEV"
+        read_only = bool(app.config.get("READ_ONLY", False))
         return {
-            "read_only": bool(app.config.get("READ_ONLY", False)),
+            "read_only": read_only and not is_dev,
             "license_reason": str(app.config.get("LICENSE_REASON", "")),
             "plan": str(app.config.get("PLAN", "TRIAL")),
             "trial_active": bool(app.config.get("TRIAL", False)),
@@ -92,13 +110,15 @@ def create_app() -> Flask:
     @app.after_request
     def add_security_headers(response):
         # Strict CSP for Offline-First Compliance (Task 4)
+        # Permissive for local previews (PDF/Images)
         csp = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; "
             "font-src 'self' data:; "
-            "img-src 'self' data:; "
-            "frame-src 'self';"
+            "img-src 'self' data: blob:; "
+            "frame-src 'self' blob: data:; "
+            "object-src 'self' blob: data:;"
         )
         response.headers["Content-Security-Policy"] = csp
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -107,11 +127,17 @@ def create_app() -> Flask:
 
     app.register_blueprint(web.bp)
     app.register_blueprint(api.bp)
+    
+    manager.set_state(SystemState.INIT, "Warming up database and indexes...")
     if web.db_init is not None:
         try:
             web.db_init()
             if callable(getattr(web.core, "index_warmup", None)):
                 web.core.index_warmup(tenant_id=app.config.get("TENANT_DEFAULT", ""))
-        except Exception:
-            pass
+        except Exception as e:
+            manager.report_error(f"Database Warmup Failed: {e}")
+            # Non-critical but logged
+    
+    boot_time = time.time() - boot_start
+    manager.set_state(SystemState.READY, f"System is active. (Boot time: {boot_time:.2f}s)")
     return app

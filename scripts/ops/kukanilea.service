@@ -1,0 +1,26 @@
+[Unit]
+Description=KUKANILEA Enterprise Server
+After=network.target
+
+[Service]
+Type=notify
+# Der Pfad /opt/kukanilea/current wird durch das Blue/Green Deployment (A1) gesetzt
+WorkingDirectory=/opt/kukanilea/current
+ExecStart=/opt/kukanilea/current/.venv/bin/python run.py server --port 5051 --host 0.0.0.0
+
+# Watchdog & Auto-Healing
+Restart=always
+RestartSec=5
+# Wenn der Server nicht alle 30 Sekunden einen "WATCHDOG=1" Ping schickt,
+# wird er von systemd hart neugestartet.
+WatchdogSec=30
+NotifyAccess=all
+
+# Security
+User=kukanilea
+Group=kukanilea
+ProtectSystem=strict
+ReadWritePaths=/opt/kukanilea/data /opt/kukanilea/current/instance
+
+[Install]
+WantedBy=multi-user.target

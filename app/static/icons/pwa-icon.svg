@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="KUKANILEA">
+  <rect width="512" height="512" rx="96" fill="#1f2937"/>
+  <circle cx="256" cy="256" r="170" fill="#4f46e5" opacity="0.25"/>
+  <path d="M146 352V160h52v78l71-78h64l-87 95 91 97h-67l-74-82v82z" fill="#e5e7eb"/>
+</svg>

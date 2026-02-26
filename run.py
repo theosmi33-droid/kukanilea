@@ -25,11 +25,41 @@ sys.path.append(str(PROJECT_ROOT))
 def start_server(port: int, host: str):
     """Starts the main KUKANILEA Flask Application."""
     from app import create_app
+    import threading
+    import time
+    import os
+    import socket
+
+    def watchdog_ping():
+        """Pings systemd watchdog if NOTIFY_SOCKET is present."""
+        notify_socket = os.environ.get("NOTIFY_SOCKET")
+        if not notify_socket:
+            return
+        
+        if notify_socket.startswith("@"):
+            notify_socket = "\0" + notify_socket[1:]
+            
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+                # Tell systemd we are ready
+                sock.sendto(b"READY=1", notify_socket)
+                
+                # Periodically ping the watchdog
+                while True:
+                    sock.sendto(b"WATCHDOG=1", notify_socket)
+                    time.sleep(10)  # Ping every 10 seconds (must be < WatchdogSec)
+        except Exception as e:
+            print(f"⚠️ Watchdog ping failed: {e}")
 
     app = create_app()
     print(f"🚀 KUKANILEA Enterprise Server starting on http://{host}:{port}")
-    # In production, uvicorn/gunicorn should be used. This is the dev entry point.
-    app.run(host=host, port=port, debug=False)
+    
+    # Start the watchdog thread (daemon so it exits when main app exits)
+    threading.Thread(target=watchdog_ping, daemon=True).start()
+    
+    # Switch to production-ready WSGI server: Waitress
+    from waitress import serve
+    serve(app, host=host, port=port, threads=8, max_request_body_size=100*1024*1024) # 100MB limit
 
 
 def run_maintenance():

@@ -1,0 +1,38 @@
+/* 
+   KUKANILEA Haptic & UI Enhancement 
+   Fokus: Physisches Feedback und flüssige Übergänge.
+*/
+
+/* Haptisches Feedback für Buttons und Kacheln */
+.btn, .card, button, a.nav-link {
+    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s;
+}
+
+.btn:active, button:active, .card:active {
+    transform: scale(0.96);
+}
+
+/* Skeleton Pulse Effekt */
+.skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+    border-radius: 0.5rem;
+}
+
+@Library/Caches/puccinialin/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/web-sys-0.3.82/src/features/gen_CssKeyframesRule.rs skeleton-loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Haptische Sidebar-Transitions */
+#chat-sidebar {
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Glassmorphism Details */
+.glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
