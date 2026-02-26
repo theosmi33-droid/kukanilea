@@ -83,6 +83,22 @@ def create_app() -> Flask:
             "trial_days_left": int(app.config.get("TRIAL_DAYS_LEFT", 0)),
         }
 
+    @app.after_request
+    def add_security_headers(response):
+        # Strict CSP for Offline-First Compliance (Task 4)
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com; "
+            "style-src 'self' 'unsafe-inline'; "
+            "font-src 'self' data:; "
+            "img-src 'self' data:; "
+            "frame-src 'self';"
+        )
+        response.headers["Content-Security-Policy"] = csp
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        return response
+
     app.register_blueprint(web.bp)
     app.register_blueprint(api.bp)
     if web.db_init is not None:
