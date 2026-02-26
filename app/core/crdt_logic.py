@@ -1,15 +1,20 @@
 from __future__ import annotations
+
 import time
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
+
 
 class LWWRegister(Generic[T]):
     """
     Last-Writer-Wins Register (CRDT).
     Ensures that the update with the highest timestamp and Peer ID wins ties.
     """
-    def __init__(self, value: T, timestamp: float | None = None, peer_id: str = "default"):
+
+    def __init__(
+        self, value: T, timestamp: float | None = None, peer_id: str = "default"
+    ):
         self.value = value
         self.timestamp = timestamp if timestamp is not None else time.time()
         self.peer_id = peer_id
@@ -32,11 +37,7 @@ class LWWRegister(Generic[T]):
         return self
 
     def to_dict(self) -> dict:
-        return {
-            "v": self.value,
-            "ts": self.timestamp,
-            "pid": self.peer_id
-        }
+        return {"v": self.value, "ts": self.timestamp, "pid": self.peer_id}
 
     @classmethod
     def from_dict(cls, data: dict) -> LWWRegister:
@@ -50,15 +51,23 @@ def merge_records(local_data: dict, remote_data: dict) -> dict:
     """
     merged = {}
     all_keys = set(local_data.keys()) | set(remote_data.keys())
-    
+
     for key in all_keys:
         l_val = local_data.get(key)
         r_val = remote_data.get(key)
-        
+
         # Convert plain values to LWW if necessary (migration path)
-        l_reg = LWWRegister.from_dict(l_val) if isinstance(l_val, dict) and "ts" in l_val else LWWRegister(l_val, timestamp=0)
-        r_reg = LWWRegister.from_dict(r_val) if isinstance(r_val, dict) and "ts" in r_val else LWWRegister(r_val, timestamp=0)
-        
+        l_reg = (
+            LWWRegister.from_dict(l_val)
+            if isinstance(l_val, dict) and "ts" in l_val
+            else LWWRegister(l_val, timestamp=0)
+        )
+        r_reg = (
+            LWWRegister.from_dict(r_val)
+            if isinstance(r_val, dict) and "ts" in r_val
+            else LWWRegister(r_val, timestamp=0)
+        )
+
         merged[key] = l_reg.merge(r_reg).to_dict()
-        
+
     return merged

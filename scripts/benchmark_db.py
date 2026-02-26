@@ -10,29 +10,35 @@ from pathlib import Path
 def setup_db(db_path, rows):
     if os.path.exists(db_path):
         os.remove(db_path)
-    
+
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
-    
-    conn.execute("CREATE TABLE benchmark (id INTEGER PRIMARY KEY, data TEXT, val INTEGER);")
+
+    conn.execute(
+        "CREATE TABLE benchmark (id INTEGER PRIMARY KEY, data TEXT, val INTEGER);"
+    )
     conn.commit()
     return conn
+
 
 def benchmark_write(conn, rows):
     start_time = time.time()
     latencies = []
     for i in range(rows):
         item_start = time.time()
-        conn.execute("INSERT INTO benchmark (data, val) VALUES (?, ?);", (f"data_{i}", i))
+        conn.execute(
+            "INSERT INTO benchmark (data, val) VALUES (?, ?);", (f"data_{i}", i)
+        )
         if i % 100 == 0:
             conn.commit()
         latencies.append((time.time() - item_start) * 1000)
-    
+
     conn.commit()
     duration = time.time() - start_time
     return duration, latencies
+
 
 def benchmark_read(conn, rows):
     start_time = time.time()
@@ -42,9 +48,10 @@ def benchmark_read(conn, rows):
         cursor = conn.execute("SELECT * FROM benchmark WHERE id = ?;", (i + 1,))
         cursor.fetchone()
         latencies.append((time.time() - item_start) * 1000)
-    
+
     duration = time.time() - start_time
     return duration, latencies
+
 
 def get_stats(latencies):
     if not latencies:
@@ -56,18 +63,23 @@ def get_stats(latencies):
     avg = sum(latencies) / len(latencies)
     return avg, p50, p95, p99
 
+
 def main():
     parser = argparse.ArgumentParser(description="SQLite Benchmarking tool")
     parser.add_argument("--db", default="benchmark.sqlite3", help="Database path")
-    parser.add_argument("--rows", type=int, default=10000, help="Number of rows for benchmark")
-    parser.add_argument("--out", default="evidence/bench", help="Output directory for reports")
+    parser.add_argument(
+        "--rows", type=int, default=10000, help="Number of rows for benchmark"
+    )
+    parser.add_argument(
+        "--out", default="evidence/bench", help="Output directory for reports"
+    )
     args = parser.parse_args()
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     conn = setup_db(args.db, args.rows)
-    
+
     # Get active PRAGMAs
     journal_mode = conn.execute("PRAGMA journal_mode;").fetchone()[0]
     synchronous = conn.execute("PRAGMA synchronous;").fetchone()[0]
@@ -75,13 +87,14 @@ def main():
 
     write_duration, write_latencies = benchmark_write(conn, args.rows)
     read_duration, read_latencies = benchmark_read(conn, args.rows)
-    
+
     w_avg, w_p50, w_p95, w_p99 = get_stats(write_latencies)
     r_avg, r_p50, r_p95, r_p99 = get_stats(read_latencies)
 
     # Machine info
     import platform
     import sys
+
     os_info = f"{platform.system()} {platform.release()}"
     py_version = sys.version.split()[0]
     sqlite_version = sqlite3.sqlite_version
@@ -89,25 +102,36 @@ def main():
     # Write CSV
     csv_path = out_dir / "db_bench.csv"
     with open(csv_path, "w", newline="") as csvfile:
-        fieldnames = ["operation", "avg_ms", "p50_ms", "p95_ms", "p99_ms", "throughput_ops_sec"]
+        fieldnames = [
+            "operation",
+            "avg_ms",
+            "p50_ms",
+            "p95_ms",
+            "p99_ms",
+            "throughput_ops_sec",
+        ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerow({
-            "operation": "write",
-            "avg_ms": f"{w_avg:.4f}",
-            "p50_ms": f"{w_p50:.4f}",
-            "p95_ms": f"{w_p95:.4f}",
-            "p99_ms": f"{w_p99:.4f}",
-            "throughput_ops_sec": f"{args.rows / write_duration:.2f}"
-        })
-        writer.writerow({
-            "operation": "read",
-            "avg_ms": f"{r_avg:.4f}",
-            "p50_ms": f"{r_p50:.4f}",
-            "p95_ms": f"{r_p95:.4f}",
-            "p99_ms": f"{r_p99:.4f}",
-            "throughput_ops_sec": f"{args.rows / read_duration:.2f}"
-        })
+        writer.writerow(
+            {
+                "operation": "write",
+                "avg_ms": f"{w_avg:.4f}",
+                "p50_ms": f"{w_p50:.4f}",
+                "p95_ms": f"{w_p95:.4f}",
+                "p99_ms": f"{w_p99:.4f}",
+                "throughput_ops_sec": f"{args.rows / write_duration:.2f}",
+            }
+        )
+        writer.writerow(
+            {
+                "operation": "read",
+                "avg_ms": f"{r_avg:.4f}",
+                "p50_ms": f"{r_p50:.4f}",
+                "p95_ms": f"{r_p95:.4f}",
+                "p99_ms": f"{r_p99:.4f}",
+                "throughput_ops_sec": f"{args.rows / read_duration:.2f}",
+            }
+        )
 
     # Write Markdown Report
     md_path = out_dir / "REPORT_DB_BENCHMARK.md"
@@ -145,12 +169,13 @@ def main():
     - p99: {r_p99:.4f} ms
 
 ---
-*Generated by scripts/benchmark_db.py on {time.strftime('%Y-%m-%d %H:%M:%S')}*
+*Generated by scripts/benchmark_db.py on {time.strftime("%Y-%m-%d %H:%M:%S")}*
 """
     md_path.write_text(report)
     print(f"Benchmark complete. Report: {md_path}")
 
     conn.close()
+
 
 if __name__ == "__main__":
     main()

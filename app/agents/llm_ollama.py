@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import Optional
 
 import requests
 
 
-import json
-from pathlib import Path
-
 def generate(prompt: str) -> Optional[str]:
     host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     model = os.environ.get("OLLAMA_MODEL", "")
-    
+
     if not model:
         # Respect hardware profile
         try:
@@ -23,10 +22,10 @@ def generate(prompt: str) -> Optional[str]:
                     model = profile.get("recommended_model")
         except Exception:
             pass
-            
+
     if not model:
-        model = "qwen2.5:0.5b" # Safe default
-        
+        model = "qwen2.5:0.5b"  # Safe default
+
     url = f"{host}/api/generate"
     payload = {"model": model, "prompt": prompt, "stream": False}
     try:

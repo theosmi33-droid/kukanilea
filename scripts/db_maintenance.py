@@ -17,6 +17,7 @@ def run_check(db_path, deep=False):
     except Exception as e:
         return [str(e)], time.time() - start_time
 
+
 def run_vacuum(db_path):
     conn = sqlite3.connect(db_path)
     start_time = time.time()
@@ -29,6 +30,7 @@ def run_vacuum(db_path):
     except Exception as e:
         return str(e), time.time() - start_time
 
+
 def run_wal_checkpoint(db_path):
     conn = sqlite3.connect(db_path)
     start_time = time.time()
@@ -40,20 +42,29 @@ def run_wal_checkpoint(db_path):
     except Exception as e:
         return str(e), time.time() - start_time
 
+
 def main():
     parser = argparse.ArgumentParser(description="SQLite Maintenance tool")
     parser.add_argument("--db", required=True, help="Database path")
-    parser.add_argument("--quick-check", action="store_true", help="Run PRAGMA quick_check")
-    parser.add_argument("--integrity-check", action="store_true", help="Run PRAGMA integrity_check")
+    parser.add_argument(
+        "--quick-check", action="store_true", help="Run PRAGMA quick_check"
+    )
+    parser.add_argument(
+        "--integrity-check", action="store_true", help="Run PRAGMA integrity_check"
+    )
     parser.add_argument("--vacuum", action="store_true", help="Run VACUUM")
-    parser.add_argument("--wal-checkpoint", action="store_true", help="Run PRAGMA wal_checkpoint(FULL)")
-    parser.add_argument("--out", default="evidence/db", help="Output directory for reports")
+    parser.add_argument(
+        "--wal-checkpoint", action="store_true", help="Run PRAGMA wal_checkpoint(FULL)"
+    )
+    parser.add_argument(
+        "--out", default="evidence/db", help="Output directory for reports"
+    )
     args = parser.parse_args()
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / "REPORT_DB_MAINTENANCE.md"
-    
+
     with open(report_path, "a") as f:
         f.write(f"\n## Maintenance Session: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"- DB: {args.db}\n")
@@ -75,10 +86,13 @@ def main():
 
         if args.wal_checkpoint:
             res, dur = run_wal_checkpoint(args.db)
-            f.write(f"- WAL Checkpoint: {'Success' if res is True else res} ({dur:.4f}s)\n")
+            f.write(
+                f"- WAL Checkpoint: {'Success' if res is True else res} ({dur:.4f}s)\n"
+            )
             print(f"WAL Checkpoint: {res}")
 
     print(f"Maintenance complete. Evidence appended to {report_path}")
+
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,8 @@
-import shutil
 import unittest
 from unittest.mock import patch
+
 from app.autonomy.ocr import resolve_tesseract_path
+
 
 class TestOCRAutonomy(unittest.TestCase):
     @patch("shutil.which")
@@ -17,6 +18,7 @@ class TestOCRAutonomy(unittest.TestCase):
         path = resolve_tesseract_path()
         assert path is None
         mock_which.assert_called_with("tesseract")
+
 
 if __name__ == "__main__":
     unittest.main()

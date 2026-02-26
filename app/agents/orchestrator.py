@@ -80,6 +80,7 @@ def answer(user_msg: str) -> Dict[str, Any]:
             )
 
         from flask import has_request_context
+
         tenant_id = current_tenant() if has_request_context() else ""
         user = current_user() if has_request_context() else "system"
         read_only = (
@@ -112,6 +113,7 @@ def answer(user_msg: str) -> Dict[str, Any]:
 
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
         return _frozen_response(
             text=f"Interner Fehler, ich antworte nur mit Fakten. ({exc.__class__.__name__})",

@@ -22,7 +22,7 @@ Run:
   PORT=5051 KUKANILEA_SECRET="change-me" python3 kukanilea_upload_v3_ui.py
 
 Notes:
-- This UI expects a local `kukanilea_core*.py` next to it.
+- This UI expects a local `app.core*.py` next to it.
 - OCR depends on system binaries (e.g. tesseract) + python deps.
 """
 
@@ -50,6 +50,7 @@ from flask import (
     url_for,
 )
 
+from app import core
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
 from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
@@ -89,21 +90,6 @@ if werkzeug_spec:
     secure_filename = importlib.import_module("werkzeug.utils").secure_filename  # type: ignore
 else:
     secure_filename = None  # type: ignore
-
-# -------- Core import (robust) ----------
-core = None
-_core_import_errors = []
-for mod in ("kukanilea_core_v3_fixed", "kukanilea_core_v3", "kukanilea_core"):
-    try:
-        core = __import__(mod)
-        break
-    except Exception as e:
-        _core_import_errors.append(f"{mod}: {e}")
-
-if core is None:
-    raise RuntimeError(
-        "KUKANILEA core import failed: " + " | ".join(_core_import_errors)
-    )
 
 
 def _core_get(name: str, default=None):
@@ -1551,9 +1537,12 @@ def _mock_generate(prompt: str) -> str:
 @login_required
 def api_chat():
     from .rate_limit import chat_limiter
+
     if not chat_limiter.allow(request.remote_addr):
-        return jsonify(error="too_many_requests", message="Rate limit exceeded. Please wait."), 429
-        
+        return jsonify(
+            error="too_many_requests", message="Rate limit exceeded. Please wait."
+        ), 429
+
     payload = request.get_json(silent=True) or {}
     msg = (
         (payload.get("msg") if isinstance(payload, dict) else None)
@@ -1568,7 +1557,7 @@ def api_chat():
 
     response = agent_answer(msg)
     if request.headers.get("HX-Request"):
-        return f"<div class='text-sm'>{response.get('text','')}</div>"
+        return f"<div class='text-sm'>{response.get('text', '')}</div>"
     return jsonify(response)
 
 
@@ -1576,9 +1565,12 @@ def api_chat():
 @login_required
 def api_search():
     from .rate_limit import search_limiter
+
     if not search_limiter.allow(request.remote_addr):
-        return jsonify(error="too_many_requests", message="Too many search requests."), 429
-        
+        return jsonify(
+            error="too_many_requests", message="Too many search requests."
+        ), 429
+
     payload = request.get_json(silent=True) or {}
     query = (payload.get("query") or "").strip()
     kdnr = (payload.get("kdnr") or "").strip()
@@ -1632,9 +1624,33 @@ def api_open():
 def mesh():
     # Simulate some mesh nodes for the UI demo
     nodes = [
-        {"id": "HUB-ZIMA-01", "name": "Büro Hub", "type": "ZimaBlade", "status": "ONLINE", "ip": "192.168.1.50", "sync": "100%", "conflicts": 0},
-        {"id": "TABLET-GESELLE-01", "name": "Tablet Geselle", "type": "iPad/Web", "status": "ONLINE", "ip": "192.168.1.112", "sync": "98%", "conflicts": 3},
-        {"id": "LAPTOP-MEISTER", "name": "Meister Laptop", "type": "MacBook", "status": "OFFLINE", "ip": "192.168.1.10", "sync": "75%", "conflicts": 1},
+        {
+            "id": "HUB-ZIMA-01",
+            "name": "Büro Hub",
+            "type": "ZimaBlade",
+            "status": "ONLINE",
+            "ip": "192.168.1.50",
+            "sync": "100%",
+            "conflicts": 0,
+        },
+        {
+            "id": "TABLET-GESELLE-01",
+            "name": "Tablet Geselle",
+            "type": "iPad/Web",
+            "status": "ONLINE",
+            "ip": "192.168.1.112",
+            "sync": "98%",
+            "conflicts": 3,
+        },
+        {
+            "id": "LAPTOP-MEISTER",
+            "name": "Meister Laptop",
+            "type": "MacBook",
+            "status": "OFFLINE",
+            "ip": "192.168.1.10",
+            "sync": "75%",
+            "conflicts": 1,
+        },
     ]
     return _render_base(
         render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh"
@@ -1708,6 +1724,7 @@ HTML_MESH = r"""
     </div>
 </div>
 """
+
 
 @login_required
 @require_role("OPERATOR")
@@ -2317,13 +2334,14 @@ def settings_branding_save():
     new_branding = {
         "app_name": data.get("app_name", "KUKANILEA"),
         "primary_color": data.get("primary_color", "#0ea5e9"),
-        "footer_text": data.get("footer_text", "")
+        "footer_text": data.get("footer_text", ""),
     }
-    
+
     import json
+
     with open(Config.BRANDING_FILE, "w") as f:
         json.dump(new_branding, f, indent=2)
-        
+
     return redirect(url_for("web.settings_page"))
 
 
@@ -2557,9 +2575,12 @@ def index():
 @bp.route("/upload", methods=["POST"])
 def upload():
     from .rate_limit import upload_limiter
+
     if not upload_limiter.allow(request.remote_addr):
-        return jsonify(error="too_many_requests", message="Upload rate limit exceeded."), 429
-        
+        return jsonify(
+            error="too_many_requests", message="Upload rate limit exceeded."
+        ), 429
+
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(error="no_file"), 400
@@ -2785,7 +2806,7 @@ def done_view(token: str):
 def assistant():
     # Ensure core searches within current tenant
     try:
-        import kukanilea_core_v3_fixed as _core
+        from app import core as _core
 
         _core.TENANT_DEFAULT = current_tenant() or _core.TENANT_DEFAULT
     except Exception:

@@ -7,12 +7,12 @@ from pathlib import Path
 try:
     from platformdirs import user_data_dir
 except Exception:  # pragma: no cover
+
     def user_data_dir(appname: str, appauthor: bool = False) -> str:
         if platform.system() == "Windows":
             return str(Path.home() / "AppData" / "Local" / appname)
         return str(Path.home() / "Library" / "Application Support" / appname)
 
-import platform # Added import
 
 def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
@@ -55,18 +55,19 @@ class Config:
 
     # White-Labeling / Branding
     BRANDING_FILE = USER_DATA_ROOT / "branding.json"
-    
+
     @classmethod
     def get_branding(cls):
         defaults = {
             "app_name": "KUKANILEA",
-            "primary_color": "#2563eb", # blue-600
+            "primary_color": "#2563eb",  # blue-600
             "logo_url": "/static/logo.png",
             "support_url": "https://tophandwerk.de",
-            "footer_text": "KUKANILEA — Lokale Intelligenz fürs Handwerk"
+            "footer_text": "KUKANILEA — Lokale Intelligenz fürs Handwerk",
         }
         if cls.BRANDING_FILE.exists():
             import json
+
             try:
                 with open(cls.BRANDING_FILE, "r") as f:
                     custom = json.load(f)

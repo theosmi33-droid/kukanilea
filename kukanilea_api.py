@@ -42,7 +42,7 @@ from typing import List, Optional
 
 from flask import Flask, abort, jsonify, render_template_string, request, send_file
 
-import kukanilea_core as core
+from app import core as core
 
 
 # ============================================================

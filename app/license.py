@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import socket
 import uuid
 from dataclasses import dataclass
 from datetime import date
@@ -50,14 +49,17 @@ def device_fingerprint() -> str:
     """
     Combines machine UUID, CPU info and MAC to create a stable HWID.
     """
-    import subprocess
     import platform
+    import subprocess
+
     hwid_parts = [str(uuid.getnode())]
-    
+
     try:
         if platform.system() == "Darwin":
             # Avoid shell=True for security
-            out = subprocess.check_output(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]).decode()
+            out = subprocess.check_output(
+                ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]
+            ).decode()
             for line in out.splitlines():
                 if "IOPlatformUUID" in line:
                     hwid_parts.append(line.strip())
@@ -67,9 +69,10 @@ def device_fingerprint() -> str:
             hwid_parts.append(out.strip())
     except Exception:
         pass
-        
+
     raw = "::".join(hwid_parts).encode("utf-8")
     return hashlib.sha256(raw).hexdigest().upper()
+
 
 def get_activation_code() -> str:
     """
@@ -115,9 +118,9 @@ def load_license(license_path: Path) -> Dict[str, Any]:
         current_fp = device_fingerprint()
         # Support both full hash and 16-char prefix for backward compatibility/simplicity
         device_mismatch = bool(
-            expected_device and 
-            not current_fp.startswith(expected_device) and 
-            expected_device != current_fp
+            expected_device
+            and not current_fp.startswith(expected_device)
+            and expected_device != current_fp
         )
 
         return {

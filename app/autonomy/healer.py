@@ -16,16 +16,19 @@ def check_db_integrity(db_path: str, deep=False) -> bool:
     except Exception:
         return False
 
+
 def init_healer(app: Flask) -> None:
     enabled = app.config.get("KUK_HEALER_ENABLED", False)
     if not enabled:
         return
 
     db_path = str(app.config.get("CORE_DB", "core.sqlite3"))
-    
+
     # Simple check on startup
     if not check_db_integrity(db_path):
-        app.logger.error("Database integrity check failed! Switching to Degraded Read-Only Mode.")
+        app.logger.error(
+            "Database integrity check failed! Switching to Degraded Read-Only Mode."
+        )
         app.config["MAINTENANCE_READ_ONLY"] = True
     else:
         app.config["MAINTENANCE_READ_ONLY"] = False
@@ -34,15 +37,17 @@ def init_healer(app: Flask) -> None:
     def enforce_degraded_mode():
         if not app.config.get("MAINTENANCE_READ_ONLY"):
             return None
-            
+
         # For certain routes, we might allow read-only access
         # But for maintenance, it's safer to block all mutating operations
         if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
             rid = getattr(g, "request_id", "-")
-            return jsonify({
-                "error": "maintenance_mode",
-                "message": "The system is in a degraded read-only mode due to a database integrity issue.",
-                "request_id": rid,
-                "status": "degraded"
-            }), 503
+            return jsonify(
+                {
+                    "error": "maintenance_mode",
+                    "message": "The system is in a degraded read-only mode due to a database integrity issue.",
+                    "request_id": rid,
+                    "status": "degraded",
+                }
+            ), 503
         return None

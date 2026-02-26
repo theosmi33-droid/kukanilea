@@ -25,6 +25,8 @@ def init_otel(app: Flask) -> None:
         # Local only: Console exporter
         span_processor = BatchSpanProcessor(ConsoleSpanExporter())
         trace.get_tracer_provider().add_span_processor(span_processor)
-        
+
     except ImportError:
-        app.logger.warning("OpenTelemetry requested but dependencies (opentelemetry-sdk, opentelemetry-instrumentation-flask) not found.")
+        app.logger.warning(
+            "OpenTelemetry requested but dependencies (opentelemetry-sdk, opentelemetry-instrumentation-flask) not found."
+        )

@@ -362,7 +362,8 @@ def process_queue(limit: int = 200) -> int:
 
 def _tokenize(query: str) -> List[str]:
     import re
-    cleaned = re.sub(r'[^\w\s]', '', query)
+
+    cleaned = re.sub(r"[^\w\s]", "", query)
     return [t.strip().lower() for t in cleaned.split() if len(t.strip()) >= 2]
 
 

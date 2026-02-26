@@ -71,9 +71,7 @@ def create_app() -> Flask:
 
     @app.context_processor
     def _branding_context():
-        return {
-            "branding": Config.get_branding()
-        }
+        return {"branding": Config.get_branding()}
 
     @app.context_processor
     def _license_context():

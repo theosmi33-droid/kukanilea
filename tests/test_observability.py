@@ -14,7 +14,7 @@ def app(tmp_path):
     app.config["LOG_DIR"] = str(log_dir)
     app.config["TENANT_DEFAULT"] = "TEST_TENANT"
     init_observability(app)
-    
+
     @app.route("/test")
     def test_route():
         return "ok"
@@ -22,23 +22,26 @@ def app(tmp_path):
     @app.route("/error")
     def error_route():
         raise ValueError("test error")
-        
+
     return app
+
 
 @pytest.fixture
 def client(app):
     return app.test_client()
+
 
 def test_request_id_header(client):
     response = client.get("/test")
     assert response.status_code == 200
     assert "X-Request-Id" in response.headers
 
+
 def test_json_logging(client, app):
     log_file = Path(app.config["LOG_DIR"]) / "app.jsonl"
-    
+
     client.get("/test")
-    
+
     assert log_file.exists()
     with open(log_file, "r") as f:
         line = f.readline()
@@ -47,16 +50,18 @@ def test_json_logging(client, app):
         assert log_data["status_code"] == 200
         assert "request_id" in log_data
         import hashlib
+
         expected_hash = hashlib.sha256(b"TEST_TENANT").hexdigest()[:12]
         assert log_data["tenant_hash"] == expected_hash
         assert "duration_ms" in log_data
 
+
 def test_error_logging(client, app):
     log_file = Path(app.config["LOG_DIR"]) / "app.jsonl"
-    
+
     response = client.get("/error")
     assert response.status_code == 500
-    
+
     assert log_file.exists()
     with open(log_file, "r") as f:
         lines = f.readlines()
