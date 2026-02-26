@@ -48,9 +48,6 @@ class Config:
 
     TENANT_DEFAULT = _env("TENANT_DEFAULT", "KUKANILEA")
     TENANT_FIXED = _env("TENANT_FIXED", "1") not in ("0", "false", "False", "no", "NO")
-    FEATURE_GOOGLE_OAUTH = _env("FEATURE_GOOGLE_OAUTH", "0") == "1"
-    GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID", "")
-    GOOGLE_CLIENT_SECRET = _env("GOOGLE_CLIENT_SECRET", "")
 
     KUK_HEALER_ENABLED = _env("KUK_HEALER_ENABLED", "0") == "1"
     KUK_OTEL_ENABLED = _env("KUK_OTEL_ENABLED", "0") == "1"

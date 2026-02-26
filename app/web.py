@@ -493,20 +493,28 @@ HTML_BASE = r"""<!doctype html>
 </script>
 <style>
   :root{
-    --bg:#0b1220;
-    --bg-elev:#111a2c;
-    --bg-panel:#0f172a;
-    --border:rgba(148,163,184,.15);
-    --text:#e2e8f0;
+    --bg:#060b16;
+    --bg-elev:#0f172a;
+    --bg-panel:rgba(30, 41, 59, 0.7);
+    --border:rgba(255, 255, 255, 0.08);
+    --text:#f8fafc;
     --muted:#94a3b8;
     --accent-500:{{branding.primary_color}};
     --accent-600:{{branding.primary_color}};
-    --shadow:0 8px 30px rgba(15,23,42,.35);
-    --radius-lg:18px;
-    --radius-md:14px;
+    --shadow:0 20px 50px rgba(0,0,0,0.5);
+    --radius-lg:24px;
+    --radius-md:16px;
   }
-  html[data-accent="brand"]{ --accent-500:{{branding.primary_color}}; --accent-600:{{branding.primary_color}}; }
-  html[data-accent="indigo"]{ --accent-500:#6366f1; --accent-600:#4f46e5; }
+  body { background-color: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, sans-serif; }
+  .glass { background: var(--bg-panel); backdrop-filter: blur(12px); border: 1px solid var(--border); }
+  .card { background: rgba(30, 41, 59, 0.4); border: 1px solid var(--border); border-radius: var(--radius-md); transition: all 0.3s ease; }
+  .card:hover { border-color: var(--accent-500); transform: translateY(-2px); }
+  .nav-link { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--radius-md); color: var(--muted); transition: 0.2s; font-size: 0.9rem; }
+  .nav-link:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+  .nav-link.active { background: var(--accent-500); color: white; box-shadow: 0 10px 20px -5px var(--accent-500); }
+  .btn-primary { background: var(--accent-500); color: white; border-radius: 12px; padding: 10px 20px; font-weight: 600; transition: 0.3s; }
+  .btn-primary:hover { filter: brightness(1.1); box-shadow: 0 0 20px var(--accent-500); }
+</style>
   html[data-accent="emerald"]{ --accent-500:#10b981; --accent-600:#059669; }
   html[data-accent="amber"]{ --accent-500:#f59e0b; --accent-600:#d97706; }
   .light body{
@@ -549,22 +557,22 @@ HTML_BASE = r"""<!doctype html>
 <div class="app-shell">
   <aside class="app-nav">
     <div class="flex items-center gap-2 mb-6">
-      <div class="h-10 w-10 rounded-2xl flex items-center justify-center text-white" style="background:var(--accent-500);">✦</div>
+      <div class="h-10 w-10 rounded-2xl flex items-center justify-center text-white font-bold" style="background:var(--accent-500);">K</div>
       <div>
         <div class="text-sm font-semibold">{{branding.app_name}}</div>
         <div class="text-[11px] muted">Agent Orchestra</div>
       </div>
     </div>
     <nav class="space-y-2">
-      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">📥 Upload</a>
-      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">✅ Tasks</a>
-      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">⏱️ Time</a>
-      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">🧠 Assistant</a>
-      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">💬 Chat</a>
-      <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">✉️ Mail</a>
+      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">[+] Upload</a>
+      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">[/] Tasks</a>
+      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">[@] Time</a>
+      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">[*] Assistant</a>
+      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">[>] Chat</a>
+      <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">[#] Mail</a>
       {% if roles in ['DEV', 'ADMIN'] %}
-      <a class="nav-link {{'active' if active_tab=='mesh' else ''}}" href="/admin/mesh">📡 Mesh</a>
-      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">🛠️ Settings</a>
+      <a class="nav-link {{'active' if active_tab=='mesh' else ''}}" href="/admin/mesh">[^] Mesh</a>
+      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">[%] Settings</a>
       {% endif %}
     </nav>
     <div class="mt-8 text-xs muted">
@@ -606,8 +614,8 @@ HTML_BASE = r"""<!doctype html>
 
 <!-- Floating Chat Widget -->
 <div id="chatWidgetBtn" title="Chat" class="fixed bottom-6 right-6 z-50 cursor-pointer select-none">
-  <div class="relative h-12 w-12 rounded-full flex items-center justify-center" style="background:var(--accent-600); box-shadow:var(--shadow); color:white;">
-    💬
+  <div class="relative h-12 w-12 rounded-full flex items-center justify-center font-bold text-lg" style="background:var(--accent-600); box-shadow:var(--shadow); color:white;">
+    &gt;_
     <span id="chatUnread" class="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-500 hidden"></span>
   </div>
 </div>
@@ -704,46 +712,59 @@ HTML_LOGIN = r"""
 
 
 HTML_INDEX = r"""<div class="grid lg:grid-cols-2 gap-6">
-  <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
-    <div class="text-lg font-semibold mb-2">Datei hochladen</div>
-    <div class="muted text-sm mb-4">Upload → Analyse → Review öffnet automatisch.</div>
-    <form id="upform" class="space-y-3">
-      <input id="file" name="file" type="file"
-        class="block w-full text-sm input
-        file:mr-4 file:rounded-xl file:border-0 file:bg-slate-700 file:px-4 file:py-2
-        file:text-sm file:font-semibold file:text-white hover:file:bg-slate-600" />
-      <button id="btn" type="submit" class="rounded-xl px-4 py-2 font-semibold btn-primary">Hochladen</button>
+  <div class="card p-6 glass">
+    <div class="text-xl font-bold mb-2">Beleg-Zentrale</div>
+    <div class="muted text-sm mb-6">Importieren Sie Dokumente für die automatisierte OCR-Analyse und Archivierung.</div>
+    <form id="upform" class="space-y-4">
+      <div class="relative group">
+        <input id="file" name="file" type="file"
+          class="block w-full text-sm text-slate-400
+          file:mr-4 file:py-2 file:px-4
+          file:rounded-xl file:border-0
+          file:text-sm file:font-semibold
+          file:bg-slate-800 file:text-slate-300
+          hover:file:bg-slate-700 transition cursor-pointer" />
+      </div>
+      <button id="btn" type="submit" class="w-full btn-primary font-bold py-3">Analyse starten</button>
     </form>
-    <div class="mt-4">
-      <div class="text-xs muted mb-1" id="pLabel">0.0%</div>
-      <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden"><div id="bar" class="h-3 w-0" style="background:var(--accent-500)"></div></div>
-      <div class="text-slate-300 text-sm mt-3" id="status"></div>
-      <div class="muted text-xs mt-1" id="phase"></div>
+    <div class="mt-6 pt-6 border-t border-slate-800/50">
+      <div class="flex justify-between items-center mb-2">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-500" id="phase">Bereit zum Import</div>
+        <div class="text-xs font-bold text-slate-400" id="pLabel">0%</div>
+      </div>
+      <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
+        <div id="bar" class="h-full transition-all duration-300 shadow-[0_0_10px_rgba(56,189,248,0.5)]" style="background:var(--accent-500); width: 0%"></div>
+      </div>
+      <div class="text-slate-400 text-sm mt-4 font-medium" id="status">Keine laufenden Prozesse.</div>
     </div>
   </div>
-  <div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
-    <div class="text-lg font-semibold mb-2">Review Queue</div>
+  <div class="card p-6 glass">
+    <div class="text-xl font-bold mb-2">Prüf-Warteschlange</div>
+    <div class="muted text-sm mb-6">Dokumente, die eine menschliche Validierung erfordern.</div>
     {% if items %}
-      <div class="space-y-2">
+      <div class="space-y-3">
         {% for it in items %}
-          <div class="rounded-xl border border-slate-800 hover:border-slate-600 px-3 py-2">
-            <div class="flex items-center justify-between gap-2">
-              <a class="text-sm font-semibold underline accentText" href="/review/{{it}}/kdnr">Review öffnen</a>
-              <div class="muted text-xs">{{ (meta.get(it, {}).get('progress', 0.0) or 0.0) | round(1) }}%</div>
+          <div class="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/50 hover:border-slate-700/50 transition">
+            <div class="flex items-center justify-between mb-3">
+              <a class="text-sm font-bold text-sky-400 hover:text-sky-300 transition underline decoration-sky-400/30" href="/review/{{it}}/kdnr">Validierung öffnen</a>
+              <div class="text-[10px] font-bold px-2 py-1 rounded bg-slate-800 text-slate-400">{{ (meta.get(it, {}).get('progress', 0.0) or 0.0) | round(1) }}%</div>
             </div>
-            <div class="muted text-xs break-all">{{ meta.get(it, {}).get('filename','') }}</div>
-            <div class="muted text-[11px]">{{ meta.get(it, {}).get('progress_phase','') }}</div>
-            <div class="mt-2 flex gap-2">
-              <a class="rounded-xl px-3 py-2 text-xs btn-outline card" href="/file/{{it}}" target="_blank">Datei</a>
-              <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Pending wirklich löschen?')" style="display:inline;">
-                <button class="rounded-xl px-3 py-2 text-xs btn-outline card" type="submit">Delete</button>
+            <div class="text-xs text-slate-300 font-mono mb-1 truncate">{{ meta.get(it, {}).get('filename','') }}</div>
+            <div class="text-[10px] uppercase tracking-widest text-slate-500">{{ meta.get(it, {}).get('progress_phase','') }}</div>
+            <div class="mt-4 flex gap-2">
+              <a class="flex-1 text-center py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition" href="/file/{{it}}" target="_blank">Vorschau</a>
+              <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Eintrag wirklich verwerfen?')" class="flex-1">
+                <button class="w-full py-2 text-xs rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition" type="submit">Verwerfen</button>
               </form>
             </div>
           </div>
         {% endfor %}
       </div>
     {% else %}
-      <div class="muted text-sm">Keine offenen Reviews.</div>
+      <div class="flex flex-col items-center justify-center py-12 text-slate-500">
+        <div class="text-4xl mb-4 opacity-20">[-]</div>
+        <div class="text-sm">Derzeit liegen keine Dokumente zur Prüfung vor.</div>
+      </div>
     {% endif %}
   </div>
 </div>
@@ -1435,8 +1456,6 @@ def _guard_login():
     if p.startswith("/static/") or p in [
         "/login",
         "/health",
-        "/auth/google/start",
-        "/auth/google/callback",
         "/api/health",
         "/api/ping",
     ]:
@@ -1479,32 +1498,6 @@ def login():
                 error = "Login fehlgeschlagen."
     return _render_base(
         render_template_string(HTML_LOGIN, error=error), active_tab="upload"
-    )
-
-
-@bp.get("/auth/google/start")
-def google_start():
-    if not (
-        current_app.config.get("GOOGLE_CLIENT_ID")
-        and current_app.config.get("GOOGLE_CLIENT_SECRET")
-    ):
-        return _render_base(
-            _card(
-                "info",
-                "Google OAuth ist nicht konfiguriert. Setze GOOGLE_CLIENT_ID/SECRET.",
-            ),
-            active_tab="mail",
-        )
-    return _render_base(
-        _card("info", "Google OAuth Flow (Stub). Callback nicht implementiert."),
-        active_tab="mail",
-    )
-
-
-@bp.get("/auth/google/callback")
-def google_callback():
-    return _render_base(
-        _card("info", "Google OAuth Callback (Stub)."), active_tab="mail"
     )
 
 
@@ -1644,7 +1637,7 @@ HTML_MESH = r"""
 <div class="space-y-6">
     <div class="flex justify-between items-end">
         <div>
-            <h1 class="text-2xl font-bold">📡 Global Health Monitor</h1>
+            <h1 class="text-2xl font-bold">[>] Global Health Monitor</h1>
             <p class="muted">P2P Mesh-Netzwerk & CRDT Sync Status</p>
         </div>
         <div class="badge px-4 py-2 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
@@ -1958,21 +1951,6 @@ def api_time_export():
 # ==============================
 HTML_MAIL = """
 <div class="grid gap-4">
-  <div class="card p-4 rounded-2xl border">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-lg font-semibold">Google Mail (Stub)</div>
-        <div class="text-sm opacity-80">OAuth Platzhalter – keine echte Verbindung in dieser Version.</div>
-      </div>
-      <div class="text-right text-xs opacity-70">
-        Status: {{ 'konfiguriert' if google_configured else 'nicht konfiguriert' }}
-      </div>
-    </div>
-    <div class="mt-3 flex gap-2">
-      <a class="rounded-xl px-4 py-2 text-sm btn-outline" href="/auth/google/start">Connect Google</a>
-      <span class="text-xs opacity-70">Setze GOOGLE_CLIENT_ID/SECRET um den Flow zu aktivieren.</span>
-    </div>
-  </div>
   <div class="card p-4 rounded-2xl border">
     <div class="text-lg font-semibold mb-1">Mail Agent</div>
     <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM. Keine Drittanbieter-Links.</div>
@@ -2318,12 +2296,8 @@ Kontext/Stichpunkte:
 @bp.get("/mail")
 @login_required
 def mail_page():
-    google_configured = bool(
-        current_app.config.get("GOOGLE_CLIENT_ID")
-        and current_app.config.get("GOOGLE_CLIENT_SECRET")
-    )
     return _render_base(
-        render_template_string(HTML_MAIL, google_configured=google_configured),
+        render_template_string(HTML_MAIL),
         active_tab="mail",
     )
 

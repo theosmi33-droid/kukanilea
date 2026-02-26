@@ -139,7 +139,7 @@ def main():
     _assert(isinstance(dups, list), "dups not list")
     print("OK: duplicate detector entries =", len(dups))
 
-    print("\nALL TESTS PASSED ✅")
+    print("\nALL TESTS PASSED [OK]")
     print("Sandbox:", tmp)
 
 

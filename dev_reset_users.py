@@ -11,7 +11,7 @@ def reset_users():
 
     con.commit()
     con.close()
-    print("✅ Alle User & Rollen wurden gelöscht.")
+    print("[OK] Alle User & Rollen wurden gelöscht.")
 
 
 if __name__ == "__main__":
