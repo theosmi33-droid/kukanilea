@@ -94,6 +94,12 @@ def main():
 
     args = parser.parse_args()
 
+    # Default to server if no command provided (useful for bundled apps)
+    if not args.command:
+        args.command = "server"
+        args.port = 5051
+        args.host = "127.0.0.1"
+
     try:
         if args.command == "server":
             start_server(args.port, args.host)

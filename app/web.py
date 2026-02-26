@@ -31,6 +31,7 @@ from __future__ import annotations
 import base64
 import importlib
 import importlib.util
+import json
 import os
 import re
 import time
@@ -69,6 +70,7 @@ from .auth import (
 from .config import Config
 from .db import AuthDB
 from .errors import json_error
+from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
 from .security import csrf_protected
 
@@ -179,6 +181,37 @@ ORCHESTRATOR = None
 
 # --- Early template defaults (avoid NameError during debug reload) ---
 HTML_LOGIN = ""  # will be overwritten later by the full template block
+
+
+HTML_LICENSE = """
+<div class="grid gap-4">
+  <div class="card p-6 glass">
+    <div class="text-xl font-bold mb-4">Lizenzstatus</div>
+    <div class="grid gap-4 text-sm md:grid-cols-2">
+      <div><span class="muted text-xs uppercase tracking-widest">Plan</span><div class="text-lg font-bold">{{ plan }}</div></div>
+      <div><span class="muted text-xs uppercase tracking-widest">Status</span><div class="text-lg font-bold">{{ "Read-only" if read_only else "Aktiv" }}</div></div>
+      <div><span class="muted text-xs uppercase tracking-widest">Grund</span><div>{{ license_reason or "-" }}</div></div>
+      <div><span class="muted text-xs uppercase tracking-widest">Trial Resttage</span><div>{{ trial_days_left }}</div></div>
+    </div>
+    {% if notice %}
+    <div class="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-400">{{ notice }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-400">{{ error }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card p-6 glass">
+    <div class="text-lg font-bold mb-2">Lizenz aktivieren</div>
+    <div class="muted text-sm mb-4">Fügen Sie hier Ihr signiertes Lizenz-JSON ein, um den vollen Funktionsumfang freizuschalten.</div>
+    <form method="post" action="/license" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="license_json" rows="10" class="w-full rounded-xl border border-slate-700 px-4 py-3 text-xs bg-slate-900/50 font-monospace" placeholder='{"customer_id":"...","plan":"ENTERPRISE","signature":"..."}'></textarea>
+      <button type="submit" class="w-full btn-primary font-bold py-3">Lizenz validieren & aktivieren</button>
+    </form>
+  </div>
+</div>
+"""
 
 
 def suggest_existing_folder(
@@ -2904,3 +2937,71 @@ def chat():
 @bp.route("/health")
 def health():
     return jsonify(ok=True, ts=time.time(), app="kukanilea_upload_v3_ui")
+
+
+@bp.before_app_request
+def check_first_run():
+    """Detects missing license and redirects to setup/license page."""
+    # Exclusions
+    if request.endpoint and (
+        "static" in request.endpoint
+        or "license" in request.endpoint
+        or "login" in request.endpoint
+    ):
+        return None
+
+    license_path = Path(current_app.config["LICENSE_PATH"])
+    if not license_path.exists():
+        # Only redirect if not already on license page
+        return redirect(url_for("web.license_page"))
+
+    return None
+
+
+@bp.route("/license", methods=["GET", "POST"])
+@csrf_protected
+def license_page():
+    notice = ""
+    error = ""
+    if request.method == "POST":
+        blob = str(request.form.get("license_json") or "").strip()
+        if not blob:
+            error = "Lizenz-JSON fehlt."
+        else:
+            try:
+                payload = json.loads(blob)
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON root must be object")
+            except Exception:
+                payload = None
+                error = "Lizenz-JSON ist ungültig."
+
+            if payload is not None:
+                license_path = Path(current_app.config["LICENSE_PATH"])
+                previous_text = (
+                    license_path.read_text(encoding="utf-8")
+                    if license_path.exists()
+                    else None
+                )
+                license_path.parent.mkdir(parents=True, exist_ok=True)
+                license_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                info = load_license(license_path)
+                if not bool(info.get("valid")):
+                    if previous_text is None:
+                        try:
+                            license_path.unlink()
+                        except Exception:
+                            pass
+                    else:
+                        license_path.write_text(previous_text, encoding="utf-8")
+                    error = f"Lizenz ungültig ({info.get('reason') or 'invalid'})."
+                else:
+                    notice = "Lizenz erfolgreich aktiviert."
+
+    return _render_base(
+        render_template_string(HTML_LICENSE, notice=notice, error=error),
+        active_tab="settings",
+    )

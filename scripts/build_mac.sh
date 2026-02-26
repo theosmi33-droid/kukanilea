@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="KUKANILEA"
-ENTRYPOINT="$ROOT_DIR/kukanilea_server.py"
+ENTRYPOINT="$ROOT_DIR/run.py"
 
 PY_BIN="${PYTHON:-python3}"
 
@@ -15,6 +15,9 @@ pyinstaller \
   --name "$APP_NAME" \
   --onefile \
   --windowed \
+  --add-data "$ROOT_DIR/app/core:app/core" \
+  --add-data "$ROOT_DIR/app/observability:app/observability" \
+  --add-data "$ROOT_DIR/app/static:app/static" \
   "$ENTRYPOINT"
 
 echo "Build complete: $ROOT_DIR/dist/${APP_NAME}.app"
