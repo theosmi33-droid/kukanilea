@@ -22,7 +22,7 @@ class Config:
     BASE_DIR = Path(__file__).resolve().parent.parent
     PORT = int(_env("PORT", "5051"))
     SECRET_KEY = _env("KUKANILEA_SECRET", "kukanilea-dev-secret-change-me")
-    MAX_CONTENT_LENGTH = int(_env("KUKANILEA_MAX_UPLOAD", str(25 * 1024 * 1024)))
+    MAX_CONTENT_LENGTH = int(_env("KUKANILEA_MAX_UPLOAD", str(100 * 1024 * 1024)))
 
     USER_DATA_ROOT = Path(
         _env(
@@ -46,6 +46,9 @@ class Config:
     IMPORT_ROOT = Path(_env("IMPORT_ROOT", str(USER_DATA_ROOT / "imports")))
     IMPORT_ROOT.mkdir(parents=True, exist_ok=True)
 
+    ZWISCHENABLAGE = USER_DATA_ROOT / "zwischenablage"
+    ZWISCHENABLAGE.mkdir(parents=True, exist_ok=True)
+
     TENANT_DEFAULT = _env("TENANT_DEFAULT", "KUKANILEA")
     TENANT_FIXED = _env("TENANT_FIXED", "1") not in ("0", "false", "False", "no", "NO")
 
@@ -62,7 +65,7 @@ class Config:
             "app_name": "KUKANILEA",
             "primary_color": "#2563eb",  # blue-600
             "logo_url": "/static/logo.png",
-            "support_url": "https://tophandwerk.de",
+            "support_url": "https://kukanilea.de",
             "footer_text": "KUKANILEA — Lokale Intelligenz fürs Handwerk",
         }
         if cls.BRANDING_FILE.exists():
