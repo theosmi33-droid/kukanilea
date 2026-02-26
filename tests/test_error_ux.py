@@ -27,6 +27,36 @@ def test_error_envelope_request_id(app):
         assert payload["error"]["details"]["request_id"] == "REQ-123"
 
 
+def test_html_error_response(app):
+    client = app.test_client()
+    # Mock login to avoid redirect
+    with client.session_transaction() as sess:
+        sess["user"] = "test-user"
+        sess["role"] = "ADMIN"
+
+    # Propose a 404
+    response = client.get("/this-page-definitely-does-not-exist")
+    assert response.status_code == 404
+    assert b"404 - Nicht gefunden" in response.data
+    assert "text/html" in response.content_type
+
+
+def test_api_json_error_response(app):
+    client = app.test_client()
+    # Mock login to avoid unauthorized
+    with client.session_transaction() as sess:
+        sess["user"] = "test-user"
+        sess["role"] = "ADMIN"
+
+    # Propose a 404 but with JSON header
+    response = client.get(
+        "/api/invalid-endpoint", headers={"Accept": "application/json"}
+    )
+    assert response.status_code == 404
+    assert response.is_json
+    assert response.get_json()["error"]["code"] == "NOT_FOUND"
+
+
 @pytest.fixture
 def app():
     from app import create_app
