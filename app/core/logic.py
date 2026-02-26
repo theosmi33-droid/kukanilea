@@ -105,15 +105,18 @@ def _env_bool(key: str, default: str = "0") -> bool:
 # ============================================================
 # CONFIG / PATHS
 # ============================================================
+_KUK_DATA_ROOT = Path.home() / "Kukanilea" / "data"
+_KUK_DATA_ROOT.mkdir(parents=True, exist_ok=True)
+
 _TEST_BASE = Path.home() / "Downloads" / "DB-test"
 _ENV_BASE_DIR = _env("BASE_DIRNAME", "Kukanilea_Kundenablage")
-BASE_PATH = _TEST_BASE if _TEST_BASE.exists() else Path.home() / _ENV_BASE_DIR
+BASE_PATH = _TEST_BASE if _TEST_BASE.exists() else _KUK_DATA_ROOT / _ENV_BASE_DIR
 
-EINGANG = Path.home() / _env("EINGANG_DIRNAME", "Kukanilea_Eingang")
-PENDING_DIR = Path.home() / _env("PENDING_DIRNAME", "Kukanilea_Pending")
-DONE_DIR = Path.home() / _env("DONE_DIRNAME", "Kukanilea_Done")
-ZWISCHENABLAGE = Path.home() / _env("ZWISCHENABLAGE_DIRNAME", "KUKANILEA_Zwischenablage")
-DB_PATH = Path.home() / _env("DB_FILENAME", "Kukanilea_DB.sqlite3")
+EINGANG = _KUK_DATA_ROOT / _env("EINGANG_DIRNAME", "Kukanilea_Eingang")
+PENDING_DIR = _KUK_DATA_ROOT / _env("PENDING_DIRNAME", "Kukanilea_Pending")
+DONE_DIR = _KUK_DATA_ROOT / _env("DONE_DIRNAME", "Kukanilea_Done")
+ZWISCHENABLAGE = _KUK_DATA_ROOT / _env("ZWISCHENABLAGE_DIRNAME", "KUKANILEA_Zwischenablage")
+DB_PATH = _KUK_DATA_ROOT / _env("DB_FILENAME", "Kukanilea_DB.sqlite3")
 SCHEMA_VERSION = 4
 
 # Multi-tenant behavior
