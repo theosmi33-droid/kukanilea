@@ -10,7 +10,7 @@ from .config import Config
 from .db import AuthDB
 from .errors import json_error
 from .license import load_runtime_license_state
-from .logging import init_request_logging
+from .log_utils import init_request_logging
 from .observability import init_observability
 
 
@@ -82,6 +82,12 @@ def create_app() -> Flask:
             "trial_active": bool(app.config.get("TRIAL", False)),
             "trial_days_left": int(app.config.get("TRIAL_DAYS_LEFT", 0)),
         }
+
+    @app.context_processor
+    def _security_context():
+        from .security import get_csrf_token
+
+        return {"csrf_token": get_csrf_token}
 
     @app.after_request
     def add_security_headers(response):

@@ -9,8 +9,6 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from flask import Flask, g, request
-
 
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -37,7 +35,9 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_data)
 
 
-def init_json_logging(app: Flask) -> None:
+def init_json_logging(app) -> None:
+    from flask import g, request
+
     log_dir = Path(app.config.get("LOG_DIR", "logs"))
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "app.jsonl"

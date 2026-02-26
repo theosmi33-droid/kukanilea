@@ -69,6 +69,8 @@ from .auth import (
 from .config import Config
 from .db import AuthDB
 from .errors import json_error
+from .rate_limit import chat_limiter, search_limiter, upload_limiter
+from .security import csrf_protected
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
@@ -469,6 +471,7 @@ HTML_BASE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>{{branding.app_name}} Systems</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -682,6 +685,7 @@ HTML_LOGIN = r"""
     <p class="text-sm opacity-80 mb-4">Accounts: <b>admin</b>/<b>admin</b> (Tenant: KUKANILEA) • <b>dev</b>/<b>dev</b> (Tenant: KUKANILEA Dev)</p>
     {% if error %}<div class="alert alert-error mb-3">{{ error }}</div>{% endif %}
     <form method="post" class="space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div>
         <label class="label">Username</label>
         <input class="input w-full" name="username" autocomplete="username" required>
@@ -740,6 +744,7 @@ HTML_INDEX = r"""<div class="grid lg:grid-cols-2 gap-6">
             <div class="mt-4 flex gap-2">
               <a class="flex-1 text-center py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition" href="/file/{{it}}" target="_blank">Vorschau</a>
               <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Eintrag wirklich verwerfen?')" class="flex-1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="w-full py-2 text-xs rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition" type="submit">Verwerfen</button>
               </form>
             </div>
@@ -783,6 +788,8 @@ form.addEventListener("submit", (e) => {
   fd.append("file", f);
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/upload", true);
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+  if(csrf) xhr.setRequestHeader("X-CSRF-Token", csrf);
   xhr.upload.onprogress = (ev) => {
     if(ev.lengthComputable){ setProgress((ev.loaded / ev.total) * 35); phase.textContent = "Upload…"; }
   };
@@ -841,6 +848,7 @@ HTML_REVIEW_SPLIT = r"""<div class="grid lg:grid-cols-2 gap-4">
 </div>"""
 
 HTML_WIZARD = r"""<form method="post" class="space-y-3" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="flex items-start justify-between gap-3">
     <div>
       <div class="text-lg font-semibold">Review</div>
@@ -1162,7 +1170,10 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   async function openToken(token){
     if(!token) return;
     try{
-      const res = await fetch('/api/open', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body: JSON.stringify({token})});
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+      const headers = {'Content-Type':'application/json'};
+      if(csrf) headers['X-CSRF-Token'] = csrf;
+      const res = await fetch('/api/open', {method:'POST', credentials:'same-origin', headers: headers, body: JSON.stringify({token})});
       const data = await res.json();
       if(!res.ok){
         const errMsg = (data && data.error && data.error.message) ? data.error.message : (data.message || data.error || ('HTTP ' + res.status));
@@ -1227,7 +1238,10 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     q.value = "";
     send.disabled = true;
     try{
-      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", credentials:"same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+      const headers = {"Content-Type":"application/json"};
+      if(csrf) headers["X-CSRF-Token"] = csrf;
+      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", headers: headers, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
       const j = await res.json();
       if(!res.ok){
         const errMsg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ("HTTP " + res.status));
@@ -1456,6 +1470,7 @@ def _guard_login():
 
 
 @bp.route("/login", methods=["GET", "POST"])
+@csrf_protected
 def login():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     error = ""
@@ -1535,14 +1550,9 @@ def _mock_generate(prompt: str) -> str:
 
 @bp.route("/api/chat", methods=["POST"])
 @login_required
+@csrf_protected
+@chat_limiter.limit_required
 def api_chat():
-    from .rate_limit import chat_limiter
-
-    if not chat_limiter.allow(request.remote_addr):
-        return jsonify(
-            error="too_many_requests", message="Rate limit exceeded. Please wait."
-        ), 429
-
     payload = request.get_json(silent=True) or {}
     msg = (
         (payload.get("msg") if isinstance(payload, dict) else None)
@@ -1563,14 +1573,9 @@ def api_chat():
 
 @bp.post("/api/search")
 @login_required
+@csrf_protected
+@search_limiter.limit_required
 def api_search():
-    from .rate_limit import search_limiter
-
-    if not search_limiter.allow(request.remote_addr):
-        return jsonify(
-            error="too_many_requests", message="Too many search requests."
-        ), 429
-
     payload = request.get_json(silent=True) or {}
     query = (payload.get("query") or "").strip()
     kdnr = (payload.get("kdnr") or "").strip()
@@ -1593,6 +1598,7 @@ def api_search():
 
 @bp.post("/api/open")
 @login_required
+@csrf_protected
 def api_open():
     payload = request.get_json(silent=True) or {}
     token = (payload.get("token") or "").strip()
@@ -1790,6 +1796,7 @@ def api_time_projects():
 
 @bp.post("/api/time/projects")
 @login_required
+@csrf_protected
 @require_role("OPERATOR")
 def api_time_projects_create():
     if not callable(time_project_create):
@@ -1814,6 +1821,7 @@ def api_time_projects_create():
 
 @bp.post("/api/time/start")
 @login_required
+@csrf_protected
 @require_role("OPERATOR")
 def api_time_start():
     if not callable(time_entry_start):
@@ -1838,6 +1846,7 @@ def api_time_start():
 
 @bp.post("/api/time/stop")
 @login_required
+@csrf_protected
 @require_role("OPERATOR")
 def api_time_stop():
     if not callable(time_entry_stop):
@@ -1891,6 +1900,7 @@ def api_time_entries():
 
 @bp.post("/api/time/entry/edit")
 @login_required
+@csrf_protected
 @require_role("OPERATOR")
 def api_time_entry_edit():
     if not callable(time_entry_update):
@@ -1923,6 +1933,7 @@ def api_time_entry_edit():
 
 @bp.post("/api/time/entry/approve")
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def api_time_entry_approve():
     if not callable(time_entry_approve):
@@ -2329,6 +2340,7 @@ def mail_page():
 
 @bp.post("/settings/branding")
 @login_required
+@csrf_protected
 def settings_branding_save():
     data = request.form
     new_branding = {
@@ -2516,6 +2528,7 @@ def api_test_llm():
 
 @bp.post("/api/mail/draft")
 @login_required
+@csrf_protected
 def api_mail_draft():
     try:
         payload = request.get_json(force=True) or {}
@@ -2536,6 +2549,7 @@ def api_mail_draft():
 
 @bp.post("/api/mail/eml")
 @login_required
+@csrf_protected
 def api_mail_eml():
     payload = request.get_json(force=True) or {}
     to = (payload.get("to") or "").strip()
@@ -2573,14 +2587,9 @@ def index():
 
 
 @bp.route("/upload", methods=["POST"])
+@csrf_protected
+@upload_limiter.limit_required
 def upload():
-    from .rate_limit import upload_limiter
-
-    if not upload_limiter.allow(request.remote_addr):
-        return jsonify(
-            error="too_many_requests", message="Upload rate limit exceeded."
-        ), 429
-
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(error="no_file"), 400
@@ -2608,6 +2617,7 @@ def upload():
 
 
 @bp.route("/review/<token>/delete", methods=["POST"])
+@csrf_protected
 def review_delete(token: str):
     try:
         delete_pending(token)
@@ -2630,6 +2640,7 @@ def file_preview(token: str):
 
 
 @bp.route("/review/<token>/kdnr", methods=["GET", "POST"])
+@csrf_protected
 def review(token: str):
     p = read_pending(token)
     if not p:

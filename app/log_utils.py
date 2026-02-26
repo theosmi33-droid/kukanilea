@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 import uuid
 
-from flask import g, request
-
 
 def init_request_logging(app) -> None:
+    from flask import g, request
+
     logger = logging.getLogger("kukanilea")
     if not logger.handlers:
         logging.basicConfig(

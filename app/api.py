@@ -2,15 +2,19 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify
 
+from .rate_limit import search_limiter
+
 bp = Blueprint("api", __name__, url_prefix="/api")
 
 
 @bp.get("/ping")
+@search_limiter.limit_required
 def ping():
     return jsonify(ok=True)
 
 
 @bp.get("/health")
+@search_limiter.limit_required
 def health():
     auth_db = current_app.extensions["auth_db"]
     core_stats = {}
