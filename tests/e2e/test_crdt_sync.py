@@ -36,7 +36,6 @@ def run_sync_test():
     setup_db(peer_db)
 
     hub_mgr = CRDTContactManager(hub_db, "HUB-ZIMA-01")
-    peer_mgr = CRDTContactManager(peer_db, "TABLET-GESELLE-01")
 
     kdnr = "K123"
     # Init: Create Kunde X on both
@@ -50,7 +49,6 @@ def run_sync_test():
     print(f"--- Phase 1: Shared state initialized for {kdnr} ---")
 
     # Phase 2 (Offline Split): Hub changes Name (T1), Peer changes Phone (T2)
-    t1 = time.time()
     hub_mgr.update_customer_name(kdnr, "Hans Mueller (Stammkunde)")
 
     time.sleep(0.1)  # Ensure distinct timestamps

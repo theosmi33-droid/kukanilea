@@ -13,22 +13,24 @@ Usage:
 """
 
 import argparse
-import sys
-import os
 import subprocess
+import sys
 from pathlib import Path
 
 # Add current directory to sys.path
 PROJECT_ROOT = Path(__file__).parent.resolve()
 sys.path.append(str(PROJECT_ROOT))
 
+
 def start_server(port: int, host: str):
     """Starts the main KUKANILEA Flask Application."""
     from app import create_app
+
     app = create_app()
     print(f"🚀 KUKANILEA Enterprise Server starting on http://{host}:{port}")
     # In production, uvicorn/gunicorn should be used. This is the dev entry point.
     app.run(host=host, port=port, debug=False)
+
 
 def run_maintenance():
     """Runs the daily maintenance daemon."""
@@ -37,8 +39,11 @@ def run_maintenance():
         print("🛠️ Running Maintenance Daemon...")
         subprocess.run(["bash", str(script_path)], check=True)
     else:
-        print("❌ Error: Maintenance script not found at scripts/ops/maintenance_daemon.sh")
+        print(
+            "❌ Error: Maintenance script not found at scripts/ops/maintenance_daemon.sh"
+        )
         sys.exit(1)
+
 
 def run_security_audit():
     """Runs the supply-chain security audit."""
@@ -50,6 +55,7 @@ def run_security_audit():
         print("❌ Error: Security scan script not found.")
         sys.exit(1)
 
+
 def run_chaos_monkey():
     """Runs the weekly chaos & resilience tests."""
     script_path = PROJECT_ROOT / "scripts" / "tests" / "chaos_monkey.py"
@@ -60,17 +66,22 @@ def run_chaos_monkey():
         print("❌ Error: Chaos Monkey script not found.")
         sys.exit(1)
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="KUKANILEA Systems - Central Control Unit",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", help="Operational command")
 
     # Command: server
     server_parser = subparsers.add_parser("server", help="Start the main UI/API server")
-    server_parser.add_argument("--port", type=int, default=5051, help="Port (default: 5051)")
-    server_parser.add_argument("--host", type=str, default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    server_parser.add_argument(
+        "--port", type=int, default=5051, help="Port (default: 5051)"
+    )
+    server_parser.add_argument(
+        "--host", type=str, default="127.0.0.1", help="Host (default: 127.0.0.1)"
+    )
 
     # Command: maintenance
     subparsers.add_parser("maintenance", help="Run maintenance & vacuum")
@@ -95,13 +106,12 @@ def main():
         else:
             parser.print_help()
     except subprocess.CalledProcessError as e:
-        print(f"
-❌ Command failed with exit code {e.returncode}")
+        print(f"\n❌ Command failed with exit code {e.returncode}")
         sys.exit(e.returncode)
     except Exception as e:
-        print(f"
-❌ Unexpected error: {e}")
+        print(f"\n❌ Unexpected error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

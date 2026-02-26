@@ -52,5 +52,5 @@ Erstelle eine E-Mail oder einen gesicherten Download-Link für den Partner mit f
 2. **Backup:** Sichere die `license.json` (OHNE Private-Key!) in deinem verschlüsselten Kundenarchiv, um bei Verlust des Kundengeräts schnell Ersatz leisten zu können.
 
 ---
-**GEFAHRENHINWEIS:** 
+**GEFAHRENHINWEIS:**
 Sollte die Datei `kukanilea_private.key` jemals in einer E-Mail oder einem Cloud-Backup auftauchen, gilt der Master-Key als kompromittiert. In diesem Fall muss der Public-Key in der gesamten KUKANILEA-Flotte per Zwangsupdate getauscht werden.

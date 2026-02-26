@@ -19,8 +19,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from app.config import Config
-from app.core.observer import get_system_status
+from app.config import Config  # noqa: E402
+from app.core.observer import get_system_status  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [CHAOS] %(message)s")
 logger = logging.getLogger("kukanilea.chaos")

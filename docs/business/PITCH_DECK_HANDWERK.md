@@ -27,7 +27,7 @@
 * **Buchhaltung leicht gemacht:** Nahtloser DATEV-Export für Ihren Steuerberater – ohne manuelle Tipparbeit.
 
 ### Slide 6: Wirtschaftlichkeit – Einmal kaufen, ewig nutzen
-* **Kosten-Vergleich:** 
+* **Kosten-Vergleich:**
     * *Wettbewerb:* 150€ / Monat = 1.800€ jedes Jahr.
     * *KUKANILEA:* Einmalige Lizenz + Hardware (ZimaBlade Hub). Amortisiert in weniger als 12 Monaten.
 * **Wertsteigerung:** Sie investieren in Ihr eigenes digitales Eigentum, nicht in die Miete fremder Software.
