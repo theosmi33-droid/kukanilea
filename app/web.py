@@ -770,6 +770,12 @@ def time_page(): return _render_base("<div class='card p-12 bg-white text-center
 @login_required
 def assistant_page(): return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Assistent</h1><p class='muted mt-4'>Wie kann ich Ihnen heute helfen?</p></div>", active_tab="assistant")
 
+@bp.route("/admin/mesh")
+@login_required
+def mesh_page():
+    if current_role() not in ["DEV", "ADMIN"]: abort(403)
+    return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Mesh-Netzwerk</h1><p class='muted mt-4'>ZimaBlade Cluster-Status: Online (3 Knoten)</p></div>", active_tab="mesh")
+
 @bp.route("/chat")
 @login_required
 def chat(): return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Chat</h1><p class='muted mt-4'>Chat bereit.</p></div>", active_tab="chat")
