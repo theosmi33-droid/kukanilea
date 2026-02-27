@@ -19,6 +19,7 @@ Hinweis:
 """
 
 from __future__ import annotations
+from app.core.audit import vault_store_evidence
 
 import base64
 import csv
@@ -4038,6 +4039,20 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
                         note="dedupe_same_bytes_existing_target",
                         tenant_id=tenant,
                     )
+                    # GoBD Evidence Vault Storage (Dedupe case)
+                    try:
+                        evidence_payload = {
+                            "doc_id": doc_id,
+                            "tenant_id": tenant,
+                            "doctype": doctype,
+                            "doc_date": doc_date,
+                            "file_name": target.name,
+                            "group_key": group_key,
+                            "note": "dedupe"
+                        }
+                        ev_hash = hashlib.sha256(json.dumps(evidence_payload, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+                        vault_store_evidence(doc_id, tenant, ev_hash, evidence_payload)
+                    except Exception: pass
                 return folder, target, created_new_object
         except Exception:
             pass
@@ -4083,6 +4098,21 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
         note=note,
         tenant_id=tenant,
     )
+
+    # GoBD Evidence Vault Storage
+    try:
+        evidence_payload = {
+            "doc_id": doc_id,
+            "tenant_id": tenant,
+            "doctype": doctype,
+            "doc_date": doc_date,
+            "file_name": target.name,
+            "group_key": group_key
+        }
+        ev_hash = hashlib.sha256(json.dumps(evidence_payload, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+        vault_store_evidence(doc_id, tenant, ev_hash, evidence_payload)
+    except Exception as e:
+        _audit_to_file(f"[VAULT_FAILED] doc_id={doc_id} error={e}")
 
     db_upsert_customer(
         tenant_id=tenant, kdnr=kdnr_raw, name=name, address=addr, plzort=plzort

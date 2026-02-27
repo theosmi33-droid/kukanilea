@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from app.agents.base import AgentContext, AgentResult
 from app.agents.archive import ArchiveAgent
 from app.agents.auth_tenant import AuthTenantAgent
+from app.agents.base import AgentContext, AgentResult
 from app.agents.customer import CustomerAgent
+from app.agents.guards import build_safe_suggestions, detect_prompt_injection
 from app.agents.index import IndexAgent
+from app.agents.llm import LLMProvider, get_default_provider
 from app.agents.mail import MailAgent
 from app.agents.open_file import OpenFileAgent
 from app.agents.review import ReviewAgent
@@ -15,9 +17,6 @@ from app.agents.search import SearchAgent
 from app.agents.summary import SummaryAgent
 from app.agents.upload import UploadAgent
 from app.agents.weather import WeatherAgent
-
-from app.agents.guards import build_safe_suggestions, detect_prompt_injection
-from app.agents.llm import LLMProvider, get_default_provider
 
 from .intent import IntentParser
 from .policy import PolicyEngine

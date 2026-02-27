@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+{% block title %}Audit Trail - GoBD Compliance{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-4);">
+    <div>
+      <h1 style="font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 4px;">Compliance Audit Trail</h1>
+      <p style="color: var(--color-text-muted); font-size: 14px;">Unveränderbare Historie der Beleg-Verarbeitung (Evidence Vault)</p>
+    </div>
+    <div class="badge" style="background: rgba(16, 185, 129, 0.1); color: var(--color-success); border-color: rgba(16, 185, 129, 0.2);">
+      GoBD Konform
+    </div>
+  </div>
+
+  <div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Zeitstempel (UTC)</th>
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Dokument-ID</th>
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Mandant</th>
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Metadaten-Hash</th>
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in trail %}
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); hover: background: rgba(255,255,255,0.02);">
+          <td style="padding: 12px; font-family: var(--font-mono); color: var(--color-text-muted);">{{ entry.created_at }}</td>
+          <td style="padding: 12px; font-weight: 600; color: #fff;">{{ entry.doc_id[:12] }}...</td>
+          <td style="padding: 12px;"><span class="badge">{{ entry.tenant_id }}</span></td>
+          <td style="padding: 12px; font-family: var(--font-mono); font-size: 11px; color: var(--color-accent);">{{ entry.metadata_hash[:16] }}...</td>
+          <td style="padding: 12px;">
+            <div style="display: flex; align-items: center; gap: 6px; color: var(--color-success);">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              VERIFIZIERT
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not trail %}
+        <tr>
+          <td colspan="5" style="padding: 40px; text-align: center; color: var(--color-text-muted); font-style: italic;">
+            Noch keine Audit-Einträge vorhanden.
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

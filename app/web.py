@@ -1,3 +1,4 @@
+from app.core.audit import vault
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -3010,3 +3011,11 @@ def license_page():
         render_template_string(HTML_LICENSE, notice=notice, error=error),
         active_tab="settings",
     )
+
+@bp.route("/admin/audit")
+@login_required
+@require_role(["DEV", "ADMIN"])
+def admin_audit():
+    trail = vault.get_audit_trail()
+    return _render_base("audit_trail.html", active_tab="settings", trail=trail)
+

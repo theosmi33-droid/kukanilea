@@ -49,6 +49,34 @@
         <span class="nav-text">Chat</span>
       </a>
     </li>
+
+    {% if roles in ['DEV', 'ADMIN'] %}
+    <li style="margin: 24px 0 8px 16px; font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px;">Verwaltung</li>
+    <li class="nav-item">
+      <a href="/admin/mesh" class="nav-link {{ 'active' if request.path == '/admin/mesh' }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 00-1-1h-1a1 1 0 100 2h1a1 1 0 001-1zM5.05 6.464a1 1 0 101.414-1.414l-.707-.707a1 1 0 10-1.414 1.414l.707.707zM5 10a1 1 0 00-1-1H3a1 1 0 100 2h1a1 1 0 001-1zM8 16v-1a1 1 0 10-2 0v1a1 1 0 102 0zM13.657 14.243a1 1 0 00-1.414 1.414l.707.707a1 1 0 001.414-1.414l-.707-.707zM10 10a1 1 0 100-2 1 1 0 000 2z" fill="currentColor"/>
+        </svg>
+        <span class="nav-text">Mesh (Admin)</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/admin/audit" class="nav-link {{ 'active' if request.path == '/admin/audit' }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill="currentColor"/>
+        </svg>
+        <span class="nav-text">Audit Trail</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/settings" class="nav-link {{ 'active' if request.path == '/settings' }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" fill="currentColor"/>
+        </svg>
+        <span class="nav-text">Einstellungen</span>
+      </a>
+    </li>
+    {% endif %}
   </ul>
   
   <div style="margin-top: auto; padding: var(--spacing-4); border-top: 1px solid var(--border-color);">
