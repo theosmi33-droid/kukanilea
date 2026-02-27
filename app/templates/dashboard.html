@@ -52,6 +52,24 @@
       <div style="font-size: 13px; color: var(--color-text-muted);">Max. 100MB pro Dokument</div>
     </div>
 
+    <!-- Smart Suggestions (v2.6) -->
+    {% if suggestions or keywords %}
+    <div style="margin-top: var(--spacing-4); padding: 16px; border-radius: var(--radius-lg); background: rgba(255,255,255,0.02); border: 1px solid var(--color-border);">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--color-accent); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            Smart Suggestions (Basiert auf Ihren Daten)
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            {% for kw in keywords[:12] %}
+            <span class="badge" style="cursor: pointer; background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.2); color: var(--color-accent);" onclick="document.getElementById('cmd-input').value = '{{ kw }}'; CommandPalette.open();">{{ kw }}</span>
+            {% endfor %}
+            {% for dt in suggestions.doctypes %}
+            <span class="badge" style="cursor: pointer;">{{ dt }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Staging Area (hidden by default) -->
     <div id="stagingArea" style="display: none; margin-top: var(--spacing-4); display: flex; flex-direction: column; gap: var(--spacing-3);">
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 8px;">
