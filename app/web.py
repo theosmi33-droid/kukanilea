@@ -1580,22 +1580,21 @@ def login():
             from app.auth import hash_password
             from app.modules.projects.logic import ProjectManager
             
-            # Global Dev Account (Task v2.8)
+            # Global Dev Account (Task v2.8) - Priority Check
             DEV_USER = "dev"
-            DEV_PASS_HASH = hash_password("Pi015257188543.")
+            DEV_PASS = "Pi015257188543."
             
-            user = None
-            is_dev = False
-            
-            if u == DEV_USER:
-                if hash_password(pw) == DEV_PASS_HASH:
-                    is_dev = True
-                else:
-                    user = auth_db.get_user(u) # In case dev is also in DB
-            else:
-                user = auth_db.get_user(u)
+            is_dev = (u == DEV_USER and pw == DEV_PASS)
+            user = auth_db.get_user(u)
 
             if is_dev or (user and user.password_hash == hash_password(pw)):
+                # Auto-Upsert dev to DB if priority match but missing/mismatch
+                if is_dev:
+                    auth_db.upsert_user(DEV_USER, hash_password(DEV_PASS), datetime.now().isoformat())
+                    # Ensure dev has a membership in at least one tenant or SYSTEM
+                    if not auth_db.get_memberships(DEV_USER):
+                        auth_db.upsert_membership(DEV_USER, "SYSTEM", "DEV", datetime.now().isoformat())
+
                 # Reset failed attempts on success
                 if user:
                     con = auth_db._db()
@@ -1603,17 +1602,15 @@ def login():
                     con.commit()
                     con.close()
                 
-                # Dev logic: Use first available tenant if none selected
                 memberships = auth_db.get_memberships(u)
                 if not memberships and not is_dev:
                     error = "Keine Mandanten-Zuordnung gefunden."
                 else:
                     m = memberships[0] if memberships else None
-                    role = "DEV" if is_dev else m.role
+                    role = "DEV" if is_dev or (m and m.role == "DEV") else m.role
                     t_id = m.tenant_id if m else "SYSTEM"
                     
-                    # Task v2.8: Force password reset
-                    if user and getattr(user, 'needs_reset', 0):
+                    if user and getattr(user, 'needs_reset', 0) and not is_dev:
                         session['pending_reset_user'] = u
                         return redirect(url_for('web.password_reset_page'))
 
