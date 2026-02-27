@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""KUKANILEA – Single Entry Point"""
+"""KUKANILEA – Single Entry Point (v1.3.1)"""
 import argparse
 import logging
 import sys
@@ -16,8 +16,12 @@ def handle_sigterm(signum, frame):
     logger.info("🛑 Received SIGTERM. Commencing safe shutdown sequence...")
     # Add hooks to close DB connections, agents, thread pools here safely.
     from app.core.task_queue import task_queue
+    from app.core.memory_guard import memory_guard
+    from app.core.thread_monitor import thread_monitor
     try:
         task_queue.stop()
+        memory_guard.stop()
+        thread_monitor.stop()
     except Exception: pass
     sys.exit(0)
 
@@ -32,10 +36,10 @@ def main():
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--benchmark', action='store_true', help="Run startup benchmark and exit")
-    parser.add_argument('--version', action='version', version='1.0.0-beta.3')
+    parser.add_argument('--version', action='version', version='1.1.0-RC')
     args = parser.parse_args()
     
-    logger.info("🚀 Initializing KUKANILEA...")
+    logger.info("🚀 Initializing KUKANILEA v1.1.0-RC (Fleet Commander)...")
     
     from app import create_app
     app = create_app()
@@ -43,20 +47,27 @@ def main():
     # 1. Config Validation
     from app.core.config_schema import validate_config
     from app.config import Config
-    # We pass standard dict-like representation of config
     if not validate_config({k: v for k, v in Config.__dict__.items() if not k.startswith('_')}):
         logger.critical("Configuration validation failed. Blocking startup.")
         sys.exit(1)
         
-    # 2. Self-Test
+    # 2. Sequential Migrations
+    from app.core.migrations import run_migrations
+    run_migrations(Config.CORE_DB)
+    
+    # 3. System Self-Test (WORM, Storage, DB, ClamAV)
     from app.core.selftest import run_selftest
     if not run_selftest({k: v for k, v in Config.__dict__.items() if not k.startswith('_')}):
         logger.critical("Self-test failed. Blocking startup.")
         sys.exit(1)
         
-    # 3. Task Queue Start
+    # 4. Watchdogs & Queues Start
     from app.core.task_queue import task_queue
+    from app.core.memory_guard import memory_guard
+    from app.core.thread_monitor import thread_monitor
     task_queue.start()
+    memory_guard.start()
+    thread_monitor.start()
 
     boot_duration = (time.time() - start_time) * 1000
     logger.info(f"✅ Boot sequence completed in {boot_duration:.2f}ms")
@@ -68,19 +79,7 @@ def main():
             mem_info = process.memory_info().rss / (1024 * 1024)
             print(f"BENCHMARK: BootTime={boot_duration:.2f}ms, MemoryUsage={mem_info:.2f}MB")
         except ImportError:
-            print(f"BENCHMARK: BootTime={boot_duration:.2f}ms, MemoryUsage=Unknown (psutil not installed)")
-        
-        # Log to tracking file
-        startup_log = Config.LOG_DIR / "startup.json"
-        import json
-        try:
-            log_data = []
-            if startup_log.exists():
-                log_data = json.loads(startup_log.read_text())
-            log_data.append({"timestamp": time.time(), "duration_ms": boot_duration})
-            startup_log.write_text(json.dumps(log_data))
-        except Exception: pass
-        
+            print(f"BENCHMARK: BootTime={boot_duration:.2f}ms, MemoryUsage=Unknown")
         sys.exit(0)
     
     if args.mode == 'api':
@@ -106,8 +105,9 @@ def main():
     except KeyboardInterrupt:
         logger.info("👋 Shutting down...")
         task_queue.stop()
+        memory_guard.stop()
+        thread_monitor.stop()
         sys.exit(0)
 
 if __name__ == '__main__':
     main()
-

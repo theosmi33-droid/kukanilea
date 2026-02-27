@@ -1,16 +1,17 @@
 """
 app/agents/supervisor.py
-Agent crash recovery and health monitoring.
+Agent crash recovery and health monitoring with Exponential Backoff.
 """
 import logging
 import time
 import threading
+from typing import Dict, Any
 
 logger = logging.getLogger("kukanilea.agent_supervisor")
 
 class AgentSupervisor:
     def __init__(self):
-        self.monitored_agents = {}
+        self.monitored_agents: Dict[str, Dict[str, Any]] = {}
         self._stop_event = threading.Event()
         self._thread = None
 
@@ -18,13 +19,16 @@ class AgentSupervisor:
         self.monitored_agents[agent_id] = {
             "start_func": start_func,
             "status": "STOPPED",
-            "last_heartbeat": 0
+            "last_heartbeat": 0,
+            "fail_count": 0,
+            "next_retry": 0
         }
 
     def heartbeat(self, agent_id: str):
         if agent_id in self.monitored_agents:
             self.monitored_agents[agent_id]["last_heartbeat"] = time.time()
             self.monitored_agents[agent_id]["status"] = "RUNNING"
+            self.monitored_agents[agent_id]["fail_count"] = 0 # Reset on success
 
     def start(self):
         self._stop_event.clear()
@@ -42,16 +46,31 @@ class AgentSupervisor:
             now = time.time()
             for agent_id, data in self.monitored_agents.items():
                 if data["status"] == "RUNNING" and (now - data["last_heartbeat"] > 60):
-                    logger.warning(f"Agent {agent_id} unresponsive. Attempting restart.")
-                    data["status"] = "RESTARTING"
-                    try:
-                        data["start_func"]()
-                        data["last_heartbeat"] = time.time()
-                        data["status"] = "RUNNING"
-                        logger.info(f"Agent {agent_id} restarted successfully.")
-                    except Exception as e:
-                        logger.error(f"Failed to restart agent {agent_id}: {e}")
-                        data["status"] = "ERROR"
+                    logger.warning(f"Agent {agent_id} unresponsive.")
+                    self._handle_failure(agent_id, data)
+                
+                elif data["status"] == "ERROR" and (now >= data["next_retry"]):
+                    logger.info(f"Attempting scheduled restart for agent {agent_id}.")
+                    self._attempt_start(agent_id, data)
+                    
             self._stop_event.wait(15)
+
+    def _handle_failure(self, agent_id: str, data: Dict[str, Any]):
+        data["fail_count"] += 1
+        data["status"] = "ERROR"
+        # Exponential backoff: 30s, 60s, 120s, ... up to 1 hour
+        wait_time = min(3600, 30 * (2 ** (data["fail_count"] - 1)))
+        data["next_retry"] = time.time() + wait_time
+        logger.error(f"Agent {agent_id} failed. Retry #{data['fail_count']} in {wait_time}s.")
+
+    def _attempt_start(self, agent_id: str, data: Dict[str, Any]):
+        try:
+            data["start_func"]()
+            data["last_heartbeat"] = time.time()
+            data["status"] = "RUNNING"
+            logger.info(f"Agent {agent_id} restarted successfully.")
+        except Exception as e:
+            logger.error(f"Failed to restart agent {agent_id}: {e}")
+            self._handle_failure(agent_id, data)
 
 supervisor = AgentSupervisor()
