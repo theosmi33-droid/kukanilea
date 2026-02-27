@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """KUKANILEA – Single Entry Point"""
-import argparse, sys, logging
+import argparse
+import logging
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
 from app import create_app
 

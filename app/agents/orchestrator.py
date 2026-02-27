@@ -3,21 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from app.agents import (
-    AgentContext,
-    AgentResult,
-    ArchiveAgent,
-    AuthTenantAgent,
-    CustomerAgent,
-    IndexAgent,
-    MailAgent,
-    OpenFileAgent,
-    ReviewAgent,
-    SearchAgent,
-    SummaryAgent,
-    UploadAgent,
-    WeatherAgent,
-)
+from app.agents.base import AgentContext, AgentResult
+from app.agents.archive import ArchiveAgent
+from app.agents.auth_tenant import AuthTenantAgent
+from app.agents.customer import CustomerAgent
+from app.agents.index import IndexAgent
+from app.agents.mail import MailAgent
+from app.agents.open_file import OpenFileAgent
+from app.agents.review import ReviewAgent
+from app.agents.search import SearchAgent
+from app.agents.summary import SummaryAgent
+from app.agents.upload import UploadAgent
+from app.agents.weather import WeatherAgent
+
 from app.agents.guards import build_safe_suggestions, detect_prompt_injection
 from app.agents.llm import LLMProvider, get_default_provider
 
@@ -226,7 +224,7 @@ class Orchestrator:
 def answer(user_msg: str) -> Dict[str, Any]:
     """Top-level entry point for the agentic chat."""
     from app import core
-    from app.auth import current_tenant, current_user, current_role
+    from app.auth import current_role, current_tenant, current_user
     
     # Simple adapter for the weather if present
     _weather_adapter = None

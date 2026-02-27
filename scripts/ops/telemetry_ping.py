@@ -3,13 +3,12 @@
 KUKANILEA - Predictive Fleet Telemetry (Opt-In)
 Sammlung von anonymisierten Hardware-Health-Daten für Predictive Maintenance.
 """
-import os
-import sys
 import json
+import os
 import time
-import uuid
-import urllib.request
 import urllib.error
+import urllib.request
+import uuid
 from pathlib import Path
 
 # Paths

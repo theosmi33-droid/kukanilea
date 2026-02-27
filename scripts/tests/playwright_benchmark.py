@@ -1,7 +1,8 @@
-import time
-import requests
-import sys
 import logging
+import sys
+import time
+
+import requests
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 

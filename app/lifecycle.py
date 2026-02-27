@@ -1,8 +1,9 @@
 from __future__ import annotations
+
 import enum
-import time
-import threading
 import logging
+import threading
+import time
 from typing import Optional
 
 logger = logging.getLogger("kukanilea.lifecycle")

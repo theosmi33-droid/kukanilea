@@ -52,12 +52,12 @@ from flask import (
 )
 
 from app import core
-from app.agents.orchestrator import answer as agent_answer
-from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.base import AgentContext
 from app.agents.customer import CustomerAgent
-from app.agents.search import SearchAgent
 from app.agents.orchestrator import Orchestrator
+from app.agents.orchestrator import answer as agent_answer
+from app.agents.retrieval_fts import enqueue as rag_enqueue
+from app.agents.search import SearchAgent
 
 from .auth import (
     current_role,
@@ -457,6 +457,7 @@ def _card(kind: str, msg: str) -> str:
 
 
 from flask import render_template
+
 
 def _render_base(template_name: str, **kwargs) -> str:
     profile = _get_profile()

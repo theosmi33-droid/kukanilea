@@ -24,6 +24,7 @@ def _wire_runtime_env(app: Flask) -> None:
 
 from .lifecycle import SystemState, manager
 
+
 def create_app() -> Flask:
     boot_start = time.time()
     manager.set_state(SystemState.BOOT, "Booting application context...")
