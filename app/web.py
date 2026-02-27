@@ -3020,6 +3020,43 @@ def assistant():
     return _render_base(html, active_tab="assistant")
 
 
+@bp.route("/projects")
+@login_required
+def projects_list():
+    from app.modules.projects.logic import ProjectManager
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    
+    # Ensure at least one project exists for demo
+    con = current_app.extensions["auth_db"]._db()
+    p = con.execute("SELECT * FROM projects LIMIT 1").fetchone()
+    con.close()
+    
+    if not p:
+        p_id = pm.create_project(current_tenant(), "Standard Projekt", "Willkommen in Ihrer Projektverwaltung.")
+        pm.create_board(p_id, "Hauptboard")
+        return redirect(url_for("web.projects_list"))
+        
+    tasks = pm.list_tasks(con.execute("SELECT id FROM boards WHERE project_id = ? LIMIT 1", (p["id"],)).fetchone()[0])
+    
+    return _render_base("kanban.html", active_tab="tasks", project=p, tasks=tasks)
+
+
+@bp.post("/api/tasks/<task_id>/move")
+@login_required
+@csrf_protected
+def api_task_move(task_id: str):
+    payload = request.get_json() or {}
+    new_col = payload.get("column")
+    if not new_col:
+        return jsonify(ok=False), 400
+        
+    from app.modules.projects.logic import ProjectManager
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    pm.update_task_column(task_id, new_col)
+    
+    return jsonify(ok=True)
+
+
 @bp.route("/tasks")
 def tasks():
     return _render_base("generic_tool.html", active_tab="tasks", title="Aufgaben", message="Aufgabenliste wird synchronisiert...")

@@ -31,15 +31,12 @@ class RAGSync:
         
         # 2. Format for MEMORY.md
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        entry = f"
-### [{now}] Intelligence Sync (Tenant: {tenant_id})
-"
-        entry += f"- **Dominante Schlagworte:** {', '.join(intelligence_data['keywords'])}
-"
-        entry += f"- **Top Kunden:** {', '.join(intelligence_data['top_customers'])}
-"
-        entry += f"- **Dokumenten-Volumen:** {intelligence_data['doc_count']} Belege archiviert.
-"
+        entry = (
+            f"\n### [{now}] Intelligence Sync (Tenant: {tenant_id})\n"
+            f"- **Dominante Schlagworte:** {', '.join(intelligence_data['keywords'])}\n"
+            f"- **Top Kunden:** {', '.join(intelligence_data['top_customers'])}\n"
+            f"- **Dokumenten-Volumen:** {intelligence_data['doc_count']} Belege archiviert.\n"
+        )
         
         # 3. Append to MEMORY.md (Local-First Long-term Memory)
         try:
@@ -61,7 +58,8 @@ class RAGSync:
             conn.row_factory = sqlite3.Row
             
             # Count
-            facts["doc_count"] = conn.execute("SELECT COUNT(*) FROM docs_index WHERE tenant_id = ?", (tenant_id,)).fetchone()[0]
+            res = conn.execute("SELECT COUNT(*) FROM docs_index WHERE tenant_id = ?", (tenant_id,)).fetchone()
+            facts["doc_count"] = res[0] if res else 0
             
             # Top Customers
             rows = conn.execute(
@@ -72,12 +70,21 @@ class RAGSync:
             
             # Top Keywords (weighted via vocab if available)
             try:
+                # First, ensure vocab table exists or just try to query it
                 k_rows = conn.execute(
                     "SELECT term FROM vocab_index ORDER BY cnt DESC LIMIT 10"
                 ).fetchall()
                 facts["keywords"] = [r["term"] for r in k_rows]
             except:
-                pass # vocab_index might not be ready yet
+                # Fallback: analyze file_name if vocab not available
+                k_rows = conn.execute(
+                    "SELECT file_name FROM docs_index WHERE tenant_id = ? LIMIT 20", (tenant_id,)
+                ).fetchall()
+                words = []
+                for r in k_rows:
+                    words.extend([w.lower() for w in r[0].replace("_", " ").replace(".", " ").split() if len(w) > 3])
+                from collections import Counter
+                facts["keywords"] = [w[0] for w in Counter(words).most_common(5)]
                 
             conn.close()
         except Exception as e:

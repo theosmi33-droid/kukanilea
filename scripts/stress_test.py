@@ -88,5 +88,6 @@ class StressTester:
 
 if __name__ == "__main__":
     from app.config import Config
-    tester = StressTester(Config.CORE_DB)
+    # Enterprise tables (projects, tasks) are currently in AUTH_DB
+    tester = StressTester(Config.AUTH_DB)
     tester.run_stress_test()
