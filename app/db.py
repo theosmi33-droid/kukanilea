@@ -162,6 +162,75 @@ class AuthDB:
                 );
                 """
             )
+            # Task 192: Immutable Audit Trail via Trigger
+            con.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS prevent_audit_deletion
+                BEFORE DELETE ON audit_log
+                BEGIN
+                    SELECT RAISE(FAIL, 'Audit log entries are immutable and cannot be deleted.');
+                END;
+                """
+            )
+            con.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS prevent_audit_update
+                BEFORE UPDATE ON audit_log
+                BEGIN
+                    SELECT RAISE(FAIL, 'Audit log entries are immutable and cannot be modified.');
+                END;
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS file_versions(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  file_id TEXT NOT NULL,
+                  version INTEGER NOT NULL,
+                  path TEXT NOT NULL,
+                  size INTEGER NOT NULL,
+                  hash TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS file_trash(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  original_name TEXT NOT NULL,
+                  original_path TEXT NOT NULL,
+                  deleted_at TEXT NOT NULL,
+                  expires_at TEXT NOT NULL,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_relations(
+                  task_id TEXT NOT NULL,
+                  related_task_id TEXT NOT NULL,
+                  relation_type TEXT NOT NULL, -- 'blocks', 'duplicate', 'relates'
+                  PRIMARY KEY(task_id, related_task_id),
+                  FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                  FOREIGN KEY(related_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_checklists(
+                  id TEXT PRIMARY KEY,
+                  task_id TEXT NOT NULL,
+                  content TEXT NOT NULL,
+                  is_done INTEGER DEFAULT 0,
+                  FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );
+                """
+            )
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS automation_rules(
@@ -176,7 +245,7 @@ class AuthDB:
                 """
             )
             con.execute(
-                "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '2')"
+                "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '3')"
             )
             con.commit()
         finally:
