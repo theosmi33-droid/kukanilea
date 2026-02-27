@@ -143,6 +143,28 @@ a:hover {
   transition: width 0.3s ease;
 }
 
+/* Phase 4: Physical Haptics */
+.btn:active, .badge:active {
+  transform: scale(0.95);
+  transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Phase 4: Skeleton Screens */
+.skeleton-tag {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  height: 24px;
+  width: 80px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.4s ease-out forwards;
 }

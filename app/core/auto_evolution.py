@@ -36,8 +36,15 @@ class SystemHealer:
         self.run_indexing_worker()
 
     def run_indexing_worker(self):
-        """Task 105: Background Indexing for FTS and Suggestion Engine."""
+        """Task 105: Background Indexing & Phase 2: Index Optimization."""
         logger.info("Indexing Worker (Task 105) started...")
+        
+        from app.core.indexing_logic import IndividualIntelligence
+        intel = IndividualIntelligence(self.db_path)
+        
+        # Phase 2: Optimize FTS
+        intel.optimize_index()
+        
         # Simulation: Re-calculating keyword weights in docs_index
         try:
             conn = sqlite3.connect(str(self.db_path))

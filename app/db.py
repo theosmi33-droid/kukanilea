@@ -148,12 +148,20 @@ class AuthDB:
                   name TEXT NOT NULL,
                   path TEXT NOT NULL,
                   size INTEGER NOT NULL,
+                  hash TEXT, -- Phase 5: Integrity
+                  keywords_json TEXT, -- Phase 3: YAKE!
+                  frequency_score REAL DEFAULT 0.0, -- Phase 2: Scoring
                   version INTEGER DEFAULT 1,
                   created_at TEXT NOT NULL,
                   FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
                 );
                 """
             )
+            # Migration helper for v1.4
+            for col, dtype in [("hash", "TEXT"), ("keywords_json", "TEXT"), ("frequency_score", "REAL")]:
+                try: con.execute(f"ALTER TABLE files ADD COLUMN {col} {dtype}")
+                except Exception: pass
+
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS audit_log(

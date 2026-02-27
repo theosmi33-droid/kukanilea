@@ -40,6 +40,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
 
+from app.core.indexing_logic import IndividualIntelligence
+from app.core.malware_scanner import scan_file_stream
+from app.core.auto_evolution import SystemHealer
+
 from flask import (
     Blueprint,
     abort,
@@ -2742,6 +2746,11 @@ def upload():
         dest = tenant_in / f"{ts}__{filename}"
         f.save(dest)
         
+        # Phase 5: ClamAV Malware Scan
+        if not scan_file_stream(dest):
+            dest.unlink()
+            return jsonify(error="malware_detected", message="Sicherheitsrisiko erkannt."), 403
+        
         is_safe, info = process_upload(dest, tenant)
         if not is_safe:
             current_app.logger.warning(f"Upload rejected: {filename} - {info}")
@@ -2916,6 +2925,12 @@ def review(token: str):
     dyn_suggestions = engine.get_frequent_labels()
     dyn_keywords = engine.analyze_keywords()
 
+    # Phase 3: Individual Intelligence (YAKE! + DB Weights)
+    intel_engine = IndividualIntelligence(_get_tenant_db_path())
+    # Extract OCR text from pending if available (simplified for now)
+    doc_text = p.get("ocr_text", filename)
+    weighted_tags = intel_engine.get_weighted_suggestions(doc_text)
+
     return _render_base(
         "review.html",
         active_tab="upload",
@@ -2933,7 +2948,7 @@ def review(token: str):
         confidence=confidence,
         msg=msg,
         is_duplicate=p.get("is_duplicate", False),
-        keywords=dyn_keywords
+        keywords=weighted_tags # v1.4: Use weighted YAKE tags
     )
 
 
