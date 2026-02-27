@@ -1542,6 +1542,24 @@ def logout():
     return redirect(url_for("web.login"))
 
 
+@bp.route("/api/progress")
+def api_progress_multi():
+    tokens = request.args.get("tokens", "").split(",")
+    results = {}
+    for t in tokens:
+        if not t: continue
+        p = read_pending(t)
+        if p:
+            results[t] = {
+                "status": p.get("status", "ANALYZING"),
+                "progress": p.get("progress", 0),
+                "progress_phase": p.get("progress_phase", "")
+            }
+        else:
+            results[t] = {"status": "NOT_FOUND", "progress": 0}
+    return jsonify(results)
+
+
 @bp.route("/api/progress/<token>")
 def api_progress(token: str):
     if (not current_user()) and (request.remote_addr not in ("127.0.0.1", "::1")):
@@ -2622,47 +2640,48 @@ def index():
 @csrf_protected
 @upload_limiter.limit_required
 def upload():
-    f = request.files.get("file")
-    if not f or not f.filename:
+    files = request.files.getlist("file")
+    if not files:
         return jsonify(error="no_file"), 400
+        
     tenant = _norm_tenant(current_tenant() or "default")
-    # tenant is fixed by license/account; no user input here.
-    filename = _safe_filename(f.filename)
-    if not _is_allowed_ext(filename):
-        return jsonify(error="unsupported"), 400
-        
-    # ClamAV Stream-Scanning (Enterprise Security)
-    try:
-        import pyclamd
-        cd = pyclamd.ClamdUnixSocket()
-        if cd.ping():
-            # Seek to start, read for scan, seek back
+    results = []
+    
+    for f in files:
+        if not f.filename: continue
+        filename = _safe_filename(f.filename)
+        if not _is_allowed_ext(filename):
+            continue
+            
+        # ClamAV Stream-Scanning (Enterprise Security)
+        try:
+            import pyclamd
+            cd = pyclamd.ClamdUnixSocket()
+            if cd.ping():
+                f.stream.seek(0)
+                if cd.instream(f.stream):
+                    current_app.logger.warning(f"Malware detected: {filename}")
+                    continue # Skip infected file
+                f.stream.seek(0)
+        except Exception:
             f.stream.seek(0)
-            scan_result = cd.instream(f.stream)
-            f.stream.seek(0)
-            if scan_result:
-                current_app.logger.warning(f"Malware detected in upload: {scan_result}")
-                return jsonify(error="malware_detected"), 403
-    except Exception as e:
-        # Fallback if ClamAV is not available or not configured
-        f.stream.seek(0)
+            
+        tenant_in = EINGANG / tenant
+        tenant_in.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = tenant_in / f"{ts}__{filename}"
+        f.save(dest)
         
-    tenant_in = EINGANG / tenant
-    tenant_in.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = tenant_in / f"{ts}__{filename}"
-    f.save(dest)
-    token = analyze_to_pending(dest)
-    try:
-        p = read_pending(token) or {}
-        p["tenant"] = tenant
-        w = _wizard_get(p)
-        w["tenant"] = tenant
-        p["wizard"] = w
-        write_pending(token, p)
-    except Exception:
-        pass
-    return jsonify(token=token, tenant=tenant)
+        token = analyze_to_pending(dest)
+        try:
+            p = read_pending(token) or {}
+            p["tenant"] = tenant
+            write_pending(token, p)
+        except Exception: pass
+        
+        results.append({"token": token, "filename": filename})
+        
+    return jsonify(tokens=results, tenant=tenant)
 
 
 @bp.route("/review/<token>/delete", methods=["POST"])
@@ -2840,6 +2859,18 @@ def done_view(token: str):
     d = read_done(token) or {}
     fp = d.get("final_path", "")
     return _render_base("done.html", active_tab="upload", final_path=fp)
+
+
+@bp.route("/crm/contacts")
+@login_required
+def crm_contacts():
+    return _render_base("generic_tool.html", active_tab="crm", title="CRM - Kontakte", message="Kontaktverwaltung wird synchronisiert...")
+
+
+@bp.route("/documents")
+@login_required
+def documents():
+    return _render_base("generic_tool.html", active_tab="documents", title="Dokumenten-Archiv", message="Archiv-Index wird geladen...")
 
 
 @bp.route("/assistant")

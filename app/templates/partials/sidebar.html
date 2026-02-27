@@ -1,0 +1,61 @@
+<nav class="sidebar">
+  <div class="sidebar-header">{% include 'partials/logo.html' %}</div>
+  <ul class="nav-list">
+    <li class="nav-item">
+      <a href="/" class="nav-link {{ 'active' if request.path == '/' }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M3 5h4v4H3V5zm0 6h4v4H3v-4zm6-6h4v4H9V5zm0 6h4v4H9v-4z" fill="currentColor"/>
+        </svg>
+        <span class="nav-text">Dashboard</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/crm/contacts" class="nav-link {{ 'active' if request.path.startswith('/crm') }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M10 10a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" fill="currentColor"/>
+        </svg>
+        <span class="nav-text">CRM</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/tasks" class="nav-link {{ 'active' if request.path.startswith('/tasks') }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" fill="currentColor"/>
+        </svg>
+        <span class="nav-text">Aufgaben</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/documents" class="nav-link {{ 'active' if request.path.startswith('/documents') }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" fill="currentColor"/>
+        </svg>
+        <span class="nav-text">Dokumente</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/assistant" class="nav-link {{ 'active' if request.path == '/assistant' }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" fill="currentColor"/>
+        </svg>
+        <span class="nav-text">KI-Assistent</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/chat" class="nav-link {{ 'active' if request.path == '/chat' }}">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.51 12.73 2 11.422 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="nav-text">Chat</span>
+      </a>
+    </li>
+  </ul>
+  
+  <div style="margin-top: auto; padding: var(--spacing-4); border-top: 1px solid var(--border-color);">
+    {% if user and user != '-' %}
+    <div style="font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); color: var(--text-secondary); margin-bottom: var(--spacing-1);">USER</div>
+    <div style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); margin-bottom: var(--spacing-2);">{{ user }}</div>
+    <a href="/logout" class="btn btn-secondary btn-sm" style="width: 100%;">Abmelden</a>
+    {% endif %}
+  </div>
+</nav>

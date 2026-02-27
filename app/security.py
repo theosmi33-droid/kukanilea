@@ -14,6 +14,22 @@ def get_csrf_token() -> str:
     return token
 
 
+def set_security_headers(response):
+    """Set security headers."""
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "font-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "frame-src 'self' blob: data:;"
+    )
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+
 def csrf_protected(fn):
     """
     Decorator to protect routes against CSRF.

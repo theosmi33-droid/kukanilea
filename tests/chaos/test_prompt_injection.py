@@ -6,7 +6,7 @@ import pytest
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from kukanilea.llm import MockProvider
+from app.agents.llm import MockProvider
 
 
 @pytest.fixture

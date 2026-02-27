@@ -11,7 +11,7 @@
     </div>
     
     <div id="dropZone" style="position: relative; border: 2px dashed var(--color-border); border-radius: var(--radius-xl); padding: var(--spacing-5); text-align: center; background: rgba(0,0,0,0.2); transition: all 0.2s; cursor: pointer;">
-      <input type="file" id="file" style="position: absolute; inset: 0; opacity: 0; cursor: pointer;" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.txt">
+      <input type="file" id="file" name="file" style="position: absolute; inset: 0; opacity: 0; cursor: pointer;" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.txt">
       <div style="margin-bottom: var(--spacing-3); display: flex; justify-content: center;">
         <div style="height: 64px; width: 64px; border-radius: var(--radius-lg); background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; color: var(--color-accent); border: 1px solid var(--color-border);">
           <svg fill="none" stroke="currentColor" stroke-width="2" width="32" height="32" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
@@ -204,7 +204,11 @@ document.addEventListener("DOMContentLoaded", function() {
                     bar.style.width = "100%";
                     pLabel.textContent = "100%";
                     status.textContent = "Analyse abgeschlossen. Lade Review...";
-                    setTimeout(() => window.location.reload(), 800);
+                    if(tokens.length === 1){
+                      setTimeout(() => window.location.href = "/review/" + tokens[0] + "/kdnr", 800);
+                    } else {
+                      setTimeout(() => window.location.reload(), 800);
+                    }
                   }
                 }
               };

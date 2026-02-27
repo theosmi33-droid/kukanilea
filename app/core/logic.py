@@ -105,7 +105,12 @@ def _env_bool(key: str, default: str = "0") -> bool:
 # ============================================================
 # CONFIG / PATHS
 # ============================================================
-_KUK_DATA_ROOT = Path.home() / "Kukanilea" / "data"
+_ENV_ROOT = os.environ.get("KUKANILEA_USER_DATA_ROOT")
+if _ENV_ROOT:
+    _KUK_DATA_ROOT = Path(_ENV_ROOT)
+else:
+    _KUK_DATA_ROOT = Path.home() / "Kukanilea" / "data"
+
 _KUK_DATA_ROOT.mkdir(parents=True, exist_ok=True)
 
 _TEST_BASE = Path.home() / "Downloads" / "DB-test"
