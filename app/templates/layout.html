@@ -5,11 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/design-system.css">
+  <script src="/static/js/state.js"></script>
+  <script src="/static/js/command_palette.js"></script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
   {% include 'partials/sidebar.html' %}
   <main class="main-content">
+    <header style="display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--spacing-4); padding:0 var(--spacing-2);">
+        <div>
+            {% include 'components/system_status.html' %}
+        </div>
+        <div style="display:flex; align-items:center; gap:16px;">
+            <kbd style="font-size:10px; padding:4px 8px; background:var(--bg-tertiary); border:1px solid var(--color-border); border-radius:6px; color:var(--text-tertiary);">⌘ K</kbd>
+        </div>
+    </header>
     {% block content %}{% endblock %}
   </main>
   {% block scripts %}{% endblock %}

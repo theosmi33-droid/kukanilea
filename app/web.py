@@ -1505,6 +1505,45 @@ def _guard_login():
     return None
 
 
+@bp.before_app_request
+def check_onboarding():
+    if request.endpoint in ("web.onboarding", "static") or not request.endpoint:
+        return
+    
+    # Simple check: if no license.json and no users exist, we need onboarding
+    auth_db = current_app.extensions.get("auth_db")
+    if auth_db and auth_db.count_tenants() == 0:
+        return redirect(url_for("web.onboarding"))
+
+
+@bp.route("/onboarding", methods=["GET", "POST"])
+def onboarding():
+    auth_db = current_app.extensions.get("auth_db")
+    if auth_db and auth_db.count_tenants() > 0:
+        return redirect(url_for("web.login"))
+
+    if request.method == "POST":
+        t_name = request.form.get("tenant_name", "KUKANILEA").strip()
+        u_name = request.form.get("admin_user", "admin").strip()
+        u_pass = request.form.get("admin_pass", "").strip()
+        
+        if t_name and u_name and u_pass:
+            from app.auth import hash_password
+            now = datetime.now().isoformat()
+            t_id = _safe_filename(t_name).upper()
+            auth_db.upsert_tenant(t_id, t_name, now)
+            auth_db.upsert_user(u_name, hash_password(u_pass), now)
+            auth_db.upsert_membership(u_name, t_id, "ADMIN", now)
+            
+            # Create a dummy trial license
+            lic_path = Path(current_app.config["USER_DATA_ROOT"]) / "license.json"
+            lic_path.write_text(json.dumps({"valid": True, "plan": "ENTERPRISE", "customer": t_name}))
+            
+            return redirect(url_for("web.login"))
+
+    return render_template("onboarding.html", branding=Config.get_branding())
+
+
 @bp.route("/login", methods=["GET", "POST"])
 @csrf_protected
 def login():
@@ -2415,27 +2454,13 @@ def settings_page():
     if current_role() not in {"ADMIN", "DEV"}:
         return json_error("forbidden", "Nicht erlaubt.", status=403)
     auth_db: AuthDB = current_app.extensions["auth_db"]
-    if callable(getattr(core, "get_db_info", None)):
-        core_db = core.get_db_info()
-    else:
-        core_db = {
-            "path": str(getattr(core, "DB_PATH", "")),
-            "schema_version": "?",
-            "tenants": "?",
-        }
     return _render_base(
-        render_template_string(
-            HTML_SETTINGS,
-            core_db=core_db,
-            auth_db_path=str(auth_db.path),
-            auth_schema=auth_db.get_schema_version(),
-            auth_tenants=auth_db.count_tenants(),
-            db_files=[str(p) for p in _list_allowlisted_db_files()],
-            base_paths=[str(p) for p in _list_allowlisted_base_paths()],
-            profile=_get_profile(),
-            import_root=str(current_app.config.get("IMPORT_ROOT", "")),
-        ),
+        "settings.html",
         active_tab="settings",
+        auth_db_path=str(auth_db.path),
+        auth_schema=auth_db.get_schema_version(),
+        auth_tenants=auth_db.count_tenants(),
+        import_root=str(current_app.config.get("IMPORT_ROOT", "")),
     )
 
 

@@ -1,89 +1,81 @@
 <nav class="sidebar">
-  <div class="sidebar-header">{% include 'partials/logo.html' %}</div>
-  <ul class="nav-list">
+  <div class="sidebar-header" style="display:flex; align-items:center; gap:12px; padding: 0 var(--spacing-2);">
+    {% include 'partials/logo.html' %}
+  </div>
+  
+  <ul class="nav-list" style="padding: 0 var(--spacing-2);">
     <li class="nav-item">
       <a href="/" class="nav-link {{ 'active' if request.path == '/' }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M3 5h4v4H3V5zm0 6h4v4H3v-4zm6-6h4v4H9V5zm0 6h4v4H9v-4z" fill="currentColor"/>
-        </svg>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
         <span class="nav-text">Dashboard</span>
       </a>
     </li>
     <li class="nav-item">
       <a href="/crm/contacts" class="nav-link {{ 'active' if request.path.startswith('/crm') }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M10 10a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" fill="currentColor"/>
-        </svg>
-        <span class="nav-text">CRM</span>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span class="nav-text">Kunden & CRM</span>
       </a>
     </li>
     <li class="nav-item">
       <a href="/tasks" class="nav-link {{ 'active' if request.path.startswith('/tasks') }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" fill="currentColor"/>
-        </svg>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <span class="nav-text">Aufgaben</span>
       </a>
     </li>
     <li class="nav-item">
       <a href="/documents" class="nav-link {{ 'active' if request.path.startswith('/documents') }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" fill="currentColor"/>
-        </svg>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
         <span class="nav-text">Dokumente</span>
       </a>
     </li>
     <li class="nav-item">
       <a href="/assistant" class="nav-link {{ 'active' if request.path == '/assistant' }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" fill="currentColor"/>
-        </svg>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
         <span class="nav-text">KI-Assistent</span>
       </a>
     </li>
     <li class="nav-item">
       <a href="/chat" class="nav-link {{ 'active' if request.path == '/chat' }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.51 12.73 2 11.422 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span class="nav-text">Chat</span>
       </a>
     </li>
+  </ul>
 
-    {% if roles in ['DEV', 'ADMIN'] %}
-    <li style="margin: 24px 0 8px 16px; font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px;">Verwaltung</li>
+  {% if roles in ['DEV', 'ADMIN'] %}
+  <div style="margin: 24px 0 8px 24px; font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px;">Administration</div>
+  <ul class="nav-list" style="padding: 0 var(--spacing-2);">
     <li class="nav-item">
       <a href="/admin/mesh" class="nav-link {{ 'active' if request.path == '/admin/mesh' }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 00-1-1h-1a1 1 0 100 2h1a1 1 0 001-1zM5.05 6.464a1 1 0 101.414-1.414l-.707-.707a1 1 0 10-1.414 1.414l.707.707zM5 10a1 1 0 00-1-1H3a1 1 0 100 2h1a1 1 0 001-1zM8 16v-1a1 1 0 10-2 0v1a1 1 0 102 0zM13.657 14.243a1 1 0 00-1.414 1.414l.707.707a1 1 0 001.414-1.414l-.707-.707zM10 10a1 1 0 100-2 1 1 0 000 2z" fill="currentColor"/>
-        </svg>
-        <span class="nav-text">Mesh (Admin)</span>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        <span class="nav-text">Mesh-Netzwerk</span>
       </a>
     </li>
     <li class="nav-item">
       <a href="/admin/audit" class="nav-link {{ 'active' if request.path == '/admin/audit' }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill="currentColor"/>
-        </svg>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
         <span class="nav-text">Audit Trail</span>
       </a>
     </li>
     <li class="nav-item">
       <a href="/settings" class="nav-link {{ 'active' if request.path == '/settings' }}">
-        <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" fill="currentColor"/>
-        </svg>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
         <span class="nav-text">Einstellungen</span>
       </a>
     </li>
-    {% endif %}
   </ul>
+  {% endif %}
   
   <div style="margin-top: auto; padding: var(--spacing-4); border-top: 1px solid var(--border-color);">
     {% if user and user != '-' %}
-    <div style="font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); color: var(--text-secondary); margin-bottom: var(--spacing-1);">USER</div>
-    <div style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); margin-bottom: var(--spacing-2);">{{ user }}</div>
-    <a href="/logout" class="btn btn-secondary btn-sm" style="width: 100%;">Abmelden</a>
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+        <div style="width:32px; height:32px; border-radius:50%; background:var(--color-primary); color:white; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px;">{{ user[0]|upper }}</div>
+        <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:600; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ user }}</div>
+            <div style="font-size:10px; color:var(--text-tertiary); text-transform:uppercase;">{{ roles }}</div>
+        </div>
+    </div>
+    <a href="/logout" class="btn btn-secondary btn-sm" style="width: 100%; border-radius:8px;">Abmelden</a>
     {% endif %}
   </div>
 </nav>

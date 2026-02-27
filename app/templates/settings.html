@@ -1,0 +1,71 @@
+{% extends "layout.html" %}
+{% block title %}System-Einstellungen{% endblock %}
+
+{% block content %}
+<div style="display: flex; flex-direction: column; gap: var(--spacing-6);">
+  
+  <div class="panel">
+    <h2 style="font-size: 20px; font-weight: 700; color: #fff; margin-bottom: var(--spacing-4);">Branding & Personalisierung</h2>
+    <form action="/settings/branding" method="post" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-4);">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      
+      <div class="form-group">
+        <label class="form-label">Anwendungsname</label>
+        <input type="text" name="app_name" class="form-input" value="{{ branding.app_name }}" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Primärfarbe (Hex)</label>
+        <div style="display:flex; gap:8px;">
+            <input type="color" name="primary_color" value="{{ branding.primary_color }}" style="width:48px; height:40px; border:none; background:none; cursor:pointer;">
+            <input type="text" value="{{ branding.primary_color }}" class="form-input" readonly style="flex:1;">
+        </div>
+      </div>
+
+      <div class="form-group" style="grid-column: span 2;">
+        <label class="form-label">Footer-Text</label>
+        <input type="text" name="footer_text" class="form-input" value="{{ branding.footer_text }}">
+      </div>
+
+      <div style="grid-column: span 2; padding-top: var(--spacing-2);">
+        <button type="submit" class="btn btn-primary">BRANDING AKTUALISIEREN</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="grid grid-cols-2 gap-6">
+    <div class="panel">
+      <h2 style="font-size: 18px; font-weight: 700; color: #fff; margin-bottom: var(--spacing-3);">Datenbank-Status</h2>
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
+            <span class="text-muted">Auth DB Path</span>
+            <code style="color:var(--color-accent);">{{ auth_db_path }}</code>
+        </div>
+        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
+            <span class="text-muted">Mandanten</span>
+            <span style="font-weight:600; color:#fff;">{{ auth_tenants }}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
+            <span class="text-muted">Schema Version</span>
+            <span style="font-weight:600; color:#fff;">v{{ auth_schema }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 style="font-size: 18px; font-weight: 700; color: #fff; margin-bottom: var(--spacing-3);">Import & Pfade</h2>
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
+            <span class="text-muted">Import Root</span>
+            <code style="color:var(--color-accent);">{{ import_root }}</code>
+        </div>
+        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
+            <span class="text-muted">Basis-Ablage</span>
+            <code style="color:var(--color-accent);">{{ ablage }}</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
