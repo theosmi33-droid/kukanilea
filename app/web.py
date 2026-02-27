@@ -1490,6 +1490,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 def _guard_login():
     p = request.path or "/"
     if p.startswith("/static/") or p in [
+        "/onboarding",
         "/login",
         "/health",
         "/api/health",
@@ -2963,72 +2964,6 @@ def health():
     return jsonify(ok=True, ts=time.time(), app="kukanilea_upload_v3_ui")
 
 
-@bp.before_app_request
-def check_first_run():
-    """Detects missing license and redirects to setup/license page."""
-    # Exclusions
-    if request.endpoint and (
-        "static" in request.endpoint
-        or "license" in request.endpoint
-        or "login" in request.endpoint
-    ):
-        return None
-
-    license_path = Path(current_app.config["LICENSE_PATH"])
-    if not license_path.exists():
-        # Only redirect if not already on license page
-        return redirect(url_for("web.license_page"))
-
-    return None
-
-
-@bp.route("/license", methods=["GET", "POST"])
-@csrf_protected
-def license_page():
-    notice = ""
-    error = ""
-    if request.method == "POST":
-        blob = str(request.form.get("license_json") or "").strip()
-        if not blob:
-            error = "Lizenz-JSON fehlt."
-        else:
-            try:
-                payload = json.loads(blob)
-                if not isinstance(payload, dict):
-                    raise ValueError("JSON root must be object")
-            except Exception:
-                payload = None
-                error = "Lizenz-JSON ist ungültig."
-
-            if payload is not None:
-                license_path = Path(current_app.config["LICENSE_PATH"])
-                previous_text = (
-                    license_path.read_text(encoding="utf-8")
-                    if license_path.exists()
-                    else None
-                )
-                license_path.parent.mkdir(parents=True, exist_ok=True)
-                license_path.write_text(
-                    json.dumps(payload, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                info = load_license(license_path)
-                if not bool(info.get("valid")):
-                    if previous_text is None:
-                        try:
-                            license_path.unlink()
-                        except Exception:
-                            pass
-                    else:
-                        license_path.write_text(previous_text, encoding="utf-8")
-                    error = f"Lizenz ungültig ({info.get('reason') or 'invalid'})."
-                else:
-                    notice = "Lizenz erfolgreich aktiviert."
-
-    return _render_base(
-        render_template_string(HTML_LICENSE, notice=notice, error=error),
-        active_tab="settings",
-    )
 
 @bp.route("/admin/audit")
 @login_required

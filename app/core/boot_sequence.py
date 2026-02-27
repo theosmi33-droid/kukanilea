@@ -36,10 +36,24 @@ def get_optimal_llm(use_case="general"):
 def run_boot_sequence():
     """
     Initializes the system:
-    1. Detects hardware via llmfit.
-    2. Saves the profile.
-    3. Pulls the recommended model via Ollama if needed.
+    1. Integrity check (v2.1 Step 1).
+    2. Detects hardware via llmfit.
+    3. Saves the profile.
+    4. Pulls the recommended model via Ollama if needed.
     """
+    from app.core.integrity_check import check_system_integrity
+    
+    # 1. Integrity Check
+    print("System Integrity Check (v2.1)...")
+    integrity = check_system_integrity()
+    if not integrity.get("all_ok", False):
+        if os.environ.get("KUK_SAFE_MODE") == "1":
+            print("⚠️ WARNING: Integrity failed, but running in SAFE MODE.")
+        else:
+            print("❌ CRITICAL: Integrity check failed! Boot aborted.")
+            print("Check logs/crash/ for details.")
+            return False
+
     profile_path = Path("instance/hardware_profile.json")
     profile_path.parent.mkdir(parents=True, exist_ok=True)
 

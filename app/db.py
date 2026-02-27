@@ -97,7 +97,86 @@ class AuthDB:
                 """
             )
             con.execute(
-                "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')"
+                """
+                CREATE TABLE IF NOT EXISTS projects(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  description TEXT,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS boards(
+                  id TEXT PRIMARY KEY,
+                  project_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tasks(
+                  id TEXT PRIMARY KEY,
+                  board_id TEXT NOT NULL,
+                  column_name TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  content TEXT,
+                  assigned_user TEXT,
+                  due_date TEXT,
+                  priority TEXT,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS files(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  path TEXT NOT NULL,
+                  size INTEGER NOT NULL,
+                  version INTEGER DEFAULT 1,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_log(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ts TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  username TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  resource TEXT NOT NULL,
+                  details TEXT
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS automation_rules(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  trigger TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  config TEXT,
+                  active INTEGER DEFAULT 1,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '2')"
             )
             con.commit()
         finally:
