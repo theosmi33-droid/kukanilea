@@ -56,11 +56,20 @@ def run_boot_sequence():
 
     # 1.1 Auto-Evolution (Task 201)
     from app.core.auto_evolution import SystemHealer
+    from app.core.rag_sync import RAGSync
     from app.config import Config
-    print("Auto-Evolution Cycle (v2.5)...")
+    print("Auto-Evolution & RAG-SYNC (v2.5)...")
     healer = SystemHealer(Config.CORE_DB, Config.BASE_DIR)
     healer.run_healing_cycle()
     healer.evolution_step()
+    
+    # Task 134: RAG-SYNC (Sync facts to MEMORY.md)
+    try:
+        memory_file = Path("MEMORY.md")
+        rag = RAGSync(Config.CORE_DB, memory_file)
+        rag.sync_tenant_intelligence(os.environ.get("TENANT_DEFAULT", "KUKANILEA"))
+    except Exception as e:
+        print(f"RAG-SYNC failed: {e}")
 
     profile_path = Path("instance/hardware_profile.json")
     profile_path.parent.mkdir(parents=True, exist_ok=True)
