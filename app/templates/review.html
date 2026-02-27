@@ -70,18 +70,32 @@
 
         <div class="input-group">
           <label>Kundennummer (KDNR)</label>
-          <input name="kdnr" value="{{w.kdnr}}" list="kdnr_list" class="input" style="font-weight: 600;" placeholder="z.B. 12345" required>
+          <input name="kdnr" id="kdnr_input" value="{{w.kdnr}}" list="kdnr_list" class="input" style="font-weight: 600;" placeholder="z.B. 12345" required>
           <datalist id="kdnr_list">
-            {% for k in kdnr_ranked %}<option value="{{k[0]}}">{% endfor %}
+            {% for k in kdnr_ranked %}<option value="{{k}}">{% endfor %}
           </datalist>
+          {% if kdnr_ranked %}
+          <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;">
+            {% for k in kdnr_ranked[:5] %}
+            <span class="badge" style="cursor: pointer; font-size: 10px;" onclick="document.getElementById('kdnr_input').value='{{k}}'">{{k}}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
         </div>
 
         <div class="input-group">
           <label>Name / Firma</label>
-          <input name="name" value="{{w.name}}" list="name_list" class="input">
+          <input name="name" id="name_input" value="{{w.name}}" list="name_list" class="input">
           <datalist id="name_list">
             {% for n in name_suggestions %}<option value="{{n}}">{% endfor %}
           </datalist>
+          {% if name_suggestions %}
+          <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;">
+            {% for n in name_suggestions[:5] %}
+            <span class="badge" style="cursor: pointer; font-size: 10px;" onclick="document.getElementById('name_input').value='{{n}}'">{{n}}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
         </div>
 
         <div style="display: flex; gap: var(--spacing-2); margin-top: var(--spacing-2); padding-top: var(--spacing-3); border-top: 1px solid var(--color-border);">

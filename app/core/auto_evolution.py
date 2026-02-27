@@ -31,6 +31,23 @@ class SystemHealer:
         
         # 3. Auto-Repair Registry (Mock implementation of common fixes)
         self.apply_hotfixes()
+        
+        # 4. Task 105: Indexing Worker (Plugin-style)
+        self.run_indexing_worker()
+
+    def run_indexing_worker(self):
+        """Task 105: Background Indexing for FTS and Suggestion Engine."""
+        logger.info("Indexing Worker (Task 105) started...")
+        # Simulation: Re-calculating keyword weights in docs_index
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            # Mock indexing logic: update 'updated_at' for all docs
+            conn.execute("UPDATE docs_index SET updated_at = ? WHERE updated_at IS NULL", (datetime.now().isoformat(),))
+            conn.commit()
+            conn.close()
+            logger.info("Indexing complete.")
+        except Exception as e:
+            logger.error(f"Indexing failed: {e}")
 
     def optimize_database(self):
         """Task 184: Weekly VACUUM and performance tuning."""

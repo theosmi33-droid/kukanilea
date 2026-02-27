@@ -58,10 +58,15 @@ class AuthDB:
                 CREATE TABLE IF NOT EXISTS tenants(
                   tenant_id TEXT PRIMARY KEY,
                   display_name TEXT NOT NULL,
+                  core_db_path TEXT,
                   created_at TEXT NOT NULL
                 );
                 """
             )
+            try:
+                con.execute("ALTER TABLE tenants ADD COLUMN core_db_path TEXT")
+            except Exception:
+                pass
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS memberships(
