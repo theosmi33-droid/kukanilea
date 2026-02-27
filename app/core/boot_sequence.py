@@ -54,6 +54,14 @@ def run_boot_sequence():
             print("Check logs/crash/ for details.")
             return False
 
+    # 1.1 Auto-Evolution (Task 201)
+    from app.core.auto_evolution import SystemHealer
+    from app.config import Config
+    print("Auto-Evolution Cycle (v2.5)...")
+    healer = SystemHealer(Config.CORE_DB, Config.BASE_DIR)
+    healer.run_healing_cycle()
+    healer.evolution_step()
+
     profile_path = Path("instance/hardware_profile.json")
     profile_path.parent.mkdir(parents=True, exist_ok=True)
 
