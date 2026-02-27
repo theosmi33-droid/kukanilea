@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/design-system.css">
+  <script>
+    if (localStorage.getItem('ks_theme') === 'dark' || (!localStorage.getItem('ks_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+    }
+  </script>
   <script src="/static/js/state.js"></script>
   <script src="/static/js/command_palette.js"></script>
   {% block extra_head %}{% endblock %}

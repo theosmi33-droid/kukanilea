@@ -41,12 +41,18 @@
   --transition-fast: 0.1s ease; --transition-base: 0.15s ease; --transition-slow: 0.3s ease;
 }
 
- @Library/Preferences/com.apple.AppleMediaServices.plist (prefers-color-scheme: dark) {
+ @media (prefers-color-scheme: dark) {
   :root {
     --bg-primary: var(--color-gray-900); --bg-secondary: var(--color-gray-800); --bg-tertiary: var(--color-gray-700);
     --text-primary: var(--color-gray-100); --text-secondary: var(--color-gray-300); --text-tertiary: var(--color-gray-500);
     --border-color: var(--color-gray-700); --border-color-hover: var(--color-gray-600);
   }
+}
+
+html.dark {
+    --bg-primary: var(--color-gray-900); --bg-secondary: var(--color-gray-800); --bg-tertiary: var(--color-gray-700);
+    --text-primary: var(--color-gray-100); --text-secondary: var(--color-gray-300); --text-tertiary: var(--color-gray-500);
+    --border-color: var(--color-gray-700); --border-color-hover: var(--color-gray-600);
 }
 
 * { box-sizing: border-box; }
@@ -152,7 +158,7 @@ code, pre { font-family: var(--font-mono); font-size: 0.875em; }
 .nav-text { flex: 1; }
 .main-content { margin-left: 260px; padding: var(--spacing-6); }
 
- @Library/Preferences/com.apple.AppleMediaServices.plist (max-width: 768px) {
+ @media (max-width: 768px) {
   .sidebar { transform: translateX(-100%); transition: transform var(--transition-slow); }
   .sidebar.mobile-open { transform: translateX(0); }
   .main-content { margin-left: 0; }
@@ -161,4 +167,4 @@ code, pre { font-family: var(--font-mono); font-size: 0.875em; }
 /* Logo */
 .logo { height: 40px; width: auto; color: var(--color-primary); transition: color var(--transition-base); }
 .logo:hover { color: var(--color-primary-hover); }
- @Library/Preferences/com.apple.AppleMediaServices.plist (max-width: 768px) { .logo { height: 32px; } }
+ @media (max-width: 768px) { .logo { height: 32px; } }
