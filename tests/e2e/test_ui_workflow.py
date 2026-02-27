@@ -34,6 +34,12 @@ def run_server(port, auth_db_path, core_db_path, user_data_root):
     adb.upsert_user("admin", hpw, now)
     adb.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
 
+    # Bypass first-run check by creating a license file
+    lic_path = Path(user_data_root) / "license.json"
+    lic_path.parent.mkdir(parents=True, exist_ok=True)
+    import json
+    lic_path.write_text(json.dumps({"valid": True, "plan": "ENTERPRISE"}))
+
     app = create_app()
     app.run(port=port, debug=False, use_reloader=False)
 

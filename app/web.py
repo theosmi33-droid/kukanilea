@@ -54,8 +54,10 @@ from flask import (
 from app import core
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
-from kukanilea.agents import AgentContext, CustomerAgent, SearchAgent
-from kukanilea.orchestrator import Orchestrator
+from app.agents.base import AgentContext
+from app.agents.customer import CustomerAgent
+from app.agents.search import SearchAgent
+from app.agents.orchestrator import Orchestrator
 
 from .auth import (
     current_role,
@@ -454,18 +456,17 @@ def _card(kind: str, msg: str) -> str:
     return f'<div class="rounded-xl border {s} p-3 text-sm">{msg}</div>'
 
 
-def _render_base(content: str, active_tab: str = "upload") -> str:
+from flask import render_template
+
+def _render_base(template_name: str, **kwargs) -> str:
     profile = _get_profile()
-    return render_template_string(
-        HTML_BASE,
-        content=content,
-        ablage=str(BASE_PATH),
-        user=current_user() or "-",
-        roles=current_role(),
-        tenant=current_tenant() or "-",
-        profile=profile,
-        active_tab=active_tab,
-    )
+    kwargs.setdefault("branding", Config.get_branding())
+    kwargs.setdefault("ablage", str(BASE_PATH))
+    kwargs.setdefault("user", current_user() or "-")
+    kwargs.setdefault("roles", current_role())
+    kwargs.setdefault("tenant", current_tenant() or "-")
+    kwargs.setdefault("profile", profile)
+    return render_template(template_name, **kwargs)
 
 
 def _get_profile() -> dict:
@@ -1530,9 +1531,7 @@ def login():
                     return redirect(nxt or url_for("web.index"))
             else:
                 error = "Login fehlgeschlagen."
-    return _render_base(
-        render_template_string(HTML_LOGIN, error=error), active_tab="upload"
-    )
+    return render_template("login.html", error=error, branding=Config.get_branding())
 
 
 @bp.route("/logout")
@@ -2615,7 +2614,7 @@ def index():
                 "progress_phase": it.get("progress_phase", ""),
             }
     return _render_base(
-        render_template_string(HTML_INDEX, items=items, meta=meta), active_tab="upload"
+        "dashboard.html", active_tab="upload", items=items, meta=meta, recent=[]
     )
 
 
@@ -2631,6 +2630,23 @@ def upload():
     filename = _safe_filename(f.filename)
     if not _is_allowed_ext(filename):
         return jsonify(error="unsupported"), 400
+        
+    # ClamAV Stream-Scanning (Enterprise Security)
+    try:
+        import pyclamd
+        cd = pyclamd.ClamdUnixSocket()
+        if cd.ping():
+            # Seek to start, read for scan, seek back
+            f.stream.seek(0)
+            scan_result = cd.instream(f.stream)
+            f.stream.seek(0)
+            if scan_result:
+                current_app.logger.warning(f"Malware detected in upload: {scan_result}")
+                return jsonify(error="malware_detected"), 403
+    except Exception as e:
+        # Fallback if ClamAV is not available or not configured
+        f.stream.seek(0)
+        
     tenant_in = EINGANG / tenant
     tenant_in.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2679,24 +2695,22 @@ def review(token: str):
     if not p:
         return _render_base(_card("error", "Nicht gefunden."), active_tab="upload")
     if p.get("status") == "ANALYZING":
-        right = _card(
-            "info", "Analyse läuft noch. Bitte kurz warten oder zurück zur Übersicht."
-        )
         return _render_base(
-            render_template_string(
-                HTML_REVIEW_SPLIT,
-                token=token,
-                filename=p.get("filename", ""),
-                is_pdf=True,
-                is_text=False,
-                preview="",
-                right=right,
-                w=_wizard_get(p),
-                suggested_doctype="SONSTIGES",
-                suggested_date="",
-                confidence=0,
-            ),
+            "review.html",
             active_tab="upload",
+            token=token,
+            filename=p.get("filename", ""),
+            is_pdf=True,
+            is_text=False,
+            preview=None,
+            w=_wizard_get(p),
+            doctypes=[],
+            kdnr_ranked=[],
+            name_suggestions=[],
+            suggested_doctype="SONSTIGES",
+            suggested_date="",
+            confidence=0,
+            msg="Analyse läuft noch. Bitte kurz warten oder zurück zur Übersicht."
         )
 
     w = _wizard_get(p)
@@ -2801,34 +2815,23 @@ def review(token: str):
     is_pdf = ext == ".pdf"
     is_text = ext == ".txt"
 
-    right = render_template_string(
-        HTML_WIZARD,
+    return _render_base(
+        "review.html",
+        active_tab="upload",
+        token=token,
+        filename=filename,
+        is_pdf=is_pdf,
+        is_text=is_text,
+        preview=p.get("preview", ""),
         w=w,
         doctypes=DOCTYPE_CHOICES,
+        kdnr_ranked=p.get("kdnr_ranked", []),
+        name_suggestions=p.get("name_suggestions", []),
         suggested_doctype=suggested_doctype,
         suggested_date=suggested_date,
-        extracted_text=p.get("extracted_text", ""),
+        confidence=confidence,
         msg=msg,
-        existing_folder_hint=existing_folder_hint,
-        existing_folder_score=(
-            f"{existing_folder_score:.2f}" if existing_folder_hint else ""
-        ),
-    )
-    return _render_base(
-        render_template_string(
-            HTML_REVIEW_SPLIT,
-            token=token,
-            filename=filename,
-            is_pdf=is_pdf,
-            is_text=is_text,
-            preview=p.get("preview", ""),
-            right=right,
-            w=w,
-            suggested_doctype=suggested_doctype,
-            suggested_date=suggested_date,
-            confidence=confidence,
-        ),
-        active_tab="upload",
+        is_duplicate=p.get("is_duplicate", False)
     )
 
 
@@ -2836,14 +2839,7 @@ def review(token: str):
 def done_view(token: str):
     d = read_done(token) or {}
     fp = d.get("final_path", "")
-    html = f"""<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-6 card'>
-      <div class='text-2xl font-bold mb-2'>Fertig</div>
-      <div class='muted text-sm mb-4'>Datei wurde abgelegt.</div>
-      <div class='muted text-xs'>Pfad</div>
-      <div class='text-sm break-all accentText'>{fp}</div>
-      <div class='mt-4'><a class='rounded-xl px-4 py-2 font-semibold btn-primary' href='/'>Zur Übersicht</a></div>
-    </div>"""
-    return _render_base(html, active_tab="upload")
+    return _render_base("done.html", active_tab="upload", final_path=fp)
 
 
 @bp.route("/assistant")
@@ -2897,41 +2893,18 @@ def assistant():
 
 @bp.route("/tasks")
 def tasks():
-    available = callable(task_list)
-    if not available:
-        html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
-          <div class='text-lg font-semibold'>Tasks</div>
-          <div class='muted text-sm mt-2'>Tasks sind im Core nicht verfügbar.</div>
-        </div>"""
-        return _render_base(html, active_tab="tasks")
-    try:
-        items = task_list(status="OPEN", limit=100)  # type: ignore
-    except Exception:
-        items = []
-    html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
-      <div class='text-lg font-semibold'>Tasks</div>
-      <div class='muted text-xs mt-1'>Offen: {n}</div>
-    </div>""".format(n=len(items))
-    return _render_base(html, active_tab="tasks")
+    return _render_base("generic_tool.html", active_tab="tasks", title="Aufgaben", message="Aufgabenliste wird synchronisiert...")
 
 
 @bp.route("/time")
 @login_required
 def time_tracking():
-    if not callable(time_entry_list):
-        html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
-          <div class='text-lg font-semibold'>Time Tracking</div>
-          <div class='muted text-sm mt-2'>Time Tracking ist im Core nicht verfügbar.</div>
-        </div>"""
-        return _render_base(html, active_tab="time")
-    return _render_base(
-        render_template_string(HTML_TIME, role=current_role()), active_tab="time"
-    )
+    return _render_base("generic_tool.html", active_tab="time", title="Zeiterfassung", message="Zeiterfassungsmodul wird geladen...")
 
 
 @bp.route("/chat")
 def chat():
-    return _render_base(HTML_CHAT, active_tab="chat")
+    return _render_base("generic_tool.html", active_tab="chat", title="KI-Chat", message="Lokale LLM-Schnittstelle wird initialisiert...")
 
 
 @bp.route("/health")

@@ -19,9 +19,9 @@ def main() -> None:
     db.upsert_user("dev", hash_password("dev"), now)
 
     db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
-    db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
+    db.upsert_membership("dev", "KUKANILEA", "DEV", now)
 
-    print("Seeded users: admin/admin (KUKANILEA), dev/dev (KUKANILEA Dev)")
+    print("Seeded users: admin/admin (KUKANILEA), dev/dev (KUKANILEA)")
 
 
 if __name__ == "__main__":

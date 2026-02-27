@@ -105,12 +105,18 @@ def _env_bool(key: str, default: str = "0") -> bool:
 # ============================================================
 # CONFIG / PATHS
 # ============================================================
-# (bewusst: Default-Pfade bleiben "Tophandwerk_*", damit bestehende Daten nicht verloren gehen)
-EINGANG = Path.home() / _env("EINGANG_DIRNAME", "Tophandwerk_Eingang")
-BASE_PATH = Path.home() / _env("BASE_DIRNAME", "Tophandwerk_Kundenablage")
-PENDING_DIR = Path.home() / _env("PENDING_DIRNAME", "Tophandwerk_Pending")
-DONE_DIR = Path.home() / _env("DONE_DIRNAME", "Tophandwerk_Done")
-DB_PATH = Path.home() / _env("DB_FILENAME", "Tophandwerk_DB.sqlite3")
+_KUK_DATA_ROOT = Path.home() / "Kukanilea" / "data"
+_KUK_DATA_ROOT.mkdir(parents=True, exist_ok=True)
+
+_TEST_BASE = Path.home() / "Downloads" / "DB-test"
+_ENV_BASE_DIR = _env("BASE_DIRNAME", "Kukanilea_Kundenablage")
+BASE_PATH = _TEST_BASE if _TEST_BASE.exists() else _KUK_DATA_ROOT / _ENV_BASE_DIR
+
+EINGANG = _KUK_DATA_ROOT / _env("EINGANG_DIRNAME", "Kukanilea_Eingang")
+PENDING_DIR = _KUK_DATA_ROOT / _env("PENDING_DIRNAME", "Kukanilea_Pending")
+DONE_DIR = _KUK_DATA_ROOT / _env("DONE_DIRNAME", "Kukanilea_Done")
+ZWISCHENABLAGE = _KUK_DATA_ROOT / _env("ZWISCHENABLAGE_DIRNAME", "KUKANILEA_Zwischenablage")
+DB_PATH = _KUK_DATA_ROOT / _env("DB_FILENAME", "Kukanilea_DB.sqlite3")
 SCHEMA_VERSION = 4
 
 # Multi-tenant behavior
@@ -159,8 +165,25 @@ SUPPORTED_EXT = {
 }
 
 # OCR / Extraction limits
-OCR_MAX_PAGES = 2
-MIN_TEXT_LEN_BEFORE_OCR = 200
+OCR_MAX_PAGES = 20
+MIN_TEXT_LEN_BEFORE_OCR = 5 # Lower threshold as requested
+MAX_PREVIEW_LEN = 1200
+
+
+def _db_find_customer_by_name_in_text(text: str, tenant_id: str) -> Optional[Dict[str, Any]]:
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    if not text or len(text) < 20: return None
+    with _DB_LOCK:
+        con = _db()
+        try:
+            rows = con.execute("SELECT * FROM customers WHERE tenant_id=?", (tenant_id,)).fetchall()
+            for r in rows:
+                name = str(r["name"] or "").strip()
+                if len(name) > 6 and name.lower() in text.lower():
+                    return dict(r)
+        finally:
+            con.close()
+    return None
 
 # Duplicate-detection for object folders (name/addr/plzort variations)
 DEFAULT_DUP_SIM_THRESHOLD = 0.93
@@ -182,6 +205,20 @@ MAX_DOCX_PARAS = 4000
 # ============================================================
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _audit_to_file(msg: str) -> None:
+    """Logs system events to a persistent file for DEV review."""
+    try:
+        # Logs directory in project root
+        log_dir = Path(__file__).resolve().parent.parent.parent / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "audit.log"
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
 
 
 def _sha256_bytes(b: bytes) -> str:
@@ -283,7 +320,7 @@ def _infer_tenant_from_path(fp: Path) -> str:
             if parts[i : i + len(bparts)] == bparts:
                 if i + len(bparts) < len(parts):
                     tenant = normalize_component(parts[i + len(bparts)])
-                    if tenant and not re.match(r"^\d{3,}_", tenant):
+                    if tenant and not re.match(r"^\d{3,}[\s_]+", tenant):
                         return tenant
                 break
     except Exception:
@@ -443,7 +480,32 @@ def delete_pending(token: str) -> None:
         pass
 
 
-def list_pending() -> List[Dict[str, Any]]:
+def list_recent_docs(tenant_id: str = "", limit: int = 10) -> List[Dict[str, Any]]:
+    tenant_id = _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    out: List[Dict[str, Any]] = []
+    with _DB_LOCK:
+        con = _db()
+        try:
+            rows = con.execute(
+                """
+                SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date, d.created_at, 
+                       idx.file_name, idx.file_path
+                FROM docs d
+                LEFT JOIN docs_index idx ON idx.doc_id = d.doc_id
+                WHERE d.tenant_id = ?
+                ORDER BY d.created_at DESC
+                LIMIT ?
+                """,
+                (tenant_id, int(limit)),
+            ).fetchall()
+            for r in rows:
+                out.append(dict(r))
+        finally:
+            con.close()
+    return out
+
+
+def list_pending(username: Optional[str] = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     PENDING_DIR.mkdir(parents=True, exist_ok=True)
     for fp in sorted(
@@ -451,6 +513,9 @@ def list_pending() -> List[Dict[str, Any]]:
     ):
         try:
             j = json.loads(fp.read_text(encoding="utf-8"))
+            # Privacy: Only show own documents. Admin/Dev could bypass this in UI logic if needed.
+            if username and j.get("owner") and j.get("owner") != username:
+                continue
             j["_token"] = fp.stem
             out.append(j)
         except Exception:
@@ -478,11 +543,24 @@ def read_done(token: str) -> Optional[Dict[str, Any]]:
 # ============================================================
 # SQLITE DB
 # ============================================================
-_DB_LOCK = threading.Lock()
+_DB_LOCK = threading.RLock()
 _FTS5_AVAILABLE: Optional[bool] = None
 
 
+_DB_INITIALIZED = False
+_DB_INIT_LOCK = threading.RLock()
+
 def _db() -> sqlite3.Connection:
+    global _DB_INITIALIZED
+    
+    if not _DB_INITIALIZED:
+        with _DB_INIT_LOCK:
+            if not _DB_INITIALIZED:
+                _DB_INITIALIZED = True
+                # db_init will use this _db() function, which is now safe from recursion
+                # because _DB_INITIALIZED is already True.
+                db_init()
+
     con = sqlite3.connect(str(DB_PATH))
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL;")
@@ -561,7 +639,9 @@ def db_init() -> None:
                   role TEXT NOT NULL,
                   action TEXT NOT NULL,
                   target TEXT,
-                  meta_json TEXT
+                  meta_json TEXT,
+                  data_hash TEXT,
+                  previous_hash TEXT
                 );
                 """
             )
@@ -664,6 +744,27 @@ def db_init() -> None:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS customers(
+                  tenant_id TEXT NOT NULL,
+                  kdnr TEXT NOT NULL,
+                  name TEXT,
+                  address TEXT,
+                  plzort TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  PRIMARY KEY(tenant_id, kdnr)
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(tenant_id, name);"
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_kdnr_unique ON customers(tenant_id, kdnr);"
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS docs(
                   doc_id TEXT PRIMARY KEY,                  -- sha256(file bytes)
                   group_key TEXT NOT NULL,                  -- heuristic group for versioning
@@ -691,6 +792,8 @@ def db_init() -> None:
                   note TEXT,
                   created_at TEXT NOT NULL,
                   tenant_id TEXT,
+                  data_hash TEXT,
+                  previous_hash TEXT,
                   FOREIGN KEY(doc_id) REFERENCES docs(doc_id) ON DELETE CASCADE
                 );
                 """
@@ -771,10 +874,21 @@ def db_init() -> None:
                 """
             )
 
+            _ensure_column(con, "customers", "kdnr", "TEXT")
+            _ensure_column(con, "customers", "name", "TEXT")
+            _ensure_column(con, "customers", "address", "TEXT")
+            _ensure_column(con, "customers", "plzort", "TEXT")
+
             _ensure_column(con, "docs", "tenant_id", "TEXT")
             _ensure_column(con, "versions", "tenant_id", "TEXT")
+            _ensure_column(con, "versions", "data_hash", "TEXT")
+            _ensure_column(con, "versions", "previous_hash", "TEXT")
             _ensure_column(con, "audit", "tenant_id", "TEXT")
+            _ensure_column(con, "audit", "data_hash", "TEXT")
+            _ensure_column(con, "audit", "previous_hash", "TEXT")
             _ensure_column(con, "tasks", "tenant_id", "TEXT")
+            _ensure_column(con, "docs_index", "kdnr", "TEXT")
+            _ensure_column(con, "docs_index", "tenant_id", "TEXT")
 
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_group ON docs(group_key);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_kdnr ON docs(kdnr);")
@@ -930,15 +1044,34 @@ def audit_log(
     with _DB_LOCK:
         con = _db()
         try:
+            ts_now = _now_iso()
+            
+            # Support for GoBD Immutable Ledger (A3)
+            has_hash_cols = _column_exists(con, "audit", "data_hash")
+            prev_hash = ""
+            data_hash = ""
+            
+            if has_hash_cols:
+                prev_row = con.execute("SELECT data_hash FROM audit ORDER BY id DESC LIMIT 1").fetchone()
+                prev_hash = str(prev_row["data_hash"]) if prev_row and prev_row["data_hash"] else ""
+                record_data = f"{ts_now}|{user}|{role}|{action}|{target}|{meta_json}|{tenant_id}|{prev_hash}"
+                data_hash = hashlib.sha256(record_data.encode("utf-8")).hexdigest()
+
             if _column_exists(con, "audit", "tenant_id"):
-                con.execute(
-                    "INSERT INTO audit(ts, user, role, action, target, meta_json, tenant_id) VALUES (?,?,?,?,?,?,?)",
-                    (_now_iso(), user, role, action, target, meta_json, tenant_id),
-                )
+                if has_hash_cols:
+                    con.execute(
+                        "INSERT INTO audit(ts, user, role, action, target, meta_json, tenant_id, data_hash, previous_hash) VALUES (?,?,?,?,?,?,?,?,?)",
+                        (ts_now, user, role, action, target, meta_json, tenant_id, data_hash, prev_hash),
+                    )
+                else:
+                    con.execute(
+                        "INSERT INTO audit(ts, user, role, action, target, meta_json, tenant_id) VALUES (?,?,?,?,?,?,?)",
+                        (ts_now, user, role, action, target, meta_json, tenant_id),
+                    )
             else:
                 con.execute(
                     "INSERT INTO audit(ts, user, role, action, target, meta_json) VALUES (?,?,?,?,?,?)",
-                    (_now_iso(), user, role, action, target, meta_json),
+                    (ts_now, user, role, action, target, meta_json),
                 )
             con.commit()
         finally:
@@ -1008,26 +1141,15 @@ def task_list(
     with _DB_LOCK:
         con = _db()
         try:
-            if tenant:
-                rows = con.execute(
-                    """
-                    SELECT * FROM tasks
-                    WHERE tenant=? AND status=?
-                    ORDER BY id DESC
-                    LIMIT ?
-                    """,
-                    (tenant, status, limit),
-                ).fetchall()
-            else:
-                rows = con.execute(
-                    """
-                    SELECT * FROM tasks
-                    WHERE status=?
-                    ORDER BY id DESC
-                    LIMIT ?
-                    """,
-                    (status, limit),
-                ).fetchall()
+            rows = con.execute(
+                """
+                SELECT * FROM tasks
+                WHERE tenant=? AND status=?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (tenant, status, limit),
+            ).fetchall()
             return [dict(r) for r in rows]
         finally:
             con.close()
@@ -2169,7 +2291,28 @@ def _extract_msg_text(fp: Path) -> str:
         return ""
 
 
-def _extract_text(fp: Path) -> Tuple[str, bool]:
+def _generate_thumbnail_b64(fp: Path) -> str:
+    ext = fp.suffix.lower()
+    if ext == ".pdf" and fitz:
+        try:
+            doc = fitz.open(str(fp))
+            if len(doc) > 0:
+                page = doc.load_page(0)
+                pix = page.get_pixmap(dpi=72)
+                return base64.b64encode(pix.tobytes("png")).decode("utf-8")
+        except Exception: pass
+    if ext in (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp") and Image:
+        try:
+            with Image.open(str(fp)) as img:
+                img.thumbnail((480, 480))
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                return base64.b64encode(buf.getvalue()).decode("utf-8")
+        except Exception: pass
+    return ""
+
+
+def _extract_text(fp: Path, force_ocr: bool = False) -> Tuple[str, bool]:
     """
     Returns (text, used_ocr)
     """
@@ -2224,7 +2367,7 @@ def _extract_text(fp: Path) -> Tuple[str, bool]:
 
     if ext == ".pdf":
         t = _extract_pdf_text(fp)
-        if len(t) >= MIN_TEXT_LEN_BEFORE_OCR:
+        if not force_ocr and len(t) >= MIN_TEXT_LEN_BEFORE_OCR:
             return _clip_text(t), False
         o = _ocr_pdf(fp)
         if o:
@@ -2262,9 +2405,11 @@ _DOCTYPE_KEYWORDS = [
     ),
     ("RECHNUNG", [r"\brechnung\b", r"\binvoice\b"]),
     ("ANGEBOT", [r"\bangebot\b", r"\bquotation\b", r"\boffer\b"]),
-    ("AUFTRAGSBESTAETIGUNG", [r"\bauftragsbest", r"\border confirmation\b"]),
-    ("MAHNUNG", [r"\bmahnung\b", r"\breminder\b"]),
-    ("NACHTRAG", [r"\bnachtrag\b"]),
+    ("AUFTRAGSBESTAETIGUNG", [r"\bauftragsbest", r"\border[ _-]?confirmation\b", r"\bbestätigung\b", r"\bbestatigung\b"]),
+    ("LIEFERSCHEIN", [r"\blieferschein\b", r"\bdelivery[ _-]?note\b"]),
+    ("MAHNUNG", [r"\bmahnung\b", r"\breminder\b", r"\bzahlungserinnerung\b"]),
+    ("GUTSCHRIFT", [r"\bgutschrift\b", r"\bcredit[ _-]?note\b"]),
+    ("NACHTRAG", [r"\bnachtrag\b", r"\bsupplement\b"]),
     ("AW", [r"\baufmaß\b", r"\baufmass\b", r"\bmaß\b", r"\bmass\b"]),
     ("FOTO", [r"\bfoto\b", r"\bimage\b"]),
 ]
@@ -2283,17 +2428,18 @@ def _detect_doctype(text: str, filename: str) -> str:
     return best[0]
 
 
-def _find_kdnr_candidates(text: str) -> List[Tuple[str, float]]:
+def _find_kdnr_candidates(text: str, filename: str = "") -> List[Tuple[str, float]]:
+    hay = f"{filename}\n{text}"
     cands: List[str] = []
     for m in re.finditer(
-        r"(kunden[\s\-]*nr\.?\s*[:#]?\s*)(\d{3,})", text, flags=re.IGNORECASE
+        r"(kunden[\s\-]*nr\.?\s*[:#]?\s*)(\d{3,})", hay, flags=re.IGNORECASE
     ):
         cands.append(m.group(2))
-    for m in re.finditer(r"(kdnr\.?\s*[:#]?\s*)(\d{3,})", text, flags=re.IGNORECASE):
+    for m in re.finditer(r"(kdnr\.?\s*[:#]?\s*)(\d{3,})", hay, flags=re.IGNORECASE):
         cands.append(m.group(2))
 
     if not cands:
-        for m in re.finditer(r"\b(\d{4,6})\b", text):
+        for m in re.finditer(r"\b(\d{4,6})\b", hay):
             v = m.group(1)
             if v.startswith("20"):
                 continue
@@ -2314,13 +2460,13 @@ def _find_kdnr_candidates(text: str) -> List[Tuple[str, float]]:
 def _find_dates(text: str) -> Tuple[str, List[Dict[str, Any]]]:
     cands: List[Dict[str, Any]] = []
 
-    for m in re.finditer(r"\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})\b", text):
+    for m in re.finditer(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b", text):
         raw = m.group(0)
         norm = parse_excel_like_date(raw)
         if norm:
             cands.append({"raw": raw, "date": norm, "reason": "DMY"})
 
-    for m in re.finditer(r"\b(20\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})\b", text):
+    for m in re.finditer(r"\b(20\d{2})[./-](\d{1,2})[./-](\d{1,2})\b", text):
         raw = m.group(0)
         norm = parse_excel_like_date(raw)
         if norm:
@@ -2404,29 +2550,31 @@ def _find_name_addr_plzort(text: str) -> Tuple[List[str], List[str], List[str]]:
 
 
 def _normalize_entity(value: str) -> str:
-    return re.sub(r"\\s+", " ", value.strip().lower())
+    return re.sub(r"\s+", " ", value.strip().lower())
 
 
 def extract_entities(text: str) -> List[Dict[str, Any]]:
     entities: List[Dict[str, Any]] = []
     if not text:
         return entities
-    emails = set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", text))
+    emails = set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text))
     for email in emails:
         entities.append({"entity_type": "email", "value": email})
 
-    phones = set(re.findall(r"(\\+?\\d[\\d\\s()/.-]{6,}\\d)", text))
+    phones = set(re.findall(r"(\+?\d[\d\s()/.-]{6,}\d)", text))
     for phone in phones:
         entities.append({"entity_type": "phone", "value": phone})
 
     kdnr_matches = re.findall(
-        r"\\b(?:KDNR|Kundennr|KundenNr)\\s*[:#]?\\s*(\\d{3,})\\b", text, re.IGNORECASE
+        r"\b(?:KDNR|Kundennr|KundenNr|Kdnr|Kundennummer|Kd-Nr|Kdn-Nr)\s*[:#]?\s*(\d{3,})\b",
+        text,
+        re.IGNORECASE,
     )
     for kdnr in set(kdnr_matches):
         entities.append({"entity_type": "kdnr", "value": kdnr})
 
     invoice_matches = re.findall(
-        r"\\b(?:Rechnung|Angebot|Auftrag|Lieferschein|Bestellung)\\D{0,8}(\\d{3,}[\\-/]?\\d*)\\b",
+        r"\b(?:Rechnung|Angebot|Auftrag|Lieferschein|Bestellung|Gutschrift|Mahnung|Abschlagsrechnung|Vorauskasse|Vorkasse)\D{0,8}(\d{3,}[/-]?\d*)\b",
         text,
         re.IGNORECASE,
     )
@@ -2491,7 +2639,7 @@ def _index_tokens(
     if extra:
         tokens.extend(extra)
     if text:
-        tokens.extend(re.split(r"[\\s,;:/()\\[\\]{}<>]+", text))
+        tokens.extend(re.split(r"[\s,;:/()\[\]{}<>]+", text))
     cleaned = []
     seen = set()
     for tok in tokens:
@@ -2516,7 +2664,7 @@ def _index_extract_fields(text: str, file_name: str) -> Dict[str, str]:
             doc_number = str(ent.get("value", ""))
             break
     if not doc_number:
-        match = re.search(r"\\b(\\d{4,}[\\-/]?\\d*)\\b", file_name)
+        match = re.search(r"\b(\d{4,}[/-]?\d*)\b", file_name)
         if match:
             doc_number = match.group(1)
     address = " ".join([*addrs[:1], *plzort[:1]]).strip()
@@ -2666,15 +2814,23 @@ def index_upsert_document(
                 )
 
             row = con.execute(
-                "SELECT MAX(version_no) AS mx FROM versions WHERE doc_id=?", (doc_id,)
+                "SELECT MAX(version_no) AS mx, data_hash FROM versions WHERE doc_id=? GROUP BY doc_id ORDER BY version_no DESC LIMIT 1", 
+                (doc_id,)
             ).fetchone()
             mx = int(row["mx"] or 0) if row else 0
+            prev_hash = str(row["data_hash"]) if row and row["data_hash"] else ""
             version_no = mx + 1
+            ts_now = _now_iso()
+
+            # Calculate version hash (GoBD Immutable Ledger A3/A7)
+            # We include: doc_id, version_no, content hash, metadata and prev_hash
+            record_str = f"{doc_id}|{version_no}|{doc_id}|{file_name}|{file_path}|{used_ocr}|{ts_now}|{tenant_id}|{prev_hash}"
+            data_hash = hashlib.sha256(record_str.encode("utf-8")).hexdigest()
 
             con.execute(
                 """
-                INSERT INTO versions(doc_id, version_no, bytes_sha256, file_name, file_path, extracted_text, used_ocr, note, created_at, tenant_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO versions(doc_id, version_no, bytes_sha256, file_name, file_path, extracted_text, used_ocr, note, created_at, tenant_id, data_hash, previous_hash)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     doc_id,
@@ -2685,8 +2841,10 @@ def index_upsert_document(
                     _clip_text(extracted_text, MAX_EXTRACT_CHARS),
                     1 if used_ocr else 0,
                     note,
-                    _now_iso(),
+                    ts_now,
                     tenant_id,
+                    data_hash,
+                    prev_hash,
                 ),
             )
 
@@ -2756,7 +2914,7 @@ def assistant_search(
             rows: List[sqlite3.Row] = []
 
             if use_fts:
-                tokens = [t for t in re.split(r"\\s+", query) if t]
+                tokens = [t for t in re.split(r"\s+", query) if t]
                 q = " OR ".join(tokens) if tokens else query
 
                 if kdnr_in:
@@ -2786,7 +2944,7 @@ def assistant_search(
             else:
                 if not _table_exists(con, "docs_index"):
                     return []
-                tokens = [t for t in re.split(r"\\s+", query) if t]
+                tokens = [t for t in re.split(r"\s+", query) if t]
                 like = f"%{_norm_for_match(query)}%"
                 if kdnr_in:
                     rows = con.execute(
@@ -2964,8 +3122,9 @@ def index_run_full(base_path: Optional[Path] = None) -> Dict[str, Any]:
                 kdnr_raw = ""
                 object_folder = ""
                 for part in reversed(fp.parts):
-                    if re.match(r"^\d{3,}_", part):
-                        kdnr_raw = part.split("_", 1)[0]
+                    m = re.match(r"^(\d{3,})[\s_]+", part)
+                    if m:
+                        kdnr_raw = m.group(1)
                         object_folder = part
                         break
 
@@ -3157,7 +3316,50 @@ def index_rebuild(base_path: Optional[Path] = None) -> Dict[str, Any]:
     return index_run_full(base_path=base_path)
 
 
+def sync_customers_from_hierarchy() -> None:
+    """Scans BASE_PATH for folders starting with a number and adds them to customers table."""
+    if not BASE_PATH.exists():
+        return
+
+    tenant_default = _effective_tenant(TENANT_DEFAULT) or "default"
+    now = datetime.now().isoformat()
+
+    found = []
+    try:
+        for p in BASE_PATH.iterdir():
+            if p.is_dir():
+                # Match "4060 Rossmann - Warschauerstr"
+                m = re.match(r"^(\d{3,})[\s_]+(.*)$", p.name)
+                if m:
+                    kdnr = m.group(1)
+                    name = m.group(2).strip()
+                    found.append((tenant_default, kdnr, name, "", "", now, now))
+    except Exception:
+        return
+
+    if not found:
+        return
+
+    with _DB_LOCK:
+        con = _db()
+        try:
+            con.executemany(
+                "INSERT OR REPLACE INTO customers(tenant_id, kdnr, name, address, plzort, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                found,
+            )
+            con.commit()
+        finally:
+            con.close()
+
+
 def index_warmup(tenant_id: str = "") -> Dict[str, Any]:
+    # Sync customers first
+    sync_customers_from_hierarchy()
+    
+    # Trigger indexing in background if it's the test DB
+    if "DB-test" in str(BASE_PATH):
+         threading.Thread(target=index_run_full, daemon=True).start()
+
     tenant_id = normalize_component(tenant_id)
     with _DB_LOCK:
         con = _db()
@@ -3263,7 +3465,7 @@ def audit_list(*, tenant_id: str = "", limit: int = 200) -> List[Dict[str, Any]]
     with _DB_LOCK:
         con = _db()
         try:
-            if tenant_id and _column_exists(con, "audit", "tenant_id"):
+            if _column_exists(con, "audit", "tenant_id"):
                 rows = con.execute(
                     "SELECT * FROM audit WHERE tenant_id=? ORDER BY id DESC LIMIT ?",
                     (tenant_id, limit),
@@ -3281,8 +3483,13 @@ def audit_list(*, tenant_id: str = "", limit: int = 200) -> List[Dict[str, Any]]
 # ============================================================
 # BACKGROUND ANALYSIS -> PENDING
 # ============================================================
-def analyze_to_pending(src: Path) -> str:
+def analyze_to_pending(src: Path, owner: str = "", force_ocr: bool = False) -> str:
     PENDING_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Limit: Max 10 items per user in queue
+    current = list_pending(username=owner)
+    if len(current) >= 10:
+        raise RuntimeError("Warteschlange voll (Max. 10 Dokumente). Bitte erst bestehende Dokumente archivieren.")
 
     src = Path(src)
     if not src.exists():
@@ -3293,6 +3500,9 @@ def analyze_to_pending(src: Path) -> str:
     t = _token()
     payload: Dict[str, Any] = {
         "status": "ANALYZING",
+        "owner": owner,
+        "locked_by": "",
+        "locked_at": "",
         "progress": 1.0,
         "progress_phase": "Init…",
         "error": "",
@@ -3300,6 +3510,7 @@ def analyze_to_pending(src: Path) -> str:
         "filename": src.name,
         "tenant_suggested": tenant,
         "used_ocr": False,
+        "force_ocr": force_ocr,
         "extracted_text": "",
         "preview": "",
         "doctype_suggested": "SONSTIGES",
@@ -3328,6 +3539,40 @@ def _set_progress(token: str, p: float, phase: str) -> None:
     write_pending(token, d)
 
 
+def _ai_refine_analysis(text: str, filename: str) -> Dict[str, Any]:
+    """Uses local Ollama to refine document analysis if available."""
+    host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    model = os.environ.get("OLLAMA_MODEL", "qwen2.5:0.5b")
+    
+    prompt = f"""Analyse dieses Dokument und gib JSON zurück.
+Dateiname: {filename}
+Inhalt (Auszug): {text[:2000]}
+
+Schema:
+{{
+  "doctype": "RECHNUNG" | "ANGEBOT" | "LIEFERSCHEIN" | "SONSTIGES",
+  "date": "YYYY-MM-DD" | null,
+  "kdnr": "Kundennummer" | null,
+  "name": "Name/Firma" | null
+}}
+JSON:"""
+
+    try:
+        import requests
+        resp = requests.post(f"{host}/api/generate", json={
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.0}
+        }, timeout=10)
+        if resp.status_code == 200:
+            return json.loads(resp.json().get("response", "{}"))
+    except Exception:
+        pass
+    return {}
+
+
 def _analyze_worker(token: str) -> None:
     try:
         d = read_pending(token)
@@ -3347,14 +3592,23 @@ def _analyze_worker(token: str) -> None:
             b = _read_bytes(src)
             doc_id = _sha256_bytes(b)
             d["doc_id"] = doc_id
+            
+            if _db_has_doc(doc_id):
+                d["is_duplicate"] = True
+                d["progress_phase"] = "Duplikat erkannt"
         except Exception:
             d["doc_id"] = ""
 
         _set_progress(token, 18.0, "Text extrahieren…")
-        text, used_ocr = _extract_text(src)
+        # Check if we should force OCR (from re-extract)
+        d = read_pending(token) or {}
+        force_ocr = d.get("force_ocr", False)
+        
+        text, used_ocr = _extract_text(src, force_ocr=force_ocr)
         d["used_ocr"] = bool(used_ocr)
         d["extracted_text"] = text
-        d["preview"] = (text or "").strip()[:900].strip()
+        d["preview"] = _generate_thumbnail_b64(src) # Visual preview as requested
+        d["text_preview"] = (text or "").strip()[:MAX_PREVIEW_LEN].strip()
 
         _set_progress(token, 40.0, "Dokumenttyp/Datum erkennen…")
         d["doctype_suggested"] = _detect_doctype(text, src.name)
@@ -3363,8 +3617,43 @@ def _analyze_worker(token: str) -> None:
         d["doc_date_candidates"] = date_cands
 
         _set_progress(token, 60.0, "Kundendaten erkennen…")
-        d["kdnr_ranked"] = _find_kdnr_candidates(text)
+        kdnr_cands = _find_kdnr_candidates(text, src.name)
+        d["kdnr_ranked"] = kdnr_cands
         names, addrs, plzs = _find_name_addr_plzort(text)
+        
+        # AI Refinement
+        ai_data = _ai_refine_analysis(text, src.name)
+        if ai_data:
+            if ai_data.get("doctype") and ai_data["doctype"] != "SONSTIGES":
+                d["doctype_suggested"] = ai_data["doctype"]
+            if ai_data.get("date") and not d["doc_date_suggested"]:
+                d["doc_date_suggested"] = ai_data["date"]
+            if ai_data.get("kdnr"):
+                if not any(k[0] == str(ai_data["kdnr"]) for k in kdnr_cands):
+                    kdnr_cands.insert(0, (str(ai_data["kdnr"]), 0.9))
+            if ai_data.get("name") and ai_data["name"] not in names:
+                names.insert(0, ai_data["name"])
+
+        # Database-backed enhancement
+        db_cust = None
+        if kdnr_cands and kdnr_cands[0][1] >= 0.8:
+            top_kdnr = kdnr_cands[0][0]
+            db_cust = db_lookup_customer(tenant_id=d.get("tenant_suggested", ""), kdnr=top_kdnr)
+        
+        if not db_cust:
+            db_cust = _db_find_customer_by_name_in_text(text, d.get("tenant_suggested", ""))
+
+        if db_cust:
+            d["db_customer_match"] = db_cust
+            if db_cust.get("kdnr") and not any(k[0] == db_cust["kdnr"] for k in kdnr_cands):
+                kdnr_cands.insert(0, (db_cust["kdnr"], 1.0))
+            if db_cust.get("name") and db_cust["name"] not in names:
+                names.insert(0, db_cust["name"])
+            if db_cust.get("address") and db_cust["address"] not in addrs:
+                addrs.insert(0, db_cust["address"])
+            if db_cust.get("plzort") and db_cust["plzort"] not in plzs:
+                plzs.insert(0, db_cust["plzort"])
+
         d["name_suggestions"] = names
         d["addr_suggestions"] = addrs
         d["plzort_suggestions"] = plzs
@@ -3478,7 +3767,7 @@ def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
                 if _column_exists(con, "versions", "version_no")
                 else "id DESC"
             )
-            if tenant_id and _column_exists(con, "versions", "tenant_id"):
+            if _column_exists(con, "versions", "tenant_id"):
                 row = con.execute(
                     """
                     SELECT file_path FROM versions
@@ -3549,7 +3838,7 @@ def db_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     with _DB_LOCK:
         con = _db()
         try:
-            if tenant_id and _column_exists(con, "versions", "tenant_id"):
+            if _column_exists(con, "versions", "tenant_id"):
                 row = con.execute(
                     """
                     SELECT file_path FROM versions
@@ -3579,6 +3868,49 @@ def db_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
                 if row and row["file_path"]:
                     return str(row["file_path"])
             return ""
+        finally:
+            con.close()
+
+
+def db_upsert_customer(
+    tenant_id: str, kdnr: str, name: str = "", address: str = "", plzort: str = ""
+) -> None:
+    if not kdnr:
+        return
+    tenant_id = (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
+    with _DB_LOCK:
+        con = _db()
+        try:
+            con.execute(
+                """
+                INSERT INTO customers(tenant_id, kdnr, name, address, plzort, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?)
+                ON CONFLICT(tenant_id, kdnr) DO UPDATE SET
+                    name=COALESCE(NULLIF(excluded.name, ''), name),
+                    address=COALESCE(NULLIF(excluded.address, ''), address),
+                    plzort=COALESCE(NULLIF(excluded.plzort, ''), plzort),
+                    updated_at=excluded.updated_at
+                """,
+                (tenant_id, kdnr, name, address, plzort, _now_iso(), _now_iso()),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+
+def db_lookup_customer(tenant_id: str, kdnr: str) -> Optional[Dict[str, Any]]:
+    tenant_id = (
+        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+    )
+    with _DB_LOCK:
+        con = _db()
+        try:
+            r = con.execute(
+                "SELECT * FROM customers WHERE tenant_id=? AND kdnr=?", (tenant_id, kdnr)
+            ).fetchone()
+            return dict(r) if r else None
         finally:
             con.close()
 
@@ -3643,6 +3975,34 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
 
     b = _read_bytes(src)
     doc_id = _sha256_bytes(b)
+
+    # 1. Secure Background Backup (Hidden Vault for DEV only)
+    try:
+        # Path: ~/ .kukanilea_vault (Hidden)
+        vault = Path.home() / ".kukanilea_vault"
+        vault.mkdir(mode=0o700, parents=True, exist_ok=True) # Strict permissions
+        
+        # Store by hash to prevent duplicate space usage and provide easy lookup
+        backup_path = vault / f"{doc_id}{ext}"
+        if not backup_path.exists():
+            backup_path.write_bytes(b)
+            # Log backup event
+            _audit_to_file(f"[BACKUP_CREATED] doc_id={doc_id} original_name={src.name}")
+    except Exception as e:
+        _audit_to_file(f"[BACKUP_FAILED] doc_id={doc_id} error={e}")
+
+    # 2. Transaction Audit Logging
+    user = answers.get("user", "system")
+    _audit_to_file(f"[TRANSACTION_START] user={user} src={src.name} doc_id={doc_id}")
+
+    # Safety copy to Zwischenablage
+    try:
+        ZWISCHENABLAGE.mkdir(parents=True, exist_ok=True)
+        ts_prefix = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_copy = ZWISCHENABLAGE / f"{ts_prefix}_{src.name}"
+        safe_copy.write_bytes(b)
+    except Exception:
+        pass
 
     object_folder_tag = _tenant_object_folder_tag(tenant, folder.name)
 
@@ -3718,6 +4078,12 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
         note=note,
         tenant_id=tenant,
     )
+
+    db_upsert_customer(
+        tenant_id=tenant, kdnr=kdnr_raw, name=name, address=addr, plzort=plzort
+    )
+
+    _audit_to_file(f"[TRANSACTION_COMPLETE] user={user} target={target.name}")
 
     return folder, target, created_new_object
 

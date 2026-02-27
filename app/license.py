@@ -11,7 +11,7 @@ from typing import Any, Dict
 
 # Ed25519 public key used to validate offline license signatures.
 # Matching private key is kept internal and only used by scripts/generate_license.py.
-PUBLIC_KEY_HEX = "a306d347895bd9780c73e4c6f03d32340e740ab44e0a70bf9964e2ccdca0c3f1"
+PUBLIC_KEY_HEX = "d9213284c379d7ffd915619a57d2105fa4f39bbf2b25fa39d1d189bd57778b07"
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
