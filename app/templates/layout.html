@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ branding.app_name }} Enterprise</title>
+  <link rel="stylesheet" href="/static/css/system.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom: 32px; padding: 0 8px;">
+        <img src="/static/logo.svg" width="32" height="32" alt="Logo">
+        <div>
+          <div style="font-weight:700; font-size:16px; color:#fff;">{{ branding.app_name }}</div>
+          <div style="font-size:10px; color:var(--color-accent); text-transform:uppercase; letter-spacing:1px;">Enterprise Core</div>
+        </div>
+      </div>
+      
+      <nav style="display:flex; flex-direction:column; gap:4px; flex:1;">
+        <a href="/" class="nav-link {% if active_tab == 'upload' %}active{% endif %}">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+          Upload
+        </a>
+        <a href="/tasks" class="nav-link {% if active_tab == 'tasks' %}active{% endif %}">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Aufgaben
+        </a>
+        <a href="/time" class="nav-link {% if active_tab == 'time' %}active{% endif %}">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Zeiterfassung
+        </a>
+        <a href="/assistant" class="nav-link {% if active_tab == 'assistant' %}active{% endif %}">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
+          Assistent
+        </a>
+        <a href="/chat" class="nav-link {% if active_tab == 'chat' %}active{% endif %}">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+          Chat
+        </a>
+        <a href="/mail" class="nav-link {% if active_tab == 'mail' %}active{% endif %}">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          Postfach
+        </a>
+        
+        {% if roles in ['DEV', 'ADMIN'] %}
+        <div style="margin: 24px 0 8px 12px; font-size: 10px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing:1px;">Verwaltung</div>
+        <a href="/admin/mesh" class="nav-link {% if active_tab == 'mesh' %}active{% endif %}">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m21 16-5.16-5.16a2 2 0 0 0-2.82 0L3 21"/><circle cx="16" cy="7" r="4"/></svg>
+          Mesh (Admin)
+        </a>
+        <a href="/settings" class="nav-link {% if active_tab == 'settings' %}active{% endif %}">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          Einstellungen
+        </a>
+        {% endif %}
+      </nav>
+      
+      <div style="border-top: 1px solid var(--color-border); padding-top: 16px; margin-top: auto;">
+         <div style="font-size:10px; font-weight:600; color:var(--color-text-muted); margin-bottom:4px;">SYSTEM STATUS</div>
+         <div style="font-size:12px; font-weight:500; display:flex; align-items:center; gap:6px;">
+           <div style="width:8px; height:8px; border-radius:50%; background:var(--color-success);"></div>
+           Online ({{ roles }})
+         </div>
+      </div>
+    </aside>
+
+    <main class="app-main">
+      <header class="app-header">
+        <h2 style="font-size:16px; font-weight:600; color:#fff; text-transform:uppercase; letter-spacing:0.05em;">
+          {% block title %}{{ active_tab|capitalize }}{% endblock %}
+        </h2>
+        <div style="display:flex; align-items:center; gap:16px;">
+          <span class="badge">{{ tenant }}</span>
+          <div style="height:32px; width:1px; background:var(--color-border);"></div>
+          {% if user and user != '-' %}
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="text-align:right;">
+              <div style="font-size:13px; font-weight:600;">{{user}}</div>
+              <div style="font-size:11px; color:var(--color-text-muted);">{{profile.name if profile else 'User'}}</div>
+            </div>
+            <a href="/logout" class="btn btn-secondary" style="height:32px; font-size:12px; padding: 0 12px;">Abmelden</a>
+          </div>
+          {% endif %}
+        </div>
+      </header>
+      
+      <div class="app-content">
+        <div class="content-container">
+          {% block content %}{% endblock %}
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

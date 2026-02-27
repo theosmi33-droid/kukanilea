@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block title %}Erfolgreich archiviert{% endblock %}
+
+{% block content %}
+<div class="panel" style="text-align: center; padding: var(--spacing-6); max-width: 500px; margin: 0 auto; margin-top: var(--spacing-5);">
+  <div style="height: 80px; width: 80px; border-radius: 50%; background: rgba(16, 185, 129, 0.1); color: var(--color-success); border: 1px solid rgba(16, 185, 129, 0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto; margin-bottom: var(--spacing-4); box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.1);">
+    <svg fill="none" stroke="currentColor" stroke-width="3" width="40" height="40" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  </div>
+  <h1 style="font-size: 28px; font-weight: 800; color: #fff; margin-bottom: var(--spacing-2);">Archiviert</h1>
+  <p style="color: var(--color-text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: var(--spacing-5);">Dokument sicher im Ledger abgelegt</p>
+  <a href="/" class="btn btn-primary" style="padding: 0 48px; height: 48px; font-size: 16px;">Zur Übersicht</a>
+</div>
+{% endblock %}

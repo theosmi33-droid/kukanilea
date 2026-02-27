@@ -2,22 +2,42 @@
 # -*- coding: utf-8 -*-
 
 """
-KUKANILEA Systems — Enterprise UI / UX v4.4 (Restored & Optimized)
-=============================================================
-Restores the acclaimed overlay layout and original trademarked logo.
+KUKANILEA Systems — Upload/UI v3 (Split-View + Theme + Local Chat)
+==================================================================
+
+Drop-in Flask UI for the KUKANILEA core.
+
+Key features:
+- Queue overview (no Jinja crashes even if fields missing)
+- Review Split-View: PDF/preview LEFT, wizard RIGHT
+- Dark/Light mode + Accent color (stored in localStorage)
+- Upload -> background analyze -> auto-open review when READY
+- Re-Extract creates new token and redirects
+- Optional Tasks tab (if core exposes task_* functions)
+- Local Chat tab:
+    - deterministic agent-orchestrator without external LLM
+
+Run:
+  source .venv/bin/activate
+  PORT=5051 KUKANILEA_SECRET="change-me" python3 kukanilea_upload_v3_ui.py
+
+Notes:
+- This UI expects a local `app.core*.py` next to it.
+- OCR depends on system binaries (e.g. tesseract) + python deps.
 """
 
 from __future__ import annotations
 
+import base64
+import importlib
+import importlib.util
 import json
 import os
 import re
 import time
-import secrets
-import hashlib
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Tuple
 
 from flask import (
     Blueprint,
@@ -34,7 +54,9 @@ from flask import (
 from app import core
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
-from app.agents import AgentContext, CustomerAgent, SearchAgent
+from app.agents.base import AgentContext
+from app.agents.customer import CustomerAgent
+from app.agents.search import SearchAgent
 from app.agents.orchestrator import Orchestrator
 
 from .auth import (
@@ -54,19 +76,48 @@ from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
 from .security import csrf_protected
 
-# -------- Globals & Setup ----------
-bp = Blueprint("web", __name__)
+weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
+if weather_spec:
+    _weather_mod = importlib.import_module("kukanilea_weather_plugin")
+    get_weather = getattr(_weather_mod, "get_weather", None) or getattr(
+        _weather_mod, "get_berlin_weather_now", None
+    )
+else:
+    get_weather = None  # type: ignore
+
+rapidfuzz_spec = importlib.util.find_spec("rapidfuzz")
+if rapidfuzz_spec:
+    fuzz = importlib.import_module("rapidfuzz").fuzz  # type: ignore
+else:
+    fuzz = None  # type: ignore
+
+werkzeug_spec = importlib.util.find_spec("werkzeug.utils")
+if werkzeug_spec:
+    secure_filename = importlib.import_module("werkzeug.utils").secure_filename  # type: ignore
+else:
+    secure_filename = None  # type: ignore
+
 
 def _core_get(name: str, default=None):
     return getattr(core, name, default)
 
+
+# Paths/config from core
 EINGANG: Path = _core_get("EINGANG")
 BASE_PATH: Path = _core_get("BASE_PATH")
 PENDING_DIR: Path = _core_get("PENDING_DIR")
 DONE_DIR: Path = _core_get("DONE_DIR")
-SUPPORTED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"}
+SUPPORTED_EXT = set(
+    _core_get(
+        "SUPPORTED_EXT",
+        {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".txt"},
+    )
+)
 
-analyze_to_pending = _core_get("analyze_to_pending")
+# Core functions (minimum)
+analyze_to_pending = _core_get("analyze_to_pending") or _core_get(
+    "start_background_analysis"
+)
 read_pending = _core_get("read_pending")
 write_pending = _core_get("write_pending")
 delete_pending = _core_get("delete_pending")
@@ -75,747 +126,2838 @@ write_done = _core_get("write_done")
 read_done = _core_get("read_done")
 process_with_answers = _core_get("process_with_answers")
 normalize_component = _core_get("normalize_component", lambda s: (s or "").strip())
+
+# Optional helpers
 db_init = _core_get("db_init")
 assistant_search = _core_get("assistant_search")
+audit_log = _core_get("audit_log")
+db_latest_path_for_doc = _core_get("db_latest_path_for_doc")
+db_path_for_doc = _core_get("db_path_for_doc")
 
-DOCTYPE_CHOICES = ["RECHNUNG", "ANGEBOT", "LIEFERSCHEIN", "MAHNUNG", "SONSTIGES"]
+# Optional tasks
+task_list = _core_get("task_list")
+task_resolve = _core_get("task_resolve")
+task_dismiss = _core_get("task_dismiss")
 
-# -------- Original Trademarked Logo ----------
-SVG_LOGO = r"""
-<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:100%; display:block;">
-  <circle cx="50" cy="50" r="42" stroke="#D4AF37" stroke-width="6" stroke-dasharray="10 5" />
-  <path d="M50 8C55 8 60 12 60 18C60 24 55 28 50 28C45 28 40 24 40 18C40 12 45 8 50 8Z" fill="#D4AF37" />
-  <path d="M82 50C82 55 78 60 72 60C66 60 62 55 62 50C62 45 66 41 72 41C78 41 82 45 82 50Z" fill="#D4AF37" />
-  <path d="M50 92C45 92 40 88 40 82C40 76 45 72 50 72C55 72 60 76 60 82C60 88 55 92 50 92Z" fill="#D4AF37" />
-  <path d="M18 50C18 45 22 40 28 40C34 40 38 45 38 50C38 55 34 59 28 59C22 59 18 55 18 50Z" fill="#D4AF37" />
-  <path d="M38 35V65M38 50L58 35M38 50L58 65" stroke="#1E3A8A" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+# Optional time tracking
+time_project_create = _core_get("time_project_create")
+time_project_list = _core_get("time_project_list")
+time_entry_start = _core_get("time_entry_start")
+time_entry_stop = _core_get("time_entry_stop")
+time_entry_list = _core_get("time_entries_list")
+time_entry_update = _core_get("time_entry_update")
+time_entry_approve = _core_get("time_entry_approve")
+time_entries_export_csv = _core_get("time_entries_export_csv")
+
+# Guard minimum contract
+_missing = []
+if EINGANG is None:
+    _missing.append("EINGANG")
+if BASE_PATH is None:
+    _missing.append("BASE_PATH")
+if PENDING_DIR is None:
+    _missing.append("PENDING_DIR")
+if DONE_DIR is None:
+    _missing.append("DONE_DIR")
+if not callable(analyze_to_pending):
+    _missing.append("analyze_to_pending")
+for fn in (
+    read_pending,
+    write_pending,
+    delete_pending,
+    list_pending,
+    write_done,
+    read_done,
+    process_with_answers,
+):
+    if fn is None:
+        _missing.append("core_fn_missing")
+        break
+if _missing:
+    raise RuntimeError("Core contract incomplete: " + ", ".join(_missing))
+
+
+# -------- Flask ----------
+bp = Blueprint("web", __name__)
+ORCHESTRATOR = None
+
+# --- Early template defaults (avoid NameError during debug reload) ---
+HTML_LOGIN = ""  # will be overwritten later by the full template block
+
+
+HTML_LICENSE = """
+<div class="grid gap-4">
+  <div class="card p-6 glass">
+    <div class="text-xl font-bold mb-4">Lizenzstatus</div>
+    <div class="grid gap-4 text-sm md:grid-cols-2">
+      <div><span class="muted text-xs uppercase tracking-widest">Plan</span><div class="text-lg font-bold">{{ plan }}</div></div>
+      <div><span class="muted text-xs uppercase tracking-widest">Status</span><div class="text-lg font-bold">{{ "Read-only" if read_only else "Aktiv" }}</div></div>
+      <div><span class="muted text-xs uppercase tracking-widest">Grund</span><div>{{ license_reason or "-" }}</div></div>
+      <div><span class="muted text-xs uppercase tracking-widest">Trial Resttage</span><div>{{ trial_days_left }}</div></div>
+    </div>
+    {% if notice %}
+    <div class="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-400">{{ notice }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-400">{{ error }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card p-6 glass">
+    <div class="text-lg font-bold mb-2">Lizenz aktivieren</div>
+    <div class="muted text-sm mb-4">Fügen Sie hier Ihr signiertes Lizenz-JSON ein, um den vollen Funktionsumfang freizuschalten.</div>
+    <form method="post" action="/license" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="license_json" rows="10" class="w-full rounded-xl border border-slate-700 px-4 py-3 text-xs bg-slate-900/50 font-monospace" placeholder='{"customer_id":"...","plan":"ENTERPRISE","signature":"..."}'></textarea>
+      <button type="submit" class="w-full btn-primary font-bold py-3">Lizenz validieren & aktivieren</button>
+    </form>
+  </div>
+</div>
 """
 
-# -------- Base Template (Classic Shell) ----------
+
+def suggest_existing_folder(
+    base_path: str, tenant: str, kdnr: str, name: str
+) -> Tuple[str, float]:
+    """Heuristic: find an existing customer folder for this tenant."""
+    try:
+        root = Path(base_path) / tenant
+        if not root.exists():
+            return "", 0.0
+        k = (kdnr or "").strip()
+        n = (name or "").strip().lower()
+        candidates = []
+        for p in root.glob("*"):
+            if not p.is_dir():
+                continue
+            s = p.name.lower()
+            if k and s.startswith(k.lower() + "_"):
+                return str(p), 0.95
+            if n and n in s:
+                candidates.append((str(p), 0.7))
+            if n and fuzz is not None:
+                score = fuzz.partial_ratio(n, s) / 100.0
+                if score >= 0.6:
+                    candidates.append((str(p), score))
+        if not candidates:
+            return "", 0.0
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return candidates[0]
+    except Exception:
+        return "", 0.0
+
+
+DOCTYPE_CHOICES = [
+    "ANGEBOT",
+    "RECHNUNG",
+    "AUFTRAGSBESTAETIGUNG",
+    "AW",
+    "MAHNUNG",
+    "NACHTRAG",
+    "SONSTIGES",
+    "FOTO",
+    "H_RECHNUNG",
+    "H_ANGEBOT",
+]
+
+ASSISTANT_HIDE_EINGANG = True
+
+
+# -------- Helpers ----------
+def _b64(s: str) -> str:
+    return base64.urlsafe_b64encode((s or "").encode("utf-8")).decode("ascii")
+
+
+def _unb64(s: str) -> str:
+    return base64.urlsafe_b64decode((s or "").encode("ascii")).decode(
+        "utf-8", errors="ignore"
+    )
+
+
+def _audit(action: str, target: str = "", meta: dict = None) -> None:
+    if audit_log is None:
+        return
+    try:
+        role = current_role()
+        user = current_user() or ""
+        audit_log(
+            user=user,
+            role=role,
+            action=action,
+            target=target,
+            meta=meta or {},
+            tenant_id=current_tenant(),
+        )
+    except Exception:
+        pass
+
+
+def _resolve_doc_path(token: str, pending: dict | None = None) -> Path | None:
+    pending = pending or {}
+    direct = Path(pending.get("path", "")) if pending.get("path") else None
+    if direct and direct.exists():
+        return direct
+    doc_id = normalize_component(pending.get("doc_id") or token)
+    tenant_id = (
+        current_tenant() or pending.get("tenant") or pending.get("tenant_id") or ""
+    )
+    if doc_id:
+        if callable(db_latest_path_for_doc):
+            latest = db_latest_path_for_doc(doc_id, tenant_id=tenant_id)
+            if latest and Path(latest).exists():
+                return Path(latest)
+        if callable(db_path_for_doc):
+            fallback = db_path_for_doc(doc_id, tenant_id=tenant_id)
+            if fallback and Path(fallback).exists():
+                return Path(fallback)
+    return None
+
+
+def _allowlisted_dirs() -> List[Path]:
+    base = Config.BASE_DIR
+    instance_dir = base / "instance"
+    core_db_dir = Path(getattr(core, "DB_PATH", instance_dir)).resolve().parent
+    import_root = Path(str(Config.IMPORT_ROOT or "")).expanduser()
+    allowlist = [instance_dir.resolve(), core_db_dir]
+    if str(import_root):
+        allowlist.append(import_root.resolve())
+    return allowlist
+
+
+def _is_allowlisted_path(path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except Exception:
+        return False
+    for allowed in _allowlisted_dirs():
+        try:
+            if resolved.is_relative_to(allowed):
+                return True
+        except AttributeError:
+            if str(resolved).startswith(str(allowed)):
+                return True
+    return False
+
+
+def _list_allowlisted_db_files() -> List[Path]:
+    files: List[Path] = []
+    for folder in _allowlisted_dirs():
+        if not folder.exists():
+            continue
+        for fp in folder.glob("*.db"):
+            files.append(fp)
+        for fp in folder.glob("*.sqlite3"):
+            files.append(fp)
+    return sorted({f.resolve() for f in files})
+
+
+def _list_allowlisted_base_paths() -> List[Path]:
+    candidates = {BASE_PATH.resolve()}
+    base_dir = Config.BASE_DIR.resolve()
+    data_dir = base_dir / "data"
+    if data_dir.exists():
+        candidates.add(data_dir.resolve())
+    return sorted(candidates)
+
+
+def _is_storage_path_valid(path: Path) -> bool:
+    try:
+        resolved = path.expanduser().resolve()
+    except Exception:
+        return False
+    return resolved.exists() and resolved.is_dir()
+
+
+def _seed_dev_users(auth_db: AuthDB) -> str:
+    now = datetime.utcnow().isoformat()
+    auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+    auth_db.upsert_tenant("KUKANILEA Dev", "KUKANILEA Dev", now)
+    auth_db.upsert_user("admin", hash_password("admin"), now)
+    auth_db.upsert_user("dev", hash_password("dev"), now)
+    auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+    auth_db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
+    return "Seeded users: admin/admin, dev/dev"
+
+
+def _safe_filename(name: str) -> str:
+    raw = (name or "").strip().replace("\\", "_").replace("/", "_")
+    if secure_filename is not None:
+        out = secure_filename(raw)
+        return out or "upload"
+    raw = re.sub(r"[^a-zA-Z0-9._-]+", "_", raw).strip("._-")
+    return raw or "upload"
+
+
+def _is_allowed_ext(filename: str) -> bool:
+    try:
+        return Path(filename).suffix.lower() in SUPPORTED_EXT
+    except Exception:
+        return False
+
+
+def _allowed_roots() -> List[Path]:
+    return [
+        EINGANG.resolve(),
+        BASE_PATH.resolve(),
+        PENDING_DIR.resolve(),
+        DONE_DIR.resolve(),
+    ]
+
+
+def _is_allowed_path(fp: Path) -> bool:
+    try:
+        rp = fp.resolve()
+        for root in _allowed_roots():
+            if rp == root or str(rp).startswith(str(root) + os.sep):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _norm_tenant(t: str) -> str:
+    t = normalize_component(t or "").lower().replace(" ", "_")
+    t = re.sub(r"[^a-z0-9_\-]+", "", t)
+    return t[:40]
+
+
+def _wizard_get(p: dict) -> dict:
+    w = p.get("wizard") or {}
+    w.setdefault("tenant", "")
+    w.setdefault("kdnr", "")
+    w.setdefault("use_existing", "")
+    w.setdefault("name", "")
+    w.setdefault("addr", "")
+    w.setdefault("plzort", "")
+    w.setdefault("doctype", "")
+    w.setdefault("document_date", "")
+    return w
+
+
+def _wizard_save(token: str, p: dict, w: dict) -> None:
+    p["wizard"] = w
+    write_pending(token, p)
+
+
+def _rag_enqueue(kind: str, pk: int, op: str) -> None:
+    try:
+        rag_enqueue(kind, int(pk), op)
+    except Exception:
+        pass
+
+
+def _card(kind: str, msg: str) -> str:
+    styles = {
+        "error": "border-red-500/40 bg-red-500/10",
+        "warn": "border-amber-500/40 bg-amber-500/10",
+        "info": "border-slate-700 bg-slate-950/40",
+    }
+    s = styles.get(kind, styles["info"])
+    return f'<div class="rounded-xl border {s} p-3 text-sm">{msg}</div>'
+
+
+from flask import render_template
+
+def _render_base(template_name: str, **kwargs) -> str:
+    profile = _get_profile()
+    kwargs.setdefault("branding", Config.get_branding())
+    kwargs.setdefault("ablage", str(BASE_PATH))
+    kwargs.setdefault("user", current_user() or "-")
+    kwargs.setdefault("roles", current_role())
+    kwargs.setdefault("tenant", current_tenant() or "-")
+    kwargs.setdefault("profile", profile)
+    return render_template(template_name, **kwargs)
+
+
+def _get_profile() -> dict:
+    if callable(getattr(core, "get_profile", None)):
+        return core.get_profile()
+    return {
+        "name": "default",
+        "db_path": str(getattr(core, "DB_PATH", "")),
+        "base_path": str(BASE_PATH),
+    }
+
+
+def _parse_date(value: str) -> datetime.date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except Exception:
+        return datetime.now().date()
+
+
+def _time_range_params(range_name: str, date_value: str) -> tuple[str, str]:
+    base_date = _parse_date(date_value)
+    if range_name == "day":
+        start_date = base_date
+        end_date = base_date
+    else:
+        start_date = base_date - timedelta(days=base_date.weekday())
+        end_date = start_date + timedelta(days=6)
+    start_at = f"{start_date.isoformat()}T00:00:00"
+    end_at = f"{end_date.isoformat()}T23:59:59"
+    return start_at, end_at
+
+
+# -------- UI Templates ----------
 HTML_BASE = r"""<!doctype html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icons/app-icon.svg') }}">
-<title>{{branding.app_name}} Enterprise Systems</title>
-<script src="{{ url_for('static', filename='vendor/tailwindcss.min.js') }}"></script>
+<title>{{branding.app_name}} Systems</title>
+<script src="https://cdn.tailwindcss.com"></script>
 <script>
-  const savedTheme = localStorage.getItem("ks_theme") || "light";
-  if(savedTheme === "dark"){ document.documentElement.classList.add("dark"); }
+  const savedTheme = localStorage.getItem("ks_theme") || "dark";
+  const savedAccent = localStorage.getItem("ks_accent") || "brand";
+  if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
+  document.documentElement.dataset.accent = savedAccent;
 </script>
 <style>
-  :root {
-    --bg: #ffffff; --bg-elev: #f8fafc; --bg-panel: #ffffff; --border: #e2e8f0;
-    --text: #0f172a; --muted: #64748b; --accent-500: #D4AF37; --accent-600: #B8860B;
-    --navy: #1E3A8A; --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-    --radius-lg: 12px; --radius-md: 8px; --nav-width: 260px;
+  :root{
+    --bg:#060b16;
+    --bg-elev:#0f172a;
+    --bg-panel:rgba(30, 41, 59, 0.7);
+    --border:rgba(255, 255, 255, 0.08);
+    --text:#f8fafc;
+    --muted:#94a3b8;
+    --accent-500:{{branding.primary_color}};
+    --accent-600:{{branding.primary_color}};
+    --shadow:0 20px 50px rgba(0,0,0,0.5);
+    --radius-lg:24px;
+    --radius-md:16px;
   }
-  .dark body {
-    --bg: #0f172a; --bg-elev: #1e293b; --bg-panel: #1e293b; --border: #334155;
-    --text: #f8fafc; --muted: #94a3b8; --shadow: 0 10px 15px -3px rgb(0 0 0 / 0.5);
+  body { background-color: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, sans-serif; }
+  .glass { background: var(--bg-panel); backdrop-filter: blur(12px); border: 1px solid var(--border); }
+  .card { background: rgba(30, 41, 59, 0.4); border: 1px solid var(--border); border-radius: var(--radius-md); transition: all 0.3s ease; }
+  .card:hover { border-color: var(--accent-500); transform: translateY(-2px); }
+  .nav-link { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--radius-md); color: var(--muted); transition: 0.2s; font-size: 0.9rem; }
+  .nav-link:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+  .nav-link.active { background: var(--accent-500); color: white; box-shadow: 0 10px 20px -5px var(--accent-500); }
+  .btn-primary { background: var(--accent-500); color: white; border-radius: 12px; padding: 10px 20px; font-weight: 600; transition: 0.3s; }
+  .btn-primary:hover { filter: brightness(1.1); box-shadow: 0 0 20px var(--accent-500); }
+</style>
+  html[data-accent="emerald"]{ --accent-500:#10b981; --accent-600:#059669; }
+  html[data-accent="amber"]{ --accent-500:#f59e0b; --accent-600:#d97706; }
+  .light body{
+    --bg:#f8fafc;
+    --bg-elev:#ffffff;
+    --bg-panel:#ffffff;
+    --border:rgba(148,163,184,.25);
+    --text:#0f172a;
+    --muted:#475569;
+    --shadow:0 8px 30px rgba(15,23,42,.12);
   }
-  * { box-sizing: border-box; }
-  body { 
-    background-color: var(--bg); color: var(--text); margin: 0; padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased; height: 100vh; overflow: hidden; width: 100vw;
+  body{ background:var(--bg); color:var(--text); }
+  .app-shell{ display:flex; min-height:100vh; }
+  .app-nav{
+    width:240px; background:var(--bg-elev); border-right:1px solid var(--border);
+    padding:24px 18px; position:sticky; top:0; height:100vh;
   }
-  .app-shell { display: flex; height: 100vh; width: 100vw; }
-  .app-nav {
-    width: var(--nav-width); background: var(--bg-elev); border-right: 1px solid var(--border);
-    padding: 24px 16px; height: 100vh; display: flex; flex-direction: column; flex-shrink: 0;
+  .app-main{ flex:1; display:flex; flex-direction:column; }
+  .app-topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:22px 28px; border-bottom:1px solid var(--border); background:var(--bg-elev);
   }
-  .app-main { flex: 1; display: flex; flex-direction: column; background: var(--bg); min-width: 0; height: 100vh; }
-  .app-topbar {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 0 32px; height: 64px; border-bottom: 1px solid var(--border); background: var(--bg-panel);
-    flex-shrink: 0; width: 100%;
+  .app-content{ padding:24px 28px; }
+  .nav-link{
+    display:flex; gap:12px; align-items:center; padding:10px 12px; border-radius:12px;
+    color:var(--muted); text-decoration:none; transition:all .15s ease;
   }
-  .app-content-scroll { flex: 1; overflow-y: auto; padding: 32px; width: 100%; }
-  .app-content-container { max-width: 1200px; margin: 0 auto; width: 100%; }
-  
-  .nav-link {
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius-md);
-    color: var(--muted); text-decoration: none; transition: all 0.2s; font-size: 0.95rem; font-weight: 500;
-  }
-  .nav-link:active { transform: scale(0.97); }
-  .nav-link:hover { background: rgba(0,0,0,0.03); color: var(--text); }
-  .dark .nav-link:hover { background: rgba(255,255,255,0.05); }
-  .nav-link.active { background: var(--navy); color: white; box-shadow: 0 4px 12px rgba(30, 58, 138, 0.2); }
-  
-  .card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
-  .btn-primary { 
-    background: var(--navy); color: white; border-radius: var(--radius-md); padding: 10px 20px; font-weight: 600; border: none; cursor: pointer; 
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  }
-  .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
-  .btn-primary:active { transform: scale(0.96); }
-  
-  .btn-outline { 
-    border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 16px; background: transparent; color: var(--text); 
-    cursor: pointer; text-decoration: none; font-size: 0.875rem; transition: all 0.2s; 
-  }
-  .btn-outline:hover { background: rgba(0,0,0,0.03); }
-  
-  .input { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 14px; color: var(--text); width: 100%; }
-  .badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--bg-elev); border: 1px solid var(--border); color: var(--muted); font-weight: 600; }
-  .logo-container { width: 44px; height: 44px; flex-shrink: 0; }
+  .nav-link:hover{ background:rgba(148,163,184,.08); color:var(--text); }
+  .nav-link.active{ background:rgba(99,102,241,.15); color:var(--text); border:1px solid rgba(99,102,241,.25); }
+  .badge{ font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
+  .card{ background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow); }
+  .btn-primary{ background:var(--accent-600); color:white; border-radius:12px; }
+  .btn-outline{ border:1px solid var(--border); border-radius:12px; }
+  .input{ background:transparent; border:1px solid var(--border); border-radius:12px; }
+  .muted{ color:var(--muted); }
+  .pill{ background:rgba(99,102,241,.12); color:var(--text); border:1px solid rgba(99,102,241,.2); padding:2px 8px; border-radius:999px; font-size:11px; }
 </style>
 </head>
 <body>
-<main class="app-shell" role="main">
-  <nav class="app-nav" aria-label="Hauptnavigation">
-    <div style="display:flex; align-items:center; gap:14px; margin-bottom:40px; padding:0 8px;">
-      <div class="logo-container" role="img" aria-label="KUKANILEA Logo">""" + SVG_LOGO + r"""</div>
-      <div style="overflow:hidden; line-height:1.15;">
-        <div style="font-weight:800; font-size:18px; color:var(--navy); text-transform:uppercase;">{{branding.app_name}}</div>
-        <div style="font-size:9px; text-transform:uppercase; font-weight:700; color:var(--accent-600);">Enterprise Core</div>
+<div class="app-shell">
+  <aside class="app-nav">
+    <div class="flex items-center gap-2 mb-6">
+      <div class="h-10 w-10 rounded-2xl flex items-center justify-center text-white font-bold" style="background:var(--accent-500);">K</div>
+      <div>
+        <div class="text-sm font-semibold">{{branding.app_name}}</div>
+        <div class="text-[11px] muted">Agent Orchestra</div>
       </div>
     </div>
-    <div style="flex:1; display:flex; flex-direction:column; gap:4px;">
-      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/" aria-current="{{'page' if active_tab=='upload' else 'false'}}">
-        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-        Upload
-      </a>
-      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks" aria-current="{{'page' if active_tab=='tasks' else 'false'}}">
-        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        Aufgaben
-      </a>
-      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time" aria-current="{{'page' if active_tab=='time' else 'false'}}">
-        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Zeiterfassung
-      </a>
-      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant" aria-current="{{'page' if active_tab=='assistant' else 'false'}}">
-        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
-        Assistent
-      </a>
-      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat" aria-current="{{'page' if active_tab=='chat' else 'false'}}">
-        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
-        Chat
-      </a>
-      <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail" aria-current="{{'page' if active_tab=='mail' else 'false'}}">
-        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-        Postfach
-      </a>
+    <nav class="space-y-2">
+      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">[+] Upload</a>
+      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">[/] Tasks</a>
+      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">[@] Time</a>
+      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">[*] Assistant</a>
+      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">[>] Chat</a>
+      <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">[#] Mail</a>
       {% if roles in ['DEV', 'ADMIN'] %}
-      <div role="presentation" style="padding: 24px 12px 8px; font-size: 10px; font-weight: bold; text-transform: uppercase; color: var(--muted); opacity: 0.7;">Verwaltung</div>
-      <a class="nav-link {{'active' if active_tab=='mesh' else ''}}" href="/admin/mesh" aria-current="{{'page' if active_tab=='mesh' else 'false'}}">
-        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-5.16-5.16a2 2 0 0 0-2.82 0L3 21"/><circle cx="16" cy="7" r="4"/></svg>
-        Mesh (Admin)
-      </a>
-      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings" aria-current="{{'page' if active_tab=='settings' else 'false'}}">
-        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
-        Einstellungen
-      </a>
+      <a class="nav-link {{'active' if active_tab=='mesh' else ''}}" href="/admin/mesh">[^] Mesh</a>
+      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">[%] Settings</a>
       {% endif %}
+    </nav>
+    <div class="mt-8 text-xs muted">
+      Ablage: {{ablage}}
     </div>
-    <footer style="margin-top:auto; padding-top:24px; border-top:1px dashed var(--border);">
-      <div style="font-size:10px; font-weight:bold; color:var(--muted); margin-bottom:4px;">ABLAGE</div>
-      <div style="font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="{{ablage}}">{{ablage}}</div>
-    </footer>
-  </nav>
-  <div class="app-main">
-    <header class="app-topbar" aria-label="Anwendungs-Kopfzeile">
-      <div style="display:flex; align-items:center; gap:16px;"><h2 style="font-size:14px; font-weight:bold; text-transform:uppercase; letter-spacing:0.1em;">{{ active_tab|capitalize }}</h2></div>
-      <div style="display:flex; align-items:center; gap:16px;">
-        <span class="badge" role="status">{{tenant}}</span><span class="badge" role="status">{{roles}}</span>
-        <div style="height:32px; width:1px; background:var(--border);"></div>
-        <button id="themeBtn" aria-label="Farbschema umschalten" style="padding:8px; background:transparent; border:none; cursor:pointer; color:var(--text);">
-          <span class="dark:hidden"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span>
-          <span class="hidden dark:inline"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>
-        </button>
-        {% if user and user != '-' %}
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div style="text-align:right;"><div style="font-size:12px; font-weight:bold;">{{user}}</div><div style="font-size:10px; color:var(--muted);">{{profile.name}}</div></div>
-          <a class="btn-outline" style="font-size:12px; padding:6px 12px;" href="/logout">Abmelden</a>
-        </div>
-        {% endif %}
+  </aside>
+  <main class="app-main">
+    <div class="app-topbar">
+      <div>
+        <div class="text-lg font-semibold">Workspace</div>
+        <div class="text-xs muted">Upload → Review → Ablage</div>
       </div>
-    </header>
-    <section class="app-content-scroll" aria-label="Inhalt"><div class="app-content-container">{{ content|safe }}</div></section>
+      <div class="flex items-center gap-3">
+        <span class="badge">User: {{user}}</span>
+        <span class="badge">Role: {{roles}}</span>
+        <span class="badge">Tenant: {{tenant}}</span>
+        <span class="badge">Profile: {{ profile.name }}</span>
+        {% if user and user != '-' %}
+        <a class="px-3 py-2 text-sm btn-outline" href="/logout">Logout</a>
+        {% endif %}
+        <button id="accentBtn" class="px-3 py-2 text-sm btn-outline">Accent: <span id="accentLabel"></span></button>
+        <button id="themeBtn" class="px-3 py-2 text-sm btn-outline">Theme: <span id="themeLabel"></span></button>
+      </div>
+    </div>
+    <div class="app-content">
+      {% if read_only %}
+      <div class="mb-4 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm">
+        Read-only mode aktiv ({{license_reason}}). Schreibaktionen sind deaktiviert.
+      </div>
+      {% elif trial_active and trial_days_left <= 3 %}
+      <div class="mb-4 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm">
+        Trial aktiv: noch {{trial_days_left}} Tage.
+      </div>
+      {% endif %}
+      {{ content|safe }}
+    </div>
+  </main>
+</div>
+
+<!-- Floating Chat Widget -->
+<div id="chatWidgetBtn" title="Chat" class="fixed bottom-6 right-6 z-50 cursor-pointer select-none">
+  <div class="relative h-12 w-12 rounded-full flex items-center justify-center font-bold text-lg" style="background:var(--accent-600); box-shadow:var(--shadow); color:white;">
+    &gt;_
+    <span id="chatUnread" class="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-500 hidden"></span>
   </div>
-</main>
+</div>
+
+<div id="chatDrawer" class="fixed inset-y-0 right-0 z-50 hidden w-[420px] max-w-[92vw] border-l" style="background:var(--bg-elev); border-color:var(--border); box-shadow:var(--shadow);">
+  <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:var(--border);">
+    <div>
+      <div class="text-sm font-semibold">KUKANILEA Assistant</div>
+      <div class="text-xs muted">Tenant: {{tenant}}</div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="chatWidgetStatus" class="text-[11px] muted">Bereit</span>
+      <button id="chatWidgetClose" class="rounded-lg px-2 py-1 text-sm btn-outline">✕</button>
+    </div>
+  </div>
+  <div class="px-4 py-3 border-b" style="border-color:var(--border);">
+    <div class="flex flex-wrap gap-2">
+      <button class="chat-quick pill" data-q="suche rechnung">Suche Rechnung</button>
+      <button class="chat-quick pill" data-q="suche angebot">Suche Angebot</button>
+      <button class="chat-quick pill" data-q="zeige letzte uploads">Letzte Uploads</button>
+      <button class="chat-quick pill" data-q="hilfe">Hilfe</button>
+    </div>
+  </div>
+  <div id="chatWidgetMsgs" class="flex-1 overflow-auto px-4 py-4 space-y-3 text-sm" style="height: calc(100vh - 230px);"></div>
+  <div class="border-t px-4 py-3 space-y-2" style="border-color:var(--border);">
+    <div class="flex gap-2">
+      <input id="chatWidgetKdnr" class="w-24 rounded-xl input px-3 py-2 text-sm" placeholder="KDNR" />
+      <input id="chatWidgetInput" class="flex-1 rounded-xl input px-3 py-2 text-sm" placeholder="Frag etwas…" />
+      <button id="chatWidgetSend" class="rounded-xl px-3 py-2 text-sm btn-primary">Senden</button>
+    </div>
+    <div class="flex items-center justify-between">
+      <button id="chatWidgetRetry" class="text-xs btn-outline px-3 py-1 hidden">Retry</button>
+      <button id="chatWidgetClear" class="text-xs btn-outline px-3 py-1">Clear</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   const btnTheme = document.getElementById("themeBtn");
-  function curTheme(){ return (localStorage.getItem("ks_theme") || "light"); }
+  const lblTheme = document.getElementById("themeLabel");
+  const btnAcc = document.getElementById("accentBtn");
+  const lblAcc = document.getElementById("accentLabel");
+  function curTheme(){ return (localStorage.getItem("ks_theme") || "dark"); }
+  function curAccent(){ return (localStorage.getItem("ks_accent") || "indigo"); }
   function applyTheme(t){
-    if(t === "dark"){ document.documentElement.classList.add("dark"); }
-    else { document.documentElement.classList.remove("dark"); }
+    if(t === "light"){ document.documentElement.classList.add("light"); }
+    else { document.documentElement.classList.remove("light"); }
     localStorage.setItem("ks_theme", t);
+    lblTheme.textContent = t;
+  }
+  function applyAccent(a){
+    document.documentElement.dataset.accent = a;
+    localStorage.setItem("ks_accent", a);
+    lblAcc.textContent = a;
   }
   applyTheme(curTheme());
-  btnTheme?.addEventListener("click", ()=>{ applyTheme(curTheme()==="dark"?"light":"dark"); window.location.reload(); });
+  applyAccent(curAccent());
+  btnTheme?.addEventListener("click", ()=>{ applyTheme(curTheme() === "dark" ? "light" : "dark"); });
+  btnAcc?.addEventListener("click", ()=>{
+    const order = ["indigo","emerald","amber"];
+    const i = order.indexOf(curAccent());
+    applyAccent(order[(i+1) % order.length]);
+  });
 })();
 </script>
+
 </body>
 </html>"""
 
-# -------- Login Template ----------
+# ------------------------------
+# Login template
+# ------------------------------
 HTML_LOGIN = r"""
-<div class="max-w-md mx-auto mt-20" id="bootSequence">
-  <div class="card p-10 bg-slate-900 border-slate-800 shadow-2xl overflow-hidden relative">
-    <div class="absolute top-0 left-0 w-full h-1 bg-slate-800">
-        <div id="bootProgress" class="h-full bg-accent-500 transition-all duration-500" style="width: 0%"></div>
-    </div>
-    <div class="flex flex-col items-center justify-center py-10">
-      <div class="mb-8" style="width:80px; height:80px;">""" + SVG_LOGO + r"""</div>
-      <div class="text-center space-y-4 w-full">
-        <div class="text-white font-mono text-xs tracking-widest uppercase opacity-50" id="bootPhase">Kernel Boot</div>
-        <div class="h-4 flex items-center justify-center">
-            <div class="flex gap-1" id="bootDots">
-                <div class="w-1.5 h-1.5 rounded-full bg-accent-500 animate-bounce" style="animation-delay: 0s"></div>
-                <div class="w-1.5 h-1.5 rounded-full bg-accent-500 animate-bounce" style="animation-delay: 0.2s"></div>
-                <div class="w-1.5 h-1.5 rounded-full bg-accent-500 animate-bounce" style="animation-delay: 0.4s"></div>
-            </div>
-        </div>
-        <div class="text-[10px] font-mono text-accent-400 bg-slate-800/50 p-3 rounded-lg border border-slate-700/50 break-all h-16 flex items-center justify-center" id="bootDetails">Loading...</div>
+<div class="max-w-md mx-auto mt-10">
+  <div class="card p-6">
+    <h1 class="text-2xl font-bold mb-2">Login</h1>
+    <p class="text-sm opacity-80 mb-4">Accounts: <b>admin</b>/<b>admin</b> (Tenant: KUKANILEA) • <b>dev</b>/<b>dev</b> (Tenant: KUKANILEA Dev)</p>
+    {% if error %}<div class="alert alert-error mb-3">{{ error }}</div>{% endif %}
+    <form method="post" class="space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="label">Username</label>
+        <input class="input w-full" name="username" autocomplete="username" required>
       </div>
-    </div>
-    <div class="mt-6 pt-6 border-t border-slate-800 text-center"><p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Enterprise Core Bootloader</p></div>
+      <div>
+        <label class="label">Password</label>
+        <input class="input w-full" type="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Login</button>
+    </form>
   </div>
 </div>
-<div class="max-w-md mx-auto mt-20 hidden" id="loginForm">
-  <div class="card p-10 bg-white shadow-2xl">
-    <div class="flex items-center gap-4 mb-8 justify-center">
-      <div style="width:56px; height:56px;">""" + SVG_LOGO + r"""</div>
-      <div style="line-height:1.15;">
-        <div style="font-weight:800; font-size:24px; color:#1E3A8A; text-transform:uppercase;">KUKANILEA</div>
-        <div style="font-size:10px; font-weight:700; color:#B8860B;">Enterprise Office</div>
+"""
+
+
+HTML_INDEX = r"""<div class="grid lg:grid-cols-2 gap-6">
+  <div class="card p-6 glass">
+    <div class="text-xl font-bold mb-2">Beleg-Zentrale</div>
+    <div class="muted text-sm mb-6">Importieren Sie Dokumente für die automatisierte OCR-Analyse und Archivierung.</div>
+    <form id="upform" class="space-y-4">
+      <div class="relative group">
+        <input id="file" name="file" type="file"
+          class="block w-full text-sm text-slate-400
+          file:mr-4 file:py-2 file:px-4
+          file:rounded-xl file:border-0
+          file:text-sm file:font-semibold
+          file:bg-slate-800 file:text-slate-300
+          hover:file:bg-slate-700 transition cursor-pointer" />
+      </div>
+      <button id="btn" type="submit" class="w-full btn-primary font-bold py-3">Analyse starten</button>
+    </form>
+    <div class="mt-6 pt-6 border-t border-slate-800/50">
+      <div class="flex justify-between items-center mb-2">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-500" id="phase">Bereit zum Import</div>
+        <div class="text-xs font-bold text-slate-400" id="pLabel">0%</div>
+      </div>
+      <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
+        <div id="bar" class="h-full transition-all duration-300 shadow-[0_0_10px_rgba(56,189,248,0.5)]" style="background:var(--accent-500); width: 0%"></div>
+      </div>
+      <div class="text-slate-400 text-sm mt-4 font-medium" id="status">Keine laufenden Prozesse.</div>
+    </div>
+  </div>
+  <div class="card p-6 glass">
+    <div class="text-xl font-bold mb-2">Prüf-Warteschlange</div>
+    <div class="muted text-sm mb-6">Dokumente, die eine menschliche Validierung erfordern.</div>
+    {% if items %}
+      <div class="space-y-3">
+        {% for it in items %}
+          <div class="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/50 hover:border-slate-700/50 transition">
+            <div class="flex items-center justify-between mb-3">
+              <a class="text-sm font-bold text-sky-400 hover:text-sky-300 transition underline decoration-sky-400/30" href="/review/{{it}}/kdnr">Validierung öffnen</a>
+              <div class="text-[10px] font-bold px-2 py-1 rounded bg-slate-800 text-slate-400">{{ (meta.get(it, {}).get('progress', 0.0) or 0.0) | round(1) }}%</div>
+            </div>
+            <div class="text-xs text-slate-300 font-mono mb-1 truncate">{{ meta.get(it, {}).get('filename','') }}</div>
+            <div class="text-[10px] uppercase tracking-widest text-slate-500">{{ meta.get(it, {}).get('progress_phase','') }}</div>
+            <div class="mt-4 flex gap-2">
+              <a class="flex-1 text-center py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition" href="/file/{{it}}" target="_blank">Vorschau</a>
+              <form method="post" action="/review/{{it}}/delete" onsubmit="return confirm('Eintrag wirklich verwerfen?')" class="flex-1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="w-full py-2 text-xs rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition" type="submit">Verwerfen</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="flex flex-col items-center justify-center py-12 text-slate-500">
+        <div class="text-4xl mb-4 opacity-20">[-]</div>
+        <div class="text-sm">Derzeit liegen keine Dokumente zur Prüfung vor.</div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+<script>
+const form = document.getElementById("upform");
+const fileInput = document.getElementById("file");
+const bar = document.getElementById("bar");
+const pLabel = document.getElementById("pLabel");
+const status = document.getElementById("status");
+const phase = document.getElementById("phase");
+function setProgress(p){
+  const pct = Math.max(0, Math.min(100, p));
+  bar.style.width = pct + "%";
+  pLabel.textContent = pct.toFixed(1) + "%";
+}
+async function poll(token){
+  const res = await fetch("/api/progress/" + token, {cache:"no-store", credentials:"same-origin"});
+  const j = await res.json();
+  setProgress(j.progress || 0);
+  phase.textContent = j.progress_phase || "";
+  if(j.status === "READY"){ status.textContent = "Analyse fertig. Review öffnet…"; setTimeout(()=>{ window.location.href = "/review/" + token + "/kdnr"; }, 120); return; }
+  if(j.status === "ERROR"){ status.textContent = "Analyse-Fehler: " + (j.error || "unbekannt"); return; }
+  setTimeout(()=>poll(token), 450);
+}
+form.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = fileInput.files[0];
+  if(!f){ status.textContent = "Bitte eine Datei auswählen."; return; }
+  const fd = new FormData();
+  fd.append("file", f);
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/upload", true);
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+  if(csrf) xhr.setRequestHeader("X-CSRF-Token", csrf);
+  xhr.upload.onprogress = (ev) => {
+    if(ev.lengthComputable){ setProgress((ev.loaded / ev.total) * 35); phase.textContent = "Upload…"; }
+  };
+  xhr.onload = () => {
+    if(xhr.status === 200){
+      const resp = JSON.parse(xhr.responseText);
+      status.textContent = "Upload OK. Analyse läuft…";
+      poll(resp.token);
+    } else {
+      try{ const j = JSON.parse(xhr.responseText || "{}"); status.textContent = "Fehler beim Upload: " + (j.error || ("HTTP " + xhr.status)); }
+      catch(e){ status.textContent = "Fehler beim Upload: HTTP " + xhr.status; }
+    }
+  };
+  xhr.onerror = () => { status.textContent = "Upload fehlgeschlagen (Netzwerk/Server)."; };
+  status.textContent = "Upload läuft…"; setProgress(0); phase.textContent = ""; xhr.send(fd);
+});
+</script>"""
+
+HTML_REVIEW_SPLIT = r"""<div class="grid lg:grid-cols-2 gap-4">
+  <div class="card p-4 sticky top-6 h-fit">
+    <div class="flex items-center justify-between gap-2">
+      <div>
+        <div class="text-lg font-semibold">Dokument</div>
+        <div class="muted text-xs break-all">{{filename}}</div>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <a class="underline" href="/file/{{token}}" target="_blank">Download</a>
+        <a class="underline muted" href="/">Home</a>
       </div>
     </div>
-    {% if error %}<div class="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700 font-bold shadow-sm">{{ error }}</div>{% endif %}
-    <form method="post" class="space-y-6">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="space-y-1"><label class="muted text-[10px] font-bold uppercase tracking-widest px-1">Benutzername</label><input class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" name="username" required></div>
-      <div class="space-y-1"><label class="muted text-[10px] font-bold uppercase tracking-widest px-1">Passwort</label><input class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" type="password" name="password" required></div>
-      <div class="pt-2"><button class="w-full rounded-xl px-6 py-4 font-bold btn-primary text-lg" type="submit" style="background:#1E3A8A;">Login</button></div>
-    </form>
+    <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div class="badge">KDNR: {{w.kdnr or '-'}}</div>
+      <div class="badge">Typ: {{suggested_doctype}}</div>
+      <div class="badge">Datum: {{suggested_date or '-'}}</div>
+      <div class="badge">Confidence: {{confidence}}%</div>
+    </div>
+    <div class="mt-3 rounded-xl overflow-hidden border" style="border-color:var(--border); height:70vh;">
+      {% if is_pdf %}
+        <iframe src="/file/{{token}}#page=1" class="w-full h-full"></iframe>
+      {% elif is_text %}
+        <iframe src="/file/{{token}}" class="w-full h-full"></iframe>
+      {% else %}
+        <img src="/file/{{token}}" class="w-full h-full object-contain"/>
+      {% endif %}
+    </div>
+    {% if preview %}
+      <div class="mt-3">
+        <div class="text-sm font-semibold mb-1">Preview (Auszug)</div>
+        <pre class="text-xs whitespace-pre-wrap rounded-xl border p-3 max-h-48 overflow-auto" style="border-color:var(--border); background:rgba(15,23,42,.35);">{{preview}}</pre>
+      </div>
+    {% endif %}
+  </div>
+  <div class="card p-4">
+    {{ right|safe }}
+  </div>
+</div>"""
+
+HTML_WIZARD = r"""<form method="post" class="space-y-3" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="flex items-start justify-between gap-3">
+    <div>
+      <div class="text-lg font-semibold">Review</div>
+      <div class="muted text-xs">Bearbeitung rechts, Preview links.</div>
+    </div>
+    <div class="flex gap-2">
+      <button class="rounded-xl px-3 py-2 text-xs btn-outline card" name="reextract" value="1" type="submit">Re-Extract</button>
+    </div>
+  </div>
+  {% if msg %}
+    <div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">{{msg}}</div>
+  {% endif %}
+  <div class="grid md:grid-cols-2 gap-3">
+    <div>
+      <label class="muted text-xs">Kundennr (KDNR)</label>
+      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="kdnr" value="{{w.kdnr}}" placeholder="z.B. 1234"/>
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-3">
+    <div>
+      <label class="muted text-xs">Dokumenttyp</label>
+      <select class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="doctype">
+        {% for d in doctypes %}
+          <option value="{{d}}" {{'selected' if d==w.doctype else ''}}>{{d}}</option>
+        {% endfor %}
+      </select>
+      <div class="muted text-[11px] mt-1">Vorschlag: {{suggested_doctype}}</div>
+    </div>
+    <div>
+      <label class="muted text-xs">Dokumentdatum (optional)</label>
+      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="document_date" value="{{w.document_date}}" placeholder="YYYY-MM-DD oder leer"/>
+      <div class="muted text-[11px] mt-1">Vorschlag: {{suggested_date or '-'}} </div>
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-3">
+    <div>
+      <label class="muted text-xs">Name</label>
+      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="name" value="{{w.name}}" placeholder="z.B. Gerd Warmbrunn"/>
+    </div>
+    <div>
+      <label class="muted text-xs">Adresse</label>
+      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="addr" value="{{w.addr}}" placeholder="Straße + Nr"/>
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-3">
+    <div>
+      <label class="muted text-xs">PLZ Ort</label>
+      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="plzort" value="{{w.plzort}}" placeholder="z.B. 16341 Panketal"/>
+    </div>
+    <div>
+      <label class="muted text-xs">Existing Folder (optional)</label>
+      <input class="w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input" name="use_existing" value="{{w.use_existing}}" placeholder="Pfad eines existierenden Objektordners"/>
+      {% if existing_folder_hint %}
+        <div class="muted text-[11px] mt-1">Meintest du: {{existing_folder_hint}} (Confidence {{existing_folder_score}})</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="pt-2 flex flex-wrap gap-2">
+    <button class="rounded-xl px-4 py-2 font-semibold btn-primary" name="confirm" value="1" type="submit">Alles korrekt → Ablage</button>
+    <a class="rounded-xl px-4 py-2 font-semibold btn-outline card" href="/">Zurück</a>
+  </div>
+  <div class="mt-3">
+    <div class="text-sm font-semibold">Extrahierter Text</div>
+    <div class="muted text-xs">Read-only. Re-Extract aktualisiert Vorschläge.</div>
+    <textarea class="w-full text-xs rounded-xl border border-slate-800 p-3 bg-slate-950/40 input mt-2" style="height:260px" readonly>{{extracted_text}}</textarea>
+  </div>
+</form>"""
+
+HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
+  <div class="lg:col-span-1 space-y-4">
+    <div class="card p-4">
+      <div class="text-lg font-semibold">Timer</div>
+      <div class="muted text-sm">Starte und stoppe Zeiten pro Projekt.</div>
+      <div class="mt-3 space-y-2">
+        <label class="text-xs muted">Projekt</label>
+        <select id="timeProject" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"></select>
+        <label class="text-xs muted">Notiz</label>
+        <input id="timeNote" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Baustelle Prüfen" />
+        <div class="flex gap-2 pt-2">
+          <button id="timeStart" class="px-4 py-2 text-sm btn-primary w-full">Start</button>
+          <button id="timeStop" class="px-4 py-2 text-sm btn-outline w-full">Stop</button>
+        </div>
+        <div id="timeStatus" class="muted text-xs pt-2">Timer bereit.</div>
+      </div>
+    </div>
+    <div class="card p-4">
+      <div class="text-lg font-semibold">Projekt anlegen</div>
+      <div class="mt-3 space-y-2">
+        <input id="projectName" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Projektname" />
+        <textarea id="projectDesc" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" rows="3" placeholder="Beschreibung (optional)"></textarea>
+        <button id="projectCreate" class="px-4 py-2 text-sm btn-outline w-full">Anlegen</button>
+        <div id="projectStatus" class="muted text-xs pt-1"></div>
+      </div>
+    </div>
+    <div class="card p-4">
+      <div class="text-lg font-semibold">Export</div>
+      <div class="muted text-xs">CSV Export der aktuellen Woche.</div>
+      <button id="exportWeek" class="mt-3 px-4 py-2 text-sm btn-outline w-full">CSV herunterladen</button>
+    </div>
+  </div>
+  <div class="lg:col-span-2 space-y-4">
+    <div class="card p-4">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div>
+          <div class="text-lg font-semibold">Wochenübersicht</div>
+          <div class="muted text-xs">Summen pro Tag, direkt prüfbar.</div>
+        </div>
+        <input id="weekDate" type="date" class="rounded-xl border px-3 py-2 text-sm bg-transparent" />
+      </div>
+      <div id="weekSummary" class="grid md:grid-cols-2 gap-3 mt-4"></div>
+    </div>
+    <div class="card p-4">
+      <div class="text-lg font-semibold">Einträge</div>
+      <div class="muted text-xs">Klick auf „Bearbeiten“ für Korrekturen.</div>
+      <div id="entryList" class="mt-4 space-y-3"></div>
+    </div>
   </div>
 </div>
 <script>
 (function(){
-    const boot = document.getElementById('bootSequence'), login = document.getElementById('loginForm'), phase = document.getElementById('bootPhase'), details = document.getElementById('bootDetails'), bar = document.getElementById('bootProgress');
-    const pollStatus = async () => {
-        try {
-            const res = await fetch('/health'), data = await res.json();
-            phase.textContent = data.state; details.textContent = data.details;
-            if (data.state === 'BOOT') bar.style.width = '20%';
-            if (data.state === 'INIT') bar.style.width = '60%';
-            if (data.state === 'READY') {
-                bar.style.width = '100%';
-                setTimeout(() => { boot.classList.add('hidden'); login.classList.remove('hidden'); }, 800);
-                return;
-            }
-            setTimeout(pollStatus, 500);
-        } catch (e) { setTimeout(pollStatus, 1000); }
-    };
-    pollStatus();
+  const role = "{{role}}";
+  const timeProject = document.getElementById("timeProject");
+  const timeNote = document.getElementById("timeNote");
+  const timeStart = document.getElementById("timeStart");
+  const timeStop = document.getElementById("timeStop");
+  const timeStatus = document.getElementById("timeStatus");
+  const projectName = document.getElementById("projectName");
+  const projectDesc = document.getElementById("projectDesc");
+  const projectCreate = document.getElementById("projectCreate");
+  const projectStatus = document.getElementById("projectStatus");
+  const weekDate = document.getElementById("weekDate");
+  const weekSummary = document.getElementById("weekSummary");
+  const entryList = document.getElementById("entryList");
+  const exportWeek = document.getElementById("exportWeek");
+
+  function fmtDuration(seconds){
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${m}m`;
+  }
+
+  function setStatus(msg, isError){
+    timeStatus.textContent = msg;
+    timeStatus.style.color = isError ? "#f87171" : "";
+  }
+
+  async function loadProjects(){
+    const res = await fetch("/api/time/projects", {credentials:"same-origin"});
+    const data = await res.json();
+    timeProject.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Ohne Projekt";
+    timeProject.appendChild(opt);
+    (data.projects || []).forEach(p => {
+      const o = document.createElement("option");
+      o.value = p.id;
+      o.textContent = p.name;
+      timeProject.appendChild(o);
+    });
+  }
+
+  function renderSummary(items){
+    weekSummary.innerHTML = "";
+    if(!items.length){
+      weekSummary.innerHTML = "<div class='muted text-sm'>Keine Einträge.</div>";
+      return;
+    }
+    items.forEach(day => {
+      const card = document.createElement("div");
+      card.className = "rounded-xl border p-3";
+      card.innerHTML = `<div class="text-sm font-semibold">${day.date}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
+      weekSummary.appendChild(card);
+    });
+  }
+
+  function renderEntries(entries){
+    entryList.innerHTML = "";
+    if(!entries.length){
+      entryList.innerHTML = "<div class='muted text-sm'>Keine Einträge in dieser Woche.</div>";
+      return;
+    }
+    entries.forEach(entry => {
+      const wrap = document.createElement("div");
+      wrap.className = "rounded-xl border p-3";
+      const approveBtn = (role === "ADMIN" || role === "DEV") && entry.approval_status !== "APPROVED"
+        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entry.id}">Freigeben</button>`
+        : "";
+      wrap.innerHTML = `
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <div>
+            <div class="text-sm font-semibold">${entry.project_name || "Ohne Projekt"}</div>
+            <div class="muted text-xs">${entry.start_at} → ${entry.end_at || "läuft"} · ${fmtDuration(entry.duration_seconds || 0)}</div>
+            <div class="muted text-xs">Status: ${entry.approval_status || "PENDING"} ${entry.approved_by ? "(von " + entry.approved_by + ")" : ""}</div>
+            ${entry.note ? `<div class="text-xs mt-1">${entry.note}</div>` : ""}
+          </div>
+          <div class="flex gap-2">
+            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entry.id}">Bearbeiten</button>
+            ${approveBtn}
+          </div>
+        </div>`;
+      entryList.appendChild(wrap);
+    });
+  }
+
+  async function loadEntries(){
+    const dateValue = weekDate.value;
+    const res = await fetch(`/api/time/entries?range=week&date=${encodeURIComponent(dateValue)}`, {credentials:"same-origin"});
+    const data = await res.json();
+    renderSummary(data.summary || []);
+    renderEntries(data.entries || []);
+    if(data.running){
+      setStatus(`Läuft seit ${data.running.start_at}.`, false);
+    } else {
+      setStatus("Timer bereit.", false);
+    }
+  }
+
+  async function startTimer(){
+    setStatus("Starte…", false);
+    const payload = {project_id: timeProject.value || null, note: timeNote.value || ""};
+    const res = await fetch("/api/time/start", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(!res.ok){
+      setStatus(data.error?.message || "Fehler beim Start.", true);
+      return;
+    }
+    timeNote.value = "";
+    await loadEntries();
+  }
+
+  async function stopTimer(){
+    setStatus("Stoppe…", false);
+    const res = await fetch("/api/time/stop", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({})});
+    const data = await res.json();
+    if(!res.ok){
+      setStatus(data.error?.message || "Fehler beim Stoppen.", true);
+      return;
+    }
+    await loadEntries();
+  }
+
+  async function createProject(){
+    projectStatus.textContent = "Speichern…";
+    const payload = {name: projectName.value || "", description: projectDesc.value || ""};
+    const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(!res.ok){
+      projectStatus.textContent = data.error?.message || "Fehler beim Anlegen.";
+      return;
+    }
+    projectName.value = "";
+    projectDesc.value = "";
+    projectStatus.textContent = "Projekt angelegt.";
+    await loadProjects();
+  }
+
+  entryList.addEventListener("click", async (e) => {
+    const editId = e.target.getAttribute("data-edit");
+    const approveId = e.target.getAttribute("data-approve");
+    if(editId){
+      const startAt = prompt("Startzeit (YYYY-MM-DDTHH:MM:SS)", "");
+      if(startAt === null) return;
+      const endAt = prompt("Endzeit (YYYY-MM-DDTHH:MM:SS oder leer)", "");
+      const note = prompt("Notiz (optional)", "");
+      const payload = {entry_id: parseInt(editId, 10), start_at: startAt || null, end_at: endAt || null, note: note || null};
+      const res = await fetch("/api/time/entry/edit", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+      const data = await res.json();
+      if(!res.ok){ alert(data.error?.message || "Fehler beim Update."); }
+      await loadEntries();
+    }
+    if(approveId){
+      const res = await fetch("/api/time/entry/approve", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({entry_id: parseInt(approveId, 10)})});
+      const data = await res.json();
+      if(!res.ok){ alert(data.error?.message || "Fehler beim Freigeben."); }
+      await loadEntries();
+    }
+  });
+
+  exportWeek.addEventListener("click", () => {
+    const dateValue = weekDate.value;
+    window.location.href = `/api/time/export?range=week&date=${encodeURIComponent(dateValue)}`;
+  });
+
+  timeStart.addEventListener("click", startTimer);
+  timeStop.addEventListener("click", stopTimer);
+  projectCreate.addEventListener("click", createProject);
+
+  const today = new Date().toISOString().slice(0, 10);
+  weekDate.value = today;
+  loadProjects().then(loadEntries);
 })();
 </script>
 """
 
-# -------- Dashboard Template ----------
-HTML_INDEX = r"""
-<div class="space-y-10">
-  <div class="card p-10 bg-white">
-    <div class="flex items-center gap-4 mb-8">
-      <div style="width:40px; height:40px;">""" + SVG_LOGO + r"""</div>
-      <h1 class="text-2xl font-bold text-slate-900">Beleg-Zentrale</h1>
+HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card">
+  <div class="flex items-center justify-between gap-2">
+    <div>
+      <div class="text-lg font-semibold">Local Chat</div>
+      <div class="muted text-sm">Tool-fähiger Chat mit Agent-Orchestrator (lokal, deterministisch).</div>
     </div>
-    
-    <div id="dropZone" class="relative group border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center bg-slate-50/50 hover:bg-white hover:border-accent-500 transition-all cursor-pointer">
-      <input type="file" id="file" class="absolute inset-0 opacity-0 cursor-pointer" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.txt">
-      <div class="mb-6 flex justify-center">
-        <div class="h-16 w-16 rounded-2xl bg-white shadow-sm flex items-center justify-center text-accent-600 border border-slate-100 group-hover:scale-110 transition-transform">
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+  </div>
+  <div class="mt-4 flex flex-col md:flex-row gap-2">
+    <input id="kdnr" class="rounded-xl bg-slate-800 border border-slate-700 p-2 input md:w-48" placeholder="Kdnr optional" />
+    <input id="q" class="rounded-xl bg-slate-800 border border-slate-700 p-2 input flex-1" placeholder="Frag etwas… z.B. 'suche Rechnung KDNR 12393'" />
+    <button id="send" class="rounded-xl px-4 py-2 font-semibold btn-primary md:w-40">Senden</button>
+  </div>
+  <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3" style="height:62vh; overflow:auto" id="log"></div>
+  <div class="muted text-xs mt-3">
+    Tipp: Nutze „öffne &lt;token&gt;“ um direkt in die Review-Ansicht zu springen.
+  </div>
+</div>
+<script>
+(function(){
+  const log = document.getElementById("log");
+  const q = document.getElementById("q");
+  const kdnr = document.getElementById("kdnr");
+  const send = document.getElementById("send");
+  async function openToken(token){
+    if(!token) return;
+    try{
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+      const headers = {'Content-Type':'application/json'};
+      if(csrf) headers['X-CSRF-Token'] = csrf;
+      const res = await fetch('/api/open', {method:'POST', credentials:'same-origin', headers: headers, body: JSON.stringify({token})});
+      const data = await res.json();
+      if(!res.ok){
+        const errMsg = (data && data.error && data.error.message) ? data.error.message : (data.message || data.error || ('HTTP ' + res.status));
+        add("system", "Fehler: " + errMsg);
+        return;
+      }
+      if(data && data.token){
+        window.location.href = '/review/' + data.token + '/kdnr';
+      }
+    }catch(e){
+      add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e));
+    }
+  }
+  async function copyToken(token){
+    if(!token) return;
+    try{
+      await navigator.clipboard.writeText(token);
+      add("system", "Token kopiert: " + token);
+    }catch(e){
+      add("system", "Kopieren fehlgeschlagen: " + (e && e.message ? e.message : e));
+    }
+  }
+  window.openToken = openToken;
+  window.copyToken = copyToken;
+  function add(role, text, actions, results, suggestions){
+    const d = document.createElement("div");
+    d.className = "mb-3";
+    let actionHtml = "";
+    if(actions && actions.length){
+      actionHtml = actions.map(a => {
+        if(a.type === "open_token" && a.token){
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${a.token}')">Öffnen ${a.token.slice(0,10)}…</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${a.token}')">Token ${a.token.slice(0,10)}…</button>`;
+        }
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${a.type || 'tool'}</span>`;
+      }).join("");
+    }
+    let resultHtml = "";
+    if(results && results.length){
+      resultHtml = results.map(r => {
+        const token = r.token || r.doc_id || "";
+        const label = r.file_name || token;
+        if(token){
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${token}')">${label}</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${token}')">Token ${token.slice(0,10)}…</button>`;
+        }
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${label}</span>`;
+      }).join("");
+    }
+    let suggestionHtml = "";
+    if(suggestions && suggestions.length){
+      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${s}">${s}</button>`).join("");
+    }
+    d.innerHTML = `<div class="muted text-[11px]">${role}</div><div class="text-sm whitespace-pre-wrap">${text}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
+  }
+  async function doSend(){
+    const msg = (q.value || "").trim();
+    if(!msg) return;
+    add("you", msg);
+    q.value = "";
+    send.disabled = true;
+    try{
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+      const headers = {"Content-Type":"application/json"};
+      if(csrf) headers["X-CSRF-Token"] = csrf;
+      const res = await fetch("/api/chat", {method:"POST", credentials:"same-origin", headers: headers, body: JSON.stringify({q: msg, kdnr: (kdnr.value||"").trim()})});
+      const j = await res.json();
+      if(!res.ok){
+        const errMsg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ("HTTP " + res.status));
+        add("system", "Fehler: " + errMsg);
+      }
+      else { add("assistant", j.message || "(leer)", j.actions || [], j.results || [], j.suggestions || []); }
+    }catch(e){ add("system", "Netzwerkfehler: " + (e && e.message ? e.message : e)); }
+    finally{ send.disabled = false; }
+  }
+  send.addEventListener("click", doSend);
+  q.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSend(); }});
+  log.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-suggestion");
+    if(!btn) return;
+    q.value = btn.dataset.q || "";
+    doSend();
+  });
+
+  // ---- Floating Chat Widget ----
+  const _cw = {
+    btn: document.getElementById('chatWidgetBtn'),
+    drawer: document.getElementById('chatDrawer'),
+    close: document.getElementById('chatWidgetClose'),
+    msgs: document.getElementById('chatWidgetMsgs'),
+    input: document.getElementById('chatWidgetInput'),
+    send: document.getElementById('chatWidgetSend'),
+    kdnr: document.getElementById('chatWidgetKdnr'),
+    clear: document.getElementById('chatWidgetClear'),
+    status: document.getElementById('chatWidgetStatus'),
+    retry: document.getElementById('chatWidgetRetry'),
+    unread: document.getElementById('chatUnread'),
+    quick: document.querySelectorAll('.chat-quick'),
+  };
+  let _cwLastBody = null;
+  function _cwAppend(role, text, actions, results, suggestions){
+    if(!_cw.msgs) return;
+    const wrap = document.createElement('div');
+    const isUser = role === 'you';
+    wrap.className = 'flex ' + (isUser ? 'justify-end' : 'justify-start');
+    const bubble = document.createElement('div');
+    bubble.className = (isUser
+      ? 'max-w-[85%] rounded-2xl px-3 py-2 text-white'
+      : 'max-w-[85%] rounded-2xl px-3 py-2 border') + ' card';
+    bubble.textContent = text;
+    if(actions && actions.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      actions.forEach((action) => {
+        if(action.type === 'open_token' && action.token){
+          const btn = document.createElement('button');
+          btn.textContent = 'Öffnen ' + action.token.slice(0,10) + '…';
+          btn.className = 'rounded-full border px-2 py-1';
+          btn.addEventListener('click', () => openToken(action.token));
+          list.appendChild(btn);
+          const tokenBtn = document.createElement('button');
+          tokenBtn.textContent = 'Token ' + action.token.slice(0,10) + '…';
+          tokenBtn.className = 'rounded-full border px-2 py-1';
+          tokenBtn.addEventListener('click', () => copyToken(action.token));
+          list.appendChild(tokenBtn);
+        } else if(action.type){
+          const tag = document.createElement('span');
+          tag.textContent = 'Action: ' + action.type;
+          tag.className = 'rounded-full border px-2 py-1';
+          list.appendChild(tag);
+        }
+      });
+      bubble.appendChild(list);
+    }
+    if(results && results.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      results.forEach((row) => {
+        const token = row.token || row.doc_id || '';
+        const label = row.file_name || token || 'Dokument';
+        if(token){
+          const btn = document.createElement('button');
+          btn.textContent = label;
+          btn.className = 'rounded-full border px-2 py-1';
+          btn.addEventListener('click', () => openToken(token));
+          list.appendChild(btn);
+          const tokenBtn = document.createElement('button');
+          tokenBtn.textContent = 'Token ' + token.slice(0,10) + '…';
+          tokenBtn.className = 'rounded-full border px-2 py-1';
+          tokenBtn.addEventListener('click', () => copyToken(token));
+          list.appendChild(tokenBtn);
+        }
+      });
+      bubble.appendChild(list);
+    }
+    if(suggestions && suggestions.length){
+      const list = document.createElement('div');
+      list.className = 'mt-2 flex flex-wrap gap-2 text-xs';
+      suggestions.forEach((s) => {
+        const btn = document.createElement('button');
+        btn.textContent = s;
+        btn.dataset.q = s;
+        btn.className = 'rounded-full border px-2 py-1 chat-suggestion';
+        list.appendChild(btn);
+      });
+      bubble.appendChild(list);
+    }
+    if(isUser){
+      bubble.style.background = 'var(--accent-600)';
+    }
+    wrap.appendChild(bubble);
+    _cw.msgs.appendChild(wrap);
+    _cw.msgs.scrollTop = _cw.msgs.scrollHeight;
+    if(_cw.unread && _cw.drawer?.classList.contains('hidden')){
+      _cw.unread.classList.remove('hidden');
+    }
+  }
+  function _cwLoad(){
+    try{
+      const k = localStorage.getItem('kukanilea_cw_kdnr') || '';
+      if(_cw.kdnr) _cw.kdnr.value = k;
+      const hist = JSON.parse(localStorage.getItem('kukanilea_cw_hist') || '[]');
+      if(_cw.msgs){
+        _cw.msgs.innerHTML = '';
+        hist.forEach(x => _cwAppend(x.role, x.text));
+      }
+    }catch(e){}
+  }
+  function _cwSave(){
+    try{
+      if(_cw.kdnr) localStorage.setItem('kukanilea_cw_kdnr', _cw.kdnr.value || '');
+      const hist = [];
+      if(_cw.msgs){
+        _cw.msgs.querySelectorAll('div.flex').forEach(row => {
+          const isUser = row.className.includes('justify-end');
+          const bubble = row.querySelector('div');
+          hist.push({role: isUser ? 'you' : 'assistant', text: bubble ? bubble.textContent : ''});
+        });
+      }
+      localStorage.setItem('kukanilea_cw_hist', JSON.stringify(hist.slice(-40)));
+    }catch(e){}
+  }
+  async function _cwSend(){
+    const q = (_cw.input && _cw.input.value ? _cw.input.value.trim() : '');
+    if(!q) return;
+    _cwAppend('you', q);
+    if(_cw.input) _cw.input.value = '';
+    _cwSave();
+    if(_cw.status) _cw.status.textContent = 'Denke…';
+    if(_cw.retry) _cw.retry.classList.add('hidden');
+    try{
+      const body = { q, kdnr: _cw.kdnr ? _cw.kdnr.value.trim() : '' };
+      _cwLastBody = body;
+      const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      let j = {};
+      try{ j = await r.json(); }catch(e){}
+      if(!r.ok){
+        const msg = (j && j.error && j.error.message) ? j.error.message : (j.message || j.error || ('HTTP ' + r.status));
+        _cwAppend('assistant', 'Fehler: ' + msg);
+        if(_cw.status) _cw.status.textContent = 'Fehler';
+        if(_cw.retry) _cw.retry.classList.remove('hidden');
+        return;
+      }
+      _cwAppend('assistant', j.message || '(keine Antwort)', j.actions || [], j.results || [], j.suggestions || []);
+      if(_cw.status) _cw.status.textContent = 'OK';
+      _cwSave();
+    }catch(e){
+      _cwAppend('assistant', 'Fehler: ' + (e && e.message ? e.message : e));
+      if(_cw.status) _cw.status.textContent = 'Fehler';
+      if(_cw.retry) _cw.retry.classList.remove('hidden');
+    }
+  }
+  if(_cw.msgs){
+    _cw.msgs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chat-suggestion');
+      if(!btn) return;
+      if(_cw.input) _cw.input.value = btn.dataset.q || '';
+      _cwSend();
+    });
+  }
+  if(_cw.btn && _cw.drawer){
+    _cw.btn.addEventListener('click', () => {
+      _cw.drawer.classList.toggle('hidden');
+      if(_cw.unread) _cw.unread.classList.add('hidden');
+      _cwLoad();
+      if(!_cw.drawer.classList.contains('hidden') && _cw.input) _cw.input.focus();
+    });
+  }
+  if(_cw.close) _cw.close.addEventListener('click', () => _cw.drawer && _cw.drawer.classList.add('hidden'));
+  if(_cw.send) _cw.send.addEventListener('click', _cwSend);
+  if(_cw.input) _cw.input.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); _cwSend(); }});
+  if(_cw.kdnr) _cw.kdnr.addEventListener('change', _cwSave);
+  if(_cw.clear) _cw.clear.addEventListener('click', () => { if(_cw.msgs) _cw.msgs.innerHTML=''; localStorage.removeItem('kukanilea_cw_hist'); _cwSave(); });
+  if(_cw.retry) _cw.retry.addEventListener('click', () => {
+    if(!_cwLastBody) return;
+    if(_cw.input) _cw.input.value = _cwLastBody.q || '';
+    _cwSend();
+  });
+  _cw.quick?.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if(_cw.input) _cw.input.value = btn.dataset.q || '';
+      _cwSend();
+    });
+  });
+  // ---- /Floating Chat Widget ----
+})();
+</script>"""
+
+# -------- Routes / API ----------
+
+
+# ============================================================
+# Auth routes + global guard
+# ============================================================
+@bp.before_app_request
+def _guard_login():
+    p = request.path or "/"
+    if p.startswith("/static/") or p in [
+        "/login",
+        "/health",
+        "/api/health",
+        "/api/ping",
+    ]:
+        return None
+    if not current_user():
+        if p.startswith("/api/"):
+            return json_error(
+                "auth_required", "Authentifizierung erforderlich.", status=401
+            )
+        return redirect(url_for("web.login", next=p))
+    return None
+
+
+@bp.route("/login", methods=["GET", "POST"])
+@csrf_protected
+def login():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    error = ""
+    nxt = request.args.get("next", "/")
+    if request.method == "POST":
+        u = (request.form.get("username") or "").strip().lower()
+        pw = (request.form.get("password") or "").strip()
+        if not u or not pw:
+            error = "Bitte Username und Passwort eingeben."
+        else:
+            user = auth_db.get_user(u)
+            if user and user.password_hash == hash_password(pw):
+                memberships = auth_db.get_memberships(u)
+                if not memberships:
+                    error = "Keine Mandanten-Zuordnung gefunden."
+                else:
+                    membership = memberships[0]
+                    login_user(u, membership.role, membership.tenant_id)
+                    _audit(
+                        "login",
+                        target=u,
+                        meta={"role": membership.role, "tenant": membership.tenant_id},
+                    )
+                    return redirect(nxt or url_for("web.index"))
+            else:
+                error = "Login fehlgeschlagen."
+    return render_template("login.html", error=error, branding=Config.get_branding())
+
+
+@bp.route("/logout")
+def logout():
+    if current_user():
+        _audit("logout", target=current_user() or "", meta={})
+    logout_user()
+    return redirect(url_for("web.login"))
+
+
+@bp.route("/api/progress/<token>")
+def api_progress(token: str):
+    if (not current_user()) and (request.remote_addr not in ("127.0.0.1", "::1")):
+        return jsonify(error="unauthorized"), 401
+    p = read_pending(token)
+    if not p:
+        return jsonify(error="not_found"), 404
+    return jsonify(
+        status=p.get("status", ""),
+        progress=float(p.get("progress", 0.0) or 0.0),
+        progress_phase=p.get("progress_phase", ""),
+        error=p.get("error", ""),
+    )
+
+
+def _weather_answer(city: str) -> str:
+    info = get_weather(city)
+    if not info:
+        return f"Ich konnte das Wetter für {city} nicht abrufen."
+    return f"Wetter {info.get('city', '')}: {info.get('summary', '')} (Temp: {info.get('temp_c', '?')}°C, Wind: {info.get('wind_kmh', '?')} km/h)"
+
+
+def _weather_adapter(message: str) -> str:
+    city = "Berlin"
+    match = re.search(r"\bin\s+([A-Za-zÄÖÜäöüß\- ]{2,40})\b", message, re.IGNORECASE)
+    if match:
+        city = match.group(1).strip()
+    return _weather_answer(city)
+
+
+ORCHESTRATOR = Orchestrator(core, weather_adapter=_weather_adapter)
+_DEV_STATUS = {"index": None, "scan": None, "llm": None, "db": None}
+
+
+def _mock_generate(prompt: str) -> str:
+    return f"[mocked] {prompt.strip()[:200]}"
+
+
+@bp.route("/api/chat", methods=["POST"])
+@login_required
+@csrf_protected
+@chat_limiter.limit_required
+def api_chat():
+    payload = request.get_json(silent=True) or {}
+    msg = (
+        (payload.get("msg") if isinstance(payload, dict) else None)
+        or (payload.get("q") if isinstance(payload, dict) else None)
+        or request.form.get("msg")
+        or request.form.get("q")
+        or ""
+    ).strip()
+
+    if not msg:
+        return json_error("empty_query", "Leer.", status=400)
+
+    response = agent_answer(msg)
+    if request.headers.get("HX-Request"):
+        return f"<div class='text-sm'>{response.get('text', '')}</div>"
+    return jsonify(response)
+
+
+@bp.post("/api/search")
+@login_required
+@csrf_protected
+@search_limiter.limit_required
+def api_search():
+    payload = request.get_json(silent=True) or {}
+    query = (payload.get("query") or "").strip()
+    kdnr = (payload.get("kdnr") or "").strip()
+    limit = int(payload.get("limit") or 8)
+    if not query:
+        return json_error("query_missing", "Query fehlt.", status=400)
+    context = AgentContext(
+        tenant_id=current_tenant(),
+        user=str(current_user() or "dev"),
+        role=str(current_role()),
+        kdnr=kdnr,
+    )
+    agent = SearchAgent(core)
+    results, suggestions = agent.search(query, context, limit=limit)
+    message = "OK" if results else "Keine Treffer gefunden."
+    return jsonify(
+        ok=True, message=message, results=results, did_you_mean=suggestions or []
+    )
+
+
+@bp.post("/api/open")
+@login_required
+@csrf_protected
+def api_open():
+    payload = request.get_json(silent=True) or {}
+    token = (payload.get("token") or "").strip()
+    if not token:
+        return json_error("token_missing", "Token fehlt.", status=400)
+    src = _resolve_doc_path(token, {})
+    if not src or not src.exists():
+        return json_error(
+            "FILE_NOT_FOUND",
+            "Datei nicht gefunden. Bitte suche erneut oder prüfe den Token.",
+            status=404,
+            details={"token": token},
+        )
+    try:
+        new_token = analyze_to_pending(src)
+    except FileNotFoundError:
+        return json_error(
+            "FILE_NOT_FOUND",
+            "Datei nicht gefunden. Bitte suche erneut oder prüfe den Token.",
+            status=404,
+            details={"token": token},
+        )
+    return jsonify(ok=True, token=new_token)
+
+
+@bp.route("/admin/mesh")
+@login_required
+@require_role(["DEV", "ADMIN"])
+def mesh():
+    # Simulate some mesh nodes for the UI demo
+    nodes = [
+        {
+            "id": "HUB-ZIMA-01",
+            "name": "Büro Hub",
+            "type": "ZimaBlade",
+            "status": "ONLINE",
+            "ip": "192.168.1.50",
+            "sync": "100%",
+            "conflicts": 0,
+        },
+        {
+            "id": "TABLET-GESELLE-01",
+            "name": "Tablet Geselle",
+            "type": "iPad/Web",
+            "status": "ONLINE",
+            "ip": "192.168.1.112",
+            "sync": "98%",
+            "conflicts": 3,
+        },
+        {
+            "id": "LAPTOP-MEISTER",
+            "name": "Meister Laptop",
+            "type": "MacBook",
+            "status": "OFFLINE",
+            "ip": "192.168.1.10",
+            "sync": "75%",
+            "conflicts": 1,
+        },
+    ]
+    return _render_base(
+        render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh"
+    )
+
+
+HTML_MESH = r"""
+<div class="space-y-6">
+    <div class="flex justify-between items-end">
+        <div>
+            <h1 class="text-2xl font-bold">[>] Global Health Monitor</h1>
+            <p class="muted">P2P Mesh-Netzwerk & CRDT Sync Status</p>
         </div>
-      </div>
-      <div class="text-lg font-bold text-slate-900 mb-2">Dateien auswählen oder ablegen</div>
-      <div class="muted text-sm font-medium">Max. 50MB pro Dokument</div>
+        <div class="badge px-4 py-2 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+            Mesh-Status: Stabil
+        </div>
     </div>
 
-    <div id="stagingArea" class="mt-10 hidden space-y-6">
-      <div class="flex items-center justify-between px-2">
-        <div class="text-xs font-bold uppercase tracking-widest text-slate-500">Warteliste für Upload (<span id="fileCount">0</span>)</div>
-        <button id="clearStaging" class="text-xs font-bold text-rose-600 hover:underline">Alle leeren</button>
+    <div class="grid md:grid-cols-3 gap-6">
+        {% for node in nodes %}
+        <div class="card p-6 space-y-4">
+            <div class="flex justify-between items-start">
+                <div class="h-12 w-12 rounded-xl bg-slate-800 flex items-center justify-center text-xl">
+                    {{ '🖥️' if node.type == 'ZimaBlade' else '📱' if node.type == 'iPad/Web' else '💻' }}
+                </div>
+                <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-800 {{ 'text-emerald-500' if node.status == 'ONLINE' else 'text-rose-500' }}">
+                    {{ node.status }}
+                </span>
+            </div>
+            <div>
+                <h3 class="font-bold">{{ node.name }}</h3>
+                <p class="text-xs muted">{{ node.type }} • {{ node.ip }}</p>
+            </div>
+            <div class="pt-4 border-t border-slate-800 space-y-2">
+                <div class="flex justify-between text-xs">
+                    <span class="muted">Synchronisation</span>
+                    <span>{{ node.sync }}</span>
+                </div>
+                <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                    <div class="h-full bg-indigo-500" style="width: {{ node.sync }};"></div>
+                </div>
+                <div class="flex justify-between text-xs pt-2">
+                    <span class="muted">Automatische Konfliktlösungen (CRDT)</span>
+                    <span class="{{ 'text-amber-500 font-bold' if node.conflicts > 0 else 'muted' }}">{{ node.conflicts }}</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="card p-6">
+        <h3 class="font-bold mb-4">📜 Letzte Sync-Ereignisse</h3>
+        <div class="space-y-3">
+            <div class="flex items-center gap-4 text-sm p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                <div class="h-2 w-2 rounded-full bg-amber-500"></div>
+                <div class="flex-1">
+                    <span class="font-semibold">Konflikt gelöst:</span> Feld "customer_name" bei Kunde K123 (Hans Mueller)
+                </div>
+                <div class="text-xs muted">Vor 5 Min.</div>
+                <div class="badge">LWW-Logic</div>
+            </div>
+             <div class="flex items-center gap-4 text-sm p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                <div class="h-2 w-2 rounded-full bg-emerald-500"></div>
+                <div class="flex-1">
+                    <span class="font-semibold">Sync erfolgreich:</span> TABLET-GESELLE-01 → HUB-ZIMA-01
+                </div>
+                <div class="text-xs muted">Vor 12 Min.</div>
+                <div class="badge">1.2 MB</div>
+            </div>
+        </div>
+    </div>
+</div>
+"""
+
+
+@login_required
+@require_role("OPERATOR")
+def api_customer():
+    payload = request.get_json(silent=True) or {}
+    kdnr = (payload.get("kdnr") or "").strip()
+    if not kdnr:
+        return json_error("kdnr_missing", "KDNR fehlt.", status=400)
+    context = AgentContext(
+        tenant_id=current_tenant(),
+        user=str(current_user() or "dev"),
+        role=str(current_role()),
+        kdnr=kdnr,
+    )
+    agent = CustomerAgent(core)
+    result = agent.handle(kdnr, "customer_lookup", context)
+    results = result.data.get("results", []) if isinstance(result.data, dict) else []
+    summary = results[0] if results else {}
+    return jsonify(
+        ok=result.error is None,
+        kdnr=str(summary.get("kdnr") or kdnr),
+        customer_name=str(summary.get("customer_name") or ""),
+        last_doc=str(summary.get("file_name") or ""),
+        last_doc_date=str(summary.get("doc_date") or ""),
+        results=results,
+        message=result.text,
+    )
+
+
+@bp.get("/api/tasks")
+@login_required
+def api_tasks():
+    status = (request.args.get("status") or "OPEN").strip().upper()
+    if callable(task_list):
+        tasks = task_list(tenant=current_tenant(), status=status, limit=200)  # type: ignore
+    else:
+        tasks = []
+    return jsonify(ok=True, tasks=tasks)
+
+
+@bp.get("/api/audit")
+@login_required
+@require_role("ADMIN")
+def api_audit():
+    limit = int(request.args.get("limit") or 100)
+    if callable(getattr(core, "audit_list", None)):
+        events = core.audit_list(tenant_id=current_tenant(), limit=limit)
+    else:
+        events = []
+    return jsonify(ok=True, events=events)
+
+
+@bp.get("/api/time/projects")
+@login_required
+def api_time_projects():
+    if not callable(time_project_list):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    projects = time_project_list(tenant_id=current_tenant(), status="ACTIVE")  # type: ignore
+    return jsonify(ok=True, projects=projects)
+
+
+@bp.post("/api/time/projects")
+@login_required
+@csrf_protected
+@require_role("OPERATOR")
+def api_time_projects_create():
+    if not callable(time_project_create):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("name") or "").strip()
+    description = (payload.get("description") or "").strip()
+    try:
+        project = time_project_create(  # type: ignore
+            tenant_id=current_tenant(),
+            name=name,
+            description=description,
+            created_by=current_user() or "",
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Projekt konnte nicht angelegt werden.", status=400)
+    _rag_enqueue("time_project", int(project.get("id") or 0), "upsert")
+    return jsonify(ok=True, project=project)
+
+
+@bp.post("/api/time/start")
+@login_required
+@csrf_protected
+@require_role("OPERATOR")
+def api_time_start():
+    if not callable(time_entry_start):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    payload = request.get_json(silent=True) or {}
+    project_id = payload.get("project_id")
+    note = (payload.get("note") or "").strip()
+    try:
+        entry = time_entry_start(  # type: ignore
+            tenant_id=current_tenant(),
+            user=current_user() or "",
+            project_id=int(project_id) if project_id else None,
+            note=note,
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Timer konnte nicht gestartet werden.", status=400)
+    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
+    return jsonify(ok=True, entry=entry)
+
+
+@bp.post("/api/time/stop")
+@login_required
+@csrf_protected
+@require_role("OPERATOR")
+def api_time_stop():
+    if not callable(time_entry_stop):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    payload = request.get_json(silent=True) or {}
+    entry_id = payload.get("entry_id")
+    try:
+        entry = time_entry_stop(  # type: ignore
+            tenant_id=current_tenant(),
+            user=current_user() or "",
+            entry_id=int(entry_id) if entry_id else None,
+        )
+    except ValueError as exc:
+        return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
+    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
+    return jsonify(ok=True, entry=entry)
+
+
+@bp.get("/api/time/entries")
+@login_required
+def api_time_entries():
+    if not callable(time_entry_list):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    range_name = (request.args.get("range") or "week").strip().lower()
+    date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
+    user = (request.args.get("user") or "").strip()
+    if current_role() not in {"ADMIN", "DEV"}:
+        user = current_user() or ""
+    start_at, end_at = _time_range_params(range_name, date_value)
+    entries = time_entry_list(  # type: ignore
+        tenant_id=current_tenant(),
+        user=user or None,
+        start_at=start_at,
+        end_at=end_at,
+        limit=500,
+    )
+    summary: dict[str, int] = {}
+    running = None
+    for entry in entries:
+        day = (entry.get("start_at") or "").split("T")[0]
+        summary[day] = summary.get(day, 0) + int(entry.get("duration_seconds") or 0)
+        if not entry.get("end_at") and running is None:
+            running = entry
+    summary_list = [{"date": k, "total_seconds": v} for k, v in sorted(summary.items())]
+    return jsonify(ok=True, entries=entries, summary=summary_list, running=running)
+
+
+@bp.post("/api/time/entry/edit")
+@login_required
+@csrf_protected
+@require_role("OPERATOR")
+def api_time_entry_edit():
+    if not callable(time_entry_update):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    payload = request.get_json(silent=True) or {}
+    entry_id = payload.get("entry_id")
+    if not entry_id:
+        return json_error("entry_id_required", "Eintrag fehlt.", status=400)
+    try:
+        entry = time_entry_update(  # type: ignore
+            tenant_id=current_tenant(),
+            entry_id=int(entry_id),
+            project_id=(
+                int(payload.get("project_id")) if payload.get("project_id") else None
+            ),
+            start_at=(payload.get("start_at") or None),
+            end_at=(payload.get("end_at") or None),
+            note=payload.get("note"),
+            user=current_user() or "",
+        )
+    except ValueError as exc:
+        return json_error(
+            str(exc), "Eintrag konnte nicht aktualisiert werden.", status=400
+        )
+    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
+    return jsonify(ok=True, entry=entry)
+
+
+@bp.post("/api/time/entry/approve")
+@login_required
+@csrf_protected
+@require_role("ADMIN")
+def api_time_entry_approve():
+    if not callable(time_entry_approve):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    payload = request.get_json(silent=True) or {}
+    entry_id = payload.get("entry_id")
+    if not entry_id:
+        return json_error("entry_id_required", "Eintrag fehlt.", status=400)
+    try:
+        entry = time_entry_approve(  # type: ignore
+            tenant_id=current_tenant(),
+            entry_id=int(entry_id),
+            approved_by=current_user() or "",
+        )
+    except ValueError as exc:
+        return json_error(
+            str(exc), "Eintrag konnte nicht freigegeben werden.", status=400
+        )
+    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
+    return jsonify(ok=True, entry=entry)
+
+
+@bp.get("/api/time/export")
+@login_required
+def api_time_export():
+    if not callable(time_entries_export_csv):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    range_name = (request.args.get("range") or "week").strip().lower()
+    date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
+    user = (request.args.get("user") or "").strip()
+    if current_role() not in {"ADMIN", "DEV"}:
+        user = current_user() or ""
+    start_at, end_at = _time_range_params(range_name, date_value)
+    csv_payload = time_entries_export_csv(  # type: ignore
+        tenant_id=current_tenant(),
+        user=user or None,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    response = current_app.response_class(csv_payload, mimetype="text/csv")
+    response.headers["Content-Disposition"] = "attachment; filename=time_entries.csv"
+    return response
+
+
+# ==============================
+# Mail Agent Tab (Template/Mock workflow)
+# ==============================
+HTML_MAIL = """
+<div class="grid gap-4">
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-1">Mail Agent</div>
+    <div class="text-sm opacity-80 mb-4">Entwurf lokal mit Template/Mock-LLM. Keine Drittanbieter-Links.</div>
+
+    <div class="grid gap-3 md:grid-cols-2">
+      <div>
+        <label class="block text-xs opacity-70 mb-1">Empfänger (optional)</label>
+        <input id="m_to" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. haendler@firma.de" />
       </div>
-      <div id="fileList" class="grid gap-3 sm:grid-cols-2"></div>
-      <div class="pt-4">
-        <button id="startAnalysis" class="w-full btn-primary text-lg py-4 shadow-xl">ANALYSE STARTEN</button>
+      <div>
+        <label class="block text-xs opacity-70 mb-1">Betreff (optional)</label>
+        <input id="m_subj" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Mangel: Defekte Fliesenlieferung" />
+      </div>
+
+      <div>
+        <label class="block text-xs opacity-70 mb-1">Ton</label>
+        <select id="m_tone" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent">
+          <option value="neutral" selected>Neutral</option>
+          <option value="freundlich">Freundlich</option>
+          <option value="formell">Formell</option>
+          <option value="bestimmt">Bestimmt (Reklamation)</option>
+          <option value="kurz">Sehr kurz</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs opacity-70 mb-1">Länge</label>
+        <select id="m_len" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent">
+          <option value="kurz" selected>Kurz</option>
+          <option value="normal">Normal</option>
+          <option value="detailliert">Detailliert</option>
+        </select>
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="block text-xs opacity-70 mb-1">Kontext / Stichpunkte</label>
+        <textarea id="m_ctx" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent h-32" placeholder="z.B. Bitte Fotos an Händler schicken, Rabatt anfragen, Lieferung vom ... (Details)"></textarea>
       </div>
     </div>
 
-    <div id="progressArea" class="mt-10 hidden p-10 rounded-3xl bg-slate-900 text-white shadow-2xl relative overflow-hidden">
-      <div class="relative z-10">
-        <div class="flex justify-between items-end mb-6">
-          <div>
-            <div id="phase" class="text-xs font-bold uppercase tracking-widest text-accent-500 mb-1">Vorbereitung...</div>
-            <div id="status" class="text-lg font-bold text-white">Analyse läuft...</div>
-          </div>
-          <div id="pLabel" class="text-3xl font-black text-white italic">0.0%</div>
-        </div>
-        <div class="h-3 w-full bg-white/10 rounded-full overflow-hidden border border-white/5">
-          <div id="bar" class="h-full bg-accent-500 shadow-[0_0_20px_rgba(212,175,55,0.5)] transition-all duration-300" style="width: 0%"></div>
-        </div>
-      </div>
+    <div class="mt-4 flex flex-wrap gap-2">
+      <button id="m_gen" class="rounded-xl px-4 py-2 text-sm card btn-primary">Entwurf erzeugen</button>
+      <button id="m_copy" class="rounded-xl px-4 py-2 text-sm btn-outline" disabled>Copy</button>
+      <button id="m_eml" class="rounded-xl px-4 py-2 text-sm btn-outline" disabled>.eml Export</button>
+      <button id="m_rewrite" class="rounded-xl px-4 py-2 text-sm btn-outline">Stil verbessern</button>
+      <div class="text-xs opacity-70 flex items-center" id="m_status"></div>
     </div>
   </div>
 
-  <div class="space-y-6">
-    <div class="flex items-center justify-between px-2">
-      <h2 class="text-sm font-bold uppercase tracking-widest text-slate-500 italic">Warteschlange zur Prüfung</h2>
+  <div class="card p-4 rounded-2xl border">
+    <div class="flex items-center justify-between mb-2">
+      <div class="font-semibold">Output</div>
+      <div class="text-xs opacity-70">Kopie: Betreff + Body</div>
     </div>
-    <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-      {% for token in items %}
-      {% set m = meta[token] %}
-      <a href="/review/{{token}}/kdnr" class="card p-6 bg-white hover:border-navy transition-all group">
-        <div class="flex items-center justify-between mb-4">
-          <div class="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center text-navy group-hover:bg-navy group-hover:text-white transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          </div>
-          <span class="badge">{{ m.status }}</span>
-        </div>
-        <div class="text-sm font-bold text-slate-900 truncate mb-1">{{ m.filename }}</div>
-        <div class="text-[10px] muted uppercase tracking-widest">{{ token[:8] }}...</div>
-      </a>
-      {% endfor %}
-    </div>
-  </div>
-
-  <div class="space-y-6">
-    <div class="flex items-center justify-between px-2">
-      <h2 class="text-sm font-bold uppercase tracking-widest text-slate-500 italic">Verlauf der letzten 24h</h2>
-    </div>
-    <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-      {% for r in recent %}
-      <div class="card p-6 bg-white hover:border-accent-500 transition-colors cursor-default">
-        <div class="flex items-start justify-between mb-4">
-          <div class="h-10 w-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-          </div>
-          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{{ r.created_at[:10] }}</span>
-        </div>
-        <div class="text-sm font-bold text-slate-900 truncate mb-1" title="{{ r.file_name }}">{{ r.file_name }}</div>
-        <div class="flex items-center gap-2">
-          <span class="badge bg-slate-50 border-slate-100 text-[9px] uppercase">{{ r.doctype }}</span>
-          <span class="badge bg-slate-50 border-slate-100 text-[9px] uppercase">KDNR: {{ r.kdnr }}</span>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
+    <textarea id="m_out" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent h-[360px]" placeholder="Hier erscheint der Entwurf…"></textarea>
   </div>
 </div>
 
 <script>
 (function(){
-  const fileInput = document.getElementById("file"), stagingArea = document.getElementById("stagingArea"), fileList = document.getElementById("fileList"), fileCount = document.getElementById("fileCount"), clearStaging = document.getElementById("clearStaging"), startBtn = document.getElementById("startAnalysis"), progressArea = document.getElementById("progressArea"), bar = document.getElementById("bar"), pLabel = document.getElementById("pLabel"), status = document.getElementById("status"), phase = document.getElementById("phase");
-  let stagedFiles = [];
-  const updateUI = () => {
-    fileList.innerHTML = "";
-    stagedFiles.forEach((f, i) => {
-      const d = document.createElement("div");
-      d.className = "flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200 text-sm shadow-sm";
-      d.innerHTML = `<div class="truncate font-medium">${f.name}</div><button class="text-rose-600 font-bold px-2 py-1 text-xs hover:bg-rose-50 rounded-lg transition-colors" onclick="window._rm(${i})">Entfernen</button>`;
-      fileList.appendChild(d);
-    });
-    fileCount.textContent = stagedFiles.length;
-    stagingArea.classList.toggle("hidden", stagedFiles.length === 0);
-  };
-  window._rm = (i) => { stagedFiles.splice(i, 1); updateUI(); };
-  fileInput.addEventListener("change", () => { for(let f of fileInput.files) stagedFiles.push(f); fileInput.value = ""; updateUI(); });
-  clearStaging.addEventListener("click", () => { stagedFiles = []; updateUI(); });
-  
-  let targetProgress = 0, displayProgress = 0;
-  const smooth = () => {
-    if (displayProgress < targetProgress) {
-      displayProgress += Math.max(0.1, (targetProgress - displayProgress) * 0.1);
-      if (displayProgress > targetProgress) displayProgress = targetProgress;
-      bar.style.width = displayProgress + "%"; pLabel.textContent = displayProgress.toFixed(1) + "%";
+  const gen=document.getElementById('m_gen');
+  const copy=document.getElementById('m_copy');
+  const rewrite=document.getElementById('m_rewrite');
+  const eml=document.getElementById('m_eml');
+  const status=document.getElementById('m_status');
+  const out=document.getElementById('m_out');
+
+  function v(id){ return (document.getElementById(id)?.value||'').trim(); }
+
+  async function run(){
+    status.textContent='Generiere…';
+    out.value='';
+    copy.disabled=true;
+    if(eml) eml.disabled=true;
+    try{
+      const res = await fetch('/api/mail/draft', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          to: v('m_to'),
+          subject: v('m_subj'),
+          tone: v('m_tone'),
+          length: v('m_len'),
+          context: v('m_ctx')
+        })
+      });
+      const data = await res.json();
+      if(!res.ok){
+        status.textContent = 'Fehler: ' + (data.error || res.status);
+        return;
+      }
+      out.value = data.text || '';
+      copy.disabled = !out.value;
+      if(eml) eml.disabled = !out.value;
+      status.textContent = data.meta || 'OK';
+    }catch(e){
+      status.textContent='Fehler: '+e;
     }
-    requestAnimationFrame(smooth);
-  };
-  smooth();
+  }
 
-  const poll = async (token, isLast) => {
-    try {
-      const res = await fetch("/api/progress/" + token), j = await res.json();
-      if(isLast) { targetProgress = 35 + (j.progress || 0) * 0.65; phase.textContent = j.progress_phase || "Analyse..."; }
-      if(j.status === "READY" || j.status === "ERROR"){ 
-        if(isLast) { 
-          targetProgress = 100; status.textContent = j.status === "READY" ? "Fertig!" : "Fehler.";
-          setTimeout(() => { if(j.status === "READY") window.location.href = "/review/" + token + "/kdnr"; }, 1000);
-        } return; 
-      }
-      setTimeout(() => poll(token, isLast), 800);
-    } catch(e) { setTimeout(() => poll(token, isLast), 2000); }
-  };
+  async function doCopy(){
+    try{
+      await navigator.clipboard.writeText(out.value||'');
+      status.textContent='In Zwischenablage kopiert.';
+    }catch(e){
+      status.textContent='Copy fehlgeschlagen (Browser-Rechte).';
+    }
+  }
 
-  startBtn.addEventListener("click", async () => {
-    if(!stagedFiles.length) return;
-    progressArea.classList.remove("hidden"); stagingArea.classList.add("hidden");
-    targetProgress = 0; displayProgress = 0;
-    const fd = new FormData(); stagedFiles.forEach(f => fd.append("file", f));
-    const xhr = new XMLHttpRequest(); xhr.open("POST", "/upload", true);
-    const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-    if(csrf) xhr.setRequestHeader("X-CSRF-Token", csrf);
-    xhr.upload.onprogress = (ev) => { if(ev.lengthComputable){ targetProgress = (ev.loaded / ev.total) * 35; phase.textContent = "Übertragung..."; } };
-    xhr.onload = () => {
-      if(xhr.status === 200){
-        try {
-          const resp = JSON.parse(xhr.responseText);
-          if(resp.tokens?.length) resp.tokens.forEach((t, i) => poll(t.token, i === resp.tokens.length - 1));
-          else status.textContent = "Upload erfolgreich, aber keine Token erhalten.";
-        } catch(e) {
-          status.textContent = "Server-Antwort konnte nicht gelesen werden.";
-        }
-      } else {
-        try {
-          const resp = JSON.parse(xhr.responseText);
-          status.textContent = "Fehler: " + (resp.message || resp.error || xhr.status);
-        } catch(e) {
-          status.textContent = "Server-Fehler " + xhr.status;
-        }
-        stagingArea.classList.remove("hidden");
-      }
-    };
-    xhr.onerror = () => {
-      status.innerHTML = '<div class="text-rose-400 font-bold mb-2">Netzwerkfehler oder Zeitüberschreitung.</div><div class="text-xs opacity-70">Der Server (Port 5051) ist eventuell überlastet oder die Datei ist zu groß. Bitte Seite neu laden und erneut versuchen.</div>';
-      stagingArea.classList.remove("hidden");
-    };
-    xhr.ontimeout = () => {
-      status.textContent = "Zeitüberschreitung beim Upload. Bitte Internetverbindung prüfen.";
-      stagingArea.classList.remove("hidden");
-    };
-    xhr.timeout = 300000;
-    xhr.send(fd);
+  async function doEml(){
+    if(!out.value) return;
+    const payload = { to: v('m_to'), subject: v('m_subj'), body: out.value };
+    const res = await fetch('/api/mail/eml', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kukanilea_mail.eml';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function rewriteLocal(){
+    if(!out.value) return;
+    const lines = out.value.split('\\n').map(l => l.trim()).filter(Boolean);
+    const greeting = lines[0]?.startsWith('Betreff') ? '' : 'Guten Tag,';
+    const closing = 'Mit freundlichen Grüßen';
+    const body = lines.filter(l => !l.toLowerCase().startsWith('betreff')).join('\\n');
+    out.value = [greeting, body, '', closing].filter(Boolean).join('\\n');
+    status.textContent='Stil verbessert (lokal).';
+  }
+
+  gen && gen.addEventListener('click', run);
+  copy && copy.addEventListener('click', doCopy);
+  rewrite && rewrite.addEventListener('click', rewriteLocal);
+  eml && eml.addEventListener('click', doEml);
+})();
+</script>
+"""
+
+HTML_SETTINGS = """
+<div class="grid gap-4">
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-lg font-semibold mb-2">DEV Settings</div>
+    <div class="grid gap-3 md:grid-cols-2 text-sm">
+      <div>
+        <div class="muted text-xs mb-1">Profile</div>
+        <div><strong>{{ profile.name }}</strong></div>
+        <div class="muted text-xs">Base Path: {{ profile.base_path }}</div>
+      </div>
+      <div>
+        <div class="muted text-xs mb-1">Core DB</div>
+        <div><strong>{{ core_db.path }}</strong></div>
+        <div class="muted text-xs">Schema: {{ core_db.schema_version }} · Tenants: {{ core_db.tenants }}</div>
+      </div>
+      <div>
+        <div class="muted text-xs mb-1">Auth DB</div>
+        <div><strong>{{ auth_db_path }}</strong></div>
+        <div class="muted text-xs">Schema: {{ auth_schema }} · Tenants: {{ auth_tenants }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">DB wechseln (Allowlist)</div>
+    <div class="flex flex-wrap gap-2 items-center">
+      <select id="dbSelect" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
+        {% for p in db_files %}
+          <option value="{{ p }}">{{ p }}</option>
+        {% endfor %}
+      </select>
+      <button id="dbSwitch" class="rounded-xl px-3 py-2 text-sm btn-primary">DB wechseln</button>
+      <span id="dbSwitchStatus" class="text-xs muted"></span>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Ablage-Pfad wechseln (DEV)</div>
+    <div class="flex flex-wrap gap-2 items-center">
+      <select id="baseSelect" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
+        {% for p in base_paths %}
+          <option value="{{ p }}">{{ p }}</option>
+        {% endfor %}
+      </select>
+      <input id="baseCustom" class="rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Benutzerdefinierter Pfad" />
+      <button id="baseSwitch" class="rounded-xl px-3 py-2 text-sm btn-primary">Ablage wechseln</button>
+      <span id="baseSwitchStatus" class="text-xs muted"></span>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Import (DEV)</div>
+    <div class="muted text-xs mb-2">IMPORT_ROOT: {{ import_root }}</div>
+    <div class="flex flex-wrap gap-2 items-center">
+      <button id="runImport" class="rounded-xl px-3 py-2 text-sm btn-outline">Import starten</button>
+      <span id="importStatus" class="text-xs muted"></span>
+    </div>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Partner Branding (White-Label)</div>
+    <form action="/settings/branding" method="POST" class="grid gap-3 text-sm">
+      <div class="grid gap-1">
+        <label class="muted text-[10px] uppercase font-bold">Anzeigename</label>
+        <input name="app_name" value="{{ branding.app_name }}" class="rounded-xl border px-3 py-2 bg-transparent" />
+      </div>
+      <div class="grid gap-1">
+        <label class="muted text-[10px] uppercase font-bold">Primärfarbe (Hex)</label>
+        <div class="flex gap-2">
+          <input type="color" name="primary_color" value="{{ branding.primary_color }}" class="h-10 w-10 rounded-lg bg-transparent border-0 cursor-pointer" />
+          <input name="primary_color_text" id="pColorText" value="{{ branding.primary_color }}" class="rounded-xl border px-3 py-2 bg-transparent flex-1" oninput="document.getElementsByName('primary_color')[0].value = this.value" />
+        </div>
+      </div>
+      <div class="grid gap-1">
+        <label class="muted text-[10px] uppercase font-bold">Footer Text</label>
+        <input name="footer_text" value="{{ branding.footer_text }}" class="rounded-xl border px-3 py-2 bg-transparent" />
+      </div>
+      <button type="submit" class="rounded-xl px-3 py-2 text-sm btn-primary self-start mt-2">Branding speichern</button>
+    </form>
+  </div>
+
+  <div class="card p-4 rounded-2xl border">
+    <div class="text-sm font-semibold mb-2">Tools</div>
+    <div class="flex flex-wrap gap-2">
+      <button id="seedUsers" class="rounded-xl px-3 py-2 text-sm btn-outline">Seed Dev Users</button>
+      <button id="rebuildIndex" class="rounded-xl px-3 py-2 text-sm btn-outline">Rebuild Index</button>
+      <button id="fullScan" class="rounded-xl px-3 py-2 text-sm btn-outline">Full Scan</button>
+      <button id="repairDrift" class="rounded-xl px-3 py-2 text-sm btn-outline">Repair Drift Scan</button>
+      <button id="testLLM" class="rounded-xl px-3 py-2 text-sm btn-outline">Test LLM</button>
+    </div>
+    <div id="toolStatus" class="text-xs muted mt-2"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  async function postJson(url, body){
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});
+    let j = {};
+    try{ j = await r.json(); }catch(e){}
+    if(!r.ok){
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+    return j;
+  }
+
+  const status = document.getElementById('toolStatus');
+  const dbStatus = document.getElementById('dbSwitchStatus');
+  const baseStatus = document.getElementById('baseSwitchStatus');
+  const importStatus = document.getElementById('importStatus');
+
+  document.getElementById('seedUsers')?.addEventListener('click', async () => {
+    status.textContent = 'Seeding...';
+    try{
+      const j = await postJson('/api/dev/seed-users');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('rebuildIndex')?.addEventListener('click', async () => {
+    status.textContent = 'Rebuild läuft...';
+    try{
+      const j = await postJson('/api/dev/rebuild-index');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('fullScan')?.addEventListener('click', async () => {
+    status.textContent = 'Scan läuft...';
+    try{
+      const j = await postJson('/api/dev/full-scan');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('repairDrift')?.addEventListener('click', async () => {
+    status.textContent = 'Drift-Scan läuft...';
+    try{
+      const j = await postJson('/api/dev/repair-drift');
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('testLLM')?.addEventListener('click', async () => {
+    status.textContent = 'Teste LLM...';
+    try{
+      const j = await postJson('/api/dev/test-llm', {q:'suche rechnung von gerd'});
+      status.textContent = j.message || 'OK';
+    }catch(e){ status.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('dbSwitch')?.addEventListener('click', async () => {
+    const sel = document.getElementById('dbSelect');
+    const path = sel ? sel.value : '';
+    if(!path){ return; }
+    dbStatus.textContent = 'Wechsle...';
+    try{
+      const j = await postJson('/api/dev/switch-db', {path});
+      dbStatus.textContent = j.message || 'OK';
+      window.location.reload();
+    }catch(e){ dbStatus.textContent = 'Fehler: ' + e.message; }
+  });
+  document.getElementById('baseSwitch')?.addEventListener('click', async () => {
+    const sel = document.getElementById('baseSelect');
+    const custom = document.getElementById('baseCustom');
+    const path = (custom && custom.value ? custom.value : (sel ? sel.value : ''));
+    if(!path){ return; }
+    baseStatus.textContent = 'Wechsle...';
+    try{
+      const j = await postJson('/api/dev/switch-base', {path});
+      baseStatus.textContent = j.message || 'OK';
+      window.location.reload();
+    }catch(e){ baseStatus.textContent = 'Fehler: ' + e.message; }
+  });
+
+  document.getElementById('runImport')?.addEventListener('click', async () => {
+    importStatus.textContent = 'Import läuft...';
+    try{
+      const j = await postJson('/api/dev/import/run');
+      importStatus.textContent = j.message || 'OK';
+    }catch(e){ importStatus.textContent = 'Fehler: ' + e.message; }
   });
 })();
 </script>
 """
 
-# -------- Review Template ----------
-HTML_REVIEW_SPLIT = r"""
-<div class="flex h-[calc(100vh-160px)] gap-8">
-  <div class="flex-1 card overflow-hidden bg-slate-900 shadow-2xl relative border-none">
-    {% if preview %}
-      <div id="preview-placeholder" class="absolute inset-0 w-full h-full flex items-center justify-center bg-slate-900 z-0">
-         <img src="data:image/png;base64,{{preview}}" class="max-w-full max-h-full rounded shadow-2xl opacity-60 blur-sm" alt="Vorschau wird geladen...">
-      </div>
-    {% endif %}
 
-    {% if is_pdf %}
-      <iframe src="/file/{{token}}" class="w-full h-full border-none relative z-10 bg-transparent" title="PDF Vorschau" onload="document.getElementById('preview-placeholder')?.classList.add('hidden')"></iframe>
-    {% elif preview %}
-      <div class="w-full h-full p-10 flex items-center justify-center relative z-10">
-        <img src="data:image/png;base64,{{preview}}" class="max-w-full max-h-full rounded shadow-2xl" alt="Beleg Vorschau">
-      </div>
-    {% else %}
-      <div class="w-full h-full flex flex-col items-center justify-center text-white/20">
-        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-        <span class="mt-4 font-bold uppercase tracking-widest text-xs">Vorschau nicht verfügbar</span>
-      </div>
-    {% endif %}
-  </div>
-  
-  <div class="w-[480px] flex flex-col gap-6 overflow-y-auto pr-2">
-    <div class="card p-8 bg-white">
-      <div class="flex items-center justify-between mb-6">
-        <div>
-          <h1 class="text-xl font-bold text-slate-900">Validierung</h1>
-          <p class="text-xs font-bold muted uppercase tracking-widest">{{ filename }}</p>
-        </div>
-        <div class="badge bg-accent-50 text-accent-700 border-accent-100 font-bold">{{ confidence }}% Vertrauen</div>
-      </div>
-      {{ right|safe }}
-    </div>
-  </div>
-</div>
+def _mail_prompt(to: str, subject: str, tone: str, length: str, context: str) -> str:
+    return f"""Du bist ein deutscher Office-Assistent. Schreibe einen professionellen E-Mail-Entwurf.
+Wichtig:
+- Du hast KEINEN Zugriff auf echte Systeme. Keine falschen Behauptungen.
+- Klar, freundlich, ohne leere Floskeln.
+- Wenn Fotos erwähnt werden: Bitte um Bestätigung, dass Fotos angehängt sind und nenne die Anzahl falls bekannt.
+- Output-Format exakt:
+BETREFF: <eine Zeile>
+TEXT:
+<Mailtext>
+
+Empfänger: {to or "(nicht angegeben)"}
+Betreff-Vorschlag (falls vorhanden): {subject or "(leer)"}
+Ton: {tone}
+Länge: {length}
+
+Kontext/Stichpunkte:
+{context or "(leer)"}
 """
 
-HTML_WIZARD = r"""
-{% if is_duplicate %}
-<div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 font-bold shadow-sm mb-6 flex items-center gap-3">
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
-  <div>Duplikat erkannt: Dokument bereits im Archiv.</div>
-</div>
-{% endif %}
 
-{% if msg %}<div class="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold shadow-sm">{{ msg }}</div>{% endif %}
-
-<form method="post" class="space-y-6">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="confirm" value="1">
-  
-  <div class="space-y-4">
-    <div class="grid gap-4 sm:grid-cols-2">
-      <div class="space-y-1">
-        <label class="muted text-[10px] font-bold uppercase tracking-widest px-1">Beleg-Typ</label>
-        <select name="doctype" class="w-full rounded-xl border border-slate-200 p-3 text-sm font-bold bg-slate-50 focus:border-accent-500">
-          {% for dt in doctypes %}
-            <option value="{{dt}}" {{'selected' if w.doctype==dt or suggested_doctype==dt}}>{{dt}}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="space-y-1">
-        <label class="muted text-[10px] font-bold uppercase tracking-widest px-1">Beleg-Datum</label>
-        <input name="document_date" value="{{w.document_date or suggested_date}}" class="w-full rounded-xl border border-slate-200 p-3 text-sm bg-white focus:border-accent-500" placeholder="YYYY-MM-DD">
-      </div>
-    </div>
-
-    <div class="space-y-1">
-      <label class="muted text-[10px] font-bold uppercase tracking-widest px-1">Kundennummer (KDNR)</label>
-      <input name="kdnr" value="{{w.kdnr}}" list="kdnr_list" class="w-full rounded-xl border border-slate-200 p-3 text-sm font-bold bg-white focus:border-accent-500" placeholder="z.B. 12345" required>
-      <datalist id="kdnr_list">
-        {% for k in kdnr_ranked %}<option value="{{k}}">{% endfor %}
-      </datalist>
-    </div>
-
-    <div class="space-y-1">
-      <label class="muted text-[10px] font-bold uppercase tracking-widest px-1">Name / Firma</label>
-      <input name="name" value="{{w.name}}" class="w-full rounded-xl border border-slate-200 p-3 text-sm bg-white focus:border-accent-500">
-    </div>
-  </div>
-
-  <div class="pt-6 border-t border-slate-50 flex gap-3">
-    <button type="submit" class="flex-1 btn-primary py-4 shadow-lg">ARCHIVIEREN</button>
-    <button type="submit" name="reextract" value="1" class="px-6 btn-outline bg-white shadow-sm font-bold text-xs" title="Neu analysieren">RESET</button>
-  </div>
-</form>
-"""
-
-# -------- Helper Functions ----------
-def _render_base(content: str, active_tab: str = "upload"):
-    return render_template_string(
-        HTML_BASE,
-        content=content,
-        active_tab=active_tab,
-        branding=Config.get_branding(),
-        tenant=_norm_tenant(current_tenant() or "default"),
-        roles=current_role(),
-        user=current_user() or "-",
-        profile=_get_profile(),
-        ablage=str(BASE_PATH)
+@bp.get("/mail")
+@login_required
+def mail_page():
+    return _render_base(
+        render_template_string(HTML_MAIL),
+        active_tab="mail",
     )
 
-def _get_profile() -> dict:
-    if callable(getattr(core, "get_profile", None)):
-        return core.get_profile()
-    return {"name": "Standard Profil"}
 
-def _norm_tenant(t: str) -> str:
-    return (t or "default").upper()
+@bp.post("/settings/branding")
+@login_required
+@csrf_protected
+def settings_branding_save():
+    data = request.form
+    new_branding = {
+        "app_name": data.get("app_name", "KUKANILEA"),
+        "primary_color": data.get("primary_color", "#0ea5e9"),
+        "footer_text": data.get("footer_text", ""),
+    }
 
-def _safe_filename(fn: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9._-]", "_", fn)
+    import json
 
-def _is_allowed_ext(fn: str) -> bool:
-    return Path(fn).suffix.lower() in SUPPORTED_EXT
+    with open(Config.BRANDING_FILE, "w") as f:
+        json.dump(new_branding, f, indent=2)
 
-def _wizard_get(p: dict) -> dict:
-    return p.get("wizard") or {}
+    return redirect(url_for("web.settings_page"))
 
-def _card(level: str, text: str) -> str:
-    c = {"error": "rose", "warn": "amber", "info": "blue"}.get(level, "slate")
-    return f"<div class='card p-6 bg-{c}-50 border-{c}-200 text-{c}-700 text-sm font-medium'>{text}</div>"
 
-def _resolve_doc_path(token: str, p: dict) -> Optional[Path]:
-    path_str = p.get("path")
-    if not path_str: return None
-    path = Path(path_str)
-    return path if path.exists() else None
+@bp.get("/settings")
+@login_required
+def settings_page():
+    if current_role() not in {"ADMIN", "DEV"}:
+        return json_error("forbidden", "Nicht erlaubt.", status=403)
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    if callable(getattr(core, "get_db_info", None)):
+        core_db = core.get_db_info()
+    else:
+        core_db = {
+            "path": str(getattr(core, "DB_PATH", "")),
+            "schema_version": "?",
+            "tenants": "?",
+        }
+    return _render_base(
+        render_template_string(
+            HTML_SETTINGS,
+            core_db=core_db,
+            auth_db_path=str(auth_db.path),
+            auth_schema=auth_db.get_schema_version(),
+            auth_tenants=auth_db.count_tenants(),
+            db_files=[str(p) for p in _list_allowlisted_db_files()],
+            base_paths=[str(p) for p in _list_allowlisted_base_paths()],
+            profile=_get_profile(),
+            import_root=str(current_app.config.get("IMPORT_ROOT", "")),
+        ),
+        active_tab="settings",
+    )
 
-# -------- Routes ----------
+
+@bp.post("/api/dev/seed-users")
+@login_required
+@require_role("DEV")
+def api_seed_users():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    msg = _seed_dev_users(auth_db)
+    _audit("seed_users", meta={"status": "ok"})
+    return jsonify(ok=True, message=msg)
+
+
+@bp.post("/api/dev/rebuild-index")
+@login_required
+@require_role("DEV")
+def api_rebuild_index():
+    if callable(getattr(core, "index_rebuild", None)):
+        result = core.index_rebuild()
+    elif callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Indexing nicht verfügbar."), 400
+    _DEV_STATUS["index"] = result
+    _audit("rebuild_index", meta={"result": result})
+    return jsonify(ok=True, message="Index neu aufgebaut.", result=result)
+
+
+@bp.post("/api/dev/full-scan")
+@login_required
+@require_role("DEV")
+def api_full_scan():
+    if callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Scan nicht verfügbar."), 400
+    _DEV_STATUS["scan"] = result
+    _audit("full_scan", meta={"result": result})
+    return jsonify(ok=True, message="Scan abgeschlossen.", result=result)
+
+
+@bp.post("/api/dev/repair-drift")
+@login_required
+@require_role("DEV")
+def api_repair_drift():
+    if callable(getattr(core, "index_run_full", None)):
+        result = core.index_run_full()
+    else:
+        return jsonify(ok=False, message="Drift-Scan nicht verfügbar."), 400
+    _DEV_STATUS["scan"] = result
+    _audit("repair_drift", meta={"result": result})
+    return jsonify(ok=True, message="Drift-Scan abgeschlossen.", result=result)
+
+
+@bp.post("/api/dev/import/run")
+@login_required
+@require_role("DEV")
+def api_import_run():
+    import_root = Path(str(current_app.config.get("IMPORT_ROOT", ""))).expanduser()
+    if not str(import_root):
+        return json_error("import_root_missing", "IMPORT_ROOT fehlt.", status=400)
+    if not _is_allowlisted_path(import_root):
+        return json_error(
+            "import_root_forbidden", "IMPORT_ROOT nicht erlaubt.", status=403
+        )
+    if not import_root.exists():
+        return json_error(
+            "import_root_missing", "IMPORT_ROOT existiert nicht.", status=400
+        )
+    if callable(getattr(core, "import_run", None)):
+        result = core.import_run(
+            import_root=import_root,
+            user=str(current_user() or "dev"),
+            role=str(current_role()),
+        )
+    else:
+        return json_error("import_not_available", "Import nicht verfügbar.", status=400)
+    _DEV_STATUS["scan"] = result
+    _audit("import_run", meta={"result": result, "root": str(import_root)})
+    return jsonify(ok=True, message="Import abgeschlossen.", result=result)
+
+
+@bp.post("/api/dev/switch-db")
+@login_required
+@require_role("DEV")
+def api_switch_db():
+    payload = request.get_json(silent=True) or {}
+    path = Path(str(payload.get("path", ""))).expanduser()
+    if not path:
+        return jsonify(ok=False, message="Pfad fehlt."), 400
+    if not _is_allowlisted_path(path):
+        return jsonify(ok=False, message="Pfad nicht erlaubt."), 400
+    if not path.exists():
+        return jsonify(ok=False, message="Datei existiert nicht."), 400
+    old_path = str(getattr(core, "DB_PATH", ""))
+    if callable(getattr(core, "set_db_path", None)):
+        core.set_db_path(path)
+        _DEV_STATUS["db"] = {"old": old_path, "new": str(path)}
+        _audit("switch_db", target=str(path), meta={"old": old_path})
+        return jsonify(ok=True, message="DB gewechselt.", path=str(path))
+    return jsonify(ok=False, message="DB switch nicht verfügbar."), 400
+
+
+@bp.post("/api/dev/switch-base")
+@login_required
+@require_role("DEV")
+def api_switch_base():
+    payload = request.get_json(silent=True) or {}
+    path = Path(str(payload.get("path", ""))).expanduser()
+    if not path:
+        return jsonify(ok=False, message="Pfad fehlt."), 400
+    if not _is_storage_path_valid(path):
+        return (
+            jsonify(ok=False, message="Pfad nicht erlaubt oder nicht vorhanden."),
+            400,
+        )
+    old_path = str(getattr(core, "BASE_PATH", ""))
+    if callable(getattr(core, "set_base_path", None)):
+        core.set_base_path(path)
+        global BASE_PATH
+        BASE_PATH = path
+        _DEV_STATUS["base"] = {"old": old_path, "new": str(path)}
+        _audit("switch_base", target=str(path), meta={"old": old_path})
+        return jsonify(ok=True, message="Ablage gewechselt.", path=str(path))
+    return jsonify(ok=False, message="Ablage switch nicht verfügbar."), 400
+
+
+@bp.post("/api/dev/test-llm")
+@login_required
+@require_role("DEV")
+def api_test_llm():
+    payload = request.get_json(silent=True) or {}
+    q = str(payload.get("q") or "suche rechnung")
+    llm = getattr(ORCHESTRATOR, "llm", None)
+    if not llm:
+        return jsonify(ok=False, message="LLM nicht verfügbar."), 400
+    result = llm.rewrite_query(q)
+    _DEV_STATUS["llm"] = result
+    _audit("test_llm", meta={"result": result})
+    return jsonify(ok=True, message=f"LLM: {llm.name}, intent={result.get('intent')}")
+
+
+@bp.post("/api/mail/draft")
+@login_required
+@csrf_protected
+def api_mail_draft():
+    try:
+        payload = request.get_json(force=True) or {}
+        to = (payload.get("to") or "").strip()
+        subject = (payload.get("subject") or "").strip()
+        tone = (payload.get("tone") or "neutral").strip()
+        length = (payload.get("length") or "kurz").strip()
+        context = (payload.get("context") or "").strip()
+
+        if not context and not subject:
+            return jsonify({"error": "Bitte Kontext oder Betreff angeben."}), 400
+
+        text = _mock_generate(_mail_prompt(to, subject, tone, length, context))
+        return jsonify({"text": text, "meta": "mode=mock"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.post("/api/mail/eml")
+@login_required
+@csrf_protected
+def api_mail_eml():
+    payload = request.get_json(force=True) or {}
+    to = (payload.get("to") or "").strip()
+    subject = (payload.get("subject") or "").strip()
+    body = (payload.get("body") or "").strip()
+    if not body:
+        return jsonify({"error": "Body fehlt."}), 400
+    import email.message
+
+    msg = email.message.EmailMessage()
+    msg["To"] = to or "unknown@example.com"
+    msg["From"] = "noreply@kukanilea.local"
+    msg["Subject"] = subject or "KUKANILEA Entwurf"
+    msg.set_content(body)
+    eml_bytes = msg.as_bytes()
+    return current_app.response_class(eml_bytes, mimetype="message/rfc822")
+
 
 @bp.route("/")
-@login_required
 def index():
-    user = current_user()
-    items_meta = list_pending(username=user) or []
-    
-    # Optimization: Strip large fields for the index list
-    items = []
+    items_meta = list_pending() or []
+    items = [x.get("_token") for x in items_meta if x.get("_token")]
     meta = {}
-    for x in items_meta:
-        t = x.get("_token")
+    for it in items_meta:
+        t = it.get("_token")
         if t:
-            items.append(t)
-            # Remove large data from the meta dict used in the list view
-            x.pop("preview", None)
-            x.pop("extracted_text", None)
-            meta[t] = x
-            
-    list_recent = _core_get("list_recent_docs")
-    recent = list_recent(tenant_id=current_tenant()) if list_recent else []
-    return _render_base(render_template_string(HTML_INDEX, items=items, meta=meta, recent=recent), active_tab="upload")
+            meta[t] = {
+                "filename": it.get("filename", ""),
+                "progress": float(it.get("progress", 0.0) or 0.0),
+                "progress_phase": it.get("progress_phase", ""),
+            }
+    return _render_base(
+        "dashboard.html", active_tab="upload", items=items, meta=meta, recent=[]
+    )
+
 
 @bp.route("/upload", methods=["POST"])
-@login_required
 @csrf_protected
 @upload_limiter.limit_required
 def upload():
-    current_app.logger.info(f"Upload request received from user {current_user()}")
-    files = request.files.getlist("file")
-    if not files:
-        current_app.logger.warning("No files in upload request.")
+    f = request.files.get("file")
+    if not f or not f.filename:
         return jsonify(error="no_file"), 400
-        
     tenant = _norm_tenant(current_tenant() or "default")
-    results = []
-    for f in files:
-        if not f or not f.filename: continue
-        fname = _safe_filename(f.filename)
-        current_app.logger.info(f"Processing file: {fname} for tenant: {tenant}")
-        
-        if not _is_allowed_ext(fname):
-            current_app.logger.warning(f"File extension not supported: {fname}")
-            continue
-            
-        dest_dir = EINGANG / tenant
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(2)}_{fname}"
-        
-        try:
-            f.save(str(dest))
-            current_app.logger.info(f"File saved to: {dest}")
-            token = analyze_to_pending(dest, owner=current_user() or "")
-            results.append({"token": token, "filename": fname})
-            current_app.logger.info(f"Analysis triggered. Token: {token}")
-        except Exception as e:
-            current_app.logger.error(f"Error during upload processing for {fname}: {e}")
-            pass
-            
-    if not results:
-        return jsonify(error="unsupported", message="Keine gueltigen Dateien hochgeladen."), 400
-        
-    return jsonify(tokens=results)
+    # tenant is fixed by license/account; no user input here.
+    filename = _safe_filename(f.filename)
+    if not _is_allowed_ext(filename):
+        return jsonify(error="unsupported"), 400
+    tenant_in = EINGANG / tenant
+    tenant_in.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = tenant_in / f"{ts}__{filename}"
+    f.save(dest)
+    token = analyze_to_pending(dest)
+    try:
+        p = read_pending(token) or {}
+        p["tenant"] = tenant
+        w = _wizard_get(p)
+        w["tenant"] = tenant
+        p["wizard"] = w
+        write_pending(token, p)
+    except Exception:
+        pass
+    return jsonify(token=token, tenant=tenant)
+
+
+@bp.route("/review/<token>/delete", methods=["POST"])
+@csrf_protected
+def review_delete(token: str):
+    try:
+        delete_pending(token)
+    except Exception:
+        pass
+    return redirect(url_for("web.index"))
+
+
+@bp.route("/file/<token>")
+def file_preview(token: str):
+    p = read_pending(token)
+    if not p:
+        abort(404)
+    file_path = Path(p.get("path", ""))
+    if not file_path.exists():
+        abort(404)
+    if not _is_allowed_path(file_path):
+        abort(403)
+    return send_file(file_path, as_attachment=False)
+
 
 @bp.route("/review/<token>/kdnr", methods=["GET", "POST"])
-@login_required
 @csrf_protected
 def review(token: str):
-    user, role = current_user() or "guest", current_role()
     p = read_pending(token)
-    if not p: return _render_base(_card("error", "Beleg nicht gefunden."))
-    
-    # Locking
-    now = datetime.now()
-    locked_by, locked_at_str = p.get("locked_by", ""), p.get("locked_at", "")
-    if locked_by and locked_by != user and role != "DEV":
-        if locked_at_str:
-            try:
-                locked_at = datetime.fromisoformat(locked_at_str)
-                if (now - locked_at).total_seconds() < 900:
-                    return _render_base(_card("warn", f"Gesperrt durch {locked_by}"))
-            except Exception: pass
-
-    p["locked_by"], p["locked_at"] = user, now.isoformat()
-    write_pending(token, p)
-
+    if not p:
+        return _render_base(_card("error", "Nicht gefunden."), active_tab="upload")
     if p.get("status") == "ANALYZING":
-        return _render_base(render_template_string(HTML_REVIEW_SPLIT, token=token, filename=p.get("filename",""), is_pdf=True, right=_card("info","KI Analyse läuft..."), confidence=0))
-    
+        return _render_base(
+            "review.html",
+            active_tab="upload",
+            token=token,
+            filename=p.get("filename", ""),
+            is_pdf=True,
+            is_text=False,
+            preview=None,
+            w=_wizard_get(p),
+            doctypes=[],
+            kdnr_ranked=[],
+            name_suggestions=[],
+            suggested_doctype="SONSTIGES",
+            suggested_date="",
+            confidence=0,
+            msg="Analyse läuft noch. Bitte kurz warten oder zurück zur Übersicht."
+        )
+
     w = _wizard_get(p)
+    if True:
+        # Tenant is fixed per account/license
+        w["tenant"] = _norm_tenant(current_tenant() or p.get("tenant", "") or "default")
+
+    suggested_doctype = (p.get("doctype_suggested") or "SONSTIGES").upper()
+    if not w.get("doctype"):
+        w["doctype"] = (
+            suggested_doctype if suggested_doctype in DOCTYPE_CHOICES else "SONSTIGES"
+        )
+    suggested_date = (p.get("doc_date_suggested") or "").strip()
+    confidence = 40
+    if suggested_doctype and suggested_doctype != "SONSTIGES":
+        confidence += 20
+    if suggested_date:
+        confidence += 20
+    if w.get("kdnr"):
+        confidence += 20
+    confidence = min(95, confidence)
+
+    # Suggest an existing customer folder (best effort)
+    existing_folder_hint = ""
+    existing_folder_score = 0.0
+    if not (w.get("existing_folder") or "").strip():
+        match_path, match_score = suggest_existing_folder(
+            BASE_PATH, w["tenant"], w.get("kdnr", ""), w.get("name", "")
+        )
+        if match_path:
+            w["existing_folder"] = match_path
+            existing_folder_hint = match_path
+            existing_folder_score = match_score
+
     msg = ""
     if request.method == "POST":
         if request.form.get("reextract") == "1":
             src = _resolve_doc_path(token, p)
-            if src:
-                delete_pending(token)
-                new_t = analyze_to_pending(src, owner=current_user() or "", force_ocr=True)
-                return redirect(url_for("web.review", token=new_t))
+            if src and src.exists():
+                try:
+                    delete_pending(token)
+                except Exception:
+                    pass
+                new_token = analyze_to_pending(src)
+                return redirect(url_for("web.review", token=new_token))
+            msg = "Quelle nicht gefunden – Re-Extract nicht möglich."
+
         if request.form.get("confirm") == "1":
             tenant = _norm_tenant(current_tenant() or w.get("tenant") or "default")
-            answers = {
-                "tenant": tenant, "kdnr": normalize_component(request.form.get("kdnr") or ""),
-                "name": normalize_component(request.form.get("name") or "Kunde"),
-                "doctype": (request.form.get("doctype") or "SONSTIGES").upper(),
-                "document_date": normalize_component(request.form.get("document_date") or ""),
-                "user": user,
-            }
-            if not answers["kdnr"]: msg = "KDNR fehlt."
+            terr = None
+            if terr:
+                msg = f"Mandant-Fehler: {terr}"
             else:
-                src = _resolve_doc_path(token, p)
-                if src:
-                    try:
-                        process_with_answers(src, answers); delete_pending(token); return redirect(url_for("web.done_view", token=token))
-                    except Exception as e: msg = f"Error: {e}"
+                w["tenant"] = tenant
+                w["kdnr"] = normalize_component(request.form.get("kdnr") or "")
+                w["doctype"] = (
+                    request.form.get("doctype") or w.get("doctype") or "SONSTIGES"
+                ).upper()
+                w["document_date"] = normalize_component(
+                    request.form.get("document_date") or ""
+                )
+                w["name"] = normalize_component(request.form.get("name") or "")
+                w["addr"] = normalize_component(request.form.get("addr") or "")
+                w["plzort"] = normalize_component(request.form.get("plzort") or "")
+                w["use_existing"] = normalize_component(
+                    request.form.get("use_existing") or ""
+                )
 
-    right = render_template_string(HTML_WIZARD, w=w, doctypes=DOCTYPE_CHOICES, suggested_doctype="SONSTIGES", suggested_date="", confidence=50, msg=msg)
-    return _render_base(render_template_string(HTML_REVIEW_SPLIT, token=token, filename=p.get("filename",""), is_pdf=Path(p.get("filename","")).suffix.lower()==".pdf", preview=p.get("preview"), right=right, confidence=50), active_tab="upload")
+                if not w["kdnr"]:
+                    msg = "KDNR fehlt."
+                else:
+                    src = Path(p.get("path", ""))
+                    if not src.exists():
+                        msg = "Datei im Eingang nicht gefunden."
+                    else:
+                        answers = {
+                            "tenant": w["tenant"],
+                            "kdnr": w["kdnr"],
+                            "use_existing": w.get("use_existing", ""),
+                            "name": w.get("name") or "Kunde",
+                            "addr": w.get("addr") or "Adresse",
+                            "plzort": w.get("plzort") or "PLZ Ort",
+                            "doctype": w.get("doctype") or "SONSTIGES",
+                            "document_date": w.get("document_date") or "",
+                        }
+                        try:
+                            folder, final_path, created_new = process_with_answers(
+                                Path(p.get("path", "")), answers
+                            )
+                            write_done(
+                                token, {"final_path": str(final_path), **answers}
+                            )
+                            delete_pending(token)
+                            return redirect(url_for("web.done_view", token=token))
+                        except Exception as e:
+                            msg = f"Ablage fehlgeschlagen: {e}"
+
+    _wizard_save(token, p, w)
+
+    filename = p.get("filename", "")
+    ext = Path(filename).suffix.lower()
+    is_pdf = ext == ".pdf"
+    is_text = ext == ".txt"
+
+    return _render_base(
+        "review.html",
+        active_tab="upload",
+        token=token,
+        filename=filename,
+        is_pdf=is_pdf,
+        is_text=is_text,
+        preview=p.get("preview", ""),
+        w=w,
+        doctypes=DOCTYPE_CHOICES,
+        kdnr_ranked=p.get("kdnr_ranked", []),
+        name_suggestions=p.get("name_suggestions", []),
+        suggested_doctype=suggested_doctype,
+        suggested_date=suggested_date,
+        confidence=confidence,
+        msg=msg,
+        is_duplicate=p.get("is_duplicate", False)
+    )
+
 
 @bp.route("/done/<token>")
-@login_required
 def done_view(token: str):
-    html = f"<div class='card p-16 bg-white text-center max-w-xl mx-auto'><div class='h-24 w-24 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mx-auto mb-8 shadow-xl border border-emerald-100'><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3'><polyline points='20 6 9 17 4 12'/></svg></div><h1 class='text-3xl font-black mb-4'>Archiviert</h1><p class='muted mb-12 font-bold uppercase tracking-widest text-[10px]'>Dokument sicher im Ledger abgelegt</p><a class='btn-primary px-12 py-4' href='/'>Zur Übersicht</a></div>"
-    return _render_base(html, active_tab="upload")
+    d = read_done(token) or {}
+    fp = d.get("final_path", "")
+    return _render_base("done.html", active_tab="upload", final_path=fp)
 
-@bp.route("/mail")
-@login_required
-def mail(): return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Postfach</h1><p class='muted mt-4'>Keine neuen Nachrichten.</p></div>", active_tab="mail")
+
+@bp.route("/assistant")
+def assistant():
+    # Ensure core searches within current tenant
+    try:
+        from app import core as _core
+
+        _core.TENANT_DEFAULT = current_tenant() or _core.TENANT_DEFAULT
+    except Exception:
+        pass
+    q = normalize_component(request.args.get("q", "") or "")
+    kdnr = normalize_component(request.args.get("kdnr", "") or "")
+    results = []
+    if q and assistant_search is not None:
+        try:
+            raw = assistant_search(
+                query=q,
+                kdnr=kdnr,
+                limit=50,
+                role=current_role(),
+                tenant_id=current_tenant(),
+            )
+            for r in raw or []:
+                fp = r.get("file_path") or ""
+                if ASSISTANT_HIDE_EINGANG and fp:
+                    try:
+                        if str(Path(fp).resolve()).startswith(
+                            str(EINGANG.resolve()) + os.sep
+                        ):
+                            continue
+                    except Exception:
+                        pass
+                r["fp_b64"] = _b64(fp) if fp else ""
+                results.append(r)
+        except Exception:
+            pass
+    html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
+      <div class='text-lg font-semibold mb-1'>Assistant</div>
+      <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
+        <input class='w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input' name='q' value='{q}' placeholder='Suche…' />
+        <input class='w-full md:w-40 rounded-xl bg-slate-800 border border-slate-700 p-2 input' name='kdnr' value='{kdnr}' placeholder='Kdnr optional' />
+        <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
+      </form>
+      <div class='muted text-xs'>Treffer: {n}</div>
+    </div>""".format(
+        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
+    )
+    return _render_base(html, active_tab="assistant")
+
 
 @bp.route("/tasks")
-@login_required
-def tasks(): return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Aufgaben</h1><p class='muted mt-4'>Alle Aufgaben erledigt.</p></div>", active_tab="tasks")
+def tasks():
+    return _render_base("generic_tool.html", active_tab="tasks", title="Aufgaben", message="Aufgabenliste wird synchronisiert...")
+
 
 @bp.route("/time")
 @login_required
-def time_page(): return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Zeiterfassung</h1><p class='muted mt-4'>Zeiterfassung bereit.</p></div>", active_tab="time")
+def time_tracking():
+    return _render_base("generic_tool.html", active_tab="time", title="Zeiterfassung", message="Zeiterfassungsmodul wird geladen...")
 
-@bp.route("/assistant")
-@login_required
-def assistant_page(): return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Assistent</h1><p class='muted mt-4'>Wie kann ich Ihnen heute helfen?</p></div>", active_tab="assistant")
-
-@bp.route("/admin/mesh")
-@login_required
-def mesh_page():
-    if current_role() not in ["DEV", "ADMIN"]: abort(403)
-    return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Mesh-Netzwerk</h1><p class='muted mt-4'>ZimaBlade Cluster-Status: Online (3 Knoten)</p></div>", active_tab="mesh")
 
 @bp.route("/chat")
-@login_required
-def chat(): return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Chat</h1><p class='muted mt-4'>Chat bereit.</p></div>", active_tab="chat")
+def chat():
+    return _render_base("generic_tool.html", active_tab="chat", title="KI-Chat", message="Lokale LLM-Schnittstelle wird initialisiert...")
 
-@bp.route("/settings")
-@login_required
-def settings_page(): return _render_base("<div class='card p-12 bg-white text-center'><h1 class='text-xl font-black'>Konfiguration</h1><p class='muted mt-4'>Systemeinstellungen sind optimiert.</p></div>", active_tab="settings")
-
-@bp.route("/login", methods=["GET", "POST"])
-def login():
-    error = None
-    if request.method == "POST":
-        u, p = request.form.get("username"), request.form.get("password")
-        auth_db: AuthDB = current_app.extensions["auth_db"]
-        user_row = auth_db.get_user(u)
-        if user_row and user_row.password_hash == hash_password(p):
-            m = auth_db.get_memberships(u)
-            if m: login_user(u, m[0].role, m[0].tenant_id); return redirect(url_for("web.index"))
-            error = "Keine Mandanten-Zuordnung."
-        else: error = "Identität konnte nicht verifiziert werden."
-    return render_template_string(HTML_LOGIN, error=error, branding=Config.get_branding())
-
-@bp.route("/logout")
-def logout(): logout_user(); return redirect(url_for("web.login"))
 
 @bp.route("/health")
 def health():
-    from .lifecycle import manager
-    return jsonify(ok=True, state=manager.state.value, details=manager.details, uptime=manager.uptime)
+    return jsonify(ok=True, ts=time.time(), app="kukanilea_upload_v3_ui")
 
-@bp.route("/api/progress/<token>")
-@login_required
-def api_progress(token: str):
-    p = read_pending(token)
-    if not p: return jsonify(status="ERROR"), 404
-    return jsonify(status=p.get("status", "ANALYZING"), progress=p.get("progress", 0), progress_phase=p.get("progress_phase", ""))
 
-@bp.route("/file/<token>")
-@login_required
-def file_preview(token: str):
-    p = read_pending(token)
-    if not p or not p.get("path"): abort(404)
-    return send_file(p["path"])
+@bp.before_app_request
+def check_first_run():
+    """Detects missing license and redirects to setup/license page."""
+    # Exclusions
+    if request.endpoint and (
+        "static" in request.endpoint
+        or "license" in request.endpoint
+        or "login" in request.endpoint
+    ):
+        return None
+
+    license_path = Path(current_app.config["LICENSE_PATH"])
+    if not license_path.exists():
+        # Only redirect if not already on license page
+        return redirect(url_for("web.license_page"))
+
+    return None
+
+
+@bp.route("/license", methods=["GET", "POST"])
+@csrf_protected
+def license_page():
+    notice = ""
+    error = ""
+    if request.method == "POST":
+        blob = str(request.form.get("license_json") or "").strip()
+        if not blob:
+            error = "Lizenz-JSON fehlt."
+        else:
+            try:
+                payload = json.loads(blob)
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON root must be object")
+            except Exception:
+                payload = None
+                error = "Lizenz-JSON ist ungültig."
+
+            if payload is not None:
+                license_path = Path(current_app.config["LICENSE_PATH"])
+                previous_text = (
+                    license_path.read_text(encoding="utf-8")
+                    if license_path.exists()
+                    else None
+                )
+                license_path.parent.mkdir(parents=True, exist_ok=True)
+                license_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                info = load_license(license_path)
+                if not bool(info.get("valid")):
+                    if previous_text is None:
+                        try:
+                            license_path.unlink()
+                        except Exception:
+                            pass
+                    else:
+                        license_path.write_text(previous_text, encoding="utf-8")
+                    error = f"Lizenz ungültig ({info.get('reason') or 'invalid'})."
+                else:
+                    notice = "Lizenz erfolgreich aktiviert."
+
+    return _render_base(
+        render_template_string(HTML_LICENSE, notice=notice, error=error),
+        active_tab="settings",
+    )

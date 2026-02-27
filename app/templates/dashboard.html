@@ -1,0 +1,236 @@
+{% extends "layout.html" %}
+{% block title %}Upload & Dashboard{% endblock %}
+
+{% block content %}
+<div style="display: flex; flex-direction: column; gap: var(--spacing-4);">
+  
+  <div class="panel">
+    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: var(--spacing-3);">
+      <div style="width:40px; height:40px;"><img src="/static/logo.svg" width="100%" height="100%"></div>
+      <h1 style="font-size: 24px; font-weight: 700; color: #fff;">Beleg-Zentrale</h1>
+    </div>
+    
+    <div id="dropZone" style="position: relative; border: 2px dashed var(--color-border); border-radius: var(--radius-xl); padding: var(--spacing-5); text-align: center; background: rgba(0,0,0,0.2); transition: all 0.2s; cursor: pointer;">
+      <input type="file" id="file" style="position: absolute; inset: 0; opacity: 0; cursor: pointer;" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.txt">
+      <div style="margin-bottom: var(--spacing-3); display: flex; justify-content: center;">
+        <div style="height: 64px; width: 64px; border-radius: var(--radius-lg); background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; color: var(--color-accent); border: 1px solid var(--color-border);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" width="32" height="32" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+        </div>
+      </div>
+      <div style="font-size: 18px; font-weight: 600; color: #fff; margin-bottom: var(--spacing-1);">Dateien auswählen oder ablegen</div>
+      <div style="font-size: 13px; color: var(--color-text-muted);">Max. 100MB pro Dokument</div>
+    </div>
+
+    <!-- Staging Area (hidden by default) -->
+    <div id="stagingArea" style="display: none; margin-top: var(--spacing-4); display: flex; flex-direction: column; gap: var(--spacing-3);">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 8px;">
+        <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted);">Warteliste für Upload (<span id="fileCount">0</span>)</div>
+        <button id="clearStaging" style="background: none; border: none; font-size: 12px; font-weight: 600; color: var(--color-danger); cursor: pointer;">Alle leeren</button>
+      </div>
+      <div id="fileList" class="grid grid-cols-2 gap-4"></div>
+      <div style="padding-top: var(--spacing-2);">
+        <button id="startAnalysis" class="btn btn-primary" style="width: 100%; height: 48px; font-size: 16px;">ANALYSE STARTEN</button>
+      </div>
+    </div>
+
+    <!-- Progress Area -->
+    <div id="progressArea" style="display: none; margin-top: var(--spacing-4); padding: var(--spacing-4); border-radius: var(--radius-xl); background: rgba(0,0,0,0.3); border: 1px solid var(--color-border);">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: var(--spacing-3);">
+        <div>
+          <div id="phase" style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--color-accent); margin-bottom: 4px;">Vorbereitung...</div>
+          <div id="status" style="font-size: 16px; font-weight: 600; color: #fff;">Analyse läuft...</div>
+        </div>
+        <div id="pLabel" style="font-size: 24px; font-weight: 800; color: #fff;">0.0%</div>
+      </div>
+      <div style="height: 12px; width: 100%; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;">
+        <div id="bar" style="height: 100%; background: var(--color-accent); width: 0%; transition: width 0.3s ease;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: var(--spacing-3);">
+    <h2 style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); padding: 0 8px;">Warteschlange zur Prüfung</h2>
+    <div class="grid grid-cols-3 gap-6">
+      {% for token in items %}
+      {% set m = meta[token] %}
+      <a href="/review/{{token}}/kdnr" class="panel" style="display: block; transition: border-color 0.2s; margin-bottom: 0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--spacing-2);">
+          <div style="height: 40px; width: 40px; border-radius: var(--radius-md); background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; color: var(--color-text-muted);">
+            <svg fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          </div>
+          <span class="badge">{{ m.status }}</span>
+        </div>
+        <div style="font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px;">{{ m.filename }}</div>
+        <div style="font-size: 11px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 1px;">{{ token[:8] }}...</div>
+      </a>
+      {% endfor %}
+      {% if not items %}
+      <div style="grid-column: span 3; padding: var(--spacing-4); text-align: center; color: var(--color-text-muted); font-size: 13px; font-style: italic; background: rgba(255,255,255,0.02); border-radius: var(--radius-lg); border: 1px dashed var(--color-border);">
+        Keine Dokumente in der Warteschlange.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: var(--spacing-3);">
+    <h2 style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); padding: 0 8px;">Verlauf (Zuletzt archiviert)</h2>
+    <div class="grid grid-cols-3 gap-6">
+      {% for r in recent %}
+      <div class="panel" style="margin-bottom: 0;">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: var(--spacing-2);">
+          <div style="height: 40px; width: 40px; border-radius: var(--radius-md); background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: center; color: var(--color-text-muted);">
+            <svg fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <span style="font-size: 10px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;">{{ r.created_at[:10] }}</span>
+        </div>
+        <div style="font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px;" title="{{ r.file_name }}">{{ r.file_name }}</div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="badge">{{ r.doctype }}</span>
+          <span class="badge">KDNR: {{ r.kdnr }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const fileInput = document.getElementById("file");
+  const stagingArea = document.getElementById("stagingArea");
+  const fileList = document.getElementById("fileList");
+  const fileCount = document.getElementById("fileCount");
+  const clearStaging = document.getElementById("clearStaging");
+  const startBtn = document.getElementById("startAnalysis");
+  const progressArea = document.getElementById("progressArea");
+  const bar = document.getElementById("bar");
+  const pLabel = document.getElementById("pLabel");
+  const status = document.getElementById("status");
+  const phase = document.getElementById("phase");
+  
+  let stagedFiles = [];
+  
+  const updateUI = () => {
+    fileList.innerHTML = "";
+    stagedFiles.forEach((f, i) => {
+      const d = document.createElement("div");
+      d.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--radius-md); background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); font-size: 13px;";
+      d.innerHTML = `
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: #fff;">${f.name}</div>
+        <button style="background: none; border: none; color: var(--color-danger); cursor: pointer; font-weight: 600; padding: 4px 8px; font-size: 12px;" onclick="window._rm(${i})">Entfernen</button>
+      `;
+      fileList.appendChild(d);
+    });
+    fileCount.textContent = stagedFiles.length;
+    stagingArea.style.display = stagedFiles.length > 0 ? "flex" : "none";
+  };
+
+  window._rm = (idx) => { stagedFiles.splice(idx, 1); updateUI(); };
+  
+  clearStaging.addEventListener("click", () => { stagedFiles = []; updateUI(); fileInput.value = ""; });
+  
+  fileInput.addEventListener("change", () => {
+    stagedFiles = [...stagedFiles, ...Array.from(fileInput.files)];
+    updateUI();
+  });
+  
+  const dropZone = document.getElementById("dropZone");
+  dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "var(--color-accent)"; });
+  dropZone.addEventListener("dragleave", () => { dropZone.style.borderColor = "var(--color-border)"; });
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = "var(--color-border)";
+    if(e.dataTransfer.files.length > 0){
+      stagedFiles = [...stagedFiles, ...Array.from(e.dataTransfer.files)];
+      updateUI();
+    }
+  });
+
+  const csrfToken = "{{ csrf_token() }}";
+  
+  startBtn.addEventListener("click", () => {
+    if(stagedFiles.length === 0) return;
+    stagingArea.style.display = "none";
+    progressArea.style.display = "block";
+    
+    const formData = new FormData();
+    stagedFiles.forEach(f => formData.append("file", f));
+    formData.append("csrf_token", csrfToken);
+    
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/upload", true);
+    let targetProgress = 0, currentProgress = 0;
+    
+    const sim = setInterval(() => {
+      if(currentProgress < targetProgress) currentProgress += 1;
+      bar.style.width = currentProgress + "%";
+      pLabel.textContent = currentProgress.toFixed(1) + "%";
+    }, 50);
+
+    xhr.upload.onprogress = (ev) => {
+      if(ev.lengthComputable){
+        targetProgress = (ev.loaded / ev.total) * 35; // Upload phase
+        phase.textContent = "Übertragung...";
+      }
+    };
+    
+    xhr.onload = () => {
+      if(xhr.status === 200){
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if(res.tokens && res.tokens.length > 0){
+            const tokens = res.tokens.map(t => t.token);
+            targetProgress = 35;
+            phase.textContent = "KI Analyse...";
+            status.textContent = "Dokumente werden analysiert...";
+            
+            const check = setInterval(() => {
+              const pXhr = new XMLHttpRequest();
+              pXhr.open("GET", "/api/progress?tokens=" + tokens.join(","), true);
+              pXhr.onload = () => {
+                if(pXhr.status === 200){
+                  const data = JSON.parse(pXhr.responseText);
+                  let allDone = true;
+                  let minP = 100;
+                  Object.values(data).forEach(d => {
+                    if(d.status !== "READY" && d.status !== "ERROR") allDone = false;
+                    if(d.progress < minP) minP = d.progress;
+                  });
+                  targetProgress = 35 + (minP * 0.65);
+                  if(allDone){
+                    clearInterval(check);
+                    clearInterval(sim);
+                    bar.style.width = "100%";
+                    pLabel.textContent = "100%";
+                    status.textContent = "Analyse abgeschlossen. Lade Review...";
+                    setTimeout(() => window.location.reload(), 800);
+                  }
+                }
+              };
+              pXhr.send();
+            }, 1000);
+          } else {
+            status.textContent = "Upload erfolgreich, Fehler bei KI-Start.";
+            clearInterval(sim);
+          }
+        } catch(e) {
+          status.textContent = "Fehlerhafte Server-Antwort.";
+          clearInterval(sim);
+        }
+      } else {
+        status.textContent = "Fehler beim Upload. Bitte erneut versuchen.";
+        clearInterval(sim);
+      }
+    };
+    
+    xhr.onerror = () => {
+      status.textContent = "Netzwerkfehler.";
+      clearInterval(sim);
+    };
+    
+    xhr.send(formData);
+  });
+});
+</script>
+{% endblock %}
