@@ -46,6 +46,12 @@
   <div style="margin: 24px 0 8px 24px; font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px;">Administration</div>
   <ul class="nav-list" style="padding: 0 var(--spacing-2);">
     <li class="nav-item">
+      <a href="/admin/forensics" class="nav-link {{ 'active' if request.path == '/admin/forensics' }}">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span class="nav-text">Forensic Monitor</span>
+      </a>
+    </li>
+    <li class="nav-item">
       <a href="/admin/mesh" class="nav-link {{ 'active' if request.path == '/admin/mesh' }}">
         <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
         <span class="nav-text">Mesh-Netzwerk</span>
@@ -75,7 +81,10 @@
             <div style="font-size:10px; color:var(--text-tertiary); text-transform:uppercase;">{{ roles }}</div>
         </div>
     </div>
-    <a href="/logout" class="btn btn-secondary btn-sm" style="width: 100%; border-radius:8px;">Abmelden</a>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+        <a href="/logout" class="btn btn-secondary btn-sm" style="width: 100%; border-radius:8px;">Abmelden</a>
+        <a href="/legal" style="font-size: 10px; color: var(--text-tertiary); text-align: center; text-decoration: none;">Impressum & Datenschutz</a>
+    </div>
     {% endif %}
   </div>
 </nav>

@@ -2721,6 +2721,13 @@ def upload():
         return jsonify(error="no_file"), 400
         
     tenant = _norm_tenant(current_tenant() or "default")
+    
+    # Task 114: Disk Quota Management (100MB limit per tenant for now)
+    QUOTA_LIMIT = 100 * 1024 * 1024 
+    current_usage = sum(f.stat().st_size for f in (EINGANG / tenant).glob("*") if f.is_file())
+    if current_usage > QUOTA_LIMIT:
+        return jsonify(error="quota_exceeded", message="Speicherlimit für Mandant erreicht."), 403
+
     results = []
     
     from app.core.upload_pipeline import process_upload
@@ -3014,10 +3021,45 @@ def chat():
     return _render_base("generic_tool.html", active_tab="chat", title="KI-Chat", message="Lokale LLM-Schnittstelle wird initialisiert...")
 
 
+@bp.route("/legal")
+def legal_page():
+    return _render_base("legal.html", active_tab="settings")
+
+
 @bp.route("/health")
 def health():
     return jsonify(ok=True, ts=time.time(), app="kukanilea_upload_v3_ui")
 
+
+
+@bp.route("/admin/forensics")
+@login_required
+@require_role(["DEV", "ADMIN"])
+def admin_forensics():
+    from app.core.audit import vault
+    from kukanilea_app import measure_db_speed, measure_cpu_usage, measure_memory_usage
+    
+    trail = vault.get_audit_trail() or []
+    
+    # System performance snapshot (Step 171-185)
+    perf = {
+        "db_query_speed": measure_db_speed(),
+        "cpu_usage": measure_cpu_usage(),
+        "memory_info": measure_memory_usage(),
+        "boot_time_ms": 420 # Mock for now
+    }
+    
+    # Active Users simulation (Step 22)
+    active_users = ["admin", "user_1"] # In real impl, check session store
+    
+    return _render_base(
+        "forensic_dashboard.html",
+        active_tab="settings",
+        trail=trail,
+        perf=perf,
+        audit_count=len(trail),
+        active_users=active_users
+    )
 
 
 @bp.route("/admin/audit")

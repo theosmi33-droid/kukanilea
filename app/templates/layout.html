@@ -15,6 +15,29 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+  <!-- Task 156: Boot Splash -->
+  <div id="boot-splash">
+    <div class="boot-logo-animate">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+    </div>
+    <div style="margin-top: 16px; font-size: 10px; font-weight: 800; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 2px;">System Initializing</div>
+    <div class="boot-progress">
+        <div class="boot-progress-bar" id="boot-bar"></div>
+    </div>
+  </div>
+
+  <script>
+    // Boot splash logic
+    window.addEventListener('DOMContentLoaded', () => {
+        const bar = document.getElementById('boot-bar');
+        const splash = document.getElementById('boot-splash');
+        if (bar) bar.style.width = '100%';
+        setTimeout(() => {
+            if (splash) splash.classList.add('fade-out');
+        }, 600);
+    });
+  </script>
+
   {% include 'partials/sidebar.html' %}
   <main class="main-content">
     <header style="display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--spacing-4); padding:0 var(--spacing-2);">

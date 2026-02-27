@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+{% block title %}Impressum & Datenschutz{% endblock %}
+
+{% block content %}
+<div class="panel" style="max-width: 800px; margin: 0 auto; line-height: 1.6;">
+    <h1 style="font-size: 24px; font-weight: 800; color: #fff; margin-bottom: var(--spacing-4);">Rechtliche Informationen</h1>
+    
+    <section style="margin-bottom: var(--spacing-6);">
+        <h2 style="font-size: 18px; font-weight: 700; color: var(--color-accent); margin-bottom: 12px;">Impressum (gem. § 5 DDG)</h2>
+        <p><strong>Betreiber:</strong><br>
+        {{ branding.app_name }} Enterprise<br>
+        Lokale Instanz auf diesem Gerät.</p>
+        <p><strong>Kontakt:</strong><br>
+        E-Mail: support@kukanilea.de<br>
+        Web: {{ branding.support_url }}</p>
+    </section>
+
+    <section style="margin-bottom: var(--spacing-6);">
+        <h2 style="font-size: 18px; font-weight: 700; color: var(--color-accent); margin-bottom: 12px;">Datenschutzerklärung (TDDDG & DSGVO)</h2>
+        <p>Diese Anwendung arbeitet nach dem <strong>Local-First-Prinzip</strong>. Personenbezogene Daten werden primär auf diesem lokalen System verarbeitet und gespeichert (TDDDG Konformität 2026).</p>
+        <ul style="list-style: disc; padding-left: 20px; color: var(--color-text-muted);">
+            <li>Keine Cloud-Synchronisierung ohne explizite Zustimmung.</li>
+            <li>Vollständige Kontrolle über Ihre Daten.</li>
+            <li>Integrierter Audit-Log zur Nachverfolgung aller Zugriffe.</li>
+        </ul>
+    </section>
+    
+    <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--color-border); text-align: center;">
+        <a href="/" class="btn btn-secondary">Zurück zum Dashboard</a>
+    </div>
+</div>
+{% endblock %}
