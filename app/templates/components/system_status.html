@@ -1,0 +1,37 @@
+<!-- templates/components/system_status.html -->
+<div id="system-status-indicator" style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600;">
+    <div id="status-dot" style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--color-success);"></div>
+    <span id="status-text" style="color: var(--text-secondary);">READY</span>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const dot = document.getElementById('status-dot');
+        const text = document.getElementById('status-text');
+
+        if (typeof StateStore !== 'undefined') {
+            StateStore.subscribe((state) => {
+                if (!state.isOnline) {
+                    dot.style.backgroundColor = 'var(--color-warning)';
+                    text.textContent = 'OFFLINE';
+                    return;
+                }
+
+                switch (state.systemStatus) {
+                    case 'READY':
+                        dot.style.backgroundColor = 'var(--color-success)';
+                        text.textContent = 'READY';
+                        break;
+                    case 'LOADING':
+                        dot.style.backgroundColor = 'var(--color-info)';
+                        text.textContent = 'LOADING';
+                        break;
+                    case 'ERROR':
+                        dot.style.backgroundColor = 'var(--color-error)';
+                        text.textContent = 'ERROR';
+                        break;
+                }
+            });
+        }
+    });
+</script>

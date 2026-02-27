@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% block title %}System Logs - KUKANILEA Live Diagnostics{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-4);">
+    <div>
+      <h1 style="font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 4px;">Live System-Logs</h1>
+      <p style="color: var(--color-text-muted); font-size: 14px;">Echtzeit-Diagnose des Business OS Kernels</p>
+    </div>
+    <div style="display: flex; gap: 12px;">
+        <button id="clear-logs" class="btn btn-secondary btn-sm">Ansicht leeren</button>
+        <div class="badge" id="conn-status" style="background: rgba(245, 158, 11, 0.1); color: var(--color-warning); border-color: rgba(245, 158, 11, 0.2);">
+          Verbinde...
+        </div>
+    </div>
+  </div>
+
+  <div id="log-container" style="background: #000; color: #0f0; font-family: var(--font-mono); font-size: 12px; padding: 20px; border-radius: var(--radius-lg); height: 600px; overflow-y: auto; border: 1px solid var(--color-border); white-space: pre-wrap;">
+> Initializing Log Stream...
+  </div>
+</div>
+
+<script>
+    const logContainer = document.getElementById('log-container');
+    const statusBadge = document.getElementById('conn-status');
+    const clearBtn = document.getElementById('clear-logs');
+
+    clearBtn.onclick = () => logContainer.innerHTML = '> Logs cleared.
+';
+
+    function startStream() {
+        const eventSource = new EventSource("/system/logs/stream");
+
+        eventSource.onopen = () => {
+            statusBadge.textContent = "LIVE";
+            statusBadge.style.backgroundColor = "rgba(16, 185, 129, 0.1)";
+            statusBadge.style.color = "var(--color-success)";
+            statusBadge.style.borderColor = "rgba(16, 185, 129, 0.2)";
+        };
+
+        eventSource.onmessage = (event) => {
+            const line = document.createElement('div');
+            line.textContent = event.data;
+            logContainer.appendChild(line);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        };
+
+        eventSource.onerror = () => {
+            statusBadge.textContent = "RECONNECTING...";
+            statusBadge.style.backgroundColor = "rgba(239, 68, 68, 0.1)";
+            statusBadge.style.color = "var(--color-danger)";
+            eventSource.close();
+            setTimeout(startStream, 3000);
+        };
+    }
+
+    startStream();
+</script>
+{% endblock %}

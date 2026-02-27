@@ -1,4 +1,3 @@
-from app.core.audit import vault
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -28,6 +27,7 @@ Notes:
 """
 
 from __future__ import annotations
+from app.core.audit import vault
 
 import base64
 import importlib
@@ -2649,35 +2649,28 @@ def upload():
     tenant = _norm_tenant(current_tenant() or "default")
     results = []
     
+    from app.core.upload_pipeline import process_upload
+
     for f in files:
         if not f.filename: continue
         filename = _safe_filename(f.filename)
-        if not _is_allowed_ext(filename):
-            continue
-            
-        # ClamAV Stream-Scanning (Enterprise Security)
-        try:
-            import pyclamd
-            cd = pyclamd.ClamdUnixSocket()
-            if cd.ping():
-                f.stream.seek(0)
-                if cd.instream(f.stream):
-                    current_app.logger.warning(f"Malware detected: {filename}")
-                    continue # Skip infected file
-                f.stream.seek(0)
-        except Exception:
-            f.stream.seek(0)
-            
+        
         tenant_in = EINGANG / tenant
         tenant_in.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         dest = tenant_in / f"{ts}__{filename}"
         f.save(dest)
         
+        is_safe, info = process_upload(dest, tenant)
+        if not is_safe:
+            current_app.logger.warning(f"Upload rejected: {filename} - {info}")
+            continue
+            
         token = analyze_to_pending(dest)
         try:
             p = read_pending(token) or {}
             p["tenant"] = tenant
+            p["file_hash"] = info # info contains the SHA256 hash here
             write_pending(token, p)
         except Exception: pass
         
