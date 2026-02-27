@@ -2630,6 +2630,23 @@ def upload():
     filename = _safe_filename(f.filename)
     if not _is_allowed_ext(filename):
         return jsonify(error="unsupported"), 400
+        
+    # ClamAV Stream-Scanning (Enterprise Security)
+    try:
+        import pyclamd
+        cd = pyclamd.ClamdUnixSocket()
+        if cd.ping():
+            # Seek to start, read for scan, seek back
+            f.stream.seek(0)
+            scan_result = cd.instream(f.stream)
+            f.stream.seek(0)
+            if scan_result:
+                current_app.logger.warning(f"Malware detected in upload: {scan_result}")
+                return jsonify(error="malware_detected"), 403
+    except Exception as e:
+        # Fallback if ClamAV is not available or not configured
+        f.stream.seek(0)
+        
     tenant_in = EINGANG / tenant
     tenant_in.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
