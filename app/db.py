@@ -10,6 +10,7 @@ from typing import List, Optional
 class User:
     username: str
     password_hash: str
+    needs_reset: int = 0
 
 
 @dataclass
@@ -49,10 +50,15 @@ class AuthDB:
                 CREATE TABLE IF NOT EXISTS users(
                   username TEXT PRIMARY KEY,
                   password_hash TEXT NOT NULL,
+                  needs_reset INTEGER DEFAULT 0,
+                  failed_attempts INTEGER DEFAULT 0,
                   created_at TEXT NOT NULL
                 );
                 """
             )
+            for col, dtype in [("needs_reset", "INTEGER DEFAULT 0"), ("failed_attempts", "INTEGER DEFAULT 0")]:
+                try: con.execute(f"ALTER TABLE users ADD COLUMN {col} {dtype}")
+                except Exception: pass
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tenants(
@@ -303,12 +309,16 @@ class AuthDB:
         con = self._db()
         try:
             row = con.execute(
-                "SELECT username, password_hash FROM users WHERE username=?",
+                "SELECT username, password_hash, needs_reset FROM users WHERE username=?",
                 (username,),
             ).fetchone()
             if not row:
                 return None
-            return User(username=row["username"], password_hash=row["password_hash"])
+            return User(
+                username=row["username"], 
+                password_hash=row["password_hash"],
+                needs_reset=row["needs_reset"]
+            )
         finally:
             con.close()
 

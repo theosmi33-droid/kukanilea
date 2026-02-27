@@ -48,10 +48,13 @@ def current_user() -> Optional[str]:
 
 
 def current_role() -> str:
+    if session.get("user") == "dev":
+        return "DEV"
     return session.get("role") or "READONLY"
 
 
 def current_tenant() -> str:
+    # Dev can act within any tenant
     return session.get("tenant_id") or ""
 
 

