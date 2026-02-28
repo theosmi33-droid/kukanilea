@@ -12,6 +12,15 @@
   </script>
   <script src="/static/js/state.js"></script>
   <script src="/static/js/command_palette.js"></script>
+  <script>
+    (function(){
+      try {
+        if (localStorage.getItem('ks_sidebar_collapsed') === '1') {
+          document.documentElement.classList.add('sidebar-collapsed');
+        }
+      } catch (e) {}
+    })();
+  </script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -112,6 +121,23 @@
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     </button>
   </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('sidebar-toggle');
+      if (!btn) return;
+      const updateLabel = () => {
+        const collapsed = document.documentElement.classList.contains('sidebar-collapsed');
+        btn.textContent = collapsed ? '→' : '←';
+      };
+      btn.addEventListener('click', () => {
+        const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
+        try { localStorage.setItem('ks_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+        updateLabel();
+      });
+      updateLabel();
+    });
+  </script>
 
   <script>
     function toggleChat() {

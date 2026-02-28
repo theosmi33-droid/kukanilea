@@ -115,6 +115,25 @@ class AuthDB:
             )
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS auth_outbox(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT NOT NULL,
+                  purpose TEXT NOT NULL,
+                  code TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  expires_at TEXT NOT NULL,
+                  used INTEGER NOT NULL DEFAULT 0
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_auth_outbox_lookup
+                ON auth_outbox(username, purpose, used, expires_at);
+                """
+            )
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS projects(
                   id TEXT PRIMARY KEY,
                   tenant_id TEXT NOT NULL,
@@ -413,6 +432,82 @@ class AuthDB:
         try:
             row = con.execute("SELECT COUNT(*) AS c FROM tenants").fetchone()
             return int(row["c"] or 0) if row else 0
+        finally:
+            con.close()
+
+    def count_users(self) -> int:
+        con = self._db()
+        try:
+            row = con.execute("SELECT COUNT(*) AS c FROM users").fetchone()
+            return int(row["c"] or 0) if row else 0
+        finally:
+            con.close()
+
+    def create_auth_outbox_code(
+        self,
+        *,
+        username: str,
+        purpose: str,
+        code: str,
+        created_at: str,
+        expires_at: str,
+    ) -> None:
+        con = self._db()
+        try:
+            con.execute(
+                """
+                INSERT INTO auth_outbox(username, purpose, code, created_at, expires_at, used)
+                VALUES (?,?,?,?,?,0)
+                """,
+                (username, purpose, code, created_at, expires_at),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    def get_auth_outbox_code(
+        self, *, username: str, purpose: str, code: str
+    ) -> Optional[dict]:
+        con = self._db()
+        try:
+            row = con.execute(
+                """
+                SELECT id, username, purpose, code, created_at, expires_at, used
+                FROM auth_outbox
+                WHERE username=? AND purpose=? AND code=?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (username, purpose, code),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            con.close()
+
+    def consume_auth_outbox_code(
+        self, *, username: str, purpose: str, code: str, now_iso: str
+    ) -> bool:
+        con = self._db()
+        try:
+            row = con.execute(
+                """
+                SELECT id, expires_at, used
+                FROM auth_outbox
+                WHERE username=? AND purpose=? AND code=?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (username, purpose, code),
+            ).fetchone()
+            if not row:
+                return False
+            if int(row["used"] or 0) != 0:
+                return False
+            if str(row["expires_at"]) <= now_iso:
+                return False
+            con.execute("UPDATE auth_outbox SET used=1 WHERE id=?", (row["id"],))
+            con.commit()
+            return True
         finally:
             con.close()
 
