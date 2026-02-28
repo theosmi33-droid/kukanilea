@@ -56,6 +56,9 @@ class Config:
     KUK_OTEL_ENABLED = _env("KUK_OTEL_ENABLED", "0") == "1"
     KUK_DIAG_ENABLED = _env("KUK_DIAG_ENABLED", "0") == "1"
 
+    # Lexoffice Integration
+    LEXOFFICE_API_KEY = _env("LEXOFFICE_API_KEY", "")
+
     # White-Labeling / Branding
     BRANDING_FILE = USER_DATA_ROOT / "branding.json"
 

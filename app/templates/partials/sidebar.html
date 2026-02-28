@@ -11,9 +11,9 @@
       </a>
     </li>
     <li class="nav-item">
-      <a href="/crm/contacts" class="nav-link {{ 'active' if request.path.startswith('/crm') }}">
-        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        <span class="nav-text">Kunden & CRM</span>
+      <a href="/" class="nav-link">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+        <span class="nav-text">Upload</span>
       </a>
     </li>
     <li class="nav-item">
@@ -23,21 +23,45 @@
       </a>
     </li>
     <li class="nav-item">
-      <a href="/documents" class="nav-link {{ 'active' if request.path.startswith('/documents') }}">
-        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <a href="/time" class="nav-link {{ 'active' if request.path == '/time' }}">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span class="nav-text">Zeiterfassung</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/crm/contacts" class="nav-link {{ 'active' if request.path.startswith('/crm') }}">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span class="nav-text">CRM</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/documents" class="nav-link {{ 'active' if request.path == '/documents' }}">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
         <span class="nav-text">Dokumente</span>
       </a>
     </li>
     <li class="nav-item">
       <a href="/assistant" class="nav-link {{ 'active' if request.path == '/assistant' }}">
-        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
-        <span class="nav-text">KI-Assistent</span>
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        <span class="nav-text">Assistent</span>
       </a>
     </li>
     <li class="nav-item">
-      <a href="/chat" class="nav-link {{ 'active' if request.path == '/chat' }}">
+      <a href="/mail" class="nav-link {{ 'active' if request.path == '/mail' }}">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+        <span class="nav-text">E-Mail</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/messenger" class="nav-link {{ 'active' if request.path == '/messenger' }}">
         <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span class="nav-text">Chat</span>
+        <span class="nav-text">Messenger</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/visualizer" class="nav-link {{ 'active' if request.path == '/visualizer' }}">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="3" x2="21" y1="15" y2="15"/><line x1="9" x2="9" y1="3" y2="21"/><line x1="15" x2="15" y1="3" y2="21"/></svg>
+        <span class="nav-text">Excel Visualizer</span>
       </a>
     </li>
   </ul>
@@ -45,6 +69,12 @@
   {% if roles in ['DEV', 'ADMIN'] %}
   <div style="margin: 24px 0 8px 24px; font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px;">Administration</div>
   <ul class="nav-list" style="padding: 0 var(--spacing-2);">
+    <li class="nav-item">
+      <a href="/admin/tenants" class="nav-link {{ 'active' if request.path == '/admin/tenants' }}">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h7"/><path d="M16 5V3"/><path d="M8 5V3"/><path d="M3 9h18"/><circle cx="18" cy="18" r="3"/><path d="m21.1 21.1-1.1-1.1"/></svg>
+        <span class="nav-text">Mandanten</span>
+      </a>
+    </li>
     <li class="nav-item">
       <a href="/admin/forensics" class="nav-link {{ 'active' if request.path == '/admin/forensics' }}">
         <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
@@ -61,6 +91,12 @@
       <a href="/admin/audit" class="nav-link {{ 'active' if request.path == '/admin/audit' }}">
         <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
         <span class="nav-text">Audit Trail</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="/automation/rules" class="nav-link {{ 'active' if request.path.startswith('/automation') }}">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
+        <span class="nav-text">Automatisierung</span>
       </a>
     </li>
     <li class="nav-item">

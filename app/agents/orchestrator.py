@@ -11,6 +11,7 @@ from app.agents.guards import build_safe_suggestions, detect_prompt_injection
 from app.agents.index import IndexAgent
 from app.agents.llm import LLMProvider, get_default_provider
 from app.agents.mail import MailAgent
+from app.agents.observer import ObserverAgent
 from app.agents.open_file import OpenFileAgent
 from app.agents.review import ReviewAgent
 from app.agents.search import SearchAgent
@@ -65,6 +66,7 @@ class Orchestrator:
             MailAgent(),
             WeatherAgent(weather_adapter),
             AuthTenantAgent(),
+            ObserverAgent(),
         ]
         for agent in self.agents:
             for tool in agent.tools:

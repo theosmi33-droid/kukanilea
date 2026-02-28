@@ -50,7 +50,7 @@ body {
 
 h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
-  color: #ffffff;
+  color: var(--color-text-main);
   margin-bottom: var(--spacing-2);
 }
 
@@ -179,4 +179,34 @@ a:hover {
 
 .cmd-item:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+/* White Mode Support */
+:root {
+  --color-bg-root: #f8fafc;
+  --color-bg-panel: #ffffff;
+  --color-bg-panel-hover: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-root: #0f1115;
+    --color-bg-panel: rgba(30, 41, 59, 0.5);
+    --color-bg-panel-hover: rgba(30, 41, 59, 0.8);
+    --color-border: rgba(255, 255, 255, 0.1);
+    --color-text-main: #f8fafc;
+    --color-text-muted: #94a3b8;
+  }
+}
+
+html.dark {
+  --color-bg-root: #0f1115;
+  --color-bg-panel: rgba(30, 41, 59, 0.5);
+  --color-bg-panel-hover: rgba(30, 41, 59, 0.8);
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text-main: #f8fafc;
+  --color-text-muted: #94a3b8;
 }

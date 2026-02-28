@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import time
 from typing import Optional
 
 from flask import abort, g, redirect, request, session, url_for
@@ -37,6 +38,7 @@ def login_user(username: str, role: str, tenant_id: str) -> None:
     session["user"] = username
     session["role"] = role
     session["tenant_id"] = tenant_id
+    session["last_active"] = time.time()
 
 
 def logout_user() -> None:

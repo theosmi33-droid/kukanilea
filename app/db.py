@@ -32,15 +32,21 @@ class AuthDB:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _db(self) -> sqlite3.Connection:
-        con = sqlite3.connect(str(self.path))
-        con.row_factory = sqlite3.Row
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-        con.execute("PRAGMA foreign_keys=ON;")
-        con.execute("PRAGMA temp_store=MEMORY;")
-        con.execute("PRAGMA cache_size=-64000;")
-        con.execute("PRAGMA mmap_size=268435456;")
-        return con
+        # Task 4: Centralized Error Handling for SQLite
+        try:
+            con = sqlite3.connect(str(self.path))
+            con.row_factory = sqlite3.Row
+            con.execute("PRAGMA journal_mode=WAL;")
+            con.execute("PRAGMA synchronous=NORMAL;")
+            con.execute("PRAGMA foreign_keys=ON;")
+            con.execute("PRAGMA temp_store=MEMORY;")
+            con.execute("PRAGMA cache_size=-64000;")
+            con.execute("PRAGMA mmap_size=268435456;")
+            return con
+        except sqlite3.OperationalError as e:
+            if "unable to open database file" in str(e):
+                raise FileNotFoundError(f"[SYSTEM HALT] Datenbank nicht gefunden: {self.path}")
+            raise
 
     def init(self) -> None:
         con = self._db()

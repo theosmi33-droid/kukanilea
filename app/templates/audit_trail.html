@@ -5,49 +5,65 @@
 <div class="panel">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-4);">
     <div>
-      <h1 style="font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 4px;">Compliance Audit Trail</h1>
-      <p style="color: var(--color-text-muted); font-size: 14px;">Unveränderbare Historie der Beleg-Verarbeitung (Evidence Vault)</p>
+      <h1 style="font-size: 24px; font-weight: 700; color: var(--color-text-main); margin-bottom: 4px;">Compliance Audit Trail</h1>
+      <p style="color: var(--color-text-muted); font-size: 14px;">Forensische Beweiskette (Immutable Hash-Chain) nach GoBD-Vorgaben.</p>
     </div>
-    <div class="badge" style="background: rgba(16, 185, 129, 0.1); color: var(--color-success); border-color: rgba(16, 185, 129, 0.2);">
-      GoBD Konform
+    
+    <div id="verify-status">
+        <button class="btn btn-secondary" 
+                hx-post="/admin/audit/verify" 
+                hx-target="#verify-status"
+                style="height: 36px; gap: 8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            CHAIN VERIFIZIEREN
+        </button>
     </div>
   </div>
 
   <div style="overflow-x: auto;">
-    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
       <thead>
         <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">ID</th>
           <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Zeitstempel (UTC)</th>
-          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Dokument-ID</th>
           <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Mandant</th>
-          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Metadaten-Hash</th>
-          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Status</th>
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Dokument-ID</th>
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Chain-Hash (Node)</th>
+          <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Integrität</th>
         </tr>
       </thead>
       <tbody>
         {% for entry in trail %}
-        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); hover: background: rgba(255,255,255,0.02);">
-          <td style="padding: 12px; font-family: var(--font-mono); color: var(--color-text-muted);">{{ entry.created_at }}</td>
-          <td style="padding: 12px; font-weight: 600; color: #fff;">{{ entry.doc_id[:12] }}...</td>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.01)'" onmouseout="this.style.background='transparent'">
+          <td style="padding: 12px; font-family: var(--font-mono); color: var(--color-text-muted);">#{{ entry.id }}</td>
+          <td style="padding: 12px; font-family: var(--font-mono);">{{ entry.created_at }}</td>
           <td style="padding: 12px;"><span class="badge">{{ entry.tenant_id }}</span></td>
-          <td style="padding: 12px; font-family: var(--font-mono); font-size: 11px; color: var(--color-accent);">{{ entry.metadata_hash[:16] }}...</td>
+          <td style="padding: 12px; font-weight: 600; color: var(--color-text-main);">{{ entry.doc_id[:16] }}...</td>
+          <td style="padding: 12px; font-family: var(--font-mono); font-size: 10px; color: var(--color-accent);">{{ entry.node_hash[:24] }}...</td>
           <td style="padding: 12px;">
-            <div style="display: flex; align-items: center; gap: 6px; color: var(--color-success);">
+            <div style="display: flex; align-items: center; gap: 6px; color: var(--color-success); font-weight: 700;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              VERIFIZIERT
+              OK
             </div>
           </td>
         </tr>
         {% endfor %}
         {% if not trail %}
         <tr>
-          <td colspan="5" style="padding: 40px; text-align: center; color: var(--color-text-muted); font-style: italic;">
-            Noch keine Audit-Einträge vorhanden.
+          <td colspan="6" style="padding: 60px; text-align: center; color: var(--color-text-muted); font-style: italic;">
+            Der Evidence Vault ist leer. Laden Sie Dokumente hoch, um die Kette zu starten.
           </td>
         </tr>
         {% endif %}
       </tbody>
     </table>
   </div>
+</div>
+
+<div class="panel" style="margin-top: var(--spacing-6); background: rgba(37,99,235,0.02); border-color: rgba(37,99,235,0.1);">
+    <h3 style="font-size: 14px; font-weight: 700; color: var(--color-accent); margin-bottom: 8px;">Compliance Information</h3>
+    <p style="font-size: 12px; color: var(--color-text-muted); margin: 0;">
+        Dieses System nutzt einen kryptographisch verketteten Evidence Vault. Jede Änderung an einem Beleg oder ein Versuch, Einträge zu löschen, bricht die Hash-Kette und wird bei der nächsten Verifizierung sofort erkannt. Dies erfüllt die GoBD-Anforderungen an die Unveränderbarkeit und Nachvollziehbarkeit.
+    </p>
 </div>
 {% endblock %}

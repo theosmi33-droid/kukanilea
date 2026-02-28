@@ -18,7 +18,7 @@ class JSONFormatter(logging.Formatter):
             ).isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
-            "request_id": getattr(record, "request_id", "-"),
+            "request_id": getattr(record, "request_id", getattr(record, "rid", "-")),
             "route": getattr(record, "route", "-"),
             "status_code": getattr(record, "status_code", 0),
             "duration_ms": getattr(record, "duration_ms", 0),
@@ -86,6 +86,7 @@ def init_json_logging(app) -> None:
         tenant_id = app.config.get("TENANT_DEFAULT", "-")
 
         log_extra = {
+            "rid": rid,
             "route": request.path,
             "status_code": response.status_code,
             "duration_ms": duration_ms,
@@ -101,6 +102,14 @@ def init_json_logging(app) -> None:
     @app.errorhandler(Exception)
     def handle_exception(e):
         g.error_class = e.__class__.__name__
+        import traceback
+        logger.error(f"Unhandled Exception: {e}\n{traceback.format_exc()}", extra={
+            "rid": getattr(g, "request_id", "-"),
+            "route": request.path,
+            "status_code": 500,
+            "error_class": g.error_class
+        })
+        
         from flask import jsonify, render_template_string
 
         request_id = getattr(g, "request_id", "-")
@@ -123,6 +132,35 @@ def init_json_logging(app) -> None:
             )
             response.status_code = 500
             return response
+
+        # Task 4: Fallback & Recovery for DB errors
+        if "[SYSTEM HALT]" in str(e):
+            halt_html = f"""
+            <!doctype html>
+            <html lang="de">
+            <head>
+                <meta charset="utf-8">
+                <title>SYSTEM HALT - KUKANILEA</title>
+                <style>
+                    body {{ font-family: sans-serif; background: #0f1115; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+                    .container {{ text-align: center; border: 1px solid #ef4444; padding: 40px; border-radius: 24px; background: rgba(239, 68, 68, 0.05); backdrop-filter: blur(10px); max-width: 600px; }}
+                    h1 {{ color: #ef4444; margin-top: 0; font-family: monospace; }}
+                    .msg {{ font-size: 18px; margin: 24px 0; line-height: 1.6; }}
+                    .path {{ font-family: monospace; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); color: #94a3b8; word-break: break-all; }}
+                    a {{ color: #38bdf8; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 24px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>[SYSTEM HALT]</h1>
+                    <div class="msg">Datenbankdatei nicht an erwartetem Pfad gefunden. Bitte Mapping im Admin-Panel korrigieren.</div>
+                    <div class="path">{str(e).split(": ")[-1] if ": " in str(e) else ""}</div>
+                    <a href="/admin/tenants">ZUM ADMIN-PANEL</a>
+                </div>
+            </body>
+            </html>
+            """
+            return render_template_string(halt_html), 500
 
         # HTML Error Page for Browser
         error_html = f"""

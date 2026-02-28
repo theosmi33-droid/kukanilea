@@ -6,7 +6,7 @@
     <!-- Board Header -->
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-            <h1 style="font-size: 28px; font-weight: 800; color: #fff; letter-spacing: -0.02em;">{{ project.name }}</h1>
+            <h1 style="font-size: 28px; font-weight: 800; color: var(--color-text-main); letter-spacing: -0.02em;">{{ project.name }}</h1>
             <p style="color: var(--color-text-muted); font-size: 14px;">{{ project.description or 'Projekt-Übersicht' }}</p>
         </div>
         <button class="btn btn-primary" onclick="alert('Task Creation Dialog (v2.7)')">+ Aufgabe erstellen</button>
@@ -24,7 +24,7 @@
             <div id="col-{{ col|replace(' ', '-') }}" class="kanban-column" style="display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 100px;">
                 {% for task in tasks if task.column_name == col %}
                 <div class="panel ripple task-card" style="margin: 0; padding: 16px; cursor: grab; background: var(--color-bg-panel); border-color: var(--color-border);" data-id="{{ task.id }}">
-                    <div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">{{ task.title }}</div>
+                    <div style="font-size: 14px; font-weight: 600; color: var(--color-text-main); margin-bottom: 8px;">{{ task.title }}</div>
                     {% if task.priority %}
                     <span class="badge" style="font-size: 9px; background: {{ 'rgba(239, 68, 68, 0.1)' if task.priority == 'HIGH' else 'rgba(37, 99, 235, 0.1)' }}; color: {{ 'var(--color-danger)' if task.priority == 'HIGH' else 'var(--color-accent)' }};">
                         {{ task.priority }}
@@ -33,7 +33,7 @@
                     <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
                         <div style="font-size: 10px; color: var(--text-tertiary);">#{{ task.id[:6] }}</div>
                         {% if task.assigned_user %}
-                        <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--color-accent); display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 800; color: #fff;">
+                        <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--color-accent); display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 800; color: var(--color-text-main);">
                             {{ task.assigned_user[0]|upper }}
                         </div>
                         {% endif %}

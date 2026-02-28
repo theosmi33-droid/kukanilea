@@ -1,0 +1,71 @@
+{% extends "layout.html" %}
+{% block title %}Messenger{% endblock %}
+
+{% block content %}
+<div class="panel" style="height: calc(100vh - 120px); display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+    <div style="padding: 20px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 12px;">
+        <div style="width: 10px; height: 10px; background: var(--color-success); border-radius: 50%;"></div>
+        <h1 style="font-size: 20px; font-weight: 700; margin: 0; color: var(--color-text-main);">Interner Messenger</h1>
+    </div>
+    
+    <div style="flex: 1; display: flex;">
+        <!-- Contact List -->
+        <div style="width: 300px; border-right: 1px solid var(--color-border); background: rgba(0,0,0,0.05); overflow-y: auto;">
+            <div style="padding: 16px; border-bottom: 1px solid var(--color-border); font-size: 12px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;">Kontakte</div>
+            <div style="padding: 12px 16px; background: rgba(37,99,235,0.1); border-left: 3px solid var(--color-accent); display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--color-primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;">S</div>
+                <div>
+                    <div style="font-weight: 600; font-size: 14px; color: var(--color-text-main);">Support Team</div>
+                    <div style="font-size: 11px; color: var(--color-success);">Online</div>
+                </div>
+            </div>
+            <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--color-bg-tertiary); color: var(--color-text-muted); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;">A</div>
+                <div>
+                    <div style="font-weight: 600; font-size: 14px; color: var(--color-text-main);">Admin</div>
+                    <div style="font-size: 11px; color: var(--color-text-muted);">Zuletzt vor 5 Min.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div style="flex: 1; display: flex; flex-direction: column; background: rgba(255,255,255,0.01);">
+            <div style="flex: 1; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px;">
+                <div style="align-self: center; background: var(--color-bg-tertiary); padding: 4px 12px; border-radius: 20px; font-size: 11px; color: var(--color-text-muted);">Heute</div>
+                
+                <div style="align-self: flex-start; max-width: 70%;">
+                    <div style="background: var(--color-bg-panel); border: 1px solid var(--color-border); padding: 12px 16px; border-radius: 16px 16px 16px 2px; color: var(--color-text-main); font-size: 14px; line-height: 1.5;">
+                        Willkommen im KUKANILEA Messenger. Hier können Sie sicher und lokal mit Ihrem Team kommunizieren.
+                    </div>
+                    <div style="font-size: 10px; color: var(--color-text-muted); margin-top: 4px; margin-left: 4px;">14:30</div>
+                </div>
+
+                <div style="align-self: flex-end; max-width: 70%;">
+                    <div style="background: var(--color-accent); padding: 12px 16px; border-radius: 16px 16px 2px 16px; color: white; font-size: 14px; line-height: 1.5;">
+                        Verstanden. Werden alle Nachrichten lokal auf dem Hub gespeichert?
+                    </div>
+                    <div style="font-size: 10px; color: var(--color-text-muted); margin-top: 4px; text-align: right; margin-right: 4px;">14:32 • Gelesen</div>
+                </div>
+
+                <div style="align-self: flex-start; max-width: 70%;">
+                    <div style="background: var(--color-bg-panel); border: 1px solid var(--color-border); padding: 12px 16px; border-radius: 16px 16px 16px 2px; color: var(--color-text-main); font-size: 14px; line-height: 1.5;">
+                        Ja, absolut. Keine Cloud, kein Datenabfluss. Alle Chat-Daten liegen verschlüsselt in Ihrer privaten SQLite-Instanz.
+                    </div>
+                    <div style="font-size: 10px; color: var(--color-text-muted); margin-top: 4px; margin-left: 4px;">14:33</div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div style="padding: 20px; border-top: 1px solid var(--color-border); display: flex; gap: 12px; background: var(--color-bg-panel);">
+                <button class="btn btn-secondary" style="width: 40px; height: 40px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </button>
+                <input type="text" class="input" placeholder="Nachricht schreiben..." style="flex: 1; height: 40px;">
+                <button class="btn btn-primary" style="width: 40px; height: 40px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -61,7 +61,7 @@ class IndividualIntelligence:
         try:
             conn = sqlite3.connect(str(self.db_path))
             # Ensure vocab table exists
-            conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS vocab_index USING fts5_vocab(docs_fts, row);")
+            conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS vocab_index USING fts5vocab(docs_fts, row);")
             
             rows = conn.execute("SELECT term, cnt FROM vocab_index ORDER BY cnt DESC LIMIT 100").fetchall()
             for r in rows:

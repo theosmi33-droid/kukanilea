@@ -12,7 +12,7 @@
         </div>
         <div>
             <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Archivierte Belege</div>
-            <div style="font-size:24px; font-weight:800; color:#fff;">{{ recent|length + items|length }}</div>
+            <div style="font-size:24px; font-weight:800; color:var(--text-primary);">{{ recent|length + items|length }}</div>
         </div>
     </div>
     <div class="panel" style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
@@ -25,12 +25,12 @@
         </div>
     </div>
     <div class="panel" style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
-        <div style="width:48px; height:48px; border-radius:12px; background:rgba(245,158,11,0.1); color:var(--color-warning); display:flex; align-items:center; justify-content:center;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div id="syncStatusIcon" style="width:48px; height:48px; border-radius:12px; background:rgba(245,158,11,0.1); color:var(--color-warning); display:flex; align-items:center; justify-content:center;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a5.5 5.5 0 0 0 2.5-10.5 6 6 0 0 0-8-4.5 5.5 5.5 0 0 0-5 10.5"/><path d="m15 13-3 3-3-3"/><path d="M12 16V10"/></svg>
         </div>
         <div>
-            <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">KI-Auslastung</div>
-            <div style="font-size:24px; font-weight:800; color:#fff;">Stabil</div>
+            <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Sync-Warteschlange</div>
+            <div id="syncStatusLabel" style="font-size:24px; font-weight:800; color:var(--text-primary);">Prüfe...</div>
         </div>
     </div>
   </div>
@@ -38,7 +38,7 @@
   <div class="panel">
     <div style="display: flex; align-items: center; gap: 16px; margin-bottom: var(--spacing-3);">
       <div style="width:40px; height:40px;"><img src="/static/logo.svg" width="100%" height="100%"></div>
-      <h1 style="font-size: 24px; font-weight: 700; color: #fff;">Beleg-Zentrale</h1>
+      <h1 style="font-size: 24px; font-weight: 700; color: var(--color-text-main);">Beleg-Zentrale</h1>
     </div>
     
     <div id="dropZone" style="position: relative; border: 2px dashed var(--color-border); border-radius: var(--radius-xl); padding: var(--spacing-5); text-align: center; background: rgba(0,0,0,0.2); transition: all 0.2s; cursor: pointer;">
@@ -48,7 +48,7 @@
           <svg fill="none" stroke="currentColor" stroke-width="2" width="32" height="32" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
         </div>
       </div>
-      <div style="font-size: 18px; font-weight: 600; color: #fff; margin-bottom: var(--spacing-1);">Dateien auswählen oder ablegen</div>
+      <div style="font-size: 18px; font-weight: 600; color: var(--color-text-main); margin-bottom: var(--spacing-1);">Dateien auswählen oder ablegen</div>
       <div style="font-size: 13px; color: var(--color-text-muted);">Max. 100MB pro Dokument</div>
     </div>
 
@@ -87,9 +87,9 @@
       <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: var(--spacing-3);">
         <div>
           <div id="phase" style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--color-accent); margin-bottom: 4px;">Vorbereitung...</div>
-          <div id="status" style="font-size: 16px; font-weight: 600; color: #fff;">Analyse läuft...</div>
+          <div id="status" style="font-size: 16px; font-weight: 600; color: var(--color-text-main);">Analyse läuft...</div>
         </div>
-        <div id="pLabel" style="font-size: 24px; font-weight: 800; color: #fff;">0.0%</div>
+        <div id="pLabel" style="font-size: 24px; font-weight: 800; color: var(--color-text-main);">0.0%</div>
       </div>
       <div style="height: 12px; width: 100%; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;">
         <div id="bar" style="height: 100%; background: var(--color-accent); width: 0%; transition: width 0.3s ease;"></div>
@@ -109,7 +109,7 @@
           </div>
           <span class="badge">{{ m.status }}</span>
         </div>
-        <div style="font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px;">{{ m.filename }}</div>
+        <div style="font-size: 14px; font-weight: 600; color: var(--color-text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px;">{{ m.filename }}</div>
         <div style="font-size: 11px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 1px;">{{ token[:8] }}...</div>
       </a>
       {% endfor %}
@@ -132,7 +132,7 @@
           </div>
           <span style="font-size: 10px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;">{{ r.created_at[:10] }}</span>
         </div>
-        <div style="font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px;" title="{{ r.file_name }}">{{ r.file_name }}</div>
+        <div style="font-size: 14px; font-weight: 600; color: var(--color-text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px;" title="{{ r.file_name }}">{{ r.file_name }}</div>
         <div style="display: flex; align-items: center; gap: 8px;">
           <span class="badge">{{ r.doctype }}</span>
           <span class="badge">KDNR: {{ r.kdnr }}</span>
@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", function() {
       const d = document.createElement("div");
       d.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--radius-md); background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); font-size: 13px;";
       d.innerHTML = `
-        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: #fff;">${f.name}</div>
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--color-text-main);">${f.name}</div>
         <button style="background: none; border: none; color: var(--color-danger); cursor: pointer; font-weight: 600; padding: 4px 8px; font-size: 12px;" onclick="window._rm(${i})">Entfernen</button>
       `;
       fileList.appendChild(d);
@@ -284,6 +284,41 @@ document.addEventListener("DOMContentLoaded", function() {
     
     xhr.send(formData);
   });
+
+  // Sync Status Polling
+  const updateSyncStatus = () => {
+    fetch('/api/outbound/status')
+      .then(r => r.json())
+      .then(data => {
+        if(data.ok){
+          const pending = data.stats.pending || 0;
+          const failed = data.stats.failed || 0;
+          const label = document.getElementById("syncStatusLabel");
+          const icon = document.getElementById("syncStatusIcon");
+          
+          if(failed > 0){
+            label.textContent = `${failed} Fehler`;
+            label.style.color = "var(--color-danger)";
+            icon.style.background = "rgba(239,68,68,0.1)";
+            icon.style.color = "var(--color-danger)";
+          } else if(pending > 0){
+            label.textContent = `${pending} Ausstehend`;
+            label.style.color = "var(--color-warning)";
+            icon.style.background = "rgba(245,158,11,0.1)";
+            icon.style.color = "var(--color-warning)";
+            icon.classList.add("pulse");
+          } else {
+            label.textContent = "Bereit";
+            label.style.color = "var(--color-success)";
+            icon.style.background = "rgba(16,185,129,0.1)";
+            icon.style.color = "var(--color-success)";
+            icon.classList.remove("pulse");
+          }
+        }
+      });
+  };
+  updateSyncStatus();
+  setInterval(updateSyncStatus, 10000);
 });
 </script>
 {% endblock %}

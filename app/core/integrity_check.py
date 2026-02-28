@@ -87,7 +87,7 @@ def check_database_integrity() -> Dict[str, Any]:
     db_path = Config.CORE_DB
     
     if not db_path.exists():
-        return {"ok": False, "error": "Database file missing"}
+        return {"ok": True, "status": "Database missing (will be created)"}
         
     try:
         conn = sqlite3.connect(str(db_path))

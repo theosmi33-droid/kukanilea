@@ -751,22 +751,69 @@ def db_init() -> None:
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS customers(
+                  id TEXT PRIMARY KEY,
                   tenant_id TEXT NOT NULL,
                   kdnr TEXT NOT NULL,
                   name TEXT,
                   address TEXT,
                   plzort TEXT,
                   created_at TEXT NOT NULL,
-                  updated_at TEXT NOT NULL,
-                  PRIMARY KEY(tenant_id, kdnr)
+                  updated_at TEXT NOT NULL
                 );
                 """
             )
             con.execute(
-                "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(tenant_id, name);"
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_tenant_kdnr ON customers(tenant_id, kdnr);"
             )
             con.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_kdnr_unique ON customers(tenant_id, kdnr);"
+                "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(tenant_id, name);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS leads(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'new'
+                    CHECK(status IN ('new','contacted','qualified','lost','won','screening','ignored')),
+                  source TEXT NOT NULL
+                    CHECK(source IN ('call','email','webform','manual')),
+                  customer_id TEXT,
+                  contact_name TEXT,
+                  contact_email TEXT,
+                  contact_phone TEXT,
+                  subject TEXT,
+                  message TEXT,
+                  notes TEXT,
+                  priority TEXT DEFAULT 'normal',
+                  pinned INTEGER DEFAULT 0,
+                  response_due TEXT,
+                  screened_at TEXT,
+                  blocked_reason TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(customer_id) REFERENCES customers(id)
+                );
+                """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS deals(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  customer_id TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  stage TEXT NOT NULL,
+                  project_id INTEGER,
+                  value_cents INTEGER,
+                  currency TEXT DEFAULT 'EUR',
+                  notes TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(customer_id) REFERENCES customers(id)
+                );
+                """
             )
 
             con.execute(
@@ -2888,6 +2935,23 @@ def index_upsert_document(
         finally:
             con.close()
 
+    # RAG Sync: Process in background or after commit to semantic memory
+    try:
+        from app.core.rag_sync import sync_document_to_memory
+        sync_document_to_memory(
+            tenant_id=tenant_id,
+            doc_id=doc_id,
+            file_name=file_name,
+            text=extracted_text,
+            metadata={
+                "kdnr": kdnr,
+                "doctype": doctype,
+                "doc_date": doc_date
+            }
+        )
+    except Exception as e:
+        logger.error(f"RAG Sync failed for {doc_id}: {e}")
+
 
 def assistant_search(
     query: str,
@@ -3545,12 +3609,12 @@ def _set_progress(token: str, p: float, phase: str) -> None:
     write_pending(token, d)
 
 
-def _ai_refine_analysis(text: str, filename: str) -> Dict[str, Any]:
+def _ai_refine_analysis(text: str, filename: str, tenant_id: str = "") -> Dict[str, Any]:
     """Uses local Ollama to refine document analysis if available."""
     host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     model = os.environ.get("OLLAMA_MODEL", "qwen2.5:0.5b")
-    
-    prompt = f"""Analyse dieses Dokument und gib JSON zurück.
+
+    base_prompt = f"""Analyse dieses Dokument und gib JSON zurück.
 Dateiname: {filename}
 Inhalt (Auszug): {text[:2000]}
 
@@ -3563,7 +3627,17 @@ Schema:
 }}
 JSON:"""
 
+    prompt = base_prompt
+    if tenant_id:
+        try:
+            from app.core.ocr_corrector import OCRCorrector
+            corrector = OCRCorrector(tenant_id)
+            prompt = corrector.apply_corrections_to_prompt(base_prompt, text)
+        except Exception as e:
+            logger.warning(f"OCR Corrector injection failed: {e}")
+
     try:
+
         import requests
         resp = requests.post(f"{host}/api/generate", json={
             "model": model,
@@ -3628,7 +3702,7 @@ def _analyze_worker(token: str) -> None:
         names, addrs, plzs = _find_name_addr_plzort(text)
         
         # AI Refinement
-        ai_data = _ai_refine_analysis(text, src.name)
+        ai_data = _ai_refine_analysis(text, src.name, tenant_id=d.get("tenant_suggested", ""))
         if ai_data:
             if ai_data.get("doctype") and ai_data["doctype"] != "SONSTIGES":
                 d["doctype_suggested"] = ai_data["doctype"]

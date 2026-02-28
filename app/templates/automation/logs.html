@@ -1,0 +1,40 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold">Execution Logs</h1>
+      <p class="text-sm opacity-80">Regel: <code>{{ rule.id }}</code></p>
+    </div>
+    <a class="btn-outline px-3 py-2 text-sm" href="/automation/{{ rule.id }}">Regel</a>
+  </div>
+
+  <div class="card p-0 overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="text-left border-b border-zinc-700/40">
+          <th class="p-3">Started</th>
+          <th class="p-3">Status</th>
+          <th class="p-3">Trigger</th>
+          <th class="p-3">Ref</th>
+          <th class="p-3">Output</th>
+          <th class="p-3">Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr class="border-b border-zinc-700/20">
+          <td class="p-3">{{ log.started_at }}</td>
+          <td class="p-3">{{ log.status }}</td>
+          <td class="p-3">{{ log.trigger_type }}</td>
+          <td class="p-3"><code>{{ log.trigger_ref }}</code></td>
+          <td class="p-3">{{ log.output_redacted }}</td>
+          <td class="p-3">{{ log.error_redacted }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="p-3 opacity-70" colspan="6">Noch keine Ausführungen.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

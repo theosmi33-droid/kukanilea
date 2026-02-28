@@ -55,4 +55,21 @@ def process_upload(file_path: Path, tenant_id: str) -> Tuple[bool, str]:
     # 4. Hash Generation
     file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
 
+    # 5. Evidence Capture (Task GoBD v2.0)
+    try:
+        from app.core.audit import vault_store_evidence
+        vault_store_evidence(
+            doc_id=file_path.name,
+            tenant_id=tenant_id,
+            metadata_hash=file_hash,
+            payload={
+                "original_filename": file_path.name,
+                "size_bytes": file_path.stat().st_size,
+                "scan_status": "CLEAN"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to capture forensic evidence for {file_path.name}: {e}")
+        # We continue as the file itself is safe, but we log the audit failure
+
     return True, file_hash

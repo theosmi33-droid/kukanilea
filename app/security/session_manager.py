@@ -18,10 +18,17 @@ def init_app(app):
             return
             
         if 'user' in session:
-            last_active = session.get('last_active', 0)
+            last_active = session.get('last_active')
             now = time.time()
+            
+            # If last_active is missing, initialize it (emergency fallback)
+            if last_active is None:
+                session['last_active'] = now
+                return
+                
             if now - last_active > SESSION_TIMEOUT_SECONDS:
                 logger.info(f"Session timeout for user {session['user']}.")
                 session.clear()
-                return redirect(url_for('web.login', next=request.url))
+                # Use request.path instead of full URL to avoid redirect loops with hostnames
+                return redirect(url_for('web.login', next=request.path))
             session['last_active'] = now

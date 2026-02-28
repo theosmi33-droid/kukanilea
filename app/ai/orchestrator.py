@@ -39,8 +39,7 @@ class AgenticOrchestrator:
         # Mock extraction
         fact = f"Fact extracted at {now}: User preferred Red theme."
         with open("MEMORY.md", "a") as f:
-            f.write(f"
-- {fact}")
+            f.write(f"\n- {fact}")
 
     def run_autonomous_workflow(self, goal: str):
         """Step 131: Plan -> Chunking -> Code -> Review."""

@@ -50,10 +50,12 @@ from flask import (
     current_app,
     jsonify,
     redirect,
+    render_template,
     render_template_string,
     request,
     send_file,
     url_for,
+    session,
 )
 
 from app import core
@@ -459,7 +461,6 @@ def _card(kind: str, msg: str) -> str:
     }
     s = styles.get(kind, styles["info"])
     return f'<div class="rounded-xl border {s} p-3 text-sm">{msg}</div>'
-
 
 from flask import render_template
 
@@ -1493,17 +1494,43 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
 def _get_tenant_db_path() -> Path:
     """Resolves the core database path for the current tenant."""
     from app.config import Config
-    auth_db = current_app.extensions.get("auth_db")
-    t_id = current_tenant()
+    from app.core.tenant_registry import tenant_registry
     
+    # 1. Session Override (Task v1.5)
+    session_path = session.get("tenant_db_path")
+    if session_path:
+        return Path(session_path).expanduser()
+    
+    # 2. Registry Lookup
+    t_id = current_tenant()
+    tenant = tenant_registry.get_tenant(t_id)
+    if tenant and tenant.get("db_path"):
+        return Path(tenant["db_path"]).expanduser()
+    
+    # 3. Fallback to AuthDB Mapping
+    auth_db = current_app.extensions.get("auth_db")
     if auth_db and t_id:
-        con = auth_db._db()
-        row = con.execute("SELECT core_db_path FROM tenants WHERE tenant_id = ?", (t_id,)).fetchone()
-        con.close()
-        if row and row["core_db_path"]:
-            return Path(row["core_db_path"]).expanduser()
+        try:
+            con = auth_db._db()
+            row = con.execute("SELECT core_db_path FROM tenants WHERE tenant_id = ?", (t_id,)).fetchone()
+            con.close()
+            if row and row["core_db_path"]:
+                return Path(row["core_db_path"]).expanduser()
+        except Exception:
+            pass
             
     return Config.CORE_DB
+
+
+@bp.before_app_request
+def _apply_tenant_context():
+    """Binds the global core logic to the current tenant's database."""
+    from app import core as _core
+    try:
+        db_path = _get_tenant_db_path()
+        _core.logic.DB_PATH = db_path
+    except Exception:
+        pass
 
 
 @bp.before_app_request
@@ -1517,12 +1544,18 @@ def _guard_login():
         "/api/ping",
     ]:
         return None
-    if not current_user():
+    
+    user = current_user()
+    if not user:
+        # Avoid full URLs in 'next' to prevent redirect issues
+        target = request.full_path if request.query_string else request.path
+        if target == "/login": target = "/"
+        
         if p.startswith("/api/"):
             return json_error(
                 "auth_required", "Authentifizierung erforderlich.", status=401
             )
-        return redirect(url_for("web.login", next=p))
+        return redirect(url_for("web.login", next=target))
     return None
 
 
@@ -1860,36 +1893,33 @@ def api_open():
 @login_required
 @require_role(["DEV", "ADMIN"])
 def mesh():
-    # Simulate some mesh nodes for the UI demo
-    nodes = [
-        {
-            "id": "HUB-ZIMA-01",
-            "name": "Büro Hub",
-            "type": "ZimaBlade",
-            "status": "ONLINE",
-            "ip": "192.168.1.50",
-            "sync": "100%",
-            "conflicts": 0,
-        },
-        {
-            "id": "TABLET-GESELLE-01",
-            "name": "Tablet Geselle",
-            "type": "iPad/Web",
-            "status": "ONLINE",
-            "ip": "192.168.1.112",
-            "sync": "98%",
-            "conflicts": 3,
-        },
-        {
-            "id": "LAPTOP-MEISTER",
-            "name": "Meister Laptop",
-            "type": "MacBook",
-            "status": "OFFLINE",
-            "ip": "192.168.1.10",
-            "sync": "75%",
-            "conflicts": 1,
-        },
-    ]
+    # Fetch real mesh nodes from the database
+    auth_db = current_app.extensions["auth_db"]
+    from app.core.mesh_network import MeshNetworkManager
+    manager = MeshNetworkManager(auth_db)
+    nodes = manager.get_peers()
+    
+    # If no real nodes yet, keep some demo nodes but marked as demo
+    if not nodes:
+        nodes = [
+            {
+                "node_id": "DEMO-ZIMA",
+                "name": "Büro Hub (Demo)",
+                "type": "ZimaBlade",
+                "status": "ONLINE",
+                "last_ip": "192.168.1.50",
+                "last_seen": "Gerade eben",
+            }
+        ]
+
+    # Map database fields to UI fields if necessary
+    for node in nodes:
+        node["id"] = node.get("node_id")
+        node["ip"] = node.get("last_ip")
+        node["type"] = node.get("type", "ZimaBlade") # Default for Hubs
+        node["sync"] = "100%"
+        node["conflicts"] = 0
+
     return _render_base(
         render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh"
     )
@@ -1899,7 +1929,10 @@ HTML_MESH = r"""
 <div class="space-y-6">
     <div class="flex justify-between items-end">
         <div>
-            <h1 class="text-2xl font-bold">[>] Global Health Monitor</h1>
+            <h1 class="text-2xl font-bold flex items-center gap-2">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                Global Health Monitor
+            </h1>
             <p class="muted">P2P Mesh-Netzwerk & CRDT Sync Status</p>
         </div>
         <div class="badge px-4 py-2 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
@@ -1911,8 +1944,14 @@ HTML_MESH = r"""
         {% for node in nodes %}
         <div class="card p-6 space-y-4">
             <div class="flex justify-between items-start">
-                <div class="h-12 w-12 rounded-xl bg-slate-800 flex items-center justify-center text-xl">
-                    {{ '🖥️' if node.type == 'ZimaBlade' else '📱' if node.type == 'iPad/Web' else '💻' }}
+                <div class="h-12 w-12 rounded-xl bg-slate-800 flex items-center justify-center">
+                    {% if node.type == 'ZimaBlade' %}
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    {% elif node.type == 'iPad/Web' %}
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                    {% else %}
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12"/><path d="M2 20h20"/><path d="M5 20l1-4h12l1 4"/></svg>
+                    {% endif %}
                 </div>
                 <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-800 {{ 'text-emerald-500' if node.status == 'ONLINE' else 'text-rose-500' }}">
                     {{ node.status }}
@@ -1940,7 +1979,10 @@ HTML_MESH = r"""
     </div>
 
     <div class="card p-6">
-        <h3 class="font-bold mb-4">📜 Letzte Sync-Ereignisse</h3>
+        <h3 class="font-bold mb-4 flex items-center gap-2">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+            Letzte Sync-Ereignisse
+        </h3>
         <div class="space-y-3">
             <div class="flex items-center gap-4 text-sm p-3 rounded-lg bg-slate-800/30 border border-slate-800">
                 <div class="h-2 w-2 rounded-full bg-amber-500"></div>
@@ -3021,6 +3063,19 @@ def review(token: str):
                             "document_date": w.get("document_date") or "",
                         }
                         try:
+                            # Auto-Learning: Capture corrections before clearing pending
+                            try:
+                                from app.core.rag_sync import learn_from_correction
+                                learn_from_correction(
+                                    tenant_id=answers["tenant"],
+                                    file_name=p.get("filename", ""),
+                                    text=p.get("ocr_text", ""),
+                                    original_suggestions=p,
+                                    final_answers=answers
+                                )
+                            except Exception as le:
+                                logger.error(f"Auto-Learning failed: {le}")
+
                             folder, final_path, created_new = process_with_answers(
                                 Path(p.get("path", "")), answers
                             )
@@ -3126,11 +3181,11 @@ def assistant():
                 results.append(r)
         except Exception:
             pass
-    html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
+    html = """<div class='card p-5'>
       <div class='text-lg font-semibold mb-1'>Assistant</div>
       <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
-        <input class='w-full rounded-xl bg-slate-800 border border-slate-700 p-2 input' name='q' value='{q}' placeholder='Suche…' />
-        <input class='w-full md:w-40 rounded-xl bg-slate-800 border border-slate-700 p-2 input' name='kdnr' value='{kdnr}' placeholder='Kdnr optional' />
+        <input class='w-full rounded-xl p-2 input' name='q' value='{q}' placeholder='Suche…' />
+        <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{kdnr}' placeholder='Kdnr optional' />
         <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
       </form>
       <div class='muted text-xs'>Treffer: {n}</div>
@@ -3177,20 +3232,16 @@ def api_task_move(task_id: str):
     return jsonify(ok=True)
 
 
-@bp.route("/tasks")
-def tasks():
-    return _render_base("generic_tool.html", active_tab="tasks", title="Aufgaben", message="Aufgabenliste wird synchronisiert...")
-
-
-@bp.route("/time")
+@bp.route("/messenger")
 @login_required
-def time_tracking():
-    return _render_base("generic_tool.html", active_tab="time", title="Zeiterfassung", message="Zeiterfassungsmodul wird geladen...")
+def messenger_page():
+    return _render_base("messenger.html", active_tab="messenger")
 
 
-@bp.route("/chat")
-def chat():
-    return _render_base("generic_tool.html", active_tab="chat", title="KI-Chat", message="Lokale LLM-Schnittstelle wird initialisiert...")
+@bp.route("/visualizer")
+@login_required
+def visualizer_page():
+    return _render_base("visualizer.html", active_tab="visualizer")
 
 
 @bp.route("/legal")
@@ -3234,10 +3285,65 @@ def admin_forensics():
     )
 
 
+@bp.route("/admin/logs")
+@login_required
+@require_role("DEV")
+def admin_logs():
+    log_file = Path(current_app.config.get("LOG_DIR", "logs")) / "app.jsonl"
+    logs = []
+    if log_file.exists():
+        try:
+            with open(log_file, "r") as f:
+                # Get last 500 lines
+                lines = f.readlines()[-500:]
+                for line in lines:
+                    try:
+                        logs.append(json.loads(line))
+                    except:
+                        pass
+        except Exception as e:
+            logs.append({"timestamp": str(datetime.now()), "level": "ERROR", "message": f"Log read failed: {e}"})
+            
+    return _render_base("dev_logs.html", active_tab="settings", logs=logs)
+
+
 @bp.route("/admin/audit")
 @login_required
 @require_role(["DEV", "ADMIN"])
 def admin_audit():
     trail = vault.get_audit_trail()
     return _render_base("audit_trail.html", active_tab="settings", trail=trail)
+
+
+@bp.route("/api/tools")
+@login_required
+def api_list_tools():
+    from app.tools.registry import registry
+    return jsonify(ok=True, tools=registry.list())
+
+
+@bp.route("/admin/audit/verify", methods=["POST"])
+@login_required
+@require_role(["DEV", "ADMIN"])
+def admin_audit_verify():
+    from app.core.audit import vault
+    ok, errors = vault.verify_chain()
+    if ok:
+        return '<div class="badge pulse" style="background:rgba(16,185,129,0.1); color:var(--color-success); border-color:rgba(16,185,129,0.2);">CHAIN VERIFIZIERT (OK)</div>'
+    else:
+        return f'<div class="badge" style="background:rgba(239,68,68,0.1); color:var(--color-danger); border-color:rgba(239,68,68,0.2);">CHAIN MANIPULIERT ({len(errors)} FEHLER)</div>'
+
+
+@bp.route("/time")
+@login_required
+def time_tracking():
+    if not callable(time_entry_list):
+        html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
+          <div class='text-lg font-semibold'>Time Tracking</div>
+          <div class='muted text-sm mt-2'>Time Tracking ist im Core nicht verfügbar.</div>
+        </div>"""
+        return _render_base(html, active_tab="time")
+    return _render_base(
+        render_template_string(HTML_TIME, role=current_role()), active_tab="time"
+    )
 

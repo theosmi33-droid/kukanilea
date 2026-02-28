@@ -84,18 +84,32 @@ def measure_memory_usage():
     return "N/A (psutil missing)"
 
 def main():
-    if "--benchmark" in sys.argv:
+    import argparse
+    parser = argparse.ArgumentParser(description="KUKANILEA Business OS")
+    parser.add_argument("--benchmark", action="store_true", help="Run performance benchmarks")
+    parser.add_argument("--port", type=int, default=5051, help="Port to listen on")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to")
+    args = parser.parse_args()
+
+    if args.benchmark:
         run_benchmark()
         return
 
     # Normal startup
     print("Initializing KUKANILEA v2.1...")
-    # Add real server startup logic here if needed
     from app.core.boot_sequence import run_boot_sequence
     if run_boot_sequence() is False:
         sys.exit(1)
         
-    print("System ready. Run 'python kukanilea_app.py --benchmark' for performance checks.")
+    print(f"System ready. Starting Web Server on {args.host}:{args.port}...")
+    
+    from app import create_app
+    from waitress import serve
+    
+    flask_app = create_app()
+    
+    # Task 177: Waitress Tuning
+    serve(flask_app, host=args.host, port=args.port, threads=8)
 
 if __name__ == "__main__":
     main()

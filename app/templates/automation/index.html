@@ -1,0 +1,73 @@
+{% from 'components/alert.html' import banner %}
+{% from 'components/button.html' import button_link, button_submit %}
+
+<div class="space-y-4">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h1 class="text-xl font-semibold">Automation Builder v1</h1>
+    <div class="flex items-center gap-2">
+      {{ button_link('Pending Actions', '/automation/pending', kind='outline') }}
+      <form method="post" action="/automation/run">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {{ button_submit('Run now', kind='primary', disabled=read_only) }}
+      </form>
+    </div>
+  </div>
+
+  {% if read_only %}
+  {{ banner('Read-only mode aktiv. Schreibaktionen sind deaktiviert.', kind='error') }}
+  {% endif %}
+
+  <div class="card p-0 overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="text-left border-b border-zinc-700/40">
+          <th class="p-3">Name</th>
+          <th class="p-3">Enabled</th>
+          <th class="p-3">Version</th>
+          <th class="p-3">Trigger</th>
+          <th class="p-3">Conditions</th>
+          <th class="p-3">Actions</th>
+          <th class="p-3">Updated</th>
+          <th class="p-3">Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rules %}
+        <tr class="border-b border-zinc-700/20">
+          <td class="p-3"><a class="underline" href="/automation/{{ r.id }}">{{ r.name }}</a></td>
+          <td class="p-3">{{ "yes" if r.is_enabled else "no" }}</td>
+          <td class="p-3">{{ r.version }}</td>
+          <td class="p-3">{{ r.trigger_count }}</td>
+          <td class="p-3">{{ r.condition_count }}</td>
+          <td class="p-3">{{ r.action_count }}</td>
+          <td class="p-3">{{ r.updated_at }}</td>
+          <td class="p-3">
+            <form method="post" action="/automation/{{ r.id }}/toggle" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="enabled" value="{{ 0 if r.is_enabled else 1 }}">
+              {{ button_submit("Disable" if r.is_enabled else "Enable", kind='outline', size='sm', disabled=read_only) }}
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="p-3 opacity-70" colspan="8">Keine Builder-Regeln vorhanden.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card p-4 space-y-2">
+    <h2 class="font-semibold">Rule Import (safe JSON)</h2>
+    <p class="text-xs opacity-80">Trigger-Typen: <code>eventlog</code>, <code>cron</code>. Actions: <code>create_task</code>, <code>create_followup</code>, <code>create_postfach_draft</code>, <code>email_draft</code>, <code>email_send</code>, <code>webhook</code>.</p>
+    <form method="post" action="/automation/import" class="grid gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <textarea class="input px-3 py-2 text-sm" rows="6" name="rule_json" placeholder='{"name":"Cron Rule","description":"","max_executions_per_minute":10,"triggers":[{"trigger_type":"cron","config":{"cron":"0 8 * * 1"}}],"conditions":[],"actions":[{"action_type":"email_send","config":{"to":["kunde@example.com"],"subject":"Wochenupdate","body_template":"Hallo {customer_name}","requires_confirm":true}},{"action_type":"webhook","config":{"url":"https://example.com/hook","method":"POST","body_template":"{\"event\":\"{{event_type}}\"}","headers":{"X-Source":"kukanilea"}}}]}' {% if read_only %}disabled{% endif %}></textarea>
+      {{ button_submit('Import Rule (disabled by default)', kind='outline', extra='w-fit', disabled=read_only) }}
+    </form>
+  </div>
+</div>

@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block title %}Neue Regel erstellen{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div style="display: flex; align-items: center; gap: 12px; margin-bottom: var(--spacing-6);">
+    <a href="/automation/rules" class="btn btn-ghost btn-sm" style="padding: 8px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+    </a>
+    <h1 style="font-size: 24px; font-weight: 700; margin: 0;">Neue Automatisierungs-Regel</h1>
+  </div>
+
+  <form hx-post="/automation/rules/create" style="display: flex; flex-direction: column; gap: 24px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
+    <div class="input-group">
+        <label>Name der Regel</label>
+        <input type="text" name="name" class="input" placeholder="z.B. Beleg-Eingang Benachrichtigung" required>
+    </div>
+
+    <div class="input-group">
+        <label>Anwendungsbereich (Scope)</label>
+        <select name="scope" class="input">
+            <option value="leads">Belege / Leads</option>
+            <option value="tasks">Aufgaben</option>
+            <option value="files">Dateien</option>
+        </select>
+    </div>
+
+    <div class="input-group">
+        <label>Bedingung (JSON)</label>
+        <textarea name="condition_json" class="input" style="height: 100px; font-family: var(--font-mono); font-size: 13px;" placeholder='{"type": "always"}'></textarea>
+    </div>
+
+    <div class="input-group">
+        <label>Aktionen (JSON-Liste)</label>
+        <textarea name="action_list_json" class="input" style="height: 150px; font-family: var(--font-mono); font-size: 13px;" placeholder='[{"type": "notification", "message": "Neuer Beleg eingegangen"}]'></textarea>
+    </div>
+
+    <div style="display: flex; gap: 12px; margin-top: 12px;">
+        <button type="submit" class="btn btn-primary" style="flex: 1; height: 48px;">REGEL ERSTELLEN</button>
+        <a href="/automation/rules" class="btn btn-secondary" style="flex: 1; height: 48px; display: flex; align-items: center; justify-content: center;">ABBRECHEN</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
