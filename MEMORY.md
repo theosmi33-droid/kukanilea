@@ -193,3 +193,8 @@
 - **Dominante Schlagworte:** 
 - **Top Kunden:** 
 - **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-02-28 22:36:40] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.

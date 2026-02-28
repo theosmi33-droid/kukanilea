@@ -5,12 +5,73 @@ Database migration system. Supports background index building.
 import sqlite3
 import logging
 import threading
+import hashlib
 from pathlib import Path
 
 logger = logging.getLogger("kukanilea.migrations")
 
 # Current target schema version
 CURRENT_SCHEMA_VERSION = 6
+
+def _customer_stable_id(tenant_id: str, kdnr: str) -> str:
+    raw = f"{tenant_id.strip()}|{kdnr.strip()}".encode("utf-8")
+    return "cust_" + hashlib.sha256(raw).hexdigest()[:24]
+
+
+def repair_legacy_customer_fk(db_path: Path) -> bool:
+    """
+    Repairs legacy core DBs where deals/leads reference customers(id)
+    but customers table still uses (tenant_id, kdnr) without id.
+    Idempotent by design.
+    """
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    changed = False
+    try:
+        conn.execute("PRAGMA foreign_keys=OFF;")
+
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='customers'"
+        ).fetchone()
+        if not exists:
+            conn.execute("PRAGMA foreign_keys=ON;")
+            return False
+
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(customers)").fetchall()]
+        if "id" not in cols:
+            conn.execute("ALTER TABLE customers ADD COLUMN id TEXT")
+            changed = True
+
+        rows = conn.execute(
+            "SELECT rowid, tenant_id, kdnr, COALESCE(id, '') AS id FROM customers"
+        ).fetchall()
+        for row in rows:
+            cid = str(row["id"] or "").strip()
+            if cid:
+                continue
+            stable = _customer_stable_id(str(row["tenant_id"] or ""), str(row["kdnr"] or ""))
+            # Collision-safe fallback (extremely unlikely)
+            probe = stable
+            n = 1
+            while conn.execute(
+                "SELECT 1 FROM customers WHERE id=? AND rowid<>?",
+                (probe, row["rowid"]),
+            ).fetchone():
+                n += 1
+                probe = f"{stable}_{n}"
+            conn.execute("UPDATE customers SET id=? WHERE rowid=?", (probe, row["rowid"]))
+            changed = True
+
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_id_unique ON customers(id)")
+
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys=ON;")
+        # Raises on schema mismatch in broken legacy setups if still unresolved
+        conn.execute("PRAGMA foreign_key_check;").fetchall()
+        return changed
+    finally:
+        conn.close()
+
 
 def _get_user_version(conn: sqlite3.Connection) -> int:
     return conn.execute("PRAGMA user_version").fetchone()[0]

@@ -6,15 +6,15 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-def log_event(event_type: str, data: Any):
+def log_event(event_type: str, data: Any) -> None:
     """
     Logs a structured event to instance/agent_events.jsonl.
     Uses UTC ISO-8601 timestamps for GoBD compliance.
     """
     entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "type": event_type,
-        "data": data
+        "data": data,
     }
 
     log_dir = "instance"
@@ -23,5 +23,4 @@ def log_event(event_type: str, data: Any):
 
     log_path = os.path.join(log_dir, "agent_events.jsonl")
     with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "
-")
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")

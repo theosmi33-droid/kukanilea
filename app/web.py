@@ -1561,7 +1561,11 @@ def _guard_login():
 
 @bp.before_app_request
 def check_onboarding():
-    if request.endpoint in ("web.onboarding", "static") or not request.endpoint:
+    if (
+        not request.endpoint
+        or request.endpoint in ("web.onboarding", "static")
+        or request.path.startswith("/api/")
+    ):
         return
     
     # Simple check: if no license.json and no users exist, we need onboarding

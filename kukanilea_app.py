@@ -88,7 +88,7 @@ def main():
     parser = argparse.ArgumentParser(description="KUKANILEA Business OS")
     parser.add_argument("--benchmark", action="store_true", help="Run performance benchmarks")
     parser.add_argument("--port", type=int, default=5051, help="Port to listen on")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to")
     args = parser.parse_args()
 
     if args.benchmark:

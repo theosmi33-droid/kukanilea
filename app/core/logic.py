@@ -243,6 +243,11 @@ def _token() -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(raw).digest())[:22].decode("ascii")
 
 
+def _customer_stable_id(tenant_id: str, kdnr: str) -> str:
+    raw = f"{str(tenant_id).strip()}|{str(kdnr).strip()}".encode("utf-8")
+    return "cust_" + hashlib.sha256(raw).hexdigest()[:24]
+
+
 def normalize_component(s: Any) -> str:
     """
     Strong normalization:
@@ -927,10 +932,41 @@ def db_init() -> None:
                 """
             )
 
+            _ensure_column(con, "customers", "id", "TEXT")
             _ensure_column(con, "customers", "kdnr", "TEXT")
             _ensure_column(con, "customers", "name", "TEXT")
             _ensure_column(con, "customers", "address", "TEXT")
             _ensure_column(con, "customers", "plzort", "TEXT")
+
+            # Legacy recovery: old DBs may miss customers.id while leads/deals reference it.
+            try:
+                rows = con.execute(
+                    "SELECT rowid, tenant_id, kdnr, COALESCE(id, '') AS id FROM customers"
+                ).fetchall()
+                for row in rows:
+                    cid = str(row["id"] or "").strip()
+                    if cid:
+                        continue
+                    stable = _customer_stable_id(
+                        str(row["tenant_id"] or ""), str(row["kdnr"] or "")
+                    )
+                    probe = stable
+                    n = 1
+                    while con.execute(
+                        "SELECT 1 FROM customers WHERE id=? AND rowid<>?",
+                        (probe, row["rowid"]),
+                    ).fetchone():
+                        n += 1
+                        probe = f"{stable}_{n}"
+                    con.execute(
+                        "UPDATE customers SET id=? WHERE rowid=?",
+                        (probe, row["rowid"]),
+                    )
+                con.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_id_unique ON customers(id);"
+                )
+            except Exception as e:
+                logger.warning(f"customer id recovery skipped: {e}")
 
             _ensure_column(con, "docs", "tenant_id", "TEXT")
             _ensure_column(con, "versions", "tenant_id", "TEXT")
@@ -3403,7 +3439,7 @@ def sync_customers_from_hierarchy() -> None:
                 if m:
                     kdnr = m.group(1)
                     name = m.group(2).strip()
-                    found.append((tenant_default, kdnr, name, "", "", now, now))
+                    found.append((_customer_stable_id(tenant_default, kdnr), tenant_default, kdnr, name, "", "", now, now))
     except Exception:
         return
 
@@ -3414,7 +3450,7 @@ def sync_customers_from_hierarchy() -> None:
         con = _db()
         try:
             con.executemany(
-                "INSERT OR REPLACE INTO customers(tenant_id, kdnr, name, address, plzort, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO customers(id, tenant_id, kdnr, name, address, plzort, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
                 found,
             )
             con.commit()
@@ -3965,15 +4001,16 @@ def db_upsert_customer(
         try:
             con.execute(
                 """
-                INSERT INTO customers(tenant_id, kdnr, name, address, plzort, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?)
+                INSERT INTO customers(id, tenant_id, kdnr, name, address, plzort, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?)
                 ON CONFLICT(tenant_id, kdnr) DO UPDATE SET
+                    id=COALESCE(NULLIF(customers.id, ''), excluded.id),
                     name=COALESCE(NULLIF(excluded.name, ''), name),
                     address=COALESCE(NULLIF(excluded.address, ''), address),
                     plzort=COALESCE(NULLIF(excluded.plzort, ''), plzort),
                     updated_at=excluded.updated_at
                 """,
-                (tenant_id, kdnr, name, address, plzort, _now_iso(), _now_iso()),
+                (_customer_stable_id(tenant_id, kdnr), tenant_id, kdnr, name, address, plzort, _now_iso(), _now_iso()),
             )
             con.commit()
         finally:

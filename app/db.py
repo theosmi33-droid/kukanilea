@@ -208,6 +208,47 @@ class AuthDB:
             )
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS agent_memory(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  timestamp TEXT NOT NULL,
+                  agent_role TEXT NOT NULL,
+                  content TEXT NOT NULL,
+                  embedding BLOB NOT NULL,
+                  metadata TEXT,
+                  importance_score INTEGER DEFAULT 5,
+                  category TEXT DEFAULT 'FAKT',
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_memory_tenant_ts ON agent_memory(tenant_id, timestamp);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS api_outbound_queue(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  target_system TEXT NOT NULL,
+                  payload TEXT NOT NULL,
+                  file_path TEXT,
+                  status TEXT DEFAULT 'pending',
+                  retry_count INTEGER DEFAULT 0,
+                  created_at TEXT NOT NULL,
+                  last_attempt TEXT,
+                  error_message TEXT,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_api_queue_status ON api_outbound_queue(status, retry_count);"
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS file_versions(
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   file_id TEXT NOT NULL,

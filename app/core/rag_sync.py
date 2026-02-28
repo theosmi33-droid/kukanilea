@@ -85,7 +85,6 @@ class RAGSync:
                 words = []
                 for r in k_rows:
                     words.extend([w.lower() for w in r[0].replace("_", " ").replace(".", " ").split() if len(w) > 3])
-                    from collections import Counter
                 facts["keywords"] = [w[0] for w in Counter(words).most_common(5)]
                 
             conn.close()
