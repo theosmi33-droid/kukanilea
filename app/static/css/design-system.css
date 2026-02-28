@@ -197,6 +197,13 @@ code, pre { font-family: var(--font-mono); font-size: 0.875em; }
 .nav-text { flex: 1; }
 .main-content { margin-left: 260px; padding: var(--spacing-6); }
 
+html.sidebar-collapsed .sidebar { width: 84px; }
+html.sidebar-collapsed .main-content { margin-left: 84px; }
+html.sidebar-collapsed .nav-text { display: none; }
+html.sidebar-collapsed .nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
+html.sidebar-collapsed .nav-icon { margin-right: 0; }
+html.sidebar-collapsed .sidebar .btn { min-width: 32px; }
+
  @media (max-width: 768px) {
   .sidebar { transform: translateX(-100%); transition: transform var(--transition-slow); }
   .sidebar.mobile-open { transform: translateX(0); }

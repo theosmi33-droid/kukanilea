@@ -2,12 +2,14 @@
 <div id="system-status-indicator" style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600;">
     <div id="status-dot" style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--color-success);"></div>
     <span id="status-text" style="color: var(--text-secondary);">READY</span>
+    <span id="outbound-status-badges" style="display:flex; align-items:center; gap:6px;"></span>
 </div>
 
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const dot = document.getElementById('status-dot');
         const text = document.getElementById('status-text');
+        const badges = document.getElementById('outbound-status-badges');
 
         if (typeof StateStore !== 'undefined') {
             StateStore.subscribe((state) => {
@@ -33,5 +35,36 @@
                 }
             });
         }
+
+        const renderBadge = (label, value, color, bg) => {
+            const el = document.createElement('span');
+            el.className = 'badge';
+            el.textContent = `${label}:${value}`;
+            el.style.color = color;
+            el.style.background = bg;
+            return el;
+        };
+
+        const refreshOutbound = () => {
+            fetch('/api/outbound/status', { credentials: 'same-origin' })
+                .then((r) => r.json())
+                .then((data) => {
+                    if (!badges || !data || !data.ok) return;
+                    const stats = data.stats || {};
+                    const pending = Number(stats.pending || 0);
+                    const failed = Number(stats.failed || 0);
+                    badges.innerHTML = '';
+                    if (pending > 0) {
+                        badges.appendChild(renderBadge('queued', pending, 'var(--color-warning)', 'rgba(245,158,11,0.14)'));
+                    }
+                    if (failed > 0) {
+                        badges.appendChild(renderBadge('failed', failed, 'var(--color-error)', 'rgba(239,68,68,0.14)'));
+                    }
+                })
+                .catch(() => {});
+        };
+
+        refreshOutbound();
+        setInterval(refreshOutbound, 10000);
     });
 </script>

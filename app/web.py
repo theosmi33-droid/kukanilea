@@ -35,6 +35,7 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -1537,8 +1538,11 @@ def _apply_tenant_context():
 def _guard_login():
     p = request.path or "/"
     if p.startswith("/static/") or p in [
+        "/bootstrap",
         "/onboarding",
         "/login",
+        "/forgot",
+        "/reset-code",
         "/health",
         "/api/health",
         "/api/ping",
@@ -1547,10 +1551,15 @@ def _guard_login():
     
     user = current_user()
     if not user:
+        auth_db = current_app.extensions.get("auth_db")
+        if auth_db and auth_db.count_users() == 0 and not p.startswith("/api/"):
+            return redirect("/bootstrap")
+
         # Avoid full URLs in 'next' to prevent redirect issues
         target = request.full_path if request.query_string else request.path
-        if target == "/login": target = "/"
-        
+        if target == "/login":
+            target = "/"
+
         if p.startswith("/api/"):
             return json_error(
                 "auth_required", "Authentifizierung erforderlich.", status=401
@@ -1559,47 +1568,92 @@ def _guard_login():
     return None
 
 
+def _is_local_request() -> bool:
+    remote = (request.remote_addr or "").strip()
+    return remote in {"127.0.0.1", "::1", "localhost"}
+
+
+def _dev_local_email_codes_enabled() -> bool:
+    mail_mode = (os.environ.get("MAIL_MODE") or "").strip().lower()
+    flag = (os.environ.get("DEV_LOCAL_EMAIL_CODES") or "0").strip().lower()
+    return mail_mode == "outbox" and flag in {"1", "true", "yes", "on"}
+
+
+def _blind_success_message() -> str:
+    return "Wenn ein passender Account existiert, wurde ein Code erzeugt."
+
+
 @bp.before_app_request
 def check_onboarding():
     if (
         not request.endpoint
-        or request.endpoint in ("web.onboarding", "static")
+        or request.endpoint in ("web.onboarding", "web.bootstrap", "static")
         or request.path.startswith("/api/")
     ):
         return
-    
-    # Simple check: if no license.json and no users exist, we need onboarding
+
     auth_db = current_app.extensions.get("auth_db")
-    if auth_db and auth_db.count_tenants() == 0:
-        return redirect(url_for("web.onboarding"))
+    if auth_db and auth_db.count_users() == 0:
+        return redirect("/bootstrap")
 
 
+@bp.route("/bootstrap", methods=["GET", "POST"])
 @bp.route("/onboarding", methods=["GET", "POST"])
-def onboarding():
+def bootstrap():
     auth_db = current_app.extensions.get("auth_db")
-    if auth_db and auth_db.count_tenants() > 0:
+    if not auth_db:
+        abort(500)
+
+    if auth_db.count_users() > 0:
         return redirect(url_for("web.login"))
 
+    if not _is_local_request():
+        return json_error("forbidden", "Bootstrap ist nur lokal erlaubt.", status=403)
+
     if request.method == "POST":
-        t_name = request.form.get("tenant_name", "KUKANILEA").strip()
-        u_name = request.form.get("admin_user", "admin").strip()
-        u_pass = request.form.get("admin_pass", "").strip()
-        
-        if t_name and u_name and u_pass:
-            from app.auth import hash_password
-            now = datetime.now().isoformat()
-            t_id = _safe_filename(t_name).upper()
-            auth_db.upsert_tenant(t_id, t_name, now)
-            auth_db.upsert_user(u_name, hash_password(u_pass), now)
-            auth_db.upsert_membership(u_name, t_id, "ADMIN", now)
-            
-            # Create a dummy trial license
-            lic_path = Path(current_app.config["USER_DATA_ROOT"]) / "license.json"
-            lic_path.write_text(json.dumps({"valid": True, "plan": "ENTERPRISE", "customer": t_name}))
-            
-            return redirect(url_for("web.login"))
+        t_name = request.form.get("tenant_name", "KUKANILEA").strip() or "KUKANILEA"
+        u_name = (request.form.get("admin_user") or "dev").strip().lower() or "dev"
+        u_pass = (request.form.get("admin_pass") or "").strip() or secrets.token_urlsafe(10)
+
+        from app.auth import hash_password
+
+        now = datetime.now().isoformat()
+        t_id = _safe_filename(t_name).upper() or "KUKANILEA"
+        auth_db.upsert_tenant(t_id, t_name, now)
+        auth_db.upsert_user(u_name, hash_password(u_pass), now)
+        auth_db.upsert_membership(u_name, t_id, "DEV", now)
+
+        lic_path = Path(current_app.config["USER_DATA_ROOT"]) / "license.json"
+        lic_path.write_text(
+            json.dumps({"valid": True, "plan": "ENTERPRISE", "customer": t_name})
+        )
+
+        return render_template_string(
+            """
+            <!doctype html>
+            <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bootstrap abgeschlossen</title></head>
+            <body style="font-family:system-ui;max-width:680px;margin:40px auto;line-height:1.5;">
+              <h1>Bootstrap abgeschlossen</h1>
+              <p>Einmalige Zugangsdaten wurden erzeugt:</p>
+              <ul>
+                <li><strong>Username:</strong> {{ username }}</li>
+                <li><strong>Passwort:</strong> {{ password }}</li>
+                <li><strong>Mandant:</strong> {{ tenant }}</li>
+                <li><strong>Rolle:</strong> DEV</li>
+              </ul>
+              <p>Bitte nach dem ersten Login das Passwort ändern.</p>
+              <p><a href="{{ url_for('web.login') }}">Zum Login</a></p>
+            </body></html>
+            """,
+            username=u_name,
+            password=u_pass,
+            tenant=t_id,
+        )
 
     return render_template("onboarding.html", branding=Config.get_branding())
+
+
+onboarding = bootstrap
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -1684,6 +1738,110 @@ def login():
                 else:
                     error = "Login fehlgeschlagen."
     return render_template("login.html", error=error, branding=Config.get_branding())
+
+
+@bp.route("/forgot", methods=["GET", "POST"])
+@csrf_protected
+def forgot_password():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    code = ""
+    message = ""
+    if request.method == "POST":
+        u = (request.form.get("username") or "").strip().lower()
+        if u:
+            user = auth_db.get_user(u)
+            if user:
+                now = datetime.now().isoformat()
+                expires = (datetime.now() + timedelta(minutes=15)).isoformat()
+                reset_code = f"{secrets.randbelow(900000) + 100000}"
+                auth_db.create_auth_outbox_code(
+                    username=u,
+                    purpose="password_reset",
+                    code=reset_code,
+                    created_at=now,
+                    expires_at=expires,
+                )
+                if _dev_local_email_codes_enabled():
+                    code = reset_code
+        message = _blind_success_message()
+
+    return render_template_string(
+        """
+        <!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Passwort vergessen</title></head>
+        <body style="font-family:system-ui;max-width:560px;margin:40px auto;line-height:1.5;">
+          <h1>Passwort vergessen</h1>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>Benutzername</label>
+            <input name="username" style="display:block;width:100%;padding:8px;margin:8px 0 12px;" required>
+            <button type="submit">Code anfordern</button>
+          </form>
+          {% if message %}<p>{{ message }}</p>{% endif %}
+          {% if code %}<p><strong>DEV Local Code:</strong> {{ code }}</p>{% endif %}
+          <p><a href="{{ url_for('web.reset_with_code') }}">Code einlösen</a></p>
+          <p><a href="{{ url_for('web.login') }}">Zurück zum Login</a></p>
+        </body></html>
+        """,
+        message=message,
+        code=code,
+    )
+
+
+@bp.route("/reset-code", methods=["GET", "POST"])
+@csrf_protected
+def reset_with_code():
+    auth_db: AuthDB = current_app.extensions["auth_db"]
+    error = ""
+    success = ""
+    if request.method == "POST":
+        u = (request.form.get("username") or "").strip().lower()
+        code = (request.form.get("code") or "").strip()
+        pw1 = (request.form.get("password") or "").strip()
+        pw2 = (request.form.get("password_confirm") or "").strip()
+        if not u or not code or not pw1 or pw1 != pw2:
+            error = "Ungültige Eingaben."
+        else:
+            consumed = auth_db.consume_auth_outbox_code(
+                username=u,
+                purpose="password_reset",
+                code=code,
+                now_iso=datetime.now().isoformat(),
+            )
+            if not consumed:
+                error = "Code ungültig oder abgelaufen."
+            else:
+                con = auth_db._db()
+                try:
+                    con.execute(
+                        "UPDATE users SET password_hash=?, needs_reset=0 WHERE username=?",
+                        (hash_password(pw1), u),
+                    )
+                    con.commit()
+                finally:
+                    con.close()
+                success = "Passwort wurde aktualisiert."
+
+    return render_template_string(
+        """
+        <!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reset mit Code</title></head>
+        <body style="font-family:system-ui;max-width:560px;margin:40px auto;line-height:1.5;">
+          <h1>Passwort per Code zurücksetzen</h1>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>Benutzername</label><input name="username" style="display:block;width:100%;padding:8px;margin:8px 0 12px;" required>
+            <label>Code</label><input name="code" style="display:block;width:100%;padding:8px;margin:8px 0 12px;" required>
+            <label>Neues Passwort</label><input name="password" type="password" style="display:block;width:100%;padding:8px;margin:8px 0 12px;" required>
+            <label>Passwort bestätigen</label><input name="password_confirm" type="password" style="display:block;width:100%;padding:8px;margin:8px 0 12px;" required>
+            <button type="submit">Passwort setzen</button>
+          </form>
+          {% if error %}<p style="color:#b91c1c;">{{ error }}</p>{% endif %}
+          {% if success %}<p style="color:#047857;">{{ success }}</p>{% endif %}
+          <p><a href="{{ url_for('web.login') }}">Zurück zum Login</a></p>
+        </body></html>
+        """,
+        error=error,
+        success=success,
+    )
 
 
 @bp.route("/password-reset", methods=["GET", "POST"])
