@@ -17,6 +17,7 @@ dependencies = [
   "waitress",
   "platformdirs",
   "cryptography",
+  "yake",
 ]
 
 [tool.setuptools]

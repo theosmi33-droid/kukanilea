@@ -1,0 +1,67 @@
+name: KUKANILEA CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint-and-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install bandit
+
+      - name: Compile sanity
+        run: |
+          python -m compileall app run.py kukanilea_app.py
+
+      - name: Security scan report (non-blocking)
+        run: |
+          bandit -r app -x app/static -f txt -o bandit-report.txt || true
+
+      - name: Upload bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.txt
+
+  agent-logic-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [lint-and-scan]
+    env:
+      OLLAMA_ENABLED: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run selected core tests
+        run: |
+          pytest -q tests/test_memory_system.py tests/test_rag_pipeline.py tests/test_lexoffice.py tests/test_error_ux.py
