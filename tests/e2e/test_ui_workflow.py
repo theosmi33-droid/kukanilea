@@ -95,7 +95,7 @@ def test_full_workflow(page: Page, server: str):
     # We wait for the URL to change to something containing "/review/"
     page.wait_for_url("**/review/**/kdnr", timeout=15000)
 
-    expect(page.get_by_text("Review", exact=True)).to_be_visible()
+    expect(page.get_by_text("Metadaten", exact=True)).to_be_visible()
 
     # Cleanup
     test_file.unlink()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 
-from flask import Flask, request
+from flask import Flask, request, session
 
 from .auth import init_auth
 from .autonomy import init_autonomy
@@ -24,6 +24,7 @@ def _wire_runtime_env(app: Flask) -> None:
 
 from .lifecycle import SystemState, manager
 
+
 def create_app() -> Flask:
     boot_start = time.time()
     manager.set_state(SystemState.BOOT, "Booting application context...")
@@ -39,6 +40,10 @@ def create_app() -> Flask:
     manager.set_state(SystemState.INIT, "Initializing modules and databases...")
     # Import blueprints after env/path wiring so legacy modules read correct paths.
     from . import api, web
+    from .routes import system_logs, admin_tenants, automation
+    from .core.tool_loader import load_all_tools
+
+    load_all_tools()
 
     auth_db = AuthDB(app.config["AUTH_DB"])
     try:
@@ -52,6 +57,13 @@ def create_app() -> Flask:
     init_request_logging(app)
     init_observability(app)
     init_autonomy(app)
+    
+    from .security.session_manager import init_app as init_session_manager
+    init_session_manager(app)
+
+    # Start Background API Dispatcher (Store & Forward)
+    from .services.api_dispatcher import start_dispatcher_daemon
+    start_dispatcher_daemon(str(auth_db.path), interval=60)
 
     manager.set_state(SystemState.INIT, "Loading license state...")
     license_state = load_runtime_license_state(
@@ -64,6 +76,21 @@ def create_app() -> Flask:
     app.config["TRIAL_DAYS_LEFT"] = license_state["trial_days_left"]
     app.config["READ_ONLY"] = license_state["read_only"]
     app.config["LICENSE_REASON"] = license_state["reason"]
+    
+    from flask import g
+    
+    @app.before_request
+    def start_timer():
+        g.start_time = time.time()
+        
+    @app.after_request
+    def log_render_time(response):
+        if hasattr(g, 'start_time'):
+            elapsed = (time.time() - g.start_time) * 1000
+            response.headers["X-Render-Time"] = f"{elapsed:.2f}ms"
+            if elapsed > 100 and request.endpoint and not request.endpoint.startswith('static'):
+                app.logger.warning(f"⚠️ UI Render SLA missed: {request.path} took {elapsed:.2f}ms")
+        return response
     
     # ... Context Processors and Headers ...
 
@@ -102,6 +129,15 @@ def create_app() -> Flask:
         }
 
     @app.context_processor
+    def _tenants_context():
+        from .core.tenant_registry import tenant_registry
+        return {
+            "all_tenants": tenant_registry.list_tenants(),
+            "active_tenant_id": session.get("tenant_id", Config.TENANT_DEFAULT),
+            "active_tenant_name": session.get("tenant_name", Config.TENANT_DEFAULT)
+        }
+
+    @app.context_processor
     def _security_context():
         from .security import get_csrf_token
 
@@ -127,6 +163,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(web.bp)
     app.register_blueprint(api.bp)
+    app.register_blueprint(system_logs.bp)
+    app.register_blueprint(admin_tenants.bp)
+    app.register_blueprint(automation.bp)
+    
+    with app.app_context():
+        automation.init_automation_schema()
     
     manager.set_state(SystemState.INIT, "Warming up database and indexes...")
     if web.db_init is not None:

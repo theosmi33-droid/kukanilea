@@ -1,8 +1,8 @@
-import threading
-import requests
-import time
-import uuid
 import re
+import threading
+import uuid
+
+import requests
 
 BASE_URL = "http://127.0.0.1:5051"
 

@@ -10,6 +10,7 @@ from typing import List, Optional
 class User:
     username: str
     password_hash: str
+    needs_reset: int = 0
 
 
 @dataclass
@@ -31,15 +32,21 @@ class AuthDB:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _db(self) -> sqlite3.Connection:
-        con = sqlite3.connect(str(self.path))
-        con.row_factory = sqlite3.Row
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-        con.execute("PRAGMA foreign_keys=ON;")
-        con.execute("PRAGMA temp_store=MEMORY;")
-        con.execute("PRAGMA cache_size=-64000;")
-        con.execute("PRAGMA mmap_size=268435456;")
-        return con
+        # Task 4: Centralized Error Handling for SQLite
+        try:
+            con = sqlite3.connect(str(self.path))
+            con.row_factory = sqlite3.Row
+            con.execute("PRAGMA journal_mode=WAL;")
+            con.execute("PRAGMA synchronous=NORMAL;")
+            con.execute("PRAGMA foreign_keys=ON;")
+            con.execute("PRAGMA temp_store=MEMORY;")
+            con.execute("PRAGMA cache_size=-64000;")
+            con.execute("PRAGMA mmap_size=268435456;")
+            return con
+        except sqlite3.OperationalError as e:
+            if "unable to open database file" in str(e):
+                raise FileNotFoundError(f"[SYSTEM HALT] Datenbank nicht gefunden: {self.path}")
+            raise
 
     def init(self) -> None:
         con = self._db()
@@ -49,19 +56,29 @@ class AuthDB:
                 CREATE TABLE IF NOT EXISTS users(
                   username TEXT PRIMARY KEY,
                   password_hash TEXT NOT NULL,
+                  needs_reset INTEGER DEFAULT 0,
+                  failed_attempts INTEGER DEFAULT 0,
                   created_at TEXT NOT NULL
                 );
                 """
             )
+            for col, dtype in [("needs_reset", "INTEGER DEFAULT 0"), ("failed_attempts", "INTEGER DEFAULT 0")]:
+                try: con.execute(f"ALTER TABLE users ADD COLUMN {col} {dtype}")
+                except Exception: pass
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tenants(
                   tenant_id TEXT PRIMARY KEY,
                   display_name TEXT NOT NULL,
+                  core_db_path TEXT,
                   created_at TEXT NOT NULL
                 );
                 """
             )
+            try:
+                con.execute("ALTER TABLE tenants ADD COLUMN core_db_path TEXT")
+            except Exception:
+                pass
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS memberships(
@@ -97,7 +114,163 @@ class AuthDB:
                 """
             )
             con.execute(
-                "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')"
+                """
+                CREATE TABLE IF NOT EXISTS projects(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  description TEXT,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS boards(
+                  id TEXT PRIMARY KEY,
+                  project_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tasks(
+                  id TEXT PRIMARY KEY,
+                  board_id TEXT NOT NULL,
+                  column_name TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  content TEXT,
+                  assigned_user TEXT,
+                  due_date TEXT,
+                  priority TEXT,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS files(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  path TEXT NOT NULL,
+                  size INTEGER NOT NULL,
+                  hash TEXT, -- Phase 5: Integrity
+                  keywords_json TEXT, -- Phase 3: YAKE!
+                  frequency_score REAL DEFAULT 0.0, -- Phase 2: Scoring
+                  version INTEGER DEFAULT 1,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            # Migration helper for v1.4
+            for col, dtype in [("hash", "TEXT"), ("keywords_json", "TEXT"), ("frequency_score", "REAL")]:
+                try: con.execute(f"ALTER TABLE files ADD COLUMN {col} {dtype}")
+                except Exception: pass
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_log(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ts TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  username TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  resource TEXT NOT NULL,
+                  details TEXT
+                );
+                """
+            )
+            # Task 192: Immutable Audit Trail via Trigger
+            con.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS prevent_audit_deletion
+                BEFORE DELETE ON audit_log
+                BEGIN
+                    SELECT RAISE(FAIL, 'Audit log entries are immutable and cannot be deleted.');
+                END;
+                """
+            )
+            con.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS prevent_audit_update
+                BEFORE UPDATE ON audit_log
+                BEGIN
+                    SELECT RAISE(FAIL, 'Audit log entries are immutable and cannot be modified.');
+                END;
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS file_versions(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  file_id TEXT NOT NULL,
+                  version INTEGER NOT NULL,
+                  path TEXT NOT NULL,
+                  size INTEGER NOT NULL,
+                  hash TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS file_trash(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  original_name TEXT NOT NULL,
+                  original_path TEXT NOT NULL,
+                  deleted_at TEXT NOT NULL,
+                  expires_at TEXT NOT NULL,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_relations(
+                  task_id TEXT NOT NULL,
+                  related_task_id TEXT NOT NULL,
+                  relation_type TEXT NOT NULL, -- 'blocks', 'duplicate', 'relates'
+                  PRIMARY KEY(task_id, related_task_id),
+                  FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                  FOREIGN KEY(related_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_checklists(
+                  id TEXT PRIMARY KEY,
+                  task_id TEXT NOT NULL,
+                  content TEXT NOT NULL,
+                  is_done INTEGER DEFAULT 0,
+                  FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS automation_rules(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  trigger TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  config TEXT,
+                  active INTEGER DEFAULT 1,
+                  FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '3')"
             )
             con.commit()
         finally:
@@ -142,12 +315,16 @@ class AuthDB:
         con = self._db()
         try:
             row = con.execute(
-                "SELECT username, password_hash FROM users WHERE username=?",
+                "SELECT username, password_hash, needs_reset FROM users WHERE username=?",
                 (username,),
             ).fetchone()
             if not row:
                 return None
-            return User(username=row["username"], password_hash=row["password_hash"])
+            return User(
+                username=row["username"], 
+                password_hash=row["password_hash"],
+                needs_reset=row["needs_reset"]
+            )
         finally:
             con.close()
 

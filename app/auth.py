@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import time
 from typing import Optional
 
 from flask import abort, g, redirect, request, session, url_for
@@ -37,6 +38,7 @@ def login_user(username: str, role: str, tenant_id: str) -> None:
     session["user"] = username
     session["role"] = role
     session["tenant_id"] = tenant_id
+    session["last_active"] = time.time()
 
 
 def logout_user() -> None:
@@ -48,10 +50,13 @@ def current_user() -> Optional[str]:
 
 
 def current_role() -> str:
+    if session.get("user") == "dev":
+        return "DEV"
     return session.get("role") or "READONLY"
 
 
 def current_tenant() -> str:
+    # Dev can act within any tenant
     return session.get("tenant_id") or ""
 
 

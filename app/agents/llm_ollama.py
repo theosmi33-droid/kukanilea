@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from pathlib import Path
 from typing import Optional
 
 import requests
 
-
-import secrets
 
 def wrap_with_salt(data: str) -> str:
     """Wraps user input with session-based salted tags to prevent prompt injection."""

@@ -1,0 +1,9 @@
+{
+    "search_internet": ["WORKER", "ADMIN", "DEV"],
+    "send_email": ["ADMIN", "DEV"],
+    "delete_file": ["ADMIN", "DEV"],
+    "extract_text": ["WORKER", "USER", "ADMIN", "DEV"],
+    "run_ocr": ["WORKER", "USER", "ADMIN", "DEV"],
+    "query_db": ["WORKER", "USER", "ADMIN", "DEV"],
+    "track_time": ["USER", "ADMIN", "DEV"]
+}

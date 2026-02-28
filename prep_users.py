@@ -1,12 +1,11 @@
 import hashlib
-from pathlib import Path
-from datetime import datetime
 import sys
-import os
+from datetime import datetime
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from app.db import AuthDB
 import app.config as config
+from app.db import AuthDB
 
 db_path = config.Config.AUTH_DB
 db = AuthDB(db_path)

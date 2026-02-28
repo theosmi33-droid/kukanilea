@@ -3,96 +3,166 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ branding.app_name }} Enterprise</title>
-  <link rel="stylesheet" href="/static/css/system.css">
-  <link rel="stylesheet" href="/static/css/components.css">
-  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+  <title>{% block title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/design-system.css">
+  <script>
+    if (localStorage.getItem('ks_theme') === 'dark') {
+        document.documentElement.classList.add('dark');
+    }
+  </script>
+  <script src="/static/js/state.js"></script>
+  <script src="/static/js/command_palette.js"></script>
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
-  <div class="app-layout">
-    <aside class="app-sidebar">
-      <div style="display:flex; align-items:center; gap:12px; margin-bottom: 32px; padding: 0 8px;">
-        <img src="/static/logo.svg" width="32" height="32" alt="Logo">
-        <div>
-          <div style="font-weight:700; font-size:16px; color:#fff;">{{ branding.app_name }}</div>
-          <div style="font-size:10px; color:var(--color-accent); text-transform:uppercase; letter-spacing:1px;">Enterprise Core</div>
-        </div>
-      </div>
-      
-      <nav style="display:flex; flex-direction:column; gap:4px; flex:1;">
-        <a href="/" class="nav-link {% if active_tab == 'upload' %}active{% endif %}">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-          Upload
-        </a>
-        <a href="/tasks" class="nav-link {% if active_tab == 'tasks' %}active{% endif %}">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          Aufgaben
-        </a>
-        <a href="/time" class="nav-link {% if active_tab == 'time' %}active{% endif %}">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          Zeiterfassung
-        </a>
-        <a href="/assistant" class="nav-link {% if active_tab == 'assistant' %}active{% endif %}">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
-          Assistent
-        </a>
-        <a href="/chat" class="nav-link {% if active_tab == 'chat' %}active{% endif %}">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
-          Chat
-        </a>
-        <a href="/mail" class="nav-link {% if active_tab == 'mail' %}active{% endif %}">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-          Postfach
-        </a>
-        
-        {% if roles in ['DEV', 'ADMIN'] %}
-        <div style="margin: 24px 0 8px 12px; font-size: 10px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing:1px;">Verwaltung</div>
-        <a href="/admin/mesh" class="nav-link {% if active_tab == 'mesh' %}active{% endif %}">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m21 16-5.16-5.16a2 2 0 0 0-2.82 0L3 21"/><circle cx="16" cy="7" r="4"/></svg>
-          Mesh (Admin)
-        </a>
-        <a href="/settings" class="nav-link {% if active_tab == 'settings' %}active{% endif %}">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-          Einstellungen
-        </a>
-        {% endif %}
-      </nav>
-      
-      <div style="border-top: 1px solid var(--color-border); padding-top: 16px; margin-top: auto;">
-         <div style="font-size:10px; font-weight:600; color:var(--color-text-muted); margin-bottom:4px;">SYSTEM STATUS</div>
-         <div style="font-size:12px; font-weight:500; display:flex; align-items:center; gap:6px;">
-           <div style="width:8px; height:8px; border-radius:50%; background:var(--color-success);"></div>
-           Online ({{ roles }})
-         </div>
-      </div>
-    </aside>
-
-    <main class="app-main">
-      <header class="app-header">
-        <h2 style="font-size:16px; font-weight:600; color:#fff; text-transform:uppercase; letter-spacing:0.05em;">
-          {% block title %}{{ active_tab|capitalize }}{% endblock %}
-        </h2>
-        <div style="display:flex; align-items:center; gap:16px;">
-          <span class="badge">{{ tenant }}</span>
-          <div style="height:32px; width:1px; background:var(--color-border);"></div>
-          {% if user and user != '-' %}
-          <div style="display:flex; align-items:center; gap:12px;">
-            <div style="text-align:right;">
-              <div style="font-size:13px; font-weight:600;">{{user}}</div>
-              <div style="font-size:11px; color:var(--color-text-muted);">{{profile.name if profile else 'User'}}</div>
-            </div>
-            <a href="/logout" class="btn btn-secondary" style="height:32px; font-size:12px; padding: 0 12px;">Abmelden</a>
-          </div>
-          {% endif %}
-        </div>
-      </header>
-      
-      <div class="app-content">
-        <div class="content-container">
-          {% block content %}{% endblock %}
-        </div>
-      </div>
-    </main>
+  <!-- Task 156: Boot Splash -->
+  <div id="boot-splash">
+    <div class="boot-logo-animate">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+    </div>
+    <div style="margin-top: 16px; font-size: 10px; font-weight: 800; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 2px;">System Initializing</div>
+    <div class="boot-progress">
+        <div class="boot-progress-bar" id="boot-bar"></div>
+    </div>
   </div>
+
+  <script>
+    // Boot splash logic
+    window.addEventListener('DOMContentLoaded', () => {
+        const bar = document.getElementById('boot-bar');
+        const splash = document.getElementById('boot-splash');
+        if (bar) bar.style.width = '100%';
+        setTimeout(() => {
+            if (splash) splash.classList.add('fade-out');
+        }, 600);
+    });
+  </script>
+
+  {% include 'partials/sidebar.html' %}
+  <main class="main-content">
+    <header style="display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--spacing-4); padding:0 var(--spacing-2);">
+        <div>
+            {% include 'components/system_status.html' %}
+        </div>
+        <div style="display:flex; align-items:center; gap:16px;">
+            <button onclick="toggleTheme()" class="nav-link" id="theme-toggle" style="padding: 8px; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border: 1px solid var(--color-border);">
+                <!-- Icon will be set by JS -->
+            </button>
+            <script>
+                function toggleTheme() {
+                    const isDark = document.documentElement.classList.toggle('dark');
+                    localStorage.setItem('ks_theme', isDark ? 'dark' : 'light');
+                    updateThemeIcon();
+                }
+                function updateThemeIcon() {
+                    const btn = document.getElementById('theme-toggle');
+                    if (!btn) return;
+                    const isDark = document.documentElement.classList.contains('dark');
+                    btn.innerHTML = isDark 
+                        ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>' 
+                        : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+                }
+                window.addEventListener('DOMContentLoaded', updateThemeIcon);
+            </script>
+            {% if roles in ['DEV', 'ADMIN'] and all_tenants %}
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size: 11px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;">Kontext:</span>
+                <select class="input" style="height: 32px; padding: 0 12px; font-size: 13px; width: auto; background: var(--bg-secondary);" 
+                        name="tenant_id"
+                        hx-post="/admin/context/switch"
+                        hx-trigger="change">
+                    <option value="SYSTEM" {{ 'selected' if active_tenant_id == 'SYSTEM' }}>SYSTEM (Default)</option>
+                    {% for t in all_tenants %}
+                    <option value="{{ t.id }}" {{ 'selected' if active_tenant_id == t.id }}>{{ t.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <kbd style="font-size:10px; padding:4px 8px; background:var(--bg-tertiary); border:1px solid var(--color-border); border-radius:6px; color:var(--text-tertiary);">⌘ K</kbd>
+        </div>
+    </header>
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- KI Chatbot Floating Widget -->
+  <div id="ki-chat-widget" style="position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; gap: 12px;">
+    <div id="ki-chat-window" style="display: none; width: 350px; height: 450px; background: var(--bg-secondary); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); flex-direction: column; overflow: hidden; backdrop-filter: blur(10px);">
+        <div style="padding: 16px; background: var(--color-primary); color: white; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 8px; height: 8px; background: #4ade80; border-radius: 50%; box-shadow: 0 0 8px #4ade80;"></div>
+                <span style="font-weight: 700; font-size: 14px;">KI ASSISTENT</span>
+            </div>
+            <button onclick="toggleChat()" style="background: none; border: none; color: white; cursor: pointer; padding: 4px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+        <div id="chat-messages" style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+            <div style="background: var(--bg-tertiary); padding: 10px 14px; border-radius: 12px 12px 12px 2px; align-self: flex-start; max-width: 85%; line-height: 1.4;">
+                Guten Tag! Wie kann ich Ihnen heute bei Ihren Aufgaben oder Dokumenten behilflich sein?
+            </div>
+        </div>
+        <div style="padding: 12px; border-top: 1px solid var(--color-border); display: flex; gap: 8px; background: var(--bg-primary);">
+            <input type="text" id="chat-input" placeholder="Nachricht schreiben..." style="flex: 1; background: var(--bg-tertiary); border: 1px solid var(--color-border); border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-size: 13px; outline: none;">
+            <button onclick="sendChatMessage()" style="background: var(--color-primary); color: white; border: none; border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            </button>
+        </div>
+    </div>
+    <button onclick="toggleChat()" style="width: 56px; height: 56px; border-radius: 50%; background: var(--color-primary); color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); display: flex; align-items: center; justify-content: center; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </button>
+  </div>
+
+  <script>
+    function toggleChat() {
+        const win = document.getElementById('ki-chat-window');
+        if (win.style.display === 'none') {
+            win.style.display = 'flex';
+        } else {
+            win.style.display = 'none';
+        }
+    }
+
+    async function sendChatMessage() {
+        const input = document.getElementById('chat-input');
+        const text = input.value.trim();
+        if (!text) return;
+
+        const container = document.getElementById('chat-messages');
+        
+        // Add User Message
+        const userDiv = document.createElement('div');
+        userDiv.style.cssText = "background: var(--color-primary); color: white; padding: 10px 14px; border-radius: 12px 12px 2px 12px; align-self: flex-end; max-width: 85%; line-height: 1.4;";
+        userDiv.textContent = text;
+        container.appendChild(userDiv);
+        
+        input.value = '';
+        container.scrollTop = container.scrollHeight;
+
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '{{ csrf_token() }}' },
+                body: JSON.stringify({ message: text })
+            });
+            const data = await response.json();
+            
+            // Add AI Message
+            const aiDiv = document.createElement('div');
+            aiDiv.style.cssText = "background: var(--bg-tertiary); padding: 10px 14px; border-radius: 12px 12px 12px 2px; align-self: flex-start; max-width: 85%; line-height: 1.4;";
+            aiDiv.textContent = data.response || "Entschuldigung, ich konnte die Anfrage nicht verarbeiten.";
+            container.appendChild(aiDiv);
+            container.scrollTop = container.scrollHeight;
+        } catch (e) {
+            console.error('Chat error:', e);
+        }
+    }
+
+    document.getElementById('chat-input')?.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') sendChatMessage();
+    });
+  </script>
+
+  {% block scripts %}{% endblock %}
 </body>
 </html>

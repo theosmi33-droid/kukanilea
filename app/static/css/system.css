@@ -50,7 +50,7 @@ body {
 
 h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
-  color: #ffffff;
+  color: var(--color-text-main);
   margin-bottom: var(--spacing-2);
 }
 
@@ -79,6 +79,134 @@ a:hover {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+/* Task 153: Skeleton Screens */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  height: 1em;
+  width: 100%;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Task 156: Boot Animation Overlay */
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  background: var(--color-bg-root);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.5s ease, visibility 0.5s;
+}
+
+#boot-splash.fade-out {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.boot-logo-animate {
+  animation: boot-pulse 2s ease-in-out infinite;
+}
+
+@keyframes boot-pulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.boot-progress {
+  width: 200px;
+  height: 2px;
+  background: var(--bg-tertiary);
+  margin-top: 24px;
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+
+.boot-progress-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--color-accent);
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+/* Phase 4: Physical Haptics */
+.btn:active, .badge:active {
+  transform: scale(0.95);
+  transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Phase 4: Skeleton Screens */
+.skeleton-tag {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  height: 24px;
+  width: 80px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.cmd-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* White Mode Support */
+:root {
+  --color-bg-root: #f8fafc;
+  --color-bg-panel: #ffffff;
+  --color-bg-panel-hover: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-root: #0f1115;
+    --color-bg-panel: rgba(30, 41, 59, 0.5);
+    --color-bg-panel-hover: rgba(30, 41, 59, 0.8);
+    --color-border: rgba(255, 255, 255, 0.1);
+    --color-text-main: #f8fafc;
+    --color-text-muted: #94a3b8;
+  }
+}
+
+html.dark {
+  --color-bg-root: #0f1115;
+  --color-bg-panel: rgba(30, 41, 59, 0.5);
+  --color-bg-panel-hover: rgba(30, 41, 59, 0.8);
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text-main: #f8fafc;
+  --color-text-muted: #94a3b8;
 }

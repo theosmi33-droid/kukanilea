@@ -147,6 +147,30 @@ class SearchAgent(BaseAgent):
                 tenant_id=context.tenant_id,
             )
 
+        # Hybrid Search: Include semantic memory results
+        try:
+            from app.agents.memory_store import MemoryManager
+            from app.config import Config
+            manager = MemoryManager(str(Config.AUTH_DB))
+            semantic_hits = manager.retrieve_context(context.tenant_id, query, limit=3)
+            for hit in semantic_hits:
+                meta = hit.get("metadata", {})
+                if meta.get("type") == "document_snippet":
+                    # Map semantic hit to search result format
+                    results.append({
+                        "doc_id": meta.get("doc_id"),
+                        "token": meta.get("doc_id"),
+                        "kdnr": meta.get("kdnr", ""),
+                        "doctype": meta.get("doctype", ""),
+                        "doc_date": meta.get("doc_date", ""),
+                        "file_name": f"[Semantic Match] {meta.get('file_name', '')}",
+                        "file_path": "",
+                        "preview": hit.get("content", "")[:100] + "...",
+                        "semantic_score": hit.get("score")
+                    })
+        except Exception:
+            pass
+
         if not results and self._fs_scan_fallback_enabled():
             results = self._fs_scan(query, context)
 
