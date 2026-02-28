@@ -1,0 +1,45 @@
+name: Build Windows Installer (RC1)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install build deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller flask requests python-dotenv pydantic rapidfuzz waitress platformdirs cryptography
+
+      - name: Validate Python sources
+        shell: pwsh
+        run: |
+          python -m compileall app run.py kukanilea_app.py
+
+      - name: Create RC artifact bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist_win | Out-Null
+          Compress-Archive -Path app,run.py,kukanilea_app.py,requirements.txt -DestinationPath dist_win/KUKANILEA-rc1-source.zip -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KUKANILEA-windows-rc1-source
+          path: dist_win/KUKANILEA-rc1-source.zip
