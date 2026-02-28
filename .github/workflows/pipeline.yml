@@ -2,9 +2,9 @@ name: KUKANILEA CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, release/v1.5.0-gold]
   pull_request:
-    branches: [main]
+    branches: [main, release/v1.5.0-gold]
   workflow_dispatch:
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
 
       - name: Compile sanity
         run: |
-          python -m compileall app run.py kukanilea_app.py
+          python -m compileall app kukanilea_app.py
 
       - name: Security scan report (non-blocking)
         run: |
@@ -62,6 +62,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run selected core tests
+      - name: Run branch-compatible core tests
         run: |
-          pytest -q tests/test_memory_system.py tests/test_rag_pipeline.py tests/test_lexoffice.py tests/test_error_ux.py
+          pytest -q tests --ignore=tests/e2e
