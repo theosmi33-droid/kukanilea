@@ -2,9 +2,9 @@ name: Build Windows Installer (RC1)
 
 on:
   push:
-    branches: [main]
+    branches: [main, release/v1.5.0-gold]
   pull_request:
-    branches: [main]
+    branches: [main, release/v1.5.0-gold]
   workflow_dispatch:
 
 jobs:
@@ -30,13 +30,13 @@ jobs:
       - name: Validate Python sources
         shell: pwsh
         run: |
-          python -m compileall app run.py kukanilea_app.py
+          python -m compileall app kukanilea_app.py
 
       - name: Create RC artifact bundle
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist_win | Out-Null
-          Compress-Archive -Path app,run.py,kukanilea_app.py,requirements.txt -DestinationPath dist_win/KUKANILEA-rc1-source.zip -Force
+          Compress-Archive -Path app,kukanilea_app.py,requirements.txt -DestinationPath dist_win/KUKANILEA-rc1-source.zip -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

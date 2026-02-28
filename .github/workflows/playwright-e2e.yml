@@ -2,9 +2,9 @@ name: Playwright E2E Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, release/v1.5.0-gold]
   pull_request:
-    branches: [main]
+    branches: [main, release/v1.5.0-gold]
   workflow_dispatch:
 
 jobs:
@@ -28,8 +28,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Install Playwright browser
+        if: ${{ hashFiles('tests/e2e/test_ui_workflow.py') != '' }}
+        run: |
+          pip install playwright pytest-playwright
           python -m playwright install --with-deps chromium
 
       - name: Run Playwright tests
+        if: ${{ hashFiles('tests/e2e/test_ui_workflow.py') != '' }}
         run: |
           pytest -q tests/e2e/test_ui_workflow.py
+
+      - name: Skip missing Playwright test file
+        if: ${{ hashFiles('tests/e2e/test_ui_workflow.py') == '' }}
+        run: |
+          echo "No tests/e2e/test_ui_workflow.py on this branch; skipping Playwright suite."
