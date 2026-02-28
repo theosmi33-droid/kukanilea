@@ -11,6 +11,8 @@ from app.agents.guards import build_safe_suggestions, detect_prompt_injection
 from app.agents.index import IndexAgent
 from app.agents.llm import LLMProvider, get_default_provider
 from app.agents.mail import MailAgent
+from app.agents.memory import MemoryAgent
+from app.agents.mesh import MeshAgent
 from app.agents.observer import ObserverAgent
 from app.agents.open_file import OpenFileAgent
 from app.agents.review import ReviewAgent
@@ -53,6 +55,12 @@ class Orchestrator:
             "summarize_doc",
             "list_tasks",
             "rebuild_index",
+            "lexoffice_upload",
+            "memory_store",
+            "memory_search",
+            "generate_zugferd_xml",
+            "mesh_sync",
+            "mail_generate",
         }
         self.agents = [
             OpenFileAgent(),
@@ -64,6 +72,8 @@ class Orchestrator:
             ArchiveAgent(),
             IndexAgent(core_module),
             MailAgent(),
+            MemoryAgent(),
+            MeshAgent(),
             WeatherAgent(weather_adapter),
             AuthTenantAgent(),
             ObserverAgent(),

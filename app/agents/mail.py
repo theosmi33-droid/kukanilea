@@ -7,7 +7,7 @@ class MailAgent(BaseAgent):
     name = "mail"
     required_role = "OPERATOR"
     scope = "mail"
-    tools = ["mail"]
+    tools = ["mail_generate"]
 
     def can_handle(self, intent: str, message: str) -> bool:
         return intent == "mail"

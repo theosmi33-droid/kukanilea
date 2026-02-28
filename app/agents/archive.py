@@ -7,7 +7,7 @@ class ArchiveAgent(BaseAgent):
     name = "archive"
     required_role = "OPERATOR"
     scope = "archive"
-    tools = ["archive"]
+    tools = ["archive", "generate_zugferd_xml"]
 
     def can_handle(self, intent: str, message: str) -> bool:
         return intent == "archive"

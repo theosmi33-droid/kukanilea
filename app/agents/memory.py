@@ -3,14 +3,14 @@ from __future__ import annotations
 from .base import AgentContext, AgentResult, BaseAgent
 
 
-class UploadAgent(BaseAgent):
-    name = "upload"
+class MemoryAgent(BaseAgent):
+    name = "memory"
     required_role = "OPERATOR"
-    scope = "upload"
-    tools = ["upload", "lexoffice_upload"]
+    scope = "memory"
+    tools = ["memory_store", "memory_search"]
 
     def can_handle(self, intent: str, message: str) -> bool:
-        return intent == "upload"
+        return intent == "memory"
 
     def handle(self, message: str, intent: str, context: AgentContext) -> AgentResult:
-        return AgentResult(text="Upload-Aufträge bitte über die Upload-Seite starten.")
+        return AgentResult(text="Mein semantisches Gedächtnis ist aktiv und lernt mit.")
