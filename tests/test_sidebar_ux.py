@@ -39,7 +39,7 @@ def test_sidebar_toggle_persistence_and_running_badges_markup(tmp_path, monkeypa
         sess["role"] = "ADMIN"
         sess["tenant_id"] = "KUKANILEA"
 
-    resp = client.get("/")
+    resp = client.get("/", follow_redirects=True)
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
