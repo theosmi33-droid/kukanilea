@@ -48,7 +48,10 @@
   "terminal.integrated.defaultProfile.osx": "zsh",
   "terminal.integrated.cwd": "${workspaceFolder}",
   "terminal.integrated.env.osx": {
-    "PYTHONUNBUFFERED": "1"
+    "PYTHONUNBUFFERED": "1",
+    "OLLAMA_ENABLED": "1",
+    "KUKANILEA_REMOTE_LLM_ENABLED": "0",
+    "OLLAMA_HOST": "http://127.0.0.1:11434"
   },
 
   "workbench.editor.enablePreview": false,

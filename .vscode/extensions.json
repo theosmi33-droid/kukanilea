@@ -1,5 +1,6 @@
 {
   "recommendations": [
+    "google.geminicodeassist",
     "ms-python.python",
     "ms-python.vscode-pylance",
     "charliermarsh.ruff",
@@ -7,5 +8,8 @@
     "github.vscode-github-actions",
     "ms-playwright.playwright",
     "eamodio.gitlens"
+  ],
+  "unwantedRecommendations": [
+    "github.copilot-chat"
   ]
 }

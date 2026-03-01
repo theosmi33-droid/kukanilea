@@ -2,6 +2,15 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "KUKANILEA: Ready Check (Gemini + Runtime)",
+      "type": "shell",
+      "command": "OLLAMA_ENABLED=1 KUKANILEA_REMOTE_LLM_ENABLED=0 bash scripts/vscode_ready_check.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "KUKANILEA: Pytest (all)",
       "type": "shell",
       "command": "pytest -q",
@@ -30,11 +39,9 @@
       "isBackground": true,
       "problemMatcher": {
         "owner": "custom",
-        "pattern": [
-          {
-            "regexp": ".*"
-          }
-        ],
+        "pattern": {
+          "regexp": ".*"
+        },
         "background": {
           "activeOnStart": true,
           "beginsPattern": "System ready\\.|Serving on",
