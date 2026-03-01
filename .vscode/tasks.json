@@ -32,7 +32,7 @@
     {
       "label": "KUKANILEA: Start App (127.0.0.1:5051)",
       "type": "shell",
-      "command": "./.venv/bin/python kukanilea_app.py --host 127.0.0.1 --port 5051",
+      "command": "${command:python.interpreterPath} kukanilea_app.py --host 127.0.0.1 --port 5051",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -61,7 +61,7 @@
     {
       "label": "KUKANILEA: Shared Memory Init",
       "type": "shell",
-      "command": "python scripts/shared_memory.py init",
+      "command": "${command:python.interpreterPath} scripts/shared_memory.py init",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -70,7 +70,7 @@
     {
       "label": "KUKANILEA: Shared Memory Read",
       "type": "shell",
-      "command": "python scripts/shared_memory.py read",
+      "command": "${command:python.interpreterPath} scripts/shared_memory.py read",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -79,7 +79,7 @@
     {
       "label": "KUKANILEA: Shared Memory Snapshot",
       "type": "shell",
-      "command": "python scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
+      "command": "${command:python.interpreterPath} scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
       "options": {
         "cwd": "${workspaceFolder}"
       },
