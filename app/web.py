@@ -3489,6 +3489,29 @@ def api_list_tools():
     return jsonify(ok=True, tools=registry.list())
 
 
+@bp.get("/api/system/status")
+@login_required
+def api_system_status():
+    """Dashboard status endpoint for HTMX/widget refresh."""
+    from app.core.observer import get_system_status
+
+    status = get_system_status() or {}
+    accept = (request.headers.get("Accept") or "").lower()
+    wants_html = "text/html" in accept or (request.args.get("format") or "").lower() == "html"
+    if wants_html:
+        return render_template("components/system_status.html", **status)
+    return jsonify(ok=True, status=status)
+
+
+@bp.get("/api/outbound/status")
+@login_required
+def api_outbound_status():
+    """Auth-protected proxy to existing outbound queue status implementation."""
+    from .api import outbound_status as _outbound_status
+
+    return _outbound_status()
+
+
 @bp.route("/admin/audit/verify", methods=["POST"])
 @login_required
 @require_role(["DEV", "ADMIN"])
