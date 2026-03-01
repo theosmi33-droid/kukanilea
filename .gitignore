@@ -6,10 +6,10 @@ venv/
 .DS_Store
 *.log
 
-Tophandwerk_Eingang/
-Tophandwerk_Pending/
-Tophandwerk_Done/
-Tophandwerk_Kundenablage/
+Kukanilea_Eingang/
+Kukanilea_Pending/
+Kukanilea_Done/
+Kukanilea_Kundenablage/
 _THW_TEST_SANDBOX/
 
 *.sqlite3

@@ -25,7 +25,7 @@ Beim ersten Start erscheint der **Onboarding-Wizard**.
 
 ### 4. Support & Erste Hilfe
 Sollten Sie Fragen zur Einrichtung haben, erreichen Sie unseren Enterprise-Support unter:
-*   **Web:** [https://tophandwerk.de/support](https://tophandwerk.de/support)
+*   **Web:** [https://kukanilea.de/support](https://kukanilea.de/support)
 *   **Diagnose:** Nutzen Sie den Button „System-Check“ im Bereich „Settings“, um ein Fehlerprotokoll für unsere Techniker zu erstellen.
 
 ---
