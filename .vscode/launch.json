@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "KUKANILEA: Debug App 5051",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/kukanilea_app.py",
+      "args": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5051"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    }
+  ]
+}

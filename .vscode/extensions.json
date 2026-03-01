@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "github.vscode-pull-request-github",
+    "github.vscode-github-actions",
+    "ms-playwright.playwright",
+    "eamodio.gitlens"
+  ]
+}
