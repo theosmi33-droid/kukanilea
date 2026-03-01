@@ -6,9 +6,16 @@
   <title>{% block title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/design-system.css">
   <script>
-    if (localStorage.getItem('ks_theme') === 'dark') {
-        document.documentElement.classList.add('dark');
-    }
+    (function () {
+        const t = localStorage.getItem('ks_theme');
+        if (t === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.classList.remove('light');
+        } else if (t === 'light') {
+            document.documentElement.classList.add('light');
+            document.documentElement.classList.remove('dark');
+        }
+    })();
   </script>
   <script src="/static/js/state.js"></script>
   <script src="/static/js/command_palette.js"></script>
@@ -59,8 +66,17 @@
             </button>
             <script>
                 function toggleTheme() {
-                    const isDark = document.documentElement.classList.toggle('dark');
-                    localStorage.setItem('ks_theme', isDark ? 'dark' : 'light');
+                    const root = document.documentElement;
+                    const wasDark = root.classList.contains('dark');
+                    if (wasDark) {
+                        root.classList.remove('dark');
+                        root.classList.add('light');
+                        localStorage.setItem('ks_theme', 'light');
+                    } else {
+                        root.classList.add('dark');
+                        root.classList.remove('light');
+                        localStorage.setItem('ks_theme', 'dark');
+                    }
                     updateThemeIcon();
                 }
                 function updateThemeIcon() {
@@ -169,14 +185,14 @@
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '{{ csrf_token() }}' },
-                body: JSON.stringify({ message: text })
+                body: JSON.stringify({ msg: text })
             });
             const data = await response.json();
             
             // Add AI Message
             const aiDiv = document.createElement('div');
             aiDiv.style.cssText = "background: var(--bg-tertiary); padding: 10px 14px; border-radius: 12px 12px 12px 2px; align-self: flex-start; max-width: 85%; line-height: 1.4;";
-            aiDiv.textContent = data.response || "Entschuldigung, ich konnte die Anfrage nicht verarbeiten.";
+            aiDiv.textContent = data.text || data.response || data.message || "Entschuldigung, ich konnte die Anfrage nicht verarbeiten.";
             container.appendChild(aiDiv);
             container.scrollTop = container.scrollHeight;
         } catch (e) {

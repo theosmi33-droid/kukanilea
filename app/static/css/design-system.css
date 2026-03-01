@@ -16,6 +16,7 @@
   --bg-primary: #ffffff; --bg-secondary: var(--color-gray-50); --bg-tertiary: var(--color-gray-100);
   --text-primary: var(--color-gray-900); --text-secondary: var(--color-gray-600); --text-tertiary: var(--color-gray-400);
   --border-color: var(--color-gray-200); --border-color-hover: var(--color-gray-300);
+  --color-border: var(--border-color);
   
   /* Spacing (8pt Grid) */
   --spacing-1: 0.5rem; --spacing-2: 1rem; --spacing-3: 1.5rem; --spacing-4: 2rem;
@@ -81,10 +82,11 @@
 }
 
  @media (prefers-color-scheme: dark) {
-  :root {
+  html:not(.light) {
     --bg-primary: var(--color-gray-900); --bg-secondary: var(--color-gray-800); --bg-tertiary: var(--color-gray-700);
     --text-primary: var(--color-gray-100); --text-secondary: var(--color-gray-300); --text-tertiary: var(--color-gray-500);
     --border-color: var(--color-gray-700); --border-color-hover: var(--color-gray-600);
+    --color-border: var(--border-color);
   }
 }
 
@@ -92,6 +94,14 @@ html.dark {
     --bg-primary: var(--color-gray-900); --bg-secondary: var(--color-gray-800); --bg-tertiary: var(--color-gray-700);
     --text-primary: var(--color-gray-100); --text-secondary: var(--color-gray-300); --text-tertiary: var(--color-gray-500);
     --border-color: var(--color-gray-700); --border-color-hover: var(--color-gray-600);
+    --color-border: var(--border-color);
+}
+
+html.light {
+    --bg-primary: #ffffff; --bg-secondary: var(--color-gray-50); --bg-tertiary: var(--color-gray-100);
+    --text-primary: var(--color-gray-900); --text-secondary: var(--color-gray-600); --text-tertiary: var(--color-gray-400);
+    --border-color: var(--color-gray-200); --border-color-hover: var(--color-gray-300);
+    --color-border: var(--border-color);
 }
 
 * { box-sizing: border-box; }

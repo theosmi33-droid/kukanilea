@@ -187,6 +187,82 @@ class OllamaProvider(LLMProvider):
             return text.strip()[:400]
 
 
+
+
+class OpenAICompatibleProvider(LLMProvider):
+    def __init__(self, base_url: str, model: str, api_key: str) -> None:
+        super().__init__(name="remote", available=False)
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.api_key = api_key.strip()
+        self.available = self._ping()
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def _ping(self) -> bool:
+        if not self.api_key:
+            return False
+        req = urllib.request.Request(
+            self.base_url + "/models", method="GET", headers=self._headers()
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=2.5):
+                return True
+        except Exception:
+            return False
+
+    def _post_json(
+        self, path: str, payload: Dict[str, Any], timeout: float = 12.0
+    ) -> Dict[str, Any]:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self.base_url + path,
+            method="POST",
+            data=data,
+            headers=self._headers(),
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def complete(self, prompt: str, *, temperature: float = 0.0) -> str:
+        if not self.available:
+            raise RuntimeError("Remote provider not available")
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": float(temperature),
+        }
+        data = self._post_json("/chat/completions", payload)
+        choices = data.get("choices") or []
+        msg = choices[0].get("message", {}) if choices else {}
+        return str(msg.get("content", "")).strip()
+
+    def generate(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, str]],
+        context: Dict[str, Any] | None = None,
+    ) -> str:
+        if not self.available:
+            raise RuntimeError("Remote provider not available")
+        payload_messages = [{"role": "system", "content": system_prompt}] + messages
+        if context:
+            payload_messages.append({"role": "system", "content": json.dumps(context)})
+        payload = {
+            "model": self.model,
+            "messages": payload_messages,
+            "temperature": 0.2,
+        }
+        data = self._post_json("/chat/completions", payload)
+        choices = data.get("choices") or []
+        msg = choices[0].get("message", {}) if choices else {}
+        return str(msg.get("content", "")).strip()
+
+
 def get_default_provider() -> LLMProvider:
     host = _env("OLLAMA_HOST", "http://127.0.0.1:11434")
 
@@ -213,4 +289,22 @@ def get_default_provider() -> LLMProvider:
                 return provider
     except Exception:
         pass
+
+    # Optional internet fallback (explicit opt-in only).
+    remote_enabled = _env("KUKANILEA_REMOTE_LLM_ENABLED", "0").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if remote_enabled:
+        remote_base = _env("KUKANILEA_REMOTE_LLM_BASE", "https://openrouter.ai/api/v1")
+        remote_model = _env("KUKANILEA_REMOTE_LLM_MODEL", "openai/gpt-4o-mini")
+        remote_key = _env("KUKANILEA_REMOTE_LLM_API_KEY", "")
+        try:
+            remote = OpenAICompatibleProvider(remote_base, remote_model, remote_key)
+            if remote.available:
+                return remote
+        except Exception:
+            pass
+
     return MockProvider()
