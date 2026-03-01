@@ -14,15 +14,15 @@ DOMAIN SCOPE
   app/web.py, app/db.py, app/__init__.py, app/core/logic.py
 
 MANDATORY STATE SOURCE (ONLY)
-- Shared DB: /Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db
+- Shared DB: <PATH_TO_DATA_DIR>/agent_orchestra_shared.db
 - Before any change:
-  1) python /Users/gensuminguyen/Kukanilea/kukanilea_production/scripts/shared_memory.py init
-  2) python /Users/gensuminguyen/Kukanilea/kukanilea_production/scripts/shared_memory.py read
+  1) python <PATH_TO_PROJECT>/scripts/shared_memory.py init
+  2) python <PATH_TO_PROJECT>/scripts/shared_memory.py read
   3) Respect active directives. If CORE_FREEZE exists, stop.
 
 MANDATORY WRITEBACK
 After each meaningful action or commit:
-python /Users/gensuminguyen/Kukanilea/kukanilea_production/scripts/shared_memory.py upsert-domain \
+python <PATH_TO_PROJECT>/scripts/shared_memory.py upsert-domain \
   --domain <DOMAIN_NAME> \
   --action "<ACTION_SUMMARY>" \
   --commit <COMMIT_HASH_OR_local_only> \
@@ -32,7 +32,7 @@ python /Users/gensuminguyen/Kukanilea/kukanilea_production/scripts/shared_memory
 
 GITHUB HANDOFF
 If creating PRs or major architecture decisions:
-1) python /Users/gensuminguyen/Kukanilea/kukanilea_production/scripts/shared_memory.py snapshot --output /Users/gensuminguyen/Kukanilea/kukanilea_production/docs/shared_memory_snapshot.json
+1) python <PATH_TO_PROJECT>/scripts/shared_memory.py snapshot --output <PATH_TO_PROJECT>/docs/shared_memory_snapshot.json
 2) Include docs/shared_memory_snapshot.json in branch/PR evidence.
 
 QUALITY GATE

@@ -31,16 +31,6 @@
     "**/playwright-report": true,
     "**/test-results": true
   },
-  "search.exclude": {
-    "**/.pytest_cache": true,
-    "**/.ruff_cache": true,
-    "**/__pycache__": true,
-    "**/output": true,
-    "**/artifacts": true,
-    "**/playwright-report": true,
-    "**/test-results": true
-  },
-
   "git.autofetch": true,
   "git.confirmSync": false,
   "githubPullRequests.pullBranch": "never",
