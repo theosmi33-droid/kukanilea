@@ -1982,6 +1982,8 @@ def _mock_generate(prompt: str) -> str:
 def api_chat():
     payload = request.get_json(silent=True) or {}
     msg = (
+        (payload.get("message") if isinstance(payload, dict) else None)
+        or
         (payload.get("msg") if isinstance(payload, dict) else None)
         or (payload.get("q") if isinstance(payload, dict) else None)
         or request.form.get("msg")
@@ -1993,6 +1995,9 @@ def api_chat():
         return json_error("empty_query", "Leer.", status=400)
 
     response = agent_answer(msg)
+    # Compat: some widgets expect `response`, others `text`.
+    if isinstance(response, dict) and "text" in response and "response" not in response:
+        response["response"] = response.get("text", "")
     if request.headers.get("HX-Request"):
         return f"<div class='text-sm'>{response.get('text', '')}</div>"
     return jsonify(response)
@@ -3508,4 +3513,3 @@ def time_tracking():
     return _render_base(
         render_template_string(HTML_TIME, role=current_role()), active_tab="time"
     )
-
