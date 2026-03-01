@@ -30,6 +30,7 @@ from __future__ import annotations
 from app.core.audit import vault
 
 import base64
+import logging
 import importlib
 import importlib.util
 import json
@@ -83,6 +84,8 @@ from .errors import json_error
 from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
 from .security import csrf_protected
+
+logger = logging.getLogger("kukanilea.web")
 
 weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
 if weather_spec:
@@ -474,7 +477,44 @@ def _render_base(template_name: str, **kwargs) -> str:
     kwargs.setdefault("roles", current_role())
     kwargs.setdefault("tenant", current_tenant() or "-")
     kwargs.setdefault("profile", profile)
+
+    # Some routes provide already-rendered HTML.
+    # If it's a full document, return it unchanged; if it's a fragment, wrap in layout.
+    if isinstance(template_name, str) and "<" in template_name and ">" in template_name:
+        probe = template_name.lstrip().lower()
+        if probe.startswith("<!doctype") or "<html" in probe:
+            return template_name
+        inline_wrapper = "{% extends 'layout.html' %}{% block content %}{{ inline_content|safe }}{% endblock %}"
+        return render_template_string(inline_wrapper, inline_content=template_name, **kwargs)
+
     return render_template(template_name, **kwargs)
+
+
+def _is_hx_partial_request() -> bool:
+    hx_request = (request.headers.get("HX-Request") or "").lower() == "true"
+    hx_history_restore = (
+        request.headers.get("HX-History-Restore-Request") or ""
+    ).lower() == "true"
+    return hx_request and not hx_history_restore
+
+
+def _render_sovereign_tool(
+    tool_key: str, title: str, message: str, active_tab: str = "dashboard"
+) -> str:
+    if _is_hx_partial_request():
+        return render_template(
+            "skeletons/tool_partial.html",
+            tool_key=tool_key,
+            title=title,
+            message=message,
+        )
+    return _render_base(
+        "skeletons/tool_page.html",
+        active_tab=active_tab,
+        tool_key=tool_key,
+        title=title,
+        message=message,
+    )
 
 
 def _get_profile() -> dict:
@@ -2060,13 +2100,15 @@ def api_open():
 @login_required
 @require_role(["DEV", "ADMIN"])
 def mesh():
-    # Fetch real mesh nodes from the database
     auth_db = current_app.extensions["auth_db"]
     from app.core.mesh_network import MeshNetworkManager
+
     manager = MeshNetworkManager(auth_db)
-    nodes = manager.get_peers()
-    
-    # If no real nodes yet, keep some demo nodes but marked as demo
+    try:
+        nodes = manager.get_peers()
+    except Exception:
+        nodes = []
+
     if not nodes:
         nodes = [
             {
@@ -2079,17 +2121,14 @@ def mesh():
             }
         ]
 
-    # Map database fields to UI fields if necessary
     for node in nodes:
         node["id"] = node.get("node_id")
         node["ip"] = node.get("last_ip")
-        node["type"] = node.get("type", "ZimaBlade") # Default for Hubs
+        node["type"] = node.get("type", "ZimaBlade")
         node["sync"] = "100%"
         node["conflicts"] = 0
 
-    return _render_base(
-        render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh"
-    )
+    return _render_base(render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh")
 
 
 HTML_MESH = r"""
@@ -2773,6 +2812,13 @@ Kontext/Stichpunkte:
 @bp.get("/mail")
 @login_required
 def mail_page():
+    if _is_hx_partial_request():
+        return _render_sovereign_tool(
+            "email",
+            "Emailpostfach",
+            "Mail-Modul wird geladen...",
+            active_tab="email",
+        )
     return _render_base(
         render_template_string(HTML_MAIL),
         active_tab="mail",
@@ -2811,6 +2857,13 @@ def settings_branding_save():
 @bp.get("/settings")
 @login_required
 def settings_page():
+    if _is_hx_partial_request():
+        return _render_sovereign_tool(
+            "settings",
+            "Einstellungen",
+            "System-Konfiguration wird geladen...",
+            active_tab="settings",
+        )
     if current_role() not in {"ADMIN", "DEV"}:
         return json_error("forbidden", "Nicht erlaubt.", status=403)
     auth_db: AuthDB = current_app.extensions["auth_db"]
@@ -3016,32 +3069,63 @@ def api_mail_eml():
 
 @bp.route("/")
 def index():
-    items_meta = list_pending() or []
-    items = [x.get("_token") for x in items_meta if x.get("_token")]
-    meta = {}
-    for it in items_meta:
-        t = it.get("_token")
-        if t:
-            meta[t] = {
-                "filename": it.get("filename", ""),
-                "progress": float(it.get("progress", 0.0) or 0.0),
-                "progress_phase": it.get("progress_phase", ""),
-            }
-            
-    # Step 2.6: Weighted Suggestions
-    from app.core.suggestion_engine import SuggestionEngine
-    engine = SuggestionEngine(_get_tenant_db_path())
-    suggestions = engine.get_frequent_labels()
-    keywords = engine.analyze_keywords()
-    
-    return _render_base(
-        "dashboard.html", 
-        active_tab="upload", 
-        items=items, 
-        meta=meta, 
-        recent=[],
-        suggestions=suggestions,
-        keywords=keywords
+    return redirect(url_for("web.dashboard_page"))
+
+
+@bp.get("/dashboard")
+@login_required
+def dashboard_page():
+    return _render_sovereign_tool(
+        "dashboard",
+        "Dashboard",
+        "Dashboard-Widgets werden geladen...",
+        active_tab="dashboard",
+    )
+
+
+@bp.route("/upload", methods=["GET"])
+@login_required
+def upload_page():
+    return _render_sovereign_tool(
+        "upload",
+        "Upload",
+        "Upload-Pipeline wird geladen...",
+        active_tab="upload",
+    )
+
+
+@bp.get("/tasks")
+@login_required
+def tasks_page():
+    return _render_sovereign_tool(
+        "tasks",
+        "Aufgaben",
+        "Aufgaben-Modul wird geladen...",
+        active_tab="tasks",
+    )
+
+
+@bp.get("/email")
+@login_required
+def email_page():
+    if _is_hx_partial_request():
+        return _render_sovereign_tool(
+            "email",
+            "Emailpostfach",
+            "Mail-Modul wird geladen...",
+            active_tab="email",
+        )
+    return mail_page()
+
+
+@bp.get("/calendar")
+@login_required
+def calendar_page():
+    return _render_sovereign_tool(
+        "calendar",
+        "Kalender",
+        "Kalender-Modul wird geladen...",
+        active_tab="calendar",
     )
 
 
@@ -3365,22 +3449,39 @@ def assistant():
 @bp.route("/projects")
 @login_required
 def projects_list():
+    if _is_hx_partial_request():
+        return _render_sovereign_tool(
+            "projects",
+            "Projekte",
+            "Projektboard wird geladen...",
+            active_tab="projects",
+        )
     from app.modules.projects.logic import ProjectManager
+
     pm = ProjectManager(current_app.extensions["auth_db"])
-    
-    # Ensure at least one project exists for demo
     con = current_app.extensions["auth_db"]._db()
-    p = con.execute("SELECT * FROM projects LIMIT 1").fetchone()
-    con.close()
-    
-    if not p:
-        p_id = pm.create_project(current_tenant(), "Standard Projekt", "Willkommen in Ihrer Projektverwaltung.")
-        pm.create_board(p_id, "Hauptboard")
-        return redirect(url_for("web.projects_list"))
-        
-    tasks = pm.list_tasks(con.execute("SELECT id FROM boards WHERE project_id = ? LIMIT 1", (p["id"],)).fetchone()[0])
-    
-    return _render_base("kanban.html", active_tab="tasks", project=p, tasks=tasks)
+    try:
+        project = con.execute("SELECT * FROM projects LIMIT 1").fetchone()
+
+        # Ensure at least one project/board exists for first-run UX
+        if not project:
+            p_id = pm.create_project(
+                current_tenant(),
+                "Standard Projekt",
+                "Willkommen in Ihrer Projektverwaltung.",
+            )
+            pm.create_board(p_id, "Hauptboard")
+            return redirect(url_for("web.projects_list"))
+
+        board = con.execute(
+            "SELECT id FROM boards WHERE project_id = ? LIMIT 1", (project["id"],)
+        ).fetchone()
+        board_id = board["id"] if board else pm.create_board(project["id"], "Hauptboard")
+    finally:
+        con.close()
+
+    tasks = pm.list_tasks(board_id)
+    return _render_base("kanban.html", active_tab="tasks", project=project, tasks=tasks)
 
 
 @bp.post("/api/tasks/<task_id>/move")
@@ -3402,12 +3503,26 @@ def api_task_move(task_id: str):
 @bp.route("/messenger")
 @login_required
 def messenger_page():
+    if _is_hx_partial_request():
+        return _render_sovereign_tool(
+            "messenger",
+            "Messenger",
+            "Messenger wird geladen...",
+            active_tab="messenger",
+        )
     return _render_base("messenger.html", active_tab="messenger")
 
 
 @bp.route("/visualizer")
 @login_required
 def visualizer_page():
+    if _is_hx_partial_request():
+        return _render_sovereign_tool(
+            "visualizer",
+            "Visualizer",
+            "Dokumenten-Visualizer wird geladen...",
+            active_tab="visualizer",
+        )
     return _render_base("visualizer.html", active_tab="visualizer")
 
 
@@ -3428,27 +3543,38 @@ def health():
 def admin_forensics():
     from app.core.audit import vault
     from kukanilea_app import measure_db_speed, measure_cpu_usage, measure_memory_usage
-    
-    trail = vault.get_audit_trail() or []
-    
-    # System performance snapshot (Step 171-185)
+
+    raw_trail = vault.get_audit_trail() or []
+    trail = []
+    for item in raw_trail:
+        d = dict(item or {})
+        trail.append(
+            {
+                "ts": str(d.get("ts") or d.get("created_at") or datetime.utcnow().isoformat()),
+                "username": str(d.get("username") or d.get("user") or "system"),
+                "action": str(d.get("action") or d.get("event") or "EVENT"),
+                "resource": str(d.get("resource") or d.get("doc_id") or d.get("entity_id") or "-"),
+                "details": str(d.get("details") or d.get("doc_id") or "-"),
+                "tenant_id": str(d.get("tenant_id") or current_tenant() or "SYSTEM"),
+            }
+        )
+
     perf = {
         "db_query_speed": measure_db_speed(),
         "cpu_usage": measure_cpu_usage(),
         "memory_info": measure_memory_usage(),
-        "boot_time_ms": 420 # Mock for now
+        "boot_time_ms": 420,
     }
-    
-    # Active Users simulation (Step 22)
-    active_users = ["admin", "user_1"] # In real impl, check session store
-    
+
+    active_users = ["admin", "user_1"]
+
     return _render_base(
         "forensic_dashboard.html",
         active_tab="settings",
         trail=trail,
         perf=perf,
         audit_count=len(trail),
-        active_users=active_users
+        active_users=active_users,
     )
 
 
@@ -3478,7 +3604,19 @@ def admin_logs():
 @login_required
 @require_role(["DEV", "ADMIN"])
 def admin_audit():
-    trail = vault.get_audit_trail()
+    raw_trail = vault.get_audit_trail() or []
+    trail = []
+    for idx, item in enumerate(raw_trail, start=1):
+        d = dict(item or {})
+        trail.append(
+            {
+                "id": d.get("id") or idx,
+                "created_at": str(d.get("created_at") or d.get("ts") or datetime.utcnow().isoformat()),
+                "tenant_id": str(d.get("tenant_id") or current_tenant() or "SYSTEM"),
+                "doc_id": str(d.get("doc_id") or d.get("resource") or "-"),
+                "node_hash": str(d.get("node_hash") or d.get("hash") or d.get("event_hash") or "n/a"),
+            }
+        )
     return _render_base("audit_trail.html", active_tab="settings", trail=trail)
 
 
@@ -3527,6 +3665,13 @@ def admin_audit_verify():
 @bp.route("/time")
 @login_required
 def time_tracking():
+    if _is_hx_partial_request():
+        return _render_sovereign_tool(
+            "time",
+            "Zeiterfassung",
+            "Zeiterfassung wird geladen...",
+            active_tab="time",
+        )
     if not callable(time_entry_list):
         html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
           <div class='text-lg font-semibold'>Time Tracking</div>
