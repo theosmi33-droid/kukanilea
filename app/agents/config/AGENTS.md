@@ -17,7 +17,7 @@ Zuständig für Triage, Tool-Auswahl und Context-Window-Management.
 - W06: Email Processing (IMAP/SMTP)
 - W07: Time Tracking & Controlling
 - W08: Contact Management (CRM)
-- W09: ERP Sync (Lexware/Tophandwerk)
+- W09: ERP Sync (Lexware/KUKANILEA-Legacy)
 - W10: System Maintenance & Backup
 - W11: Summarization & Reporting
 - W12: Code Execution & Analysis
