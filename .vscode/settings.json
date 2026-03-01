@@ -1,0 +1,49 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": [
+    "tests",
+    "-q"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.autoImportCompletions": true,
+
+  "ruff.lint.run": "onType",
+  "ruff.nativeServer": "on",
+
+  "editor.formatOnSave": false,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "explicit"
+  },
+
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  "files.exclude": {
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/__pycache__": true,
+    "**/output": true,
+    "**/artifacts": true,
+    "**/playwright-report": true,
+    "**/test-results": true
+  },
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "githubPullRequests.pullBranch": "never",
+
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "terminal.integrated.env.osx": {
+    "PYTHONUNBUFFERED": "1",
+    "OLLAMA_ENABLED": "1",
+    "KUKANILEA_REMOTE_LLM_ENABLED": "0",
+    "OLLAMA_HOST": "http://127.0.0.1:11434"
+  },
+
+  "workbench.editor.enablePreview": false,
+  "workbench.startupEditor": "none"
+}
