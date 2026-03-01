@@ -1,0 +1,88 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "KUKANILEA: Pytest (all)",
+      "type": "shell",
+      "command": "pytest -q",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Ruff Check",
+      "type": "shell",
+      "command": "ruff check .",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Start App (127.0.0.1:5051)",
+      "type": "shell",
+      "command": "./.venv/bin/python kukanilea_app.py --host 127.0.0.1 --port 5051",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": [
+          {
+            "regexp": ".*"
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "System ready\\.|Serving on",
+          "endsPattern": "Serving on"
+        }
+      }
+    },
+    {
+      "label": "KUKANILEA: GitHub PR Checks (current)",
+      "type": "shell",
+      "command": "gh pr checks --watch",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Shared Memory Init",
+      "type": "shell",
+      "command": "python scripts/shared_memory.py init",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Shared Memory Read",
+      "type": "shell",
+      "command": "python scripts/shared_memory.py read",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Shared Memory Snapshot",
+      "type": "shell",
+      "command": "python scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Stop Ollama",
+      "type": "shell",
+      "command": "pkill -f 'ollama serve' || true",
+      "problemMatcher": []
+    }
+  ]
+}
