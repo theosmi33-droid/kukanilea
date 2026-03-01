@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+SHARED_CORE = {
+    "app/web.py",
+    "app/core/logic.py",
+    "app/__init__.py",
+    "app/db.py",
+}
+
+ALLOWLIST: dict[str, list[str]] = {
+    "dashboard": [
+        "app/templates/dashboard.html",
+        "app/templates/components/system_status.html",
+        "app/core/observer.py",
+        "app/core/auto_evolution.py",
+    ],
+    "upload": [
+        "app/core/upload_pipeline.py",
+        "app/core/ocr_corrector.py",
+        "app/core/rag_sync.py",
+        "app/templates/review.html",
+        "app/templates/dashboard.html",
+    ],
+    "emailpostfach": [
+        "app/mail/",
+        "app/agents/mail.py",
+        "app/plugins/mail.py",
+        "app/templates/messenger.html",
+    ],
+    "messenger": [
+        "app/agents/orchestrator.py",
+        "app/agents/planner.py",
+        "app/agents/memory_store.py",
+        "app/templates/messenger.html",
+    ],
+    "kalender": [
+        "app/knowledge/ics_source.py",
+        "app/knowledge/core.py",
+        "app/templates/generic_tool.html",
+    ],
+    "aufgaben": [
+        "app/modules/projects/logic.py",
+        "app/modules/automation/",
+        "app/templates/kanban.html",
+    ],
+    "zeiterfassung": [
+        "app/templates/generic_tool.html",
+        "app/modules/projects/logic.py",
+    ],
+    "projekte": [
+        "app/modules/projects/",
+        "app/templates/kanban.html",
+    ],
+    "excel-docs-visualizer": [
+        "app/templates/visualizer.html",
+        "app/static/js/",
+    ],
+    "einstellungen": [
+        "app/core/tenant_registry.py",
+        "app/core/mesh_network.py",
+        "app/license.py",
+        "app/routes/admin_tenants.py",
+        "app/templates/settings.html",
+    ],
+    "floating-widget-chatbot": [
+        "app/templates/layout.html",
+        "app/templates/partials/chat_widget.html",
+        "app/static/js/chat_widget.js",
+        "app/static/css/chat_widget.css",
+    ],
+}
+
+
+def _run_git(args: list[str]) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), *args],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def _rel(path: str) -> str:
+    p = Path(path)
+    if p.is_absolute():
+        try:
+            return str(p.resolve().relative_to(REPO_ROOT)).replace("\\", "/")
+        except Exception:
+            return str(p).replace("\\", "/")
+    return str(p).replace("\\", "/").lstrip("./")
+
+
+def _matches_allowlist(rel_path: str, allowlist: list[str]) -> bool:
+    for rule in allowlist:
+        rule = rule.replace("\\", "/")
+        if rule.endswith("/"):
+            if rel_path.startswith(rule):
+                return True
+        elif rel_path == rule:
+            return True
+    return False
+
+
+def _branch_file_set(branch: str, base_branch: str) -> set[str]:
+    base_ref = _run_git(["rev-parse", "--verify", base_branch])
+    if not base_ref:
+        return set()
+    merge_base = _run_git(["merge-base", branch, base_branch])
+    if not merge_base:
+        return set()
+    out = _run_git(["diff", "--name-only", f"{merge_base}..{branch}"])
+    return {line.strip() for line in out.splitlines() if line.strip()}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Detect cross-domain overlaps for tab projects")
+    parser.add_argument("--reiter", required=True, choices=sorted(ALLOWLIST.keys()))
+    parser.add_argument("--files", nargs="+", required=True)
+    parser.add_argument("--base-branch", default="main")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    files = sorted({_rel(f) for f in args.files})
+    allowlist = ALLOWLIST[args.reiter]
+
+    outside_allowlist = [f for f in files if not _matches_allowlist(f, allowlist)]
+    shared_core_touched = sorted([f for f in files if f in SHARED_CORE])
+
+    current_branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]) or ""
+    codex_branches_raw = _run_git(["for-each-ref", "--format=%(refname:short)", "refs/heads/codex/"])
+    codex_branches = [b for b in codex_branches_raw.splitlines() if b and b != current_branch]
+
+    branch_overlaps: dict[str, list[str]] = {}
+    for branch in codex_branches:
+        changed = _branch_file_set(branch, args.base_branch)
+        overlap = sorted([f for f in files if f in changed])
+        if overlap:
+            branch_overlaps[branch] = overlap
+
+    has_overlap = bool(outside_allowlist or shared_core_touched or branch_overlaps)
+
+    result = {
+        "status": "DOMAIN_OVERLAP_DETECTED" if has_overlap else "OK",
+        "reiter": args.reiter,
+        "current_branch": current_branch,
+        "files": files,
+        "outside_allowlist": outside_allowlist,
+        "shared_core_touched": shared_core_touched,
+        "branch_overlaps": branch_overlaps,
+    }
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"status={result['status']}")
+        print(f"reiter={args.reiter}")
+        if outside_allowlist:
+            print("outside_allowlist:")
+            for f in outside_allowlist:
+                print(f"  - {f}")
+        if shared_core_touched:
+            print("shared_core_touched:")
+            for f in shared_core_touched:
+                print(f"  - {f}")
+        if branch_overlaps:
+            print("branch_overlaps:")
+            for b, overlap in sorted(branch_overlaps.items()):
+                print(f"  - {b}")
+                for f in overlap:
+                    print(f"    * {f}")
+
+    return 2 if has_overlap else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
