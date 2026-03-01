@@ -1,0 +1,40 @@
+{
+  "db_path": "/Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db",
+  "global_context": [
+    {
+      "key": "current_phase",
+      "value": "DASHBOARD_TRANSFORMATION",
+      "updated_by": "unknown",
+      "updated_at": "2026-03-01 19:01:17"
+    },
+    {
+      "key": "system_state",
+      "value": "FLEET_COMMANDER_ACTIVE",
+      "updated_by": "unknown",
+      "updated_at": "2026-03-01 19:01:17"
+    }
+  ],
+  "domain_sync": [
+    {
+      "domain": "dashboard",
+      "last_action": "core endpoints added: /api/system/status + /api/outbound/status proxy",
+      "last_commit": "local_only",
+      "status": "COMPLETED",
+      "updated_by": "codex_core",
+      "source": "codex",
+      "updated_at": "2026-03-01T19:03:52Z"
+    }
+  ],
+  "active_directives": [],
+  "recent_events": [
+    {
+      "id": 1,
+      "ts_utc": "2026-03-01T19:03:52Z",
+      "actor": "codex_core",
+      "source": "codex",
+      "domain": "dashboard",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"core endpoints added: /api/system/status + /api/outbound/status proxy\", \"last_commit\": \"local_only\", \"status\": \"COMPLETED\"}"
+    }
+  ]
+}
