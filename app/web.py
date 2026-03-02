@@ -40,7 +40,7 @@ import secrets
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from app.core.indexing_logic import IndividualIntelligence
 from app.core.malware_scanner import scan_file_stream
@@ -2014,6 +2014,109 @@ def _mock_generate(prompt: str) -> str:
     return f"[mocked] {prompt.strip()[:200]}"
 
 
+_WIDGET_READONLY_ACTIONS = {
+    "search_docs",
+    "open_token",
+    "show_customer",
+    "summarize_doc",
+    "list_tasks",
+    "memory_search",
+}
+
+
+def _widget_now_iso() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _widget_sanitize_context(raw: str) -> str:
+    value = (raw or "").strip()[:120]
+    if not value:
+        return "/"
+    value = re.sub(r"[^a-zA-Z0-9_/:. -]+", "", value)
+    return value or "/"
+
+
+def _widget_sanitize_message(raw: str) -> str:
+    value = (raw or "").replace("\x00", "").strip()
+    return value[:1200]
+
+
+def _widget_model_choice(*, weak_hw: bool, offline: bool) -> Tuple[str, bool]:
+    safe_mode = bool(weak_hw or offline)
+    try:
+        load = os.getloadavg()[0]
+        cores = max(1, int(os.cpu_count() or 1))
+        if (load / float(cores)) >= 0.85:
+            safe_mode = True
+    except Exception:
+        pass
+    return ("local-small" if safe_mode else "local-default"), safe_mode
+
+
+def _widget_add_chat_history(
+    *,
+    direction: str,
+    message: str,
+    tenant_id: str,
+    username: str,
+    role: str,
+) -> None:
+    auth_db = current_app.extensions.get("auth_db")
+    if not auth_db or not message:
+        return
+    try:
+        auth_db.add_chat_message(
+            ts=_widget_now_iso(),
+            tenant_id=tenant_id,
+            username=username,
+            role=role,
+            direction=direction,
+            message=message[:2000],
+        )
+    except Exception:
+        pass
+
+
+def _widget_compact_response(
+    *,
+    text: str,
+    model: str,
+    context_tag: str,
+    latency_ms: int,
+    suggestions: List[str] | None = None,
+    actions: List[Dict[str, Any]] | None = None,
+    thinking_steps: List[str] | None = None,
+    requires_confirm: bool = False,
+    pending_id: str = "",
+    confirm_prompt: str = "",
+    status: str = "Bereit",
+    ok: bool = True,
+) -> Dict[str, Any]:
+    return {
+        "ok": ok,
+        "text": text,
+        "response": text,
+        "model": model,
+        "current_context": context_tag,
+        "status": status,
+        "latency_ms": int(latency_ms),
+        "suggestions": suggestions or [],
+        "actions": actions or [],
+        "thinking_steps": thinking_steps or [],
+        "requires_confirm": bool(requires_confirm),
+        "pending_id": pending_id,
+        "confirm_prompt": confirm_prompt,
+    }
+
+
+def _widget_requires_confirm(actions: List[Dict[str, Any]]) -> bool:
+    for action in actions:
+        action_type = str(action.get("type", "")).strip().lower()
+        if action_type and action_type not in _WIDGET_READONLY_ACTIONS:
+            return True
+    return False
+
+
 @bp.route("/api/chat", methods=["POST"])
 @login_required
 @csrf_protected
@@ -2040,6 +2143,186 @@ def api_chat():
     if request.headers.get("HX-Request"):
         return f"<div class='text-sm'>{response.get('text', '')}</div>"
     return jsonify(response)
+
+
+@bp.route("/api/chat/compact", methods=["GET", "POST"])
+@login_required
+@csrf_protected
+@chat_limiter.limit_required
+def api_chat_compact():
+    tenant_id = str(current_tenant() or "default")
+    username = str(current_user() or "dev")
+    role = str(current_role() or "USER")
+
+    if request.method == "GET":
+        if request.args.get("history") != "1":
+            return jsonify({"ok": True, "messages": []})
+        limit = max(1, min(int(request.args.get("limit") or 30), 80))
+        auth_db = current_app.extensions.get("auth_db")
+        if not auth_db:
+            return jsonify({"ok": True, "messages": []})
+        rows = auth_db.list_chat_messages(tenant_id=tenant_id, limit=limit * 3)
+        rows = [r for r in rows if str(r.get("username", "")) == username][:limit]
+        rows = list(reversed(rows))
+        messages = [
+            {
+                "ts": str(r.get("ts", "")),
+                "direction": str(r.get("direction", "")),
+                "message": str(r.get("message", "")),
+            }
+            for r in rows
+        ]
+        return jsonify({"ok": True, "messages": messages})
+
+    started = time.perf_counter()
+    payload = request.get_json(silent=True) or {}
+
+    current_context = _widget_sanitize_context(str(payload.get("current_context") or ""))
+    weak_hw = bool(payload.get("weak_hw"))
+    offline = bool(payload.get("offline"))
+    model_name, safe_mode = _widget_model_choice(weak_hw=weak_hw, offline=offline)
+
+    if bool(payload.get("confirm")):
+        pending_id = str(payload.get("pending_id") or "").strip()
+        pending = session.get("widget_pending_action") or {}
+        if not pending_id or pending_id != str(pending.get("id", "")):
+            return jsonify(
+                _widget_compact_response(
+                    text="Keine ausstehende Aktion zur Bestätigung gefunden.",
+                    model=model_name,
+                    context_tag=current_context,
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                    thinking_steps=["Bestätigung geprüft", "Keine Aktion gefunden"],
+                    status="Bestätigung fehlgeschlagen",
+                    ok=False,
+                )
+            ), 400
+
+        actions = list(pending.get("actions") or [])
+        labels = [str(a.get("label") or a.get("type") or "Aktion") for a in actions]
+        executed = [{"type": a.get("type"), "label": a.get("label"), "status": "approved"} for a in actions]
+        session.pop("widget_pending_action", None)
+        session.modified = True
+
+        text = "Bestätigt. Freigegebene Aktionen: " + ", ".join(labels[:6])
+        _widget_add_chat_history(
+            direction="out",
+            message=text,
+            tenant_id=tenant_id,
+            username=username,
+            role=role,
+        )
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        response = _widget_compact_response(
+            text=text,
+            model=model_name,
+            context_tag=current_context,
+            latency_ms=latency_ms,
+            actions=executed,
+            thinking_steps=["Plan erstellt", "Aktionen bestätigt", "Ausführung freigegeben"],
+            status="Aktionen bestätigt",
+            ok=True,
+        )
+        response["executed_actions"] = executed
+        return jsonify(response)
+
+    user_msg = _widget_sanitize_message(
+        str(payload.get("message") or payload.get("msg") or payload.get("q") or "")
+    )
+    if not user_msg:
+        return jsonify(
+            _widget_compact_response(
+                text="Bitte gib eine Nachricht ein.",
+                model=model_name,
+                context_tag=current_context,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                thinking_steps=["Eingabe geprüft"],
+                status="Leer",
+                ok=False,
+            )
+        ), 400
+
+    # Prompt injection defense: user input stays separate, context is passed via metadata.
+    agent_context = AgentContext(
+        tenant_id=tenant_id,
+        user=username,
+        role=role,
+        meta={
+            "safe_mode": safe_mode,
+            "widget_channel": "compact",
+            "current_context": current_context,
+            "skill_system": "OpenClaw/PicoClaw",
+        },
+    )
+    result = ORCHESTRATOR.handle(user_msg, agent_context)
+    actions_raw: List[Dict[str, Any]] = list(result.actions or [])
+    requires_confirm = _widget_requires_confirm(actions_raw)
+
+    mapped_actions: List[Dict[str, Any]] = []
+    for idx, action in enumerate(actions_raw):
+        action_type = str(action.get("type") or "").strip()
+        mapped_actions.append(
+            {
+                "id": f"a{idx + 1}",
+                "type": action_type,
+                "label": str(action.get("label") or action_type or "Aktion"),
+                "requires_confirm": action_type.lower() not in _WIDGET_READONLY_ACTIONS,
+            }
+        )
+
+    pending_id = ""
+    confirm_prompt = ""
+    if requires_confirm and mapped_actions:
+        pending_id = secrets.token_urlsafe(12)
+        session["widget_pending_action"] = {
+            "id": pending_id,
+            "actions": mapped_actions,
+            "current_context": current_context,
+            "created_at": _widget_now_iso(),
+        }
+        session.modified = True
+        confirm_prompt = "Für diese Anfrage sind bestätigungspflichtige Aktionen geplant."
+
+    _widget_add_chat_history(
+        direction="in",
+        message=f"[{current_context}] {user_msg}",
+        tenant_id=tenant_id,
+        username=username,
+        role=role,
+    )
+    _widget_add_chat_history(
+        direction="out",
+        message=result.text or "OK",
+        tenant_id=tenant_id,
+        username=username,
+        role=role,
+    )
+
+    steps = ["Plan erstellt"]
+    if mapped_actions:
+        steps.append("Proposed Actions erstellt")
+    if requires_confirm:
+        steps.append("Warte auf Bestätigung")
+    else:
+        steps.append("Antwort bereit")
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    return jsonify(
+        _widget_compact_response(
+            text=result.text or "OK",
+            model=model_name,
+            context_tag=current_context,
+            latency_ms=latency_ms,
+            suggestions=list(result.suggestions or [])[:6],
+            actions=mapped_actions,
+            thinking_steps=steps,
+            requires_confirm=requires_confirm,
+            pending_id=pending_id,
+            confirm_prompt=confirm_prompt,
+            status="Bestätigung erforderlich" if requires_confirm else "Bereit",
+            ok=bool(result.ok),
+        )
+    )
 
 
 @bp.post("/api/search")
