@@ -12,6 +12,7 @@ from .db import AuthDB
 from .errors import json_error
 from .license import load_runtime_license_state
 from .log_utils import init_request_logging
+from .migrations.ensure_agent_memory import ensure_agent_memory_tables
 from .observability import init_observability
 
 
@@ -48,6 +49,8 @@ def create_app() -> Flask:
     auth_db = AuthDB(app.config["AUTH_DB"])
     try:
         auth_db.init()
+        # Ensure shared AI queue/memory tables exist before background services start.
+        ensure_agent_memory_tables(str(app.config["AUTH_DB"]))
     except Exception as e:
         manager.report_error(f"AuthDB Init Failed: {e}")
         raise
@@ -166,6 +169,12 @@ def create_app() -> Flask:
     app.register_blueprint(system_logs.bp)
     app.register_blueprint(admin_tenants.bp)
     app.register_blueprint(automation.bp)
+    try:
+        from .services.metrics_exporter import bp as metrics_bp
+
+        app.register_blueprint(metrics_bp, url_prefix="")
+    except Exception as e:
+        app.logger.warning("Metrics blueprint not registered: %s", e)
     
     with app.app_context():
         automation.init_automation_schema()
