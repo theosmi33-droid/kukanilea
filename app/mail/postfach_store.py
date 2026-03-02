@@ -8,10 +8,14 @@ import re
 import sqlite3
 import uuid
 from datetime import UTC, datetime
+from email import policy
+from email.parser import BytesParser
+from email.utils import getaddresses
 from pathlib import Path
 from typing import Any
 
 from app import core as core
+from app.config import Config
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 from app.knowledge import knowledge_redact_text
@@ -110,6 +114,42 @@ def _ensure_column(con: sqlite3.Connection, table: str, column_def: str) -> None
         return
     sql = "ALTER TABLE %s ADD COLUMN %s" % (table, column_def)
     con.execute(sql)
+
+
+def _table_exists(con: sqlite3.Connection, table_name: str) -> bool:
+    row = con.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type='table' AND name=?
+        LIMIT 1
+        """,
+        (table_name,),
+    ).fetchone()
+    return bool(row)
+
+
+def _normalize_email_candidates(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        lowered = str(value or "").strip().lower()
+        if not lowered or "@" not in lowered:
+            continue
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        out.append(lowered)
+    return out
+
+
+def _safe_attachment_filename(name: str, *, fallback: str) -> str:
+    raw = str(name or "").strip().replace("\x00", "")
+    base = Path(raw).name
+    clean = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
+    if not clean:
+        return fallback
+    return clean[:180]
 
 
 def _migrate_legacy_account_secrets(con: sqlite3.Connection) -> int:
@@ -1048,6 +1088,255 @@ def store_message(
     }
 
 
+def store_message_attachment(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    message_id: str,
+    filename: str,
+    mime_type: str,
+    size_bytes: int,
+    content_ref: dict[str, Any] | None = None,
+) -> str:
+    ensure_postfach_schema(db_path)
+    attachment_id = uuid.uuid4().hex
+    now = _now_iso()
+    con = _db(db_path)
+    try:
+        con.execute(
+            """
+            INSERT INTO mailbox_attachments(
+              id, tenant_id, message_id, filename_redacted, mime_type, size_bytes, content_ref, created_at
+            ) VALUES (?,?,?,?,?,?,?,?)
+            """,
+            (
+                attachment_id,
+                tenant_id,
+                message_id,
+                knowledge_redact_text(str(filename or ""), max_len=220),
+                str(mime_type or "application/octet-stream").strip().lower()[:120],
+                max(0, int(size_bytes or 0)),
+                json.dumps(content_ref or {}, ensure_ascii=False, sort_keys=True),
+                now,
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+    return attachment_id
+
+
+def ingest_message_attachments(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    account_id: str,
+    message_id: str,
+    attachments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    ensure_postfach_schema(db_path)
+    base_dir = (
+        Config.USER_DATA_ROOT
+        / "mail_attachments"
+        / str(tenant_id or "default")
+        / str(account_id or "unknown")
+        / str(message_id or "unknown")
+    )
+    quarantine_dir = Config.USER_DATA_ROOT / "mail_quarantine"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    quarantine_dir.mkdir(parents=True, exist_ok=True)
+
+    processed = 0
+    accepted = 0
+    rejected = 0
+    quarantined = 0
+    errors = 0
+    attachment_ids: list[str] = []
+
+    for idx, attachment in enumerate(attachments, start=1):
+        filename = _safe_attachment_filename(
+            str(attachment.get("filename") or ""),
+            fallback=f"attachment_{idx:03d}.bin",
+        )
+        mime_type = str(attachment.get("mime_type") or "application/octet-stream")
+        payload = bytes(attachment.get("content_bytes") or b"")
+        size_bytes = int(attachment.get("size_bytes") or len(payload))
+        if not payload and size_bytes <= 0:
+            continue
+        processed += 1
+
+        target = base_dir / f"{idx:03d}_{filename}"
+        ref: dict[str, Any] = {
+            "status": "pending",
+            "filename": filename,
+            "mime_type": mime_type,
+            "size_bytes": size_bytes,
+        }
+
+        try:
+            target.write_bytes(payload)
+            from app.core.malware_scanner import scan_file_stream
+            from app.core.upload_pipeline import process_upload
+
+            if not scan_file_stream(target):
+                quarantine_target = (
+                    quarantine_dir
+                    / f"{str(message_id)}_{idx:03d}_{uuid.uuid4().hex[:8]}_{filename}"
+                )
+                try:
+                    target.replace(quarantine_target)
+                    ref["storage_path"] = str(quarantine_target)
+                except Exception:
+                    ref["storage_path"] = str(target)
+                ref["status"] = "quarantined"
+                ref["reason"] = "malware_detected"
+                quarantined += 1
+                rejected += 1
+            else:
+                is_safe, info = process_upload(target, str(tenant_id or "default"))
+                if is_safe:
+                    ref["status"] = "accepted"
+                    ref["sha256"] = str(info or "")
+                    ref["storage_path"] = str(target)
+                    accepted += 1
+                else:
+                    ref["status"] = "rejected"
+                    ref["reason"] = str(info or "upload_pipeline_rejected")
+                    ref["storage_path"] = str(target)
+                    rejected += 1
+        except Exception as exc:
+            ref["status"] = "error"
+            ref["reason"] = f"attachment_processing_failed:{exc.__class__.__name__}"
+            ref["storage_path"] = str(target)
+            errors += 1
+
+        attachment_id = store_message_attachment(
+            db_path,
+            tenant_id=tenant_id,
+            message_id=message_id,
+            filename=filename,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            content_ref=ref,
+        )
+        attachment_ids.append(attachment_id)
+
+    return {
+        "ok": True,
+        "processed": processed,
+        "accepted": accepted,
+        "rejected": rejected,
+        "quarantined": quarantined,
+        "errors": errors,
+        "attachment_ids": attachment_ids,
+    }
+
+
+def _find_customer_ids_by_emails(
+    con: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    emails: list[str],
+) -> set[str]:
+    matched: set[str] = set()
+    if not emails:
+        return matched
+
+    placeholders = ",".join("?" for _ in emails)
+    customer_cols = _table_columns(con, "customers")
+    if _table_exists(con, "customers") and "id" in customer_cols and "tenant_id" in customer_cols:
+        for column_name in ("email", "contact_email", "email_address", "mail"):
+            if column_name not in customer_cols:
+                continue
+            rows = con.execute(
+                f"""
+                SELECT id
+                FROM customers
+                WHERE tenant_id=?
+                  AND LOWER(TRIM(COALESCE({column_name}, ''))) IN ({placeholders})
+                """,
+                [tenant_id] + emails,
+            ).fetchall()
+            for row in rows:
+                value = str(row["id"] or "").strip()
+                if value:
+                    matched.add(value)
+
+    leads_cols = _table_columns(con, "leads")
+    if _table_exists(con, "leads") and {
+        "tenant_id",
+        "contact_email",
+        "customer_id",
+    }.issubset(leads_cols):
+        rows = con.execute(
+            f"""
+            SELECT DISTINCT customer_id
+            FROM leads
+            WHERE tenant_id=?
+              AND customer_id IS NOT NULL
+              AND TRIM(customer_id) != ''
+              AND LOWER(TRIM(COALESCE(contact_email, ''))) IN ({placeholders})
+            """,
+            [tenant_id] + emails,
+        ).fetchall()
+        for row in rows:
+            value = str(row["customer_id"] or "").strip()
+            if value:
+                matched.add(value)
+    return matched
+
+
+def link_thread_customers_by_email(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    emails: list[str],
+) -> dict[str, Any]:
+    ensure_postfach_schema(db_path)
+    normalized = _normalize_email_candidates(emails)
+    if not normalized:
+        return {"ok": True, "linked": 0, "customer_ids": []}
+
+    now = _now_iso()
+    linked = 0
+    customer_ids: list[str] = []
+    con = _db(db_path)
+    try:
+        resolved_ids = sorted(
+            _find_customer_ids_by_emails(con, tenant_id=tenant_id, emails=normalized)
+        )
+        for customer_id in resolved_ids:
+            cur = con.execute(
+                """
+                INSERT OR IGNORE INTO mailbox_links(
+                  id, tenant_id, thread_id, entity_type, entity_id, created_at
+                ) VALUES (?,?,?,?,?,?)
+                """,
+                (uuid.uuid4().hex, tenant_id, thread_id, "customer", customer_id, now),
+            )
+            if int(cur.rowcount or 0) > 0:
+                linked += 1
+        con.commit()
+        customer_ids = resolved_ids
+    finally:
+        con.close()
+
+    if linked > 0:
+        _event(
+            event_type="mailbox_thread_linked",
+            entity_type="mailbox_thread",
+            entity_text_id=thread_id,
+            tenant_id=tenant_id,
+            payload={
+                "thread_id": thread_id,
+                "links_created": int(linked),
+                "entity_type": "customer",
+            },
+        )
+    return {"ok": True, "linked": int(linked), "customer_ids": customer_ids}
+
+
 def list_threads(
     db_path: Path,
     *,
@@ -1100,6 +1389,65 @@ def list_threads(
         con.close()
 
 
+def search_messages(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    account_id: str | None = None,
+    query: str,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    ensure_postfach_schema(db_path)
+    q = str(query or "").strip()
+    if not q:
+        return []
+    pattern = f"%{q}%"
+    lim = max(1, min(int(limit or 100), 500))
+    con = _db(db_path)
+    try:
+        if account_id:
+            rows = con.execute(
+                """
+                SELECT m.id, m.tenant_id, m.account_id, m.thread_id, m.direction, m.message_id_header,
+                       m.from_redacted, m.to_redacted, m.subject_redacted, m.redacted_text,
+                       m.has_attachments, m.received_at, m.created_at
+                FROM mailbox_messages m
+                WHERE m.tenant_id=? AND m.account_id=?
+                  AND (
+                    m.subject_redacted LIKE ?
+                    OR m.from_redacted LIKE ?
+                    OR m.to_redacted LIKE ?
+                    OR m.redacted_text LIKE ?
+                  )
+                ORDER BY COALESCE(m.received_at, m.created_at) DESC, m.id DESC
+                LIMIT ?
+                """,
+                (tenant_id, account_id, pattern, pattern, pattern, pattern, lim),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                """
+                SELECT m.id, m.tenant_id, m.account_id, m.thread_id, m.direction, m.message_id_header,
+                       m.from_redacted, m.to_redacted, m.subject_redacted, m.redacted_text,
+                       m.has_attachments, m.received_at, m.created_at
+                FROM mailbox_messages m
+                WHERE m.tenant_id=?
+                  AND (
+                    m.subject_redacted LIKE ?
+                    OR m.from_redacted LIKE ?
+                    OR m.to_redacted LIKE ?
+                    OR m.redacted_text LIKE ?
+                  )
+                ORDER BY COALESCE(m.received_at, m.created_at) DESC, m.id DESC
+                LIMIT ?
+                """,
+                (tenant_id, pattern, pattern, pattern, pattern, lim),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        con.close()
+
+
 def get_thread(
     db_path: Path, *, tenant_id: str, thread_id: str
 ) -> dict[str, Any] | None:
@@ -1118,7 +1466,7 @@ def get_thread(
         if not thread_row:
             return None
 
-        messages = con.execute(
+        message_rows = con.execute(
             """
             SELECT id, direction, message_id_header, in_reply_to, references_header,
                    from_redacted, to_redacted, subject_redacted, redacted_text,
@@ -1129,6 +1477,35 @@ def get_thread(
             """,
             (tenant_id, thread_id),
         ).fetchall()
+        messages = [dict(r) for r in message_rows]
+        attachments_by_message: dict[str, list[dict[str, Any]]] = {}
+        if messages:
+            message_ids = [str(m.get("id") or "") for m in messages if m.get("id")]
+            placeholders = ",".join("?" for _ in message_ids)
+            params: list[str] = [tenant_id] + message_ids
+            rows = con.execute(
+                f"""
+                SELECT id, message_id, filename_redacted, mime_type, size_bytes, content_ref, created_at
+                FROM mailbox_attachments
+                WHERE tenant_id=? AND message_id IN ({placeholders})
+                ORDER BY created_at ASC, id ASC
+                """,
+                params,
+            ).fetchall()
+            for row in rows:
+                item = dict(row)
+                raw_ref = str(item.get("content_ref") or "").strip()
+                if raw_ref:
+                    try:
+                        item["content_ref_json"] = json.loads(raw_ref)
+                    except Exception:
+                        item["content_ref_json"] = None
+                else:
+                    item["content_ref_json"] = None
+                mid = str(item.get("message_id") or "")
+                attachments_by_message.setdefault(mid, []).append(item)
+            for msg in messages:
+                msg["attachments"] = attachments_by_message.get(str(msg.get("id")), [])
 
         links = con.execute(
             """
@@ -1142,7 +1519,7 @@ def get_thread(
 
         return {
             "thread": dict(thread_row),
-            "messages": [dict(r) for r in messages],
+            "messages": messages,
             "links": [dict(r) for r in links],
         }
     finally:
@@ -1300,6 +1677,342 @@ def list_drafts_for_thread(
         return [dict(r) for r in rows]
     finally:
         con.close()
+
+
+def _first_email_from_header(value: str) -> str:
+    parsed = getaddresses([str(value or "")])
+    for _name, addr in parsed:
+        lowered = str(addr or "").strip().lower()
+        if lowered and "@" in lowered:
+            return lowered
+    return ""
+
+
+def _parse_reply_target_from_raw(raw_eml_blob: str) -> tuple[str, str]:
+    blob = str(raw_eml_blob or "").strip()
+    if not blob:
+        return "", ""
+    try:
+        msg = BytesParser(policy=policy.default).parsebytes(decrypt_bytes(blob))
+    except Exception:
+        return "", ""
+
+    reply_to = _first_email_from_header(str(msg.get("reply-to") or ""))
+    sender = _first_email_from_header(str(msg.get("from") or ""))
+    recipient = _first_email_from_header(str(msg.get("to") or ""))
+    subject = str(msg.get("subject") or "").strip()
+    target = reply_to or sender or recipient
+    return target, subject
+
+
+def generate_local_reply_draft(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    account_id: str | None = None,
+    instruction: str = "",
+) -> dict[str, Any]:
+    ensure_postfach_schema(db_path)
+    con = _db(db_path)
+    try:
+        thread = con.execute(
+            """
+            SELECT id, account_id, subject_redacted
+            FROM mailbox_threads
+            WHERE tenant_id=? AND id=?
+            LIMIT 1
+            """,
+            (tenant_id, thread_id),
+        ).fetchone()
+        if not thread:
+            return {"ok": False, "reason": "thread_not_found"}
+
+        resolved_account = str(account_id or thread["account_id"] or "").strip()
+        if not resolved_account:
+            return {"ok": False, "reason": "account_not_found"}
+
+        msg_row = con.execute(
+            """
+            SELECT raw_eml_blob, subject_redacted, redacted_text
+            FROM mailbox_messages
+            WHERE tenant_id=? AND thread_id=?
+            ORDER BY CASE WHEN direction='inbound' THEN 0 ELSE 1 END, created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (tenant_id, thread_id),
+        ).fetchone()
+        if not msg_row:
+            return {"ok": False, "reason": "thread_empty"}
+    finally:
+        con.close()
+
+    reply_to, subject_plain = _parse_reply_target_from_raw(
+        str(msg_row["raw_eml_blob"] or "")
+    )
+    if not reply_to:
+        return {"ok": False, "reason": "recipient_unavailable"}
+
+    subject_seed = str(subject_plain or msg_row["subject_redacted"] or "").strip()
+    if not subject_seed:
+        subject_seed = str(thread["subject_redacted"] or "").strip() or "Antwort"
+    lower_subject = subject_seed.lower()
+    if not lower_subject.startswith("re:"):
+        subject_seed = f"Re: {subject_seed}"
+
+    snippet = str(msg_row["redacted_text"] or "").strip()
+    if len(snippet) > 320:
+        snippet = snippet[:320].rstrip() + "..."
+
+    body_parts = [
+        "Hallo,",
+        "",
+        "danke fuer Ihre Nachricht.",
+    ]
+    if snippet:
+        body_parts.extend(["", f"Bezug: {snippet}"])
+    if instruction.strip():
+        body_parts.extend(["", f"Bearbeitungshinweis: {instruction.strip()}"])
+    body_parts.extend(
+        [
+            "",
+            "Ich melde mich mit der finalen Rueckmeldung schnellstmoeglich.",
+            "",
+            "Viele Gruesse",
+        ]
+    )
+    body_text = "\n".join(body_parts).strip()
+
+    draft_id = create_draft(
+        db_path,
+        tenant_id=tenant_id,
+        account_id=resolved_account,
+        thread_id=thread_id,
+        to_value=reply_to,
+        subject_value=subject_seed,
+        body_value=body_text,
+    )
+    return {
+        "ok": True,
+        "reason": "ok",
+        "draft_id": draft_id,
+        "thread_id": thread_id,
+        "account_id": resolved_account,
+        "recipient": reply_to,
+    }
+
+
+def generate_local_ai_reply_draft(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    account_id: str | None = None,
+    instruction: str = "",
+) -> dict[str, Any]:
+    base = generate_local_reply_draft(
+        db_path,
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        account_id=account_id,
+        instruction=instruction,
+    )
+    if not bool(base.get("ok")):
+        return base
+
+    draft_id = str(base.get("draft_id") or "")
+    if not draft_id:
+        return {"ok": False, "reason": "draft_creation_failed"}
+
+    draft = get_draft(db_path, tenant_id=tenant_id, draft_id=draft_id, include_plain=True)
+    if not draft:
+        return {"ok": False, "reason": "draft_not_found"}
+
+    thread = get_thread(db_path, tenant_id=tenant_id, thread_id=thread_id) or {}
+    messages = thread.get("messages", [])
+    facts = {
+        "thread_id": thread_id,
+        "message_count": str(len(messages)),
+        "instruction": instruction.strip(),
+    }
+
+    try:
+        from app.plugins.mail import MailAgent, MailInput, MailOptions
+
+        agent = MailAgent()
+        result = agent.generate(
+            MailInput(
+                context="Antwort auf eingegangene E-Mail im lokalen Postfach",
+                facts=facts,
+                attachments=[],
+                draft=str(draft.get("body_plain") or ""),
+                recipient_name="",
+                recipient_company="",
+            ),
+            MailOptions(
+                tone="neutral",
+                length="normal",
+                legal_level="light",
+                goal="nachbesserung",
+                recipient_type="kunde",
+                rewrite_mode="local",
+            ),
+        )
+        suggested_subject = str(result.get("subject") or "").strip() or str(draft.get("subject_plain") or "")
+        suggested_body = str(result.get("body") or "").strip() or str(draft.get("body_plain") or "")
+    except Exception:
+        return {"ok": True, "reason": "fallback_local_template", "draft_id": draft_id}
+
+    final_draft_id = create_draft(
+        db_path,
+        tenant_id=tenant_id,
+        account_id=str(draft.get("account_id") or ""),
+        thread_id=thread_id,
+        to_value=str(draft.get("to_plain") or ""),
+        subject_value=suggested_subject,
+        body_value=suggested_body,
+    )
+    return {
+        "ok": True,
+        "reason": "ok",
+        "draft_id": final_draft_id,
+        "source_draft_id": draft_id,
+        "thread_id": thread_id,
+    }
+
+
+def create_calendar_followup_from_thread(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    owner: str,
+    created_by: str,
+) -> dict[str, Any]:
+    data = get_thread(db_path, tenant_id=tenant_id, thread_id=thread_id)
+    if not data:
+        return {"ok": False, "reason": "thread_not_found"}
+
+    messages = data.get("messages", [])
+    merged = "\n".join(str(m.get("redacted_text") or "") for m in messages)
+    date_matches = re.findall(r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b", merged)
+    time_matches = re.findall(r"\b\d{1,2}:\d{2}\b", merged)
+    due_hint = date_matches[0] if date_matches else ""
+    time_hint = time_matches[0] if time_matches else ""
+    subject = str((data.get("thread") or {}).get("subject_redacted") or "Mail Termin")
+
+    task_id = int(
+        core.task_create(
+            tenant=tenant_id,
+            severity="INFO",
+            task_type="CALENDAR_EVENT",
+            title=f"Termin aus Mail: {subject[:80]}",
+            details=(
+                f"Thread: {thread_id}\n"
+                f"Owner: {(owner or '').strip() or 'unassigned'}\n"
+                f"DateHint: {due_hint}\n"
+                f"TimeHint: {time_hint}"
+            ),
+            token=f"postfach:calendar:{thread_id}",
+            meta={
+                "source": "postfach",
+                "thread_id": thread_id,
+                "owner": (owner or "").strip(),
+                "date_hint": due_hint,
+                "time_hint": time_hint,
+            },
+            created_by=created_by,
+        )
+    )
+
+    _event(
+        event_type="mailbox_calendar_followup_created",
+        entity_type="mailbox_thread",
+        entity_text_id=thread_id,
+        tenant_id=tenant_id,
+        payload={"thread_id": thread_id, "task_id": task_id},
+    )
+    return {
+        "ok": True,
+        "reason": "ok",
+        "task_id": task_id,
+        "date_hint": due_hint,
+        "time_hint": time_hint,
+    }
+
+
+def export_thread_pdf_and_archive(
+    db_path: Path,
+    *,
+    tenant_id: str,
+    thread_id: str,
+) -> dict[str, Any]:
+    data = get_thread(db_path, tenant_id=tenant_id, thread_id=thread_id)
+    if not data:
+        return {"ok": False, "reason": "thread_not_found"}
+
+    thread = data.get("thread") or {}
+    messages = data.get("messages") or []
+    subject = str(thread.get("subject_redacted") or "mail_thread")
+    safe_subject = re.sub(r"[^A-Za-z0-9._-]+", "_", subject).strip("._")[:80] or "mail_thread"
+    export_dir = Config.USER_DATA_ROOT / "mail_exports" / str(tenant_id or "default")
+    export_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = export_dir / f"{safe_subject}_{str(thread_id)[:8]}.pdf"
+
+    body_lines: list[str] = [f"Thread: {thread_id}", f"Subject: {subject}", ""]
+    for m in messages:
+        body_lines.extend(
+            [
+                f"From: {m.get('from_redacted') or ''}",
+                f"To: {m.get('to_redacted') or ''}",
+                f"Received: {m.get('received_at') or m.get('created_at') or ''}",
+                f"Message: {m.get('redacted_text') or ''}",
+                "",
+            ]
+        )
+    body_text = "\n".join(body_lines).strip()
+
+    try:
+        import fitz  # type: ignore
+
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        rect = fitz.Rect(36, 36, 559, 806)
+        page.insert_textbox(rect, body_text, fontsize=10, fontname="helv")
+        doc.save(str(pdf_path))
+        doc.close()
+    except Exception:
+        return {"ok": False, "reason": "pdf_backend_unavailable"}
+
+    try:
+        from app.core.malware_scanner import scan_file_stream
+        from app.core.upload_pipeline import process_upload
+    except Exception:
+        return {"ok": False, "reason": "upload_pipeline_unavailable"}
+
+    if not scan_file_stream(pdf_path):
+        return {"ok": False, "reason": "malware_detected"}
+    ok, info = process_upload(pdf_path, str(tenant_id or "default"))
+    if not ok:
+        return {"ok": False, "reason": str(info or "upload_pipeline_rejected")}
+
+    _event(
+        event_type="mailbox_thread_pdf_exported",
+        entity_type="mailbox_thread",
+        entity_text_id=thread_id,
+        tenant_id=tenant_id,
+        payload={
+            "thread_id": thread_id,
+            "pdf_path": str(pdf_path),
+            "file_hash": str(info or ""),
+        },
+    )
+    return {
+        "ok": True,
+        "reason": "ok",
+        "pdf_path": str(pdf_path),
+        "file_hash": str(info or ""),
+    }
 
 
 def link_entities(

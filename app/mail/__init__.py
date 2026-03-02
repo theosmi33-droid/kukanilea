@@ -26,19 +26,37 @@ from .postfach_store import (
     clear_oauth_token as postfach_clear_oauth_token,
 )
 from .postfach_store import create_account as postfach_create_account
+from .postfach_store import (
+    create_calendar_followup_from_thread as postfach_create_calendar_followup_from_thread,
+)
 from .postfach_store import create_draft as postfach_create_draft
 from .postfach_store import (
     create_followup_task as postfach_create_followup_task,
 )
 from .postfach_store import email_encryption_ready as postfach_email_encryption_ready
 from .postfach_store import ensure_postfach_schema
+from .postfach_store import (
+    export_thread_pdf_and_archive as postfach_export_thread_pdf_and_archive,
+)
 from .postfach_store import extract_intake as postfach_extract_intake
 from .postfach_store import extract_structured as postfach_extract_structured
+from .postfach_store import (
+    generate_local_ai_reply_draft as postfach_generate_local_ai_reply_draft,
+)
+from .postfach_store import (
+    generate_local_reply_draft as postfach_generate_local_reply_draft,
+)
 from .postfach_store import get_account as postfach_get_account
 from .postfach_store import get_draft as postfach_get_draft
 from .postfach_store import get_oauth_token as postfach_get_oauth_token
 from .postfach_store import get_thread as postfach_get_thread
+from .postfach_store import (
+    ingest_message_attachments as postfach_ingest_message_attachments,
+)
 from .postfach_store import link_entities as postfach_link_entities
+from .postfach_store import (
+    link_thread_customers_by_email as postfach_link_thread_customers_by_email,
+)
 from .postfach_store import list_accounts as postfach_list_accounts
 from .postfach_store import (
     list_drafts_for_thread as postfach_list_drafts_for_thread,
@@ -47,12 +65,16 @@ from .postfach_store import list_threads as postfach_list_threads
 from .postfach_store import oauth_token_expired as postfach_oauth_token_expired
 from .postfach_store import safety_check_draft as postfach_safety_check_draft
 from .postfach_store import save_oauth_token as postfach_save_oauth_token
+from .postfach_store import search_messages as postfach_search_messages
 from .postfach_store import (
     set_account_oauth_state as postfach_set_account_oauth_state,
 )
 from .postfach_store import (
     update_account_sync_report as postfach_update_account_sync_report,
 )
+from .sync_engine import MailSyncEngine as postfach_mail_sync_engine
+from .sync_engine import run_background_loop as postfach_run_background_loop
+from .sync_engine import sync_all_accounts as postfach_sync_all_accounts
 
 __all__ = [
     "ensure_mail_schema",
@@ -77,8 +99,13 @@ __all__ = [
     "postfach_link_entities",
     "postfach_extract_structured",
     "postfach_extract_intake",
+    "postfach_create_calendar_followup_from_thread",
     "postfach_create_followup_task",
+    "postfach_export_thread_pdf_and_archive",
+    "postfach_generate_local_ai_reply_draft",
+    "postfach_generate_local_reply_draft",
     "postfach_list_drafts_for_thread",
+    "postfach_search_messages",
     "postfach_generate_oauth_state",
     "postfach_generate_pkce_pair",
     "postfach_oauth_provider_config",
@@ -94,4 +121,9 @@ __all__ = [
     "postfach_email_encryption_ready",
     "postfach_update_account_sync_report",
     "postfach_safety_check_draft",
+    "postfach_ingest_message_attachments",
+    "postfach_link_thread_customers_by_email",
+    "postfach_sync_all_accounts",
+    "postfach_run_background_loop",
+    "postfach_mail_sync_engine",
 ]
