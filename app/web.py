@@ -2106,7 +2106,8 @@ def mesh():
     manager = MeshNetworkManager(auth_db)
     try:
         nodes = manager.get_peers()
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to get mesh peers: {e}")
         nodes = []
 
     if not nodes:
@@ -3075,11 +3076,43 @@ def index():
 @bp.get("/dashboard")
 @login_required
 def dashboard_page():
-    return _render_sovereign_tool(
-        "dashboard",
-        "Dashboard",
-        "Dashboard-Widgets werden geladen...",
+    if _is_hx_partial_request():
+        return _render_sovereign_tool(
+            "dashboard",
+            "Dashboard",
+            "Dashboard-Widgets werden geladen...",
+            active_tab="dashboard",
+        )
+    # Get items for dashboard.html
+    auth_db = current_app.extensions["auth_db"]
+    con = auth_db._db()
+    tenant = _norm_tenant(current_tenant() or "default")
+    items = []
+    if (PENDING_DIR / tenant).exists():
+        items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
+    
+    meta = {}
+    for token in items:
+        m_path = PENDING_DIR / tenant / token / "meta.json"
+        if m_path.exists():
+            with open(m_path, "r") as f:
+                meta[token] = json.load(f)
+        else:
+            meta[token] = {"filename": "Unbekannt", "status": "PENDING"}
+
+    # Get recent from core
+    recent = []
+    if callable(_core_get("get_recent_docs")):
+        recent = _core_get("get_recent_docs")(tenant, limit=6)
+
+    return _render_base(
+        "dashboard.html",
         active_tab="dashboard",
+        items=items,
+        meta=meta,
+        recent=recent,
+        suggestions={"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
+        keywords=["Maler", "Sanitär", "Elektro"]
     )
 
 
@@ -3566,7 +3599,7 @@ def admin_forensics():
         "boot_time_ms": 420,
     }
 
-    active_users = ["admin", "user_1"]
+    active_users = ["admin", "user_1"]  # TODO: Implement dynamic active user tracking from session store
 
     return _render_base(
         "forensic_dashboard.html",
