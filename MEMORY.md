@@ -198,3 +198,113 @@
 - **Dominante Schlagworte:** 
 - **Top Kunden:** 
 - **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 14:35:26] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 15:28:25] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 15:29:07] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 20:45:57] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 20:46:36] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 21:04:58] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 21:06:19] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 21:07:05] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 22:48:03] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 22:58:16] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:02:18] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:04:15] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:09:18] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:09:33] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:13:26] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:29:17] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:30:46] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:37:35] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:37:45] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:41:18] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-01 23:41:50] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.
+
+### [2026-03-02 10:36:00] Intelligence Sync (Tenant: KUKANILEA)
+- **Dominante Schlagworte:** 
+- **Top Kunden:** 
+- **Dokumenten-Volumen:** 0 Belege archiviert.

@@ -8,6 +8,36 @@
       "updated_at": "2026-03-01 19:01:17"
     },
     {
+      "key": "domain_priority_order",
+      "value": "dashboard>upload>emailpostfach>messenger>kalender>aufgaben>zeiterfassung>projekte>excel-docs-visualizer>einstellungen>floating-widget-chatbot",
+      "updated_by": "fleet_commander",
+      "updated_at": "2026-03-02T08:16:23Z"
+    },
+    {
+      "key": "product_manifest",
+      "value": "ACTIVE: /docs/PRODUCT_DOMAINS_OVERVIEW.md",
+      "updated_by": "gemini_cli",
+      "updated_at": "2026-03-01T20:52:10Z"
+    },
+    {
+      "key": "sovereign_11_mode",
+      "value": "ACTIVE",
+      "updated_by": "fleet_commander",
+      "updated_at": "2026-03-02T08:15:57Z"
+    },
+    {
+      "key": "ssot_doc",
+      "value": "/Users/gensuminguyen/Kukanilea/kukanilea_production/docs/ANWEISUNG_KI_SYNC_FLEET11.md",
+      "updated_by": "fleet_commander",
+      "updated_at": "2026-03-02T08:16:24Z"
+    },
+    {
+      "key": "sync_protocol",
+      "value": "sessions+locks+domain_sync",
+      "updated_by": "fleet_commander",
+      "updated_at": "2026-03-02T08:15:57Z"
+    },
+    {
       "key": "system_state",
       "value": "FLEET_COMMANDER_ACTIVE",
       "updated_by": "unknown",
@@ -16,17 +46,360 @@
   ],
   "domain_sync": [
     {
-      "domain": "dashboard",
-      "last_action": "core endpoints added: /api/system/status + /api/outbound/status proxy",
-      "last_commit": "local_only",
-      "status": "COMPLETED",
-      "updated_by": "codex_core",
+      "domain": "upload",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
       "source": "codex",
-      "updated_at": "2026-03-01T19:03:52Z"
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "emailpostfach",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
+      "source": "codex",
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "messenger",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
+      "source": "codex",
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "aufgaben",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
+      "source": "codex",
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "zeiterfassung",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
+      "source": "codex",
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "projekte",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
+      "source": "codex",
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "excel-docs-visualizer",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
+      "source": "codex",
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "einstellungen",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
+      "source": "codex",
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "floating-widget-chatbot",
+      "last_action": "seeded_by_fleet",
+      "last_commit": "none",
+      "status": "PENDING",
+      "updated_by": "fleet_commander",
+      "source": "codex",
+      "updated_at": "2026-03-02T08:15:27Z"
+    },
+    {
+      "domain": "kalender",
+      "last_action": "ics_source erweitert: OCR->Termine, manuelle Events CRUD, Recurrence, Reminder-Abfrage, gefilterter ICS-Feed; Rest (Routes/UI/docs) durch Scope geblockt",
+      "last_commit": "local_only",
+      "status": "BLOCKED",
+      "updated_by": "codex",
+      "source": "codex",
+      "updated_at": "2026-03-01T21:20:51Z"
+    },
+    {
+      "domain": "dashboard",
+      "last_action": "HTMX UI Refactor + ObserverAgent visualization completed",
+      "last_commit": "93e11bd",
+      "status": "COMPLETED",
+      "updated_by": "gemini_cli",
+      "source": "gemini",
+      "updated_at": "2026-03-01T19:12:32Z"
     }
   ],
-  "active_directives": [],
+  "active_directives": [
+    {
+      "id": 2,
+      "directive": "ALIGN_ALL_ACTIONS_TO: /docs/PRODUCT_DOMAINS_OVERVIEW.md",
+      "active": 1,
+      "created_by": "gemini_cli",
+      "created_at": "2026-03-01T20:52:11Z",
+      "deactivated_at": null
+    },
+    {
+      "id": 1,
+      "directive": "USE_CENTRAL_INTERPRETER: /Users/gensuminguyen/Kukanilea/kukanilea_production/.venv/bin/python",
+      "active": 1,
+      "created_by": "gemini_cli",
+      "created_at": "2026-03-01T19:24:20Z",
+      "deactivated_at": null
+    }
+  ],
+  "active_locks": [],
+  "active_sessions": [],
   "recent_events": [
+    {
+      "id": 27,
+      "ts_utc": "2026-03-02T08:16:24Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"ssot_doc\", \"value\": \"/Users/gensuminguyen/Kukanilea/kukanilea_production/docs/ANWEISUNG_KI_SYNC_FLEET11.md\"}"
+    },
+    {
+      "id": 26,
+      "ts_utc": "2026-03-02T08:16:23Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"domain_priority_order\", \"value\": \"dashboard>upload>emailpostfach>messenger>kalender>aufgaben>zeiterfassung>projekte>excel-docs-visualizer>einstellungen>floating-widget-chatbot\"}"
+    },
+    {
+      "id": 25,
+      "ts_utc": "2026-03-02T08:15:57Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"sync_protocol\", \"value\": \"sessions+locks+domain_sync\"}"
+    },
+    {
+      "id": 24,
+      "ts_utc": "2026-03-02T08:15:57Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"sovereign_11_mode\", \"value\": \"ACTIVE\"}"
+    },
+    {
+      "id": 23,
+      "ts_utc": "2026-03-02T08:15:47Z",
+      "actor": "codex_dashboard",
+      "source": "codex",
+      "domain": "dashboard",
+      "event_type": "session_end",
+      "payload_json": "{\"note\": \"sync test done\", \"session_id\": \"codex:codex_dashboard:dashboard:753624f6\", \"status\": \"COMPLETED\"}"
+    },
+    {
+      "id": 22,
+      "ts_utc": "2026-03-02T08:15:46Z",
+      "actor": "codex_dashboard",
+      "source": "codex",
+      "domain": "dashboard",
+      "event_type": "domain_unlock",
+      "payload_json": "{\"session_id\": \"codex:codex_dashboard:dashboard:753624f6\"}"
+    },
+    {
+      "id": 21,
+      "ts_utc": "2026-03-02T08:15:38Z",
+      "actor": "codex_dashboard",
+      "source": "codex",
+      "domain": "dashboard",
+      "event_type": "session_heartbeat",
+      "payload_json": "{\"note\": \"heartbeat test\", \"session_id\": \"codex:codex_dashboard:dashboard:753624f6\", \"status\": \"ACTIVE\"}"
+    },
+    {
+      "id": 20,
+      "ts_utc": "2026-03-02T08:15:38Z",
+      "actor": "codex_dashboard",
+      "source": "codex",
+      "domain": "dashboard",
+      "event_type": "domain_lock",
+      "payload_json": "{\"expires_at\": \"2026-03-02T08:45:38Z\", \"minutes\": 30, \"reason\": \"sync test\", \"session_id\": \"codex:codex_dashboard:dashboard:753624f6\"}"
+    },
+    {
+      "id": 19,
+      "ts_utc": "2026-03-02T08:15:33Z",
+      "actor": "codex_dashboard",
+      "source": "codex",
+      "domain": "dashboard",
+      "event_type": "session_start",
+      "payload_json": "{\"branch\": \"codex/dashboard\", \"note\": \"sync test\", \"session_id\": \"codex:codex_dashboard:dashboard:753624f6\", \"worktree\": \"/Users/gensuminguyen/Kukanilea/worktrees/dashboard\"}"
+    },
+    {
+      "id": 18,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "floating-widget-chatbot",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 17,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "einstellungen",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 16,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "excel-docs-visualizer",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 15,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "projekte",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 14,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "zeiterfassung",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 13,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "aufgaben",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 12,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "messenger",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 11,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "emailpostfach",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 10,
+      "ts_utc": "2026-03-02T08:15:27Z",
+      "actor": "fleet_commander",
+      "source": "codex",
+      "domain": "upload",
+      "event_type": "domain_seed",
+      "payload_json": "{\"status\": \"PENDING\"}"
+    },
+    {
+      "id": 9,
+      "ts_utc": "2026-03-01T21:20:51Z",
+      "actor": "codex",
+      "source": "codex",
+      "domain": "kalender",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"ics_source erweitert: OCR->Termine, manuelle Events CRUD, Recurrence, Reminder-Abfrage, gefilterter ICS-Feed; Rest (Routes/UI/docs) durch Scope geblockt\", \"last_commit\": \"local_only\", \"status\": \"BLOCKED\"}"
+    },
+    {
+      "id": 8,
+      "ts_utc": "2026-03-01T21:20:00Z",
+      "actor": "codex",
+      "source": "codex",
+      "domain": "kalender",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"Kalender-Core erweitert in ics_source; verbleibende UI/Route/Docs erfordern Scope-Freigabe fuer app/web.py, neue calendar route files und docs\", \"last_commit\": \"local_only\", \"status\": \"BLOCKED\"}"
+    },
+    {
+      "id": 7,
+      "ts_utc": "2026-03-01T21:19:17Z",
+      "actor": "codex",
+      "source": "codex",
+      "domain": "kalender",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"Kalender-Core in ics_source erweitert (manual events, recurrence, reminders, filtered ICS feed)\", \"last_commit\": \"local_only\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 6,
+      "ts_utc": "2026-03-01T21:16:27Z",
+      "actor": "codex",
+      "source": "codex",
+      "domain": "kalender",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"Scope/SSOT gelesen, erlaubte Pfade werden ermittelt\", \"last_commit\": \"local_only\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 5,
+      "ts_utc": "2026-03-01T20:52:11Z",
+      "actor": "gemini_cli",
+      "source": "gemini",
+      "domain": "global",
+      "event_type": "directive_add",
+      "payload_json": "{\"directive\": \"ALIGN_ALL_ACTIONS_TO: /docs/PRODUCT_DOMAINS_OVERVIEW.md\", \"id\": 2}"
+    },
+    {
+      "id": 4,
+      "ts_utc": "2026-03-01T20:52:10Z",
+      "actor": "gemini_cli",
+      "source": "gemini",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"product_manifest\", \"value\": \"ACTIVE: /docs/PRODUCT_DOMAINS_OVERVIEW.md\"}"
+    },
+    {
+      "id": 3,
+      "ts_utc": "2026-03-01T19:24:20Z",
+      "actor": "gemini_cli",
+      "source": "gemini",
+      "domain": "global",
+      "event_type": "directive_add",
+      "payload_json": "{\"directive\": \"USE_CENTRAL_INTERPRETER: /Users/gensuminguyen/Kukanilea/kukanilea_production/.venv/bin/python\", \"id\": 1}"
+    },
+    {
+      "id": 2,
+      "ts_utc": "2026-03-01T19:12:32Z",
+      "actor": "gemini_cli",
+      "source": "gemini",
+      "domain": "dashboard",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"HTMX UI Refactor + ObserverAgent visualization completed\", \"last_commit\": \"93e11bd\", \"status\": \"COMPLETED\"}"
+    },
     {
       "id": 1,
       "ts_utc": "2026-03-01T19:03:52Z",

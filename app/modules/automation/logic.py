@@ -5,11 +5,12 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime, timedelta
+from threading import RLock
 from typing import Any
 
 from flask import current_app, has_app_context
 
-from app import core as legacy_core
+from app.core import logic as legacy_core
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 
@@ -39,13 +40,16 @@ LEAD_STATUS = {"new", "contacted", "qualified", "lost", "won", "screening", "ign
 LEAD_PRIORITY = {"normal", "high"}
 
 _JSON_AVAILABLE: bool | None = None
+_SCHEMA_READY = False
+_LOCAL_DB_LOCK = RLock()
 
 
 def _tenant(tenant_id: str) -> str:
-    t = legacy_core._effective_tenant(tenant_id) or legacy_core._effective_tenant(  # type: ignore[attr-defined]
-        legacy_core.TENANT_DEFAULT
-    )
-    return t or "default"
+    effective_tenant = getattr(legacy_core, "_effective_tenant", None)
+    if callable(effective_tenant):
+        t = effective_tenant(tenant_id) or effective_tenant(getattr(legacy_core, "TENANT_DEFAULT", "default"))
+        return t or "default"
+    return str(tenant_id or getattr(legacy_core, "TENANT_DEFAULT", "default") or "default")
 
 
 def _now_iso() -> str:
@@ -67,8 +71,125 @@ def _db() -> sqlite3.Connection:
     return legacy_core._db()  # type: ignore[attr-defined]
 
 
+def _db_lock():
+    return getattr(legacy_core, "_DB_LOCK", _LOCAL_DB_LOCK)
+
+
+def _ensure_automation_schema(con: sqlite3.Connection) -> None:
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_rules(
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          name TEXT NOT NULL DEFAULT '',
+          scope TEXT NOT NULL DEFAULT '',
+          condition_kind TEXT NOT NULL DEFAULT '',
+          condition_json TEXT NOT NULL DEFAULT '{}',
+          action_list_json TEXT NOT NULL DEFAULT '[]',
+          created_by TEXT NOT NULL DEFAULT 'system',
+          created_at TEXT NOT NULL DEFAULT '',
+          updated_at TEXT NOT NULL DEFAULT '',
+          last_error TEXT,
+          last_error_at TEXT
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_runs(
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          triggered_by TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          finished_at TEXT,
+          status TEXT NOT NULL,
+          max_actions INTEGER NOT NULL,
+          actions_executed INTEGER NOT NULL DEFAULT 0,
+          aborted_reason TEXT,
+          warnings_json TEXT NOT NULL DEFAULT '[]'
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_run_actions(
+          tenant_id TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          rule_id TEXT NOT NULL,
+          action_hash TEXT NOT NULL,
+          target_type TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'queued',
+          error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(tenant_id, run_id, rule_id, action_hash)
+        );
+        """
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_rules_tenant_enabled ON automation_rules(tenant_id, enabled, updated_at)"
+    )
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_runs_tenant_started ON automation_runs(tenant_id, started_at)"
+    )
+
+    cols = {
+        str(r["name"])
+        for r in con.execute("PRAGMA table_info(automation_rules)").fetchall()
+    }
+    missing = {
+        "enabled": "INTEGER NOT NULL DEFAULT 1",
+        "name": "TEXT NOT NULL DEFAULT ''",
+        "scope": "TEXT NOT NULL DEFAULT ''",
+        "condition_kind": "TEXT NOT NULL DEFAULT ''",
+        "condition_json": "TEXT NOT NULL DEFAULT '{}'",
+        "action_list_json": "TEXT NOT NULL DEFAULT '[]'",
+        "created_by": "TEXT NOT NULL DEFAULT 'system'",
+        "created_at": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
+        "last_error": "TEXT",
+        "last_error_at": "TEXT",
+    }
+    for col, ddl in missing.items():
+        if col not in cols:
+            con.execute(f"ALTER TABLE automation_rules ADD COLUMN {col} {ddl}")
+
+
+def _bootstrap_automation_schema() -> None:
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    with _db_lock():
+        con = _db()
+        try:
+            _ensure_automation_schema(con)
+            con.commit()
+            _SCHEMA_READY = True
+        finally:
+            con.close()
+
+
 def _run_write_txn(fn):
-    return legacy_core._run_write_txn(fn)  # type: ignore[attr-defined]
+    _bootstrap_automation_schema()
+    txn = getattr(legacy_core, "_run_write_txn", None)
+    if callable(txn):
+        return txn(fn)
+
+    # Fallback transaction runner for core builds without _run_write_txn export.
+    with _db_lock():
+        con = _db()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            result = fn(con)
+            con.commit()
+            return result
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
 
 
 def _json_dumps_canonical(obj: Any) -> str:
@@ -87,7 +208,7 @@ def _json_functions_available() -> bool:
     global _JSON_AVAILABLE
     if _JSON_AVAILABLE is not None:
         return _JSON_AVAILABLE
-    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+    with _db_lock():
         con = _db()
         try:
             try:
@@ -104,7 +225,7 @@ def _validate_json_fastpath(value: str) -> None:
     _json_loads_strict(value, max_len=max(CONDITION_MAX_LEN, ACTIONS_MAX_LEN))
     if not _json_functions_available():
         return
-    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+    with _db_lock():
         con = _db()
         try:
             row = con.execute("SELECT json_valid(?) AS ok", (value,)).fetchone()
@@ -489,6 +610,7 @@ def automation_rule_create(
     action_list_json: str,
     created_by: str,
 ) -> str:
+    _bootstrap_automation_schema()
     _ensure_writable()
     t = _tenant(tenant_id)
     n = (name or "").strip()
@@ -558,8 +680,9 @@ def automation_rule_create(
 
 
 def automation_rule_list(tenant_id: str) -> list[dict[str, Any]]:
+    _bootstrap_automation_schema()
     t = _tenant(tenant_id)
-    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+    with _db_lock():
         con = _db()
         try:
             rows = con.execute(
@@ -579,8 +702,9 @@ def automation_rule_list(tenant_id: str) -> list[dict[str, Any]]:
 
 
 def automation_rule_get(tenant_id: str, rule_id: str) -> dict[str, Any] | None:
+    _bootstrap_automation_schema()
     t = _tenant(tenant_id)
-    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+    with _db_lock():
         con = _db()
         try:
             row = con.execute(
@@ -602,6 +726,7 @@ def automation_rule_get(tenant_id: str, rule_id: str) -> dict[str, Any] | None:
 def automation_rule_toggle(
     tenant_id: str, rule_id: str, enabled: bool, actor_user_id: str
 ) -> None:
+    _bootstrap_automation_schema()
     _ensure_writable()
     t = _tenant(tenant_id)
 
@@ -712,8 +837,9 @@ def _run_update(
 
 
 def automation_latest_run(tenant_id: str) -> dict[str, Any] | None:
+    _bootstrap_automation_schema()
     t = _tenant(tenant_id)
-    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+    with _db_lock():
         con = _db()
         try:
             row = con.execute(
@@ -737,6 +863,7 @@ def automation_run_now(
     triggered_by_user_id: str,
     max_actions: int = MAX_ACTIONS_DEFAULT,
 ) -> str:
+    _bootstrap_automation_schema()
     _ensure_writable()
     t = _tenant(tenant_id)
     max_actions = max(1, min(int(max_actions), 500))
@@ -747,7 +874,7 @@ def automation_run_now(
     status = "ok"
     aborted_reason: str | None = None
 
-    with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+    with _db_lock():
         con = _db()
         try:
             rules = con.execute(
@@ -778,7 +905,7 @@ def automation_run_now(
             _mark_rule_invalid(t, rule_id, "invalid_json_or_dsl")
             continue
 
-        with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
+        with _db_lock():
             con = _db()
             try:
                 targets = _select_rule_targets(

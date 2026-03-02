@@ -113,7 +113,22 @@ def compare(expected: dict[str, Any], actual: dict[str, Any], branch: str) -> li
     return drifts
 
 
-def render_issue_body(repo: str, baseline_path: Path, drifts: list[Drift]) -> str:
+def is_protection_scope_error(message: str) -> bool:
+    normalized = message.lower()
+    if "branches/" not in normalized or "/protection" not in normalized:
+        return False
+    return (
+        " 403 " in normalized
+        and "resource not accessible by integration" in normalized
+    ) or (" 401 " in normalized)
+
+
+def render_issue_body(
+    repo: str,
+    baseline_path: Path,
+    drifts: list[Drift],
+    skipped_branches: list[str] | None = None,
+) -> str:
     ts = datetime.now(timezone.utc).isoformat()
     lines = [
         "## Branch Protection Drift Detected",
@@ -130,6 +145,16 @@ def render_issue_body(repo: str, baseline_path: Path, drifts: list[Drift]) -> st
     for drift in drifts:
         lines.append(
             f"| `{drift.branch}` | `{drift.field}` | `{json.dumps(drift.expected)}` | `{json.dumps(drift.actual)}` |"
+        )
+
+    if skipped_branches:
+        lines.extend(
+            [
+                "",
+                "### Skipped Branches (insufficient token scope)",
+                "",
+                ", ".join(f"`{b}`" for b in skipped_branches),
+            ]
         )
 
     lines.extend(
@@ -174,7 +199,10 @@ def load_baseline(path: Path) -> dict[str, Any]:
 
 def main() -> int:
     repo = os.getenv("GITHUB_REPOSITORY", "theosmi33-droid/kukanilea")
-    token = os.getenv("GITHUB_TOKEN")
+    policy_token = os.getenv("POLICY_AUDIT_TOKEN", "").strip()
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    token = policy_token or github_token
+    token_source = "POLICY_AUDIT_TOKEN" if policy_token else "GITHUB_TOKEN"
     baseline_path = Path(
         os.getenv(
             "POLICY_BASELINE_PATH",
@@ -183,7 +211,7 @@ def main() -> int:
     )
 
     if not token:
-        print("GITHUB_TOKEN is required", file=sys.stderr)
+        print("POLICY_AUDIT_TOKEN or GITHUB_TOKEN is required", file=sys.stderr)
         return 1
     if not baseline_path.exists():
         print(f"Baseline file missing: {baseline_path}", file=sys.stderr)
@@ -193,21 +221,38 @@ def main() -> int:
     api = GitHubAPI(token=token, repo=repo)
 
     drifts: list[Drift] = []
+    skipped_branches: list[str] = []
     for branch, expected in branches.items():
         try:
             actual_raw = api.get_branch_protection(branch)
         except RuntimeError as exc:
-            drifts.append(Drift(branch, "protection_api", "available", str(exc)))
+            message = str(exc)
+            if is_protection_scope_error(message):
+                skipped_branches.append(branch)
+                print(
+                    "::warning::Branch protection check skipped for "
+                    f"'{branch}' due to token scope on {token_source}. "
+                    "Configure secret POLICY_AUDIT_TOKEN with repo admin scope."
+                )
+                continue
+
+            drifts.append(Drift(branch, "protection_api", "available", message))
             continue
 
         actual = normalize_protection(actual_raw)
         drifts.extend(compare(expected, actual, branch))
 
+    if skipped_branches:
+        print(
+            "Skipped branch protection audit for: "
+            + ", ".join(skipped_branches)
+        )
+
     if not drifts:
         print("No policy drift detected")
         return 0
 
-    issue_body = render_issue_body(repo, baseline_path, drifts)
+    issue_body = render_issue_body(repo, baseline_path, drifts, skipped_branches)
     upsert_drift_issue(api, issue_body)
     print(f"Policy drift found: {len(drifts)} differences")
     return 2

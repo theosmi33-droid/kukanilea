@@ -46,9 +46,12 @@
     </div>
 </div>
 
-<script src="/static/vendor/sortable.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    if (typeof Sortable === "undefined") {
+        console.warn("SortableJS not available; drag & drop disabled.");
+        return;
+    }
     const columns = document.querySelectorAll('.kanban-column');
     columns.forEach(col => {
         new Sortable(col, {

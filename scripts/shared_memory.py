@@ -4,8 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -75,14 +76,52 @@ class SharedMemory:
                 )
                 '''
             )
+            con.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS agent_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    actor TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    domain TEXT NOT NULL,
+                    branch TEXT,
+                    worktree TEXT,
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    note TEXT,
+                    started_at TEXT NOT NULL,
+                    heartbeat_at TEXT NOT NULL,
+                    ended_at TEXT
+                )
+                '''
+            )
+            con.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS domain_locks (
+                    domain TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    reason TEXT,
+                    locked_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+                '''
+            )
+
             con.execute('CREATE INDEX IF NOT EXISTS idx_sync_events_domain_ts ON sync_events(domain, ts_utc DESC)')
             con.execute('CREATE INDEX IF NOT EXISTS idx_shared_directives_active ON shared_directives(active, created_at DESC)')
+            con.execute('CREATE INDEX IF NOT EXISTS idx_agent_sessions_domain_status ON agent_sessions(domain, status, heartbeat_at DESC)')
+            con.execute('CREATE INDEX IF NOT EXISTS idx_domain_locks_expires ON domain_locks(expires_at)')
 
             self._ensure_column(con, 'global_context', 'updated_by', "TEXT DEFAULT 'unknown'")
             self._ensure_column(con, 'domain_sync', 'updated_by', "TEXT DEFAULT 'unknown'")
             self._ensure_column(con, 'domain_sync', 'source', "TEXT DEFAULT 'unknown'")
             self._ensure_column(con, 'shared_directives', 'created_by', "TEXT DEFAULT 'unknown'")
             self._ensure_column(con, 'shared_directives', 'deactivated_at', 'TEXT')
+            self._ensure_column(con, 'agent_sessions', 'note', 'TEXT')
+            self._ensure_column(con, 'agent_sessions', 'ended_at', 'TEXT')
+            self._ensure_column(con, 'domain_locks', 'reason', 'TEXT')
+
+            self._purge_expired_locks(con)
 
             now = _utc_iso()
             con.execute(
@@ -98,6 +137,10 @@ class SharedMemory:
         cols = {r['name'] for r in con.execute(f'PRAGMA table_info({table})').fetchall()}
         if column not in cols:
             con.execute(f'ALTER TABLE {table} ADD COLUMN {column} {ddl}')
+
+    def _purge_expired_locks(self, con: sqlite3.Connection) -> None:
+        now = _utc_iso()
+        con.execute('DELETE FROM domain_locks WHERE expires_at <= ?', (now,))
 
     def set_context(self, key: str, value: str, actor: str, source: str) -> None:
         now = _utc_iso()
@@ -132,11 +175,192 @@ class SharedMemory:
                 ''',
                 (domain, action, commit, status, actor, source, now),
             )
-            self._event(con, actor, source, domain, 'domain_sync', {
-                'last_action': action,
-                'last_commit': commit,
-                'status': status,
-            })
+            self._event(
+                con,
+                actor,
+                source,
+                domain,
+                'domain_sync',
+                {
+                    'last_action': action,
+                    'last_commit': commit,
+                    'status': status,
+                },
+            )
+
+    def seed_domains(self, domains: list[str], actor: str, source: str, status: str = 'PENDING') -> int:
+        now = _utc_iso()
+        inserted = 0
+        with self.connect() as con:
+            for domain in domains:
+                cur = con.execute(
+                    '''
+                    INSERT OR IGNORE INTO domain_sync(domain, last_action, last_commit, status, updated_by, source, updated_at)
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    ''',
+                    (domain, 'seeded_by_fleet', 'none', status, actor, source, now),
+                )
+                if cur.rowcount:
+                    inserted += 1
+                    self._event(
+                        con,
+                        actor,
+                        source,
+                        domain,
+                        'domain_seed',
+                        {'status': status},
+                    )
+        return inserted
+
+    def start_session(
+        self,
+        actor: str,
+        source: str,
+        domain: str,
+        branch: str,
+        worktree: str,
+        note: str,
+        session_id: str | None = None,
+    ) -> str:
+        now = _utc_iso()
+        sid = session_id or f'{source}:{actor}:{domain}:{uuid.uuid4().hex[:8]}'
+        with self.connect() as con:
+            con.execute(
+                '''
+                INSERT INTO agent_sessions(session_id, actor, source, domain, branch, worktree, status, note, started_at, heartbeat_at, ended_at)
+                VALUES(?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, NULL)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    actor=excluded.actor,
+                    source=excluded.source,
+                    domain=excluded.domain,
+                    branch=excluded.branch,
+                    worktree=excluded.worktree,
+                    status='ACTIVE',
+                    note=excluded.note,
+                    heartbeat_at=excluded.heartbeat_at,
+                    ended_at=NULL
+                ''',
+                (sid, actor, source, domain, branch, worktree, note, now, now),
+            )
+            self._event(
+                con,
+                actor,
+                source,
+                domain,
+                'session_start',
+                {'session_id': sid, 'branch': branch, 'worktree': worktree, 'note': note},
+            )
+        return sid
+
+    def heartbeat(self, session_id: str, actor: str, source: str, status: str, note: str) -> bool:
+        now = _utc_iso()
+        with self.connect() as con:
+            cur = con.execute(
+                '''
+                UPDATE agent_sessions
+                SET heartbeat_at=?, status=?, note=?
+                WHERE session_id=? AND ended_at IS NULL
+                ''',
+                (now, status, note, session_id),
+            )
+            if cur.rowcount == 0:
+                return False
+            row = con.execute('SELECT domain FROM agent_sessions WHERE session_id=?', (session_id,)).fetchone()
+            domain = row['domain'] if row else 'global'
+            self._event(
+                con,
+                actor,
+                source,
+                domain,
+                'session_heartbeat',
+                {'session_id': session_id, 'status': status, 'note': note},
+            )
+            return True
+
+    def end_session(self, session_id: str, actor: str, source: str, status: str, note: str) -> bool:
+        now = _utc_iso()
+        with self.connect() as con:
+            row = con.execute(
+                'SELECT domain FROM agent_sessions WHERE session_id=? AND ended_at IS NULL',
+                (session_id,),
+            ).fetchone()
+            if not row:
+                return False
+            con.execute(
+                '''
+                UPDATE agent_sessions
+                SET status=?, note=?, heartbeat_at=?, ended_at=?
+                WHERE session_id=?
+                ''',
+                (status, note, now, now, session_id),
+            )
+            self._event(
+                con,
+                actor,
+                source,
+                row['domain'],
+                'session_end',
+                {'session_id': session_id, 'status': status, 'note': note},
+            )
+            return True
+
+    def lock_domain(
+        self,
+        domain: str,
+        session_id: str,
+        actor: str,
+        source: str,
+        minutes: int,
+        reason: str,
+    ) -> tuple[bool, dict[str, Any] | None]:
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        lock_until = now + timedelta(minutes=max(1, minutes))
+        now_iso = now.isoformat().replace('+00:00', 'Z')
+        until_iso = lock_until.isoformat().replace('+00:00', 'Z')
+        with self.connect() as con:
+            self._purge_expired_locks(con)
+            current = con.execute('SELECT * FROM domain_locks WHERE domain=?', (domain,)).fetchone()
+            if current and current['session_id'] != session_id:
+                return False, dict(current)
+
+            con.execute(
+                '''
+                INSERT INTO domain_locks(domain, session_id, actor, source, reason, locked_at, expires_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(domain) DO UPDATE SET
+                    session_id=excluded.session_id,
+                    actor=excluded.actor,
+                    source=excluded.source,
+                    reason=excluded.reason,
+                    locked_at=excluded.locked_at,
+                    expires_at=excluded.expires_at
+                ''',
+                (domain, session_id, actor, source, reason, now_iso, until_iso),
+            )
+            self._event(
+                con,
+                actor,
+                source,
+                domain,
+                'domain_lock',
+                {'session_id': session_id, 'minutes': minutes, 'reason': reason, 'expires_at': until_iso},
+            )
+            return True, None
+
+    def unlock_domain(self, domain: str, session_id: str, actor: str, source: str) -> bool:
+        with self.connect() as con:
+            cur = con.execute('DELETE FROM domain_locks WHERE domain=? AND session_id=?', (domain, session_id))
+            if cur.rowcount == 0:
+                return False
+            self._event(
+                con,
+                actor,
+                source,
+                domain,
+                'domain_unlock',
+                {'session_id': session_id},
+            )
+            return True
 
     def add_directive(self, directive: str, actor: str, source: str) -> int:
         now = _utc_iso()
@@ -167,15 +391,57 @@ class SharedMemory:
 
     def read_state(self) -> dict[str, Any]:
         with self.connect() as con:
-            gc = [dict(r) for r in con.execute('SELECT key, value, updated_by, updated_at FROM global_context ORDER BY key').fetchall()]
-            ds = [dict(r) for r in con.execute('SELECT domain, last_action, last_commit, status, updated_by, source, updated_at FROM domain_sync ORDER BY updated_at DESC').fetchall()]
-            sd = [dict(r) for r in con.execute('SELECT id, directive, active, created_by, created_at, deactivated_at FROM shared_directives WHERE active=1 ORDER BY created_at DESC').fetchall()]
-            recent = [dict(r) for r in con.execute('SELECT id, ts_utc, actor, source, domain, event_type, payload_json FROM sync_events ORDER BY id DESC LIMIT 50').fetchall()]
+            self._purge_expired_locks(con)
+            gc = [
+                dict(r)
+                for r in con.execute('SELECT key, value, updated_by, updated_at FROM global_context ORDER BY key').fetchall()
+            ]
+            ds = [
+                dict(r)
+                for r in con.execute(
+                    'SELECT domain, last_action, last_commit, status, updated_by, source, updated_at FROM domain_sync ORDER BY updated_at DESC'
+                ).fetchall()
+            ]
+            sd = [
+                dict(r)
+                for r in con.execute(
+                    'SELECT id, directive, active, created_by, created_at, deactivated_at FROM shared_directives WHERE active=1 ORDER BY created_at DESC'
+                ).fetchall()
+            ]
+            locks = [
+                dict(r)
+                for r in con.execute(
+                    '''
+                    SELECT domain, session_id, actor, source, reason, locked_at, expires_at
+                    FROM domain_locks
+                    ORDER BY domain
+                    '''
+                ).fetchall()
+            ]
+            sessions = [
+                dict(r)
+                for r in con.execute(
+                    '''
+                    SELECT session_id, actor, source, domain, branch, worktree, status, note, started_at, heartbeat_at, ended_at
+                    FROM agent_sessions
+                    WHERE ended_at IS NULL
+                    ORDER BY heartbeat_at DESC
+                    '''
+                ).fetchall()
+            ]
+            recent = [
+                dict(r)
+                for r in con.execute(
+                    'SELECT id, ts_utc, actor, source, domain, event_type, payload_json FROM sync_events ORDER BY id DESC LIMIT 50'
+                ).fetchall()
+            ]
             return {
                 'db_path': str(self.db_path),
                 'global_context': gc,
                 'domain_sync': ds,
                 'active_directives': sd,
+                'active_locks': locks,
+                'active_sessions': sessions,
                 'recent_events': recent,
             }
 
@@ -240,6 +506,49 @@ def _build_parser() -> argparse.ArgumentParser:
     dd.add_argument('--actor', required=True)
     dd.add_argument('--source', required=True)
 
+    ss = sub.add_parser('start-session', help='Start or refresh an active agent session')
+    ss.add_argument('--actor', required=True)
+    ss.add_argument('--source', required=True)
+    ss.add_argument('--domain', required=True)
+    ss.add_argument('--branch', default='unknown')
+    ss.add_argument('--worktree', default='unknown')
+    ss.add_argument('--note', default='')
+    ss.add_argument('--session-id', default=None)
+
+    hb = sub.add_parser('heartbeat', help='Heartbeat for active session')
+    hb.add_argument('--session-id', required=True)
+    hb.add_argument('--actor', required=True)
+    hb.add_argument('--source', required=True)
+    hb.add_argument('--status', default='ACTIVE')
+    hb.add_argument('--note', default='')
+
+    es = sub.add_parser('end-session', help='End active session')
+    es.add_argument('--session-id', required=True)
+    es.add_argument('--actor', required=True)
+    es.add_argument('--source', required=True)
+    es.add_argument('--status', default='COMPLETED')
+    es.add_argument('--note', default='')
+
+    ld = sub.add_parser('lock-domain', help='Acquire domain lock with TTL')
+    ld.add_argument('--domain', required=True)
+    ld.add_argument('--session-id', required=True)
+    ld.add_argument('--actor', required=True)
+    ld.add_argument('--source', required=True)
+    ld.add_argument('--minutes', type=int, default=120)
+    ld.add_argument('--reason', default='active_work')
+
+    ud = sub.add_parser('unlock-domain', help='Release domain lock')
+    ud.add_argument('--domain', required=True)
+    ud.add_argument('--session-id', required=True)
+    ud.add_argument('--actor', required=True)
+    ud.add_argument('--source', required=True)
+
+    se = sub.add_parser('seed-domains', help='Insert missing domains with default state')
+    se.add_argument('--domains', required=True, help='Comma-separated domain ids')
+    se.add_argument('--actor', required=True)
+    se.add_argument('--source', required=True)
+    se.add_argument('--status', default='PENDING')
+
     s = sub.add_parser('snapshot', help='Write JSON snapshot for git/docs')
     s.add_argument('--output', type=Path, default=Path('docs/shared_memory_snapshot.json'))
 
@@ -282,6 +591,61 @@ def main() -> int:
         sm.init()
         sm.deactivate_directive(args.id, args.actor, args.source)
         print(json.dumps({'ok': True, 'action': 'deactivate-directive', 'id': args.id}))
+        return 0
+
+    if args.cmd == 'start-session':
+        sm.init()
+        sid = sm.start_session(
+            actor=args.actor,
+            source=args.source,
+            domain=args.domain,
+            branch=args.branch,
+            worktree=args.worktree,
+            note=args.note,
+            session_id=args.session_id,
+        )
+        print(json.dumps({'ok': True, 'action': 'start-session', 'session_id': sid}))
+        return 0
+
+    if args.cmd == 'heartbeat':
+        sm.init()
+        ok = sm.heartbeat(args.session_id, args.actor, args.source, args.status, args.note)
+        print(json.dumps({'ok': ok, 'action': 'heartbeat', 'session_id': args.session_id}))
+        return 0 if ok else 3
+
+    if args.cmd == 'end-session':
+        sm.init()
+        ok = sm.end_session(args.session_id, args.actor, args.source, args.status, args.note)
+        print(json.dumps({'ok': ok, 'action': 'end-session', 'session_id': args.session_id}))
+        return 0 if ok else 3
+
+    if args.cmd == 'lock-domain':
+        sm.init()
+        ok, lock = sm.lock_domain(
+            domain=args.domain,
+            session_id=args.session_id,
+            actor=args.actor,
+            source=args.source,
+            minutes=args.minutes,
+            reason=args.reason,
+        )
+        out = {'ok': ok, 'action': 'lock-domain', 'domain': args.domain, 'session_id': args.session_id}
+        if lock:
+            out['blocking_lock'] = lock
+        print(json.dumps(out))
+        return 0 if ok else 3
+
+    if args.cmd == 'unlock-domain':
+        sm.init()
+        ok = sm.unlock_domain(args.domain, args.session_id, args.actor, args.source)
+        print(json.dumps({'ok': ok, 'action': 'unlock-domain', 'domain': args.domain, 'session_id': args.session_id}))
+        return 0 if ok else 3
+
+    if args.cmd == 'seed-domains':
+        sm.init()
+        domains = [x.strip() for x in args.domains.split(',') if x.strip()]
+        inserted = sm.seed_domains(domains=domains, actor=args.actor, source=args.source, status=args.status)
+        print(json.dumps({'ok': True, 'action': 'seed-domains', 'inserted': inserted, 'domains': domains}))
         return 0
 
     if args.cmd == 'snapshot':

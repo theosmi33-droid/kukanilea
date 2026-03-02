@@ -25,6 +25,7 @@ import base64
 import csv
 import hashlib
 import io
+import logging
 import json
 import os
 import re
@@ -39,6 +40,8 @@ from email import policy
 from email.parser import BytesParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger("kukanilea.core.logic")
 
 # Optional libs
 try:

@@ -1,94 +1,42 @@
 {
   "version": "2.0.0",
+  "inputs": [
+    { "id": "domain", "type": "promptString", "description": "Domain (z.B. dashboard, upload, messenger)" },
+    { "id": "action", "type": "promptString", "description": "Letzte Aktion (kurz)" },
+    { "id": "commit", "type": "promptString", "description": "Commit-Hash (oder N/A)" },
+    { "id": "status", "type": "pickString", "description": "Status", "options": ["IN_PROGRESS", "COMPLETED", "BLOCKED"], "default": "COMPLETED" },
+    { "id": "directive", "type": "promptString", "description": "Neue Direktive (Text)" },
+    { "id": "priority", "type": "pickString", "description": "Priorität", "options": ["10", "50", "100", "200"], "default": "100" }
+  ],
   "tasks": [
     {
-      "label": "KUKANILEA: Ready Check (Gemini + Runtime)",
+      "label": "Agent: Init Shared DB",
       "type": "shell",
-      "command": "OLLAMA_ENABLED=1 KUKANILEA_REMOTE_LLM_ENABLED=0 bash scripts/vscode_ready_check.sh",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
+      "command": "mkdir -p /Users/gensuminguyen/Kukanilea/data && sqlite3 /Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db \"CREATE TABLE IF NOT EXISTS global_context (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))); CREATE TABLE IF NOT EXISTS shared_directives (id INTEGER PRIMARY KEY AUTOINCREMENT, directive TEXT NOT NULL, priority INTEGER NOT NULL DEFAULT 100, active INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))); CREATE TABLE IF NOT EXISTS domain_sync (domain TEXT PRIMARY KEY, status TEXT NOT NULL, last_action TEXT, last_commit TEXT, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));\"",
       "problemMatcher": []
     },
     {
-      "label": "KUKANILEA: Pytest (all)",
+      "label": "Agent: Migrate Shared DB",
       "type": "shell",
-      "command": "pytest -q",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "group": "test",
+      "command": "sqlite3 /Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db \"ALTER TABLE shared_directives ADD COLUMN priority INTEGER NOT NULL DEFAULT 100;\" || true; sqlite3 /Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db \"ALTER TABLE shared_directives ADD COLUMN updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'));\" || true; sqlite3 /Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db \"ALTER TABLE domain_sync ADD COLUMN updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'));\" || true",
       "problemMatcher": []
     },
     {
-      "label": "KUKANILEA: Ruff Check",
+      "label": "Agent: Sync Read",
       "type": "shell",
-      "command": "ruff check .",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
+      "command": "sqlite3 /Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db \"SELECT 'GLOBAL_CONTEXT' AS section, key, value, updated_at FROM global_context ORDER BY updated_at DESC; SELECT 'SHARED_DIRECTIVES' AS section, id, directive, priority, active, updated_at FROM shared_directives WHERE active=1 ORDER BY priority ASC, updated_at DESC; SELECT 'DOMAIN_SYNC' AS section, domain, status, last_action, last_commit, updated_at FROM domain_sync ORDER BY updated_at DESC;\"",
       "problemMatcher": []
     },
     {
-      "label": "KUKANILEA: Start App (127.0.0.1:5051)",
+      "label": "Agent: Sync Write",
       "type": "shell",
-      "command": "${command:python.interpreterPath} kukanilea_app.py --host 127.0.0.1 --port 5051",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "custom",
-        "pattern": {
-          "regexp": ".*"
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "System ready\\.|Serving on",
-          "endsPattern": "Serving on"
-        }
-      }
-    },
-    {
-      "label": "KUKANILEA: GitHub PR Checks (current)",
-      "type": "shell",
-      "command": "gh pr checks --watch",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
+      "command": "sqlite3 /Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db \"INSERT INTO domain_sync(domain,status,last_action,last_commit,updated_at) VALUES('${input:domain}','${input:status}','${input:action}','${input:commit}',strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(domain) DO UPDATE SET status=excluded.status,last_action=excluded.last_action,last_commit=excluded.last_commit,updated_at=excluded.updated_at; SELECT domain,status,last_action,last_commit,updated_at FROM domain_sync WHERE domain='${input:domain}';\"",
       "problemMatcher": []
     },
     {
-      "label": "KUKANILEA: Shared Memory Init",
+      "label": "Agent: Add Directive",
       "type": "shell",
-      "command": "${command:python.interpreterPath} scripts/shared_memory.py init",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "KUKANILEA: Shared Memory Read",
-      "type": "shell",
-      "command": "${command:python.interpreterPath} scripts/shared_memory.py read",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "KUKANILEA: Shared Memory Snapshot",
-      "type": "shell",
-      "command": "${command:python.interpreterPath} scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "KUKANILEA: Stop Ollama",
-      "type": "shell",
-      "command": "pkill -f 'ollama serve' || true",
+      "command": "sqlite3 /Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db \"INSERT INTO shared_directives(directive,priority,active,updated_at) VALUES('${input:directive}',${input:priority},1,strftime('%Y-%m-%dT%H:%M:%fZ','now')); SELECT id,directive,priority,active,updated_at FROM shared_directives WHERE active=1 ORDER BY priority ASC, updated_at DESC LIMIT 20;\"",
       "problemMatcher": []
     }
   ]

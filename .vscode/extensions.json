@@ -1,15 +1,19 @@
 {
   "recommendations": [
-    "google.geminicodeassist",
     "ms-python.python",
     "ms-python.vscode-pylance",
     "charliermarsh.ruff",
-    "github.vscode-pull-request-github",
-    "github.vscode-github-actions",
     "ms-playwright.playwright",
+    "github.vscode-github-actions",
     "eamodio.gitlens"
   ],
   "unwantedRecommendations": [
-    "github.copilot-chat"
+    "GoogleCloudTools.cloudcode",
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    "ms-python.autopep8",
+    "ms-python.black-formatter",
+    "ms-python.isort",
+    "alexcvzz.vscode-sqlite"
   ]
 }

@@ -4,6 +4,7 @@ import os
 import json
 import sqlite3
 import logging
+from collections import Counter
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional

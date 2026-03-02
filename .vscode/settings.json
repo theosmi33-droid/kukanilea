@@ -1,59 +1,29 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-  "python.testing.pytestEnabled": true,
-  "python.testing.pytestArgs": [
-    "tests",
-    "-q"
-  ],
-  "python.testing.unittestEnabled": false,
-  "python.analysis.typeCheckingMode": "basic",
-  "python.analysis.autoImportCompletions": true,
+  "python.defaultInterpreterPath": "/Users/gensuminguyen/Kukanilea/kukanilea_production/.build_venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.diagnosticMode": "workspace",
+  "python.analysis.indexing": true,
+  "python.experiments.enabled": false,
 
-  "ruff.lint.run": "onType",
   "ruff.nativeServer": "on",
+  "ruff.lint.enable": true,
+  "ruff.format.args": [],
 
-  "editor.formatOnSave": false,
+  "editor.formatOnSave": true,
   "editor.codeActionsOnSave": {
-    "source.fixAll": "explicit",
-    "source.organizeImports": "explicit"
+    "source.fixAll.ruff": "explicit",
+    "source.organizeImports.ruff": "explicit"
+  },
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff"
   },
 
-  "files.eol": "\n",
-  "files.trimTrailingWhitespace": true,
-  "files.insertFinalNewline": true,
-
-  "files.exclude": {
-    "**/.pytest_cache": true,
-    "**/.ruff_cache": true,
-    "**/__pycache__": true,
-    "**/output": true,
-    "**/artifacts": true,
-    "**/playwright-report": true,
-    "**/test-results": true
-  },
-  "search.exclude": {
-    "**/.pytest_cache": true,
-    "**/.ruff_cache": true,
-    "**/__pycache__": true,
-    "**/output": true,
-    "**/artifacts": true,
-    "**/playwright-report": true,
-    "**/test-results": true
-  },
-
-  "git.autofetch": true,
-  "git.confirmSync": false,
-  "githubPullRequests.pullBranch": "never",
-
-  "terminal.integrated.defaultProfile.osx": "zsh",
-  "terminal.integrated.cwd": "${workspaceFolder}",
-  "terminal.integrated.env.osx": {
-    "PYTHONUNBUFFERED": "1",
-    "OLLAMA_ENABLED": "1",
-    "KUKANILEA_REMOTE_LLM_ENABLED": "0",
-    "OLLAMA_HOST": "http://127.0.0.1:11434"
-  },
-
-  "workbench.editor.enablePreview": false,
-  "workbench.startupEditor": "none"
+  "geminicodeassist.project": "",
+  "google.geminicodeassist.project": "",
+  "cloudcode.duetAI.project": "",
+  "settingsSync.ignoredSettings": [
+    "geminicodeassist.project",
+    "google.geminicodeassist.project",
+    "cloudcode.duetAI.project"
+  ]
 }

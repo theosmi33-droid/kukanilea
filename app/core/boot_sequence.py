@@ -15,7 +15,6 @@ def get_optimal_llm(use_case="general"):
 
     binary = "llmfit.exe" if platform.system() == "Windows" else "llmfit"
     try:
-        # Check if llmfit is in PATH
         result = subprocess.run(
             [binary, "recommend", "--json", "--use-case", use_case, "--limit", "1"],
             capture_output=True,
@@ -29,8 +28,59 @@ def get_optimal_llm(use_case="general"):
     except Exception as e:
         print(f"llmfit error or missing: {e}")
 
-    # Fallback for old/limited hardware
     return "qwen2.5:0.5b"
+
+
+def _model_installed(installed: list[str], required: str) -> bool:
+    for name in installed:
+        if name == required or name.startswith(required + ":"):
+            return True
+    return False
+
+
+def _ensure_ollama_models(required_models: list[str]) -> None:
+    """
+    Ensures required local models are present in Ollama.
+    Never uses cloud APIs; only local Ollama endpoint.
+
+    Default behavior is non-blocking: report missing models only.
+    Enable auto pull with KUK_OLLAMA_AUTOPULL=1.
+    """
+    base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    auto_pull = os.environ.get("KUK_OLLAMA_AUTOPULL", "0") == "1"
+    pull_timeout = int(os.environ.get("KUK_OLLAMA_PULL_TIMEOUT", "120"))
+
+    try:
+        tags = requests.get(f"{base}/api/tags", timeout=4)
+        tags.raise_for_status()
+        payload = tags.json() or {}
+        installed = [m.get("name", "") for m in payload.get("models", [])]
+    except Exception as e:
+        print(f"Ollama not reachable ({e}). Skipping model preflight.")
+        return
+
+    missing = [m for m in required_models if not _model_installed(installed, m)]
+    if not missing:
+        print("Ollama preflight OK: required models available.")
+        return
+
+    print(f"Ollama preflight: missing models: {', '.join(missing)}")
+    if not auto_pull:
+        print("Auto-pull disabled (set KUK_OLLAMA_AUTOPULL=1 to pull automatically).")
+        return
+
+    print(f"Ollama preflight: pulling missing models: {', '.join(missing)}")
+    for model_name in missing:
+        try:
+            response = requests.post(
+                f"{base}/api/pull",
+                json={"name": model_name, "stream": False},
+                timeout=pull_timeout,
+            )
+            response.raise_for_status()
+            print(f"Model {model_name} is ready.")
+        except Exception as e:
+            print(f"Failed to pull model {model_name}: {e}")
 
 
 def run_boot_sequence():
@@ -39,11 +89,10 @@ def run_boot_sequence():
     1. Integrity check (v2.1 Step 1).
     2. Detects hardware via llmfit.
     3. Saves the profile.
-    4. Pulls the recommended model via Ollama if needed.
+    4. Ensures local Ollama models are available.
     """
     from app.core.integrity_check import check_system_integrity
-    
-    # 1. Integrity Check
+
     print("System Integrity Check (v2.1)...")
     integrity = check_system_integrity()
     if not integrity.get("all_ok", False):
@@ -59,7 +108,7 @@ def run_boot_sequence():
     from app.core.rag_sync import RAGSync
     from app.core.migrations import repair_legacy_customer_fk
     from app.config import Config
-    # Legacy schema recovery (idempotent): ensure customers.id FK target exists
+
     try:
         repaired = repair_legacy_customer_fk(Config.CORE_DB)
         if repaired:
@@ -71,8 +120,7 @@ def run_boot_sequence():
     healer = SystemHealer(Config.CORE_DB, Config.BASE_DIR)
     healer.run_healing_cycle()
     healer.evolution_step()
-    
-    # Task 134: RAG-SYNC (Sync facts to MEMORY.md)
+
     try:
         memory_file = Path("MEMORY.md")
         rag = RAGSync(Config.CORE_DB, memory_file)
@@ -94,17 +142,10 @@ def run_boot_sequence():
 
     print(f"Hardware-Aware Boot: Recommended model is {model}")
 
-    # Optional: Auto-pull model if connected to internet
-    try:
-        response = requests.post(
-            "http://localhost:11434/api/pull",
-            json={"name": model, "stream": False},
-            timeout=5,
-        )
-        if response.status_code == 200:
-            print(f"Model {model} is ready.")
-    except Exception:
-        print(f"Ollama not reachable or offline. Skipping auto-pull for {model}.")
+    required_models = ["nomic-embed-text", "qwen2.5:0.5b"]
+    if model not in required_models:
+        required_models.append(model)
+    _ensure_ollama_models(required_models)
 
 
 if __name__ == "__main__":

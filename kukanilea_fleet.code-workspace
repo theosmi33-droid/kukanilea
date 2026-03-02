@@ -1,0 +1,56 @@
+{
+  "folders": [
+    {
+      "name": "00-core-main",
+      "path": "."
+    },
+    {
+      "name": "01-dashboard",
+      "path": "../worktrees/dashboard"
+    },
+    {
+      "name": "02-upload",
+      "path": "../worktrees/upload"
+    },
+    {
+      "name": "03-emailpostfach",
+      "path": "../worktrees/emailpostfach"
+    },
+    {
+      "name": "04-messenger",
+      "path": "../worktrees/messenger"
+    },
+    {
+      "name": "05-kalender",
+      "path": "../worktrees/kalender"
+    },
+    {
+      "name": "06-aufgaben",
+      "path": "../worktrees/aufgaben"
+    },
+    {
+      "name": "07-zeiterfassung",
+      "path": "../worktrees/zeiterfassung"
+    },
+    {
+      "name": "08-projekte",
+      "path": "../worktrees/projekte"
+    },
+    {
+      "name": "09-excel-docs-visualizer",
+      "path": "../worktrees/excel-docs-visualizer"
+    },
+    {
+      "name": "10-einstellungen",
+      "path": "../worktrees/einstellungen"
+    },
+    {
+      "name": "11-floating-widget-chatbot",
+      "path": "../worktrees/floating-widget-chatbot"
+    }
+  ],
+  "settings": {
+    "workbench.editor.enablePreview": false,
+    "git.autofetch": true
+  }
+}
