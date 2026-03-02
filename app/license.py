@@ -1,22 +1,42 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict
 
-# Ed25519 public key used to validate offline license signatures.
-# Matching private key is kept internal and only used by scripts/generate_license.py.
+# Backward compatibility: legacy Ed25519 licenses remain supported.
 PUBLIC_KEY_HEX = "d9213284c379d7ffd915619a57d2105fa4f39bbf2b25fa39d1d189bd57778b07"
 
+# Primary verifier: RSA-PSS SHA-256.
+DEFAULT_RSA_PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtJ+EbD8JXXVGvRTyQAB8
+ZgWJDIFRsYMbQHx9ckGi8Ur+PakHZZbeqNJIIhhquBv7m5qmbM1NQR4j2fa6Au1o
+EuGxaYFo40ehS7baWgp7KLy3nZ5qZK6wjjg2bEIlPz0YaYrCkK4FCTMHkbUUutTs
+w36JLy6yYM+2BggnT4GlQHMLxUtqJrRquU7LSCgwYyr1eAax4fN5UR+TpPn439Td
+kWXeCvY+VMdFgbGe9n1sDR8KrF5UwRlHC81xUJeZrtdH9YuUyQI7MVI2G7ezCbwF
+1AdWfYbWUHg3/p3wm871EIsQjyaBRlFtkULGUZlwsiW9hG//NQUg4LlZHt5XBqmx
+EwIDAQAB
+-----END PUBLIC KEY-----
+"""
+
 try:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 except Exception:  # pragma: no cover - optional at import time
+    hashes = None  # type: ignore[assignment]
+    serialization = None  # type: ignore[assignment]
+    padding = None  # type: ignore[assignment]
     Ed25519PublicKey = None  # type: ignore
+    InvalidSignature = Exception  # type: ignore[assignment]
 
 
 @dataclass
@@ -43,6 +63,45 @@ class LicenseState:
 
 def _canonical_payload_bytes(payload: Dict[str, Any]) -> bytes:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+def _rsa_public_key_pem() -> str:
+    value = os.environ.get("KUKANILEA_LICENSE_RSA_PUBLIC_KEY_PEM", "").strip()
+    return value or DEFAULT_RSA_PUBLIC_KEY_PEM
+
+
+def _verify_rsa_signature(payload: Dict[str, Any], signature_b64: str) -> bool:
+    if serialization is None or hashes is None or padding is None:
+        return False
+    try:
+        public_key = serialization.load_pem_public_key(
+            _rsa_public_key_pem().encode("utf-8")
+        )
+        signature = base64.b64decode(signature_b64, validate=True)
+        public_key.verify(
+            signature,
+            _canonical_payload_bytes(payload),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH,
+            ),
+            hashes.SHA256(),
+        )
+        return True
+    except (ValueError, TypeError, binascii.Error, InvalidSignature):
+        return False
+
+
+def _verify_ed25519_signature(payload: Dict[str, Any], signature_b64: str) -> bool:
+    if Ed25519PublicKey is None:
+        return False
+    try:
+        public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(PUBLIC_KEY_HEX))
+        signature = base64.b64decode(signature_b64, validate=True)
+        public_key.verify(signature, _canonical_payload_bytes(payload))
+        return True
+    except (ValueError, TypeError, binascii.Error, InvalidSignature):
+        return False
 
 
 def device_fingerprint() -> str:
@@ -100,15 +159,22 @@ def load_license(license_path: Path) -> Dict[str, Any]:
         if not signature_b64:
             return {"valid": False, "reason": "missing_signature"}
 
+        algorithm = str(raw.get("algorithm") or raw.get("alg") or "RSA_PSS_SHA256").upper()
+
         payload = dict(raw)
         payload.pop("signature", None)
+        payload.pop("algorithm", None)
+        payload.pop("alg", None)
 
-        if Ed25519PublicKey is None:
-            return {"valid": False, "reason": "missing_crypto"}
+        if algorithm in {"RSA", "RSA_PSS_SHA256", "RSA-SHA256"}:
+            ok = _verify_rsa_signature(payload, signature_b64)
+        elif algorithm in {"ED25519", "EDDSA"}:
+            ok = _verify_ed25519_signature(payload, signature_b64)
+        else:
+            return {"valid": False, "reason": "unsupported_algorithm"}
 
-        public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(PUBLIC_KEY_HEX))
-        signature = base64.b64decode(signature_b64)
-        public_key.verify(signature, _canonical_payload_bytes(payload))
+        if not ok:
+            return {"valid": False, "reason": "invalid_signature"}
 
         expiry = str(payload.get("expiry") or "")
         exp_date = date.fromisoformat(expiry)
@@ -130,6 +196,7 @@ def load_license(license_path: Path) -> Dict[str, Any]:
             "plan": str(payload.get("plan") or "PRO"),
             "expired": expired,
             "device_mismatch": device_mismatch,
+            "algorithm": algorithm,
         }
     except Exception as exc:
         return {"valid": False, "reason": f"invalid:{exc.__class__.__name__}"}

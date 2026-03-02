@@ -1,84 +1,259 @@
 {% extends "layout.html" %}
-{% block title %}System-Einstellungen{% endblock %}
+{% block title %}Einstellungen{% endblock %}
 
 {% block content %}
-<div style="display: flex; flex-direction: column; gap: var(--spacing-6);">
-  
-  <div class="panel">
-    <h2 style="font-size: 20px; font-weight: 700; color: var(--color-text-main); margin-bottom: var(--spacing-4);">Branding & Personalisierung</h2>
-    <form action="/settings/branding" method="post" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-4);">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      
-      <div class="form-group">
-        <label class="form-label">Anwendungsname</label>
-        <input type="text" name="app_name" class="form-input" value="{{ branding.app_name }}" required>
-      </div>
+<style>
+  .router-wrap { display: grid; grid-template-columns: 280px 1fr; gap: 16px; }
+  .router-menu { position: sticky; top: 16px; align-self: start; }
+  .router-link { display:block; padding:10px 12px; border:1px solid var(--color-border); border-radius:10px; color:var(--color-text-main); text-decoration:none; margin-bottom:8px; font-size:13px; }
+  .router-link:hover { border-color: var(--color-accent); }
+  .router-card { border:1px solid var(--color-border); border-radius:14px; padding:16px; margin-bottom:16px; background: var(--bg-secondary); }
+  .router-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  .router-input { width:100%; border:1px solid var(--color-border); background:var(--bg-primary); color:var(--color-text-main); border-radius:10px; padding:9px 10px; font-size:13px; }
+  .router-btn { border:1px solid var(--color-border); border-radius:10px; background:var(--bg-primary); color:var(--color-text-main); padding:8px 12px; font-size:12px; cursor:pointer; }
+  .router-btn-danger { border-color:#dc2626; color:#fca5a5; }
+  .router-note { font-size:11px; color:var(--color-text-muted); }
+  @media (max-width: 980px) { .router-wrap { grid-template-columns: 1fr; } .router-menu { position: static; } .router-grid { grid-template-columns: 1fr; } }
+</style>
 
-      <div class="form-group">
-        <label class="form-label">Primärfarbe (Hex)</label>
-        <div style="display:flex; gap:8px;">
-            <input type="color" name="primary_color" value="{{ branding.primary_color }}" style="width:48px; height:40px; border:none; background:none; cursor:pointer;">
-            <input type="text" value="{{ branding.primary_color }}" class="form-input" readonly style="flex:1;">
-        </div>
-      </div>
+{% set mode = settings_mode or 'admin' %}
 
-             <div class="form-group" style="grid-column: span 2;">
-               <label class="form-label">Footer-Text</label>
-               <input type="text" name="footer_text" class="form-input" value="{{ branding.footer_text }}">
-             </div>
-      
-             <div class="panel" style="grid-column: span 2; background: rgba(37,99,235,0.05); border-color: rgba(37,99,235,0.2);">
-                 <h3 style="font-size: 14px; font-weight: 700; color: var(--color-accent); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h7"/><path d="M16 5V3"/><path d="M8 5V3"/><path d="M3 9h18"/><circle cx="18" cy="18" r="3"/><path d="m21.1 21.1-1.1-1.1"/></svg>
-                     Individuelle Datenbank-Zuweisung (v2.6)
-                 </h3>
-                 <div class="form-group">
-                     <label class="form-label">Core-Datenbank Pfad (.sqlite3)</label>
-                     <input type="text" name="core_db_path" class="form-input" value="{{ tenant_db_path }}" placeholder="z.B. ~/Downloads/DB-test.sqlite3">
-                     <p style="font-size: 11px; color: var(--color-text-muted); mt-2;">Wenn leer, wird die Standard-Datenbank verwendet. Die Smart Suggestions basieren auf den Daten dieser Datei.</p>
-                 </div>
-             </div>
-      
-             <div style="grid-column: span 2; padding-top: var(--spacing-2);">
-      
-        <button type="submit" class="btn btn-primary">BRANDING AKTUALISIEREN</button>
-      </div>
-    </form>
+{% if mode == 'profile' %}
+<div class="router-card" style="max-width:720px;">
+  <h2 style="margin:0 0 10px 0;">Profil & leichte Anpassungen</h2>
+  <div class="router-note" style="margin-bottom:14px;">Normale Nutzer sehen nur persönliche Einstellungen.</div>
+  <div class="router-grid" style="margin-bottom:12px;">
+    <div><div class="router-note">Benutzer</div><div>{{ user_profile.username }}</div></div>
+    <div><div class="router-note">Rolle</div><div>{{ user_profile.role }}</div></div>
+    <div><div class="router-note">Mandant</div><div>{{ user_profile.tenant_id or '-' }}</div></div>
   </div>
-
-  <div class="grid grid-cols-2 gap-6">
-    <div class="panel">
-      <h2 style="font-size: 18px; font-weight: 700; color: var(--color-text-main); margin-bottom: var(--spacing-3);">Datenbank-Status</h2>
-      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
-        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
-            <span class="text-muted">Auth DB Path</span>
-            <code style="color:var(--color-accent);">{{ auth_db_path }}</code>
-        </div>
-        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
-            <span class="text-muted">Mandanten</span>
-            <span style="font-weight:600; color:#fff;">{{ auth_tenants }}</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
-            <span class="text-muted">Schema Version</span>
-            <span style="font-weight:600; color:#fff;">v{{ auth_schema }}</span>
-        </div>
-      </div>
+  <form method="post" action="/admin/settings/profile" class="router-grid">
+    <div>
+      <label class="router-note">Sprache</label>
+      <select class="router-input" name="language">
+        <option value="de" {{ 'selected' if user_profile.language == 'de' }}>Deutsch</option>
+        <option value="en" {{ 'selected' if user_profile.language == 'en' }}>English</option>
+      </select>
     </div>
-
-    <div class="panel">
-      <h2 style="font-size: 18px; font-weight: 700; color: var(--color-text-main); margin-bottom: var(--spacing-3);">Import & Pfade</h2>
-      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
-        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
-            <span class="text-muted">Import Root</span>
-            <code style="color:var(--color-accent);">{{ import_root }}</code>
-        </div>
-        <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
-            <span class="text-muted">Basis-Ablage</span>
-            <code style="color:var(--color-accent);">{{ ablage }}</code>
-        </div>
-      </div>
+    <div>
+      <label class="router-note">Zeitzone</label>
+      <input class="router-input" name="timezone" value="{{ user_profile.timezone or 'Europe/Berlin' }}">
     </div>
-  </div>
-
+    <div>
+      <button class="router-btn" type="submit">Profil speichern</button>
+    </div>
+  </form>
 </div>
+{% else %}
+<div class="router-wrap">
+  <aside class="router-menu">
+    <a class="router-link" href="#users">Benutzer & Rollen</a>
+    <a class="router-link" href="#tenants">Mandanten</a>
+    <a class="router-link" href="#license">Lizenz</a>
+    <a class="router-link" href="#mesh">Mesh-Netzwerk</a>
+    <a class="router-link" href="#system">System</a>
+    <a class="router-link" href="#branding">Branding</a>
+    <a class="router-link" href="#backup">Backup & Restore</a>
+  </aside>
+
+  <section>
+    <div id="users" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Benutzer & Rollen</h2>
+      <div class="router-note" style="margin-bottom:12px;">Rollen: Admin, Manager, Mitarbeiter. Delete nur mit Confirm-Gate.</div>
+      <form method="post" action="/admin/settings/users/create" class="router-grid" style="margin-bottom:14px;">
+        <input class="router-input" name="username" placeholder="username" required>
+        <input class="router-input" name="password" placeholder="Startpasswort" required>
+        <input class="router-input" name="tenant_id" placeholder="tenant_id (z.B. SYSTEM)" value="SYSTEM" required>
+        <select class="router-input" name="role">
+          <option value="admin">Admin</option>
+          <option value="manager">Manager</option>
+          <option value="mitarbeiter">Mitarbeiter</option>
+        </select>
+        <div><button class="router-btn" type="submit">User anlegen</button></div>
+      </form>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead><tr><th align="left">User</th><th align="left">Tenant</th><th align="left">Rolle</th><th align="left">Reset</th><th align="left">Aktionen</th></tr></thead>
+          <tbody>
+            {% for u in users or [] %}
+            <tr style="border-top:1px solid var(--color-border);">
+              <td style="padding:8px 4px;">{{ u.username }}</td>
+              <td style="padding:8px 4px;">{{ u.tenant_id or '-' }}</td>
+              <td style="padding:8px 4px;">{{ u.role_label }}</td>
+              <td style="padding:8px 4px;">{{ 'ja' if u.needs_reset else 'nein' }}</td>
+              <td style="padding:8px 4px; display:flex; gap:6px; flex-wrap:wrap;">
+                <form method="post" action="/admin/settings/users/disable">
+                  <input type="hidden" name="username" value="{{ u.username }}">
+                  <button class="router-btn" type="submit">Disable</button>
+                </form>
+                <form method="post" action="/admin/settings/users/update" style="display:flex; gap:6px;">
+                  <input type="hidden" name="username" value="{{ u.username }}">
+                  <input type="hidden" name="tenant_id" value="{{ u.tenant_id or 'SYSTEM' }}">
+                  <select class="router-input" style="width:130px;" name="role">
+                    <option value="admin" {{ 'selected' if u.role_label == 'admin' }}>Admin</option>
+                    <option value="manager" {{ 'selected' if u.role_label == 'manager' }}>Manager</option>
+                    <option value="mitarbeiter" {{ 'selected' if u.role_label == 'mitarbeiter' }}>Mitarbeiter</option>
+                  </select>
+                  <button class="router-btn" type="submit">Role</button>
+                </form>
+                <form method="post" action="/admin/settings/users/delete" onsubmit="return confirmRisk(this)">
+                  <input type="hidden" name="username" value="{{ u.username }}">
+                  <input class="router-input" style="width:95px;" name="confirm" placeholder="CONFIRM">
+                  <button class="router-btn router-btn-danger" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tenants" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Mandanten</h2>
+      <form method="post" action="/admin/settings/tenants/add" class="router-grid" style="margin-bottom:14px;">
+        <input class="router-input" name="name" placeholder="Mandantenname" required>
+        <input class="router-input" name="db_path" placeholder="Absoluter Pfad zur .sqlite3" required>
+        <div><button class="router-btn" type="submit">Mandant anlegen</button></div>
+      </form>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead><tr><th align="left">ID</th><th align="left">Name</th><th align="left">DB</th></tr></thead>
+          <tbody>
+            {% for t in tenants or [] %}
+            <tr style="border-top:1px solid var(--color-border);">
+              <td style="padding:8px 4px;">{{ t.tenant_id }}</td>
+              <td style="padding:8px 4px;">{{ t.display_name }}</td>
+              <td style="padding:8px 4px;"><code>{{ t.core_db_path or '-' }}</code></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="license" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Lizenz</h2>
+      <div class="router-grid" style="margin-bottom:10px;">
+        <div><div class="router-note">Valid</div><div>{{ 'ja' if (license_info.valid if license_info is mapping else false) else 'nein' }}</div></div>
+        <div><div class="router-note">Grund</div><div>{{ license_info.reason if license_info is mapping else '-' }}</div></div>
+        <div><div class="router-note">Plan</div><div>{{ license_info.plan if license_info is mapping else '-' }}</div></div>
+      </div>
+      <form method="post" action="/admin/settings/license/upload" onsubmit="return confirmRisk(this)">
+        <textarea class="router-input" name="license_json" rows="8" placeholder='{"customer_id":"...","plan":"ENTERPRISE","signature":"..."}' required></textarea>
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+          <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
+          <button class="router-btn" type="submit">Lizenz hochladen</button>
+          <span class="router-note">Confirm-Gate aktiv.</span>
+        </div>
+      </form>
+    </div>
+
+    <div id="mesh" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Mesh-Netzwerk</h2>
+      <div class="router-note" style="margin-bottom:8px;">Node ID: {{ mesh_node_id or '-' }}</div>
+      <form method="post" action="/admin/settings/mesh/connect" class="router-grid" style="margin-bottom:12px;">
+        <input class="router-input" name="peer_ip" placeholder="Peer IP" required>
+        <input class="router-input" name="peer_port" placeholder="5051" value="5051" required>
+        <div><button class="router-btn" type="submit">Peer verbinden</button></div>
+      </form>
+      <form method="post" action="/admin/settings/mesh/rotate-key" onsubmit="return confirmRisk(this)" style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+        <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
+        <button class="router-btn router-btn-danger" type="submit">Mesh Key rotieren</button>
+      </form>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead><tr><th align="left">Node</th><th align="left">Name</th><th align="left">Status</th><th align="left">Last Seen</th></tr></thead>
+          <tbody>
+            {% for p in mesh_peers or [] %}
+            <tr style="border-top:1px solid var(--color-border);">
+              <td style="padding:8px 4px;">{{ p.node_id }}</td>
+              <td style="padding:8px 4px;">{{ p.name }}</td>
+              <td style="padding:8px 4px;">{{ p.status }}</td>
+              <td style="padding:8px 4px;">{{ p.last_seen }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="system" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Systemsettings</h2>
+      <form method="post" action="/admin/settings/system" class="router-grid">
+        <select class="router-input" name="language">
+          <option value="de" {{ 'selected' if (system_settings.language if system_settings is mapping else 'de') == 'de' }}>Deutsch</option>
+          <option value="en" {{ 'selected' if (system_settings.language if system_settings is mapping else '') == 'en' }}>English</option>
+        </select>
+        <input class="router-input" name="timezone" value="{{ system_settings.timezone if system_settings is mapping else 'Europe/Berlin' }}" placeholder="Zeitzone">
+        <select class="router-input" name="backup_interval">
+          <option value="hourly" {{ 'selected' if (system_settings.backup_interval if system_settings is mapping else '') == 'hourly' }}>hourly</option>
+          <option value="daily" {{ 'selected' if (system_settings.backup_interval if system_settings is mapping else 'daily') == 'daily' }}>daily</option>
+          <option value="weekly" {{ 'selected' if (system_settings.backup_interval if system_settings is mapping else '') == 'weekly' }}>weekly</option>
+        </select>
+        <select class="router-input" name="log_level">
+          {% for lvl in ['DEBUG','INFO','WARNING','ERROR'] %}
+          <option value="{{ lvl }}" {{ 'selected' if (system_settings.log_level if system_settings is mapping else 'INFO') == lvl }}>{{ lvl }}</option>
+          {% endfor %}
+        </select>
+        <label class="router-note"><input type="checkbox" name="mesh_mdns_enabled" {{ 'checked' if (system_settings.mesh_mdns_enabled if system_settings is mapping else true) }}> mDNS aktiv</label>
+        <label class="router-note"><input type="checkbox" name="mesh_tailscale_enabled" {{ 'checked' if (system_settings.mesh_tailscale_enabled if system_settings is mapping else false) }}> Tailscale aktiv</label>
+        <div><button class="router-btn" type="submit">System speichern</button></div>
+      </form>
+    </div>
+
+    <div id="branding" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Branding</h2>
+      <form method="post" action="/admin/settings/branding" class="router-grid">
+        <input class="router-input" name="app_name" value="{{ branding.app_name }}" placeholder="App Name">
+        <input class="router-input" type="color" name="primary_color" value="{{ branding.primary_color }}">
+        <input class="router-input" name="footer_text" value="{{ branding.footer_text }}" placeholder="Footer">
+        <div><button class="router-btn" type="submit">Branding speichern</button></div>
+      </form>
+    </div>
+
+    <div id="backup" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Backup & Wiederherstellung</h2>
+      <form method="post" action="/admin/settings/backup/run" style="margin-bottom:12px;">
+        <button class="router-btn" type="submit">Backup jetzt ausführen</button>
+      </form>
+      <div style="overflow:auto; margin-bottom:10px;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead><tr><th align="left">Datei</th><th align="left">Zeit</th><th align="left">Größe</th></tr></thead>
+          <tbody>
+            {% for b in backups or [] %}
+            <tr style="border-top:1px solid var(--color-border);">
+              <td style="padding:8px 4px;">{{ b.name }}</td>
+              <td style="padding:8px 4px;">{{ b.mtime }}</td>
+              <td style="padding:8px 4px;">{{ b.size }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <form method="post" action="/admin/settings/backup/restore" onsubmit="return confirmRisk(this)" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <select class="router-input" style="max-width:360px;" name="backup_name" required>
+          {% for b in backups or [] %}
+          <option value="{{ b.name }}">{{ b.name }}</option>
+          {% endfor %}
+        </select>
+        <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
+        <button class="router-btn router-btn-danger" type="submit">Restore</button>
+      </form>
+      <div class="router-note" style="margin-top:8px;">Riskante Aktion: Confirm-Gate ist verpflichtend.</div>
+    </div>
+  </section>
+</div>
+{% endif %}
+
+<script>
+  function confirmRisk(form){
+    const v = (form.querySelector('input[name="confirm"]') || {}).value || '';
+    if(v.trim().toUpperCase() !== 'CONFIRM'){
+      alert('Bitte CONFIRM eingeben.');
+      return false;
+    }
+    return confirm('Riskante Aktion ausführen?');
+  }
+</script>
 {% endblock %}
