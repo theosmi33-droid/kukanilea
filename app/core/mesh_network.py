@@ -1,25 +1,31 @@
 from __future__ import annotations
 
-import json
 import logging
-import requests
+import secrets
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
+import requests
 
 from app.config import Config
-from app.core.mesh_identity import ensure_mesh_identity, sign_message, verify_signature
+from app.core.mesh_identity import (
+    HANDSHAKE_ACK_PURPOSE,
+    HANDSHAKE_INIT_PURPOSE,
+    create_handshake_envelope,
+    verify_handshake_envelope,
+)
 
 logger = logging.getLogger("kukanilea.mesh_network")
+
 
 class MeshNetworkManager:
     """
     Manages peer Hubs and synchronization over the internet.
-    Uses Ed25519 signatures for Hub-to-Hub authentication.
+    Uses signed challenge-response handshakes for Hub authentication.
     """
 
     def __init__(self, auth_db):
         self.auth_db = auth_db
-        self.pub_key, self.node_id = ensure_mesh_identity()
 
     def register_peer(self, node_id: str, name: str, public_key: str, last_ip: str):
         """Registers a new peer Hub in the local database."""
@@ -29,7 +35,13 @@ class MeshNetworkManager:
                 INSERT OR REPLACE INTO mesh_nodes (node_id, name, public_key, last_ip, last_seen, status)
                 VALUES (?, ?, ?, ?, ?, 'OFFLINE')
                 """,
-                (node_id, name, public_key, last_ip, datetime.now(timezone.utc).isoformat() + "Z")
+                (
+                    node_id,
+                    name,
+                    public_key,
+                    last_ip,
+                    datetime.now(timezone.utc).isoformat() + "Z",
+                ),
             )
             con.commit()
 
@@ -42,36 +54,36 @@ class MeshNetworkManager:
     def initiate_handshake(self, peer_ip: str, peer_port: int = 5051) -> bool:
         """Attempts to connect to a peer Hub and exchange identity."""
         url = f"http://{peer_ip}:{peer_port}/api/mesh/handshake"
-        
-        payload = {
-            "node_id": self.node_id,
-            "name": Config.get_branding().get("app_name", "KUKANILEA Hub"),
-            "public_key": self.pub_key,
-            "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
-        }
-        
-        # Sign the payload to prove identity
-        sig = sign_message(json.dumps(payload, sort_keys=True).encode('utf-8'))
-        
+
+        challenge = secrets.token_urlsafe(24)
+        request_envelope = create_handshake_envelope(
+            name=Config.get_branding().get("app_name", "KUKANILEA Hub"),
+            purpose=HANDSHAKE_INIT_PURPOSE,
+            challenge=challenge,
+        )
+
         try:
-            resp = requests.post(url, json={"data": payload, "signature": sig}, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                peer_info = data.get("peer")
-                if peer_info:
-                    # Verify peer's response signature
-                    peer_sig = data.get("signature")
-                    peer_data = data.get("peer")
-                    if verify_signature(peer_info["public_key"], json.dumps(peer_data, sort_keys=True).encode('utf-8'), peer_sig):
-                        self.register_peer(
-                            peer_info["node_id"],
-                            peer_info["name"],
-                            peer_info["public_key"],
-                            peer_ip
-                        )
-                        logger.info(f"Handshake successful with {peer_info['node_id']}")
-                        return True
-            return False
+            resp = requests.post(url, json=request_envelope, timeout=10)
+            if resp.status_code != 200:
+                return False
+
+            ok, reason, peer_info = verify_handshake_envelope(
+                resp.json(),
+                expected_purpose=HANDSHAKE_ACK_PURPOSE,
+                expected_challenge=challenge,
+            )
+            if not ok or not peer_info:
+                logger.warning("Handshake rejected for %s: %s", peer_ip, reason)
+                return False
+
+            self.register_peer(
+                str(peer_info["node_id"]),
+                str(peer_info["name"]),
+                str(peer_info["public_key"]),
+                peer_ip,
+            )
+            logger.info("Handshake successful with %s", peer_info["node_id"])
+            return True
         except Exception as e:
             logger.error(f"Handshake failed with {peer_ip}: {e}")
             return False
@@ -83,7 +95,7 @@ class MeshNetworkManager:
         with self.auth_db._db() as con:
             con.execute(
                 "UPDATE mesh_nodes SET last_seen = ?, status = 'ONLINE' WHERE node_id = ?",
-                (datetime.now(timezone.utc).isoformat() + "Z", peer_node_id)
+                (datetime.now(timezone.utc).isoformat() + "Z", peer_node_id),
             )
             con.commit()
         return True
