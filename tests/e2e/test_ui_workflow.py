@@ -79,7 +79,7 @@ def test_full_workflow(page: Page, server: str):
     page.click('button[type="submit"]')
 
     # Verify we are on the dashboard
-    expect(page).to_have_url(f"{server}/")
+    expect(page).to_have_url(f"{server}/dashboard")
     expect(page.locator("text=Beleg-Zentrale")).to_be_visible()
 
     # 2. Upload
