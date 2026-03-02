@@ -166,7 +166,10 @@ def create_app() -> Flask:
     app.register_blueprint(system_logs.bp)
     app.register_blueprint(admin_tenants.bp)
     app.register_blueprint(automation.bp)
-    
+
+    from app.routes.widget import bp as widget_bp
+    app.register_blueprint(widget_bp)
+
     with app.app_context():
         automation.init_automation_schema()
     

@@ -77,5 +77,6 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
     html = resp.get_data(as_text=True)
 
     assert "classList.add('light')" in html
-    assert "JSON.stringify({ msg: text })" in html
-    assert "data.text || data.response" in html
+    assert "{% include 'partials/floating_chat.html' %}" not in html
+    assert "id=\"floating-chat-widget\"" in html
+    assert "/static/js/chatbot.js" in html
