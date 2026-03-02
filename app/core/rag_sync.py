@@ -4,12 +4,18 @@ import os
 import json
 import sqlite3
 import logging
+from collections import Counter
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 from app.agents.memory_store import MemoryManager
 from app.config import Config
+from app.core.upload_pipeline import (
+    collect_manual_corrections,
+    compute_layout_hash,
+    store_ocr_corrections,
+)
 
 logger = logging.getLogger("kukanilea.rag_sync")
 
@@ -173,41 +179,60 @@ def learn_from_correction(
     Analyzes differences between AI suggestions and user corrections.
     Stores significant corrections in semantic memory to improve future extractions.
     """
-    corrections = []
-    
-    # 1. Compare Doctype
-    s_type = (original_suggestions.get("doctype_suggested") or "").upper()
-    f_type = (final_answers.get("doctype") or "").upper()
-    if f_type and s_type and f_type != s_type:
-        corrections.append(f"Dokument '{file_name}' wurde als {s_type} erkannt, ist aber tatsächlich {f_type}.")
-        
-    # 2. Compare KDNR
-    s_kdnr = str(original_suggestions.get("kdnr_suggested") or "")
-    f_kdnr = str(final_answers.get("kdnr") or "")
-    if f_kdnr and s_kdnr and f_kdnr != s_kdnr:
-        corrections.append(f"Für Dokument '{file_name}' wurde KDNR {s_kdnr} vorgeschlagen, korrekt ist jedoch {f_kdnr}.")
-
+    corrections = collect_manual_corrections(original_suggestions, final_answers)
     if not corrections:
         return False
-        
-    # 3. Store corrections in memory
+
+    tenant_id = str(tenant_id or "").strip() or "default"
+    document_id = str(original_suggestions.get("doc_id") or file_name or "").strip() or "unknown"
+    layout_hash = compute_layout_hash(text, file_name=file_name)
+
+    # 1) Store deterministic layout corrections
+    inserted = store_ocr_corrections(
+        tenant_id=tenant_id,
+        document_id=document_id,
+        layout_hash=layout_hash,
+        corrections=corrections,
+    )
+
+    # 2) Store Few-Shot memory for semantic retrieval
     auth_db_path = str(Config.AUTH_DB)
     manager = MemoryManager(auth_db_path)
-    
-    combined_text = "\n".join(corrections)
-    # Also include a snippet of the text for context
-    context_snippet = text[:500] if text else ""
-    memory_content = f"KORREKTUR-WISSEN:\n{combined_text}\n\nKontext-Auszug:\n{context_snippet}"
-    
-    logger.info(f"Auto-Learning: Storing {len(corrections)} corrections for {file_name}")
-    
-    return manager.store_memory(
+
+    fewshot_lines = [
+        f"FEWSHOT|field={field}|right={value}" for field, value in corrections
+    ]
+    context_snippet = (text or "").strip()[:500]
+    memory_content = "\n".join(
+        [
+            "KORREKTUR-WISSEN:",
+            f"DATEI: {file_name}",
+            f"LAYOUT_HASH: {layout_hash}",
+            *fewshot_lines,
+            "",
+            "Kontext-Auszug:",
+            context_snippet,
+        ]
+    )
+
+    logger.info(
+        "Auto-Learning: %s correction(s) stored for %s (layout=%s, table_rows=%s)",
+        len(corrections),
+        file_name,
+        layout_hash[:12],
+        inserted,
+    )
+
+    stored = manager.store_memory(
         tenant_id=tenant_id,
         agent_role="learning_engine",
         content=memory_content,
         metadata={
             "type": "ocr_correction",
             "file_name": file_name,
-            "corrections_count": len(corrections)
-        }
+            "corrections_count": len(corrections),
+            "layout_hash": layout_hash,
+            "table_rows": inserted,
+        },
     )
+    return bool(stored or inserted > 0)
