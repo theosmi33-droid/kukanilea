@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict, Optional
 
 from app.agents.llm import get_default_provider
@@ -74,7 +75,61 @@ class Planner:
 
         # Fallback for basic intents if LLM fails
         text = (message or "").lower()
+        deterministic = self._deterministic_plan(intent=intent, message=message)
+        if deterministic:
+            return deterministic
         if "list files" in text or "dateien zeigen" in text:
             return {"tool": "filesystem_list", "params": {"path": "."}}
 
         return None
+
+    def _deterministic_plan(self, intent: str, message: str) -> Optional[Dict[str, Any]]:
+        text = (message or "").strip().lower()
+        if not text:
+            return None
+
+        if intent in {"search", "mail"} and (" und " in text or "danach" in text):
+            return {
+                "tool": "react_chain",
+                "params": {
+                    "steps": [
+                        {"connector": "internal", "action": "receive"},
+                        {"tool": "search_docs", "reason": "context_lookup"},
+                        {"tool": "mail_generate", "reason": "draft_reply"},
+                    ],
+                    "confirm_gate": True,
+                },
+            }
+
+        if "telegram" in text or "instagram" in text or "whatsapp" in text or "messenger" in text:
+            provider = self._extract_provider(text)
+            return {
+                "tool": "messenger_connector",
+                "params": {
+                    "provider": provider,
+                    "interface": ["send", "receive", "sync", "status"],
+                    "mode": "business_only" if provider in {"whatsapp", "meta"} else "standard",
+                    "confirm_gate": True,
+                },
+            }
+
+        if re.search(r"\b(task|aufgabe|termin|kalender)\b", text):
+            return {
+                "tool": "message_to_work_item",
+                "params": {
+                    "target": "termin" if "termin" in text or "kalender" in text else "task",
+                    "confirm_gate": True,
+                },
+            }
+        return None
+
+    def _extract_provider(self, text: str) -> str:
+        if "telegram" in text:
+            return "telegram"
+        if "whatsapp" in text:
+            return "whatsapp"
+        if "instagram" in text:
+            return "instagram"
+        if "messenger" in text or "meta" in text or "facebook" in text:
+            return "meta"
+        return "internal"

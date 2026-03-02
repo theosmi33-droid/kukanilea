@@ -5,6 +5,7 @@ import logging
 import sqlite3
 import struct
 import math
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -118,3 +119,78 @@ class MemoryManager:
         if magnitude1 == 0 or magnitude2 == 0:
             return 0.0
         return dot_product / (magnitude1 * magnitude2)
+
+    def store_messenger_message(
+        self,
+        *,
+        tenant_id: str,
+        provider: str,
+        sender: str,
+        recipient: str,
+        content: str,
+        external_id: str = "",
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        crm_match: Optional[Dict[str, Any]] = None,
+        direction: str = "inbound",
+        status: str = "stored",
+    ) -> bool:
+        """
+        Stores one messenger message envelope in semantic memory.
+        This avoids schema migration in scoped work while preserving provider metadata.
+        """
+        message_id = external_id.strip() or f"local-{uuid.uuid4()}"
+        attachment_count = len(attachments or [])
+        payload = (
+            f"[{provider}] {direction} {sender}->{recipient}: {content.strip()} "
+            f"(attachments={attachment_count})"
+        ).strip()
+        metadata = {
+            "type": "messenger_message",
+            "provider": (provider or "internal").strip().lower(),
+            "external_id": message_id,
+            "from": sender,
+            "to": recipient,
+            "attachments": attachments or [],
+            "crm_match": crm_match or {},
+            "direction": direction,
+            "status": status,
+            "created_at": datetime.now(timezone.utc).isoformat() + "Z",
+        }
+        return bool(
+            self.store_memory(
+                tenant_id=tenant_id,
+                agent_role="messenger",
+                content=payload,
+                metadata=metadata,
+                importance_score=6,
+                category="MESSENGER_MESSAGE",
+            )
+        )
+
+    def search_messenger_messages(
+        self, tenant_id: str, query: str, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        hits = self.retrieve_context(tenant_id=tenant_id, query=query, limit=max(limit, 1) * 3)
+        messages: List[Dict[str, Any]] = []
+        for hit in hits:
+            meta = hit.get("metadata") or {}
+            if meta.get("type") != "messenger_message":
+                continue
+            messages.append(
+                {
+                    "provider": meta.get("provider", "internal"),
+                    "external_id": meta.get("external_id", ""),
+                    "from": meta.get("from", ""),
+                    "to": meta.get("to", ""),
+                    "direction": meta.get("direction", ""),
+                    "status": meta.get("status", ""),
+                    "content": hit.get("content", ""),
+                    "score": float(hit.get("score", 0.0)),
+                    "timestamp": meta.get("created_at", hit.get("timestamp", "")),
+                    "attachments": meta.get("attachments", []),
+                    "crm_match": meta.get("crm_match", {}),
+                }
+            )
+            if len(messages) >= limit:
+                break
+        return messages
