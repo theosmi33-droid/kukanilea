@@ -7,6 +7,7 @@ import ssl
 import time
 from datetime import UTC, datetime
 from email import message_from_bytes, policy
+from email.utils import getaddresses, parsedate_to_datetime
 from typing import Any
 
 from . import postfach_oauth as oauth
@@ -17,37 +18,104 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _extract_body_text(msg) -> tuple[str, bool]:
-    has_attachments = False
+def _decode_text_part(part) -> str:
+    try:
+        content = part.get_content()
+        if isinstance(content, str):
+            return content
+    except Exception:
+        pass
+
+    payload = part.get_payload(decode=True)
+    if payload is None:
+        return str(part.get_payload() or "")
+
+    charset = part.get_content_charset() or "utf-8"
+    try:
+        return payload.decode(charset, errors="replace")
+    except Exception:
+        return payload.decode("utf-8", errors="replace")
+
+
+def _extract_body_and_attachments(msg) -> tuple[str, list[dict[str, Any]]]:
     text_plain: list[str] = []
     text_html: list[str] = []
+    attachments: list[dict[str, Any]] = []
 
     if msg.is_multipart():
-        for part in msg.walk():
-            ctype = str(part.get_content_type() or "").lower()
-            disp = str(part.get("Content-Disposition") or "").lower()
-            if "attachment" in disp:
-                has_attachments = True
+        for idx, part in enumerate(msg.walk(), start=1):
+            if part.is_multipart():
                 continue
-            payload = part.get_payload(decode=True) or b""
-            charset = part.get_content_charset() or "utf-8"
-            decoded = payload.decode(charset, errors="replace")
+            ctype = str(part.get_content_type() or "application/octet-stream").lower()
+            disp = str(part.get_content_disposition() or "").lower()
+            filename = str(part.get_filename() or "").strip()
+            is_attachment = disp == "attachment" or bool(filename)
+
+            if is_attachment:
+                payload = part.get_payload(decode=True) or b""
+                attachments.append(
+                    {
+                        "filename": filename or f"attachment_{idx:03d}.bin",
+                        "mime_type": ctype,
+                        "size_bytes": len(payload),
+                        "content_bytes": bytes(payload),
+                    }
+                )
+                continue
+
             if ctype == "text/plain":
-                text_plain.append(decoded)
+                text = _decode_text_part(part)
+                if text.strip():
+                    text_plain.append(text)
             elif ctype == "text/html":
-                text_html.append(decoded)
+                text = _decode_text_part(part)
+                if text.strip():
+                    text_html.append(text)
     else:
-        payload = msg.get_payload(decode=True) or b""
-        charset = msg.get_content_charset() or "utf-8"
-        decoded = payload.decode(charset, errors="replace")
         ctype = str(msg.get_content_type() or "").lower()
+        text = _decode_text_part(msg)
         if ctype == "text/html":
-            text_html.append(decoded)
+            text_html.append(text)
         else:
-            text_plain.append(decoded)
+            text_plain.append(text)
 
     body = "\n".join(text_plain).strip() or "\n".join(text_html).strip()
-    return body, has_attachments
+    return body, attachments
+
+
+def _parse_received_at(msg) -> str:
+    raw_date = str(msg.get("date") or "").strip()
+    if not raw_date:
+        return _now_iso()
+    try:
+        parsed = parsedate_to_datetime(raw_date)
+        if parsed is None:
+            return _now_iso()
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC).isoformat(timespec="seconds")
+    except Exception:
+        return _now_iso()
+
+
+def _extract_email_candidates(msg) -> list[str]:
+    values = [
+        str(msg.get("from") or ""),
+        str(msg.get("to") or ""),
+        str(msg.get("cc") or ""),
+        str(msg.get("reply-to") or ""),
+    ]
+    out: list[str] = []
+    seen: set[str] = set()
+    for _name, address in getaddresses(values):
+        email = str(address or "").strip().lower()
+        if not email or "@" not in email:
+            continue
+        if email in seen:
+            continue
+        seen.add(email)
+        out.append(email)
+    return out
 
 
 def connect(account: dict[str, Any]) -> imaplib.IMAP4_SSL:
@@ -207,6 +275,7 @@ def sync_account(
     account_id: str,
     limit: int = 50,
     since: str | None = None,
+    auto_download_attachments: bool = True,
 ) -> dict[str, Any]:
     store.ensure_postfach_schema(db_path)
     if not store.email_encryption_ready():
@@ -242,6 +311,11 @@ def sync_account(
     fetched = 0
     failures = 0
     last_uid = cursor
+    attachments_processed = 0
+    attachments_accepted = 0
+    attachments_rejected = 0
+    attachments_quarantined = 0
+    customer_links_created = 0
 
     try:
         with connect(account) as imap:
@@ -253,7 +327,24 @@ def sync_account(
                 )
                 imap.authenticate("XOAUTH2", lambda _: xoauth.encode("utf-8"))
 
-            imap.select("INBOX")
+            sel_status, _sel_data = imap.select("INBOX", readonly=True)
+            if sel_status != "OK":
+                store.update_account_sync_report(
+                    db_path,
+                    tenant_id=tenant_id,
+                    account_id=account_id,
+                    ok=False,
+                    imported=0,
+                    duplicates=0,
+                    error_reason="imap_select_failed",
+                )
+                return {
+                    "ok": False,
+                    "reason": "imap_select_failed",
+                    "imported": 0,
+                    "duplicates": 0,
+                }
+
             status, data = imap.uid("search", None, "ALL")
             if status != "OK":
                 store.update_account_sync_report(
@@ -271,6 +362,7 @@ def sync_account(
                     "imported": imported,
                     "duplicates": duplicates,
                 }
+
             all_uids = data[0].decode("utf-8", errors="ignore").split() if data else []
             if cursor.isdigit():
                 candidate_uids = [
@@ -279,65 +371,97 @@ def sync_account(
             else:
                 candidate_uids = all_uids
             uids = candidate_uids[-lim:]
+
             for uid in uids:
                 fetched += 1
-                msg_data = None
-                f_status = "NO"
-                for attempt in range(3):
-                    f_status, msg_data = imap.uid("fetch", uid, "(RFC822)")
-                    if f_status == "OK" and msg_data:
-                        break
-                    time.sleep(0.2 * (2**attempt))
-                if f_status != "OK" or not msg_data:
-                    failures += 1
-                    continue
+                try:
+                    msg_data = None
+                    f_status = "NO"
+                    for attempt in range(3):
+                        f_status, msg_data = imap.uid("fetch", uid, "(RFC822)")
+                        if f_status == "OK" and msg_data:
+                            break
+                        time.sleep(0.2 * (2**attempt))
+                    if f_status != "OK" or not msg_data:
+                        failures += 1
+                        continue
 
-                raw_bytes = b""
-                for part in msg_data:
-                    if (
-                        isinstance(part, tuple)
-                        and len(part) >= 2
-                        and isinstance(part[1], bytes | bytearray)
-                    ):
-                        raw_bytes = bytes(part[1])
-                        break
-                if not raw_bytes:
-                    failures += 1
-                    continue
+                    raw_bytes = b""
+                    for part in msg_data:
+                        if (
+                            isinstance(part, tuple)
+                            and len(part) >= 2
+                            and isinstance(part[1], (bytes, bytearray))
+                        ):
+                            raw_bytes = bytes(part[1])
+                            break
+                    if not raw_bytes:
+                        failures += 1
+                        continue
 
-                msg = message_from_bytes(raw_bytes, policy=policy.default)
-                body_raw, has_attachments = _extract_body_text(msg)
-                message_id_header = str(msg.get("message-id") or "").strip() or None
-                if not message_id_header:
-                    message_id_header = (
-                        "<"
-                        + hashlib.sha256(raw_bytes).hexdigest()[:32]
-                        + "@postfach.local>"
+                    msg = message_from_bytes(raw_bytes, policy=policy.default)
+                    body_raw, attachments = _extract_body_and_attachments(msg)
+                    message_id_header = str(msg.get("message-id") or "").strip() or None
+                    if not message_id_header:
+                        message_id_header = (
+                            "<"
+                            + hashlib.sha256(raw_bytes).hexdigest()[:32]
+                            + "@postfach.local>"
+                        )
+                    in_reply_to = str(msg.get("in-reply-to") or "").strip() or None
+                    references_header = str(msg.get("references") or "").strip() or None
+
+                    result = store.store_message(
+                        db_path,
+                        tenant_id=tenant_id,
+                        account_id=account_id,
+                        direction="inbound",
+                        message_id_header=message_id_header,
+                        in_reply_to=in_reply_to,
+                        references_header=references_header,
+                        from_value=str(msg.get("from") or ""),
+                        to_value=str(msg.get("to") or ""),
+                        subject_value=str(msg.get("subject") or ""),
+                        body_value=body_raw,
+                        raw_eml=raw_bytes,
+                        has_attachments=bool(attachments),
+                        received_at=_parse_received_at(msg),
                     )
-                in_reply_to = str(msg.get("in-reply-to") or "").strip() or None
-                references_header = str(msg.get("references") or "").strip() or None
 
-                result = store.store_message(
-                    db_path,
-                    tenant_id=tenant_id,
-                    account_id=account_id,
-                    direction="inbound",
-                    message_id_header=message_id_header,
-                    in_reply_to=in_reply_to,
-                    references_header=references_header,
-                    from_value=str(msg.get("from") or ""),
-                    to_value=str(msg.get("to") or ""),
-                    subject_value=str(msg.get("subject") or ""),
-                    body_value=body_raw,
-                    raw_eml=raw_bytes,
-                    has_attachments=bool(has_attachments),
-                    received_at=str(msg.get("date") or "") or _now_iso(),
-                )
-                if bool(result.get("duplicate")):
-                    duplicates += 1
-                else:
-                    imported += 1
-                last_uid = uid
+                    thread_id = str(result.get("thread_id") or "")
+                    message_id = str(result.get("message_id") or "")
+                    if bool(result.get("duplicate")):
+                        duplicates += 1
+                    else:
+                        imported += 1
+                        if auto_download_attachments and attachments and message_id:
+                            ingest = store.ingest_message_attachments(
+                                db_path,
+                                tenant_id=tenant_id,
+                                account_id=account_id,
+                                message_id=message_id,
+                                attachments=attachments,
+                            )
+                            attachments_processed += int(ingest.get("processed") or 0)
+                            attachments_accepted += int(ingest.get("accepted") or 0)
+                            attachments_rejected += int(ingest.get("rejected") or 0)
+                            attachments_quarantined += int(
+                                ingest.get("quarantined") or 0
+                            )
+
+                    if thread_id:
+                        link_result = store.link_thread_customers_by_email(
+                            db_path,
+                            tenant_id=tenant_id,
+                            thread_id=thread_id,
+                            emails=_extract_email_candidates(msg),
+                        )
+                        customer_links_created += int(link_result.get("linked") or 0)
+
+                    last_uid = uid
+                except Exception:
+                    failures += 1
+                    continue
 
         if last_uid:
             store.update_account_sync_cursor(
@@ -375,6 +499,11 @@ def sync_account(
             "fetched": fetched,
             "failed_fetches": failures,
             "sync_cursor": str(last_uid or ""),
+            "attachments_processed": attachments_processed,
+            "attachments_accepted": attachments_accepted,
+            "attachments_rejected": attachments_rejected,
+            "attachments_quarantined": attachments_quarantined,
+            "customer_links_created": customer_links_created,
             "automation": automation_result,
         }
     except Exception:
@@ -394,4 +523,9 @@ def sync_account(
             "duplicates": duplicates,
             "fetched": fetched,
             "failed_fetches": failures,
+            "attachments_processed": attachments_processed,
+            "attachments_accepted": attachments_accepted,
+            "attachments_rejected": attachments_rejected,
+            "attachments_quarantined": attachments_quarantined,
+            "customer_links_created": customer_links_created,
         }
