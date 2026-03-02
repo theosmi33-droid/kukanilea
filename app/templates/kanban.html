@@ -1,82 +1,230 @@
 {% extends "layout.html" %}
-{% block title %}Kanban Board{% endblock %}
+{% block title %}Aufgaben{% endblock %}
 
 {% block content %}
-<div style="display: flex; flex-direction: column; gap: var(--spacing-6); height: calc(100vh - 120px);">
-    <!-- Board Header -->
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h1 style="font-size: 28px; font-weight: 800; color: var(--color-text-main); letter-spacing: -0.02em;">{{ project.name }}</h1>
-            <p style="color: var(--color-text-muted); font-size: 14px;">{{ project.description or 'Projekt-Übersicht' }}</p>
-        </div>
-        <button class="btn btn-primary" onclick="alert('Task Creation Dialog (v2.7)')">+ Aufgabe erstellen</button>
-    </div>
+{% set payload = tasks if tasks is mapping else {"items": tasks or [], "inbox": [], "notifications": [], "badge_count": 0, "users": [], "viewer": {"user": user or "", "role": roles or "READONLY"}} %}
+{% set items = payload.get("items", []) %}
+{% set inbox = payload.get("inbox", []) %}
+{% set notifications = payload.get("notifications", []) %}
+{% set users = payload.get("users", []) %}
+{% set viewer = payload.get("viewer", {"user": user or "", "role": roles or "READONLY"}) %}
 
-    <!-- Kanban Grid -->
-    <div style="display: flex; gap: 20px; flex: 1; overflow-x: auto; padding-bottom: 20px;">
-        {% for col in ["To Do", "Doing", "Done"] %}
-        <div style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; background: rgba(255,255,255,0.02); border-radius: var(--radius-lg); border: 1px solid var(--color-border); padding: 16px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <h3 style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--text-tertiary);">{{ col }}</h3>
-                <span class="badge" style="font-size: 10px;">{{ tasks|selectattr('column_name', 'equalto', col)|list|length }}</span>
-            </div>
-            
-            <div id="col-{{ col|replace(' ', '-') }}" class="kanban-column" style="display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 100px;">
-                {% for task in tasks if task.column_name == col %}
-                <div class="panel ripple task-card" style="margin: 0; padding: 16px; cursor: grab; background: var(--color-bg-panel); border-color: var(--color-border);" data-id="{{ task.id }}">
-                    <div style="font-size: 14px; font-weight: 600; color: var(--color-text-main); margin-bottom: 8px;">{{ task.title }}</div>
-                    {% if task.priority %}
-                    <span class="badge" style="font-size: 9px; background: {{ 'rgba(239, 68, 68, 0.1)' if task.priority == 'HIGH' else 'rgba(37, 99, 235, 0.1)' }}; color: {{ 'var(--color-danger)' if task.priority == 'HIGH' else 'var(--color-accent)' }};">
-                        {{ task.priority }}
-                    </span>
-                    {% endif %}
-                    <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-size: 10px; color: var(--text-tertiary);">#{{ task.id[:6] }}</div>
-                        {% if task.assigned_user %}
-                        <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--color-accent); display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 800; color: var(--color-text-main);">
-                            {{ task.assigned_user[0]|upper }}
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endfor %}
+<div style="display:flex; flex-direction:column; gap:16px;">
+  <div class="panel" style="padding:16px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+    <div>
+      <h1 style="font-size:24px; font-weight:800; margin:0;">{{ project.name if project else 'Aufgaben' }}</h1>
+      <p style="margin:6px 0 0 0; color:var(--text-secondary); font-size:13px;">
+        Team-Aufgaben lokal-first: Inbox, Zuweisungen, Annahme/Ablehnung/Delegation.
+      </p>
+      <div style="margin-top:8px; font-size:12px; color:var(--text-tertiary);">
+        Rolle: <strong>{{ viewer.role }}</strong> | Benutzer: <strong>{{ viewer.user }}</strong>
+      </div>
     </div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <span class="badge">Inbox: {{ inbox|length }}</span>
+      <span class="badge">Benachrichtigungen: {{ payload.get("badge_count", 0) }}</span>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:16px;">
+    <h2 style="margin:0 0 12px 0; font-size:16px; font-weight:700;">Aufgabe erstellen</h2>
+    <form id="task-create-form" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px;">
+      <input type="text" id="task-title" class="input" placeholder="Titel" required />
+      <input type="text" id="task-desc" class="input" placeholder="Beschreibung" />
+      <select id="task-priority" class="input">
+        <option value="LOW">LOW</option>
+        <option value="MEDIUM" selected>MEDIUM</option>
+        <option value="HIGH">HIGH</option>
+        <option value="CRITICAL">CRITICAL</option>
+      </select>
+      <input type="datetime-local" id="task-due" class="input" />
+      <select id="task-assignee" class="input">
+        {% for u in users %}
+          <option value="{{ u }}" {% if u == viewer.user %}selected{% endif %}>{{ u }}</option>
+        {% endfor %}
+      </select>
+      <input type="url" id="task-attachment-link" class="input" placeholder="Anhang-Link (optional)" />
+      <input type="text" id="task-upload-path" class="input" placeholder="Upload-Handoff Pfad (optional)" />
+      <button type="submit" class="btn btn-primary">Aufgabe anlegen</button>
+    </form>
+    <p style="margin-top:8px; font-size:11px; color:var(--text-tertiary);">
+      Upload-Handoff wird serverseitig durch die Upload-Pipeline gescannt.
+    </p>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1.4fr 1fr; gap:16px;">
+    <div class="panel" style="padding:16px;">
+      <h2 style="margin:0 0 12px 0; font-size:16px; font-weight:700;">Inbox (incoming tasks)</h2>
+      <div id="inbox-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+    </div>
+    <div class="panel" style="padding:16px;">
+      <h2 style="margin:0 0 12px 0; font-size:16px; font-weight:700;">Benachrichtigungen</h2>
+      <div id="notification-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:repeat(4,minmax(220px,1fr)); gap:16px;">
+    {% for col in ["To Do", "Doing", "Done", "Rejected"] %}
+    <div class="panel" style="padding:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <h3 style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.08em;">{{ col }}</h3>
+        <span class="badge" id="count-{{ col|replace(' ', '-') }}">0</span>
+      </div>
+      <div id="col-{{ col|replace(' ', '-') }}" style="display:flex; flex-direction:column; gap:10px;"></div>
+    </div>
+    {% endfor %}
+  </div>
 </div>
 
-<script src="/static/vendor/sortable.min.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const columns = document.querySelectorAll('.kanban-column');
-    columns.forEach(col => {
-        new Sortable(col, {
-            group: 'kanban',
-            animation: 150,
-            ghostClass: 'skeleton-tag', // Reuse skeleton style for ghost
-            onEnd: async (evt) => {
-                const taskId = evt.item.dataset.id;
-                const newColumn = evt.to.id.replace('col-', '').replace('-', ' ');
-                console.log(`Task ${taskId} moved to ${newColumn}`);
-                
-                // Task 116: Backend Sync
-                try {
-                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-                    await fetch(`/api/tasks/${taskId}/move`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': csrfToken
-                        },
-                        body: JSON.stringify({ column: newColumn })
-                    });
-                } catch (e) {
-                    console.error('Failed to sync task move', e);
-                }
-            }
-        });
-    });
+const payload = {{ payload | tojson }};
+const items = Array.isArray(payload.items) ? payload.items : [];
+const inbox = Array.isArray(payload.inbox) ? payload.inbox : [];
+const notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
+
+function csrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+async function sendCommand(taskId, command) {
+  const res = await fetch(`/api/tasks/${taskId}/move`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrfToken()
+    },
+    body: JSON.stringify({ column: JSON.stringify(command) })
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP_${res.status}`);
+  }
+  return await res.json();
+}
+
+function cardHtml(task) {
+  const due = task.due_at || '';
+  const reason = task.rejection_reason ? `<div style="font-size:11px; color:#f97316;">Grund: ${task.rejection_reason}</div>` : '';
+  const attachment = Array.isArray(task.attachments) && task.attachments.length
+    ? task.attachments.map(a => `<div style="font-size:11px; color:var(--text-tertiary);">${a.kind}: ${a.value}</div>`).join('')
+    : '';
+  return `
+    <div class="panel" style="padding:12px; margin:0;">
+      <div style="display:flex; justify-content:space-between; gap:8px;">
+        <strong style="font-size:13px;">${task.title || ''}</strong>
+        <span class="badge">${task.priority || 'MEDIUM'}</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-secondary); margin:6px 0;">${task.content || ''}</div>
+      <div style="font-size:11px; color:var(--text-tertiary);">Assignee: ${task.assigned_user || '-'}</div>
+      ${due ? `<div style="font-size:11px; color:var(--text-tertiary);">Fällig: ${due}</div>` : ''}
+      ${reason}
+      ${attachment}
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        ${task.can_accept ? `<button class="btn btn-secondary btn-sm" data-action="accept" data-id="${task.id}">Annehmen</button>` : ''}
+        ${task.can_complete ? `<button class="btn btn-secondary btn-sm" data-action="complete" data-id="${task.id}">Erledigt</button>` : ''}
+        ${task.can_reject ? `<button class="btn btn-secondary btn-sm" data-action="reject" data-id="${task.id}">Ablehnen</button>` : ''}
+        ${task.can_delegate ? `<button class="btn btn-secondary btn-sm" data-action="delegate" data-id="${task.id}">Delegieren</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderColumns() {
+  const columns = ["To Do", "Doing", "Done", "Rejected"];
+  for (const col of columns) {
+    const colId = `col-${col.replaceAll(' ', '-')}`;
+    const countId = `count-${col.replaceAll(' ', '-')}`;
+    const bucket = items.filter(t => (t.column_name || 'To Do') === col);
+    document.getElementById(colId).innerHTML = bucket.map(cardHtml).join('') || '<div style="font-size:12px; color:var(--text-tertiary);">Keine Einträge</div>';
+    document.getElementById(countId).textContent = String(bucket.length);
+  }
+}
+
+function renderInbox() {
+  const el = document.getElementById('inbox-list');
+  if (!inbox.length) {
+    el.innerHTML = '<div style="font-size:12px; color:var(--text-tertiary);">Keine neuen Aufgaben.</div>';
+    return;
+  }
+  el.innerHTML = inbox.map(cardHtml).join('');
+}
+
+function renderNotifications() {
+  const el = document.getElementById('notification-list');
+  if (!notifications.length) {
+    el.innerHTML = '<div style="font-size:12px; color:var(--text-tertiary);">Keine Benachrichtigungen.</div>';
+    return;
+  }
+  el.innerHTML = notifications.map(n => `
+    <div class="panel" style="padding:10px; margin:0;">
+      <div style="font-size:12px;">${n.message || ''}</div>
+      <div style="font-size:11px; color:var(--text-tertiary); margin-top:4px;">
+        ${n.kind || ''} · ${n.created_at || ''}
+      </div>
+      ${Number(n.is_read || 0) === 0 ? `<button class="btn btn-secondary btn-sm" data-action="read-notification" data-id="${n.id}">Als gelesen</button>` : ''}
+    </div>
+  `).join('');
+}
+
+document.addEventListener('click', async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const action = target.dataset.action;
+  if (!action) return;
+  const id = target.dataset.id || '';
+  try {
+    if (action === 'accept') {
+      await sendCommand(id, { action: 'accept', task_id: id });
+      location.reload();
+    } else if (action === 'complete') {
+      await sendCommand(id, { action: 'complete', task_id: id });
+      location.reload();
+    } else if (action === 'reject') {
+      const reason = prompt('Ablehnungsgrund (Pflicht):');
+      if (!reason || !reason.trim()) return;
+      await sendCommand(id, { action: 'reject', task_id: id, reason: reason.trim() });
+      location.reload();
+    } else if (action === 'delegate') {
+      const toUser = prompt('An welchen registrierten Account delegieren?');
+      if (!toUser || !toUser.trim()) return;
+      const reason = prompt('Delegationsgrund (optional):') || '';
+      await sendCommand(id, { action: 'delegate', task_id: id, to_user: toUser.trim(), reason: reason.trim() });
+      location.reload();
+    } else if (action === 'read-notification') {
+      await sendCommand('__cmd__', { action: 'mark_notification_read', task_id: items[0]?.id || '', notification_id: Number(id) });
+      location.reload();
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Aktion fehlgeschlagen. Details in der Konsole.');
+  }
 });
+
+document.getElementById('task-create-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const title = document.getElementById('task-title').value.trim();
+  if (!title) return;
+  const command = {
+    action: 'create',
+    title,
+    description: document.getElementById('task-desc').value.trim(),
+    priority: document.getElementById('task-priority').value,
+    due_at: document.getElementById('task-due').value,
+    assigned_to: document.getElementById('task-assignee').value,
+    attachment_link: document.getElementById('task-attachment-link').value.trim(),
+    attachment_upload_path: document.getElementById('task-upload-path').value.trim(),
+  };
+  try {
+    await sendCommand('__cmd__', command);
+    location.reload();
+  } catch (err) {
+    console.error(err);
+    alert('Aufgabe konnte nicht angelegt werden.');
+  }
+});
+
+renderColumns();
+renderInbox();
+renderNotifications();
 </script>
 {% endblock %}
