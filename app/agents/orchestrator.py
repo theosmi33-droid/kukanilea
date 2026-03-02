@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
@@ -12,6 +13,7 @@ from app.agents.index import IndexAgent
 from app.agents.llm import LLMProvider, get_default_provider
 from app.agents.mail import MailAgent
 from app.agents.memory import MemoryAgent
+from app.agents.memory_store import MemoryManager
 from app.agents.mesh import MeshAgent
 from app.agents.observer import ObserverAgent
 from app.agents.open_file import OpenFileAgent
@@ -107,6 +109,9 @@ class Orchestrator:
                 error="prompt_injection_blocked",
             )
 
+        if self._is_messenger_request(message):
+            return self._handle_messenger_request(message, intent, context)
+
         for agent in self.agents:
             if agent.can_handle(intent, message):
                 if not self.policy.allows(context.role, agent.required_role):
@@ -152,6 +157,218 @@ class Orchestrator:
             ok=False,
             error="intent_unhandled",
         )
+
+    def _is_messenger_request(self, message: str) -> bool:
+        text = (message or "").lower()
+        messenger_tokens = [
+            "telegram",
+            "whatsapp",
+            "instagram",
+            "messenger",
+            "teamchat",
+            "intern",
+            "nachricht",
+            "@kukanilea",
+        ]
+        return any(tok in text for tok in messenger_tokens)
+
+    def _handle_messenger_request(
+        self, message: str, intent: str, context: AgentContext
+    ) -> OrchestratorResult:
+        text = message.strip()
+        providers = self._provider_status()
+        crm_match = self._crm_match_hint(text)
+        extracted = self._extract_provider(text)
+        normalized_provider = extracted if extracted != "unknown" else "internal"
+        memory = self._memory_manager()
+        stored = False
+        if memory:
+            stored = memory.store_messenger_message(
+                tenant_id=context.tenant_id or "default",
+                provider=normalized_provider,
+                sender=context.user or "unknown",
+                recipient="team",
+                content=text,
+                attachments=[],
+                crm_match=crm_match,
+                direction="inbound",
+                status="stored",
+            )
+
+        react_steps = [
+            {
+                "thought": "Nachricht normalisieren und Provider erkennen.",
+                "action": "normalize_message",
+                "observation": {"provider": normalized_provider, "stored": stored},
+            },
+            {
+                "thought": "CRM-Heuristik und Folgeaktionen bestimmen.",
+                "action": "analyze_context",
+                "observation": {"crm_match": crm_match, "intent": intent},
+            },
+        ]
+
+        actions: List[Dict[str, Any]] = []
+        proposals: List[Dict[str, Any]] = []
+
+        if self._asks_for_send(text):
+            proposals.append(
+                {
+                    "type": "send_message",
+                    "provider": normalized_provider,
+                    "confirm_required": True,
+                    "policy_mode": "business_only"
+                    if normalized_provider in {"whatsapp", "meta", "instagram"}
+                    else "standard",
+                }
+            )
+
+        if self._asks_for_task(text):
+            proposals.append(
+                {
+                    "type": "create_task",
+                    "confirm_required": True,
+                    "title": self._extract_task_title(text),
+                }
+            )
+
+        if self._asks_for_appointment(text):
+            proposals.append(
+                {
+                    "type": "create_appointment",
+                    "confirm_required": True,
+                    "summary": self._extract_task_title(text),
+                }
+            )
+
+        if self._asks_for_search(text):
+            search_action = {"type": "search_docs", "query": text}
+            actions.append(search_action)
+            react_steps.append(
+                {
+                    "thought": "Dokumentkontext für Assistenz vorbereiten.",
+                    "action": "search_docs",
+                    "observation": {"queued": True},
+                }
+            )
+
+        if self._asks_for_draft(text):
+            proposals.append(
+                {
+                    "type": "mail_generate",
+                    "confirm_required": True,
+                    "reason": "assistant_draft",
+                }
+            )
+
+        hint_lines = [
+            "Messenger-Hub aktiv. Interner Chat bleibt offline-fähig.",
+            "Externe Provider laufen optional und degraden auf DISCONNECTED, wenn offline.",
+        ]
+        if crm_match:
+            hint_lines.append(
+                f"CRM-Match (read-only): {crm_match.get('display', '')}."
+            )
+        if proposals:
+            hint_lines.append(
+                "Vorgeschlagene Aktionen sind mit Confirm-Gate markiert und werden nicht automatisch ausgeführt."
+            )
+
+        suggestions = build_safe_suggestions(
+            [
+                "zeige provider status",
+                "suche nachricht von <name>",
+                "erstelle task aus nachricht",
+            ]
+        )
+        return OrchestratorResult(
+            text="\n".join(hint_lines),
+            actions=actions,
+            intent="messenger",
+            data={
+                "hub": {
+                    "provider_status": providers,
+                    "store": {"ok": stored, "mode": "local_memory"},
+                    "crm_match": crm_match,
+                    "proposals": proposals,
+                    "react_trace": react_steps,
+                }
+            },
+            suggestions=suggestions,
+            ok=True,
+            error=None,
+        )
+
+    def _provider_status(self) -> Dict[str, Dict[str, str]]:
+        return {
+            "internal": {"status": "online", "mode": "offline_always"},
+            "telegram": {"status": "disconnected", "mode": "optional"},
+            "meta": {"status": "disconnected", "mode": "business_only"},
+            "instagram": {"status": "disconnected", "mode": "business_only"},
+            "whatsapp": {"status": "future_plugin", "mode": "business_only"},
+        }
+
+    def _memory_manager(self) -> MemoryManager | None:
+        auth_db = getattr(self.core, "AUTH_DB", None) or getattr(self.core, "DB_PATH", None)
+        if not auth_db:
+            return None
+        return MemoryManager(str(auth_db))
+
+    def _extract_provider(self, message: str) -> str:
+        text = (message or "").lower()
+        if "telegram" in text:
+            return "telegram"
+        if "instagram" in text:
+            return "instagram"
+        if "meta" in text or "facebook" in text or "messenger" in text:
+            return "meta"
+        if "whatsapp" in text:
+            return "whatsapp"
+        if "intern" in text or "teamchat" in text:
+            return "internal"
+        return "unknown"
+
+    def _crm_match_hint(self, message: str) -> Dict[str, str]:
+        phone_match = re.search(r"(\+?\d[\d\-\s]{7,}\d)", message or "")
+        if phone_match:
+            number = phone_match.group(1).strip()
+            return {
+                "source": "phone",
+                "display": f"Kunde mit Telefonnummer {number}",
+                "confidence": "medium",
+            }
+        name_match = re.search(r"\b(kunde|an|von)\s+([A-ZÄÖÜ][a-zäöüß]+)", message or "")
+        if name_match:
+            return {
+                "source": "name",
+                "display": f"Kunde {name_match.group(2)}",
+                "confidence": "low",
+            }
+        return {}
+
+    def _asks_for_send(self, message: str) -> bool:
+        text = (message or "").lower()
+        return any(k in text for k in ["sende", "schick", "antworten", "reply"])
+
+    def _asks_for_task(self, message: str) -> bool:
+        text = (message or "").lower()
+        return any(k in text for k in ["task", "aufgabe", "todo"])
+
+    def _asks_for_appointment(self, message: str) -> bool:
+        text = (message or "").lower()
+        return any(k in text for k in ["termin", "kalender", "meeting"])
+
+    def _asks_for_search(self, message: str) -> bool:
+        text = (message or "").lower()
+        return any(k in text for k in ["suche", "finde", "dokument", "rechnung"])
+
+    def _asks_for_draft(self, message: str) -> bool:
+        text = (message or "").lower()
+        return any(k in text for k in ["entwurf", "draft", "mail", "email"])
+
+    def _extract_task_title(self, message: str) -> str:
+        cleaned = re.sub(r"\s+", " ", (message or "").strip())
+        return cleaned[:96] or "Nachricht verarbeiten"
 
     def _apply_policy(
         self, context: AgentContext, agent, actions: List[Dict[str, Any]]
@@ -232,7 +449,7 @@ class Orchestrator:
             )
 
 
-def answer(user_msg: str) -> Dict[str, Any]:
+def answer(user_msg: str, role: str | None = None) -> Dict[str, Any]:
     """Top-level entry point for the agentic chat."""
     from app import core
     from app.auth import current_role, current_tenant, current_user
@@ -250,7 +467,7 @@ def answer(user_msg: str) -> Dict[str, Any]:
     context = AgentContext(
         tenant_id=current_tenant() or "default",
         user=str(current_user() or "dev"),
-        role=str(current_role() or "USER"),
+        role=str(role or current_role() or "USER"),
     )
     
     res = orchestrator.handle(user_msg, context)
