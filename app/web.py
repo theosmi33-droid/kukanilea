@@ -146,6 +146,7 @@ db_latest_path_for_doc = _core_get("db_latest_path_for_doc")
 db_path_for_doc = _core_get("db_path_for_doc")
 
 # Optional tasks
+task_create = _core_get("task_create")
 task_list = _core_get("task_list")
 task_resolve = _core_get("task_resolve")
 task_dismiss = _core_get("task_dismiss")
@@ -3516,20 +3517,348 @@ def projects_list():
     return _render_base("kanban.html", active_tab="tasks", project=project, tasks=tasks)
 
 
-@bp.post("/api/tasks/<task_id>/move")
+@bp.get("/api/projects/state")
+@login_required
+def api_projects_state():
+    from app.modules.projects.logic import ProjectManager
+
+    tenant_id = current_tenant()
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    hub = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
+    board_id = request.args.get("board_id") or hub["board"]["id"]
+    try:
+        state = pm.list_board_state(tenant_id=tenant_id, board_id=board_id)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+    boards = pm.list_boards(tenant_id, state["project"]["id"])
+    state["boards"] = boards
+    return jsonify(ok=True, state=state)
+
+
+@bp.post("/api/projects")
 @login_required
 @csrf_protected
-def api_task_move(task_id: str):
-    payload = request.get_json() or {}
-    new_col = payload.get("column")
-    if not new_col:
-        return jsonify(ok=False), 400
-        
+def api_projects_create():
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("name") or "").strip()
+    description = (payload.get("description") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="name_required"), 400
+
     from app.modules.projects.logic import ProjectManager
+
     pm = ProjectManager(current_app.extensions["auth_db"])
-    pm.update_task_column(task_id, new_col)
-    
-    return jsonify(ok=True)
+    pid = pm.create_project(current_tenant(), name, description)
+    board_id = pm.create_board(
+        pid,
+        "Main Board",
+        tenant_id=current_tenant(),
+        description=f"Board fuer {name}",
+        actor=current_user() or "system",
+    )
+    state = pm.list_board_state(tenant_id=current_tenant(), board_id=board_id)
+    return jsonify(ok=True, project=state["project"], board=state["board"])
+
+
+@bp.post("/api/projects/boards")
+@login_required
+@csrf_protected
+def api_projects_board_create():
+    payload = request.get_json(silent=True) or {}
+    project_id = (payload.get("project_id") or "").strip()
+    name = (payload.get("name") or "").strip()
+    description = (payload.get("description") or "").strip()
+    if not project_id or not name:
+        return jsonify(ok=False, error="project_id_and_name_required"), 400
+
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        board_id = pm.create_board(
+            project_id,
+            name,
+            tenant_id=current_tenant(),
+            description=description,
+            actor=current_user() or "system",
+        )
+        state = pm.list_board_state(tenant_id=current_tenant(), board_id=board_id)
+        return jsonify(ok=True, board=state["board"], columns=state["columns"])
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+
+
+@bp.post("/api/projects/columns")
+@login_required
+@csrf_protected
+def api_projects_column_create():
+    payload = request.get_json(silent=True) or {}
+    board_id = (payload.get("board_id") or "").strip()
+    name = (payload.get("name") or "").strip()
+    color = (payload.get("color") or "#64748b").strip()
+    if not board_id or not name:
+        return jsonify(ok=False, error="board_id_and_name_required"), 400
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        col = pm.create_column(
+            tenant_id=current_tenant(),
+            board_id=board_id,
+            name=name,
+            color=color,
+            actor=current_user() or "system",
+        )
+        return jsonify(ok=True, column=col)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+
+
+@bp.patch("/api/projects/columns/<column_id>")
+@login_required
+@csrf_protected
+def api_projects_column_update(column_id: str):
+    payload = request.get_json(silent=True) or {}
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        col = pm.update_column(
+            tenant_id=current_tenant(),
+            column_id=column_id,
+            name=payload.get("name"),
+            color=payload.get("color"),
+            position=payload.get("position"),
+            actor=current_user() or "system",
+        )
+        return jsonify(ok=True, column=col)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+
+
+@bp.delete("/api/projects/columns/<column_id>")
+@login_required
+@csrf_protected
+def api_projects_column_delete(column_id: str):
+    payload = request.get_json(silent=True) or {}
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        pm.delete_column(
+            tenant_id=current_tenant(),
+            column_id=column_id,
+            fallback_column_id=payload.get("fallback_column_id"),
+            actor=current_user() or "system",
+        )
+        return jsonify(ok=True)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+
+@bp.post("/api/projects/cards")
+@login_required
+@csrf_protected
+def api_projects_card_create():
+    payload = request.get_json(silent=True) or {}
+    required = ["board_id", "column_id", "title"]
+    if any(not (payload.get(k) or "").strip() for k in required):
+        return jsonify(ok=False, error="board_id_column_id_title_required"), 400
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        card = pm.create_card(
+            tenant_id=current_tenant(),
+            board_id=(payload.get("board_id") or "").strip(),
+            column_id=(payload.get("column_id") or "").strip(),
+            title=(payload.get("title") or "").strip(),
+            description=(payload.get("description") or "").strip(),
+            due_date=(payload.get("due_date") or "").strip(),
+            assignee=(payload.get("assignee") or "").strip(),
+            actor=current_user() or "system",
+        )
+        return jsonify(ok=True, card=card)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+
+@bp.patch("/api/projects/cards/<card_id>")
+@login_required
+@csrf_protected
+def api_projects_card_update(card_id: str):
+    payload = request.get_json(silent=True) or {}
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        card = pm.update_card(
+            tenant_id=current_tenant(),
+            card_id=card_id,
+            actor=current_user() or "system",
+            title=payload.get("title"),
+            description=payload.get("description"),
+            due_date=payload.get("due_date"),
+            assignee=payload.get("assignee"),
+        )
+        return jsonify(ok=True, card=card)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+
+
+@bp.post("/api/projects/cards/<card_id>/move")
+@login_required
+@csrf_protected
+def api_projects_card_move(card_id: str):
+    payload = request.get_json(silent=True) or {}
+    to_column_id = (payload.get("to_column_id") or "").strip()
+    if not to_column_id:
+        return jsonify(ok=False, error="to_column_id_required"), 400
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        card = pm.move_card(
+            tenant_id=current_tenant(),
+            card_id=card_id,
+            to_column_id=to_column_id,
+            actor=current_user() or "system",
+            reason=(payload.get("reason") or "").strip(),
+            position=payload.get("position"),
+        )
+        return jsonify(ok=True, card=card)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+
+@bp.get("/api/projects/cards/<card_id>/comments")
+@login_required
+def api_projects_comments_list(card_id: str):
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    comments = pm.list_comments(tenant_id=current_tenant(), card_id=card_id)
+    return jsonify(ok=True, comments=comments)
+
+
+@bp.post("/api/projects/cards/<card_id>/comments")
+@login_required
+@csrf_protected
+def api_projects_comment_add(card_id: str):
+    payload = request.get_json(silent=True) or {}
+    content = (payload.get("content") or "").strip()
+    if not content:
+        return jsonify(ok=False, error="content_required"), 400
+
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        comment = pm.add_comment(
+            tenant_id=current_tenant(),
+            card_id=card_id,
+            author=current_user() or "system",
+            content=content,
+        )
+        return jsonify(ok=True, comment=comment)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+
+@bp.get("/api/projects/cards/<card_id>/attachments")
+@login_required
+def api_projects_attachments_list(card_id: str):
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    attachments = pm.list_attachments(tenant_id=current_tenant(), card_id=card_id)
+    return jsonify(ok=True, attachments=attachments)
+
+
+@bp.post("/api/projects/cards/<card_id>/attachments")
+@login_required
+@csrf_protected
+def api_projects_attachment_add(card_id: str):
+    payload = request.get_json(silent=True) or {}
+    file_path = (payload.get("file_path") or "").strip()
+    file_name = (payload.get("file_name") or "").strip()
+    if not file_path:
+        return jsonify(ok=False, error="file_path_required"), 400
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        attachment = pm.add_attachment(
+            tenant_id=current_tenant(),
+            card_id=card_id,
+            actor=current_user() or "system",
+            file_path=file_path,
+            file_name=file_name,
+        )
+        return jsonify(ok=True, attachment=attachment)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+
+@bp.post("/api/projects/cards/<card_id>/link-task")
+@login_required
+@csrf_protected
+def api_projects_link_task(card_id: str):
+    payload = request.get_json(silent=True) or {}
+    maybe_task_id = payload.get("task_id")
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        card = pm.link_card_task(
+            tenant_id=current_tenant(),
+            card_id=card_id,
+            actor=current_user() or "system",
+            task_id=int(maybe_task_id) if maybe_task_id is not None else None,
+            task_creator=task_create if callable(task_create) else None,
+        )
+        return jsonify(ok=True, card=card)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    except Exception as exc:
+        return jsonify(ok=False, error=f"task_link_failed:{exc}"), 500
+
+
+@bp.post("/api/projects/cards/<card_id>/start-timer")
+@login_required
+@csrf_protected
+def api_projects_start_timer(card_id: str):
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        entry = pm.start_timer_for_card(
+            tenant_id=current_tenant(),
+            card_id=card_id,
+            actor=current_user() or "system",
+            timer_start_fn=time_entry_start if callable(time_entry_start) else None,
+        )
+        return jsonify(ok=True, timer=entry)
+    except PermissionError:
+        return jsonify(ok=False, error="forbidden"), 403
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    except Exception as exc:
+        return jsonify(ok=False, error=f"timer_failed:{exc}"), 500
 
 
 @bp.route("/messenger")

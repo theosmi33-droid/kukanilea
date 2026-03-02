@@ -1,128 +1,1122 @@
-"""
-app/modules/projects/logic.py
-Kanban & Project management engine for KUKANILEA v2.1.
-Handles Step 71-85 (projects, boards, tasks).
-"""
+from __future__ import annotations
 
+import hashlib
+import json
+import math
+import struct
 import uuid
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional
+
+from app.ai.embeddings import generate_embedding
+
+DEFAULT_COLUMN_SPECS = (
+    {"name": "To Do", "color": "#2563eb"},
+    {"name": "Doing", "color": "#f59e0b"},
+    {"name": "Done", "color": "#16a34a"},
+)
+
 
 class ProjectManager:
+    """Project Hub domain logic for projects, boards, columns and cards."""
+
     def __init__(self, db_ext):
         self.db = db_ext
 
+    def _now(self) -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    def _fallback_embedding(self, text: str, size: int = 64) -> List[float]:
+        vec = [0.0] * size
+        for token in (text or "").lower().split():
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            idx = digest[0] % size
+            sign = -1.0 if digest[1] % 2 else 1.0
+            weight = 0.4 + (digest[2] / 255.0)
+            vec[idx] += sign * weight
+        norm = math.sqrt(sum(v * v for v in vec))
+        if norm <= 0.0:
+            vec[0] = 1.0
+            norm = 1.0
+        return [v / norm for v in vec]
+
+    def _embed(self, text: str) -> List[float]:
+        emb = generate_embedding(text)
+        if emb:
+            return [float(v) for v in emb]
+        return self._fallback_embedding(text)
+
+    def _store_memory(
+        self,
+        con,
+        tenant_id: str,
+        actor: str,
+        category: str,
+        content: str,
+        metadata: Dict[str, Any],
+        importance: int = 7,
+    ) -> None:
+        embedding = self._embed(content)
+        blob = struct.pack(f"{len(embedding)}f", *embedding)
+        con.execute(
+            """
+            INSERT INTO agent_memory (tenant_id, timestamp, agent_role, content, embedding, metadata, importance_score, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tenant_id,
+                self._now(),
+                actor or "project_hub",
+                content,
+                blob,
+                json.dumps(metadata, ensure_ascii=True),
+                max(1, min(int(importance), 10)),
+                category,
+            ),
+        )
+
+    def _log_activity(
+        self,
+        con,
+        *,
+        tenant_id: str,
+        actor: str,
+        action: str,
+        resource: str,
+        details: str,
+        board_id: Optional[str] = None,
+        card_id: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+        importance: int = 7,
+    ) -> None:
+        ts = self._now()
+        payload_obj = payload or {}
+        con.execute(
+            "INSERT INTO audit_log(ts, tenant_id, username, action, resource, details) VALUES (?,?,?,?,?,?)",
+            (ts, tenant_id, actor or "system", action, resource, details),
+        )
+        con.execute(
+            """
+            INSERT INTO card_activities(id, tenant_id, board_id, card_id, action, payload_json, actor, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                tenant_id,
+                board_id,
+                card_id,
+                action,
+                json.dumps(payload_obj, ensure_ascii=True),
+                actor or "system",
+                ts,
+            ),
+        )
+        memory_text = f"Project Hub activity: {action}. {details}"
+        memory_meta = {
+            "event_type": "project_hub_activity",
+            "action": action,
+            "resource": resource,
+            "board_id": board_id,
+            "card_id": card_id,
+            "actor": actor,
+            "details": details,
+            **payload_obj,
+        }
+        self._store_memory(
+            con,
+            tenant_id=tenant_id,
+            actor="project_hub",
+            category="KANBAN_ACTIVITY",
+            content=memory_text,
+            metadata=memory_meta,
+            importance=importance,
+        )
+
+    def _project_row(self, con, tenant_id: str, project_id: str):
+        return con.execute(
+            "SELECT * FROM projects WHERE id = ? AND tenant_id = ?",
+            (project_id, tenant_id),
+        ).fetchone()
+
+    def _board_row(self, con, tenant_id: str, board_id: str):
+        return con.execute(
+            "SELECT * FROM project_boards WHERE id = ? AND tenant_id = ?",
+            (board_id, tenant_id),
+        ).fetchone()
+
+    def ensure_default_hub(self, tenant_id: str, actor: str = "system") -> Dict[str, Any]:
+        if not tenant_id:
+            raise ValueError("tenant_required")
+
+        con = self.db._db()
+        try:
+            project = con.execute(
+                "SELECT * FROM projects WHERE tenant_id = ? ORDER BY created_at ASC LIMIT 1",
+                (tenant_id,),
+            ).fetchone()
+            if not project:
+                pid = str(uuid.uuid4())
+                con.execute(
+                    "INSERT INTO projects(id, tenant_id, name, description, created_at) VALUES (?,?,?,?,?)",
+                    (
+                        pid,
+                        tenant_id,
+                        "Project Hub",
+                        "Lokales Kanban-Board mit Aktivitaetsverlauf.",
+                        self._now(),
+                    ),
+                )
+                project = con.execute("SELECT * FROM projects WHERE id = ?", (pid,)).fetchone()
+
+            board = con.execute(
+                "SELECT * FROM project_boards WHERE tenant_id = ? AND project_id = ? ORDER BY created_at ASC LIMIT 1",
+                (tenant_id, project["id"]),
+            ).fetchone()
+            if not board:
+                board_id = str(uuid.uuid4())
+                con.execute(
+                    """
+                    INSERT INTO project_boards(id, tenant_id, project_id, name, description, archived, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+                    """,
+                    (
+                        board_id,
+                        tenant_id,
+                        project["id"],
+                        "Main Board",
+                        "Standard-Board",
+                        self._now(),
+                        self._now(),
+                    ),
+                )
+                board = con.execute("SELECT * FROM project_boards WHERE id = ?", (board_id,)).fetchone()
+
+            cols = con.execute(
+                "SELECT id FROM project_columns WHERE tenant_id = ? AND board_id = ?",
+                (tenant_id, board["id"]),
+            ).fetchall()
+            if not cols:
+                for idx, spec in enumerate(DEFAULT_COLUMN_SPECS):
+                    con.execute(
+                        """
+                        INSERT INTO project_columns(id, tenant_id, board_id, name, position, color, archived, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+                        """,
+                        (
+                            str(uuid.uuid4()),
+                            tenant_id,
+                            board["id"],
+                            spec["name"],
+                            (idx + 1) * 100,
+                            spec["color"],
+                            self._now(),
+                            self._now(),
+                        ),
+                    )
+
+            con.commit()
+            return {
+                "project": dict(project),
+                "board": dict(board),
+                "columns": self.list_columns(str(board["id"]), tenant_id=tenant_id),
+            }
+        finally:
+            con.close()
+
     def create_project(self, tenant_id: str, name: str, description: str = "") -> str:
-        """Step 71: Create projects table."""
-        p_id = str(uuid.uuid4())
-        now = datetime.now().isoformat()
+        pid = str(uuid.uuid4())
         con = self.db._db()
         try:
             con.execute(
                 "INSERT INTO projects(id, tenant_id, name, description, created_at) VALUES (?,?,?,?,?)",
-                (p_id, tenant_id, name, description, now)
+                (pid, tenant_id, (name or "Projekt").strip(), description or "", self._now()),
             )
             con.commit()
-            return p_id
+            return pid
         finally:
             con.close()
 
-    def create_board(self, project_id: str, name: str) -> str:
-        """Step 72: Create boards."""
-        b_id = str(uuid.uuid4())
-        now = datetime.now().isoformat()
+    def create_board(
+        self,
+        project_id: str,
+        name: str,
+        *,
+        tenant_id: Optional[str] = None,
+        description: str = "",
+        actor: str = "system",
+    ) -> str:
         con = self.db._db()
         try:
+            row = con.execute(
+                "SELECT tenant_id FROM projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError("project_not_found")
+            t_id = tenant_id or str(row["tenant_id"])
+            if t_id != str(row["tenant_id"]):
+                raise PermissionError("tenant_mismatch")
+
+            bid = str(uuid.uuid4())
+            now = self._now()
             con.execute(
-                "INSERT INTO boards(id, project_id, name, created_at) VALUES (?,?,?,?)",
-                (b_id, project_id, name, now)
+                """
+                INSERT INTO project_boards(id, tenant_id, project_id, name, description, archived, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+                """,
+                (bid, t_id, project_id, (name or "Board").strip(), description or "", now, now),
+            )
+            for idx, spec in enumerate(DEFAULT_COLUMN_SPECS):
+                con.execute(
+                    """
+                    INSERT INTO project_columns(id, tenant_id, board_id, name, position, color, archived, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    """,
+                    (
+                        str(uuid.uuid4()),
+                        t_id,
+                        bid,
+                        spec["name"],
+                        (idx + 1) * 100,
+                        spec["color"],
+                        now,
+                        now,
+                    ),
+                )
+            self._log_activity(
+                con,
+                tenant_id=t_id,
+                actor=actor,
+                action="BOARD_CREATED",
+                resource=f"board:{bid}",
+                details=f"Board '{name}' erstellt.",
+                board_id=bid,
+                payload={"project_id": project_id, "board_name": name},
+                importance=6,
             )
             con.commit()
-            return b_id
+            return bid
+        except Exception:
+            con.rollback()
+            raise
         finally:
             con.close()
 
-    def create_task(self, board_id: str, title: str, column: str = "To Do", **kwargs) -> str:
-        """Step 74: Create tasks + Step 126: Activity Log."""
-        t_id = str(uuid.uuid4())
-        now = datetime.now().isoformat()
-        con = self.db._db()
-        try:
-            con.execute(
-                """INSERT INTO tasks(id, board_id, column_name, title, content, assigned_user, due_date, priority, created_at) 
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (t_id, board_id, column, title, kwargs.get("content"), kwargs.get("assigned"), 
-                 kwargs.get("due"), kwargs.get("priority"), now)
-            )
-            # Step 126: Activity Log (simplified via Audit Table)
-            self._log_activity(con, board_id, "TASK_CREATED", t_id, f"Task '{title}' created.")
-            con.commit()
-            return t_id
-        finally:
-            con.close()
-
-    def add_relation(self, task_id: str, related_id: str, rel_type: str = "relates"):
-        """Step 117: Task relationships ('blocks', 'duplicate')."""
-        con = self.db._db()
-        try:
-            con.execute(
-                "INSERT INTO task_relations(task_id, related_task_id, relation_type) VALUES (?,?,?)",
-                (task_id, related_id, rel_type)
-            )
-            con.commit()
-        finally:
-            con.close()
-
-    def add_checklist_item(self, task_id: str, content: str) -> str:
-        """Step 120: Checklist items."""
-        cl_id = str(uuid.uuid4())
-        con = self.db._db()
-        try:
-            con.execute(
-                "INSERT INTO task_checklists(id, task_id, content) VALUES (?,?,?)",
-                (cl_id, task_id, content)
-            )
-            con.commit()
-            return cl_id
-        finally:
-            con.close()
-
-    def get_gantt_data(self, project_id: str):
-        """Step 129: Data for Gantt-View."""
+    def list_projects(self, tenant_id: str) -> List[Dict[str, Any]]:
         con = self.db._db()
         try:
             rows = con.execute(
-                """SELECT t.id, t.title, t.due_date, t.created_at, b.name as board_name 
-                   FROM tasks t JOIN boards b ON t.board_id = b.id 
-                   WHERE b.project_id = ?""", (project_id,)
+                "SELECT * FROM projects WHERE tenant_id = ? ORDER BY created_at ASC",
+                (tenant_id,),
             ).fetchall()
             return [dict(r) for r in rows]
         finally:
             con.close()
 
-    def _log_activity(self, con, board_id: str, action: str, resource: str, details: str):
-        """Internal helper for Activity Feed (Step 126)."""
-        now = datetime.now().isoformat()
-        # Note: In real app, get current user/tenant from context
-        con.execute(
-            "INSERT INTO audit_log(ts, tenant_id, username, action, resource, details) VALUES (?,?,?,?,?,?)",
-            (now, "SYSTEM", "system", action, resource, details)
+    def list_boards(self, tenant_id: str, project_id: str) -> List[Dict[str, Any]]:
+        con = self.db._db()
+        try:
+            rows = con.execute(
+                """
+                SELECT * FROM project_boards
+                WHERE tenant_id = ? AND project_id = ? AND archived = 0
+                ORDER BY created_at ASC
+                """,
+                (tenant_id, project_id),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+    def list_columns(self, board_id: str, *, tenant_id: str) -> List[Dict[str, Any]]:
+        con = self.db._db()
+        try:
+            rows = con.execute(
+                """
+                SELECT * FROM project_columns
+                WHERE board_id = ? AND tenant_id = ? AND archived = 0
+                ORDER BY position ASC, created_at ASC
+                """,
+                (board_id, tenant_id),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+    def create_column(
+        self,
+        *,
+        tenant_id: str,
+        board_id: str,
+        name: str,
+        color: str = "#64748b",
+        actor: str = "system",
+    ) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            board = self._board_row(con, tenant_id, board_id)
+            if not board:
+                raise PermissionError("board_not_found_or_forbidden")
+            pos_row = con.execute(
+                "SELECT COALESCE(MAX(position), 0) AS max_pos FROM project_columns WHERE board_id = ? AND tenant_id = ?",
+                (board_id, tenant_id),
+            ).fetchone()
+            position = int(pos_row["max_pos"] or 0) + 100
+            cid = str(uuid.uuid4())
+            now = self._now()
+            con.execute(
+                """
+                INSERT INTO project_columns(id, tenant_id, board_id, name, position, color, archived, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+                """,
+                (cid, tenant_id, board_id, (name or "Spalte").strip(), position, color or "#64748b", now, now),
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="COLUMN_CREATED",
+                resource=f"column:{cid}",
+                details=f"Spalte '{name}' erstellt.",
+                board_id=board_id,
+                payload={"column_id": cid, "column_name": name},
+                importance=6,
+            )
+            con.commit()
+            row = con.execute("SELECT * FROM project_columns WHERE id = ?", (cid,)).fetchone()
+            return dict(row)
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def update_column(
+        self,
+        *,
+        tenant_id: str,
+        column_id: str,
+        name: Optional[str],
+        color: Optional[str],
+        position: Optional[int],
+        actor: str,
+    ) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            row = con.execute(
+                "SELECT * FROM project_columns WHERE id = ? AND tenant_id = ?",
+                (column_id, tenant_id),
+            ).fetchone()
+            if not row:
+                raise PermissionError("column_not_found_or_forbidden")
+
+            next_name = (name or row["name"]).strip()
+            next_color = (color or row["color"] or "#64748b").strip()
+            next_position = int(position if position is not None else row["position"])
+            con.execute(
+                "UPDATE project_columns SET name = ?, color = ?, position = ?, updated_at = ? WHERE id = ?",
+                (next_name, next_color, next_position, self._now(), column_id),
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="COLUMN_UPDATED",
+                resource=f"column:{column_id}",
+                details=f"Spalte '{row['name']}' aktualisiert.",
+                board_id=row["board_id"],
+                payload={"column_id": column_id, "name": next_name, "position": next_position},
+                importance=5,
+            )
+            con.commit()
+            new_row = con.execute("SELECT * FROM project_columns WHERE id = ?", (column_id,)).fetchone()
+            return dict(new_row)
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def delete_column(
+        self,
+        *,
+        tenant_id: str,
+        column_id: str,
+        fallback_column_id: Optional[str],
+        actor: str,
+    ) -> None:
+        con = self.db._db()
+        try:
+            column = con.execute(
+                "SELECT * FROM project_columns WHERE id = ? AND tenant_id = ?",
+                (column_id, tenant_id),
+            ).fetchone()
+            if not column:
+                raise PermissionError("column_not_found_or_forbidden")
+
+            cards_count = con.execute(
+                "SELECT COUNT(*) AS c FROM project_cards WHERE tenant_id = ? AND column_id = ?",
+                (tenant_id, column_id),
+            ).fetchone()["c"]
+            if cards_count and not fallback_column_id:
+                raise ValueError("fallback_column_required")
+            if fallback_column_id:
+                target = con.execute(
+                    "SELECT id FROM project_columns WHERE id = ? AND tenant_id = ? AND board_id = ?",
+                    (fallback_column_id, tenant_id, column["board_id"]),
+                ).fetchone()
+                if not target:
+                    raise ValueError("invalid_fallback_column")
+                con.execute(
+                    "UPDATE project_cards SET column_id = ?, updated_at = ? WHERE tenant_id = ? AND column_id = ?",
+                    (fallback_column_id, self._now(), tenant_id, column_id),
+                )
+
+            con.execute(
+                "UPDATE project_columns SET archived = 1, updated_at = ? WHERE id = ?",
+                (self._now(), column_id),
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="COLUMN_ARCHIVED",
+                resource=f"column:{column_id}",
+                details=f"Spalte '{column['name']}' archiviert.",
+                board_id=column["board_id"],
+                payload={"column_id": column_id, "fallback_column_id": fallback_column_id},
+                importance=6,
+            )
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def _assert_column_access(self, con, tenant_id: str, column_id: str) -> sqlite3.Row:
+        row = con.execute(
+            "SELECT * FROM project_columns WHERE id = ? AND tenant_id = ? AND archived = 0",
+            (column_id, tenant_id),
+        ).fetchone()
+        if not row:
+            raise PermissionError("column_not_found_or_forbidden")
+        return row
+
+    def create_card(
+        self,
+        *,
+        tenant_id: str,
+        board_id: str,
+        column_id: str,
+        title: str,
+        description: str = "",
+        due_date: str = "",
+        assignee: str = "",
+        actor: str = "system",
+    ) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            board = self._board_row(con, tenant_id, board_id)
+            if not board:
+                raise PermissionError("board_not_found_or_forbidden")
+            column = self._assert_column_access(con, tenant_id, column_id)
+            if str(column["board_id"]) != str(board_id):
+                raise ValueError("column_not_in_board")
+
+            pos_row = con.execute(
+                "SELECT COALESCE(MAX(position), 0) AS max_pos FROM project_cards WHERE tenant_id = ? AND column_id = ?",
+                (tenant_id, column_id),
+            ).fetchone()
+            position = int(pos_row["max_pos"] or 0) + 100
+            cid = str(uuid.uuid4())
+            now = self._now()
+            con.execute(
+                """
+                INSERT INTO project_cards(
+                    id, tenant_id, board_id, column_id, title, description, due_date,
+                    assignee, linked_task_id, status, position, archived,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'OPEN', ?, 0, ?, ?)
+                """,
+                (
+                    cid,
+                    tenant_id,
+                    board_id,
+                    column_id,
+                    (title or "Neue Karte").strip(),
+                    description or "",
+                    due_date or None,
+                    assignee or "",
+                    position,
+                    now,
+                    now,
+                ),
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="CARD_CREATED",
+                resource=f"card:{cid}",
+                details=f"Karte '{title}' erstellt.",
+                board_id=board_id,
+                card_id=cid,
+                payload={"column_id": column_id, "title": title},
+                importance=7,
+            )
+            con.commit()
+            card = con.execute(
+                "SELECT * FROM project_cards WHERE id = ? AND tenant_id = ?",
+                (cid, tenant_id),
+            ).fetchone()
+            return dict(card)
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def get_card(self, *, tenant_id: str, card_id: str) -> Optional[Dict[str, Any]]:
+        con = self.db._db()
+        try:
+            row = con.execute(
+                "SELECT * FROM project_cards WHERE id = ? AND tenant_id = ? AND archived = 0",
+                (card_id, tenant_id),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            con.close()
+
+    def update_card(
+        self,
+        *,
+        tenant_id: str,
+        card_id: str,
+        actor: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        due_date: Optional[str] = None,
+        assignee: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            row = con.execute(
+                "SELECT * FROM project_cards WHERE id = ? AND tenant_id = ? AND archived = 0",
+                (card_id, tenant_id),
+            ).fetchone()
+            if not row:
+                raise PermissionError("card_not_found_or_forbidden")
+            next_title = (title if title is not None else row["title"]).strip()
+            next_desc = description if description is not None else (row["description"] or "")
+            next_due = due_date if due_date is not None else row["due_date"]
+            next_assignee = assignee if assignee is not None else (row["assignee"] or "")
+            con.execute(
+                """
+                UPDATE project_cards
+                SET title = ?, description = ?, due_date = ?, assignee = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (next_title, next_desc, next_due, next_assignee, self._now(), card_id),
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="CARD_UPDATED",
+                resource=f"card:{card_id}",
+                details=f"Karte '{next_title}' aktualisiert.",
+                board_id=row["board_id"],
+                card_id=card_id,
+                payload={"title": next_title, "due_date": next_due, "assignee": next_assignee},
+                importance=6,
+            )
+            con.commit()
+            updated = con.execute("SELECT * FROM project_cards WHERE id = ?", (card_id,)).fetchone()
+            return dict(updated)
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def move_card(
+        self,
+        *,
+        tenant_id: str,
+        card_id: str,
+        to_column_id: str,
+        actor: str,
+        reason: str = "",
+        position: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            card = con.execute(
+                "SELECT * FROM project_cards WHERE id = ? AND tenant_id = ? AND archived = 0",
+                (card_id, tenant_id),
+            ).fetchone()
+            if not card:
+                raise PermissionError("card_not_found_or_forbidden")
+            new_col = self._assert_column_access(con, tenant_id, to_column_id)
+            if str(new_col["board_id"]) != str(card["board_id"]):
+                raise ValueError("column_not_in_board")
+
+            target_pos = int(position) if position is not None else int((con.execute(
+                "SELECT COALESCE(MAX(position), 0) AS max_pos FROM project_cards WHERE tenant_id = ? AND column_id = ?",
+                (tenant_id, to_column_id),
+            ).fetchone()["max_pos"] or 0) + 100)
+            from_column_id = str(card["column_id"])
+            from_col_name = con.execute("SELECT name FROM project_columns WHERE id = ?", (from_column_id,)).fetchone()
+            to_col_name = con.execute("SELECT name FROM project_columns WHERE id = ?", (to_column_id,)).fetchone()
+            con.execute(
+                "UPDATE project_cards SET column_id = ?, position = ?, updated_at = ? WHERE id = ?",
+                (to_column_id, target_pos, self._now(), card_id),
+            )
+            reason_text = (reason or "Keine Begruendung angegeben.").strip()
+            detail = (
+                f"Karte '{card['title']}' verschoben von '{from_col_name['name'] if from_col_name else from_column_id}' "
+                f"nach '{to_col_name['name'] if to_col_name else to_column_id}'. Grund: {reason_text}"
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="CARD_MOVED",
+                resource=f"card:{card_id}",
+                details=detail,
+                board_id=card["board_id"],
+                card_id=card_id,
+                payload={
+                    "from_column_id": from_column_id,
+                    "to_column_id": to_column_id,
+                    "from_column_name": from_col_name["name"] if from_col_name else from_column_id,
+                    "to_column_name": to_col_name["name"] if to_col_name else to_column_id,
+                    "reason": reason_text,
+                },
+                importance=8,
+            )
+            con.commit()
+            updated = con.execute("SELECT * FROM project_cards WHERE id = ?", (card_id,)).fetchone()
+            return dict(updated)
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def add_comment(self, *, tenant_id: str, card_id: str, author: str, content: str) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            card = con.execute(
+                "SELECT * FROM project_cards WHERE id = ? AND tenant_id = ? AND archived = 0",
+                (card_id, tenant_id),
+            ).fetchone()
+            if not card:
+                raise PermissionError("card_not_found_or_forbidden")
+            text = (content or "").strip()
+            if not text:
+                raise ValueError("comment_empty")
+            comment_id = str(uuid.uuid4())
+            now = self._now()
+            con.execute(
+                """
+                INSERT INTO card_comments(id, tenant_id, card_id, author, content, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (comment_id, tenant_id, card_id, author or "system", text, now),
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=author or "system",
+                action="CARD_COMMENT_ADDED",
+                resource=f"card:{card_id}",
+                details=f"Kommentar auf Karte '{card['title']}' hinzugefuegt.",
+                board_id=card["board_id"],
+                card_id=card_id,
+                payload={"comment_id": comment_id, "comment": text[:300]},
+                importance=7,
+            )
+            con.commit()
+            row = con.execute("SELECT * FROM card_comments WHERE id = ?", (comment_id,)).fetchone()
+            return dict(row)
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def list_comments(self, *, tenant_id: str, card_id: str) -> List[Dict[str, Any]]:
+        con = self.db._db()
+        try:
+            rows = con.execute(
+                """
+                SELECT * FROM card_comments
+                WHERE tenant_id = ? AND card_id = ?
+                ORDER BY created_at ASC
+                """,
+                (tenant_id, card_id),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+    def add_attachment(
+        self,
+        *,
+        tenant_id: str,
+        card_id: str,
+        actor: str,
+        file_path: str,
+        file_name: str = "",
+    ) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            card = con.execute(
+                "SELECT * FROM project_cards WHERE id = ? AND tenant_id = ? AND archived = 0",
+                (card_id, tenant_id),
+            ).fetchone()
+            if not card:
+                raise PermissionError("card_not_found_or_forbidden")
+            path = (file_path or "").strip()
+            if not path:
+                raise ValueError("file_path_required")
+            aid = str(uuid.uuid4())
+            now = self._now()
+            name = (file_name or "").strip() or path.split("/")[-1]
+            con.execute(
+                """
+                INSERT INTO card_attachments(id, tenant_id, card_id, file_name, file_path, uploaded_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (aid, tenant_id, card_id, name, path, actor or "system", now),
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="CARD_ATTACHMENT_ADDED",
+                resource=f"card:{card_id}",
+                details=f"Anhang '{name}' zu Karte '{card['title']}' hinzugefuegt.",
+                board_id=card["board_id"],
+                card_id=card_id,
+                payload={"attachment_id": aid, "file_name": name, "file_path": path},
+                importance=7,
+            )
+            con.commit()
+            row = con.execute("SELECT * FROM card_attachments WHERE id = ?", (aid,)).fetchone()
+            return dict(row)
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def list_attachments(self, *, tenant_id: str, card_id: str) -> List[Dict[str, Any]]:
+        con = self.db._db()
+        try:
+            rows = con.execute(
+                "SELECT * FROM card_attachments WHERE tenant_id = ? AND card_id = ? ORDER BY created_at DESC",
+                (tenant_id, card_id),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+    def list_activities(self, *, tenant_id: str, board_id: str, limit: int = 60) -> List[Dict[str, Any]]:
+        con = self.db._db()
+        try:
+            rows = con.execute(
+                """
+                SELECT * FROM card_activities
+                WHERE tenant_id = ? AND board_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (tenant_id, board_id, max(1, min(int(limit), 300))),
+            ).fetchall()
+            out: List[Dict[str, Any]] = []
+            for row in rows:
+                d = dict(row)
+                try:
+                    d["payload"] = json.loads(d.get("payload_json") or "{}")
+                except Exception:
+                    d["payload"] = {}
+                out.append(d)
+            return out
+        finally:
+            con.close()
+
+    def list_board_cards(self, *, tenant_id: str, board_id: str) -> List[Dict[str, Any]]:
+        con = self.db._db()
+        try:
+            rows = con.execute(
+                """
+                SELECT * FROM project_cards
+                WHERE tenant_id = ? AND board_id = ? AND archived = 0
+                ORDER BY column_id, position ASC, created_at ASC
+                """,
+                (tenant_id, board_id),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+    def list_board_state(self, *, tenant_id: str, board_id: str) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            board = self._board_row(con, tenant_id, board_id)
+            if not board:
+                raise PermissionError("board_not_found_or_forbidden")
+            project = self._project_row(con, tenant_id, board["project_id"])
+            if not project:
+                raise PermissionError("project_not_found_or_forbidden")
+            columns = self.list_columns(board_id, tenant_id=tenant_id)
+            cards = self.list_board_cards(tenant_id=tenant_id, board_id=board_id)
+
+            comments_count = {
+                row["card_id"]: row["c"]
+                for row in con.execute(
+                    "SELECT card_id, COUNT(*) AS c FROM card_comments WHERE tenant_id = ? GROUP BY card_id",
+                    (tenant_id,),
+                ).fetchall()
+            }
+            attachments_count = {
+                row["card_id"]: row["c"]
+                for row in con.execute(
+                    "SELECT card_id, COUNT(*) AS c FROM card_attachments WHERE tenant_id = ? GROUP BY card_id",
+                    (tenant_id,),
+                ).fetchall()
+            }
+            for card in cards:
+                card["comments_count"] = int(comments_count.get(card["id"], 0))
+                card["attachments_count"] = int(attachments_count.get(card["id"], 0))
+
+            return {
+                "project": dict(project),
+                "board": dict(board),
+                "columns": columns,
+                "cards": cards,
+                "activities": self.list_activities(tenant_id=tenant_id, board_id=board_id, limit=40),
+            }
+        finally:
+            con.close()
+
+    def link_card_task(
+        self,
+        *,
+        tenant_id: str,
+        card_id: str,
+        actor: str,
+        task_id: Optional[int] = None,
+        task_creator: Optional[Callable[..., int]] = None,
+    ) -> Dict[str, Any]:
+        con = self.db._db()
+        try:
+            card = con.execute(
+                "SELECT * FROM project_cards WHERE id = ? AND tenant_id = ? AND archived = 0",
+                (card_id, tenant_id),
+            ).fetchone()
+            if not card:
+                raise PermissionError("card_not_found_or_forbidden")
+
+            linked_task_id: Optional[int] = int(task_id) if task_id is not None else None
+            if linked_task_id is None and callable(task_creator):
+                linked_task_id = int(
+                    task_creator(
+                        tenant=tenant_id,
+                        severity="INFO",
+                        task_type="PROJECT",
+                        title=f"[Project Hub] {card['title']}",
+                        details=(card["description"] or "")[:1200],
+                        created_by=actor,
+                    )
+                )
+
+            if linked_task_id is None:
+                raise ValueError("task_id_or_creator_required")
+
+            con.execute(
+                "UPDATE project_cards SET linked_task_id = ?, updated_at = ? WHERE id = ?",
+                (linked_task_id, self._now(), card_id),
+            )
+            self._log_activity(
+                con,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="CARD_TASK_LINKED",
+                resource=f"card:{card_id}",
+                details=f"Karte '{card['title']}' mit Task {linked_task_id} verknuepft.",
+                board_id=card["board_id"],
+                card_id=card_id,
+                payload={"linked_task_id": linked_task_id},
+                importance=7,
+            )
+            con.commit()
+            updated = con.execute("SELECT * FROM project_cards WHERE id = ?", (card_id,)).fetchone()
+            return dict(updated)
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def start_timer_for_card(
+        self,
+        *,
+        tenant_id: str,
+        card_id: str,
+        actor: str,
+        timer_start_fn: Optional[Callable[..., Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        if not callable(timer_start_fn):
+            raise RuntimeError("timer_unavailable")
+
+        con = self.db._db()
+        try:
+            card = con.execute(
+                "SELECT * FROM project_cards WHERE id = ? AND tenant_id = ? AND archived = 0",
+                (card_id, tenant_id),
+            ).fetchone()
+            if not card:
+                raise PermissionError("card_not_found_or_forbidden")
+        finally:
+            con.close()
+
+        timer_entry = timer_start_fn(
+            tenant_id=tenant_id,
+            user=actor,
+            project_id=None,
+            note=f"Project Hub Card {card_id}: {card['title']}",
         )
 
-    def update_task_column(self, task_id: str, new_column: str):
-        """Step 75: Drag and drop tasks (Backend part)."""
+        con2 = self.db._db()
+        try:
+            self._log_activity(
+                con2,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="CARD_TIMER_STARTED",
+                resource=f"card:{card_id}",
+                details=f"Timer fuer Karte '{card['title']}' gestartet.",
+                board_id=card["board_id"],
+                card_id=card_id,
+                payload={"timer_entry": timer_entry},
+                importance=6,
+            )
+            con2.commit()
+        except Exception:
+            con2.rollback()
+            raise
+        finally:
+            con2.close()
+
+        return timer_entry
+
+    # ---------------------------------------------------------------------
+    # Legacy task-table compatibility for existing web flows.
+    # ---------------------------------------------------------------------
+    def create_task(
+        self, board_id: str, title: str, column: str = "To Do", **kwargs: Any
+    ) -> str:
+        t_id = str(uuid.uuid4())
+        now = self._now()
+        con = self.db._db()
+        try:
+            con.execute(
+                """INSERT INTO tasks(id, board_id, column_name, title, content, assigned_user, due_date, priority, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    t_id,
+                    board_id,
+                    column,
+                    title,
+                    kwargs.get("content"),
+                    kwargs.get("assigned"),
+                    kwargs.get("due"),
+                    kwargs.get("priority"),
+                    now,
+                ),
+            )
+            tenant_row = con.execute(
+                """SELECT p.tenant_id
+                   FROM boards b
+                   JOIN projects p ON p.id = b.project_id
+                   WHERE b.id = ?""",
+                (board_id,),
+            ).fetchone()
+            tenant_id = (
+                str(tenant_row["tenant_id"]) if tenant_row else kwargs.get("tenant_id", "SYSTEM")
+            )
+            con.execute(
+                "INSERT INTO audit_log(ts, tenant_id, username, action, resource, details) VALUES (?,?,?,?,?,?)",
+                (
+                    now,
+                    tenant_id,
+                    kwargs.get("username") or "system",
+                    "TASK_CREATED",
+                    t_id,
+                    f"Task '{title}' created in '{column}'.",
+                ),
+            )
+            con.commit()
+            return t_id
+        finally:
+            con.close()
+
+    def update_task_column(self, task_id: str, new_column: str) -> None:
         con = self.db._db()
         try:
             con.execute("UPDATE tasks SET column_name = ? WHERE id = ?", (new_column, task_id))
             con.commit()
         finally:
             con.close()
-            
+
     def list_tasks(self, board_id: str) -> List[Dict[str, Any]]:
-        """Step 84: Task list/search."""
         con = self.db._db()
         try:
-            rows = con.execute("SELECT * FROM tasks WHERE board_id = ?", (board_id,)).fetchall()
+            rows = con.execute(
+                "SELECT * FROM tasks WHERE board_id = ? ORDER BY created_at ASC",
+                (board_id,),
+            ).fetchall()
             return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+    def get_gantt_data(self, project_id: str) -> List[Dict[str, Any]]:
+        con = self.db._db()
+        try:
+            rows = con.execute(
+                """SELECT t.id, t.title, t.due_date, t.created_at, b.name as board_name
+                   FROM tasks t JOIN boards b ON t.board_id = b.id
+                   WHERE b.project_id = ?""",
+                (project_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+    def add_relation(self, task_id: str, related_id: str, rel_type: str = "relates") -> None:
+        con = self.db._db()
+        try:
+            con.execute(
+                "INSERT INTO task_relations(task_id, related_task_id, relation_type) VALUES (?,?,?)",
+                (task_id, related_id, rel_type),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    def add_checklist_item(self, task_id: str, content: str) -> str:
+        cl_id = str(uuid.uuid4())
+        con = self.db._db()
+        try:
+            con.execute(
+                "INSERT INTO task_checklists(id, task_id, content) VALUES (?,?,?)",
+                (cl_id, task_id, content),
+            )
+            con.commit()
+            return cl_id
         finally:
             con.close()
