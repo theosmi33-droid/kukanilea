@@ -32,6 +32,7 @@ from app.core.audit import vault
 import base64
 import importlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -39,7 +40,7 @@ import secrets
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from app.core.indexing_logic import IndividualIntelligence
 from app.core.malware_scanner import scan_file_stream
@@ -141,6 +142,10 @@ assistant_search = _core_get("assistant_search")
 audit_log = _core_get("audit_log")
 db_latest_path_for_doc = _core_get("db_latest_path_for_doc")
 db_path_for_doc = _core_get("db_path_for_doc")
+list_recent_docs = _core_get("list_recent_docs")
+build_visualizer_payload = _core_get("build_visualizer_payload")
+summarize_visualizer_document = _core_get("summarize_visualizer_document")
+upsert_visualizer_note = _core_get("upsert_visualizer_note")
 
 # Optional tasks
 task_list = _core_get("task_list")
@@ -421,6 +426,287 @@ def _is_allowed_path(fp: Path) -> bool:
         return False
     except Exception:
         return False
+
+
+VISUALIZER_EXTS = {
+    ".pdf",
+    ".xlsx",
+    ".csv",
+    ".docx",
+    ".pptx",
+    ".txt",
+    ".md",
+    ".rtf",
+    ".json",
+    ".xml",
+    ".html",
+    ".htm",
+    ".eml",
+    ".msg",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".bmp",
+    ".webp",
+}
+
+
+def _visualizer_item_from_path(path: Path, source: str = "vault") -> Dict[str, Any] | None:
+    try:
+        rp = path.resolve()
+    except Exception:
+        return None
+    if not rp.exists() or not rp.is_file():
+        return None
+    ext = rp.suffix.lower()
+    if ext not in VISUALIZER_EXTS:
+        return None
+    if not _is_allowed_path(rp):
+        return None
+    try:
+        st = rp.stat()
+        size = int(st.st_size)
+        ts = datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")
+        ts_num = float(st.st_mtime)
+    except Exception:
+        size = 0
+        ts = ""
+        ts_num = 0.0
+    return {
+        "id": _b64(str(rp)),
+        "name": rp.name,
+        "path": str(rp),
+        "ext": ext,
+        "size": size,
+        "updated_at": ts,
+        "updated_ts": ts_num,
+        "source": source,
+    }
+
+
+def _collect_visualizer_items(tenant: str, limit: int = 80) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add_path(path: Path, source: str) -> None:
+        try:
+            key = str(path.resolve())
+        except Exception:
+            return
+        if key in seen:
+            return
+        item = _visualizer_item_from_path(path, source=source)
+        if item:
+            items.append(item)
+            seen.add(key)
+
+    for pending in list_pending() or []:
+        raw = pending.get("path", "")
+        if not raw:
+            continue
+        add_path(Path(raw), source="pending")
+
+    if callable(list_recent_docs):
+        try:
+            for row in list_recent_docs(tenant_id=tenant, limit=max(80, limit * 2)) or []:
+                raw = row.get("file_path") or ""
+                if raw:
+                    add_path(Path(raw), source="archive")
+        except Exception:
+            pass
+
+    tenant_in = EINGANG / tenant
+    if tenant_in.exists():
+        for fp in sorted(
+            tenant_in.glob("*"),
+            key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
+            reverse=True,
+        ):
+            add_path(fp, source="eingang")
+            if len(items) >= (limit * 2):
+                break
+
+    items.sort(key=lambda x: float(x.get("updated_ts", 0.0)), reverse=True)
+    out: List[Dict[str, Any]] = []
+    for item in items[:limit]:
+        i = dict(item)
+        i.pop("updated_ts", None)
+        out.append(i)
+    return out
+
+
+def _decode_data_url_png(data_url: str) -> bytes:
+    s = normalize_component(data_url)
+    if not s:
+        return b""
+    marker = "base64,"
+    idx = s.find(marker)
+    if idx >= 0:
+        s = s[idx + len(marker) :]
+    try:
+        return base64.b64decode(s, validate=False)
+    except Exception:
+        return b""
+
+
+def _build_visualizer_export_pdf_bytes(
+    payload: Dict[str, Any], summary: str = "", chart_png_data_url: str = ""
+) -> bytes:
+    def _minimal_pdf_bytes(lines: List[str]) -> bytes:
+        safe_lines = [str(x or "").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") for x in lines[:80]]
+        content_parts = ["BT", "/F1 10 Tf", "50 790 Td"]
+        first = True
+        for line in safe_lines:
+            if not first:
+                content_parts.append("0 -14 Td")
+            content_parts.append(f"({line[:110]}) Tj")
+            first = False
+        content_parts.append("ET")
+        content_stream = "\n".join(content_parts).encode("latin-1", errors="ignore")
+
+        objs: List[bytes] = []
+        objs.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+        objs.append(b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+        objs.append(
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+        )
+        objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+        objs.append(
+            f"<< /Length {len(content_stream)} >>\nstream\n".encode("latin-1")
+            + content_stream
+            + b"\nendstream"
+        )
+
+        buf = io.BytesIO()
+        buf.write(b"%PDF-1.4\n")
+        offsets = [0]
+        for i, obj in enumerate(objs, start=1):
+            offsets.append(buf.tell())
+            buf.write(f"{i} 0 obj\n".encode("ascii"))
+            buf.write(obj)
+            buf.write(b"\nendobj\n")
+        xref_start = buf.tell()
+        buf.write(f"xref\n0 {len(objs)+1}\n".encode("ascii"))
+        buf.write(b"0000000000 65535 f \n")
+        for off in offsets[1:]:
+            buf.write(f"{off:010d} 00000 n \n".encode("ascii"))
+        buf.write(
+            f"trailer\n<< /Size {len(objs)+1} /Root 1 0 R >>\nstartxref\n{xref_start}\n%%EOF".encode(
+                "ascii"
+            )
+        )
+        return buf.getvalue()
+
+    try:
+        import fitz  # type: ignore
+    except Exception:
+        file_name = str(((payload.get("file") or {}).get("name")) or "Dokument")
+        lines = [
+            f"Visualisierte Ansicht: {file_name}",
+            f"Typ: {payload.get('kind') or '-'}",
+            "",
+            "Zusammenfassung:",
+        ] + (summary or "").splitlines()
+        return _minimal_pdf_bytes(lines)
+
+    page_w, page_h = 595.0, 842.0  # A4 portrait
+    doc = fitz.open()
+    page = doc.new_page(width=page_w, height=page_h)
+    margin = 36.0
+    y = margin
+
+    src_name = str(((payload.get("file") or {}).get("name")) or "Dokument")
+    kind = str(payload.get("kind") or "")
+    title = f"Visualisierte Ansicht - {src_name}"
+    page.insert_text((margin, y), title, fontsize=14, fontname="helv")
+    y += 22
+    page.insert_text((margin, y), f"Typ: {kind}", fontsize=10, fontname="helv")
+    y += 18
+
+    if kind == "pdf":
+        img_b64 = str(((payload.get("page") or {}).get("image_b64")) or "")
+        if img_b64:
+            try:
+                img = base64.b64decode(img_b64)
+                rect = fitz.Rect(margin, y, page_w - margin, y + 360)
+                page.insert_image(rect, stream=img, keep_proportion=True)
+                y += 372
+            except Exception:
+                pass
+    elif kind == "image":
+        img_b64 = str(((payload.get("image") or {}).get("image_b64")) or "")
+        if img_b64:
+            try:
+                img = base64.b64decode(img_b64)
+                rect = fitz.Rect(margin, y, page_w - margin, y + 320)
+                page.insert_image(rect, stream=img, keep_proportion=True)
+                y += 332
+            except Exception:
+                pass
+    elif kind == "sheet":
+        grid = payload.get("grid") or []
+        lines: List[str] = []
+        for row in grid[:14]:
+            if isinstance(row, list):
+                vals = [normalize_component(v) for v in row[:8] if normalize_component(v)]
+                if vals:
+                    lines.append(" | ".join(vals))
+        if lines:
+            text_block = "Tabellenauszug:\n" + "\n".join(lines)
+            page.insert_textbox(
+                fitz.Rect(margin, y, page_w - margin, y + 220),
+                text_block,
+                fontsize=9,
+                fontname="cour",
+            )
+            y += 232
+    else:
+        content = str(((payload.get("text") or {}).get("content")) or "")
+        if content:
+            snippet = content[:2200]
+            page.insert_textbox(
+                fitz.Rect(margin, y, page_w - margin, y + 260),
+                "Textauszug:\n" + snippet,
+                fontsize=9,
+                fontname="helv",
+            )
+            y += 272
+
+    chart_png = _decode_data_url_png(chart_png_data_url)
+    if chart_png:
+        if y > 640:
+            page = doc.new_page(width=page_w, height=page_h)
+            y = margin
+        page.insert_text((margin, y), "Chart", fontsize=11, fontname="helv")
+        y += 10
+        try:
+            rect = fitz.Rect(margin, y, page_w - margin, y + 220)
+            page.insert_image(rect, stream=chart_png, keep_proportion=True)
+            y += 232
+        except Exception:
+            pass
+
+    summary = (summary or "").strip()
+    if summary:
+        if y > 670:
+            page = doc.new_page(width=page_w, height=page_h)
+            y = margin
+        page.insert_text((margin, y), "Zusammenfassung", fontsize=11, fontname="helv")
+        y += 12
+        page.insert_textbox(
+            fitz.Rect(margin, y, page_w - margin, page_h - margin),
+            summary[:9000],
+            fontsize=10,
+            fontname="helv",
+        )
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    doc.close()
+    return buf.getvalue()
 
 
 def _norm_tenant(t: str) -> str:
@@ -3403,6 +3689,265 @@ def api_task_move(task_id: str):
 @login_required
 def messenger_page():
     return _render_base("messenger.html", active_tab="messenger")
+
+
+@bp.get("/api/visualizer/sources")
+@login_required
+def api_visualizer_sources():
+    tenant = _norm_tenant(current_tenant() or "default")
+    items = _collect_visualizer_items(tenant=tenant, limit=90)
+    return jsonify(items=items, count=len(items))
+
+
+@bp.get("/api/visualizer/render")
+@login_required
+def api_visualizer_render():
+    src = normalize_component(request.args.get("source", ""))
+    if not src:
+        return jsonify(error="missing_source"), 400
+    try:
+        raw_path = _unb64(src)
+    except Exception:
+        return jsonify(error="invalid_source"), 400
+
+    fp = Path(raw_path)
+    if not fp.exists():
+        return jsonify(error="file_not_found"), 404
+    if not _is_allowed_path(fp):
+        return jsonify(error="forbidden_path"), 403
+    ext = fp.suffix.lower()
+    if ext not in VISUALIZER_EXTS:
+        return jsonify(error="unsupported_type"), 400
+    if not callable(build_visualizer_payload):
+        return jsonify(error="visualizer_unavailable"), 503
+
+    try:
+        page = int(request.args.get("page", "0") or "0")
+    except Exception:
+        page = 0
+    page = max(0, page)
+    sheet = normalize_component(request.args.get("sheet", ""))
+    force_ocr = normalize_component(request.args.get("force_ocr", "0")).lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+    try:
+        payload = build_visualizer_payload(  # type: ignore[misc]
+            fp, page=page, sheet=sheet, force_ocr=force_ocr
+        )
+    except ValueError as e:
+        return jsonify(error="invalid_request", detail=str(e)), 400
+    except RuntimeError as e:
+        return jsonify(error="runtime_error", detail=str(e)), 503
+    except Exception as e:
+        current_app.logger.exception("Visualizer render failed for %s", fp)
+        return jsonify(error="render_failed", detail=str(e)), 500
+
+    payload = dict(payload or {})
+    payload["source"] = src
+    payload["target_path"] = str(fp)
+    return jsonify(payload)
+
+
+@bp.post("/api/visualizer/summary")
+@login_required
+@csrf_protected
+def api_visualizer_summary():
+    payload = request.get_json(force=True) or {}
+    src = normalize_component(payload.get("source", ""))
+    if not src:
+        return jsonify(error="missing_source"), 400
+    if not callable(summarize_visualizer_document):
+        return jsonify(error="summary_unavailable"), 503
+    try:
+        raw_path = _unb64(src)
+    except Exception:
+        return jsonify(error="invalid_source"), 400
+    fp = Path(raw_path)
+    if not fp.exists():
+        return jsonify(error="file_not_found"), 404
+    if not _is_allowed_path(fp):
+        return jsonify(error="forbidden_path"), 403
+
+    try:
+        page = int(payload.get("page", 0) or 0)
+    except Exception:
+        page = 0
+    page = max(0, page)
+    sheet = normalize_component(payload.get("sheet", ""))
+    force_ocr = bool(payload.get("force_ocr"))
+
+    try:
+        out = summarize_visualizer_document(  # type: ignore[misc]
+            fp, page=page, sheet=sheet, force_ocr=force_ocr
+        )
+    except Exception as e:
+        current_app.logger.exception("Visualizer summary failed for %s", fp)
+        return jsonify(error="summary_failed", detail=str(e)), 500
+    return jsonify(out)
+
+
+@bp.post("/api/visualizer/note")
+@login_required
+@csrf_protected
+def api_visualizer_note():
+    payload = request.get_json(force=True) or {}
+    src = normalize_component(payload.get("source", ""))
+    summary = normalize_component(payload.get("summary", ""))
+    if not src:
+        return jsonify(error="missing_source"), 400
+    if not summary:
+        return jsonify(error="missing_summary"), 400
+    if not callable(upsert_visualizer_note):
+        return jsonify(error="note_unavailable"), 503
+
+    try:
+        raw_path = _unb64(src)
+    except Exception:
+        return jsonify(error="invalid_source"), 400
+    fp = Path(raw_path)
+    if not fp.exists():
+        return jsonify(error="file_not_found"), 404
+    if not _is_allowed_path(fp):
+        return jsonify(error="forbidden_path"), 403
+
+    try:
+        out = upsert_visualizer_note(  # type: ignore[misc]
+            fp,
+            summary=summary,
+            tenant_id=current_tenant() or "",
+            title=normalize_component(payload.get("title", "")),
+            chart_type=normalize_component(payload.get("chart_type", "")),
+        )
+    except ValueError as e:
+        return jsonify(error="invalid_request", detail=str(e)), 400
+    except Exception as e:
+        current_app.logger.exception("Visualizer note save failed for %s", fp)
+        return jsonify(error="save_failed", detail=str(e)), 500
+    return jsonify(ok=True, note=out)
+
+
+@bp.get("/api/visualizer/projects")
+@login_required
+def api_visualizer_projects():
+    con = current_app.extensions["auth_db"]._db()
+    try:
+        rows = con.execute(
+            "SELECT id, name, description FROM projects WHERE tenant_id = ? ORDER BY created_at DESC",
+            (current_tenant(),),
+        ).fetchall()
+        return jsonify(
+            projects=[
+                {"id": r["id"], "name": r["name"], "description": r["description"] or ""}
+                for r in rows
+            ]
+        )
+    finally:
+        con.close()
+
+
+@bp.post("/api/visualizer/store-to-project")
+@login_required
+@csrf_protected
+def api_visualizer_store_to_project():
+    payload = request.get_json(force=True) or {}
+    project_id = normalize_component(payload.get("project_id", ""))
+    src = normalize_component(payload.get("source", ""))
+    summary = normalize_component(payload.get("summary", ""))
+    if not project_id:
+        return jsonify(error="missing_project_id"), 400
+    if not src:
+        return jsonify(error="missing_source"), 400
+    try:
+        raw_path = _unb64(src)
+    except Exception:
+        return jsonify(error="invalid_source"), 400
+    fp = Path(raw_path)
+    if not fp.exists():
+        return jsonify(error="file_not_found"), 404
+    if not _is_allowed_path(fp):
+        return jsonify(error="forbidden_path"), 403
+
+    from app.modules.projects.logic import ProjectManager
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    con = current_app.extensions["auth_db"]._db()
+    try:
+        board = con.execute(
+            "SELECT id FROM boards WHERE project_id = ? ORDER BY created_at ASC LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        if not board:
+            board_id = pm.create_board(project_id, "Visualizer")
+        else:
+            board_id = board["id"]
+
+        content = (
+            f"Dokument: {fp.name}\n"
+            f"Pfad: {fp}\n"
+            f"Quelle: Visualizer Export\n\n"
+            f"Summary:\n{summary[:4000]}"
+        )
+        task_id = pm.create_task(
+            board_id=board_id,
+            title=f"Visualizer: {fp.name}",
+            column="To Do",
+            content=content,
+            priority="MEDIUM",
+        )
+        return jsonify(ok=True, task_id=task_id, board_id=board_id)
+    finally:
+        con.close()
+
+
+@bp.post("/api/visualizer/export-pdf")
+@login_required
+@csrf_protected
+def api_visualizer_export_pdf():
+    payload = request.get_json(force=True) or {}
+    src = normalize_component(payload.get("source", ""))
+    if not src:
+        return jsonify(error="missing_source"), 400
+    try:
+        raw_path = _unb64(src)
+    except Exception:
+        return jsonify(error="invalid_source"), 400
+    fp = Path(raw_path)
+    if not fp.exists():
+        return jsonify(error="file_not_found"), 404
+    if not _is_allowed_path(fp):
+        return jsonify(error="forbidden_path"), 403
+    if not callable(build_visualizer_payload):
+        return jsonify(error="visualizer_unavailable"), 503
+
+    try:
+        page = int(payload.get("page", 0) or 0)
+    except Exception:
+        page = 0
+    page = max(0, page)
+    sheet = normalize_component(payload.get("sheet", ""))
+    force_ocr = bool(payload.get("force_ocr"))
+    summary = str(payload.get("summary", "") or "")
+    chart_png = str(payload.get("chart_png", "") or "")
+
+    try:
+        render_payload = build_visualizer_payload(  # type: ignore[misc]
+            fp, page=page, sheet=sheet, force_ocr=force_ocr
+        )
+        pdf_bytes = _build_visualizer_export_pdf_bytes(
+            render_payload, summary=summary, chart_png_data_url=chart_png
+        )
+    except Exception as e:
+        current_app.logger.exception("Visualizer export failed for %s", fp)
+        return jsonify(error="export_failed", detail=str(e)), 500
+
+    filename = f"{fp.stem}_visualized.pdf"
+    response = current_app.response_class(pdf_bytes, mimetype="application/pdf")
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @bp.route("/visualizer")
