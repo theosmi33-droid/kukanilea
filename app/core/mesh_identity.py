@@ -223,7 +223,7 @@ def verify_handshake_envelope(
         age_seconds = abs((datetime.now(timezone.utc) - ts).total_seconds())
         if age_seconds > max_age_seconds:
             return False, "stale_timestamp", None
-
         return True, "ok", dict(data_obj)
-    except Exception:
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Invalid mesh envelope: %s", exc)
         return False, "invalid_envelope", None

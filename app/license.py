@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -26,6 +27,7 @@ EwIDAQAB
 """
 
 try:
+    from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -34,6 +36,7 @@ except Exception:  # pragma: no cover - optional at import time
     serialization = None  # type: ignore[assignment]
     padding = None  # type: ignore[assignment]
     Ed25519PublicKey = None  # type: ignore
+    InvalidSignature = Exception  # type: ignore[assignment]
 
 
 @dataclass
@@ -85,7 +88,7 @@ def _verify_rsa_signature(payload: Dict[str, Any], signature_b64: str) -> bool:
             hashes.SHA256(),
         )
         return True
-    except Exception:
+    except (ValueError, TypeError, binascii.Error, InvalidSignature):
         return False
 
 
@@ -97,7 +100,7 @@ def _verify_ed25519_signature(payload: Dict[str, Any], signature_b64: str) -> bo
         signature = base64.b64decode(signature_b64, validate=True)
         public_key.verify(signature, _canonical_payload_bytes(payload))
         return True
-    except Exception:
+    except (ValueError, TypeError, binascii.Error, InvalidSignature):
         return False
 
 

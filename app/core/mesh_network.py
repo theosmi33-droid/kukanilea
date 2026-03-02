@@ -85,7 +85,7 @@ class MeshNetworkManager:
             logger.info("Handshake successful with %s", peer_info["node_id"])
             return True
         except Exception as e:
-            logger.error(f"Handshake failed with {peer_ip}: {e}")
+            logger.error("Handshake failed with %s: %s", peer_ip, e)
             return False
 
     def sync_with_peer(self, peer_node_id: str) -> bool:
