@@ -118,9 +118,9 @@ def is_protection_scope_error(message: str) -> bool:
     if "branches/" not in normalized or "/protection" not in normalized:
         return False
     return (
-        " 403 " in normalized
-        and "resource not accessible by integration" in normalized
-    ) or (" 401 " in normalized)
+        ("failed: 403" in normalized and "resource not accessible by integration" in normalized)
+        or "failed: 401" in normalized
+    )
 
 
 def render_issue_body(
