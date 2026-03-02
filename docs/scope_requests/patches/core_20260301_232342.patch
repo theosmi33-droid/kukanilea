@@ -1,0 +1,226 @@
+diff --git a/app/core/logic.py b/app/core/logic.py
+index a0264a7..ee9edcb 100644
+--- a/app/core/logic.py
++++ b/app/core/logic.py
+@@ -25,6 +25,7 @@ import base64
+ import csv
+ import hashlib
+ import io
++import logging
+ import json
+ import os
+ import re
+@@ -40,6 +41,8 @@ from email.parser import BytesParser
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Tuple
+ 
++logger = logging.getLogger("kukanilea.core.logic")
++
+ # Optional libs
+ try:
+     from pypdf import PdfReader  # type: ignore
+diff --git a/app/templates/layout.html b/app/templates/layout.html
+index 7f564f6..40be7fa 100644
+--- a/app/templates/layout.html
++++ b/app/templates/layout.html
+@@ -5,6 +5,7 @@
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+   <title>{% block title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}</title>
+   <link rel="stylesheet" href="/static/css/design-system.css">
++  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+   <script>
+     (function () {
+         const t = localStorage.getItem('ks_theme');
+diff --git a/app/web.py b/app/web.py
+index 2d0edfc..ea6a6d8 100644
+--- a/app/web.py
++++ b/app/web.py
+@@ -30,6 +30,7 @@ from __future__ import annotations
+ from app.core.audit import vault
+ 
+ import base64
++import logging
+ import importlib
+ import importlib.util
+ import json
+@@ -84,6 +85,8 @@ from .license import load_license
+ from .rate_limit import chat_limiter, search_limiter, upload_limiter
+ from .security import csrf_protected
+ 
++logger = logging.getLogger("kukanilea.web")
++
+ weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
+ if weather_spec:
+     _weather_mod = importlib.import_module("kukanilea_weather_plugin")
+@@ -474,6 +477,16 @@ def _render_base(template_name: str, **kwargs) -> str:
+     kwargs.setdefault("roles", current_role())
+     kwargs.setdefault("tenant", current_tenant() or "-")
+     kwargs.setdefault("profile", profile)
++
++    # Some routes provide already-rendered HTML.
++    # If it's a full document, return it unchanged; if it's a fragment, wrap in layout.
++    if isinstance(template_name, str) and "<" in template_name and ">" in template_name:
++        probe = template_name.lstrip().lower()
++        if probe.startswith("<!doctype") or "<html" in probe:
++            return template_name
++        inline_wrapper = "{% extends 'layout.html' %}{% block content %}{{ inline_content|safe }}{% endblock %}"
++        return render_template_string(inline_wrapper, inline_content=template_name, **kwargs)
++
+     return render_template(template_name, **kwargs)
+ 
+ 
+@@ -2060,13 +2073,15 @@ def api_open():
+ @login_required
+ @require_role(["DEV", "ADMIN"])
+ def mesh():
+-    # Fetch real mesh nodes from the database
+     auth_db = current_app.extensions["auth_db"]
+     from app.core.mesh_network import MeshNetworkManager
++
+     manager = MeshNetworkManager(auth_db)
+-    nodes = manager.get_peers()
+-    
+-    # If no real nodes yet, keep some demo nodes but marked as demo
++    try:
++        nodes = manager.get_peers()
++    except Exception:
++        nodes = []
++
+     if not nodes:
+         nodes = [
+             {
+@@ -2079,17 +2094,14 @@ def mesh():
+             }
+         ]
+ 
+-    # Map database fields to UI fields if necessary
+     for node in nodes:
+         node["id"] = node.get("node_id")
+         node["ip"] = node.get("last_ip")
+-        node["type"] = node.get("type", "ZimaBlade") # Default for Hubs
++        node["type"] = node.get("type", "ZimaBlade")
+         node["sync"] = "100%"
+         node["conflicts"] = 0
+ 
+-    return _render_base(
+-        render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh"
+-    )
++    return _render_base(render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh")
+ 
+ 
+ HTML_MESH = r"""
+@@ -3366,21 +3378,31 @@ def assistant():
+ @login_required
+ def projects_list():
+     from app.modules.projects.logic import ProjectManager
++
+     pm = ProjectManager(current_app.extensions["auth_db"])
+-    
+-    # Ensure at least one project exists for demo
+     con = current_app.extensions["auth_db"]._db()
+-    p = con.execute("SELECT * FROM projects LIMIT 1").fetchone()
+-    con.close()
+-    
+-    if not p:
+-        p_id = pm.create_project(current_tenant(), "Standard Projekt", "Willkommen in Ihrer Projektverwaltung.")
+-        pm.create_board(p_id, "Hauptboard")
+-        return redirect(url_for("web.projects_list"))
+-        
+-    tasks = pm.list_tasks(con.execute("SELECT id FROM boards WHERE project_id = ? LIMIT 1", (p["id"],)).fetchone()[0])
+-    
+-    return _render_base("kanban.html", active_tab="tasks", project=p, tasks=tasks)
++    try:
++        project = con.execute("SELECT * FROM projects LIMIT 1").fetchone()
++
++        # Ensure at least one project/board exists for first-run UX
++        if not project:
++            p_id = pm.create_project(
++                current_tenant(),
++                "Standard Projekt",
++                "Willkommen in Ihrer Projektverwaltung.",
++            )
++            pm.create_board(p_id, "Hauptboard")
++            return redirect(url_for("web.projects_list"))
++
++        board = con.execute(
++            "SELECT id FROM boards WHERE project_id = ? LIMIT 1", (project["id"],)
++        ).fetchone()
++        board_id = board["id"] if board else pm.create_board(project["id"], "Hauptboard")
++    finally:
++        con.close()
++
++    tasks = pm.list_tasks(board_id)
++    return _render_base("kanban.html", active_tab="tasks", project=project, tasks=tasks)
+ 
+ 
+ @bp.post("/api/tasks/<task_id>/move")
+@@ -3428,27 +3450,38 @@ def health():
+ def admin_forensics():
+     from app.core.audit import vault
+     from kukanilea_app import measure_db_speed, measure_cpu_usage, measure_memory_usage
+-    
+-    trail = vault.get_audit_trail() or []
+-    
+-    # System performance snapshot (Step 171-185)
++
++    raw_trail = vault.get_audit_trail() or []
++    trail = []
++    for item in raw_trail:
++        d = dict(item or {})
++        trail.append(
++            {
++                "ts": str(d.get("ts") or d.get("created_at") or datetime.utcnow().isoformat()),
++                "username": str(d.get("username") or d.get("user") or "system"),
++                "action": str(d.get("action") or d.get("event") or "EVENT"),
++                "resource": str(d.get("resource") or d.get("doc_id") or d.get("entity_id") or "-"),
++                "details": str(d.get("details") or d.get("doc_id") or "-"),
++                "tenant_id": str(d.get("tenant_id") or current_tenant() or "SYSTEM"),
++            }
++        )
++
+     perf = {
+         "db_query_speed": measure_db_speed(),
+         "cpu_usage": measure_cpu_usage(),
+         "memory_info": measure_memory_usage(),
+-        "boot_time_ms": 420 # Mock for now
++        "boot_time_ms": 420,
+     }
+-    
+-    # Active Users simulation (Step 22)
+-    active_users = ["admin", "user_1"] # In real impl, check session store
+-    
++
++    active_users = ["admin", "user_1"]
++
+     return _render_base(
+         "forensic_dashboard.html",
+         active_tab="settings",
+         trail=trail,
+         perf=perf,
+         audit_count=len(trail),
+-        active_users=active_users
++        active_users=active_users,
+     )
+ 
+ 
+@@ -3478,7 +3511,19 @@ def admin_logs():
+ @login_required
+ @require_role(["DEV", "ADMIN"])
+ def admin_audit():
+-    trail = vault.get_audit_trail()
++    raw_trail = vault.get_audit_trail() or []
++    trail = []
++    for idx, item in enumerate(raw_trail, start=1):
++        d = dict(item or {})
++        trail.append(
++            {
++                "id": d.get("id") or idx,
++                "created_at": str(d.get("created_at") or d.get("ts") or datetime.utcnow().isoformat()),
++                "tenant_id": str(d.get("tenant_id") or current_tenant() or "SYSTEM"),
++                "doc_id": str(d.get("doc_id") or d.get("resource") or "-"),
++                "node_hash": str(d.get("node_hash") or d.get("hash") or d.get("event_hash") or "n/a"),
++            }
++        )
+     return _render_base("audit_trail.html", active_tab="settings", trail=trail)
+ 
+ 

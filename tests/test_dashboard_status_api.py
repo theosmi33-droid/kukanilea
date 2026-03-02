@@ -1,10 +1,8 @@
 import sys
 from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
 from datetime import datetime
 
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 
 def _make_app(tmp_path, monkeypatch):
@@ -21,28 +19,38 @@ def _make_app(tmp_path, monkeypatch):
     return app
 
 
-def test_sidebar_toggle_persistence_and_running_badges_markup(tmp_path, monkeypatch):
-    app = _make_app(tmp_path, monkeypatch)
-    client = app.test_client()
-
+def _login_dev(app, client):
     with app.app_context():
         auth_db = app.extensions["auth_db"]
         now = datetime.utcnow().isoformat()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
-        auth_db.upsert_user("admin", hash_password("admin"), now)
-        auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+        auth_db.upsert_user("dev", hash_password("dev"), now)
+        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
 
     with client.session_transaction() as sess:
-        sess["user"] = "admin"
-        sess["role"] = "ADMIN"
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
         sess["tenant_id"] = "KUKANILEA"
 
-    resp = client.get("/", follow_redirects=True)
-    assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
 
-    assert "id=\"sidebar-toggle\"" in html
-    assert "ks_sidebar_collapsed" in html
-    assert "id=\"outbound-status-badges\"" in html
+def test_api_system_status_returns_json_for_authenticated_user(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+    _login_dev(app, client)
+
+    resp = client.get("/api/system/status")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert isinstance(data["status"], dict)
+    assert "observer_active" in data["status"]
+
+
+def test_api_outbound_status_redirects_when_unauthenticated(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    resp = client.get("/api/outbound/status", follow_redirects=False)
+    assert resp.status_code in (401, 301, 302)

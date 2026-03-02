@@ -72,7 +72,7 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
         sess["role"] = "ADMIN"
         sess["tenant_id"] = "KUKANILEA"
 
-    resp = client.get("/")
+    resp = client.get("/", follow_redirects=True)
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 

@@ -1,0 +1,746 @@
+diff --git a/app/__init__.py b/app/__init__.py
+index d6e1b57..793ba4d 100644
+--- a/app/__init__.py
++++ b/app/__init__.py
+@@ -12,6 +12,7 @@ from .db import AuthDB
+ from .errors import json_error
+ from .license import load_runtime_license_state
+ from .log_utils import init_request_logging
++from .migrations.ensure_agent_memory import ensure_agent_memory_tables
+ from .observability import init_observability
+ 
+ 
+@@ -48,6 +49,8 @@ def create_app() -> Flask:
+     auth_db = AuthDB(app.config["AUTH_DB"])
+     try:
+         auth_db.init()
++        # Ensure shared AI queue/memory tables exist before background services start.
++        ensure_agent_memory_tables(str(app.config["AUTH_DB"]))
+     except Exception as e:
+         manager.report_error(f"AuthDB Init Failed: {e}")
+         raise
+@@ -166,6 +169,12 @@ def create_app() -> Flask:
+     app.register_blueprint(system_logs.bp)
+     app.register_blueprint(admin_tenants.bp)
+     app.register_blueprint(automation.bp)
++    try:
++        from .services.metrics_exporter import bp as metrics_bp
++
++        app.register_blueprint(metrics_bp, url_prefix="")
++    except Exception as e:
++        app.logger.warning("Metrics blueprint not registered: %s", e)
+     
+     with app.app_context():
+         automation.init_automation_schema()
+diff --git a/app/ai/guardrails.py b/app/ai/guardrails.py
+new file mode 100644
+index 0000000..d3f11db
+--- /dev/null
++++ b/app/ai/guardrails.py
+@@ -0,0 +1,27 @@
++"""Syntactic guardrails for user prompts."""
++
++from __future__ import annotations
++
++import re
++from typing import Tuple
++
++SQL_PATTERNS = re.compile(r"\b(DROP|DELETE|INSERT|UPDATE|ALTER|TRUNCATE)\b", re.IGNORECASE)
++SHELL_PATTERNS = re.compile(r"[;&|`$<>\\]", re.IGNORECASE)
++JS_PATTERNS = re.compile(r"<\s*script|javascript:", re.IGNORECASE)
++JAILBREAK = re.compile(r"ignore (all |previous )?instructions", re.IGNORECASE)
++
++
++def validate_prompt(prompt: str, max_len: int = 500) -> Tuple[bool, str]:
++    if not isinstance(prompt, str):
++        return False, "Invalid input type"
++    if len(prompt) > max_len:
++        return False, f"Prompt zu lang (max {max_len} Zeichen)"
++    if SQL_PATTERNS.search(prompt):
++        return False, "Verbotene SQL-Keywords erkannt"
++    if SHELL_PATTERNS.search(prompt):
++        return False, "Verbotene Shell-Zeichen erkannt"
++    if JS_PATTERNS.search(prompt):
++        return False, "Verbotene JavaScript-Patterns erkannt"
++    if JAILBREAK.search(prompt):
++        return False, "Jailbreak-Attempt erkannt"
++    return True, "OK"
+diff --git a/app/core/license_checker.py b/app/core/license_checker.py
+new file mode 100644
+index 0000000..73da1c1
+--- /dev/null
++++ b/app/core/license_checker.py
+@@ -0,0 +1,51 @@
++"""License signature verification and validity checks."""
++
++from __future__ import annotations
++
++import json
++import os
++from datetime import datetime, timezone
++from pathlib import Path
++from typing import Any, Dict
++
++from nacl.signing import VerifyKey
++
++
++def verify_signature(pub_hex: str, payload: Dict[str, Any]) -> bool:
++    sig_hex = payload.pop("signature", None)
++    if not sig_hex:
++        return False
++
++    try:
++        verify_key = VerifyKey(bytes.fromhex(pub_hex))
++        message = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
++        verify_key.verify(message, bytes.fromhex(sig_hex))
++        return True
++    except Exception:
++        return False
++
++
++def check_license_file(license_path: str, pub_hex_env: str) -> Dict[str, Any]:
++    path = Path(license_path)
++    if not path.exists():
++        return {"status": "MISSING"}
++
++    payload = json.loads(path.read_text(encoding="utf-8"))
++    pub_hex = os.environ.get(pub_hex_env)
++    if not pub_hex:
++        raise RuntimeError(f"Public key env missing: {pub_hex_env}")
++
++    if not verify_signature(pub_hex, dict(payload)):
++        return {"status": "INVALID_SIGNATURE"}
++
++    valid_until = payload.get("valid_until")
++    if valid_until:
++        expires = datetime.strptime(valid_until, "%Y-%m-%d").replace(tzinfo=timezone.utc).date()
++        if expires < datetime.now(timezone.utc).date():
++            return {"status": "EXPIRED"}
++
++    return {
++        "status": "OK",
++        "tenant_id": payload.get("tenant_id"),
++        "hw": payload.get("hw_fingerprint"),
++    }
+diff --git a/app/db/migrations/ensure_agent_memory.py b/app/db/migrations/ensure_agent_memory.py
+new file mode 100644
+index 0000000..2fa2127
+--- /dev/null
++++ b/app/db/migrations/ensure_agent_memory.py
+@@ -0,0 +1,58 @@
++"""Idempotent ensure script for agent memory and outbound queue tables."""
++
++from __future__ import annotations
++
++import os
++import sqlite3
++from pathlib import Path
++
++DEFAULT_DB = os.environ.get("KUKANILEA_AUTH_DB", "instance/auth.sqlite3")
++
++
++def ensure_agent_memory_tables(db_path: str = DEFAULT_DB) -> None:
++    db_parent = Path(db_path).parent
++    db_parent.mkdir(parents=True, exist_ok=True)
++
++    conn = sqlite3.connect(db_path)
++    try:
++        cur = conn.cursor()
++        cur.execute(
++            """
++            CREATE TABLE IF NOT EXISTS agent_memory (
++                id TEXT PRIMARY KEY,
++                tenant_id TEXT NOT NULL,
++                agent_name TEXT,
++                content TEXT,
++                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
++            );
++            """
++        )
++        cur.execute(
++            "CREATE INDEX IF NOT EXISTS idx_agent_memory_tenant ON agent_memory(tenant_id);"
++        )
++
++        cur.execute(
++            """
++            CREATE TABLE IF NOT EXISTS api_outbound_queue (
++                id TEXT PRIMARY KEY,
++                tenant_id TEXT,
++                payload TEXT,
++                status TEXT DEFAULT 'pending',
++                attempts INTEGER DEFAULT 0,
++                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
++                last_attempt TIMESTAMP NULL
++            );
++            """
++        )
++        cur.execute(
++            "CREATE INDEX IF NOT EXISTS idx_outbound_tenant_status ON api_outbound_queue(tenant_id, status);"
++        )
++
++        conn.commit()
++    finally:
++        conn.close()
++
++
++if __name__ == "__main__":
++    ensure_agent_memory_tables()
++    print(f"Ensured agent_memory and api_outbound_queue in {DEFAULT_DB}")
+diff --git a/app/migrations/ensure_agent_memory.py b/app/migrations/ensure_agent_memory.py
+new file mode 100644
+index 0000000..22fdccb
+--- /dev/null
++++ b/app/migrations/ensure_agent_memory.py
+@@ -0,0 +1,58 @@
++"""Idempotent ensure script for agent_memory and api_outbound_queue tables."""
++
++from __future__ import annotations
++
++import os
++import sqlite3
++from pathlib import Path
++
++DEFAULT_DB = os.environ.get("KUKANILEA_AUTH_DB", "instance/auth.sqlite3")
++
++
++def ensure_agent_memory_tables(db_path: str = DEFAULT_DB) -> None:
++    db_parent = Path(db_path).parent
++    db_parent.mkdir(parents=True, exist_ok=True)
++
++    conn = sqlite3.connect(db_path)
++    try:
++        cur = conn.cursor()
++        cur.execute(
++            """
++            CREATE TABLE IF NOT EXISTS agent_memory (
++                id TEXT PRIMARY KEY,
++                tenant_id TEXT NOT NULL,
++                agent_name TEXT,
++                content TEXT,
++                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
++            );
++            """
++        )
++        cur.execute(
++            "CREATE INDEX IF NOT EXISTS idx_agent_memory_tenant ON agent_memory(tenant_id);"
++        )
++
++        cur.execute(
++            """
++            CREATE TABLE IF NOT EXISTS api_outbound_queue (
++                id TEXT PRIMARY KEY,
++                tenant_id TEXT,
++                payload TEXT,
++                status TEXT DEFAULT 'pending',
++                attempts INTEGER DEFAULT 0,
++                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
++                last_attempt TIMESTAMP NULL
++            );
++            """
++        )
++        cur.execute(
++            "CREATE INDEX IF NOT EXISTS idx_outbound_tenant_status ON api_outbound_queue(tenant_id, status);"
++        )
++
++        conn.commit()
++    finally:
++        conn.close()
++
++
++if __name__ == "__main__":
++    ensure_agent_memory_tables()
++    print(f"Ensured agent_memory and api_outbound_queue in {DEFAULT_DB}")
+diff --git a/app/services/ai_cleanup.py b/app/services/ai_cleanup.py
+new file mode 100644
+index 0000000..a70eb27
+--- /dev/null
++++ b/app/services/ai_cleanup.py
+@@ -0,0 +1,46 @@
++"""Cleanup low-importance AI memory entries older than retention."""
++
++from __future__ import annotations
++
++import logging
++import os
++import sqlite3
++from datetime import datetime, timedelta, timezone
++from pathlib import Path
++
++logger = logging.getLogger("ai_cleanup")
++
++MEMORY_ROOT = os.environ.get("KUKANILEA_AI_MEMORY_ROOT", "instance/ai_memory")
++
++
++def cleanup_tenant_db(db_path: str, days: int = 60, min_importance: int = 8) -> int:
++    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
++
++    conn = sqlite3.connect(db_path)
++    try:
++        conn.execute(
++            "DELETE FROM messages WHERE created_at < ? AND (importance_score IS NULL OR importance_score < ?)",
++            (cutoff.isoformat(), min_importance),
++        )
++        deleted = conn.total_changes
++        conn.commit()
++        conn.execute("VACUUM")
++        logger.info("Cleanup %s -> deleted %d messages", db_path, deleted)
++        return deleted
++    finally:
++        conn.close()
++
++
++def cleanup_all_tenants() -> None:
++    root = Path(MEMORY_ROOT)
++    root.mkdir(parents=True, exist_ok=True)
++
++    for db_file in root.glob("*.db"):
++        try:
++            cleanup_tenant_db(str(db_file))
++        except Exception:
++            logger.exception("Cleanup failed for %s", db_file)
++
++
++if __name__ == "__main__":
++    cleanup_all_tenants()
+diff --git a/app/services/metrics_exporter.py b/app/services/metrics_exporter.py
+new file mode 100644
+index 0000000..5f3147f
+--- /dev/null
++++ b/app/services/metrics_exporter.py
+@@ -0,0 +1,36 @@
++"""Prometheus-style metrics endpoint blueprint."""
++
++from __future__ import annotations
++
++import os
++import sqlite3
++from flask import Blueprint, Response
++
++bp = Blueprint("metrics", __name__)
++
++
++def get_last_backup_age_seconds(tenant_id: str = "M001") -> int:
++    # Placeholder until NAS backup metadata integration is connected.
++    _ = tenant_id
++    return 24 * 3600
++
++
++@bp.route("/metrics")
++def metrics() -> Response:
++    lines = [f"kukanilea_last_backup_age_seconds {get_last_backup_age_seconds()}"]
++
++    db_path = os.environ.get("KUKANILEA_AUTH_DB", "instance/auth.sqlite3")
++    pending = 0
++    try:
++        conn = sqlite3.connect(db_path)
++        try:
++            cur = conn.cursor()
++            cur.execute("SELECT COUNT(*) FROM api_outbound_queue WHERE status='pending'")
++            pending = int(cur.fetchone()[0])
++        finally:
++            conn.close()
++    except Exception:
++        pending = 0
++
++    lines.append(f"kukanilea_outbound_queue_pending {pending}")
++    return Response("\n".join(lines) + "\n", mimetype="text/plain")
+diff --git a/package-lock.json b/package-lock.json
+new file mode 100644
+index 0000000..68833fb
+--- /dev/null
++++ b/package-lock.json
+@@ -0,0 +1,78 @@
++{
++  "name": "kukanilea-e2e",
++  "version": "1.0.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "kukanilea-e2e",
++      "version": "1.0.0",
++      "devDependencies": {
++        "@playwright/test": "^1.53.0"
++      }
++    },
++    "node_modules/@playwright/test": {
++      "version": "1.58.2",
++      "resolved": "https://registry.npmjs.org/@playwright/test/-/test-1.58.2.tgz",
++      "integrity": "sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "dependencies": {
++        "playwright": "1.58.2"
++      },
++      "bin": {
++        "playwright": "cli.js"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/fsevents": {
++      "version": "2.3.2",
++      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.2.tgz",
++      "integrity": "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==",
++      "dev": true,
++      "hasInstallScript": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
++      }
++    },
++    "node_modules/playwright": {
++      "version": "1.58.2",
++      "resolved": "https://registry.npmjs.org/playwright/-/playwright-1.58.2.tgz",
++      "integrity": "sha512-vA30H8Nvkq/cPBnNw4Q8TWz1EJyqgpuinBcHET0YVJVFldr8JDNiU9LaWAE1KqSkRYazuaBhTpB5ZzShOezQ6A==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "dependencies": {
++        "playwright-core": "1.58.2"
++      },
++      "bin": {
++        "playwright": "cli.js"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "optionalDependencies": {
++        "fsevents": "2.3.2"
++      }
++    },
++    "node_modules/playwright-core": {
++      "version": "1.58.2",
++      "resolved": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.58.2.tgz",
++      "integrity": "sha512-yZkEtftgwS8CsfYo7nm0KE8jsvm6i/PTgVtB8DL726wNf6H2IMsDuxCpJj59KDaxCtSnrWan2AeDqM7JBaultg==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "bin": {
++        "playwright-core": "cli.js"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    }
++  }
++}
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..d43a3bc
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,11 @@
++{
++  "name": "kukanilea-e2e",
++  "version": "1.0.0",
++  "private": true,
++  "devDependencies": {
++    "@playwright/test": "^1.53.0"
++  },
++  "scripts": {
++    "test:e2e": "playwright test"
++  }
++}
+diff --git a/playwright.config.ts b/playwright.config.ts
+new file mode 100644
+index 0000000..3ffc941
+--- /dev/null
++++ b/playwright.config.ts
+@@ -0,0 +1,15 @@
++import { defineConfig } from '@playwright/test';
++
++export default defineConfig({
++  testDir: './tests/e2e',
++  timeout: 60_000,
++  expect: { timeout: 10_000 },
++  use: {
++    baseURL: 'http://127.0.0.1:5051',
++    trace: 'retain-on-failure',
++    screenshot: 'only-on-failure',
++    video: 'retain-on-failure'
++  },
++  reporter: [['list']],
++  workers: 1
++});
+diff --git a/scripts/ops/backup_to_nas.sh b/scripts/ops/backup_to_nas.sh
+new file mode 100755
+index 0000000..9534cb4
+--- /dev/null
++++ b/scripts/ops/backup_to_nas.sh
+@@ -0,0 +1,35 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++TENANT_ID="$(cat instance/tenant_id.txt)"
++TIMESTAMP="$(date +%Y-%m-%d_%H-%M)"
++TMP_DIR="/tmp/kukanilea_backup_${TENANT_ID}"
++BACKUP_NAME="${TENANT_ID}_${TIMESTAMP}.tar.zst"
++NAS_SHARE="//192.168.0.2/KUKANILEA-BACKUPS"
++NAS_USER="${NAS_USER:-backupuser}"
++NAS_PASS="${NAS_PASS:-}"
++
++mkdir -p "$TMP_DIR"
++
++sqlite3 instance/kukanilea.db .dump > "$TMP_DIR/db_dump.sql"
++tar -C instance -cf - . | zstd -19 -T0 -o "${TMP_DIR}/${BACKUP_NAME}"
++
++UPLOAD_FILE="${TMP_DIR}/${BACKUP_NAME}"
++if command -v age >/dev/null 2>&1 && [[ -n "${NAS_PUBLIC_KEY:-}" ]]; then
++  age -r "${NAS_PUBLIC_KEY}" -o "${TMP_DIR}/${BACKUP_NAME}.age" "${TMP_DIR}/${BACKUP_NAME}"
++  UPLOAD_FILE="${TMP_DIR}/${BACKUP_NAME}.age"
++fi
++
++if command -v smbclient >/dev/null 2>&1; then
++  smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "mkdir ${TENANT_ID}; cd ${TENANT_ID}; put ${UPLOAD_FILE} $(basename "$UPLOAD_FILE")"
++else
++  MOUNT_POINT="/mnt/kukanilea_nas"
++  sudo mkdir -p "$MOUNT_POINT"
++  sudo mount -t cifs "$NAS_SHARE" "$MOUNT_POINT" -o username="$NAS_USER",password="$NAS_PASS",vers=3.0
++  sudo mkdir -p "${MOUNT_POINT}/${TENANT_ID}"
++  sudo cp "$UPLOAD_FILE" "${MOUNT_POINT}/${TENANT_ID}/"
++  sudo umount "$MOUNT_POINT"
++fi
++
++rm -rf "$TMP_DIR"
++echo "Backup upload complete: $(basename "$UPLOAD_FILE")"
+diff --git a/scripts/ops/healthcheck.sh b/scripts/ops/healthcheck.sh
+new file mode 100755
+index 0000000..9032dad
+--- /dev/null
++++ b/scripts/ops/healthcheck.sh
+@@ -0,0 +1,44 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++PYTHON="${PYTHON:-python3}"
++AUTH_DB="${KUKANILEA_AUTH_DB:-instance/auth.sqlite3}"
++HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
++: > "$HEALTH_LOG"
++
++echo "[healthcheck] Starting at $(date)" | tee -a "$HEALTH_LOG"
++
++echo "[1/6] Python compile check..." | tee -a "$HEALTH_LOG"
++find app -name '*.py' -print0 | xargs -0 "$PYTHON" -m py_compile
++
++echo "[2/6] Ensuring DB tables..." | tee -a "$HEALTH_LOG"
++"$PYTHON" app/db/migrations/ensure_agent_memory.py | tee -a "$HEALTH_LOG"
++
++echo "[3/6] Running unit tests..." | tee -a "$HEALTH_LOG"
++pytest -q
++
++echo "[4/6] Checking routes (200/302)..." | tee -a "$HEALTH_LOG"
++URLS=("/" "/dashboard" "/upload" "/projects" "/tasks" "/messenger" "/email" "/calendar" "/time" "/visualizer" "/settings")
++for u in "${URLS[@]}"; do
++  code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051${u}" || true)
++  if [[ "$code" != "200" && "$code" != "302" ]]; then
++    echo "Route $u returned $code" | tee -a "$HEALTH_LOG"
++    exit 1
++  fi
++done
++
++echo "[5/6] Checking homepage for external URLs..." | tee -a "$HEALTH_LOG"
++external=$(curl -s http://127.0.0.1:5051/ | grep -oE 'https?://[^"'"'"' ]+' | grep -v '127.0.0.1' || true)
++if [[ -n "$external" ]]; then
++  echo "External URLs found:" | tee -a "$HEALTH_LOG"
++  echo "$external" | tee -a "$HEALTH_LOG"
++  exit 1
++fi
++
++echo "[6/6] DB sanity check..." | tee -a "$HEALTH_LOG"
++if ! sqlite3 "$AUTH_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_memory';" | grep -q "agent_memory"; then
++  echo "agent_memory table missing" | tee -a "$HEALTH_LOG"
++  exit 1
++fi
++
++echo "[healthcheck] All checks passed" | tee -a "$HEALTH_LOG"
+diff --git a/scripts/ops/restore_from_nas.sh b/scripts/ops/restore_from_nas.sh
+new file mode 100755
+index 0000000..f347c11
+--- /dev/null
++++ b/scripts/ops/restore_from_nas.sh
+@@ -0,0 +1,40 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# Safer restore: extracts into current project instance/ instead of root filesystem.
++TENANT_ID="${1:?tenant_id required}"
++BACKUP_FILE="${2:-}"
++NAS_SHARE="//192.168.0.2/KUKANILEA-BACKUPS"
++NAS_USER="${NAS_USER:-backupuser}"
++NAS_PASS="${NAS_PASS:-}"
++TMP_DIR="/tmp/kukanilea_restore_${TENANT_ID}"
++
++mkdir -p "$TMP_DIR"
++
++if [[ -z "$BACKUP_FILE" ]]; then
++  if command -v smbclient >/dev/null 2>&1; then
++    BACKUP_FILE="$(smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "cd ${TENANT_ID}; ls" | awk '/\.tar\.zst(\.age)?/{print $1}' | tail -n 1)"
++  else
++    echo "Provide BACKUP_FILE when smbclient is unavailable."
++    exit 1
++  fi
++fi
++
++smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "cd ${TENANT_ID}; get ${BACKUP_FILE} ${TMP_DIR}/${BACKUP_FILE}"
++LOCAL_FILE="${TMP_DIR}/${BACKUP_FILE}"
++
++if [[ "$LOCAL_FILE" == *.age ]]; then
++  age -d -i "${AGE_PRIVATE_KEY_FILE:-$HOME/.config/kukanilea/age_key.txt}" -o "${TMP_DIR}/backup.tar.zst" "$LOCAL_FILE"
++  LOCAL_FILE="${TMP_DIR}/backup.tar.zst"
++fi
++
++zstd -d "$LOCAL_FILE" -o "${TMP_DIR}/backup.tar"
++mkdir -p instance
++
++tar -xf "${TMP_DIR}/backup.tar" -C instance
++
++if [[ -f "${TMP_DIR}/db_dump.sql" ]]; then
++  sqlite3 instance/kukanilea.db < "${TMP_DIR}/db_dump.sql"
++fi
++
++echo "Restore complete (project-local instance/)."
+diff --git a/tests/e2e/navigation.spec.ts b/tests/e2e/navigation.spec.ts
+new file mode 100644
+index 0000000..1d5373e
+--- /dev/null
++++ b/tests/e2e/navigation.spec.ts
+@@ -0,0 +1,25 @@
++import { test, expect } from '@playwright/test';
++
++test.describe('Sovereign navigation', () => {
++  const routes = [
++    '/dashboard',
++    '/upload',
++    '/projects',
++    '/tasks',
++    '/messenger',
++    '/email',
++    '/calendar',
++    '/time',
++    '/visualizer',
++    '/settings'
++  ];
++
++  for (const route of routes) {
++    test(`route responds and renders ${route}`, async ({ page }) => {
++      const response = await page.goto(route);
++      const status = response?.status() ?? 0;
++      expect([200, 302]).toContain(status);
++      await expect(page.locator('body')).toContainText(/KUKANILEA|Dashboard|Upload|Projekt|Aufgabe|Kalender|Einstellungen|Login|Anmelden/i);
++    });
++  }
++});
+diff --git a/tests/e2e/task.spec.ts b/tests/e2e/task.spec.ts
+new file mode 100644
+index 0000000..d4cb263
+--- /dev/null
++++ b/tests/e2e/task.spec.ts
+@@ -0,0 +1,8 @@
++import { test, expect } from '@playwright/test';
++
++test('tasks page renders', async ({ page }) => {
++  const response = await page.goto('/tasks');
++  const status = response?.status() ?? 0;
++  expect([200, 302]).toContain(status);
++  await expect(page.locator('body')).toContainText(/Aufgabe|Task|Offen|Login|Anmelden|System betreten|Enterprise Core Access/i);
++});
+diff --git a/tests/e2e/upload.spec.ts b/tests/e2e/upload.spec.ts
+new file mode 100644
+index 0000000..a9bcbe5
+--- /dev/null
++++ b/tests/e2e/upload.spec.ts
+@@ -0,0 +1,8 @@
++import { test, expect } from '@playwright/test';
++
++test('upload page loads and shows drop area', async ({ page }) => {
++  const response = await page.goto('/upload');
++  const status = response?.status() ?? 0;
++  expect([200, 302]).toContain(status);
++  await expect(page.locator('body')).toContainText(/Dateien auswählen|Datei|Upload|Login|Anmelden|System betreten|Enterprise Core Access/i);
++});
+diff --git a/tests/test_guardrails.py b/tests/test_guardrails.py
+new file mode 100644
+index 0000000..9a8c2cd
+--- /dev/null
++++ b/tests/test_guardrails.py
+@@ -0,0 +1,16 @@
++from pathlib import Path
++import sys
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++from app.ai.guardrails import validate_prompt
++
++
++def test_validate_prompt_ok():
++    assert validate_prompt('Hallo') == (True, 'OK')
++
++
++def test_validate_prompt_sql_blocked():
++    ok, reason = validate_prompt('DROP TABLE users;')
++    assert ok is False
++    assert 'SQL' in reason
+diff --git a/tools/generate_license.py b/tools/generate_license.py
+new file mode 100755
+index 0000000..3f14d96
+--- /dev/null
++++ b/tools/generate_license.py
+@@ -0,0 +1,54 @@
++#!/usr/bin/env python3
++"""Generate a signed tenant license JSON.
++
++Requires: pip install pynacl
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++from datetime import date
++
++from nacl.signing import SigningKey
++
++
++def sign_license(private_key_hex: str, payload: dict) -> dict:
++    signer = SigningKey(bytes.fromhex(private_key_hex))
++    message = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
++    signature = signer.sign(message).signature
++    payload["signature"] = signature.hex()
++    return payload
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--tenant", required=True)
++    parser.add_argument("--hw", required=True, help="device hw fingerprint")
++    parser.add_argument("--valid-until", default=str(date(2030, 1, 1)))
++    parser.add_argument("--out", default=None)
++    args = parser.parse_args()
++
++    private_hex = os.environ.get("KUKANILEA_LICENSE_PRIV")
++    if not private_hex:
++        raise SystemExit("Set KUKANILEA_LICENSE_PRIV (hex) in env")
++
++    payload = {
++        "tenant_id": args.tenant,
++        "hw_fingerprint": args.hw,
++        "valid_until": args.valid_until,
++        "issued_at": str(date.today()),
++        "flags": {"trial": False},
++    }
++
++    signed = sign_license(private_hex, payload)
++    out_path = args.out or f"{args.tenant}_license.json"
++    with open(out_path, "w", encoding="utf-8") as fh:
++        json.dump(signed, fh, ensure_ascii=False, indent=2)
++
++    print("Wrote", out_path)
++
++
++if __name__ == "__main__":
++    main()

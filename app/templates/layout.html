@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/design-system.css">
+  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
   <script>
     (function () {
         const t = localStorage.getItem('ks_theme');
@@ -19,6 +20,7 @@
   </script>
   <script src="/static/js/state.js"></script>
   <script src="/static/js/command_palette.js"></script>
+  <script src="/static/vendor/htmx.min.js"></script>
   <script>
     (function(){
       try {
@@ -106,7 +108,9 @@
             <kbd style="font-size:10px; padding:4px 8px; background:var(--bg-tertiary); border:1px solid var(--color-border); border-radius:6px; color:var(--text-tertiary);">⌘ K</kbd>
         </div>
     </header>
-    {% block content %}{% endblock %}
+    <div id="main-content" hx-history-elt>
+      {% block content %}{% endblock %}
+    </div>
   </main>
 
   <!-- KI Chatbot Floating Widget -->
@@ -141,17 +145,30 @@
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const btn = document.getElementById('sidebar-toggle');
-      if (!btn) return;
       const updateLabel = () => {
         const collapsed = document.documentElement.classList.contains('sidebar-collapsed');
-        btn.textContent = collapsed ? '→' : '←';
+        if (btn) btn.textContent = collapsed ? '→' : '←';
       };
-      btn.addEventListener('click', () => {
-        const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
-        try { localStorage.setItem('ks_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
-        updateLabel();
-      });
+      if (btn) {
+        btn.addEventListener('click', () => {
+          const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
+          try { localStorage.setItem('ks_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+          updateLabel();
+        });
+      }
+
+      const updateSidebarActive = () => {
+        const current = window.location.pathname;
+        document.querySelectorAll('.nav-link[data-route]').forEach((a) => {
+          const route = a.getAttribute('data-route') || '';
+          const active = route === '/dashboard' ? (current === '/' || current === '/dashboard') : current.startsWith(route);
+          a.classList.toggle('active', active);
+        });
+      };
+
       updateLabel();
+      updateSidebarActive();
+      document.body.addEventListener('htmx:afterSettle', updateSidebarActive);
     });
   </script>
 

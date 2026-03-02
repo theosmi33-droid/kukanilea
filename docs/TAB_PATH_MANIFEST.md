@@ -26,9 +26,9 @@ If a required route/template is missing, it is marked as `MISSING_PATH`.
 | projekte | `/projects` | `app/modules/projects/` | `app/templates/kanban.html` | READY |
 | excel_docs_visualizer | `/visualizer`, `/documents` | `app/core/logic.py` (read/index), `app/web.py` visualizer/docs handlers | `app/templates/visualizer.html` | READY (shared-core heavy) |
 | einstellungen | `/settings`, `/settings/branding`, `/admin/tenants`, `/admin/mesh`, `/admin/audit` | `app/core/tenant_registry.py`, `app/core/mesh_network.py`, `app/license.py`, `app/routes/admin_tenants.py` | `app/templates/settings.html`, `app/templates/admin_tenants.html`, `app/templates/audit_trail.html` | READY |
-| floating_widget_chatbot | global floating widget, `/api/chat` | `app/templates/layout.html`, `app/static/js/chat_widget.js`, `app/static/css/chat_widget.css` | `app/templates/layout.html`, `app/templates/partials/chat_widget.html` | PARTIAL (API in shared core) |
+| floating_widget_chatbot | global floating widget, `/api/chat` | `app/templates/layout.html` (inline widget + script), `app/web.py` (`/api/chat`) | `app/templates/layout.html` | PARTIAL (dedicated partial/js/css pending) |
 
 ## Notes
 - Sidebar currently shows: Dashboard, Upload, Aufgaben, Zeiterfassung, CRM, Dokumente, Assistent, E-Mail, Messenger, Excel Visualizer, Einstellungen.
-- Floating widget chatbot exists as global layout element (`app/templates/layout.html`) and depends on shared-core chat API.
+- Floating widget chatbot ist aktuell inline in `app/templates/layout.html` implementiert und nutzt `/api/chat` aus `app/web.py`; dedizierte Dateien fuer Partial/JS/CSS sind als eigener Ausbauschritt vorgesehen.
 - Requested tab `kalender` is not yet represented as dedicated route/template and must be built as a new domain feature.
