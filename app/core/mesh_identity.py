@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import logging
 import os
+import secrets
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -13,11 +17,52 @@ from app.config import Config
 
 logger = logging.getLogger("kukanilea.mesh_identity")
 
+HANDSHAKE_INIT_PURPOSE = "mesh_handshake_init"
+HANDSHAKE_ACK_PURPOSE = "mesh_handshake_ack"
+DEFAULT_HANDSHAKE_MAX_AGE_SECONDS = 120
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+def _canonical_json_bytes(payload: Mapping[str, Any]) -> bytes:
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+def _parse_utc(ts: str) -> Optional[datetime]:
+    text = str(ts or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def get_identity_paths() -> Tuple[Path, Path]:
     root = Config.USER_DATA_ROOT
     priv_path = root / "mesh_id.priv"
     pub_path = root / "mesh_id.pub"
     return priv_path, pub_path
+
+
+def compute_node_id(public_key_b64: str) -> str:
+    try:
+        pub_raw = base64.b64decode(public_key_b64, validate=True)
+    except Exception as exc:
+        raise ValueError("invalid_public_key") from exc
+
+    digest = hashlib.sha256(pub_raw).hexdigest()[:16].upper()
+    return f"HUB-{digest}"
+
 
 def ensure_mesh_identity() -> Tuple[str, str]:
     """
@@ -25,13 +70,12 @@ def ensure_mesh_identity() -> Tuple[str, str]:
     Returns (public_key_b64, node_id).
     """
     priv_path, pub_path = get_identity_paths()
-    
+
     if priv_path.exists() and pub_path.exists():
         try:
-            pub_key_b64 = pub_path.read_text().strip()
-            # node_id is a short hash of the public key
-            node_id = pub_key_b64[:16] 
-            return pub_key_b64, f"HUB-{node_id}"
+            pub_key_b64 = pub_path.read_text(encoding="utf-8").strip()
+            node_id = compute_node_id(pub_key_b64)
+            return pub_key_b64, node_id
         except Exception as e:
             logger.error(f"Failed to load mesh identity: {e}")
 
@@ -39,51 +83,58 @@ def ensure_mesh_identity() -> Tuple[str, str]:
     private_key = ed25519.Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
 
-    # Save private key (unencrypted for now, as it's a local appliance)
     priv_bytes = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.OpenSSH,
-        encryption_algorithm=serialization.NoEncryption()
+        encryption_algorithm=serialization.NoEncryption(),
     )
-    
-    # Save public key
+
     pub_bytes = public_key.public_bytes(
         encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw
+        format=serialization.PublicFormat.Raw,
     )
-    pub_b64 = base64.b64encode(pub_bytes).decode('utf-8')
+    pub_b64 = base64.b64encode(pub_bytes).decode("utf-8")
 
     priv_path.parent.mkdir(parents=True, exist_ok=True)
     priv_path.write_bytes(priv_bytes)
-    pub_path.write_text(pub_b64)
-    
-    # Set restrictive permissions on private key
-    os.chmod(priv_path, 0o600)
+    pub_path.write_text(pub_b64, encoding="utf-8")
 
-    node_id = pub_b64[:16]
-    return pub_b64, f"HUB-{node_id}"
+    try:
+        os.chmod(priv_path, 0o600)
+    except OSError:
+        pass
+
+    try:
+        os.chmod(pub_path, 0o644)
+    except OSError:
+        pass
+
+    node_id = compute_node_id(pub_b64)
+    return pub_b64, node_id
+
 
 def sign_message(message: bytes) -> str:
     """Signs a message using the local private key."""
     priv_path, _ = get_identity_paths()
     if not priv_path.exists():
         raise RuntimeError("Mesh identity not initialized")
-        
+
     priv_bytes = priv_path.read_bytes()
     private_key = serialization.load_ssh_private_key(priv_bytes, password=None)
-    
+
     if not isinstance(private_key, ed25519.Ed25519PrivateKey):
         raise TypeError("Not an Ed25519 private key")
-        
+
     sig = private_key.sign(message)
-    return base64.b64encode(sig).decode('utf-8')
+    return base64.b64encode(sig).decode("utf-8")
+
 
 def verify_signature(public_key_b64: str, message: bytes, signature_b64: str) -> bool:
     """Verifies a signature from a peer Hub."""
     try:
-        pub_bytes = base64.b64decode(public_key_b64)
-        sig_bytes = base64.b64decode(signature_b64)
-        
+        pub_bytes = base64.b64decode(public_key_b64, validate=True)
+        sig_bytes = base64.b64decode(signature_b64, validate=True)
+
         public_key = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
         public_key.verify(sig_bytes, message)
         return True
