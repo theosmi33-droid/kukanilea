@@ -3,15 +3,24 @@
      hx-trigger="every 5s"
      hx-swap="outerHTML"
      style="display:flex; align-items:center; gap:10px; padding:6px 14px; border-radius:99px; background:rgba(255,255,255,0.05); border:1px solid var(--color-border); font-size:11px; font-weight:700; color:var(--text-tertiary);">
+    
+    <style>
+        @keyframes status-pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .status-dot { animation: status-pulse 2s infinite ease-in-out; }
+    </style>
 
     {% if status == 'HEALTHY' %}
-    <div style="width:8px; height:8px; border-radius:50%; background:var(--color-success); box-shadow:0 0 8px var(--color-success);"></div>
+    <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-success); box-shadow:0 0 8px var(--color-success);"></div>
     <span style="color:var(--color-success);">System Gesund</span>
-    {% elif status == 'WARNING_SYNC' %}
-    <div style="width:8px; height:8px; border-radius:50%; background:var(--color-warning); box-shadow:0 0 8px var(--color-warning);"></div>
-    <span style="color:var(--color-warning);">Sync Fehler ({{ sync_queue.failed }})</span>
+    {% elif status == 'WARNING_SYNC' or status == 'WARNING_MEMORY' %}
+    <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-warning); box-shadow:0 0 8px var(--color-warning);"></div>
+    <span style="color:var(--color-warning);">{{ 'Sync Fehler' if status == 'WARNING_SYNC' else 'Hoher RAM' }}</span>
     {% else %}
-    <div style="width:8px; height:8px; border-radius:50%; background:var(--color-danger); box-shadow:0 0 8px var(--color-danger);"></div>
+    <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-danger); box-shadow:0 0 8px var(--color-danger);"></div>
     <span style="color:var(--color-danger);">{{ status }}</span>
     {% endif %}
 
@@ -21,5 +30,12 @@
     <span style="font-family:monospace; color:var(--text-tertiary);">RAM: {{ memory_rss_mb|default(0)|round(0) }}MB</span>
 
     <!-- Task GoBD: Outbound Status Badges -->
-    <span id="outbound-status-badges" style="display:flex; align-items:center; gap:6px; margin-left: 8px;"></span>
+    <span id="outbound-status-badges" style="display:flex; align-items:center; gap:6px; margin-left: 8px;">
+        {% if outbound_queue and outbound_queue.pending > 0 %}
+        <span style="padding: 2px 6px; border-radius: 4px; background: rgba(245,158,11,0.2); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); font-size: 9px;">SYNC: {{ outbound_queue.pending }}</span>
+        {% endif %}
+        {% if outbound_queue and outbound_queue.failed > 0 %}
+        <span style="padding: 2px 6px; border-radius: 4px; background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); font-size: 9px;">FAIL: {{ outbound_queue.failed }}</span>
+        {% endif %}
+    </span>
 </div>
