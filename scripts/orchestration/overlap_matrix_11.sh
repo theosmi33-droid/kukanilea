@@ -40,11 +40,16 @@ for d in "${DOMAINS[@]}"; do
   cd "$WT"
   branch="$(git branch --show-current || echo '?')"
   dirty="$(git status --porcelain | wc -l | tr -d ' ')"
-  diff_count="$(git diff --name-only main | wc -l | tr -d ' ')"
+  # Use three-dot diff to measure only branch-owned deltas since merge-base.
+  # Two-dot (`git diff main`) produces false positives whenever `main` moved ahead.
+  diff_count="$(git diff --name-only main...HEAD | wc -l | tr -d ' ')"
 
   overlap="OK"
   if [[ "$diff_count" != "0" ]]; then
-    files=( $(git diff --name-only main) )
+    files=()
+    while IFS= read -r f; do
+      files+=("$f")
+    done < <(git diff --name-only main...HEAD)
     json="$(python "$CORE/scripts/dev/check_domain_overlap.py" --reiter "$d" --files "${files[@]}" --json 2>/dev/null || true)"
     overlap="$(python - <<'PY' "$json"
 import json,sys

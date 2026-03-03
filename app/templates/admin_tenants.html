@@ -12,7 +12,7 @@
             <h2 style="font-size: 20px; font-weight: 700; margin: 0;">Neuen Mandanten verknüpfen</h2>
         </div>
 
-        <form hx-post="/admin/tenants/add" hx-target="#validation-result" hx-swap="innerHTML" style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 16px; align-items: flex-end;">
+        <form hx-post="/admin/tenants/add" hx-target="#validation-result" hx-swap="innerHTML" hx-confirm="Neuen Mandanten jetzt verknüpfen?" style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 16px; align-items: flex-end;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <div class="input-group" style="margin-bottom: 0;">
