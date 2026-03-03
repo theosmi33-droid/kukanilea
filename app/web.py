@@ -3489,7 +3489,6 @@ def projects_list():
             active_tab="projects",
         )
     from app.modules.projects.logic import ProjectManager
-
     pm = ProjectManager(current_app.extensions["auth_db"])
     con = current_app.extensions["auth_db"]._db()
     try:
