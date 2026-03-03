@@ -29,7 +29,7 @@ Zuständig für Triage, Tool-Auswahl und Context-Window-Management.
 Ein isolierter Heartbeat-Service, der System-Limits, Memory Leaks und DB-Locks überwacht. Schlägt Alarm bei Latenzen > 200ms.
 
 ## 4. Codex Cloud Rollen (verbindlich)
-Diese Rollen sind fuer externe Codex-Cloud Sessions (z. B. zweiter PC) verpflichtend.
+Diese Rollen sind für externe Codex-Cloud Sessions (z. B. zweiter PC) verpflichtend.
 
 ### Rolle A: `REVIEW_ONLY`
 Ziel: nur auditieren, nicht editieren.
@@ -38,7 +38,7 @@ Erlaubt:
 - Code lesen
 - CI/Actions analysieren
 - PR-Checks und Logs auswerten
-- Findings mit Prioritaet (P0/P1/P2) dokumentieren
+- Findings mit Priorität (P0/P1/P2) dokumentieren
 
 Verboten:
 - Dateien aendern
@@ -60,19 +60,19 @@ Erlaubt:
 
 Verboten:
 - Direkter Push auf `main`
-- Schutzregeln abschwaechen
+- Schutzregeln abschwächen
 - Merge ohne Maintainer-Freigabe
 
 Pflichtablauf:
 1. Repro + Root Cause
 2. Minimaler Fix
-3. Tests gruen (lokal + CI)
+3. Tests grün (lokal + CI)
 4. PR mit klarer Validation-Sektion
 
 ## 5. Remote-Scan Playbook (anderer PC)
 Vor jeder Cloud-Session diesen Kontext laden:
 - `docs/TAB_OWNERSHIP_RULES.md`
-- `docs/SOVEREIGN_11_FINAL_PACKAGE.md`
+- `docs/scope_requests/core_sovereign-11-shell_20260301.md`
 - `docs/scope_requests/`
 - `scripts/dev/check_domain_overlap.py`
 - `scripts/ops/healthcheck.sh`
@@ -81,7 +81,7 @@ Vor jeder Cloud-Session diesen Kontext laden:
 ```
 Mode: REVIEW_ONLY.
 Arbeite read-only auf dem Repo.
-Pruefe: Branch-Schutz, offene PRs, fehlerhafte/cancelled Actions, Domain-Overlap, Sovereign-11 Regeln (Zero-CDN, White-Mode, HTMX).
+Prüfe: Branch-Schutz, offene PRs, fehlerhafte/cancelled Actions, Domain-Overlap, Sovereign-11 Regeln (Zero-CDN, White-Mode, HTMX).
 Liefere nur Findings (P0/P1/P2) mit Datei+Zeile, Repro und Fix-Empfehlung.
 Keine Edits, keine Commits, kein Push, kein Merge.
 ```
@@ -91,11 +91,11 @@ Keine Edits, keine Commits, kein Push, kein Merge.
 Mode: DEBUG_PR_ONLY.
 Bearbeite nur den konkreten Fehler in einem Branch codex/debug-<thema>.
 Kein Push auf main, kein Merge.
-Nach dem Fix: relevante Tests ausfuehren, PR erstellen, CI beobachten, Status reporten.
+Nach dem Fix: relevante Tests ausführen, PR erstellen, CI beobachten, Status berichten.
 ```
 
 ## 6. Merge-Gate (nicht verhandelbar)
 - `main` bleibt protected.
-- Required checks muessen gruen sein.
+- Required checks müssen grün sein.
 - Mindestens 1 Approval mit Write/Admin-Rechten.
-- Kommentare muessen resolved sein.
+- Kommentare müssen resolved sein.
