@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from app.agents.archive import ArchiveAgent
 from app.agents.auth_tenant import AuthTenantAgent
-from app.agents.base import AgentContext, AgentResult
+from app.agents.base import AgentContext, AgentResult, BaseAgent
 from app.agents.customer import CustomerAgent
+from app.agents.executor import AgentExecutor
 from app.agents.guards import build_safe_suggestions, detect_prompt_injection
 from app.agents.index import IndexAgent
 from app.agents.llm import LLMProvider, get_default_provider
@@ -17,6 +19,7 @@ from app.agents.memory_store import MemoryManager
 from app.agents.mesh import MeshAgent
 from app.agents.observer import ObserverAgent
 from app.agents.open_file import OpenFileAgent
+from app.agents.planner import Planner
 from app.agents.review import ReviewAgent
 from app.agents.search import SearchAgent
 from app.agents.summary import SummaryAgent
@@ -26,6 +29,8 @@ from app.agents.weather import WeatherAgent
 from .intent import IntentParser
 from .policy import PolicyEngine
 from .tool_registry import ToolRegistry
+
+logger = logging.getLogger("kukanilea.agents.messenger")
 
 
 @dataclass
@@ -37,6 +42,160 @@ class OrchestratorResult:
     suggestions: List[str]
     ok: bool = True
     error: str | None = None
+
+
+class MessengerAgent(BaseAgent):
+    name = "messenger"
+    required_role = "USER"
+    scope = "messenger"
+    tools = [
+        "messenger_send",
+        "messenger_sync",
+        "messenger_status",
+        "create_task",
+        "create_appointment",
+        "search_docs",
+        "mail_generate",
+    ]
+
+    def __init__(self, core_module=None) -> None:
+        self.core = core_module
+        self.planner = Planner()
+        self.executor = AgentExecutor()
+
+    def can_handle(self, intent: str, message: str) -> bool:
+        text = (message or "").lower()
+        tokens = [
+            "telegram",
+            "whatsapp",
+            "instagram",
+            "messenger",
+            "teamchat",
+            "intern",
+            "nachricht",
+            "@kukanilea",
+        ]
+        return any(t in text for t in tokens) or intent == "messenger"
+
+    def handle(self, message: str, intent: str, context: AgentContext) -> AgentResult:
+        text = message.strip()
+        provider = self._extract_provider(text)
+        crm_match = self._crm_match_hint(text)
+        memory = self._get_memory_manager(context)
+        stored = False
+        if memory:
+            stored = memory.store_messenger_message(
+                tenant_id=context.tenant_id,
+                provider=provider,
+                sender=context.user,
+                recipient="team",
+                content=text,
+                crm_match=crm_match,
+                direction="inbound",
+            )
+
+        if "@kukanilea" in text.lower() or len(text.split()) > 10:
+            return self._run_agentic_loop(text, intent, context, provider, stored, crm_match)
+
+        actions: List[Dict[str, Any]] = []
+        if self._asks_for_search(text):
+            actions.append({"type": "search_docs", "query": text})
+        proposals = self._build_proposals(text, provider, crm_match)
+        hint_lines = [
+            "Messenger-Hub (Agent-Mode) aktiv.",
+            f"Provider: {provider.upper()}.",
+        ]
+        if crm_match:
+            hint_lines.append(f"CRM-Match: {crm_match.get('display')}")
+        if proposals:
+            hint_lines.append(f"{len(proposals)} Aktionsvorschläge erstellt (Confirm-Gate benötigt).")
+
+        return AgentResult(
+            text="\n".join(hint_lines),
+            actions=actions,
+            data={
+                "hub": {
+                    "provider": provider,
+                    "crm_match": crm_match,
+                    "proposals": proposals,
+                    "react_trace": [
+                        {
+                            "thought": f"Einfache Nachricht erkannt (Provider: {provider}). Speicherstatus: {stored}",
+                            "action": "none",
+                            "observation": {"mode": "heuristic"}
+                        }
+                    ],
+                    "storage_ok": stored,
+                    "mode": "heuristic"
+                }
+            },
+            suggestions=["zeige provider status", "suche nachricht", "erstelle task"]
+        )
+
+    def _run_agentic_loop(self, message: str, intent: str, context: AgentContext, provider: str, stored: bool, crm_match: Dict[str, Any], max_steps: int = 4) -> AgentResult:
+        history = []
+        final_answer = ""
+        actions: List[Dict[str, Any]] = []
+        for i in range(max_steps):
+            plan = self.planner.plan(intent, message, tenant_id=context.tenant_id, history=history)
+            if not plan: break
+            tool_name = plan.get("tool")
+            params = plan.get("params", {})
+            thought = plan.get("thought", "")
+            if tool_name == "final_answer":
+                final_answer = params.get("answer", thought)
+                break
+            try:
+                observation = self.executor.execute(tool_name, params)
+                history.append({"thought": thought, "action": tool_name, "params": params, "observation": observation})
+                if tool_name in ["create_task", "create_appointment", "mail_generate", "messenger_send"]:
+                    actions.append({"type": tool_name, **params})
+            except Exception as e:
+                history.append({"thought": thought, "action": tool_name, "params": params, "observation": {"error": str(e)}})
+        
+        return AgentResult(
+            text=final_answer or f"Ich habe die Nachricht analysiert ({len(history)} Schritte).",
+            actions=actions,
+            data={"hub": {"provider": provider, "crm_match": crm_match, "react_trace": history, "storage_ok": stored, "mode": "agentic_loop"}},
+            suggestions=["was hast du getan?", "zeige details", "ok"]
+        )
+
+    def _extract_provider(self, message: str) -> str:
+        text = message.lower()
+        if "telegram" in text: return "telegram"
+        if "instagram" in text: return "instagram"
+        if "whatsapp" in text: return "whatsapp"
+        if any(k in text for k in ["meta", "facebook", "messenger"]): return "meta"
+        return "internal"
+
+    def _crm_match_hint(self, message: str) -> Dict[str, str]:
+        phone_match = re.search(r"(\+?\d[\d\-\s]{7,}\d)", message)
+        if phone_match:
+            return {"source": "phone", "display": f"Kunde (Tel: {phone_match.group(1).strip()})", "confidence": "medium"}
+        return {}
+
+    def _get_memory_manager(self, context: AgentContext) -> MemoryManager | None:
+        if not self.core:
+            db_path = context.meta.get("db_path")
+            return MemoryManager(db_path) if db_path else None
+        auth_db = getattr(self.core, "AUTH_DB", None) or getattr(self.core, "DB_PATH", None)
+        return MemoryManager(str(auth_db)) if auth_db else None
+
+    def _build_proposals(self, text: str, provider: str, crm_match: Dict[str, Any]) -> List[Dict[str, Any]]:
+        proposals = []
+        text_lower = text.lower()
+        if any(k in text_lower for k in ["sende", "schick", "antworten", "reply"]):
+            proposals.append({"type": "messenger_send", "provider": provider, "confirm_required": True, "policy": "business_only" if provider in ["whatsapp", "meta", "instagram"] else "standard"})
+        if any(k in text_lower for k in ["task", "aufgabe", "todo"]):
+            proposals.append({"type": "create_task", "confirm_required": True, "title": text[:50] + "..."})
+        if any(k in text_lower for k in ["termin", "kalender", "meeting"]):
+            proposals.append({"type": "create_appointment", "confirm_required": True, "summary": text[:50] + "..."})
+        if any(k in text_lower for k in ["entwurf", "draft", "mail"]):
+            proposals.append({"type": "mail_generate", "confirm_required": True, "reason": "assistant_draft"})
+        return proposals
+
+    def _asks_for_search(self, text: str) -> bool:
+        return any(k in text.lower() for k in ["suche", "finde", "dokument", "rechnung"])
 
 
 class Orchestrator:
@@ -75,6 +234,7 @@ class Orchestrator:
             IndexAgent(core_module),
             MailAgent(),
             MemoryAgent(),
+            MessengerAgent(core_module),
             MeshAgent(),
             WeatherAgent(weather_adapter),
             AuthTenantAgent(),
@@ -85,6 +245,11 @@ class Orchestrator:
                 self.tools.register(tool, agent.name)
 
     def handle(self, message: str, context: AgentContext) -> OrchestratorResult:
+        # Add db_path for agents that need direct DB access (like MemoryStore in MessengerAgent)
+        auth_db = getattr(self.core, "AUTH_DB", None) or getattr(self.core, "DB_PATH", None)
+        if auth_db:
+            context.meta["db_path"] = str(auth_db)
+
         safe_mode = bool(context.meta.get("safe_mode"))
         intent_result = self.intent_parser.parse(message, allow_llm=not safe_mode)
         intent = intent_result.intent
@@ -108,9 +273,6 @@ class Orchestrator:
                 ok=False,
                 error="prompt_injection_blocked",
             )
-
-        if self._is_messenger_request(message):
-            return self._handle_messenger_request(message, intent, context)
 
         for agent in self.agents:
             if agent.can_handle(intent, message):
@@ -157,218 +319,6 @@ class Orchestrator:
             ok=False,
             error="intent_unhandled",
         )
-
-    def _is_messenger_request(self, message: str) -> bool:
-        text = (message or "").lower()
-        messenger_tokens = [
-            "telegram",
-            "whatsapp",
-            "instagram",
-            "messenger",
-            "teamchat",
-            "intern",
-            "nachricht",
-            "@kukanilea",
-        ]
-        return any(tok in text for tok in messenger_tokens)
-
-    def _handle_messenger_request(
-        self, message: str, intent: str, context: AgentContext
-    ) -> OrchestratorResult:
-        text = message.strip()
-        providers = self._provider_status()
-        crm_match = self._crm_match_hint(text)
-        extracted = self._extract_provider(text)
-        normalized_provider = extracted if extracted != "unknown" else "internal"
-        memory = self._memory_manager()
-        stored = False
-        if memory:
-            stored = memory.store_messenger_message(
-                tenant_id=context.tenant_id or "default",
-                provider=normalized_provider,
-                sender=context.user or "unknown",
-                recipient="team",
-                content=text,
-                attachments=[],
-                crm_match=crm_match,
-                direction="inbound",
-                status="stored",
-            )
-
-        react_steps = [
-            {
-                "thought": "Nachricht normalisieren und Provider erkennen.",
-                "action": "normalize_message",
-                "observation": {"provider": normalized_provider, "stored": stored},
-            },
-            {
-                "thought": "CRM-Heuristik und Folgeaktionen bestimmen.",
-                "action": "analyze_context",
-                "observation": {"crm_match": crm_match, "intent": intent},
-            },
-        ]
-
-        actions: List[Dict[str, Any]] = []
-        proposals: List[Dict[str, Any]] = []
-
-        if self._asks_for_send(text):
-            proposals.append(
-                {
-                    "type": "send_message",
-                    "provider": normalized_provider,
-                    "confirm_required": True,
-                    "policy_mode": "business_only"
-                    if normalized_provider in {"whatsapp", "meta", "instagram"}
-                    else "standard",
-                }
-            )
-
-        if self._asks_for_task(text):
-            proposals.append(
-                {
-                    "type": "create_task",
-                    "confirm_required": True,
-                    "title": self._extract_task_title(text),
-                }
-            )
-
-        if self._asks_for_appointment(text):
-            proposals.append(
-                {
-                    "type": "create_appointment",
-                    "confirm_required": True,
-                    "summary": self._extract_task_title(text),
-                }
-            )
-
-        if self._asks_for_search(text):
-            search_action = {"type": "search_docs", "query": text}
-            actions.append(search_action)
-            react_steps.append(
-                {
-                    "thought": "Dokumentkontext für Assistenz vorbereiten.",
-                    "action": "search_docs",
-                    "observation": {"queued": True},
-                }
-            )
-
-        if self._asks_for_draft(text):
-            proposals.append(
-                {
-                    "type": "mail_generate",
-                    "confirm_required": True,
-                    "reason": "assistant_draft",
-                }
-            )
-
-        hint_lines = [
-            "Messenger-Hub aktiv. Interner Chat bleibt offline-fähig.",
-            "Externe Provider laufen optional und degraden auf DISCONNECTED, wenn offline.",
-        ]
-        if crm_match:
-            hint_lines.append(
-                f"CRM-Match (read-only): {crm_match.get('display', '')}."
-            )
-        if proposals:
-            hint_lines.append(
-                "Vorgeschlagene Aktionen sind mit Confirm-Gate markiert und werden nicht automatisch ausgeführt."
-            )
-
-        suggestions = build_safe_suggestions(
-            [
-                "zeige provider status",
-                "suche nachricht von <name>",
-                "erstelle task aus nachricht",
-            ]
-        )
-        return OrchestratorResult(
-            text="\n".join(hint_lines),
-            actions=actions,
-            intent="messenger",
-            data={
-                "hub": {
-                    "provider_status": providers,
-                    "store": {"ok": stored, "mode": "local_memory"},
-                    "crm_match": crm_match,
-                    "proposals": proposals,
-                    "react_trace": react_steps,
-                }
-            },
-            suggestions=suggestions,
-            ok=True,
-            error=None,
-        )
-
-    def _provider_status(self) -> Dict[str, Dict[str, str]]:
-        return {
-            "internal": {"status": "online", "mode": "offline_always"},
-            "telegram": {"status": "disconnected", "mode": "optional"},
-            "meta": {"status": "disconnected", "mode": "business_only"},
-            "instagram": {"status": "disconnected", "mode": "business_only"},
-            "whatsapp": {"status": "future_plugin", "mode": "business_only"},
-        }
-
-    def _memory_manager(self) -> MemoryManager | None:
-        auth_db = getattr(self.core, "AUTH_DB", None) or getattr(self.core, "DB_PATH", None)
-        if not auth_db:
-            return None
-        return MemoryManager(str(auth_db))
-
-    def _extract_provider(self, message: str) -> str:
-        text = (message or "").lower()
-        if "telegram" in text:
-            return "telegram"
-        if "instagram" in text:
-            return "instagram"
-        if "meta" in text or "facebook" in text or "messenger" in text:
-            return "meta"
-        if "whatsapp" in text:
-            return "whatsapp"
-        if "intern" in text or "teamchat" in text:
-            return "internal"
-        return "unknown"
-
-    def _crm_match_hint(self, message: str) -> Dict[str, str]:
-        phone_match = re.search(r"(\+?\d[\d\-\s]{7,}\d)", message or "")
-        if phone_match:
-            number = phone_match.group(1).strip()
-            return {
-                "source": "phone",
-                "display": f"Kunde mit Telefonnummer {number}",
-                "confidence": "medium",
-            }
-        name_match = re.search(r"\b(kunde|an|von)\s+([A-ZÄÖÜ][a-zäöüß]+)", message or "")
-        if name_match:
-            return {
-                "source": "name",
-                "display": f"Kunde {name_match.group(2)}",
-                "confidence": "low",
-            }
-        return {}
-
-    def _asks_for_send(self, message: str) -> bool:
-        text = (message or "").lower()
-        return any(k in text for k in ["sende", "schick", "antworten", "reply"])
-
-    def _asks_for_task(self, message: str) -> bool:
-        text = (message or "").lower()
-        return any(k in text for k in ["task", "aufgabe", "todo"])
-
-    def _asks_for_appointment(self, message: str) -> bool:
-        text = (message or "").lower()
-        return any(k in text for k in ["termin", "kalender", "meeting"])
-
-    def _asks_for_search(self, message: str) -> bool:
-        text = (message or "").lower()
-        return any(k in text for k in ["suche", "finde", "dokument", "rechnung"])
-
-    def _asks_for_draft(self, message: str) -> bool:
-        text = (message or "").lower()
-        return any(k in text for k in ["entwurf", "draft", "mail", "email"])
-
-    def _extract_task_title(self, message: str) -> str:
-        cleaned = re.sub(r"\s+", " ", (message or "").strip())
-        return cleaned[:96] or "Nachricht verarbeiten"
 
     def _apply_policy(
         self, context: AgentContext, agent, actions: List[Dict[str, Any]]
