@@ -52,7 +52,7 @@
       <form method="post" style="display: flex; flex-direction: column; gap: var(--spacing-3);" onsubmit="const btn=this.querySelector('button[type=submit]'); setTimeout(() => { btn.disabled=true; btn.textContent='WIRD GESPEICHERT...'; }, 10);">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="confirm" value="1">
-        
+
         <div class="grid grid-cols-2 gap-4">
           <div class="input-group" style="margin-bottom: 0;">
             <label>Beleg-Typ</label>
@@ -104,7 +104,7 @@
             {% if keywords %}
               <div style="display: flex; flex-wrap: wrap; gap: 6px;">
                 {% for kw in keywords[:10] %}
-                  <span class="badge ripple" style="cursor: pointer; background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.2); color: var(--color-accent);" 
+                  <span class="badge ripple" style="cursor: pointer; background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.2); color: var(--color-accent);"
                         onclick="const input = document.querySelector('input[name=name]'); input.value += (input.value ? ', ' : '') + '{{kw}}';">{{ kw }}</span>
                 {% endfor %}
               </div>

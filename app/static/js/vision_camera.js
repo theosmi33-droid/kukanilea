@@ -13,7 +13,7 @@ class KukanileaVisionCamera {
         this.container = document.getElementById('camera-overlay');
         this.closeBtn = document.getElementById('camera-close');
         this.shutterBtn = document.getElementById('camera-shutter');
-        
+
         if (this.btn) {
             this.init();
         }
@@ -27,19 +27,19 @@ class KukanileaVisionCamera {
 
     async openCamera() {
         try {
-            this.stream = await navigator.mediaDevices.getUserMedia({ 
+            this.stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: "environment" }, // Nutze Rückkamera falls vorhanden
-                audio: false 
+                audio: false
             });
-            
+
             this.video.srcObject = this.stream;
             this.video.setAttribute("playsinline", true); // Wichtig für iOS
             this.video.play();
-            
+
             const videoContainer = document.getElementById('camera-preview');
             videoContainer.innerHTML = '';
             videoContainer.appendChild(this.video);
-            
+
             this.container.classList.remove('hidden');
             this.container.classList.add('flex');
         } catch (err) {
@@ -84,7 +84,7 @@ class KukanileaVisionCamera {
             });
 
             const result = await response.json();
-            
+
             if (result.status === 'ok' || result.status === 'draft') {
                 this.displayResult(result);
             } else {
@@ -104,10 +104,10 @@ class KukanileaVisionCamera {
         } else {
             alert(message);
         }
-        
+
         // Event für Dashboard-Updates (z.B. neue Materialliste)
-        document.body.dispatchEvent(new CustomEvent('kukanilea:vision-result', { 
-            detail: result 
+        document.body.dispatchEvent(new CustomEvent('kukanilea:vision-result', {
+            detail: result
         }));
     }
 }

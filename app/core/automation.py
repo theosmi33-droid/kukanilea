@@ -37,10 +37,10 @@ class AutomationEngine:
                 "SELECT * FROM automation_rules WHERE tenant_id = ? AND trigger = ? AND active = 1",
                 (tenant_id, trigger_type)
             ).fetchall()
-            
+
             for rule in rules:
                 self.execute_action(rule["action"], json.loads(rule["config"]), context)
-                
+
             # Log automation execution (Step 100)
             if rules:
                 logger.info(f"Automation for trigger {trigger_type} completed.")

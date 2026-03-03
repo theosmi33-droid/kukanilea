@@ -86,7 +86,7 @@ def _build_fts_indices(db_path: str):
     try:
         # 1. Create FTS5 virtual table if missing
         conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(doc_id, content)")
-        
+
         # 2. Sync from main docs table
         conn.execute("""
             INSERT INTO docs_fts(doc_id, content)
@@ -107,11 +107,11 @@ def run_migrations(db_path: Path):
     try:
         current_version = _get_user_version(conn)
         logger.info(f"Current DB version: {current_version}")
-        
+
         if current_version < 1:
             _set_user_version(conn, 1)
             conn.commit()
-            
+
         if current_version < 2:
             t = threading.Thread(target=_build_fts_indices, args=(str(db_path),), daemon=True)
             t.start()
@@ -182,7 +182,7 @@ def run_migrations(db_path: Path):
             _set_user_version(conn, 6)
             conn.commit()
             logger.info("Migrated to version 6 (Memory Intelligence)")
-            
+
     except Exception as e:
         logger.error(f"Migration failed: {e}", exc_info=True)
         raise

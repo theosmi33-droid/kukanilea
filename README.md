@@ -26,7 +26,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Start the full-stack system
-python kukanilea_app.py --mode full --port 5051
+# (optional for development: export KUKANILEA_ENV=development)
+python kukanilea_app.py --host 127.0.0.1 --port 5051
 ```
 
 ## Data location (macOS)

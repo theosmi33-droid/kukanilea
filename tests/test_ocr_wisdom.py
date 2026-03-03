@@ -11,10 +11,10 @@ from app.core.ocr_corrector import OCRCorrector
 
 def test_ocr_wisdom_injection():
     print("Testing KUKANILEA OCR Wisdom Injection...")
-    
+
     tenant_id = "T1"
     corrector = OCRCorrector(tenant_id)
-    
+
     # Mock corrections in memory
     mock_corrections = [
         {
@@ -22,11 +22,11 @@ def test_ocr_wisdom_injection():
             "metadata": {"type": "ocr_correction"}
         }
     ]
-    
+
     with patch("app.agents.memory_store.MemoryManager.retrieve_context", return_value=mock_corrections):
         base_prompt = "Bitte analysiere das Dokument."
         final_prompt = corrector.apply_corrections_to_prompt(base_prompt, "Rechnungstext")
-        
+
         print(f"Final prompt extract:\n{final_prompt[:200]}...")
         assert "frühere Korrekturen" in final_prompt
         assert "RECHNUNG" in final_prompt

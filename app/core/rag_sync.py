@@ -33,14 +33,14 @@ class RAGSync:
 
     def sync_tenant_intelligence(self, tenant_id: str):
         """
-        Extracts high-level intelligence from the individual DB 
+        Extracts high-level intelligence from the individual DB
         and updates the semantic MEMORY.md.
         """
         logger.info(f"RAG-SYNC: Synchronizing intelligence for tenant {tenant_id}...")
-        
+
         # 1. Fetch top weighted keywords from DB
         intelligence_data = self._extract_key_facts(tenant_id)
-        
+
         # 2. Format for MEMORY.md
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         entry = (
@@ -71,25 +71,25 @@ class RAGSync:
     def _extract_key_facts(self, tenant_id: str) -> Dict[str, Any]:
         """Queries the individual DB for core facts."""
         facts = {"keywords": [], "top_customers": [], "doc_count": 0}
-        
+
         if not self.db_path.exists():
             return facts
 
         try:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
-            
+
             # Count
             res = conn.execute("SELECT COUNT(*) FROM docs_index WHERE tenant_id = ?", (tenant_id,)).fetchone()
             facts["doc_count"] = res[0] if res else 0
-            
+
             # Top Customers
             rows = conn.execute(
                 "SELECT customer_name, COUNT(*) as c FROM docs_index WHERE tenant_id = ? GROUP BY customer_name ORDER BY c DESC LIMIT 5",
                 (tenant_id,)
             ).fetchall()
             facts["top_customers"] = [r["customer_name"] for r in rows]
-            
+
             # Top Keywords (weighted via vocab if available)
             try:
                 k_rows = conn.execute(
@@ -105,11 +105,11 @@ class RAGSync:
                 for r in k_rows:
                     words.extend([w.lower() for w in r[0].replace("_", " ").replace(".", " ").split() if len(w) > 3])
                 facts["keywords"] = [w[0] for w in Counter(words).most_common(5)]
-                
+
             conn.close()
         except Exception as e:
             logger.error(f"RAG-SYNC: Fact extraction failed: {e}")
-            
+
         return facts
 
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
@@ -119,28 +119,28 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> List[str
     """
     if not text:
         return []
-        
+
     chunks = []
     start = 0
     text_len = len(text)
-    
+
     while start < text_len:
         end = start + chunk_size
         chunk = text[start:end]
         chunks.append(chunk)
-        
+
         if end >= text_len:
             break
-            
+
         start += (chunk_size - overlap)
-        
+
     return chunks
 
 def sync_document_to_memory(
-    tenant_id: str, 
-    doc_id: str, 
-    file_name: str, 
-    text: str, 
+    tenant_id: str,
+    doc_id: str,
+    file_name: str,
+    text: str,
     metadata: Optional[Dict[str, Any]] = None
 ) -> int:
     """
@@ -186,7 +186,7 @@ def sync_document_to_memory(
             "total_chunks": len(chunks),
             "type": "document_snippet"
         })
-        
+
         success = manager.store_memory(
             tenant_id=tenant_id,
             agent_role="document_engine",
@@ -195,7 +195,7 @@ def sync_document_to_memory(
         )
         if success:
             stored_count += 1
-            
+
     return stored_count
 
 def learn_from_correction(

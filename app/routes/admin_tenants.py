@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import shutil
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,12 +43,30 @@ ROLE_LABEL_TO_DB = {
     "mitarbeiter": "READONLY",
 }
 ROLE_DB_TO_LABEL = {v: k for k, v in ROLE_LABEL_TO_DB.items()}
+HOSTNAME_PATTERN = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$")
+IP_PATTERN = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
 RISK_CONFIRM_TOKEN = "CONFIRM"
 SYSTEM_SETTINGS_FILE = Config.USER_DATA_ROOT / "system_settings.json"
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _sqlite_backup(src_path: Path, dest_path: Path) -> bool:
+    """Uses the SQLite backup API for a cleaner snapshot of live DBs."""
+    if not src_path.exists():
+        return False
+    try:
+        src = sqlite3.connect(str(src_path))
+        dst = sqlite3.connect(str(dest_path))
+        with dst:
+            src.backup(dst)
+        dst.close()
+        src.close()
+        return True
+    except Exception:
+        return False
 
 
 def _load_system_settings() -> dict[str, Any]:
@@ -110,8 +130,13 @@ def _run_backup() -> list[str]:
     }
     written: list[str] = []
     for label, src in targets.items():
-        if src.exists():
-            dest = _backup_dir() / f"{label}__{ts}.bak"
+        if not src.exists():
+            continue
+        dest = _backup_dir() / f"{label}__{ts}.bak"
+        if src.suffix.lower() in (".sqlite3", ".db", ".sqlite"):
+            if _sqlite_backup(src, dest):
+                written.append(dest.name)
+        else:
             shutil.copy2(src, dest)
             written.append(dest.name)
     return written
@@ -135,7 +160,11 @@ def _restore_backup(backup_name: str) -> str:
         raise ValueError("unsupported_backup")
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, target)
+    if target.suffix.lower() in (".sqlite3", ".db", ".sqlite"):
+        if not _sqlite_backup(src, target):
+            raise RuntimeError(f"failed_to_restore_db:{label}")
+    else:
+        shutil.copy2(src, target)
     return str(target)
 
 
@@ -234,6 +263,7 @@ def settings_console():
         mesh_node_id=mesh_node,
         mesh_public_key=mesh_pub,
         system_settings=settings,
+        branding=Config.get_branding(),
         backups=_list_backups(),
         role_options=["admin", "manager", "mitarbeiter"],
     )
@@ -288,8 +318,11 @@ def update_user_role():
 @require_role("ADMIN")
 def disable_user():
     username = (request.form.get("username") or "").strip().lower()
+    actor = current_user() or ""
     if not username:
         return jsonify(ok=False, error="username_required"), 400
+    if username == actor:
+        return jsonify(ok=False, error="cannot_disable_self"), 400
 
     random_pw = secrets.token_urlsafe(32)
     with _auth_db()._db() as con:
@@ -403,16 +436,28 @@ def upload_license():
     except Exception:
         return jsonify(ok=False, error="invalid_json"), 400
 
-    Config.LICENSE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    Config.LICENSE_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temp_license = Config.LICENSE_PATH.with_suffix(".new")
     try:
-        os.chmod(Config.LICENSE_PATH, 0o600)
-    except OSError:
-        pass
+        temp_license.parent.mkdir(parents=True, exist_ok=True)
+        temp_license.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        
+        # Test validation before committing to final path
+        parsed = load_license(temp_license)
+        if not parsed.get("valid"):
+            if temp_license.exists():
+                temp_license.unlink()
+            return jsonify(ok=False, error="invalid_license", reason=parsed.get("reason")), 400
 
-    parsed = load_license(Config.LICENSE_PATH)
-    if not parsed.get("valid"):
-        return jsonify(ok=False, error="invalid_license", reason=parsed.get("reason")), 400
+        # Atomic swap
+        os.replace(temp_license, Config.LICENSE_PATH)
+        try:
+            os.chmod(Config.LICENSE_PATH, 0o600)
+        except OSError:
+            pass
+    except Exception as e:
+        if temp_license.exists():
+            temp_license.unlink()
+        return jsonify(ok=False, error="system_error", detail=str(e)), 500
 
     return redirect(url_for("admin_tenants.settings_console", section="license"))
 
@@ -446,7 +491,14 @@ def save_branding():
         "footer_text": (request.form.get("footer_text") or "").strip(),
     }
     Config.BRANDING_FILE.parent.mkdir(parents=True, exist_ok=True)
-    Config.BRANDING_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temp_branding = Config.BRANDING_FILE.with_suffix(".tmp")
+    try:
+        temp_branding.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(temp_branding, Config.BRANDING_FILE)
+    except Exception as e:
+        if temp_branding.exists():
+            temp_branding.unlink()
+        raise e
     return redirect(url_for("admin_tenants.settings_console", section="branding"))
 
 
@@ -480,6 +532,11 @@ def mesh_connect():
     peer_port_text = (request.form.get("peer_port") or "5051").strip()
     if not peer_ip:
         return jsonify(ok=False, error="peer_ip_required"), 400
+
+    if not IP_PATTERN.fullmatch(peer_ip) and not HOSTNAME_PATTERN.fullmatch(peer_ip):
+        # Allow 'localhost' or single-word hostnames for local dev
+        if peer_ip.lower() not in ("localhost", "hub-1", "hub-2"):
+            return jsonify(ok=False, error="invalid_peer_address"), 400
 
     try:
         peer_port = int(peer_port_text)

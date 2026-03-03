@@ -15,13 +15,13 @@ def generate_embedding(text: str) -> Optional[List[float]]:
     """
     host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     model = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-    
+
     url = f"{host}/api/embeddings"
     payload = {
         "model": model,
         "prompt": text
     }
-    
+
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -37,5 +37,5 @@ def generate_embedding(text: str) -> Optional[List[float]]:
                 return [float(x) for x in embedding]
     except Exception as e:
         logger.error(f"Failed to generate embedding via Ollama: {e}")
-        
+
     return None

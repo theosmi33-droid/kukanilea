@@ -42,7 +42,7 @@ def run_boot_sequence():
     4. Pulls the recommended model via Ollama if needed.
     """
     from app.core.integrity_check import check_system_integrity
-    
+
     # 1. Integrity Check
     print("System Integrity Check (v2.1)...")
     integrity = check_system_integrity()
@@ -71,7 +71,7 @@ def run_boot_sequence():
     healer = SystemHealer(Config.CORE_DB, Config.BASE_DIR)
     healer.run_healing_cycle()
     healer.evolution_step()
-    
+
     # Task 134: RAG-SYNC (Sync facts to MEMORY.md)
     try:
         memory_file = Path("MEMORY.md")

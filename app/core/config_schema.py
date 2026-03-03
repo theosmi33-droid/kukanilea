@@ -18,14 +18,14 @@ REQUIRED_KEYS = [
 def validate_config(config: Dict[str, Any]) -> bool:
     """Validates the application configuration dictionary."""
     is_valid = True
-    
+
     # Check Required Keys
     for key in REQUIRED_KEYS:
         if key not in config or not config[key]:
             logger.critical(f"Config validation failed: Missing required key '{key}'")
             is_valid = False
-            
-    # Check Path Types and Existence 
+
+    # Check Path Types and Existence
     data_root = config.get("USER_DATA_ROOT")
     if data_root:
         path = Path(data_root)
