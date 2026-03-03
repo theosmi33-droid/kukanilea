@@ -31,6 +31,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Validate VS Code config policy
+        run: |
+          python scripts/dev/enforce_vscode_configs.py --check
+
       - name: Run tests (without e2e)
         run: |
           pytest -q tests --ignore=tests/e2e

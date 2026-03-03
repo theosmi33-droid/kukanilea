@@ -2,7 +2,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PY="$ROOT/.venv/bin/python"
+PY="$ROOT/.build_venv/bin/python"
 DB="/Users/gensuminguyen/Kukanilea/data/agent_orchestra_shared.db"
 LOG="/tmp/kukanilea_readycheck.log"
 FAIL=0
@@ -29,6 +29,14 @@ if [ -x "$PY" ]; then
   "$PY" --version && ok "venv python found"
 else
   err "missing interpreter: $PY"
+fi
+
+echo "-- VS Code Config --"
+if "$PY" "$ROOT/scripts/dev/enforce_vscode_configs.py" --check >/tmp/kukanilea_vscode_config.log 2>&1; then
+  ok "vscode config is aligned"
+else
+  warn "vscode config drift detected, auto-applying defaults"
+  "$PY" "$ROOT/scripts/dev/enforce_vscode_configs.py" --apply >/tmp/kukanilea_vscode_config.log 2>&1 || true
 fi
 
 echo "-- Shared Memory --"
