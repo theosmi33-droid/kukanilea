@@ -4,7 +4,7 @@
 Domain `floating-widget-chatbot` requires Shared-Core updates to decouple chat widget code from shell layout.
 
 Date: 2026-03-03  
-Worktree: `/Users/gensuminguyen/Kukanilea/worktrees/floating-widget-chatbot`  
+Worktree: `worktrees/floating-widget-chatbot`  
 Branch: `codex/floating-widget-chatbot`
 
 ## Requested Scope Expansion
