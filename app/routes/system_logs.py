@@ -22,7 +22,7 @@ def stream_logs():
         if not log_file.exists():
             yield "data: Log file not found.\n\n"
             return
-            
+
         with open(log_file, "r") as f:
             f.seek(0, 2)
             while True:

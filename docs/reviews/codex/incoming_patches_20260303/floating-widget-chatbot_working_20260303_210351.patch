@@ -1,0 +1,97 @@
+diff --git a/app/static/js/chatbot.js b/app/static/js/chatbot.js
+index 30841d2..124ef40 100644
+--- a/app/static/js/chatbot.js
++++ b/app/static/js/chatbot.js
+@@ -40,6 +40,8 @@
+ 
+   let lastSendAt = 0;
+   let inFlight = false;
++  let pendingActions = [];
++  let selectedActionId = "";
+   let pendingConfirmId = "";
+   let lastFocusedElement = null;
+ 
+@@ -191,21 +193,45 @@
+ 
+   function hideConfirmGate() {
+     pendingConfirmId = "";
++    pendingActions = [];
++    selectedActionId = "";
+     if (els.confirm) els.confirm.hidden = true;
+     if (els.confirmText) els.confirmText.textContent = "";
++    const listContainer = document.getElementById("floating-chat-confirm-actions-list");
++    if (listContainer) listContainer.innerHTML = "";
++    if (els.confirmYes) els.confirmYes.disabled = true;
+   }
+ 
+   function showConfirmGate(confirmText, pendingId, actions) {
+     pendingConfirmId = String(pendingId || "");
+     if (!els.confirm || !pendingConfirmId) return;
+-    const labels = Array.isArray(actions)
+-      ? actions.map((a) => a.label || a.type || "Aktion").join(", ")
+-      : "Aktion";
++    pendingActions = Array.isArray(actions) ? actions : [];
++    selectedActionId = "";
+     els.confirm.hidden = false;
+     if (els.confirmText) {
+-      els.confirmText.textContent = confirmText ||
+-        "Bestätigung erforderlich für: " + labels;
++      els.confirmText.textContent = confirmText || "Bestätigung erforderlich";
+     }
++    const listContainer = document.getElementById("floating-chat-confirm-actions-list");
++    if (listContainer) {
++      listContainer.innerHTML = "";
++      for (const act of pendingActions) {
++        const btn = document.createElement("button");
++        btn.type = "button";
++        btn.className = "btn btn-outline-secondary btn-sm floating-chat-confirm-action";
++        btn.textContent = act.label || act.type || "Aktion";
++        btn.dataset.actionId = act.id || act.action_id || "";
++        btn.addEventListener("click", function () {
++          selectedActionId = String(btn.dataset.actionId || "");
++          Array.from(listContainer.children).forEach((c) => c.classList.remove("selected"));
++          btn.classList.add("selected");
++          if (els.confirmYes) {
++            els.confirmYes.disabled = !selectedActionId;
++          }
++        });
++        listContainer.appendChild(btn);
++      }
++    }
++    if (els.confirmYes) els.confirmYes.disabled = true;
+   }
+ 
+   function setPanelState(open, minimized) {
+@@ -339,6 +365,7 @@
+       if (options?.isConfirm) {
+         payload.confirm = true;
+         payload.pending_id = options.pendingId || pendingConfirmId;
++        if (options.actionId) payload.action_id = options.actionId;
+       }
+ 
+       const response = await fetch("/api/chat/compact", {
+@@ -425,7 +452,8 @@
+ 
+     if (els.confirmYes) {
+       els.confirmYes.addEventListener("click", function () {
+-        ask("bestätigen", { isConfirm: true, pendingId: pendingConfirmId });
++        if (!selectedActionId) return;
++        ask("confirm-action", { isConfirm: true, pendingId: pendingConfirmId, actionId: selectedActionId });
+       });
+     }
+ 
+diff --git a/app/templates/partials/floating_chat.html b/app/templates/partials/floating_chat.html
+index 3b0f9e9..b26bbe5 100644
+--- a/app/templates/partials/floating_chat.html
++++ b/app/templates/partials/floating_chat.html
+@@ -45,8 +45,9 @@
+ 
+     <div id="floating-chat-confirm" class="floating-chat-confirm" hidden>
+       <p id="floating-chat-confirm-text"></p>
++      <div id="floating-chat-confirm-actions-list" class="floating-chat-confirm-actions-list" aria-label="Vorgeschlagene Aktionen"></div>
+       <div class="floating-chat-confirm-actions">
+-        <button id="floating-chat-confirm-yes" type="button" class="btn btn-primary btn-sm">Ja, ausführen</button>
++        <button id="floating-chat-confirm-yes" type="button" class="btn btn-primary btn-sm" disabled>Aktion ausführen</button>
+         <button id="floating-chat-confirm-no" type="button" class="btn btn-secondary btn-sm">Abbrechen</button>
+       </div>
+     </div>

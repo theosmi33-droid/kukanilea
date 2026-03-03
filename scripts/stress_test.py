@@ -19,19 +19,19 @@ class StressTester:
         """Step 22-25: Simulate load."""
         print(f"--- KUKANILEA v2.1 Stress Test START ---")
         start = time.time()
-        
+
         try:
             self.simulate_users(users)
             self.simulate_tasks(tasks)
             self.simulate_files(files)
-            
+
             elapsed = time.time() - start
             print(f"Stress test PASSED in {elapsed:.2f}s")
             self.create_report(users, tasks, files, elapsed)
-            
+
         except Exception as e:
             print(f"Stress test FAILED: {e}")
-            
+
     def simulate_users(self, count: int):
         """Step 61-70: User Management simulation."""
         con = sqlite3.connect(str(self.db_path))
@@ -50,7 +50,7 @@ class StressTester:
         b_id = str(uuid.uuid4())
         con.execute("INSERT OR IGNORE INTO projects(id, tenant_id, name, created_at) VALUES (?,?,?,?)", ("P1", "T1", "Project 1", time.ctime()))
         con.execute("INSERT OR IGNORE INTO boards(id, project_id, name, created_at) VALUES (?,?,?,?)", (b_id, "P1", "Board 1", time.ctime()))
-        
+
         for i in range(count):
             t_id = str(uuid.uuid4())
             con.execute("INSERT INTO tasks(id, board_id, column_name, title, created_at) VALUES (?,?,?,?,?)",

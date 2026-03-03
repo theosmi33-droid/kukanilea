@@ -1,82 +1,533 @@
 {% extends "layout.html" %}
-{% block title %}Kanban Board{% endblock %}
+{% block title %}Project Hub{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ph-shell { display: flex; flex-direction: column; gap: 14px; min-height: calc(100vh - 140px); }
+  .ph-top { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-end; }
+  .ph-title h1 { margin: 0; font-size: 30px; letter-spacing: -0.02em; }
+  .ph-title p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 13px; }
+  .ph-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ph-actions .input { min-width: 150px; }
+  .ph-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; min-height: 0; flex: 1; }
+  .kanban-wrap { overflow-x: auto; padding-bottom: 10px; }
+  .kanban { display: grid; gap: 12px; grid-template-columns: repeat(var(--col-count), minmax(250px, 1fr)); min-width: 760px; }
+  .lane { border: 1px solid var(--color-border); background: var(--bg-secondary); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; min-height: 420px; }
+  .lane-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+  .lane-head h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); }
+  .lane-badge { border-radius: 999px; border: 1px solid var(--color-border); padding: 2px 8px; font-size: 11px; color: var(--color-text-muted); }
+  .cards { display: flex; flex-direction: column; gap: 8px; min-height: 300px; }
+  .cards.drop-target { outline: 2px dashed var(--color-accent); outline-offset: 5px; border-radius: 10px; }
+  .card { border: 1px solid var(--color-border); border-radius: 12px; padding: 10px; background: var(--bg-primary); cursor: grab; }
+  .card.dragging { opacity: 0.35; cursor: grabbing; }
+  .card h4 { margin: 0 0 8px; font-size: 14px; }
+  .card .meta { font-size: 11px; color: var(--color-text-muted); display: flex; justify-content: space-between; gap: 8px; }
+  .card .meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .panel { border: 1px solid var(--color-border); background: var(--bg-secondary); border-radius: 14px; padding: 12px; }
+  .panel h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); }
+  .sel-meta { display: grid; gap: 8px; }
+  .sel-meta .input { width: 100%; }
+  .comment-list, .activity-list, .attachment-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 190px; overflow: auto; }
+  .comment-list li, .activity-list li, .attachment-list li { border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: var(--bg-primary); font-size: 12px; }
+  .muted { color: var(--color-text-muted); font-size: 12px; }
+  .status { min-height: 20px; font-size: 12px; color: var(--color-text-muted); }
+  .status.error { color: #ef4444; }
+  .lane-tools { display: flex; gap: 6px; }
+  .lane-tools button { border: 1px solid var(--color-border); background: transparent; color: var(--color-text-muted); border-radius: 8px; font-size: 11px; padding: 2px 6px; cursor: pointer; }
+  @media (max-width: 1180px) {
+    .ph-grid { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<div style="display: flex; flex-direction: column; gap: var(--spacing-6); height: calc(100vh - 120px);">
-    <!-- Board Header -->
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h1 style="font-size: 28px; font-weight: 800; color: var(--color-text-main); letter-spacing: -0.02em;">{{ project.name }}</h1>
-            <p style="color: var(--color-text-muted); font-size: 14px;">{{ project.description or 'Projekt-Übersicht' }}</p>
-        </div>
-        <button class="btn btn-primary" onclick="alert('Task Creation Dialog (v2.7)')">+ Aufgabe erstellen</button>
+<div class="ph-shell" id="project-hub" data-board-id="{{ board.id }}" data-project-id="{{ project.id }}">
+  <div class="ph-top">
+    <div class="ph-title">
+      <h1>{{ project.name }}</h1>
+      <p>{{ project.description or 'Lokales Kanban mit Aktivitaetsprotokoll fuer KI-Auswertungen.' }}</p>
     </div>
-
-    <!-- Kanban Grid -->
-    <div style="display: flex; gap: 20px; flex: 1; overflow-x: auto; padding-bottom: 20px;">
-        {% for col in ["To Do", "Doing", "Done"] %}
-        <div style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; background: rgba(255,255,255,0.02); border-radius: var(--radius-lg); border: 1px solid var(--color-border); padding: 16px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <h3 style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--text-tertiary);">{{ col }}</h3>
-                <span class="badge" style="font-size: 10px;">{{ tasks|selectattr('column_name', 'equalto', col)|list|length }}</span>
-            </div>
-            
-            <div id="col-{{ col|replace(' ', '-') }}" class="kanban-column" style="display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 100px;">
-                {% for task in tasks if task.column_name == col %}
-                <div class="panel ripple task-card" style="margin: 0; padding: 16px; cursor: grab; background: var(--color-bg-panel); border-color: var(--color-border);" data-id="{{ task.id }}">
-                    <div style="font-size: 14px; font-weight: 600; color: var(--color-text-main); margin-bottom: 8px;">{{ task.title }}</div>
-                    {% if task.priority %}
-                    <span class="badge" style="font-size: 9px; background: {{ 'rgba(239, 68, 68, 0.1)' if task.priority == 'HIGH' else 'rgba(37, 99, 235, 0.1)' }}; color: {{ 'var(--color-danger)' if task.priority == 'HIGH' else 'var(--color-accent)' }};">
-                        {{ task.priority }}
-                    </span>
-                    {% endif %}
-                    <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-size: 10px; color: var(--text-tertiary);">#{{ task.id[:6] }}</div>
-                        {% if task.assigned_user %}
-                        <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--color-accent); display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 800; color: var(--color-text-main);">
-                            {{ task.assigned_user[0]|upper }}
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
+    <div class="ph-actions">
+      <select id="board-switch" class="input">
+        {% for b in boards %}
+        <option value="{{ b.id }}" {{ 'selected' if b.id == board.id else '' }}>{{ b.name }}</option>
         {% endfor %}
+      </select>
+      <input id="new-board-name" class="input" type="text" placeholder="Neues Board">
+      <button id="create-board-btn" class="btn btn-primary" type="button">Board +</button>
+      <input id="new-col-name" class="input" type="text" placeholder="Neue Spalte">
+      <button id="create-col-btn" class="btn" type="button">Spalte +</button>
+      <input id="new-card-title" class="input" type="text" placeholder="Neue Karte">
+      <button id="create-card-btn" class="btn" type="button">Karte +</button>
     </div>
-</div>
+  </div>
 
-<script src="/static/vendor/sortable.min.js"></script>
+  <div class="status" id="status-line"></div>
+
+  <div class="ph-grid">
+    <section class="kanban-wrap">
+      <div id="kanban" class="kanban" style="--col-count: {{ columns|length if columns else 1 }};">
+        {% for col in columns %}
+        <article class="lane" data-column-id="{{ col.id }}" data-column-name="{{ col.name }}">
+          <header class="lane-head">
+            <h3>{{ col.name }}</h3>
+            <div class="lane-tools">
+              <span class="lane-badge" data-count>0</span>
+              <button class="rename-col" type="button">Rename</button>
+              <button class="del-col" type="button">Archive</button>
+            </div>
+          </header>
+          <div class="cards" data-column-id="{{ col.id }}"></div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="panel" id="selected-panel">
+        <h3>Karte</h3>
+        <div id="no-selection" class="muted">Karte auswaehlen fuer Details, Kommentare und Integrationen.</div>
+        <div id="selection" style="display:none;">
+          <div class="sel-meta">
+            <input id="sel-title" class="input" type="text" placeholder="Titel">
+            <textarea id="sel-description" class="input" placeholder="Beschreibung"></textarea>
+            <input id="sel-due" class="input" type="date">
+            <input id="sel-assignee" class="input" type="text" placeholder="Verantwortlich">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button id="save-card-btn" class="btn btn-primary" type="button">Speichern</button>
+              <button id="link-task-btn" class="btn" type="button">Link Task</button>
+              <button id="start-timer-btn" class="btn" type="button">Start Timer</button>
+            </div>
+          </div>
+          <hr style="border:0;border-top:1px solid var(--color-border); margin:10px 0;">
+          <h3>Kommentare</h3>
+          <ul id="comment-list" class="comment-list"></ul>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <input id="new-comment" class="input" type="text" placeholder="Kommentar">
+            <button id="add-comment-btn" class="btn" type="button">Add</button>
+          </div>
+          <hr style="border:0;border-top:1px solid var(--color-border); margin:10px 0;">
+          <h3>Anhaenge</h3>
+          <ul id="attachment-list" class="attachment-list"></ul>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <input id="attachment-path" class="input" type="text" placeholder="Pfad oder Link">
+            <button id="add-attachment-btn" class="btn" type="button">Attach</button>
+          </div>
+          <div class="muted" style="margin-top:6px;">Upload-Handoff: erst ueber Upload hochladen, hier den Pfad verlinken.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Aktivitaeten</h3>
+        <ul id="activity-list" class="activity-list"></ul>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const columns = document.querySelectorAll('.kanban-column');
-    columns.forEach(col => {
-        new Sortable(col, {
-            group: 'kanban',
-            animation: 150,
-            ghostClass: 'skeleton-tag', // Reuse skeleton style for ghost
-            onEnd: async (evt) => {
-                const taskId = evt.item.dataset.id;
-                const newColumn = evt.to.id.replace('col-', '').replace('-', ' ');
-                console.log(`Task ${taskId} moved to ${newColumn}`);
-                
-                // Task 116: Backend Sync
-                try {
-                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-                    await fetch(`/api/tasks/${taskId}/move`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': csrfToken
-                        },
-                        body: JSON.stringify({ column: newColumn })
-                    });
-                } catch (e) {
-                    console.error('Failed to sync task move', e);
-                }
-            }
-        });
+(() => {
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "{{ csrf_token() }}";
+  const hub = document.getElementById("project-hub");
+  const kanban = document.getElementById("kanban");
+  const statusLine = document.getElementById("status-line");
+  const boardSwitch = document.getElementById("board-switch");
+  const activityList = document.getElementById("activity-list");
+
+  const state = {
+    boardId: hub.dataset.boardId,
+    projectId: hub.dataset.projectId,
+    columns: [],
+    cards: [],
+    activities: [],
+    selectedCardId: null,
+    draggedCardId: null,
+    lastDrop: null,
+  };
+
+  function esc(value) {
+    return String(value || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function setStatus(msg, isError = false) {
+    statusLine.textContent = msg || "";
+    statusLine.classList.toggle("error", !!isError);
+  }
+
+  async function api(url, method = "GET", payload = null) {
+    const headers = {};
+    if (payload !== null) {
+      headers["Content-Type"] = "application/json";
+      headers["X-CSRF-Token"] = csrfToken;
+    }
+    const res = await fetch(url, {
+      method,
+      headers,
+      credentials: "same-origin",
+      body: payload !== null ? JSON.stringify(payload) : undefined,
     });
-});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `http_${res.status}`);
+    }
+    return data;
+  }
+
+  function cardsForColumn(columnId) {
+    return state.cards
+      .filter((card) => card.column_id === columnId)
+      .sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+  }
+
+  function renderActivity() {
+    activityList.innerHTML = "";
+    const activities = state.activities.slice(0, 40);
+    if (!activities.length) {
+      activityList.innerHTML = "<li>Noch keine Aktivitaeten.</li>";
+      return;
+    }
+    activities.forEach((act) => {
+      const li = document.createElement("li");
+      const payload = act.payload || {};
+      const reason = payload.reason ? ` | Grund: ${esc(payload.reason)}` : "";
+      li.innerHTML = `<div><strong>${esc(act.action)}</strong> by ${esc(act.actor)}</div>
+        <div class="muted">${esc(act.created_at)}${reason}</div>`;
+      activityList.appendChild(li);
+    });
+  }
+
+  function renderCards() {
+    document.querySelectorAll(".cards").forEach((colEl) => {
+      colEl.innerHTML = "";
+      const colId = colEl.dataset.columnId;
+      const cards = cardsForColumn(colId);
+      cards.forEach((card) => {
+        const el = document.createElement("article");
+        el.className = "card";
+        el.draggable = true;
+        el.dataset.cardId = card.id;
+        el.dataset.columnId = colId;
+        const due = card.due_date ? `Due ${card.due_date}` : "No due";
+        const who = card.assignee || "Unassigned";
+        el.innerHTML = `<h4>${esc(card.title)}</h4>
+          <div class="meta"><span>${esc(who)}</span><span>${esc(due)}</span></div>
+          <div class="meta"><span>C:${Number(card.comments_count || 0)}</span><span>A:${Number(card.attachments_count || 0)}</span></div>`;
+        el.addEventListener("click", () => selectCard(card.id));
+        el.addEventListener("dragstart", () => {
+          state.draggedCardId = card.id;
+          el.classList.add("dragging");
+        });
+        el.addEventListener("dragend", () => {
+          state.draggedCardId = null;
+          el.classList.remove("dragging");
+          document.querySelectorAll(".cards").forEach((x) => x.classList.remove("drop-target"));
+        });
+        colEl.appendChild(el);
+      });
+      const countEl = colEl.closest(".lane")?.querySelector("[data-count]");
+      if (countEl) countEl.textContent = String(cards.length);
+    });
+  }
+
+  function wireDropTargets() {
+    document.querySelectorAll(".cards").forEach((colEl) => {
+      colEl.addEventListener("dragover", (ev) => {
+        ev.preventDefault();
+        colEl.classList.add("drop-target");
+      });
+      colEl.addEventListener("dragleave", () => colEl.classList.remove("drop-target"));
+      colEl.addEventListener("drop", async (ev) => {
+        ev.preventDefault();
+        colEl.classList.remove("drop-target");
+        const cardId = state.draggedCardId;
+        if (!cardId) return;
+        const toColumnId = colEl.dataset.columnId;
+        const card = state.cards.find((c) => c.id === cardId);
+        if (!card || card.column_id === toColumnId) return;
+        const fromColumnId = card.column_id;
+        card.column_id = toColumnId;
+        card.position = Date.now();
+        renderCards();
+        const reason = window.prompt("Grund fuer Verschiebung?", "") || "";
+        try {
+          const data = await api(`/api/projects/cards/${cardId}/move`, "POST", {
+            to_column_id: toColumnId,
+            reason,
+            position: Date.now(),
+          });
+          const idx = state.cards.findIndex((c) => c.id === cardId);
+          if (idx >= 0) state.cards[idx] = data.card;
+          await refreshState(false);
+          setStatus("Karte verschoben und protokolliert.");
+        } catch (err) {
+          card.column_id = fromColumnId;
+          renderCards();
+          setStatus(`Move fehlgeschlagen: ${err.message}`, true);
+        }
+      });
+    });
+  }
+
+  async function refreshState(syncBoardSwitch = true) {
+    const data = await api(`/api/projects/state?board_id=${encodeURIComponent(state.boardId)}`);
+    state.columns = data.state.columns || [];
+    state.cards = data.state.cards || [];
+    state.activities = data.state.activities || [];
+    state.projectId = data.state.project.id;
+
+    kanban.style.setProperty("--col-count", String(Math.max(1, state.columns.length)));
+    kanban.innerHTML = "";
+    state.columns.forEach((col) => {
+      const lane = document.createElement("article");
+      lane.className = "lane";
+      lane.dataset.columnId = col.id;
+      lane.dataset.columnName = col.name;
+      lane.innerHTML = `<header class="lane-head">
+          <h3>${esc(col.name)}</h3>
+          <div class="lane-tools">
+            <span class="lane-badge" data-count>0</span>
+            <button class="rename-col" type="button">Rename</button>
+            <button class="del-col" type="button">Archive</button>
+          </div>
+        </header>
+        <div class="cards" data-column-id="${esc(col.id)}"></div>`;
+      kanban.appendChild(lane);
+    });
+
+    if (syncBoardSwitch && data.state.boards) {
+      boardSwitch.innerHTML = "";
+      data.state.boards.forEach((b) => {
+        const opt = document.createElement("option");
+        opt.value = b.id;
+        opt.textContent = b.name;
+        if (b.id === state.boardId) opt.selected = true;
+        boardSwitch.appendChild(opt);
+      });
+    }
+
+    renderCards();
+    wireDropTargets();
+    renderActivity();
+  }
+
+  function selectedCard() {
+    return state.cards.find((c) => c.id === state.selectedCardId) || null;
+  }
+
+  async function loadComments(cardId) {
+    const data = await api(`/api/projects/cards/${cardId}/comments`);
+    const list = document.getElementById("comment-list");
+    list.innerHTML = "";
+    (data.comments || []).forEach((c) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<div><strong>${esc(c.author)}</strong></div><div>${esc(c.content)}</div><div class="muted">${esc(c.created_at)}</div>`;
+      list.appendChild(li);
+    });
+  }
+
+  async function loadAttachments(cardId) {
+    const data = await api(`/api/projects/cards/${cardId}/attachments`);
+    const list = document.getElementById("attachment-list");
+    list.innerHTML = "";
+    (data.attachments || []).forEach((a) => {
+      const li = document.createElement("li");
+      const href = esc(a.file_path);
+      li.innerHTML = `<div><a href="${href}" target="_blank" rel="noopener">${esc(a.file_name)}</a></div><div class="muted">${esc(a.created_at)} by ${esc(a.uploaded_by)}</div>`;
+      list.appendChild(li);
+    });
+  }
+
+  async function selectCard(cardId) {
+    state.selectedCardId = cardId;
+    const card = selectedCard();
+    if (!card) return;
+    document.getElementById("no-selection").style.display = "none";
+    document.getElementById("selection").style.display = "block";
+    document.getElementById("sel-title").value = card.title || "";
+    document.getElementById("sel-description").value = card.description || "";
+    document.getElementById("sel-due").value = card.due_date || "";
+    document.getElementById("sel-assignee").value = card.assignee || "";
+    await loadComments(cardId);
+    await loadAttachments(cardId);
+  }
+
+  async function createCard() {
+    const title = (document.getElementById("new-card-title").value || "").trim();
+    if (!title) {
+      setStatus("Kartentitel fehlt.", true);
+      return;
+    }
+    const firstColumn = state.columns[0];
+    if (!firstColumn) {
+      setStatus("Keine Spalte vorhanden.", true);
+      return;
+    }
+    const data = await api("/api/projects/cards", "POST", {
+      board_id: state.boardId,
+      column_id: firstColumn.id,
+      title,
+    });
+    state.cards.push(data.card);
+    document.getElementById("new-card-title").value = "";
+    renderCards();
+    setStatus("Karte erstellt.");
+    await refreshState(false);
+  }
+
+  async function createColumn() {
+    const name = (document.getElementById("new-col-name").value || "").trim();
+    if (!name) {
+      setStatus("Spaltenname fehlt.", true);
+      return;
+    }
+    await api("/api/projects/columns", "POST", {
+      board_id: state.boardId,
+      name,
+    });
+    document.getElementById("new-col-name").value = "";
+    await refreshState(false);
+    setStatus("Spalte erstellt.");
+  }
+
+  async function createBoard() {
+    const name = (document.getElementById("new-board-name").value || "").trim();
+    if (!name) {
+      setStatus("Boardname fehlt.", true);
+      return;
+    }
+    const data = await api("/api/projects/boards", "POST", {
+      project_id: state.projectId,
+      name,
+    });
+    state.boardId = data.board.id;
+    document.getElementById("new-board-name").value = "";
+    await refreshState(true);
+    setStatus("Board erstellt.");
+  }
+
+  async function saveSelectedCard() {
+    const card = selectedCard();
+    if (!card) return;
+    const payload = {
+      title: document.getElementById("sel-title").value,
+      description: document.getElementById("sel-description").value,
+      due_date: document.getElementById("sel-due").value,
+      assignee: document.getElementById("sel-assignee").value,
+    };
+    const data = await api(`/api/projects/cards/${card.id}`, "PATCH", payload);
+    const idx = state.cards.findIndex((c) => c.id === card.id);
+    if (idx >= 0) state.cards[idx] = data.card;
+    renderCards();
+    await refreshState(false);
+    setStatus("Karte gespeichert.");
+  }
+
+  async function addComment() {
+    const card = selectedCard();
+    if (!card) return;
+    const input = document.getElementById("new-comment");
+    const content = (input.value || "").trim();
+    if (!content) return;
+    await api(`/api/projects/cards/${card.id}/comments`, "POST", { content });
+    input.value = "";
+    await loadComments(card.id);
+    await refreshState(false);
+    setStatus("Kommentar hinzugefuegt.");
+  }
+
+  async function addAttachment() {
+    const card = selectedCard();
+    if (!card) return;
+    const input = document.getElementById("attachment-path");
+    const filePath = (input.value || "").trim();
+    if (!filePath) return;
+    await api(`/api/projects/cards/${card.id}/attachments`, "POST", {
+      file_path: filePath,
+    });
+    input.value = "";
+    await loadAttachments(card.id);
+    await refreshState(false);
+    setStatus("Anhang verlinkt.");
+  }
+
+  async function linkTask() {
+    const card = selectedCard();
+    if (!card) return;
+    await api(`/api/projects/cards/${card.id}/link-task`, "POST", {});
+    await refreshState(false);
+    setStatus("Task verknuepft.");
+  }
+
+  async function startTimer() {
+    const card = selectedCard();
+    if (!card) return;
+    await api(`/api/projects/cards/${card.id}/start-timer`, "POST", {});
+    await refreshState(false);
+    setStatus("Timer gestartet.");
+  }
+
+  kanban.addEventListener("click", async (event) => {
+    const renameBtn = event.target.closest(".rename-col");
+    const delBtn = event.target.closest(".del-col");
+    if (!renameBtn && !delBtn) return;
+
+    const lane = event.target.closest(".lane");
+    const columnId = lane?.dataset.columnId;
+    if (!columnId) return;
+
+    if (renameBtn) {
+      const currentName = lane.dataset.columnName || "";
+      const next = window.prompt("Neuer Spaltenname", currentName);
+      if (next && next.trim() && next.trim() !== currentName) {
+        await api(`/api/projects/columns/${columnId}`, "PATCH", { name: next.trim() });
+        await refreshState(false);
+        setStatus("Spalte umbenannt.");
+      }
+      return;
+    }
+
+    if (delBtn) {
+      const available = state.columns.filter((c) => c.id !== columnId);
+      let fallback = null;
+      if (available.length) {
+        fallback = available[0].id;
+      }
+      await api(`/api/projects/columns/${columnId}`, "DELETE", {
+        fallback_column_id: fallback,
+      });
+      await refreshState(false);
+      setStatus("Spalte archiviert.");
+    }
+  });
+
+  boardSwitch.addEventListener("change", async () => {
+    state.boardId = boardSwitch.value;
+    await refreshState(false);
+  });
+
+  document.getElementById("create-card-btn").addEventListener("click", () => createCard().catch((e) => setStatus(e.message, true)));
+  document.getElementById("create-col-btn").addEventListener("click", () => createColumn().catch((e) => setStatus(e.message, true)));
+  document.getElementById("create-board-btn").addEventListener("click", () => createBoard().catch((e) => setStatus(e.message, true)));
+  document.getElementById("save-card-btn").addEventListener("click", () => saveSelectedCard().catch((e) => setStatus(e.message, true)));
+  document.getElementById("add-comment-btn").addEventListener("click", () => addComment().catch((e) => setStatus(e.message, true)));
+  document.getElementById("add-attachment-btn").addEventListener("click", () => addAttachment().catch((e) => setStatus(e.message, true)));
+  document.getElementById("link-task-btn").addEventListener("click", () => linkTask().catch((e) => setStatus(e.message, true)));
+  document.getElementById("start-timer-btn").addEventListener("click", () => startTimer().catch((e) => setStatus(e.message, true)));
+
+  state.columns = {{ columns|tojson }};
+  state.cards = {{ cards|tojson }};
+  state.activities = {{ activities|tojson }};
+  renderCards();
+  wireDropTargets();
+  renderActivity();
+})();
 </script>
 {% endblock %}

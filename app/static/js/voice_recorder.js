@@ -11,7 +11,7 @@ class KukanileaVoiceRecorder {
         this.audioChunks = [];
         this.btn = document.getElementById('voice-record-btn');
         this.statusIndicator = document.getElementById('voice-status');
-        
+
         if (this.btn) {
             this.init();
         }
@@ -57,7 +57,7 @@ class KukanileaVoiceRecorder {
             this.mediaRecorder.stop();
             this.isRecording = false;
             this.updateUI(false);
-            
+
             // Stop stream tracks
             this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
         }
@@ -86,7 +86,7 @@ class KukanileaVoiceRecorder {
             });
 
             const result = await response.json();
-            
+
             if (result.status === 'ok' || result.status === 'draft') {
                 this.displayResult(result);
             } else {
@@ -105,13 +105,13 @@ class KukanileaVoiceRecorder {
     displayResult(result) {
         // Integration in das bestehende Chat-UI oder als Toast-Notification
         console.log("STT Result:", result);
-        
+
         const message = `🎤 "${result.transcription}"
 🤖 ${result.agent_response}`;
-        
+
         // Falls HTMX genutzt wird, triggern wir ein Event
-        document.body.dispatchEvent(new CustomEvent('kukanilea:voice-command', { 
-            detail: result 
+        document.body.dispatchEvent(new CustomEvent('kukanilea:voice-command', {
+            detail: result
         }));
 
         if (window.toast) {

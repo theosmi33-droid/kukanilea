@@ -1,5 +1,5 @@
-/* 
-  KUKANILEA Service Worker 
+/*
+  KUKANILEA Service Worker
   Fokus: PWA-Deployment & Offline-Buffer für Baustellen-Szenarien.
 */
 

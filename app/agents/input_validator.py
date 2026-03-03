@@ -22,10 +22,10 @@ def validate_input(user_input: str) -> bool:
     """Returns True if input is safe, False if it contains dangerous patterns."""
     if not user_input:
         return True
-        
+
     for pattern in DANGEROUS_PATTERNS:
         if re.search(pattern, user_input):
             logger.warning(f"Prompt injection attempt detected: '{pattern}' matched in input.")
             return False
-            
+
     return True

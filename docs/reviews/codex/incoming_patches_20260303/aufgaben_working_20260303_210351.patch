@@ -1,0 +1,180 @@
+diff --git a/app/core/logic.py b/app/core/logic.py
+index a0264a7..8e0a11a 100644
+--- a/app/core/logic.py
++++ b/app/core/logic.py
+@@ -38,6 +38,7 @@ from difflib import SequenceMatcher
+ from email import policy
+ from email.parser import BytesParser
+ from pathlib import Path
++import uuid
+ from typing import Any, Dict, List, Optional, Tuple
+ 
+ # Optional libs
+@@ -499,7 +500,7 @@ def list_recent_docs(tenant_id: str = "", limit: int = 10) -> List[Dict[str, Any
+         try:
+             rows = con.execute(
+                 """
+-                SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date, d.created_at, 
++                SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date, d.created_at,
+                        idx.file_name, idx.file_path
+                 FROM docs d
+                 LEFT JOIN docs_index idx ON idx.doc_id = d.doc_id
+@@ -563,7 +564,7 @@ _DB_INIT_LOCK = threading.RLock()
+ 
+ def _db() -> sqlite3.Connection:
+     global _DB_INITIALIZED
+-    
++
+     if not _DB_INITIALIZED:
+         with _DB_INIT_LOCK:
+             if not _DB_INITIALIZED:
+@@ -1134,12 +1135,12 @@ def audit_log(
+         con = _db()
+         try:
+             ts_now = _now_iso()
+-            
++
+             # Support for GoBD Immutable Ledger (A3)
+             has_hash_cols = _column_exists(con, "audit", "data_hash")
+             prev_hash = ""
+             data_hash = ""
+-            
++
+             if has_hash_cols:
+                 prev_row = con.execute("SELECT data_hash FROM audit ORDER BY id DESC LIMIT 1").fetchone()
+                 prev_hash = str(prev_row["data_hash"]) if prev_row and prev_row["data_hash"] else ""
+@@ -1268,6 +1269,62 @@ def task_set_status(task_id: int, status: str, resolved_by: str = "") -> bool:
+             con.close()
+ 
+ 
++def task_delegate(task_id: str, *, new_assigned_user: str, delegated_by: str = "") -> bool:
++    """Assign or reassign a task to another user and emit an audit + outbound notification.
++
++    This is a domain-local helper used by UI and automation rules. It updates
++    the `assigned_user` column on `tasks` and records an audit entry. It will
++    attempt to enqueue an outbound notification but will not fail if the
++    outbound queue is not available in this environment.
++    """
++    new_assigned_user = normalize_component(new_assigned_user).lower()
++    delegated_by = normalize_component(delegated_by).lower()
++    if not new_assigned_user:
++        return False
++
++    with _DB_LOCK:
++        con = _db()
++        try:
++            row = con.execute("SELECT id, title, assigned_user FROM tasks WHERE id=?", (str(task_id),)).fetchone()
++            if not row:
++                return False
++            con.execute("UPDATE tasks SET assigned_user=? WHERE id=?", (new_assigned_user, str(task_id)))
++            con.commit()
++
++            # audit
++            try:
++                meta = json.dumps({"old_assigned": row["assigned_user"], "new_assigned": new_assigned_user}, ensure_ascii=False)
++                ts_now = _now_iso()
++                con.execute(
++                    "INSERT INTO audit_log(ts, tenant_id, username, action, resource, details) VALUES (?,?,?,?,?,?)",
++                    (ts_now, "", delegated_by or "system", "TASK_DELEGATE", str(task_id), meta),
++                )
++                con.commit()
++            except Exception:
++                pass
++
++            # best-effort outbound notification
++            try:
++                payload = json.dumps({
++                    "task_id": str(task_id),
++                    "title": row["title"],
++                    "assigned_user": new_assigned_user,
++                    "delegated_by": delegated_by,
++                }, ensure_ascii=False)
++                con.execute(
++                    "INSERT INTO api_outbound_queue(id, tenant_id, target_system, payload, status, retry_count, created_at) VALUES (?,?,?,?,?,?,?)",
++                    (str(uuid.uuid4()), "", "assignment", payload, "pending", 0, _now_iso()),
++                )
++                con.commit()
++            except Exception:
++                # ignore if table missing or insert fails
++                pass
++
++            return True
++        finally:
++            con.close()
++
++
+ # ============================================================
+ # TIME TRACKING
+ # ============================================================
+@@ -2903,7 +2960,7 @@ def index_upsert_document(
+                 )
+ 
+             row = con.execute(
+-                "SELECT MAX(version_no) AS mx, data_hash FROM versions WHERE doc_id=? GROUP BY doc_id ORDER BY version_no DESC LIMIT 1", 
++                "SELECT MAX(version_no) AS mx, data_hash FROM versions WHERE doc_id=? GROUP BY doc_id ORDER BY version_no DESC LIMIT 1",
+                 (doc_id,)
+             ).fetchone()
+             mx = int(row["mx"] or 0) if row else 0
+@@ -3461,7 +3518,7 @@ def sync_customers_from_hierarchy() -> None:
+ def index_warmup(tenant_id: str = "") -> Dict[str, Any]:
+     # Sync customers first
+     sync_customers_from_hierarchy()
+-    
++
+     # Trigger indexing in background if it's the test DB
+     if "DB-test" in str(BASE_PATH):
+          threading.Thread(target=index_run_full, daemon=True).start()
+@@ -3591,7 +3648,7 @@ def audit_list(*, tenant_id: str = "", limit: int = 200) -> List[Dict[str, Any]]
+ # ============================================================
+ def analyze_to_pending(src: Path, owner: str = "", force_ocr: bool = False) -> str:
+     PENDING_DIR.mkdir(parents=True, exist_ok=True)
+-    
++
+     # Limit: Max 10 items per user in queue
+     current = list_pending(username=owner)
+     if len(current) >= 10:
+@@ -3708,7 +3765,7 @@ def _analyze_worker(token: str) -> None:
+             b = _read_bytes(src)
+             doc_id = _sha256_bytes(b)
+             d["doc_id"] = doc_id
+-            
++
+             if _db_has_doc(doc_id):
+                 d["is_duplicate"] = True
+                 d["progress_phase"] = "Duplikat erkannt"
+@@ -3719,7 +3776,7 @@ def _analyze_worker(token: str) -> None:
+         # Check if we should force OCR (from re-extract)
+         d = read_pending(token) or {}
+         force_ocr = d.get("force_ocr", False)
+-        
++
+         text, used_ocr = _extract_text(src, force_ocr=force_ocr)
+         d["used_ocr"] = bool(used_ocr)
+         d["extracted_text"] = text
+@@ -3736,7 +3793,7 @@ def _analyze_worker(token: str) -> None:
+         kdnr_cands = _find_kdnr_candidates(text, src.name)
+         d["kdnr_ranked"] = kdnr_cands
+         names, addrs, plzs = _find_name_addr_plzort(text)
+-        
++
+         # AI Refinement
+         ai_data = _ai_refine_analysis(text, src.name, tenant_id=d.get("tenant_suggested", ""))
+         if ai_data:
+@@ -3755,7 +3812,7 @@ def _analyze_worker(token: str) -> None:
+         if kdnr_cands and kdnr_cands[0][1] >= 0.8:
+             top_kdnr = kdnr_cands[0][0]
+             db_cust = db_lookup_customer(tenant_id=d.get("tenant_suggested", ""), kdnr=top_kdnr)
+-        
++
+         if not db_cust:
+             db_cust = _db_find_customer_by_name_in_text(text, d.get("tenant_suggested", ""))
+ 
+@@ -4098,7 +4155,7 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
+         # Path: ~/ .kukanilea_vault (Hidden)
+         vault = Path.home() / ".kukanilea_vault"
+         vault.mkdir(mode=0o700, parents=True, exist_ok=True) # Strict permissions
+-        
++
+         # Store by hash to prevent duplicate space usage and provide easy lookup
+         backup_path = vault / f"{doc_id}{ext}"
+         if not backup_path.exists():

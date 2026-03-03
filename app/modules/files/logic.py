@@ -25,17 +25,17 @@ class FileManager:
         f_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         file_hash = hashlib.sha256(content).hexdigest()
-        
+
         # Physical storage
         tenant_path = self.root / tenant_id
         tenant_path.mkdir(parents=True, exist_ok=True)
         dest = tenant_path / f"{f_id}_{filename}"
-        
+
         with open(dest, "wb") as f:
             f.write(content)
-            
+
         size = len(content)
-        
+
         # DB Record
         con = self.db._db()
         try:
@@ -59,18 +59,18 @@ class FileManager:
         try:
             row = con.execute("SELECT * FROM files WHERE id = ?", (f_id,)).fetchone()
             if not row: return False
-            
+
             now = datetime.now().isoformat()
             new_version = row["version"] + 1
             file_hash = hashlib.sha256(new_content).hexdigest()
-            
+
             # Save as new physical file for versioning
             ext = Path(row["name"]).suffix
             ver_path = Path(row["path"]).parent / f"{f_id}_v{new_version}{ext}"
-            
+
             with open(ver_path, "wb") as f:
                 f.write(new_content)
-                
+
             con.execute("UPDATE files SET version = ?, size = ? WHERE id = ?", (new_version, len(new_content), f_id))
             con.execute(
                 "INSERT INTO file_versions(file_id, version, path, size, hash, created_at) VALUES (?,?,?,?,?,?)",
@@ -87,16 +87,16 @@ class FileManager:
         try:
             row = con.execute("SELECT * FROM files WHERE id = ? AND tenant_id = ?", (f_id, tenant_id)).fetchone()
             if not row: return False
-            
+
             now = datetime.now()
             expires = now + timedelta(days=30)
-            
+
             # Move physically
             trash_path = self.trash / tenant_id
             trash_path.mkdir(parents=True, exist_ok=True)
             dest = trash_path / Path(row["path"]).name
             shutil.move(row["path"], dest)
-            
+
             # Update DB
             con.execute(
                 "INSERT INTO file_trash(id, tenant_id, original_name, original_path, deleted_at, expires_at) VALUES (?,?,?,?,?,?)",
@@ -113,7 +113,7 @@ class FileManager:
         con = self.db._db()
         try:
             rows = con.execute(
-                "SELECT * FROM files WHERE tenant_id = ? AND name LIKE ?", 
+                "SELECT * FROM files WHERE tenant_id = ? AND name LIKE ?",
                 (tenant_id, f"%{query}%")
             ).fetchall()
             return [dict(r) for r in rows]

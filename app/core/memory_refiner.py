@@ -20,18 +20,18 @@ def calculate_importance(text: str, llm_provider=None) -> Tuple[int, str]:
     Returns (score, category).
     """
     llm = llm_provider or get_default_provider()
-    
+
     prompt = (
         "Du bist ein Gedächtnis-Analyst für ein Business-OS. Bewerte die folgende Information.\n"
         "Kategorien: FAKT (Termine, Preise, Namen), PRÄFERENZ (Kundenwünsche), SMALLTALK (Belangloses), PROZESS (Bestätigungen).\n"
         "Gib ein JSON zurück: {\"score\": int, \"category\": \"string\", \"reason\": \"string\"}\n\n"
         f"INFORMATION: {text}"
     )
-    
+
     try:
         # Use low temperature for analysis
         response = llm.complete(prompt, temperature=0.0)
-        
+
         # Extract JSON
         start = response.find("{")
         end = response.rfind("}")
@@ -39,9 +39,9 @@ def calculate_importance(text: str, llm_provider=None) -> Tuple[int, str]:
             data = json.loads(response[start:end+1])
             validated = MemoryImportance.model_validate(data)
             return validated.score, validated.category
-            
+
     except (json.JSONDecodeError, ValidationError, Exception) as e:
         logger.warning(f"Importance scoring failed: {e}")
-        
+
     # Default fallback
     return 5, "FAKT"

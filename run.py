@@ -35,15 +35,15 @@ def start_server(port: int, host: str):
         notify_socket = os.environ.get("NOTIFY_SOCKET")
         if not notify_socket:
             return
-        
+
         if notify_socket.startswith("@"):
             notify_socket = "\0" + notify_socket[1:]
-            
+
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
                 # Tell systemd we are ready
                 sock.sendto(b"READY=1", notify_socket)
-                
+
                 # Periodically ping the watchdog
                 while True:
                     sock.sendto(b"WATCHDOG=1", notify_socket)
@@ -53,10 +53,10 @@ def start_server(port: int, host: str):
 
     app = create_app()
     print(f"🚀 KUKANILEA Enterprise Server starting on http://{host}:{port}")
-    
+
     # Start the watchdog thread (daemon so it exits when main app exits)
     threading.Thread(target=watchdog_ping, daemon=True).start()
-    
+
     # Switch to production-ready WSGI server: Waitress
     from waitress import serve
     serve(app, host=host, port=port, threads=8, max_request_body_size=100*1024*1024) # 100MB limit

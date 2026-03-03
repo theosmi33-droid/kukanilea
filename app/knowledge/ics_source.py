@@ -1717,6 +1717,32 @@ def knowledge_calendar_event_delete(
     return result
 
 
+def _read_task_deadlines(tenant_id: str) -> list[dict[str, Any]]:
+    today = datetime.now(UTC).date()
+    min_due = (today - timedelta(days=_feed_past_days())).isoformat()
+    max_due = (today + timedelta(days=_feed_future_days())).isoformat()
+
+    with legacy_core._DB_LOCK:
+        con = _db()
+        try:
+            # Query team_tasks for entries with due dates in the range
+            rows = con.execute(
+                """
+                SELECT id, title, description, due_at, assigned_to
+                FROM team_tasks
+                WHERE tenant_id=? AND due_at IS NOT NULL
+                AND due_at >= ? AND due_at <= ?
+                AND status != 'CLOSED' AND status != 'REJECTED'
+                """,
+                (tenant_id, min_due, max_due),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
+        finally:
+            con.close()
+
+
 def knowledge_calendar_events_list(
     tenant_id: str,
     *,
@@ -1725,6 +1751,7 @@ def knowledge_calendar_events_list(
     kinds: list[str] | None = None,
     include_manual: bool = True,
     include_deadlines: bool = True,
+    include_tasks: bool = True,
     owner_user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     tenant = _tenant(tenant_id)
@@ -1784,6 +1811,39 @@ def knowledge_calendar_events_list(
                     "notes": d.get("excerpt", ""),
                     "owner_user_id": "",
                     "reminder_minutes": 24 * 60,
+                }
+            )
+
+    if include_tasks:
+        for t in _read_task_deadlines(tenant):
+            due_str = str(t.get("due_at", ""))
+            # due_at is often just "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM:SS"
+            due_dt = _parse_iso_datetime(due_str)
+            if not due_dt:
+                # Try date only
+                d = _parse_iso_date(due_str)
+                if d:
+                    due_dt = datetime(d.year, d.month, d.day, tzinfo=UTC)
+            
+            if not due_dt:
+                continue
+            
+            if due_dt < range_start or due_dt > range_end:
+                continue
+                
+            out.append(
+                {
+                    "source": "task",
+                    "event_id": f"task:{t['id']}",
+                    "title": f"Aufgabe: {t['title']}",
+                    "kind": "task_due",
+                    "all_day": "T" not in due_str,
+                    "start_at": due_dt.isoformat(timespec="seconds"),
+                    "end_at": (due_dt + timedelta(hours=1)).isoformat(timespec="seconds"),
+                    "location": "",
+                    "notes": t.get("description", ""),
+                    "owner_user_id": t.get("assigned_to", ""),
+                    "reminder_minutes": 60,
                 }
             )
 
