@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/Users/gensuminguyen/Kukanilea"
-CORE="$ROOT/kukanilea_production"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CORE="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT="$(cd "$CORE/.." && pwd)"
 WORKTREES="$ROOT/worktrees"
 DB="$ROOT/data/agent_orchestra_shared.db"
 PY="$CORE/.build_venv/bin/python"

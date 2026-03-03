@@ -2,8 +2,9 @@
 set -euo pipefail
 
 TOOL_NAME="${1:-}"
-ROOT="/Users/gensuminguyen/Kukanilea"
-CORE="$ROOT/kukanilea_production"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CORE="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT="$(cd "$CORE/.." && pwd)"
 WORKTREE="$ROOT/worktrees/$TOOL_NAME"
 
 if [[ -z "$TOOL_NAME" ]]; then
@@ -36,7 +37,11 @@ fi
 echo "[3/4] domain overlap check (changed files only)"
 FILES="$(git diff --name-only main || true)"
 if [[ -n "$FILES" ]]; then
-  "$CORE/.build_venv/bin/python" "$CORE/scripts/dev/check_domain_overlap.py" \
+  PY="$CORE/.build_venv/bin/python"
+  if [[ ! -x "$PY" ]]; then
+    PY="$(command -v python3 || command -v python)"
+  fi
+  "$PY" "$CORE/scripts/dev/check_domain_overlap.py" \
     --reiter "$TOOL_NAME" \
     --files $FILES \
     --json || true
@@ -46,4 +51,3 @@ fi
 
 echo "[4/4] git status"
 git status --short
-
