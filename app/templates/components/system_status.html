@@ -1,70 +1,25 @@
-<!-- templates/components/system_status.html -->
-<div id="system-status-indicator" style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600;">
-    <div id="status-dot" style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--color-success);"></div>
-    <span id="status-text" style="color: var(--text-secondary);">READY</span>
-    <span id="outbound-status-badges" style="display:flex; align-items:center; gap:6px;"></span>
+<div id="system-status-indicator" 
+     hx-get="/api/system/status" 
+     hx-trigger="every 5s" 
+     hx-swap="outerHTML"
+     style="display:flex; align-items:center; gap:10px; padding:6px 14px; border-radius:99px; background:rgba(255,255,255,0.05); border:1px solid var(--color-border); font-size:11px; font-weight:700; color:var(--text-tertiary);">
+    
+    {% if status == 'HEALTHY' %}
+    <div style="width:8px; height:8px; border-radius:50%; background:var(--color-success); box-shadow:0 0 8px var(--color-success);"></div>
+    <span style="color:var(--color-success);">System Gesund</span>
+    {% elif status == 'WARNING_SYNC' %}
+    <div style="width:8px; height:8px; border-radius:50%; background:var(--color-warning); box-shadow:0 0 8px var(--color-warning);"></div>
+    <span style="color:var(--color-warning);">Sync Fehler ({{ sync_queue.failed }})</span>
+    {% else %}
+    <div style="width:8px; height:8px; border-radius:50%; background:var(--color-danger); box-shadow:0 0 8px var(--color-danger);"></div>
+    <span style="color:var(--color-danger);">{{ status }}</span>
+    {% endif %}
+    
+    <div style="height:12px; width:1px; background:var(--color-border); margin:0 4px;"></div>
+    
+    <span style="font-family:monospace; color:var(--text-tertiary);">CPU: {{ cpu_usage_pct|default(0)|round(1) }}%</span>
+    <span style="font-family:monospace; color:var(--text-tertiary);">RAM: {{ memory_rss_mb|default(0)|round(0) }}MB</span>
+
+    <!-- Task GoBD: Outbound Status Badges -->
+    <span id="outbound-status-badges" style="display:flex; align-items:center; gap:6px; margin-left: 8px;"></span>
 </div>
-
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const dot = document.getElementById('status-dot');
-        const text = document.getElementById('status-text');
-        const badges = document.getElementById('outbound-status-badges');
-
-        if (typeof StateStore !== 'undefined') {
-            StateStore.subscribe((state) => {
-                if (!state.isOnline) {
-                    dot.style.backgroundColor = 'var(--color-warning)';
-                    text.textContent = 'OFFLINE';
-                    return;
-                }
-
-                switch (state.systemStatus) {
-                    case 'READY':
-                        dot.style.backgroundColor = 'var(--color-success)';
-                        text.textContent = 'READY';
-                        break;
-                    case 'LOADING':
-                        dot.style.backgroundColor = 'var(--color-info)';
-                        text.textContent = 'LOADING';
-                        break;
-                    case 'ERROR':
-                        dot.style.backgroundColor = 'var(--color-error)';
-                        text.textContent = 'ERROR';
-                        break;
-                }
-            });
-        }
-
-        const renderBadge = (label, value, color, bg) => {
-            const el = document.createElement('span');
-            el.className = 'badge';
-            el.textContent = `${label}:${value}`;
-            el.style.color = color;
-            el.style.background = bg;
-            return el;
-        };
-
-        const refreshOutbound = () => {
-            fetch('/api/outbound/status', { credentials: 'same-origin' })
-                .then((r) => r.json())
-                .then((data) => {
-                    if (!badges || !data || !data.ok) return;
-                    const stats = data.stats || {};
-                    const pending = Number(stats.pending || 0);
-                    const failed = Number(stats.failed || 0);
-                    badges.innerHTML = '';
-                    if (pending > 0) {
-                        badges.appendChild(renderBadge('queued', pending, 'var(--color-warning)', 'rgba(245,158,11,0.14)'));
-                    }
-                    if (failed > 0) {
-                        badges.appendChild(renderBadge('failed', failed, 'var(--color-error)', 'rgba(239,68,68,0.14)'));
-                    }
-                })
-                .catch(() => {});
-        };
-
-        refreshOutbound();
-        setInterval(refreshOutbound, 10000);
-    });
-</script>

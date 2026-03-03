@@ -22,6 +22,341 @@ class ProjectManager:
 
     def __init__(self, db_ext):
         self.db = db_ext
+        self._ensure_team_task_schema()
+
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def _ensure_team_task_schema(self) -> None:
+        con = self.db._db()
+        try:
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_tasks(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  board_id TEXT,
+                  title TEXT NOT NULL,
+                  description TEXT,
+                  priority TEXT NOT NULL DEFAULT 'MEDIUM',
+                  due_at TEXT,
+                  status TEXT NOT NULL DEFAULT 'OPEN',
+                  created_by TEXT NOT NULL,
+                  assigned_to TEXT,
+                  rejection_reason TEXT,
+                  source_type TEXT,
+                  source_ref TEXT,
+                  parent_task_id TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_team_tasks_tenant ON team_tasks(tenant_id, status, due_at);"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_task_attachments(
+                  id TEXT PRIMARY KEY,
+                  task_id TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  kind TEXT NOT NULL,
+                  value TEXT NOT NULL,
+                  scan_status TEXT,
+                  metadata_json TEXT,
+                  created_by TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  FOREIGN KEY(task_id) REFERENCES team_tasks(id) ON DELETE CASCADE
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_task_events(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  task_id TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  ts TEXT NOT NULL,
+                  actor TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  reason TEXT,
+                  from_user TEXT,
+                  to_user TEXT,
+                  meta_json TEXT
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_team_task_events_task ON team_task_events(task_id, id DESC);"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_task_notifications(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  username TEXT NOT NULL,
+                  task_id TEXT,
+                  kind TEXT NOT NULL,
+                  message TEXT NOT NULL,
+                  is_read INTEGER NOT NULL DEFAULT 0,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_team_task_notifications_user ON team_task_notifications(tenant_id, username, is_read, id DESC);"
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    def _context_identity(self) -> tuple[str, str, str]:
+        if not has_request_context():
+            return "system", "ADMIN", "SYSTEM"
+        actor = str(session.get("user") or "anonymous")
+        role = str(session.get("role") or "READONLY").upper()
+        tenant = str(session.get("tenant_id") or "KUKANILEA")
+        normalized_role = self._normalize_role(role)
+        return actor, normalized_role, tenant
+
+    @staticmethod
+    def _normalize_role(role: str) -> str:
+        role_up = str(role or "").upper()
+        if role_up in {"ADMIN", "DEV"}:
+            return "ADMIN"
+        if role_up in {"MANAGER", "OPERATOR"}:
+            return "MANAGER"
+        if role_up in {"MITARBEITER"}:
+            return "MITARBEITER"
+        if role_up in {"READONLY"}:
+            return "READONLY"
+        return "READONLY"
+
+    def _role_allows(self, role: str, required: str) -> bool:
+        role_norm = self._normalize_role(role)
+        required_norm = self._normalize_role(required)
+        return ROLE_ORDER.index(role_norm) >= ROLE_ORDER.index(required_norm)
+
+    def _audit_activity(
+        self, con, *, tenant_id: str, username: str, action: str, resource: str, details: str
+    ) -> None:
+        con.execute(
+            "INSERT INTO audit_log(ts, tenant_id, username, action, resource, details) VALUES (?,?,?,?,?,?)",
+            (self._now_iso(), tenant_id, username, action, resource, details),
+        )
+
+    def _log_task_event(
+        self,
+        con,
+        *,
+        task_id: str,
+        tenant_id: str,
+        actor: str,
+        action: str,
+        reason: str = "",
+        from_user: str = "",
+        to_user: str = "",
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        con.execute(
+            """
+            INSERT INTO team_task_events(task_id, tenant_id, ts, actor, action, reason, from_user, to_user, meta_json)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                task_id,
+                tenant_id,
+                self._now_iso(),
+                actor,
+                action,
+                reason or None,
+                from_user or None,
+                to_user or None,
+                json.dumps(meta or {}, ensure_ascii=False),
+            ),
+        )
+
+    def _notify(
+        self,
+        con,
+        *,
+        tenant_id: str,
+        username: str,
+        task_id: str,
+        kind: str,
+        message: str,
+    ) -> None:
+        if not username:
+            return
+        con.execute(
+            """
+            INSERT INTO team_task_notifications(tenant_id, username, task_id, kind, message, is_read, created_at)
+            VALUES (?,?,?,?,?,0,?)
+            """,
+            (tenant_id, username, task_id, kind, message[:500], self._now_iso()),
+        )
+
+    def _user_exists(self, con, tenant_id: str, username: str) -> bool:
+        if not username:
+            return False
+        row = con.execute(
+            "SELECT 1 FROM memberships WHERE tenant_id=? AND username=? LIMIT 1",
+            (tenant_id, username),
+        ).fetchone()
+        return bool(row)
+
+    @staticmethod
+    def _normalize_priority(priority: str) -> str:
+        value = str(priority or "MEDIUM").strip().upper()
+        return value if value in VALID_PRIORITIES else "MEDIUM"
+
+    def _create_attachment(
+        self,
+        con,
+        *,
+        task_id: str,
+        tenant_id: str,
+        created_by: str,
+        kind: str,
+        value: str,
+    ) -> None:
+        payload_value = str(value or "").strip()
+        if not payload_value:
+            return
+        kind_norm = str(kind or "LINK").strip().upper()
+        metadata: dict[str, Any] = {}
+        scan_status = None
+        if kind_norm == "UPLOAD":
+            from app.core.upload_pipeline import process_upload
+
+            ok, result = process_upload(Path(payload_value), tenant_id)
+            if not ok:
+                raise ValueError(f"attachment_scan_failed:{result}")
+            scan_status = "CLEAN"
+            metadata["file_hash"] = result
+        con.execute(
+            """
+            INSERT INTO team_task_attachments(id, task_id, tenant_id, kind, value, scan_status, metadata_json, created_by, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                str(uuid.uuid4()),
+                task_id,
+                tenant_id,
+                kind_norm,
+                payload_value,
+                scan_status,
+                json.dumps(metadata, ensure_ascii=False),
+                created_by,
+                self._now_iso(),
+            ),
+        )
+
+    def create_team_task(
+        self,
+        *,
+        tenant_id: str,
+        actor: str,
+        actor_role: str,
+        title: str,
+        description: str = "",
+        priority: str = "MEDIUM",
+        due_at: str = "",
+        assigned_to: str = "",
+        board_id: str | None = None,
+        source_type: str = "",
+        source_ref: str = "",
+        attachment_link: str = "",
+        attachment_upload_path: str = "",
+    ) -> str:
+        title = str(title or "").strip()
+        if not title:
+            raise ValueError("title_required")
+
+        con = self.db._db()
+        try:
+            assignee = str(assigned_to or actor).strip()
+            if not self._user_exists(con, tenant_id, assignee):
+                raise ValueError("assignee_not_registered")
+            if assignee != actor and not self._role_allows(actor_role, "MANAGER"):
+                raise PermissionError("assign_requires_manager")
+
+            task_id = str(uuid.uuid4())
+            now = self._now_iso()
+            con.execute(
+                """
+                INSERT INTO team_tasks(
+                  id, tenant_id, board_id, title, description, priority, due_at, status,
+                  created_by, assigned_to, source_type, source_ref, created_at, updated_at
+                )
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    task_id,
+                    tenant_id,
+                    board_id,
+                    title[:220],
+                    str(description or "")[:5000],
+                    self._normalize_priority(priority),
+                    str(due_at or "").strip() or None,
+                    "OPEN",
+                    actor,
+                    assignee,
+                    str(source_type or "").strip() or None,
+                    str(source_ref or "").strip() or None,
+                    now,
+                    now,
+                ),
+            )
+            if attachment_link:
+                self._create_attachment(
+                    con,
+                    task_id=task_id,
+                    tenant_id=tenant_id,
+                    created_by=actor,
+                    kind="LINK",
+                    value=attachment_link,
+                )
+            if attachment_upload_path:
+                self._create_attachment(
+                    con,
+                    task_id=task_id,
+                    tenant_id=tenant_id,
+                    created_by=actor,
+                    kind="UPLOAD",
+                    value=attachment_upload_path,
+                )
+            self._log_task_event(
+                con,
+                task_id=task_id,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="TASK_CREATED",
+                to_user=assignee,
+                meta={"title": title[:220], "priority": self._normalize_priority(priority)},
+            )
+            self._audit_activity(
+                con,
+                tenant_id=tenant_id,
+                username=actor,
+                action="TASK_CREATED",
+                resource=f"team_task:{task_id}",
+                details=f"created and assigned to {assignee}",
+            )
+            self._notify(
+                con,
+                tenant_id=tenant_id,
+                username=assignee,
+                task_id=task_id,
+                kind="TASK_ASSIGNED",
+                message=f"Neue Aufgabe: {title[:120]}",
+            )
+            con.commit()
+            return task_id
+        finally:
+            con.close()
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -1068,8 +1403,48 @@ class ProjectManager:
     def update_task_column(self, task_id: str, new_column: str) -> None:
         con = self.db._db()
         try:
+            parsed: dict[str, Any] | None = None
+            try:
+                parsed_candidate = json.loads(str(new_column or "").strip())
+                if isinstance(parsed_candidate, dict) and parsed_candidate.get("action"):
+                    parsed = parsed_candidate
+            except Exception:
+                parsed = None
+
+            if parsed is not None:
+                if str(parsed.get("task_id") or "") == "" and task_id not in {"__cmd__", ""}:
+                    parsed["task_id"] = task_id
+                try:
+                    result = self.execute_task_command(parsed)
+                    con.commit()
+                    return result
+                except (ValueError, PermissionError) as exc:
+                    return {"ok": False, "error": str(exc)}
+
+            row = con.execute("SELECT id FROM team_tasks WHERE id=?", (task_id,)).fetchone()
+            if row:
+                mapped_status = COLUMN_TO_STATUS.get(str(new_column), "OPEN")
+                actor, role, _tenant_id = self._context_identity()
+                full_task = self._fetch_task(con, task_id)
+                if not full_task:
+                    raise ValueError("task_not_found")
+                try:
+                    self._transition_status(
+                        con,
+                        task=full_task,
+                        actor=actor,
+                        actor_role=role,
+                        new_status=mapped_status,
+                    )
+                    con.commit()
+                    return {"ok": True, "task_id": task_id}
+                except (ValueError, PermissionError) as exc:
+                    return {"ok": False, "error": str(exc)}
+
+            # Legacy board fallback.
             con.execute("UPDATE tasks SET column_name = ? WHERE id = ?", (new_column, task_id))
             con.commit()
+            return {"ok": True, "task_id": task_id, "legacy": True}
         finally:
             con.close()
 

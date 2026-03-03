@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 from collections.abc import Mapping
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app import core as core
+from app.db import AuthDB
 from app.mail import (
     postfach_create_draft,
     postfach_create_followup_task,
@@ -130,7 +132,32 @@ def _execute_create_task(
             created_by=created_by,
         )
     )
-    return {"status": "ok", "result": {"task_id": task_id}}
+
+    # If the local Aufgaben domain is available, create a synchronized team task as well.
+    team_task_id = ""
+    try:
+        from app.modules.projects.logic import ProjectManager
+
+        auth_db_path = str(os.environ.get("KUKANILEA_AUTH_DB") or "").strip()
+        if auth_db_path:
+            pm = ProjectManager(AuthDB(Path(auth_db_path)))
+            team_task_id = pm.create_team_task(
+                tenant_id=tenant_id,
+                actor=created_by or "automation",
+                actor_role="ADMIN",
+                title=title,
+                description=details,
+                priority=str(action_cfg.get("priority") or "MEDIUM"),
+                due_at=str(action_cfg.get("due_at") or ""),
+                assigned_to=str(action_cfg.get("assigned_to") or created_by or ""),
+                source_type=str(context.get("source") or "automation"),
+                source_ref=trigger_ref or rule_id,
+                attachment_link=str(action_cfg.get("attachment_link") or ""),
+            )
+    except Exception:
+        team_task_id = ""
+
+    return {"status": "ok", "result": {"task_id": task_id, "team_task_id": team_task_id}}
 
 
 def _execute_create_followup(
