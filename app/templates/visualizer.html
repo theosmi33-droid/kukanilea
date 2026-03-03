@@ -336,6 +336,22 @@
     filterInput.addEventListener("input", () => { state.filterText = filterInput.value || ""; renderSheet(payload); });
     tools.appendChild(filterInput);
 
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "vz-btn";
+    copyBtn.type = "button";
+    copyBtn.textContent = "Tabelle kopieren";
+    copyBtn.style.marginLeft = "auto";
+    copyBtn.addEventListener("click", () => {
+      const rows = Array.from(table.querySelectorAll("tr"));
+      const text = rows.map(tr => Array.from(tr.querySelectorAll("th, td")).slice(1).map(td => td.textContent).join("\t")).join("\n");
+      navigator.clipboard.writeText(text).then(() => {
+        const old = copyBtn.textContent;
+        copyBtn.textContent = "Kopiert!";
+        setTimeout(() => copyBtn.textContent = old, 2000);
+      });
+    });
+    tools.appendChild(copyBtn);
+
     const zone = document.createElement("div");
     zone.className = "sheet-zone";
     const table = document.createElement("table");
