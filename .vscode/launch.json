@@ -5,7 +5,7 @@
       "name": "KUKANILEA: Debug App 5051",
       "type": "debugpy",
       "request": "launch",
-      "python": "/Users/gensuminguyen/Kukanilea/kukanilea_production/.build_venv/bin/python",
+      "python": "${workspaceFolder}/.build_venv/bin/python",
       "program": "${workspaceFolder}/kukanilea_app.py",
       "args": [
         "--host",

@@ -50,10 +50,11 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
 
-def ensure_settings(path: Path, interpreter: str, apply: bool) -> list[str]:
+def ensure_settings(path: Path, interpreter: str, allowed_interpreters: set[str], apply: bool) -> list[str]:
     changes: list[str] = []
     data = load_json(path)
-    if data.get("python.defaultInterpreterPath") != interpreter:
+    current = data.get("python.defaultInterpreterPath")
+    if current not in allowed_interpreters:
         changes.append("python.defaultInterpreterPath")
         data["python.defaultInterpreterPath"] = interpreter
     if data.get("python.terminal.activateEnvironment") is not True:
@@ -64,7 +65,7 @@ def ensure_settings(path: Path, interpreter: str, apply: bool) -> list[str]:
     return changes
 
 
-def ensure_launch(path: Path, interpreter: str, apply: bool) -> list[str]:
+def ensure_launch(path: Path, interpreter: str, allowed_interpreters: set[str], apply: bool) -> list[str]:
     changes: list[str] = []
     data = load_json(path)
     if "version" not in data:
@@ -97,7 +98,6 @@ def ensure_launch(path: Path, interpreter: str, apply: bool) -> list[str]:
         expected = {
             "type": "debugpy",
             "request": "launch",
-            "python": interpreter,
             "program": "${workspaceFolder}/kukanilea_app.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
@@ -111,6 +111,9 @@ def ensure_launch(path: Path, interpreter: str, apply: bool) -> list[str]:
         if target.get("args") != args:
             target["args"] = args
             changes.append("configurations.args")
+        if target.get("python") not in allowed_interpreters:
+            target["python"] = interpreter
+            changes.append("configurations.python")
     if apply and changes:
         write_json(path, data)
     return changes
@@ -126,8 +129,6 @@ def main() -> int:
         args.check = True
 
     root = detect_repo_root()
-    interpreter = str(root / ".build_venv" / "bin" / "python")
-
     targets: list[Path] = [root]
     worktrees_root = root.parent / "worktrees"
     for domain in DOMAINS:
@@ -137,12 +138,20 @@ def main() -> int:
 
     mismatches: list[str] = []
     for target in targets:
+        if target == root:
+            preferred_interpreter = "${workspaceFolder}/.build_venv/bin/python"
+            absolute_interpreter = str(root / ".build_venv" / "bin" / "python")
+        else:
+            preferred_interpreter = "${workspaceFolder}/../kukanilea_production/.build_venv/bin/python"
+            absolute_interpreter = str(root / ".build_venv" / "bin" / "python")
+        allowed_interpreters = {preferred_interpreter, absolute_interpreter}
+
         vscode = target / ".vscode"
         settings = vscode / "settings.json"
         launch = vscode / "launch.json"
 
-        settings_changes = ensure_settings(settings, interpreter, apply=args.apply)
-        launch_changes = ensure_launch(launch, interpreter, apply=args.apply)
+        settings_changes = ensure_settings(settings, preferred_interpreter, allowed_interpreters, apply=args.apply)
+        launch_changes = ensure_launch(launch, preferred_interpreter, allowed_interpreters, apply=args.apply)
 
         if settings_changes or launch_changes:
             rel = str(target.relative_to(root.parent)).replace("\\", "/")
