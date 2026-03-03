@@ -33,7 +33,6 @@ import base64
 import logging
 import importlib
 import importlib.util
-import io
 import json
 import os
 import re
@@ -157,11 +156,8 @@ time_project_list = _core_get("time_project_list")
 time_entry_start = _core_get("time_entry_start")
 time_entry_stop = _core_get("time_entry_stop")
 time_entry_list = _core_get("time_entries_list")
-time_entry_manual_create = _core_get("time_entry_manual_create")
 time_entry_update = _core_get("time_entry_update")
-time_entry_storno = _core_get("time_entry_storno")
 time_entry_approve = _core_get("time_entry_approve")
-time_report_summary = _core_get("time_report_summary")
 time_entries_export_csv = _core_get("time_entries_export_csv")
 
 # Guard minimum contract
@@ -540,247 +536,12 @@ def _time_range_params(range_name: str, date_value: str) -> tuple[str, str]:
     if range_name == "day":
         start_date = base_date
         end_date = base_date
-    elif range_name == "month":
-        start_date = base_date.replace(day=1)
-        if start_date.month == 12:
-            next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
-        else:
-            next_month = start_date.replace(month=start_date.month + 1, day=1)
-        end_date = next_month - timedelta(days=1)
-    elif range_name == "year":
-        start_date = base_date.replace(month=1, day=1)
-        end_date = base_date.replace(month=12, day=31)
     else:
         start_date = base_date - timedelta(days=base_date.weekday())
         end_date = start_date + timedelta(days=6)
     start_at = f"{start_date.isoformat()}T00:00:00"
     end_at = f"{end_date.isoformat()}T23:59:59"
     return start_at, end_at
-
-
-_DOMAIN8_PROJECT_MARKER = re.compile(r"\[D8:([^\]]+)\]")
-
-
-def _extract_domain8_project_id(description: str) -> str:
-    marker = _DOMAIN8_PROJECT_MARKER.search(description or "")
-    return (marker.group(1) if marker else "").strip()
-
-
-def _domain8_projects_for_tenant(tenant_id: str) -> list[dict]:
-    auth_db = current_app.extensions.get("auth_db")
-    if not auth_db:
-        return []
-    con = auth_db._db()
-    try:
-        rows = con.execute(
-            """
-            SELECT id, tenant_id, name, description, created_at
-            FROM projects
-            WHERE tenant_id=?
-            ORDER BY name COLLATE NOCASE, created_at
-            """,
-            (tenant_id,),
-        ).fetchall()
-        return [dict(row) for row in rows]
-    except Exception:
-        return []
-    finally:
-        con.close()
-
-
-def _with_domain_project_meta(projects: list[dict]) -> list[dict]:
-    enriched = []
-    for project in projects:
-        row = dict(project)
-        domain_project_id = _extract_domain8_project_id(
-            str(row.get("description") or "")
-        )
-        row["domain_project_id"] = domain_project_id
-        row["project_source"] = "DOMAIN8" if domain_project_id else "TIME"
-        enriched.append(row)
-    enriched.sort(
-        key=lambda p: (
-            0 if p.get("domain_project_id") else 1,
-            str(p.get("name") or "").lower(),
-        )
-    )
-    return enriched
-
-
-def _time_projects_with_domain8_sync(*, tenant_id: str, user: str) -> list[dict]:
-    if not callable(time_project_list):
-        return []
-
-    try:
-        projects = time_project_list(tenant_id=tenant_id, status="ACTIVE")  # type: ignore
-    except Exception:
-        projects = []
-    by_domain_id: dict[str, dict] = {}
-    for project in projects:
-        domain_id = _extract_domain8_project_id(str(project.get("description") or ""))
-        if domain_id and domain_id not in by_domain_id:
-            by_domain_id[domain_id] = project
-
-    if callable(time_project_create):
-        for domain_project in _domain8_projects_for_tenant(tenant_id):
-            domain_project_id = str(domain_project.get("id") or "").strip()
-            if not domain_project_id or domain_project_id in by_domain_id:
-                continue
-            marker = f"[D8:{domain_project_id}]"
-            raw_description = str(domain_project.get("description") or "").strip()
-            description = f"{raw_description}\n{marker}".strip() if raw_description else marker
-            try:
-                created = time_project_create(  # type: ignore
-                    tenant_id=tenant_id,
-                    name=str(domain_project.get("name") or "").strip(),
-                    description=description,
-                    created_by=user,
-                )
-                projects.append(created)
-                by_domain_id[domain_project_id] = created
-            except Exception:
-                continue
-
-    return _with_domain_project_meta(projects)
-
-
-def _resolve_time_project_id(
-    *,
-    tenant_id: str,
-    user: str,
-    project_id: object,
-    domain_project_id: object,
-) -> int | None:
-    if project_id not in (None, ""):
-        try:
-            return int(project_id)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("project_id_invalid") from exc
-    domain_id = str(domain_project_id or "").strip()
-    if not domain_id:
-        return None
-    projects = _time_projects_with_domain8_sync(tenant_id=tenant_id, user=user)
-    for project in projects:
-        if str(project.get("domain_project_id") or "") == domain_id:
-            return int(project.get("id") or 0)
-    raise ValueError("project_not_found")
-
-
-def _build_gobd_csv(
-    *,
-    tenant_id: str,
-    export_user: str,
-    scope_start: str,
-    scope_end: str,
-    entries: list[dict],
-    project_domain_map: dict[int, str],
-) -> str:
-    exported_at_utc = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-    output = io.StringIO(newline="")
-    writer = csv.writer(output)
-    writer.writerow(
-        [
-            "exported_at_utc",
-            "export_scope_start",
-            "export_scope_end",
-            "tenant_id",
-            "export_user",
-            "entry_id",
-            "project_id",
-            "domain8_project_id",
-            "project_name",
-            "task_ref",
-            "user",
-            "start_at",
-            "end_at",
-            "duration_seconds",
-            "duration_hours",
-            "entry_type",
-            "is_cancelled",
-            "cancelled_by",
-            "cancelled_at",
-            "cancel_reason",
-            "approval_status",
-            "approved_by",
-            "approved_at",
-            "note",
-            "entry_hash",
-            "previous_entry_hash",
-            "gobd_version",
-        ]
-    )
-
-    previous_hash = ""
-    ordered = sorted(
-        entries,
-        key=lambda row: (
-            str(row.get("start_at") or ""),
-            int(row.get("id") or 0),
-        ),
-    )
-    for row in ordered:
-        entry_id = int(row.get("id") or 0)
-        try:
-            project_id = int(row.get("project_id") or 0) if row.get("project_id") else 0
-        except (TypeError, ValueError):
-            project_id = 0
-        domain8_project_id = project_domain_map.get(project_id, "") if project_id else ""
-        duration_seconds = int(row.get("duration_seconds") or 0)
-        duration_hours = f"{duration_seconds / 3600.0:.2f}"
-        canonical = "|".join(
-            [
-                tenant_id,
-                str(entry_id),
-                str(project_id),
-                domain8_project_id,
-                str(row.get("user") or ""),
-                str(row.get("start_at") or ""),
-                str(row.get("end_at") or ""),
-                str(duration_seconds),
-                str(row.get("task_ref") or ""),
-                str(row.get("entry_type") or ""),
-                str(int(row.get("is_cancelled") or 0)),
-                str(row.get("approval_status") or ""),
-                str(row.get("approved_by") or ""),
-                str(row.get("approved_at") or ""),
-                str(row.get("note") or ""),
-                previous_hash,
-            ]
-        )
-        entry_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-        writer.writerow(
-            [
-                exported_at_utc,
-                scope_start,
-                scope_end,
-                tenant_id,
-                export_user,
-                entry_id,
-                project_id or "",
-                domain8_project_id,
-                row.get("project_name") or "",
-                row.get("task_ref") or "",
-                row.get("user") or "",
-                row.get("start_at") or "",
-                row.get("end_at") or "",
-                duration_seconds,
-                duration_hours,
-                row.get("entry_type") or "",
-                int(row.get("is_cancelled") or 0),
-                row.get("cancelled_by") or "",
-                row.get("cancelled_at") or "",
-                row.get("cancel_reason") or "",
-                row.get("approval_status") or "",
-                row.get("approved_by") or "",
-                row.get("approved_at") or "",
-                row.get("note") or "",
-                entry_hash,
-                previous_hash,
-                "1.0",
-            ]
-        )
-        previous_hash = entry_hash
-    return output.getvalue()
 
 
 # -------- UI Templates ----------
@@ -1242,88 +1003,47 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     <div class="card p-4">
       <div class="text-lg font-semibold">Timer</div>
       <div class="muted text-sm">Starte und stoppe Zeiten pro Projekt.</div>
-      <div class="mt-3 rounded-xl border p-3">
-        <div class="muted text-xs">Aktuelle Laufzeit</div>
-        <div id="timeClock" class="text-3xl font-semibold tracking-tight" style="font-variant-numeric: tabular-nums;">00:00:00</div>
-        <div id="timeRunningMeta" class="muted text-xs pt-1">Kein aktiver Timer.</div>
-      </div>
       <div class="mt-3 space-y-2">
-        <label class="text-xs muted">Projekt (Domäne 8 verknüpft)</label>
+        <label class="text-xs muted">Projekt</label>
         <select id="timeProject" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"></select>
-        <label class="text-xs muted">Task-Ref (optional)</label>
-        <input id="timeTaskRef" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. TASK-4711" />
         <label class="text-xs muted">Notiz</label>
         <input id="timeNote" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Baustelle Prüfen" />
         <div class="flex gap-2 pt-2">
-          <button id="timeStart" type="button" class="px-4 py-2 text-sm btn-primary w-full">Start</button>
-          <button id="timeStop" type="button" class="px-4 py-2 text-sm btn-outline w-full">Stop</button>
+          <button id="timeStart" class="px-4 py-2 text-sm btn-primary w-full">Start</button>
+          <button id="timeStop" class="px-4 py-2 text-sm btn-outline w-full">Stop</button>
         </div>
         <div id="timeStatus" class="muted text-xs pt-2">Timer bereit.</div>
       </div>
     </div>
     <div class="card p-4">
       <div class="text-lg font-semibold">Projekt anlegen</div>
-      <div class="muted text-xs">Legt automatisch ein Domäne-8-Projekt plus Zeiterfassungs-Link an.</div>
       <div class="mt-3 space-y-2">
         <input id="projectName" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Projektname" />
         <textarea id="projectDesc" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" rows="3" placeholder="Beschreibung (optional)"></textarea>
-        <button id="projectCreate" type="button" class="px-4 py-2 text-sm btn-outline w-full">Anlegen</button>
+        <button id="projectCreate" class="px-4 py-2 text-sm btn-outline w-full">Anlegen</button>
         <div id="projectStatus" class="muted text-xs pt-1"></div>
       </div>
     </div>
     <div class="card p-4">
-      <div class="text-lg font-semibold">Manueller Nachtrag</div>
-      <div class="mt-3 space-y-2">
-        <input id="manualFrom" type="datetime-local" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" />
-        <input id="manualTo" type="datetime-local" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" />
-        <input id="manualTaskRef" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Task-Ref (optional)" />
-        <input id="manualNote" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Notiz (optional)" />
-        <button id="manualCreate" type="button" class="px-4 py-2 text-sm btn-outline w-full">Nachtrag speichern</button>
-        <div id="manualStatus" class="muted text-xs pt-1"></div>
-      </div>
-    </div>
-    <div class="card p-4">
       <div class="text-lg font-semibold">Export</div>
-      <div class="muted text-xs">GoBD-CSV mit Storno-Status.</div>
-      <button id="exportData" type="button" class="mt-3 px-4 py-2 text-sm btn-outline w-full">CSV herunterladen</button>
+      <div class="muted text-xs">CSV Export der aktuellen Woche.</div>
+      <button id="exportWeek" class="mt-3 px-4 py-2 text-sm btn-outline w-full">CSV herunterladen</button>
     </div>
   </div>
   <div class="lg:col-span-2 space-y-4">
     <div class="card p-4">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <div>
-          <div class="text-lg font-semibold">Übersicht</div>
-          <div class="muted text-xs">Tag/Woche/Monat/Jahr mit Summen pro Tag.</div>
+          <div class="text-lg font-semibold">Wochenübersicht</div>
+          <div class="muted text-xs">Summen pro Tag, direkt prüfbar.</div>
         </div>
-        <div class="flex gap-2">
-          <select id="timeRange" class="rounded-xl border px-3 py-2 text-sm bg-transparent">
-            <option value="day">Tag</option>
-            <option value="week" selected>Woche</option>
-            <option value="month">Monat</option>
-            <option value="year">Jahr</option>
-          </select>
-          <input id="rangeDate" type="date" class="rounded-xl border px-3 py-2 text-sm bg-transparent" />
-        </div>
+        <input id="weekDate" type="date" class="rounded-xl border px-3 py-2 text-sm bg-transparent" />
       </div>
-      <div id="rangeSummary" class="grid md:grid-cols-2 gap-3 mt-4"></div>
-      <div id="offlineStatus" class="muted text-xs mt-2"></div>
-    </div>
-    <div id="adminPanel" class="card p-4" style="display:none;">
-      <div class="text-lg font-semibold">Team-Auswertung</div>
-      <div class="muted text-xs">Aktive Zeiten (Storno getrennt).</div>
-      <div class="mt-3">
-        <div class="text-sm font-semibold">Nach Nutzer</div>
-        <div id="chartUsers" class="space-y-2 mt-2"></div>
-      </div>
-      <div class="mt-4">
-        <div class="text-sm font-semibold">Nach Projekt</div>
-        <div id="chartProjects" class="space-y-2 mt-2"></div>
-      </div>
-      <div id="reportTotals" class="muted text-xs mt-3"></div>
+      <div id="weekSummary" class="grid md:grid-cols-2 gap-3 mt-4"></div>
     </div>
     <div class="card p-4">
       <div class="text-lg font-semibold">Einträge</div>
-      <div class="muted text-xs">Korrekturen nur per Storno (GoBD).</div>
+      <div class="muted text-xs">Klick auf „Bearbeiten“ für Korrekturen.</div>
       <div id="entryList" class="mt-4 space-y-3"></div>
     </div>
   </div>
@@ -1331,55 +1051,24 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
 <script>
 (function(){
   const role = "{{role}}";
-  const isAdmin = role === "ADMIN" || role === "DEV";
   const timeProject = document.getElementById("timeProject");
-  const timeTaskRef = document.getElementById("timeTaskRef");
   const timeNote = document.getElementById("timeNote");
   const timeStart = document.getElementById("timeStart");
   const timeStop = document.getElementById("timeStop");
   const timeStatus = document.getElementById("timeStatus");
-  const timeClock = document.getElementById("timeClock");
-  const timeRunningMeta = document.getElementById("timeRunningMeta");
   const projectName = document.getElementById("projectName");
   const projectDesc = document.getElementById("projectDesc");
   const projectCreate = document.getElementById("projectCreate");
   const projectStatus = document.getElementById("projectStatus");
-  const manualFrom = document.getElementById("manualFrom");
-  const manualTo = document.getElementById("manualTo");
-  const manualTaskRef = document.getElementById("manualTaskRef");
-  const manualNote = document.getElementById("manualNote");
-  const manualCreate = document.getElementById("manualCreate");
-  const manualStatus = document.getElementById("manualStatus");
-  const timeRange = document.getElementById("timeRange");
-  const rangeDate = document.getElementById("rangeDate");
-  const rangeSummary = document.getElementById("rangeSummary");
+  const weekDate = document.getElementById("weekDate");
+  const weekSummary = document.getElementById("weekSummary");
   const entryList = document.getElementById("entryList");
-  const exportData = document.getElementById("exportData");
-  const adminPanel = document.getElementById("adminPanel");
-  const chartUsers = document.getElementById("chartUsers");
-  const chartProjects = document.getElementById("chartProjects");
-  const reportTotals = document.getElementById("reportTotals");
-  const offlineStatus = document.getElementById("offlineStatus");
-
-  const OFFLINE_QUEUE_KEY = "zeiterfassung_offline_queue_v1";
-  const OFFLINE_RUNNING_KEY = "zeiterfassung_offline_running_v1";
-  let runningEntry = null;
-  let clockTimeout = null;
-  let isMutating = false;
+  const exportWeek = document.getElementById("exportWeek");
 
   function fmtDuration(seconds){
-    const safe = Math.max(0, Number(seconds || 0));
-    const h = Math.floor(safe / 3600);
-    const m = Math.floor((safe % 3600) / 60);
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
     return `${h}h ${m}m`;
-  }
-
-  function fmtClock(seconds){
-    const safe = Math.max(0, Number(seconds || 0));
-    const h = Math.floor(safe / 3600);
-    const m = Math.floor((safe % 3600) / 60);
-    const s = safe % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
   function setStatus(msg, isError){
@@ -1387,181 +1076,33 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     timeStatus.style.color = isError ? "#f87171" : "";
   }
 
-  function setMutatingState(busy){
-    isMutating = busy;
-    timeStart.disabled = busy;
-    timeStop.disabled = busy;
-    projectCreate.disabled = busy;
-    manualCreate.disabled = busy;
-    exportData.disabled = busy;
-  }
-
-  function stopClock(){
-    if(clockTimeout !== null){
-      window.clearTimeout(clockTimeout);
-      clockTimeout = null;
-    }
-  }
-
-  function renderClock(){
-    if(!runningEntry){
-      timeClock.textContent = "00:00:00";
-      timeRunningMeta.textContent = "Kein aktiver Timer.";
-      return;
-    }
-    const startTs = Date.parse(runningEntry.start_at || "");
-    if(Number.isNaN(startTs)){
-      timeClock.textContent = "00:00:00";
-      timeRunningMeta.textContent = "Aktiver Timer (Startzeit ungültig).";
-      return;
-    }
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startTs) / 1000));
-    timeClock.textContent = fmtClock(elapsedSeconds);
-    const label = runningEntry.project_name || "Ohne Projekt";
-    timeRunningMeta.textContent = `${label} · seit ${runningEntry.start_at || "-"}`;
-  }
-
-  function scheduleClock(){
-    stopClock();
-    if(!runningEntry){
-      renderClock();
-      return;
-    }
-    renderClock();
-    const delay = Math.max(100, 1000 - (Date.now() % 1000));
-    clockTimeout = window.setTimeout(scheduleClock, delay);
-  }
-
-  function getRangeParams(){
-    return {range: timeRange.value || "week", date: rangeDate.value};
-  }
-
-  function toIsoLocal(value){
-    if(!value) return "";
-    const dt = new Date(value);
-    if(Number.isNaN(dt.getTime())) return "";
-    return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0,19);
-  }
-
-  function fromIsoToDatetimeLocal(value){
-    if(!value) return "";
-    const dt = new Date(value);
-    if(Number.isNaN(dt.getTime())) return "";
-    const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString();
-    return local.slice(0,16);
-  }
-
-  function getQueue(){
-    try{
-      return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]");
-    } catch(_) {
-      return [];
-    }
-  }
-
-  function setQueue(items){
-    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items || []));
-    const count = (items || []).length;
-    offlineStatus.textContent = count ? `Offline-Queue: ${count} Aktionen ausstehend.` : "";
-  }
-
-  function pushQueue(item){
-    const items = getQueue();
-    items.push(item);
-    setQueue(items);
-  }
-
-  function saveOfflineRunning(payload){
-    localStorage.setItem(OFFLINE_RUNNING_KEY, JSON.stringify(payload || {}));
-  }
-
-  function clearOfflineRunning(){
-    localStorage.removeItem(OFFLINE_RUNNING_KEY);
-  }
-
-  function loadOfflineRunning(){
-    try{
-      const raw = localStorage.getItem(OFFLINE_RUNNING_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch(_) {
-      return null;
-    }
-  }
-
-  async function postJson(url, payload){
-    const res = await fetch(url, {
-      method:"POST",
-      headers: {"Content-Type":"application/json"},
-      credentials:"same-origin",
-      body: JSON.stringify(payload || {})
-    });
-    const data = await res.json();
-    if(!res.ok){
-      throw new Error(data.error?.message || "Request fehlgeschlagen.");
-    }
-    return data;
-  }
-
-  async function flushQueue(){
-    if(!navigator.onLine){
-      return;
-    }
-    const items = getQueue();
-    if(!items.length){
-      setQueue([]);
-      return;
-    }
-    const remaining = [];
-    for(const item of items){
-      try{
-        await postJson(item.url, item.payload);
-      } catch (err){
-        remaining.push(item);
-      }
-    }
-    setQueue(remaining);
-    if(!remaining.length){
-      await loadEntries();
-      await loadReport();
-    }
-  }
-
   async function loadProjects(){
-    const selected = timeProject.value;
     const res = await fetch("/api/time/projects", {credentials:"same-origin"});
     const data = await res.json();
-    if(!res.ok){
-      throw new Error(data.error?.message || "Projektliste konnte nicht geladen werden.");
-    }
     timeProject.innerHTML = "";
-    const emptyOption = document.createElement("option");
-    emptyOption.value = "";
-    emptyOption.textContent = "Ohne Projekt";
-    emptyOption.dataset.domainProjectId = "";
-    timeProject.appendChild(emptyOption);
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Ohne Projekt";
+    timeProject.appendChild(opt);
     (data.projects || []).forEach(p => {
       const o = document.createElement("option");
-      o.value = String(p.id || "");
-      o.dataset.domainProjectId = String(p.domain_project_id || "");
-      o.textContent = p.project_source === "DOMAIN8" ? `${p.name} [D8]` : p.name;
-      if(String(p.id || "") === selected){
-        o.selected = true;
-      }
+      o.value = p.id;
+      o.textContent = p.name;
       timeProject.appendChild(o);
     });
   }
 
   function renderSummary(items){
-    rangeSummary.innerHTML = "";
+    weekSummary.innerHTML = "";
     if(!items.length){
-      rangeSummary.innerHTML = "<div class='muted text-sm'>Keine Einträge.</div>";
+      weekSummary.innerHTML = "<div class='muted text-sm'>Keine Einträge.</div>";
       return;
     }
     items.forEach(day => {
       const card = document.createElement("div");
       card.className = "rounded-xl border p-3";
       card.innerHTML = `<div class="text-sm font-semibold">${day.date}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
-      rangeSummary.appendChild(card);
+      weekSummary.appendChild(card);
     });
   }
 
@@ -1577,30 +1118,17 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       const approveBtn = (role === "ADMIN" || role === "DEV") && entry.approval_status !== "APPROVED"
         ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entry.id}">Freigeben</button>`
         : "";
-      const stornoBtn = Number(entry.is_cancelled || 0) === 0
-        ? `<button class="px-3 py-1 text-xs btn-outline" data-storno="${entry.id}">Storno</button>`
-        : "";
-      const domainHint = entry.domain_project_id
-        ? `<div class="muted text-xs">Domäne 8: ${entry.domain_project_id}</div>`
-        : "";
-      const cancelHint = Number(entry.is_cancelled || 0) === 1
-        ? `<div class="text-xs mt-1" style="color:#f59e0b;">STORNO: ${entry.cancel_reason || "-"}${entry.cancelled_by ? " (" + entry.cancelled_by + ")" : ""}</div>`
-        : "";
       wrap.innerHTML = `
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div>
             <div class="text-sm font-semibold">${entry.project_name || "Ohne Projekt"}</div>
-            <div class="muted text-xs">${entry.start_at} → ${entry.end_at || "läuft"} · ${fmtDuration(entry.duration_seconds || 0)} · ${entry.entry_type || "TIMER"}</div>
-            ${entry.task_ref ? `<div class="muted text-xs">Task: ${entry.task_ref}</div>` : ""}
+            <div class="muted text-xs">${entry.start_at} → ${entry.end_at || "läuft"} · ${fmtDuration(entry.duration_seconds || 0)}</div>
             <div class="muted text-xs">Status: ${entry.approval_status || "PENDING"} ${entry.approved_by ? "(von " + entry.approved_by + ")" : ""}</div>
-            ${domainHint}
-            ${cancelHint}
             ${entry.note ? `<div class="text-xs mt-1">${entry.note}</div>` : ""}
           </div>
           <div class="flex gap-2">
             <button class="px-3 py-1 text-xs btn-outline" data-edit="${entry.id}">Bearbeiten</button>
             ${approveBtn}
-            ${stornoBtn}
           </div>
         </div>`;
       entryList.appendChild(wrap);
@@ -1608,264 +1136,91 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   }
 
   async function loadEntries(){
-    const params = getRangeParams();
-    const res = await fetch(`/api/time/entries?range=${encodeURIComponent(params.range)}&date=${encodeURIComponent(params.date)}`, {credentials:"same-origin"});
+    const dateValue = weekDate.value;
+    const res = await fetch(`/api/time/entries?range=week&date=${encodeURIComponent(dateValue)}`, {credentials:"same-origin"});
     const data = await res.json();
-    if(!res.ok){
-      throw new Error(data.error?.message || "Einträge konnten nicht geladen werden.");
-    }
     renderSummary(data.summary || []);
     renderEntries(data.entries || []);
-    runningEntry = data.running || null;
-    scheduleClock();
-    if(runningEntry){
-      setStatus(`Läuft seit ${runningEntry.start_at}.`, false);
+    if(data.running){
+      setStatus(`Läuft seit ${data.running.start_at}.`, false);
     } else {
-      const offlineRunning = loadOfflineRunning();
-      if(offlineRunning && offlineRunning.started_at){
-        runningEntry = {start_at: offlineRunning.started_at, project_name: "(offline/pending)"};
-        scheduleClock();
-        setStatus("Offline-Timer aktiv (noch nicht synchronisiert).", false);
-      } else {
-        setStatus("Timer bereit.", false);
-      }
+      setStatus("Timer bereit.", false);
     }
-  }
-
-  function renderBars(container, items, labelKey){
-    if(!container) return;
-    container.innerHTML = "";
-    if(!items || !items.length){
-      container.innerHTML = "<div class='muted text-xs'>Keine Daten.</div>";
-      return;
-    }
-    const max = Math.max(...items.map(i => Number(i.seconds || 0)), 1);
-    items.slice(0,10).forEach(item => {
-      const row = document.createElement("div");
-      const pct = Math.round((Number(item.seconds || 0) / max) * 100);
-      row.innerHTML = `
-        <div class="flex justify-between text-xs"><span>${item[labelKey]}</span><span>${fmtDuration(item.seconds || 0)}</span></div>
-        <div class="h-2 rounded bg-slate-800 mt-1"><div class="h-2 rounded" style="width:${pct}%; background:var(--accent-500);"></div></div>`;
-      container.appendChild(row);
-    });
-  }
-
-  async function loadReport(){
-    if(!isAdmin){
-      adminPanel.style.display = "none";
-      return;
-    }
-    adminPanel.style.display = "block";
-    const params = getRangeParams();
-    const res = await fetch(`/api/time/report?range=${encodeURIComponent(params.range)}&date=${encodeURIComponent(params.date)}`, {credentials:"same-origin"});
-    const data = await res.json();
-    if(!res.ok){
-      reportTotals.textContent = data.error?.message || "Reporting nicht verfügbar.";
-      return;
-    }
-    const report = data.report || {};
-    renderBars(chartUsers, report.by_user || [], "user");
-    renderBars(chartProjects, report.by_project || [], "project");
-    const totals = report.totals || {};
-    reportTotals.textContent = `Aktiv: ${fmtDuration(totals.active_duration_seconds || 0)} · Storno: ${fmtDuration(totals.cancelled_duration_seconds || 0)} · Einträge: ${totals.entries || 0}`;
   }
 
   async function startTimer(){
-    if(isMutating){
+    setStatus("Starte…", false);
+    const payload = {project_id: timeProject.value || null, note: timeNote.value || ""};
+    const res = await fetch("/api/time/start", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(!res.ok){
+      setStatus(data.error?.message || "Fehler beim Start.", true);
       return;
     }
-    setMutatingState(true);
-    setStatus("Starte…", false);
-    const selectedOption = timeProject.options[timeProject.selectedIndex];
-    const startedAt = new Date().toISOString().slice(0,19);
-    const payload = {
-      project_id: timeProject.value || null,
-      domain_project_id: selectedOption ? (selectedOption.dataset.domainProjectId || null) : null,
-      task_ref: timeTaskRef.value || "",
-      note: timeNote.value || "",
-      started_at: startedAt
-    };
-    try{
-      if(!navigator.onLine){
-        pushQueue({url:"/api/time/start", payload});
-        saveOfflineRunning(payload);
-        runningEntry = {start_at: startedAt, project_name: "(offline/pending)"};
-        scheduleClock();
-        setStatus("Offline: Start zwischengespeichert.", false);
-      } else {
-        const data = await postJson("/api/time/start", payload);
-        clearOfflineRunning();
-        runningEntry = data.entry || null;
-        scheduleClock();
-        setStatus("Timer gestartet.", false);
-      }
-      timeNote.value = "";
-      await loadEntries();
-      await loadReport();
-    } finally {
-      setMutatingState(false);
-    }
+    timeNote.value = "";
+    await loadEntries();
   }
 
   async function stopTimer(){
-    if(isMutating){
+    setStatus("Stoppe…", false);
+    const res = await fetch("/api/time/stop", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({})});
+    const data = await res.json();
+    if(!res.ok){
+      setStatus(data.error?.message || "Fehler beim Stoppen.", true);
       return;
     }
-    setMutatingState(true);
-    setStatus("Stoppe…", false);
-    const endedAt = new Date().toISOString().slice(0,19);
-    try{
-      if(!navigator.onLine){
-        pushQueue({url:"/api/time/stop", payload:{ended_at: endedAt}});
-        clearOfflineRunning();
-        runningEntry = null;
-        scheduleClock();
-        setStatus("Offline: Stop zwischengespeichert.", false);
-      } else {
-        await postJson("/api/time/stop", {ended_at: endedAt});
-        clearOfflineRunning();
-        await loadEntries();
-        await loadReport();
-      }
-    } finally {
-      setMutatingState(false);
-    }
+    await loadEntries();
   }
 
   async function createProject(){
-    if(isMutating){
-      return;
-    }
-    setMutatingState(true);
     projectStatus.textContent = "Speichern…";
     const payload = {name: projectName.value || "", description: projectDesc.value || ""};
-    try{
-      const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
-      const data = await res.json();
-      if(!res.ok){
-        projectStatus.textContent = data.error?.message || "Fehler beim Anlegen.";
-        return;
-      }
-      projectName.value = "";
-      projectDesc.value = "";
-      projectStatus.textContent = `Projekt angelegt (D8: ${data.project?.domain_project_id || "-"})`;
-      await loadProjects();
-      await loadReport();
-    } finally {
-      setMutatingState(false);
-    }
-  }
-
-  async function createManual(){
-    manualStatus.textContent = "Speichern…";
-    if(isMutating){
+    const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(!res.ok){
+      projectStatus.textContent = data.error?.message || "Fehler beim Anlegen.";
       return;
     }
-    setMutatingState(true);
-    const selectedOption = timeProject.options[timeProject.selectedIndex];
-    const payload = {
-      project_id: timeProject.value || null,
-      domain_project_id: selectedOption ? (selectedOption.dataset.domainProjectId || null) : null,
-      task_ref: manualTaskRef.value || "",
-      start_at: toIsoLocal(manualFrom.value),
-      end_at: toIsoLocal(manualTo.value),
-      note: manualNote.value || ""
-    };
-    try{
-      if(!payload.start_at || !payload.end_at){
-        manualStatus.textContent = "Start/Ende fehlt.";
-        return;
-      }
-      if(!navigator.onLine){
-        pushQueue({url:"/api/time/manual", payload});
-        manualStatus.textContent = "Offline: Nachtrag zwischengespeichert.";
-      } else {
-        await postJson("/api/time/manual", payload);
-        manualStatus.textContent = "Nachtrag gespeichert.";
-        manualTaskRef.value = "";
-        manualNote.value = "";
-      }
-      await loadEntries();
-      await loadReport();
-    } catch(err){
-      manualStatus.textContent = err.message || "Fehler beim Speichern.";
-    } finally {
-      setMutatingState(false);
-    }
+    projectName.value = "";
+    projectDesc.value = "";
+    projectStatus.textContent = "Projekt angelegt.";
+    await loadProjects();
   }
 
   entryList.addEventListener("click", async (e) => {
-    const target = e.target;
-    const editId = target.getAttribute("data-edit");
-    const approveId = target.getAttribute("data-approve");
-    const stornoId = target.getAttribute("data-storno");
+    const editId = e.target.getAttribute("data-edit");
+    const approveId = e.target.getAttribute("data-approve");
     if(editId){
       const startAt = prompt("Startzeit (YYYY-MM-DDTHH:MM:SS)", "");
       if(startAt === null) return;
       const endAt = prompt("Endzeit (YYYY-MM-DDTHH:MM:SS oder leer)", "");
-      const taskRef = prompt("Task-Ref (optional)", "");
       const note = prompt("Notiz (optional)", "");
-      const payload = {entry_id: parseInt(editId, 10), start_at: startAt || null, end_at: endAt || null, task_ref: taskRef || null, note: note || null};
+      const payload = {entry_id: parseInt(editId, 10), start_at: startAt || null, end_at: endAt || null, note: note || null};
       const res = await fetch("/api/time/entry/edit", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
       const data = await res.json();
       if(!res.ok){ alert(data.error?.message || "Fehler beim Update."); }
       await loadEntries();
-      await loadReport();
     }
     if(approveId){
       const res = await fetch("/api/time/entry/approve", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({entry_id: parseInt(approveId, 10)})});
       const data = await res.json();
       if(!res.ok){ alert(data.error?.message || "Fehler beim Freigeben."); }
       await loadEntries();
-      await loadReport();
-    }
-    if(stornoId){
-      const reason = prompt("Storno-Grund (optional)", "") || "";
-      if(!navigator.onLine){
-        pushQueue({url:"/api/time/entry/storno", payload:{entry_id: parseInt(stornoId, 10), reason}});
-      } else {
-        const res = await fetch("/api/time/entry/storno", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({entry_id: parseInt(stornoId, 10), reason})});
-        const data = await res.json();
-        if(!res.ok){ alert(data.error?.message || "Fehler beim Storno."); }
-      }
-      await loadEntries();
-      await loadReport();
     }
   });
 
-  exportData.addEventListener("click", () => {
-    const params = getRangeParams();
-    window.location.href = `/api/time/export?range=${encodeURIComponent(params.range)}&date=${encodeURIComponent(params.date)}`;
+  exportWeek.addEventListener("click", () => {
+    const dateValue = weekDate.value;
+    window.location.href = `/api/time/export?range=week&date=${encodeURIComponent(dateValue)}`;
   });
 
-  function refreshAll(){
-    return Promise.all([loadEntries(), loadReport()]).catch((err) => setStatus(err.message || "Fehler beim Laden.", true));
-  }
-
-  rangeDate.addEventListener("change", () => {
-    refreshAll();
-  });
-  timeRange.addEventListener("change", () => {
-    refreshAll();
-  });
   timeStart.addEventListener("click", startTimer);
   timeStop.addEventListener("click", stopTimer);
   projectCreate.addEventListener("click", createProject);
-  manualCreate.addEventListener("click", createManual);
-  window.addEventListener("online", () => {
-    flushQueue();
-  });
 
   const today = new Date().toISOString().slice(0, 10);
-  rangeDate.value = today;
-  manualFrom.value = fromIsoToDatetimeLocal(new Date(Date.now() - 3600000).toISOString());
-  manualTo.value = fromIsoToDatetimeLocal(new Date().toISOString());
-  setQueue(getQueue());
-  Promise.all([loadProjects(), refreshAll(), flushQueue()])
-    .catch((err) => setStatus(err.message || "Fehler beim Laden.", true))
-    .finally(() => {
-      renderClock();
-    });
+  weekDate.value = today;
+  loadProjects().then(loadEntries);
 })();
 </script>
 """
@@ -2915,11 +2270,7 @@ def api_time_projects():
         return json_error(
             "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
         )
-    tenant_id = current_tenant()
-    projects = _time_projects_with_domain8_sync(
-        tenant_id=tenant_id,
-        user=current_user() or "system",
-    )
+    projects = time_project_list(tenant_id=current_tenant(), status="ACTIVE")  # type: ignore
     return jsonify(ok=True, projects=projects)
 
 
@@ -2936,29 +2287,14 @@ def api_time_projects_create():
     name = (payload.get("name") or "").strip()
     description = (payload.get("description") or "").strip()
     try:
-        from app.modules.projects.logic import ProjectManager
-
-        pm = ProjectManager(current_app.extensions["auth_db"])
-        domain_project_id = pm.create_project(current_tenant(), name, description)
-    except Exception:
-        return json_error(
-            "domain8_project_create_failed",
-            "Projekt in Domäne 8 konnte nicht angelegt werden.",
-            status=500,
-        )
-    marker = f"[D8:{domain_project_id}]"
-    description_with_link = f"{description}\n{marker}".strip() if description else marker
-    try:
         project = time_project_create(  # type: ignore
             tenant_id=current_tenant(),
             name=name,
-            description=description_with_link,
+            description=description,
             created_by=current_user() or "",
         )
     except ValueError as exc:
         return json_error(str(exc), "Projekt konnte nicht angelegt werden.", status=400)
-    project["domain_project_id"] = domain_project_id
-    project["project_source"] = "DOMAIN8"
     _rag_enqueue("time_project", int(project.get("id") or 0), "upsert")
     return jsonify(ok=True, project=project)
 
@@ -2973,25 +2309,14 @@ def api_time_start():
             "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
         )
     payload = request.get_json(silent=True) or {}
-    try:
-        project_id = _resolve_time_project_id(
-            tenant_id=current_tenant(),
-            user=current_user() or "system",
-            project_id=payload.get("project_id"),
-            domain_project_id=payload.get("domain_project_id"),
-        )
-    except ValueError as exc:
-        return json_error(str(exc), "Projekt konnte nicht gefunden werden.", status=400)
+    project_id = payload.get("project_id")
     note = (payload.get("note") or "").strip()
-    task_ref = (payload.get("task_ref") or "").strip()
     try:
         entry = time_entry_start(  # type: ignore
             tenant_id=current_tenant(),
             user=current_user() or "",
-            project_id=project_id,
-            task_ref=task_ref,
+            project_id=int(project_id) if project_id else None,
             note=note,
-            started_at=(payload.get("started_at") or None),
         )
     except ValueError as exc:
         return json_error(str(exc), "Timer konnte nicht gestartet werden.", status=400)
@@ -3015,7 +2340,6 @@ def api_time_stop():
             tenant_id=current_tenant(),
             user=current_user() or "",
             entry_id=int(entry_id) if entry_id else None,
-            ended_at=(payload.get("ended_at") or None),
         )
     except ValueError as exc:
         return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
@@ -3041,30 +2365,14 @@ def api_time_entries():
         user=user or None,
         start_at=start_at,
         end_at=end_at,
-        include_cancelled=True,
         limit=500,
     )
-    projects = _time_projects_with_domain8_sync(
-        tenant_id=current_tenant(),
-        user=current_user() or "system",
-    )
-    domain_by_project_id = {
-        int(project.get("id") or 0): str(project.get("domain_project_id") or "")
-        for project in projects
-        if project.get("id")
-    }
     summary: dict[str, int] = {}
     running = None
     for entry in entries:
-        project_id = int(entry.get("project_id") or 0) if entry.get("project_id") else 0
-        entry["domain_project_id"] = (
-            domain_by_project_id.get(project_id, "") if project_id else ""
-        )
-        cancelled = int(entry.get("is_cancelled") or 0) == 1
         day = (entry.get("start_at") or "").split("T")[0]
-        if not cancelled:
-            summary[day] = summary.get(day, 0) + int(entry.get("duration_seconds") or 0)
-        if not cancelled and not entry.get("end_at") and running is None:
+        summary[day] = summary.get(day, 0) + int(entry.get("duration_seconds") or 0)
+        if not entry.get("end_at") and running is None:
             running = entry
     summary_list = [{"date": k, "total_seconds": v} for k, v in sorted(summary.items())]
     return jsonify(ok=True, entries=entries, summary=summary_list, running=running)
@@ -3083,36 +2391,13 @@ def api_time_entry_edit():
     entry_id = payload.get("entry_id")
     if not entry_id:
         return json_error("entry_id_required", "Eintrag fehlt.", status=400)
-    entries = time_entry_list(  # type: ignore
-        tenant_id=current_tenant(),
-        user=None,
-        start_at=None,
-        end_at=None,
-        include_cancelled=True,
-        limit=5000,
-    )
-    selected = next((e for e in entries if int(e.get("id") or 0) == int(entry_id)), None)
-    if not selected:
-        return json_error("entry_not_found", "Eintrag nicht gefunden.", status=404)
-    if current_role() not in {"ADMIN", "DEV"} and str(selected.get("user") or "") != str(
-        current_user() or ""
-    ):
-        return json_error("forbidden", "Nicht erlaubt.", status=403)
-    try:
-        resolved_project_id = _resolve_time_project_id(
-            tenant_id=current_tenant(),
-            user=current_user() or "system",
-            project_id=payload.get("project_id"),
-            domain_project_id=payload.get("domain_project_id"),
-        )
-    except ValueError as exc:
-        return json_error(str(exc), "Projekt konnte nicht gefunden werden.", status=400)
     try:
         entry = time_entry_update(  # type: ignore
             tenant_id=current_tenant(),
             entry_id=int(entry_id),
-            project_id=resolved_project_id,
-            task_ref=(payload.get("task_ref") or None),
+            project_id=(
+                int(payload.get("project_id")) if payload.get("project_id") else None
+            ),
             start_at=(payload.get("start_at") or None),
             end_at=(payload.get("end_at") or None),
             note=payload.get("note"),
@@ -3122,89 +2407,6 @@ def api_time_entry_edit():
         return json_error(
             str(exc), "Eintrag konnte nicht aktualisiert werden.", status=400
         )
-    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
-    return jsonify(ok=True, entry=entry)
-
-
-@bp.post("/api/time/manual")
-@login_required
-@csrf_protected
-@require_role("OPERATOR")
-def api_time_manual():
-    if not callable(time_entry_manual_create):
-        return json_error(
-            "feature_unavailable", "Manuelle Erfassung ist nicht verfügbar.", status=501
-        )
-    payload = request.get_json(silent=True) or {}
-    try:
-        project_id = _resolve_time_project_id(
-            tenant_id=current_tenant(),
-            user=current_user() or "system",
-            project_id=payload.get("project_id"),
-            domain_project_id=payload.get("domain_project_id"),
-        )
-    except ValueError as exc:
-        return json_error(str(exc), "Projekt konnte nicht gefunden werden.", status=400)
-    start_at = (payload.get("start_at") or "").strip()
-    end_at = (payload.get("end_at") or "").strip()
-    note = (payload.get("note") or "").strip()
-    task_ref = (payload.get("task_ref") or "").strip()
-    try:
-        entry = time_entry_manual_create(  # type: ignore
-            tenant_id=current_tenant(),
-            user=current_user() or "",
-            start_at=start_at,
-            end_at=end_at,
-            project_id=project_id,
-            task_ref=task_ref,
-            note=note,
-        )
-    except ValueError as exc:
-        return json_error(
-            str(exc), "Manueller Eintrag konnte nicht erstellt werden.", status=400
-        )
-    _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
-    return jsonify(ok=True, entry=entry)
-
-
-@bp.post("/api/time/entry/storno")
-@login_required
-@csrf_protected
-@require_role("OPERATOR")
-def api_time_entry_storno():
-    if not callable(time_entry_storno) or not callable(time_entry_list):
-        return json_error(
-            "feature_unavailable", "Storno ist nicht verfügbar.", status=501
-        )
-    payload = request.get_json(silent=True) or {}
-    entry_id = payload.get("entry_id")
-    if not entry_id:
-        return json_error("entry_id_required", "Eintrag fehlt.", status=400)
-    entries = time_entry_list(  # type: ignore
-        tenant_id=current_tenant(),
-        user=None,
-        start_at=None,
-        end_at=None,
-        include_cancelled=True,
-        limit=5000,
-    )
-    selected = next((e for e in entries if int(e.get("id") or 0) == int(entry_id)), None)
-    if not selected:
-        return json_error("entry_not_found", "Eintrag nicht gefunden.", status=404)
-    if current_role() not in {"ADMIN", "DEV"} and str(selected.get("user") or "") != str(
-        current_user() or ""
-    ):
-        return json_error("forbidden", "Nicht erlaubt.", status=403)
-    reason = (payload.get("reason") or "").strip()
-    try:
-        entry = time_entry_storno(  # type: ignore
-            tenant_id=current_tenant(),
-            entry_id=int(entry_id),
-            cancelled_by=current_user() or "",
-            reason=reason,
-        )
-    except ValueError as exc:
-        return json_error(str(exc), "Storno fehlgeschlagen.", status=400)
     _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
 
@@ -3236,32 +2438,10 @@ def api_time_entry_approve():
     return jsonify(ok=True, entry=entry)
 
 
-@bp.get("/api/time/report")
-@login_required
-def api_time_report():
-    if not callable(time_report_summary):
-        return json_error(
-            "feature_unavailable", "Reporting ist nicht verfügbar.", status=501
-        )
-    range_name = (request.args.get("range") or "week").strip().lower()
-    date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
-    start_at, end_at = _time_range_params(range_name, date_value)
-    user = (request.args.get("user") or "").strip()
-    if current_role() not in {"ADMIN", "DEV"}:
-        user = current_user() or ""
-    report = time_report_summary(  # type: ignore
-        tenant_id=current_tenant(),
-        start_at=start_at,
-        end_at=end_at,
-        user=user or None,
-    )
-    return jsonify(ok=True, report=report, start_at=start_at, end_at=end_at)
-
-
 @bp.get("/api/time/export")
 @login_required
 def api_time_export():
-    if not callable(time_entry_list):
+    if not callable(time_entries_export_csv):
         return json_error(
             "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
         )
@@ -3271,34 +2451,14 @@ def api_time_export():
     if current_role() not in {"ADMIN", "DEV"}:
         user = current_user() or ""
     start_at, end_at = _time_range_params(range_name, date_value)
-    entries = time_entry_list(  # type: ignore
+    csv_payload = time_entries_export_csv(  # type: ignore
         tenant_id=current_tenant(),
         user=user or None,
         start_at=start_at,
         end_at=end_at,
-        limit=2000,
-    )
-    projects = _time_projects_with_domain8_sync(
-        tenant_id=current_tenant(),
-        user=current_user() or "system",
-    )
-    project_domain_map = {
-        int(project.get("id") or 0): str(project.get("domain_project_id") or "")
-        for project in projects
-        if project.get("id")
-    }
-    csv_payload = _build_gobd_csv(
-        tenant_id=current_tenant(),
-        export_user=user or "all",
-        scope_start=start_at,
-        scope_end=end_at,
-        entries=entries,
-        project_domain_map=project_domain_map,
     )
     response = current_app.response_class(csv_payload, mimetype="text/csv")
-    filename = f"time_entries_{start_at[:10]}_to_{end_at[:10]}.csv"
-    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Disposition"] = "attachment; filename=time_entries.csv"
     return response
 
 

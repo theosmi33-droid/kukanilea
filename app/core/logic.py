@@ -708,19 +708,12 @@ def db_init() -> None:
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   tenant_id TEXT NOT NULL,
                   project_id INTEGER,
-                  task_ref TEXT,
                   user TEXT NOT NULL,
-                  entry_type TEXT NOT NULL DEFAULT 'TIMER',
                   start_at TEXT NOT NULL,
                   end_at TEXT,
                   duration_seconds INTEGER,
                   note TEXT,
                   approval_status TEXT NOT NULL DEFAULT 'PENDING',
-                  is_cancelled INTEGER NOT NULL DEFAULT 0,
-                  cancelled_by TEXT,
-                  cancelled_at TEXT,
-                  cancel_reason TEXT,
-                  source_entry_id INTEGER,
                   approved_by TEXT,
                   approved_at TEXT,
                   created_at TEXT NOT NULL,
@@ -985,17 +978,6 @@ def db_init() -> None:
             _ensure_column(con, "tasks", "tenant_id", "TEXT")
             _ensure_column(con, "docs_index", "kdnr", "TEXT")
             _ensure_column(con, "docs_index", "tenant_id", "TEXT")
-            _ensure_column(con, "time_entries", "task_ref", "TEXT")
-            _ensure_column(
-                con, "time_entries", "entry_type", "TEXT NOT NULL DEFAULT 'TIMER'"
-            )
-            _ensure_column(
-                con, "time_entries", "is_cancelled", "INTEGER NOT NULL DEFAULT 0"
-            )
-            _ensure_column(con, "time_entries", "cancelled_by", "TEXT")
-            _ensure_column(con, "time_entries", "cancelled_at", "TEXT")
-            _ensure_column(con, "time_entries", "cancel_reason", "TEXT")
-            _ensure_column(con, "time_entries", "source_entry_id", "INTEGER")
 
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_group ON docs(group_key);")
             con.execute("CREATE INDEX IF NOT EXISTS idx_docs_kdnr ON docs(kdnr);")
@@ -1391,13 +1373,11 @@ def time_entry_start(
     tenant_id: str,
     user: str,
     project_id: Optional[int] = None,
-    task_ref: str = "",
     note: str = "",
     started_at: Optional[str] = None,
 ) -> Dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     user = normalize_component(user).lower()
-    task_ref = normalize_component(task_ref)
     note = (note or "").strip()
     if not user:
         raise ValueError("user_required")
@@ -1412,7 +1392,7 @@ def time_entry_start(
             ):
                 raise ValueError("project_not_found")
             row = con.execute(
-                "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL AND is_cancelled=0",
+                "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL",
                 (tenant_id, user),
             ).fetchone()
             if row:
@@ -1420,23 +1400,20 @@ def time_entry_start(
             cur = con.execute(
                 """
                 INSERT INTO time_entries(
-                    tenant_id, project_id, task_ref, user, entry_type, start_at, end_at, duration_seconds, note,
-                    approval_status, is_cancelled, created_at, updated_at
+                    tenant_id, project_id, user, start_at, end_at, duration_seconds, note,
+                    approval_status, created_at, updated_at
                 )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     tenant_id,
                     project_id,
-                    task_ref,
                     user,
-                    "TIMER",
                     now,
                     None,
                     None,
                     note,
                     "PENDING",
-                    0,
                     now,
                     now,
                 ),
@@ -1450,7 +1427,7 @@ def time_entry_start(
         role="OPERATOR",
         action="TIME_ENTRY_START",
         target=str(entry_id),
-        meta={"project_id": project_id or "", "task_ref": task_ref},
+        meta={"project_id": project_id or ""},
         tenant_id=tenant_id,
     )
     return time_entry_get(tenant_id=tenant_id, entry_id=entry_id) or {}
@@ -1506,7 +1483,7 @@ def time_entry_stop(
                 row = con.execute(
                     """
                     SELECT id, start_at FROM time_entries
-                    WHERE tenant_id=? AND user=? AND end_at IS NULL AND is_cancelled=0
+                    WHERE tenant_id=? AND user=? AND end_at IS NULL
                     """,
                     (tenant_id, user),
                 ).fetchone()
@@ -1514,7 +1491,7 @@ def time_entry_stop(
                 row = con.execute(
                     """
                     SELECT id, start_at FROM time_entries
-                    WHERE tenant_id=? AND user=? AND id=? AND is_cancelled=0
+                    WHERE tenant_id=? AND user=? AND id=?
                     """,
                     (tenant_id, user, int(entry_id)),
                 ).fetchone()
@@ -1552,7 +1529,6 @@ def time_entry_update(
     tenant_id: str,
     entry_id: int,
     project_id: Optional[int] = None,
-    task_ref: Optional[str] = None,
     start_at: Optional[str] = None,
     end_at: Optional[str] = None,
     note: Optional[str] = None,
@@ -1570,19 +1546,12 @@ def time_entry_update(
             ).fetchone()
             if not row:
                 raise ValueError("entry_not_found")
-            if int(row["is_cancelled"] or 0) == 1:
-                raise ValueError("entry_cancelled")
             if project_id is not None and not _time_project_lookup(
                 con, tenant_id, project_id
             ):
                 raise ValueError("project_not_found")
             start_val = start_at or row["start_at"]
             end_val = end_at if end_at is not None else row["end_at"]
-            task_ref_val = (
-                normalize_component(task_ref)
-                if task_ref is not None
-                else (row["task_ref"] or "")
-            )
             duration_val = None
             if end_val:
                 if _parse_iso(end_val) < _parse_iso(start_val):
@@ -1591,12 +1560,11 @@ def time_entry_update(
             con.execute(
                 """
                 UPDATE time_entries
-                SET project_id=?, task_ref=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
+                SET project_id=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
                 WHERE id=? AND tenant_id=?
                 """,
                 (
                     project_id if project_id is not None else row["project_id"],
-                    task_ref_val,
                     start_val,
                     end_val,
                     duration_val,
@@ -1614,11 +1582,7 @@ def time_entry_update(
         role="OPERATOR",
         action="TIME_ENTRY_EDIT",
         target=str(entry_id),
-        meta={
-            "project_id": project_id or "",
-            "task_ref_changed": task_ref is not None,
-            "note_changed": note is not None,
-        },
+        meta={"project_id": project_id or "", "note_changed": note is not None},
         tenant_id=tenant_id,
     )
     return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
@@ -1669,7 +1633,6 @@ def time_entries_list(
     user: Optional[str] = None,
     start_at: Optional[str] = None,
     end_at: Optional[str] = None,
-    include_cancelled: bool = True,
     limit: int = 500,
 ) -> List[Dict[str, Any]]:
     tenant_id = _time_tenant(tenant_id)
@@ -1687,8 +1650,6 @@ def time_entries_list(
     if end_at:
         clauses.append("te.start_at<=?")
         params.append(end_at)
-    if not include_cancelled:
-        clauses.append("COALESCE(te.is_cancelled, 0)=0")
 
     where_sql = " AND ".join(clauses)
     with _DB_LOCK:
@@ -1721,198 +1682,6 @@ def time_entries_list(
             con.close()
 
 
-def time_entry_manual_create(
-    *,
-    tenant_id: str,
-    user: str,
-    start_at: str,
-    end_at: str,
-    project_id: Optional[int] = None,
-    task_ref: str = "",
-    note: str = "",
-) -> Dict[str, Any]:
-    tenant_id = _time_tenant(tenant_id)
-    user = normalize_component(user).lower()
-    task_ref = normalize_component(task_ref)
-    note = (note or "").strip()
-    if not user:
-        raise ValueError("user_required")
-    if not start_at or not end_at:
-        raise ValueError("manual_times_required")
-    if _parse_iso(end_at) < _parse_iso(start_at):
-        raise ValueError("invalid_time_range")
-    duration = _duration_seconds(start_at, end_at)
-    now = _now_iso()
-
-    with _DB_LOCK:
-        con = _db()
-        try:
-            if project_id is not None and not _time_project_lookup(
-                con, tenant_id, project_id
-            ):
-                raise ValueError("project_not_found")
-            cur = con.execute(
-                """
-                INSERT INTO time_entries(
-                    tenant_id, project_id, task_ref, user, entry_type, start_at, end_at, duration_seconds, note,
-                    approval_status, is_cancelled, created_at, updated_at
-                )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    tenant_id,
-                    project_id,
-                    task_ref,
-                    user,
-                    "MANUAL",
-                    start_at,
-                    end_at,
-                    duration,
-                    note,
-                    "PENDING",
-                    0,
-                    now,
-                    now,
-                ),
-            )
-            con.commit()
-            entry_id = int(cur.lastrowid or 0)
-        finally:
-            con.close()
-    audit_log(
-        user=user,
-        role="OPERATOR",
-        action="TIME_ENTRY_MANUAL_CREATE",
-        target=str(entry_id),
-        meta={
-            "project_id": project_id or "",
-            "task_ref": task_ref,
-            "duration_seconds": duration,
-        },
-        tenant_id=tenant_id,
-    )
-    return time_entry_get(tenant_id=tenant_id, entry_id=entry_id) or {}
-
-
-def time_entry_storno(
-    *,
-    tenant_id: str,
-    entry_id: int,
-    cancelled_by: str,
-    reason: str = "",
-) -> Dict[str, Any]:
-    tenant_id = _time_tenant(tenant_id)
-    cancelled_by = normalize_component(cancelled_by).lower()
-    reason = (reason or "").strip()
-    if not cancelled_by:
-        raise ValueError("cancelled_by_required")
-    now = _now_iso()
-    with _DB_LOCK:
-        con = _db()
-        try:
-            row = con.execute(
-                "SELECT id, is_cancelled, start_at, end_at FROM time_entries WHERE id=? AND tenant_id=?",
-                (int(entry_id), tenant_id),
-            ).fetchone()
-            if not row:
-                raise ValueError("entry_not_found")
-            if int(row["is_cancelled"] or 0) == 1:
-                raise ValueError("entry_already_cancelled")
-            end_at = str(row["end_at"] or "").strip() or now
-            duration = _duration_seconds(str(row["start_at"]), end_at)
-            con.execute(
-                """
-                UPDATE time_entries
-                SET is_cancelled=1, cancelled_by=?, cancelled_at=?, cancel_reason=?,
-                    approval_status=?, end_at=?, duration_seconds=?, updated_at=?
-                WHERE id=? AND tenant_id=?
-                """,
-                (
-                    cancelled_by,
-                    now,
-                    reason,
-                    "STORNO",
-                    end_at,
-                    duration,
-                    now,
-                    int(entry_id),
-                    tenant_id,
-                ),
-            )
-            con.commit()
-        finally:
-            con.close()
-    audit_log(
-        user=cancelled_by,
-        role="OPERATOR",
-        action="TIME_ENTRY_STORNO",
-        target=str(entry_id),
-        meta={"reason": reason},
-        tenant_id=tenant_id,
-    )
-    return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
-
-
-def time_report_summary(
-    *,
-    tenant_id: str,
-    start_at: str,
-    end_at: str,
-    user: Optional[str] = None,
-) -> Dict[str, Any]:
-    tenant_id = _time_tenant(tenant_id)
-    entries = time_entries_list(
-        tenant_id=tenant_id,
-        user=user,
-        start_at=start_at,
-        end_at=end_at,
-        include_cancelled=True,
-        limit=5000,
-    )
-
-    totals = {
-        "entries": 0,
-        "active_entries": 0,
-        "cancelled_entries": 0,
-        "duration_seconds": 0,
-        "active_duration_seconds": 0,
-        "cancelled_duration_seconds": 0,
-    }
-    by_day: Dict[str, int] = {}
-    by_user: Dict[str, int] = {}
-    by_project: Dict[str, int] = {}
-    for entry in entries:
-        totals["entries"] += 1
-        duration = int(entry.get("duration_seconds") or 0)
-        totals["duration_seconds"] += duration
-        key_day = str(entry.get("start_at") or "").split("T")[0]
-        key_user = str(entry.get("user") or "")
-        key_project = str(entry.get("project_name") or "Ohne Projekt")
-        cancelled = int(entry.get("is_cancelled") or 0) == 1
-        if cancelled:
-            totals["cancelled_entries"] += 1
-            totals["cancelled_duration_seconds"] += duration
-        else:
-            totals["active_entries"] += 1
-            totals["active_duration_seconds"] += duration
-            by_day[key_day] = by_day.get(key_day, 0) + duration
-            by_user[key_user] = by_user.get(key_user, 0) + duration
-            by_project[key_project] = by_project.get(key_project, 0) + duration
-
-    return {
-        "totals": totals,
-        "by_day": [{"date": d, "seconds": s} for d, s in sorted(by_day.items())],
-        "by_user": [
-            {"user": u, "seconds": s}
-            for u, s in sorted(by_user.items(), key=lambda kv: kv[1], reverse=True)
-        ],
-        "by_project": [
-            {"project": p, "seconds": s}
-            for p, s in sorted(by_project.items(), key=lambda kv: kv[1], reverse=True)
-        ][:20],
-    }
-
-
 def time_entries_export_csv(
     *,
     tenant_id: str,
@@ -1935,18 +1704,12 @@ def time_entries_export_csv(
             "entry_id",
             "project_id",
             "project_name",
-            "task_ref",
             "user",
             "start_at",
             "end_at",
             "duration_seconds",
             "duration_hours",
             "note",
-            "entry_type",
-            "is_cancelled",
-            "cancelled_by",
-            "cancelled_at",
-            "cancel_reason",
             "approval_status",
             "approved_by",
             "approved_at",
@@ -1959,18 +1722,12 @@ def time_entries_export_csv(
                 entry.get("id"),
                 entry.get("project_id"),
                 entry.get("project_name") or "",
-                entry.get("task_ref") or "",
                 entry.get("user"),
                 entry.get("start_at"),
                 entry.get("end_at") or "",
                 duration_seconds,
                 round(duration_seconds / 3600.0, 2),
                 entry.get("note") or "",
-                entry.get("entry_type") or "TIMER",
-                int(entry.get("is_cancelled") or 0),
-                entry.get("cancelled_by") or "",
-                entry.get("cancelled_at") or "",
-                entry.get("cancel_reason") or "",
                 entry.get("approval_status") or "",
                 entry.get("approved_by") or "",
                 entry.get("approved_at") or "",
