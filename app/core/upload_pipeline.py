@@ -118,6 +118,8 @@ def _scan_malware(file_path: Path) -> Tuple[bool, str]:
 
         cd = pyclamd.ClamdUnixSocket()
         if not cd.ping():
+            if os.environ.get("CLAMAV_OPTIONAL") == "1":
+                return True, "CLAMAV_UNAVAILABLE"
             return False, "CLAMAV_UNAVAILABLE"
         result = cd.scan_file(str(file_path))
         if result:
@@ -125,6 +127,8 @@ def _scan_malware(file_path: Path) -> Tuple[bool, str]:
             return False, "INFECTED"
         return True, "CLEAN"
     except Exception:
+        if os.environ.get("CLAMAV_OPTIONAL") == "1":
+            return True, "CLAMAV_UNAVAILABLE"
         return False, "CLAMAV_UNAVAILABLE"
 
 
