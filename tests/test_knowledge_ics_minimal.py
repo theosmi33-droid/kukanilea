@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import os
+from pathlib import Path
 import sys
 
-sys.path.append(os.getcwd())
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(PROJECT_ROOT))
 
 from app.knowledge.ics_source import (
     _extract_deadline_events_from_ocr_text,
