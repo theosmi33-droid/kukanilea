@@ -24,7 +24,7 @@ def get_instance_uuid() -> str:
         with open(TELEMETRY_CONFIG, "w") as f:
             json.dump(config, f)
         return config["uuid"]
-    
+
     with open(TELEMETRY_CONFIG, "r") as f:
         config = json.load(f)
         return config.get("uuid", "unknown")
@@ -67,13 +67,13 @@ def send_telemetry():
 
     data = collect_telemetry()
     payload = json.dumps(data).encode("utf-8")
-    
+
     req = urllib.request.Request(
-        TELEMETRY_ENDPOINT, 
-        data=payload, 
+        TELEMETRY_ENDPOINT,
+        data=payload,
         headers={"Content-Type": "application/json"}
     )
-    
+
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
             if response.status in (200, 201):

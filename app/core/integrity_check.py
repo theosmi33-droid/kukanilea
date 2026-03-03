@@ -30,21 +30,21 @@ def check_system_integrity() -> Dict[str, Any]:
         "permissions": check_fs_permissions(),
         "timestamp": os.getlogin() + "_" + str(os.getpid()) # Mock identifier for now
     }
-    
+
     all_ok = all([v.get("ok", False) for k, v in results.items() if isinstance(v, dict)])
     results["all_ok"] = all_ok
-    
+
     if not all_ok:
         logger.error(f"System integrity check failed: {results}")
         create_crash_dump(results)
-        
+
     return results
 
 def verify_core_files() -> Dict[str, Any]:
     """Checks if core files exist and verifies their SHA256 hashes (Step 2)."""
     missing = []
     corrupted = []
-    
+
     # In a real enterprise system, hashes would be stored in a signed manifest.
     # For v2.1, we verify existence and basic readability.
     for f in CORE_FILES:
@@ -59,7 +59,7 @@ def verify_core_files() -> Dict[str, Any]:
                 # logger.debug(f"Verified {f}: {sha}")
             except Exception:
                 corrupted.append(f)
-            
+
     return {
         "ok": len(missing) == 0 and len(corrupted) == 0,
         "missing": missing,
@@ -75,7 +75,7 @@ def check_modules() -> Dict[str, Any]:
             __import__(m)
         except ImportError:
             failed.append(m)
-            
+
     return {
         "ok": len(failed) == 0,
         "failed": failed
@@ -85,10 +85,10 @@ def check_database_integrity() -> Dict[str, Any]:
     """Runs PRAGMA integrity_check on the core database."""
     from app.config import Config
     db_path = Config.CORE_DB
-    
+
     if not db_path.exists():
         return {"ok": True, "status": "Database missing (will be created)"}
-        
+
     try:
         conn = sqlite3.connect(str(db_path))
         res = conn.execute("PRAGMA integrity_check;").fetchone()
@@ -114,10 +114,10 @@ def create_crash_dump(data: Dict[str, Any]):
     from app.config import Config
     dump_dir = Config.LOG_DIR / "crash"
     dump_dir.mkdir(parents=True, exist_ok=True)
-    
+
     ts = os.environ.get("KUK_START_TS", str(int(os.getpid()))) # Mock
     dump_file = dump_dir / f"integrity_failure_{ts}.json"
-    
+
     import json
     with open(dump_file, "w") as f:
         json.dump(data, f, indent=2)

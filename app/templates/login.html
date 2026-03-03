@@ -23,7 +23,7 @@
   </style>
 </head>
 <body>
-  
+
   <!-- Boot Sequence Element -->
   <div id="bootSequence" style="width: 100%; max-width: 400px; margin-bottom: 32px; font-family: monospace; color: var(--color-success); font-size: 13px; line-height: 1.6; min-height: 120px;"></div>
 
@@ -69,10 +69,10 @@
     ];
     const bootDiv = document.getElementById('bootSequence');
     const loginForm = document.getElementById('loginForm');
-    
+
     // Only show boot sequence if no error is present (fresh load)
     const hasError = {{ 'true' if error else 'false' }};
-    
+
     if (hasError) {
       bootDiv.style.display = 'none';
       loginForm.style.display = 'block';

@@ -1,7 +1,7 @@
 # KUKANILEA Forensische Systemanalyse (v1.5 Cognitive Core)
 
-Datum: 2026-02-28  
-Workspace: `/Users/gensuminguyen/Kukanilea/kukanilea_production`  
+Datum: 2026-02-28
+Workspace: `/Users/gensuminguyen/Kukanilea/kukanilea_production`
 Branch: `main`
 
 ## 1) Scope und Methode
@@ -86,7 +86,7 @@ Geprüft wurden die definierten Leitplanken und Fokusbereiche:
 
 ### F-006: Externes Frontend-CDN im UI-Template
 - Evidenz:
-  - Datei: `app/web.py:517` lädt `https://cdn.tailwindcss.com`
+  - Datei: `app/web.py:517` lädt ein externes Tailwind-CDN (URL entfernt, Zero-CDN-Policy)
 - Impact:
   - Verletzt lokale Asset-Strategie; abhängig von Internet und CSP-Policy.
 - Status: OFFEN
@@ -184,4 +184,3 @@ Geprüft wurden die definierten Leitplanken und Fokusbereiche:
 - `./.venv/bin/python -m py_compile app/logging/structured_logger.py`
 - Laufzeitprüfungen via Python-Snippets auf `Config.AUTH_DB`/`Config.CORE_DB`, Journaling, Tabellenbestand, API-Endpoint-Verhalten
 - `./.venv/bin/python kukanilea_app.py --benchmark`
-

@@ -22,29 +22,29 @@ class SystemHealer:
     def run_healing_cycle(self):
         """Main loop for forensic repair."""
         logger.info("Starting Auto-Evolution Healing Cycle...")
-        
+
         # 1. Database Optimization (Step 184)
         self.optimize_database()
-        
+
         # 2. Forensic Consistency Check
         self.verify_file_system_sync()
-        
+
         # 3. Auto-Repair Registry (Mock implementation of common fixes)
         self.apply_hotfixes()
-        
+
         # 4. Task 105: Indexing Worker (Plugin-style)
         self.run_indexing_worker()
 
     def run_indexing_worker(self):
         """Task 105: Background Indexing & Phase 2: Index Optimization."""
         logger.info("Indexing Worker (Task 105) started...")
-        
+
         from app.core.indexing_logic import IndividualIntelligence
         intel = IndividualIntelligence(self.db_path)
-        
+
         # Phase 2: Optimize FTS
         intel.optimize_index()
-        
+
         # Simulation: Re-calculating keyword weights in docs_index
         try:
             conn = sqlite3.connect(str(self.db_path))
@@ -138,7 +138,7 @@ class SystemHealer:
             import json
             with open(report_path, "r") as f:
                 data = json.load(f)
-            
+
             # If boot time is too high, suggest/apply thread scaling (Task 185)
             if data.get("boot_time_ms", 0) > 1000:
                 logger.warning("System evolution: High boot time detected. Scaling worker threads.")

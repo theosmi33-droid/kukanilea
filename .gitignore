@@ -55,3 +55,9 @@ build/
 *.spec
 .vscode/
 quarantine/dead_letter_uploads/
+
+# js / e2e artifacts
+node_modules/
+playwright-report/
+test-results/
+coverage/

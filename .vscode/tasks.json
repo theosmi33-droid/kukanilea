@@ -112,6 +112,42 @@
       "problemMatcher": []
     },
     {
+      "label": "KUKANILEA: AI Quick Start",
+      "type": "shell",
+      "command": "bash scripts/ai/quick_start_cli.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Gemini Fleet Kickoff (Parallel)",
+      "type": "shell",
+      "command": "bash scripts/orchestration/start_gemini_fleet.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Gemini Fleet Kickoff (Serial)",
+      "type": "shell",
+      "command": "bash scripts/orchestration/run_gemini_kickoff_serial.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: Gemini Batch Compliance",
+      "type": "shell",
+      "command": "${workspaceFolder}/.build_venv/bin/python scripts/ai/batch_compliance_check.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "KUKANILEA: Stop Ollama",
       "type": "shell",
       "command": "pkill -f 'ollama serve' || true",

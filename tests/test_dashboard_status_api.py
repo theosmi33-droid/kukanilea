@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -22,7 +22,7 @@ def _make_app(tmp_path, monkeypatch):
 def _login_dev(app, client):
     with app.app_context():
         auth_db = app.extensions["auth_db"]
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
