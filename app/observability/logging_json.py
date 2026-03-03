@@ -109,7 +109,7 @@ def init_json_logging(app) -> None:
             "status_code": 500,
             "error_class": g.error_class
         })
-        
+
         from flask import jsonify, render_template_string
 
         request_id = getattr(g, "request_id", "-")

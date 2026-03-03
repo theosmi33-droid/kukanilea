@@ -18,16 +18,16 @@ class IndividualIntelligence:
         self.db_path = db_path
         # Phase 3: YAKE Configuration (1-3 n-grams)
         self.kw_extractor = yake.KeywordExtractor(
-            lan="german", 
-            n=3, 
-            dedupLim=0.9, 
-            top=10, 
+            lan="german",
+            n=3,
+            dedupLim=0.9,
+            top=10,
             features=None
         )
 
     def get_weighted_suggestions(self, text: str) -> List[str]:
         """
-        Phase 3: Extracts keywords from text and weights them against 
+        Phase 3: Extracts keywords from text and weights them against
         the frequency in the individual database (Phase 2).
         """
         if not text:
@@ -49,7 +49,7 @@ class IndividualIntelligence:
 
         # Sort by frequency (descending)
         weighted_list.sort(key=lambda x: x[1], reverse=True)
-        
+
         return [w[0] for w in weighted_list]
 
     def _get_db_vocabulary_weights(self) -> Dict[str, int]:
@@ -62,14 +62,14 @@ class IndividualIntelligence:
             conn = sqlite3.connect(str(self.db_path))
             # Ensure vocab table exists
             conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS vocab_index USING fts5vocab(docs_fts, row);")
-            
+
             rows = conn.execute("SELECT term, cnt FROM vocab_index ORDER BY cnt DESC LIMIT 100").fetchall()
             for r in rows:
                 weights[r[0].lower()] = r[1]
             conn.close()
         except Exception as e:
             logger.error(f"Failed to fetch DB weights: {e}")
-            
+
         return weights
 
     def optimize_index(self):

@@ -16,16 +16,16 @@ from app.agents.memory_store import MemoryManager
 
 def test_memory_intelligence():
     print("Testing KUKANILEA Memory Intelligence (v1.5)...")
-    
+
     # 1. Test Importance Scoring (Mocked)
     mock_llm = MagicMock()
     mock_llm.complete.return_value = '{"score": 9, "category": "FAKT", "reason": "Enthält einen fixen Preis."}'
-    
+
     score, cat = calculate_importance("Der Preis für das Kupferrohr ist 45 Euro.", llm_provider=mock_llm)
     print(f"Scored: {score}, Category: {cat}")
     assert score == 9
     assert cat == "FAKT"
-    
+
     # 2. Test Context Pruning
     with tempfile.NamedTemporaryFile() as tmp:
         db_path = tmp.name
@@ -46,7 +46,7 @@ def test_memory_intelligence():
         """)
         con.commit()
         con.close()
-        
+
         # Patch MemoryManager to use our temp DB
         with patch("app.config.Config.AUTH_DB", Path(db_path)):
             # Mock embeddings
@@ -54,12 +54,12 @@ def test_memory_intelligence():
                 manager = MemoryManager(db_path)
                 manager.store_memory("T1", "agent", "Wichtige Info", importance_score=10, category="FAKT")
                 manager.store_memory("T1", "agent", "Unwichtiger Smalltalk", importance_score=2, category="SMALLTALK")
-                
+
                 ctx = ContextManager("T1")
                 # Retrieval should prioritize importance
                 relevant = ctx.get_relevant_context("Info", limit=1, min_importance=5)
                 print(f"Relevant context:\n{relevant}")
-                
+
                 assert "Wichtige Info" in relevant
                 assert "Smalltalk" not in relevant
 

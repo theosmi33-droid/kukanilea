@@ -32,12 +32,12 @@ class ThreadMonitor:
             try:
                 active_threads = threading.enumerate()
                 thread_count = len(active_threads)
-                
+
                 # If too many threads, log stack traces to debug potential leaks
                 if thread_count > 50:
                     logger.warning(f"High thread count detected: {thread_count}")
                     self._dump_threads()
-                    
+
             except Exception as e:
                 logger.error(f"Thread monitor failed: {e}")
             self._stop_event.wait(self.check_interval)

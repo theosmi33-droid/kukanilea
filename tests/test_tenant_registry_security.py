@@ -63,3 +63,34 @@ def test_add_tenant_enforces_normalized_id_and_isolation(tmp_path: Path):
     outside_db = tmp_path / "outside.sqlite3"
     outside_db.write_text("", encoding="utf-8")
     assert registry.add_tenant(valid_id, "ACME GmbH 2026", str(outside_db)) is False
+
+
+def test_tenant_registry_atomic_save(tmp_path: Path):
+    import json
+    import os
+    mapping_path = tmp_path / "tenant_mapping.json"
+    registry = TenantRegistry(storage_path=mapping_path)
+    registry.tenants_root = tmp_path / "tenants"
+    registry.tenants_root.mkdir(parents=True, exist_ok=True)
+
+    # Add a tenant
+    tenant_id = "acme"
+    tenant_name = "ACME"
+    db_path = registry.tenants_root / "acme" / "core.sqlite3"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.write_text("", encoding="utf-8")
+
+    assert registry.add_tenant(tenant_id, tenant_name, str(db_path)) is True
+    assert mapping_path.exists()
+    
+    # Verify content
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    assert "acme" in data
+
+    # Try to add same tenant again - should fail due to check
+    assert registry.add_tenant(tenant_id, "ACME 2", str(db_path)) is False
+
+    # Check permissions (0o600)
+    mode = os.stat(mapping_path).st_mode & 0o777
+    assert mode == 0o600

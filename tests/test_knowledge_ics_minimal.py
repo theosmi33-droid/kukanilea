@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(PROJECT_ROOT))
+
+from app.knowledge.ics_source import (
+    _extract_deadline_events_from_ocr_text,
+    _parse_events,
+    _parse_ics_dt,
+)
+
+
+def test_parse_ics_dt_supports_date_and_datetime() -> None:
+    assert _parse_ics_dt("20260301") == "2026-03-01T00:00:00+00:00"
+    assert _parse_ics_dt("20260301T091500Z") == "2026-03-01T09:15:00+00:00"
+    assert _parse_ics_dt("not-a-date") is None
+
+
+def test_parse_events_extracts_allowed_fields_only() -> None:
+    lines = [
+        "BEGIN:VEVENT",
+        "DTSTART:20260301T091500Z",
+        "DTEND:20260301T101500Z",
+        "SUMMARY:  Baustellen-Termin   A ",
+        "LOCATION:  Lager  Nord ",
+        "DESCRIPTION:should be ignored",
+        "END:VEVENT",
+    ]
+
+    events = _parse_events(lines)
+    assert len(events) == 1
+    event = events[0]
+    assert event["DTSTART"] == "2026-03-01T09:15:00+00:00"
+    assert event["DTEND"] == "2026-03-01T10:15:00+00:00"
+    assert event["SUMMARY"] == "Baustellen-Termin A"
+    assert event["LOCATION"] == "Lager Nord"
+    assert "DESCRIPTION" not in event
+
+
+def test_extract_deadline_events_from_ocr_text_detects_payment_due() -> None:
+    ocr_text = (
+        "Rechnungsdatum: 01.02.2026\n"
+        "Zahlbar bis 15.02.2026 ohne Abzug.\n"
+    )
+    events = _extract_deadline_events_from_ocr_text(
+        ocr_text,
+        filename_hint="rechnung_4711.pdf",
+    )
+
+    assert events
+    assert events[0]["kind"] == "payment_due"
+    assert events[0]["due_date"] == "2026-02-15"
+    assert events[0]["source_filename"] == "rechnung_4711.pdf"

@@ -27,3 +27,75 @@ Zuständig für Triage, Tool-Auswahl und Context-Window-Management.
 
 ## 3. Observer (Der Wächter)
 Ein isolierter Heartbeat-Service, der System-Limits, Memory Leaks und DB-Locks überwacht. Schlägt Alarm bei Latenzen > 200ms.
+
+## 4. Codex Cloud Rollen (verbindlich)
+Diese Rollen sind für externe Codex-Cloud Sessions (z. B. zweiter PC) verpflichtend.
+
+### Rolle A: `REVIEW_ONLY`
+Ziel: nur auditieren, nicht editieren.
+
+Erlaubt:
+- Code lesen
+- CI/Actions analysieren
+- PR-Checks und Logs auswerten
+- Findings mit Priorität (P0/P1/P2) dokumentieren
+
+Verboten:
+- Dateien aendern
+- `git commit`, `git push`, `gh pr merge`
+- Auto-Fixes oder Refactors
+
+Pflichtausgabe:
+- Findings zuerst (mit Datei/Zeile, Repro, Risiko)
+- Dann offene Fragen/Annahmen
+- Dann kurze Zusammenfassung
+
+### Rolle B: `DEBUG_PR_ONLY`
+Ziel: Bugs beheben und PR erstellen, ohne direkten Merge nach `main`.
+
+Erlaubt:
+- Editieren in Feature-Branch (`codex/debug-*`) oder Fork-Branch
+- Tests lokal und in CI fixen
+- PR erstellen/aktualisieren
+
+Verboten:
+- Direkter Push auf `main`
+- Schutzregeln abschwächen
+- Merge ohne Maintainer-Freigabe
+
+Pflichtablauf:
+1. Repro + Root Cause
+2. Minimaler Fix
+3. Tests grün (lokal + CI)
+4. PR mit klarer Validation-Sektion
+
+## 5. Remote-Scan Playbook (anderer PC)
+Vor jeder Cloud-Session diesen Kontext laden:
+- `docs/TAB_OWNERSHIP_RULES.md`
+- `docs/scope_requests/core_sovereign-11-shell_20260301.md`
+- `docs/scope_requests/`
+- `scripts/dev/check_domain_overlap.py`
+- `scripts/ops/healthcheck.sh`
+
+### Prompt-Template: Review-Only Scan
+```
+Mode: REVIEW_ONLY.
+Arbeite read-only auf dem Repo.
+Prüfe: Branch-Schutz, offene PRs, fehlerhafte/cancelled Actions, Domain-Overlap, Sovereign-11 Regeln (Zero-CDN, White-Mode, HTMX).
+Liefere nur Findings (P0/P1/P2) mit Datei+Zeile, Repro und Fix-Empfehlung.
+Keine Edits, keine Commits, kein Push, kein Merge.
+```
+
+### Prompt-Template: Debug+PR
+```
+Mode: DEBUG_PR_ONLY.
+Bearbeite nur den konkreten Fehler in einem Branch codex/debug-<thema>.
+Kein Push auf main, kein Merge.
+Nach dem Fix: relevante Tests ausführen, PR erstellen, CI beobachten, Status berichten.
+```
+
+## 6. Merge-Gate (nicht verhandelbar)
+- `main` bleibt protected.
+- Required checks müssen grün sein.
+- Mindestens 1 Approval mit Write/Admin-Rechten.
+- Kommentare müssen resolved sein.

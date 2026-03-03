@@ -45,4 +45,3 @@ Das Hauptproblem ist nicht WAL oder Modellverfügbarkeit, sondern eine **DB-Rout
 2. DB-Routing in Code zentralisieren und überall gleich verwenden.
 3. Idempotente Migrationen für die gewählte Strategie auf Boot erzwingen.
 4. Warmup-Fehler `foreign key mismatch` mit Migrationsskript beheben und als Regression-Test absichern.
-

@@ -27,14 +27,14 @@ class MemorySearchTool(BaseTool):
         tenant_id = g.get("tenant_id")
         if not tenant_id:
             return {"error": "No tenant context found."}
-            
+
         auth_db = current_app.extensions.get("auth_db")
         if not auth_db:
             return {"error": "Database not initialized."}
-            
+
         manager = MemoryManager(str(auth_db.path))
         results = manager.retrieve_context(tenant_id, query, limit)
-        
+
         return {"results": results}
 
 # Register tool
