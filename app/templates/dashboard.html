@@ -24,13 +24,16 @@
             <div style="font-size:24px; font-weight:800; color:var(--color-success);">100%</div>
         </div>
     </div>
-    <div class="panel" style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
+    <div id="outbound-status-panel" 
+         hx-get="/api/outbound/status" 
+         hx-trigger="load, every 10s"
+         class="panel" style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
         <div id="syncStatusIcon" style="width:48px; height:48px; border-radius:12px; background:rgba(245,158,11,0.1); color:var(--color-warning); display:flex; align-items:center; justify-content:center;">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a5.5 5.5 0 0 0 2.5-10.5 6 6 0 0 0-8-4.5 5.5 5.5 0 0 0-5 10.5"/><path d="m15 13-3 3-3-3"/><path d="M12 16V10"/></svg>
         </div>
         <div>
             <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Sync-Warteschlange</div>
-            <div id="syncStatusLabel" style="font-size:24px; font-weight:800; color:var(--text-primary);">Prüfe...</div>
+            <div id="syncStatusLabel" style="font-size:24px; font-weight:800; color:var(--text-primary);">Lädt...</div>
         </div>
     </div>
   </div>
@@ -284,41 +287,6 @@ document.addEventListener("DOMContentLoaded", function() {
     
     xhr.send(formData);
   });
-
-  // Sync Status Polling
-  const updateSyncStatus = () => {
-    fetch('/api/outbound/status')
-      .then(r => r.json())
-      .then(data => {
-        if(data.ok){
-          const pending = data.stats.pending || 0;
-          const failed = data.stats.failed || 0;
-          const label = document.getElementById("syncStatusLabel");
-          const icon = document.getElementById("syncStatusIcon");
-          
-          if(failed > 0){
-            label.textContent = `${failed} Fehler`;
-            label.style.color = "var(--color-danger)";
-            icon.style.background = "rgba(239,68,68,0.1)";
-            icon.style.color = "var(--color-danger)";
-          } else if(pending > 0){
-            label.textContent = `${pending} Ausstehend`;
-            label.style.color = "var(--color-warning)";
-            icon.style.background = "rgba(245,158,11,0.1)";
-            icon.style.color = "var(--color-warning)";
-            icon.classList.add("pulse");
-          } else {
-            label.textContent = "Bereit";
-            label.style.color = "var(--color-success)";
-            icon.style.background = "rgba(16,185,129,0.1)";
-            icon.style.color = "var(--color-success)";
-            icon.classList.remove("pulse");
-          }
-        }
-      });
-  };
-  updateSyncStatus();
-  setInterval(updateSyncStatus, 10000);
 });
 </script>
 {% endblock %}
