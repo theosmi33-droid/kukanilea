@@ -554,9 +554,11 @@ HTML_BASE = r"""<!doctype html>
 <title>{{branding.app_name}} Systems</title>
 <script src="/static/js/tailwindcss.min.js"></script>
 <script>
-  const savedTheme = localStorage.getItem("ks_theme") || "light";
+  const savedTheme = "light";
   const savedAccent = localStorage.getItem("ks_accent") || "brand";
-  if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
+  document.documentElement.classList.add("light");
+  document.documentElement.classList.remove("dark");
+  localStorage.setItem("ks_theme", "light");
   document.documentElement.dataset.accent = savedAccent;
 </script>
 <style>
@@ -727,13 +729,13 @@ HTML_BASE = r"""<!doctype html>
   const lblTheme = document.getElementById("themeLabel");
   const btnAcc = document.getElementById("accentBtn");
   const lblAcc = document.getElementById("accentLabel");
-  function curTheme(){ return (localStorage.getItem("ks_theme") || "dark"); }
+  function curTheme(){ return "light"; }
   function curAccent(){ return (localStorage.getItem("ks_accent") || "indigo"); }
   function applyTheme(t){
-    if(t === "light"){ document.documentElement.classList.add("light"); }
-    else { document.documentElement.classList.remove("light"); }
-    localStorage.setItem("ks_theme", t);
-    lblTheme.textContent = t;
+    document.documentElement.classList.add("light");
+    document.documentElement.classList.remove("dark");
+    localStorage.setItem("ks_theme", "light");
+    lblTheme.textContent = "light";
   }
   function applyAccent(a){
     document.documentElement.dataset.accent = a;
@@ -742,7 +744,7 @@ HTML_BASE = r"""<!doctype html>
   }
   applyTheme(curTheme());
   applyAccent(curAccent());
-  btnTheme?.addEventListener("click", ()=>{ applyTheme(curTheme() === "dark" ? "light" : "dark"); });
+  btnTheme?.addEventListener("click", ()=>{ applyTheme("light"); });
   btnAcc?.addEventListener("click", ()=>{
     const order = ["indigo","emerald","amber"];
     const i = order.indexOf(curAccent());

@@ -2,9 +2,9 @@ name: KUKANILEA CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "codex/**"]
   schedule:
     - cron: "13 4 * * *"
   workflow_dispatch:

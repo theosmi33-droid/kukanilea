@@ -27,7 +27,8 @@ SHARED_CORE_FILES = [
     "app/static/css/components.css",
     "app/static/fonts/*",
     "app/static/icons/*",
-    "app/static/js/vendor/htmx.min.js",
+    "app/static/js/htmx.min.js",
+    "app/static/js/tailwindcss.min.js",
 ]
 
 
@@ -114,7 +115,7 @@ def write_scope_request(
 def auto_revert(repo_root: Path, files: list[str]) -> None:
     if not files:
         return
-    run(["git", "checkout", "--", *files], repo_root)
+    run(["git", "restore", "--staged", "--worktree", "--", *files], repo_root)
 
 
 def build_artifacts(args: argparse.Namespace, repo_root: Path) -> ScopeArtifacts:

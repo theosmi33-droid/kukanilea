@@ -12,7 +12,28 @@ SHARED_CORE = {
     "app/core/logic.py",
     "app/__init__.py",
     "app/db.py",
+    "app/templates/layout.html",
 }
+
+SHARED_CORE_PREFIXES = {
+    "app/templates/partials/",
+}
+
+GLOBAL_IGNORES = (
+    ".vscode/",
+    "vscode/",
+    "README_SCOPE.md",
+    "docs/scope_requests/",
+    "docs/scopes/",
+    "docs/shared_memory_snapshot.json",
+    "docs/AGENT_",
+    "docs/FLEET_COMMANDER_",
+    "docs/HANDOFF_GEMINI_",
+    "docs/TAB_PATH_MANIFEST.md",
+    "docs/VS_CODE_GEMINI_STARTCHECK_PROMPT.md",
+    "scripts/shared_memory.py",
+    "scripts/vscode_ready_check.sh",
+)
 
 ALLOWLIST: dict[str, list[str]] = {
     "dashboard": [
@@ -70,12 +91,8 @@ ALLOWLIST: dict[str, list[str]] = {
         "app/templates/settings.html",
     ],
     "floating-widget-chatbot": [
-        "app/templates/layout.html",
-        "app/templates/partials/chat_widget.html",
         "app/templates/partials/floating_chat.html",
-        "app/static/js/chat_widget.js",
         "app/static/js/chatbot.js",
-        "app/static/css/chat_widget.css",
     ],
 }
 
@@ -125,6 +142,10 @@ def _matches_allowlist(rel_path: str, allowlist: list[str]) -> bool:
     return False
 
 
+def _is_ignored_path(rel_path: str) -> bool:
+    return any(rel_path.startswith(prefix) for prefix in GLOBAL_IGNORES)
+
+
 def _branch_file_set(repo_root: Path, branch: str, base_branch: str) -> set[str]:
     base_ref = _run_git(repo_root, ["rev-parse", "--verify", base_branch])
     if not base_ref:
@@ -150,11 +171,17 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = _detect_repo_root()
-    files = sorted({_rel(repo_root, f) for f in args.files})
+    files = sorted({_rel(repo_root, f) for f in args.files if f and not _is_ignored_path(_rel(repo_root, f))})
     allowlist = ALLOWLIST[args.reiter]
 
     outside_allowlist = [f for f in files if not _matches_allowlist(f, allowlist)]
-    shared_core_touched = sorted([f for f in files if f in SHARED_CORE])
+    shared_core_touched = sorted(
+        [
+            f
+            for f in files
+            if f in SHARED_CORE or any(f.startswith(prefix) for prefix in SHARED_CORE_PREFIXES)
+        ]
+    )
 
     branch_overlaps: dict[str, list[str]] = {}
     current_branch = _run_git(repo_root, ["rev-parse", "--abbrev-ref", "HEAD"]) or ""
