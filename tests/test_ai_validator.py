@@ -12,11 +12,11 @@ def test_validation():
     assert result is not None
     assert result.name == "Kabel"
     assert result.price == 12.50
-    
+
     invalid_json = '{"name": "Kabel", "price": "expensive", "unit": "m"}'
     result = AIResponseValidator.validate(invalid_json, Material)
     assert result is None
-    
+
     markdown_json = """Hier ist das Ergebnis:
 ```json
 {"name": "Rohr", "price": 5.0, "unit": "stk"}

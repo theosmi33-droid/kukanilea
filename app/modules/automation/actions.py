@@ -584,23 +584,23 @@ def _execute_ai_agent(
     context: Mapping[str, Any],
 ) -> dict[str, Any]:
     from app.agents import answer as agent_answer
-    
+
     prompt_template = str(action_cfg.get("prompt_template") or action_cfg.get("prompt") or "").strip()
     if not prompt_template:
         return {"status": "failed", "error": "prompt_required"}
-    
+
     # Simple rendering using the existing email renderer logic (placeholders)
     prompt = _render_email_template_text(prompt_template, context)
-    
+
     # Get role from config
     role = str(action_cfg.get("agent_role") or "MASTER").upper()
-    
+
     # Execute AI Agent Loop (v2 Orchestrator)
     # This allows the AI to think and potentially execute tools (create_task, etc.)
     agent_result = agent_answer(prompt, role=role)
-    
+
     return {
-        "status": "ok", 
+        "status": "ok",
         "result": {
             "agent_thought": agent_result.get("text"),
             "agent_action": agent_result.get("action")

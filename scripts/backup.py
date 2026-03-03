@@ -18,15 +18,15 @@ def perform_backup():
     data_root = Path.home() / "Kukanilea" / "data"
     backup_dir = data_root / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
-    
+
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
     databases = [
         "core.sqlite3",
         "auth.sqlite3",
         "audit_vault.sqlite3"
     ]
-    
+
     success = True
     for db_name in databases:
         src = data_root / db_name
@@ -40,7 +40,7 @@ def perform_backup():
                 success = False
         else:
             logger.warning(f"Database {db_name} not found at {src}")
-            
+
     # Cleanup old backups (keep last 7 days)
     # Simple logic: keep latest 21 files (7 days * 3 DBs roughly)
     all_backups = sorted(backup_dir.glob("*.bak"), key=lambda p: p.stat().st_mtime, reverse=True)

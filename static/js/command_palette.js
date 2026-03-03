@@ -46,7 +46,7 @@ const CommandPalette = {
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', html);
-        
+
         this.overlay = document.getElementById('cmd-palette-overlay');
         this.input = document.getElementById('cmd-input');
         this.resultsContainer = document.getElementById('cmd-results');
@@ -74,8 +74,8 @@ const CommandPalette = {
 
     filter() {
         const query = this.input.value.toLowerCase();
-        const filtered = this.commands.filter(c => 
-            c.title.toLowerCase().includes(query) || 
+        const filtered = this.commands.filter(c =>
+            c.title.toLowerCase().includes(query) ||
             c.subtitle.toLowerCase().includes(query)
         );
         this.renderResults(filtered);
@@ -96,7 +96,7 @@ const CommandPalette = {
             `;
             div.className = 'cmd-item';
             if(idx === 0) div.style.background = 'rgba(255,255,255,0.05)';
-            
+
             div.innerHTML = `
                 <div style="width:32px; height:32px; border-radius:6px; background:rgba(255,255,255,0.02); border:1px solid var(--color-border); display:flex; align-items:center; justify-content:center; color:var(--color-accent);">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>

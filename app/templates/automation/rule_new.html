@@ -12,7 +12,7 @@
 
   <form hx-post="/automation/rules/create" style="display: flex; flex-direction: column; gap: 24px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    
+
     <div class="input-group">
         <label>Name der Regel</label>
         <input type="text" name="name" class="input" placeholder="z.B. Beleg-Eingang Benachrichtigung" required>

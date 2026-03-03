@@ -453,7 +453,7 @@ def answer(user_msg: str, role: str | None = None) -> Dict[str, Any]:
     """Top-level entry point for the agentic chat."""
     from app import core
     from app.auth import current_role, current_tenant, current_user
-    
+
     # Simple adapter for the weather if present
     _weather_adapter = None
     try:
@@ -463,15 +463,15 @@ def answer(user_msg: str, role: str | None = None) -> Dict[str, Any]:
         pass
 
     orchestrator = Orchestrator(core, weather_adapter=_weather_adapter)
-    
+
     context = AgentContext(
         tenant_id=current_tenant() or "default",
         user=str(current_user() or "dev"),
         role=str(role or current_role() or "USER"),
     )
-    
+
     res = orchestrator.handle(user_msg, context)
-    
+
     return {
         "text": res.text,
         "actions": res.actions,

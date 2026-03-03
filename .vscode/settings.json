@@ -13,7 +13,6 @@
   "python.analysis.indexing": true,
   "python.experiments.enabled": false,
   "python.useEnvironmentsExtension": true,
-
   "ruff.lint.run": "onType",
   "ruff.nativeServer": "on",
   "editor.formatOnSave": false,
@@ -44,6 +43,14 @@
   },
   "git.autofetch": true,
   "git.confirmSync": false,
+  "git.autoRepositoryDetection": "openEditors",
+  "git.openRepositoryInParentFolders": "never",
+  "git.untrackedChanges": "mixed",
+  "git.repositoryScanMaxDepth": 2,
+  "git.ignoredRepositories": [
+    "/Users/gensuminguyen/Kukanilea",
+    "/Users/gensuminguyen/Kukanilea/source/kukanilea_repo"
+  ],
   "githubPullRequests.pullBranch": "never",
   "terminal.integrated.defaultProfile.osx": "zsh",
   "terminal.integrated.cwd": "${workspaceFolder}",
@@ -55,5 +62,15 @@
   },
   "workbench.editor.enablePreview": false,
   "workbench.startupEditor": "none",
-  "task.allowAutomaticTasks": "on"
+  "task.allowAutomaticTasks": "on",
+  "git.autoRepositoryDetection": "openEditors",
+  "git.openRepositoryInParentFolders": "never",
+  "git.untrackedChanges": "mixed",
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/.build_venv/**": true,
+    "**/__pycache__/**": true
+  },
+  "git.repositoryScanMaxDepth": 2
 }
