@@ -19,4 +19,7 @@
     
     <span style="font-family:monospace; color:var(--text-tertiary);">CPU: {{ cpu_usage_pct|default(0)|round(1) }}%</span>
     <span style="font-family:monospace; color:var(--text-tertiary);">RAM: {{ memory_rss_mb|default(0)|round(0) }}MB</span>
+
+    <!-- Task GoBD: Outbound Status Badges -->
+    <span id="outbound-status-badges" style="display:flex; align-items:center; gap:6px; margin-left: 8px;"></span>
 </div>
