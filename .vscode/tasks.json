@@ -2,6 +2,32 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "KUKANILEA: VS Code Guardrails (Auto-Fix)",
+      "type": "shell",
+      "command": "bash scripts/dev/vscode_guardrails.sh --apply --install-hooks",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "never",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KUKANILEA: VS Code Guardrails (Check)",
+      "type": "shell",
+      "command": "bash scripts/dev/vscode_guardrails.sh --check",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "KUKANILEA: Ready Check (Gemini + Runtime)",
       "type": "shell",
       "command": "OLLAMA_ENABLED=1 KUKANILEA_REMOTE_LLM_ENABLED=0 bash scripts/vscode_ready_check.sh",
@@ -32,7 +58,7 @@
     {
       "label": "KUKANILEA: Start App (127.0.0.1:5051)",
       "type": "shell",
-      "command": "${command:python.interpreterPath} kukanilea_app.py --host 127.0.0.1 --port 5051",
+      "command": "${workspaceFolder}/.build_venv/bin/python kukanilea_app.py --host 127.0.0.1 --port 5051",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -61,7 +87,7 @@
     {
       "label": "KUKANILEA: Shared Memory Init",
       "type": "shell",
-      "command": "${command:python.interpreterPath} scripts/shared_memory.py init",
+      "command": "${workspaceFolder}/.build_venv/bin/python scripts/shared_memory.py init",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -70,7 +96,7 @@
     {
       "label": "KUKANILEA: Shared Memory Read",
       "type": "shell",
-      "command": "${command:python.interpreterPath} scripts/shared_memory.py read",
+      "command": "${workspaceFolder}/.build_venv/bin/python scripts/shared_memory.py read",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -79,7 +105,7 @@
     {
       "label": "KUKANILEA: Shared Memory Snapshot",
       "type": "shell",
-      "command": "${command:python.interpreterPath} scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
+      "command": "${workspaceFolder}/.build_venv/bin/python scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
       "options": {
         "cwd": "${workspaceFolder}"
       },

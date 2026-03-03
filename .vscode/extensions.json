@@ -2,6 +2,7 @@
   "recommendations": [
     "google.geminicodeassist",
     "ms-python.python",
+    "ms-python.debugpy",
     "ms-python.vscode-pylance",
     "charliermarsh.ruff",
     "github.vscode-pull-request-github",

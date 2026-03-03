@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+PY="$ROOT/.build_venv/bin/python"
+if [[ -x "$PY" ]]; then
+  "$PY" "$ROOT/scripts/dev/enforce_vscode_configs.py" --check >/tmp/kukanilea_precommit_vscode.log 2>&1 || {
+    echo "pre-commit: VS Code config drift detected."
+    cat /tmp/kukanilea_precommit_vscode.log
+    echo "run: bash scripts/dev/vscode_guardrails.sh --apply --install-hooks"
+    exit 1
+  }
+fi
+
+STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACMR | grep -v '^\.githooks/pre-commit$' || true)"
+if [[ -n "$STAGED_FILES" ]]; then
+  while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    if git show ":$file" | grep -E 'cdn\.tailwindcss\.com|@tailwindcss/browser|fonts\.googleapis\.com|unpkg\.com/htmx\.org' >/dev/null; then
+      echo "pre-commit: external CDN reference detected in staged file: $file"
+      echo "policy: Zero-CDN (use local assets under /static/...)"
+      exit 1
+    fi
+  done <<< "$STAGED_FILES"
+fi
+
+exit 0

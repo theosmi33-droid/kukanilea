@@ -119,6 +119,48 @@ def ensure_launch(path: Path, interpreter: str, allowed_interpreters: set[str], 
     return changes
 
 
+def ensure_global_settings_file(path: Path, interpreter: str, apply: bool) -> list[str]:
+    changes: list[str] = []
+    data = load_json(path)
+    current = data.get("python.defaultInterpreterPath")
+    if current != interpreter:
+        data["python.defaultInterpreterPath"] = interpreter
+        changes.append("python.defaultInterpreterPath")
+    if data.get("python.useEnvironmentsExtension") is not True:
+        data["python.useEnvironmentsExtension"] = True
+        changes.append("python.useEnvironmentsExtension")
+    if data.get("task.allowAutomaticTasks") != "on":
+        data["task.allowAutomaticTasks"] = "on"
+        changes.append("task.allowAutomaticTasks")
+    if apply and changes:
+        write_json(path, data)
+    return changes
+
+
+def ensure_workspace_file(path: Path, interpreter: str, apply: bool) -> list[str]:
+    changes: list[str] = []
+    data = load_json(path)
+    settings = data.get("settings")
+    if not isinstance(settings, dict):
+        settings = {}
+        data["settings"] = settings
+        changes.append("settings")
+
+    if settings.get("python.defaultInterpreterPath") != interpreter:
+        settings["python.defaultInterpreterPath"] = interpreter
+        changes.append("settings.python.defaultInterpreterPath")
+    if settings.get("python.useEnvironmentsExtension") is not True:
+        settings["python.useEnvironmentsExtension"] = True
+        changes.append("settings.python.useEnvironmentsExtension")
+    if settings.get("task.allowAutomaticTasks") != "on":
+        settings["task.allowAutomaticTasks"] = "on"
+        changes.append("settings.task.allowAutomaticTasks")
+
+    if apply and changes:
+        write_json(path, data)
+    return changes
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate/enforce VS Code interpreter + debugpy configs")
     parser.add_argument("--apply", action="store_true", help="Write missing/fixed config values")
@@ -157,6 +199,23 @@ def main() -> int:
             rel = str(target.relative_to(root.parent)).replace("\\", "/")
             msg = f"{rel}: settings={settings_changes or ['ok']} launch={launch_changes or ['ok']}"
             mismatches.append(msg)
+
+    fleet_root = root.parent
+    absolute_interpreter = str(root / ".build_venv" / "bin" / "python")
+    global_settings_path = fleet_root / ".vscode" / "settings.json"
+    global_workspace_path = fleet_root / "kukanilea.code-workspace"
+
+    if global_settings_path.exists() or args.apply:
+        changes = ensure_global_settings_file(global_settings_path, absolute_interpreter, apply=args.apply)
+        if changes:
+            rel = str(global_settings_path.relative_to(fleet_root)).replace("\\", "/")
+            mismatches.append(f"{rel}: {changes}")
+
+    if global_workspace_path.exists() or args.apply:
+        changes = ensure_workspace_file(global_workspace_path, absolute_interpreter, apply=args.apply)
+        if changes:
+            rel = str(global_workspace_path.relative_to(fleet_root)).replace("\\", "/")
+            mismatches.append(f"{rel}: {changes}")
 
     if mismatches:
         print("vscode-config-mismatches:")

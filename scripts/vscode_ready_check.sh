@@ -32,11 +32,11 @@ else
 fi
 
 echo "-- VS Code Config --"
-if "$PY" "$ROOT/scripts/dev/enforce_vscode_configs.py" --check >/tmp/kukanilea_vscode_config.log 2>&1; then
+if bash "$ROOT/scripts/dev/vscode_guardrails.sh" --check >/tmp/kukanilea_vscode_config.log 2>&1; then
   ok "vscode config is aligned"
 else
   warn "vscode config drift detected, auto-applying defaults"
-  "$PY" "$ROOT/scripts/dev/enforce_vscode_configs.py" --apply >/tmp/kukanilea_vscode_config.log 2>&1 || true
+  bash "$ROOT/scripts/dev/vscode_guardrails.sh" --apply --install-hooks >/tmp/kukanilea_vscode_config.log 2>&1 || true
 fi
 
 echo "-- Shared Memory --"

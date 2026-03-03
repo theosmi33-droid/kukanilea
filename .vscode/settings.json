@@ -12,6 +12,7 @@
   "python.analysis.diagnosticMode": "workspace",
   "python.analysis.indexing": true,
   "python.experiments.enabled": false,
+  "python.useEnvironmentsExtension": true,
 
   "ruff.lint.run": "onType",
   "ruff.nativeServer": "on",
@@ -59,5 +60,6 @@
   },
 
   "workbench.editor.enablePreview": false,
-  "workbench.startupEditor": "none"
+  "workbench.startupEditor": "none",
+  "task.allowAutomaticTasks": "on"
 }
