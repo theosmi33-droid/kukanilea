@@ -56,7 +56,7 @@ class AuditVault:
                 """)
                 con.execute("CREATE INDEX IF NOT EXISTS idx_vault_doc ON evidence_vault(doc_id)")
                 con.execute("CREATE INDEX IF NOT EXISTS idx_vault_tenant ON evidence_vault(tenant_id)")
-                
+
                 # Task 2: Immutability Triggers
                 con.execute("""
                     CREATE TRIGGER IF NOT EXISTS prevent_vault_deletion
@@ -89,18 +89,18 @@ class AuditVault:
         """
         now = datetime.now(timezone.utc).isoformat()
         payload_str = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        
+
         with _VAULT_LOCK:
             con = self._db()
             try:
                 # 1. Get previous hash
                 prev_hash = self._get_last_hash(con)
-                
+
                 # 2. Calculate node hash
                 # Data vector for hash: ts + doc + tenant + meta + payload + prev
                 data_vector = f"{now}|{doc_id}|{tenant_id}|{metadata_hash}|{payload_str}|{prev_hash}"
                 node_hash = self._calculate_hash(data_vector)
-                
+
                 # 3. Insert
                 con.execute(
                     """
@@ -145,22 +145,22 @@ class AuditVault:
         try:
             rows = con.execute("SELECT * FROM evidence_vault ORDER BY id ASC").fetchall()
             expected_prev = GENESIS_HASH
-            
+
             for row in rows:
                 # Re-calculate hash
                 data_vector = f"{row['created_at']}|{row['doc_id']}|{row['tenant_id']}|{row['metadata_hash']}|{row['payload_json']}|{row['prev_hash']}"
                 calculated = self._calculate_hash(data_vector)
-                
+
                 # Check 1: Prev hash match
                 if row["prev_hash"] != expected_prev:
                     errors.append({"id": row["id"], "error": "Prev-Hash Mismatch (Chain broken)"})
-                
+
                 # Check 2: Node hash match
                 if row["node_hash"] != calculated:
                     errors.append({"id": row["id"], "error": "Node-Hash Mismatch (Data tampered)"})
-                
+
                 expected_prev = row["node_hash"]
-                
+
             return (len(errors) == 0, errors)
         finally:
             con.close()

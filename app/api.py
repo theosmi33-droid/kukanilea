@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, render_template, request
 
 from .rate_limit import search_limiter
 
@@ -103,15 +103,24 @@ def outbound_status():
                 "SELECT status, COUNT(*) as count FROM api_outbound_queue GROUP BY status"
             ).fetchall()
             stats = {row["status"]: row["count"] for row in rows}
-            
+
             recent_failed = con.execute(
                 "SELECT target_system, error_message, last_attempt FROM api_outbound_queue WHERE status = 'failed' ORDER BY last_attempt DESC LIMIT 5"
             ).fetchall()
-            
-            return jsonify(
-                ok=True, 
-                stats=stats,
-                recent_failed=[dict(r) for r in recent_failed]
+
+            payload = {
+                "ok": True,
+                "stats": stats,
+                "recent_failed": [dict(r) for r in recent_failed],
+            }
+            accept = (request.headers.get("Accept") or "").lower()
+            wants_html = (
+                "text/html" in accept
+                or request.headers.get("HX-Request", "").lower() == "true"
+                or (request.args.get("format") or "").lower() == "html"
             )
+            if wants_html:
+                return render_template("components/outbound_status_panel.html", **payload)
+            return jsonify(**payload)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500

@@ -16,16 +16,16 @@ def user_session(user_id):
         r = session.get(f"{BASE_URL}/login")
         match = re.search(r'name="csrf_token"\s+value="([^"]+)"', r.text)
         csrf_token = match.group(1) if match else ""
-        
+
         r = session.post(f"{BASE_URL}/login", data={
             "username": username,
             "password": password,
             "csrf_token": csrf_token
         })
-        
+
         # Test 1: Hit Index
         r = session.get(f"{BASE_URL}/")
-        
+
         # Extract CSRF token from index for upload
         match = re.search(r'name="csrf_token"\s+value="([^"]+)"', r.text)
         csrf_token = match.group(1) if match else csrf_token
@@ -38,7 +38,7 @@ def user_session(user_id):
             print(f"[{user_id}] Upload returned: {r.status_code} {r.text[:100]}")
         else:
             print(f"[{user_id}] Upload OK: {r.status_code}")
-            
+
         # Test 3: Hit Chat and send message
         print(f"[{user_id}] Loading chat...")
         r = session.get(f"{BASE_URL}/chat")
@@ -50,7 +50,7 @@ def user_session(user_id):
             "message": "Hello from stress test user " + str(user_id)
         }, headers={"X-CSRFToken": csrf_token})
         print(f"[{user_id}] Chat API returned: {r.status_code}")
-        
+
     except Exception as e:
         print(f"[{user_id}] Exception: {e}")
 

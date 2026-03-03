@@ -12,7 +12,7 @@ class LexofficeClient:
     Client for the Lexoffice Public API.
     Handles authentication and document exchange.
     """
-    
+
     BASE_URL = "https://api.lexoffice.de/v1"
 
     def __init__(self, api_key: str):
@@ -36,7 +36,7 @@ class LexofficeClient:
             return None
 
         url = f"{self.BASE_URL}/files"
-        
+
         try:
             with open(file_path, "rb") as f:
                 files = {
@@ -44,10 +44,10 @@ class LexofficeClient:
                 }
                 # Lexoffice requires 'type' as a form field
                 data = {"type": voucher_type}
-                
+
                 response = requests.post(url, headers=self.headers, files=files, data=data, timeout=30)
                 response.raise_for_status()
-                
+
                 res_data = response.json()
                 return res_data.get("id")
         except Exception as e:

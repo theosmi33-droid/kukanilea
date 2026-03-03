@@ -34,7 +34,7 @@ class SimpleCache:
         with self._lock:
             if key in self._cache:
                 del self._cache[key]
-                
+
     def clear(self):
         with self._lock:
             self._cache.clear()

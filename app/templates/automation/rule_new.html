@@ -10,9 +10,9 @@
     <h1 style="font-size: 24px; font-weight: 700; margin: 0;">Neue Automatisierungs-Regel</h1>
   </div>
 
-  <form hx-post="/automation/rules/create" style="display: flex; flex-direction: column; gap: 24px;">
+  <form hx-post="/automation/rules/create" hx-confirm="Neue Automatisierungs-Regel jetzt erstellen?" style="display: flex; flex-direction: column; gap: 24px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    
+
     <div class="input-group">
         <label>Name der Regel</label>
         <input type="text" name="name" class="input" placeholder="z.B. Beleg-Eingang Benachrichtigung" required>

@@ -1,0 +1,36 @@
+{% set queue_stats = stats | default({}) %}
+{% set pending = queue_stats.get('pending', 0) | int %}
+{% set failed = queue_stats.get('failed', 0) | int %}
+
+<div id="outbound-status-panel"
+     hx-get="/api/outbound/status"
+     hx-trigger="load, every 10s"
+     hx-swap="outerHTML"
+     class="panel"
+     style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
+  {% if failed > 0 %}
+  <div style="width:48px; height:48px; border-radius:12px; background:rgba(239,68,68,0.1); color:var(--color-danger); display:flex; align-items:center; justify-content:center;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  </div>
+  <div>
+      <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Sync-Warteschlange</div>
+      <div style="font-size:24px; font-weight:800; color:var(--color-danger);">{{ failed }} Fehler</div>
+  </div>
+  {% elif pending > 0 %}
+  <div style="width:48px; height:48px; border-radius:12px; background:rgba(245,158,11,0.1); color:var(--color-warning); display:flex; align-items:center; justify-content:center;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a5.5 5.5 0 0 0 2.5-10.5 6 6 0 0 0-8-4.5 5.5 5.5 0 0 0-5 10.5"/><path d="m15 13-3 3-3-3"/><path d="M12 16V10"/></svg>
+  </div>
+  <div>
+      <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Sync-Warteschlange</div>
+      <div style="font-size:24px; font-weight:800; color:var(--color-warning);">{{ pending }} offen</div>
+  </div>
+  {% else %}
+  <div style="width:48px; height:48px; border-radius:12px; background:rgba(16,185,129,0.1); color:var(--color-success); display:flex; align-items:center; justify-content:center;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m20 6-11 11-5-5"/></svg>
+  </div>
+  <div>
+      <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Sync-Warteschlange</div>
+      <div style="font-size:24px; font-weight:800; color:var(--color-success);">OK</div>
+  </div>
+  {% endif %}
+</div>

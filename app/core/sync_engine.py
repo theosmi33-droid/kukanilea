@@ -22,7 +22,7 @@ class SyncEngine:
         chunks = []
         if not file_path.exists():
             return chunks
-            
+
         with open(file_path, "rb") as f:
             while True:
                 data = f.read(CHUNK_SIZE)
@@ -37,18 +37,18 @@ class SyncEngine:
         """Task 102: Identifies which chunk indices have changed."""
         local_hashes = self.get_file_chunks(local_path)
         deltas = []
-        
+
         for i, h in enumerate(local_hashes):
             if i >= len(remote_hashes) or h != remote_hashes[i]:
                 deltas.append(i)
-                
+
         return deltas
 
     def resolve_conflict(self, local_version: int, remote_version: int, content_local: bytes, content_remote: bytes) -> bytes:
         """Task 103: Conflict Resolution (Simple Winning Logic for now)."""
         logger.warning(f"Conflict detected: Local v{local_version} vs Remote v{remote_version}")
-        
-        # In real CRDT, we would merge operations. 
+
+        # In real CRDT, we would merge operations.
         # Here we use the higher version number (LWW - Last Write Wins style).
         if local_version >= remote_version:
             return content_local

@@ -9,7 +9,7 @@ window.toast = function(message, level = 'info') {
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${level}`;
-    
+
     const titles = {
         'success': 'Erfolg',
         'warn': 'Warnung',

@@ -29,7 +29,7 @@ class MailGenerateTool(BaseTool):
         agent = MailAgent()
         inp = MailInput(context=context, facts=facts or {}, attachments=[])
         opt = MailOptions(tone=tone, goal=goal, rewrite_mode="local")
-        
+
         result = agent.generate(inp, opt)
         return {
             "status": "success",
