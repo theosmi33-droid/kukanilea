@@ -60,6 +60,37 @@ def ensure_settings(path: Path, interpreter: str, allowed_interpreters: set[str]
     if data.get("python.terminal.activateEnvironment") is not True:
         changes.append("python.terminal.activateEnvironment")
         data["python.terminal.activateEnvironment"] = True
+
+    # Keep VS Code Source Control responsive in large multi-worktree setups.
+    if data.get("git.autoRepositoryDetection") != "openEditors":
+        changes.append("git.autoRepositoryDetection")
+        data["git.autoRepositoryDetection"] = "openEditors"
+    if data.get("git.openRepositoryInParentFolders") != "never":
+        changes.append("git.openRepositoryInParentFolders")
+        data["git.openRepositoryInParentFolders"] = "never"
+    if data.get("git.untrackedChanges") != "mixed":
+        changes.append("git.untrackedChanges")
+        data["git.untrackedChanges"] = "mixed"
+    if data.get("git.repositoryScanMaxDepth") != 2:
+        changes.append("git.repositoryScanMaxDepth")
+        data["git.repositoryScanMaxDepth"] = 2
+
+    watcher_exclude = data.get("files.watcherExclude")
+    if not isinstance(watcher_exclude, dict):
+        watcher_exclude = {}
+        data["files.watcherExclude"] = watcher_exclude
+        changes.append("files.watcherExclude")
+
+    desired_watcher = {
+        "**/.git/objects/**": True,
+        "**/.git/subtree-cache/**": True,
+        "**/.build_venv/**": True,
+        "**/__pycache__/**": True,
+    }
+    for key, value in desired_watcher.items():
+        if watcher_exclude.get(key) != value:
+            watcher_exclude[key] = value
+            changes.append(f"files.watcherExclude.{key}")
     if apply and changes:
         write_json(path, data)
     return changes
@@ -132,6 +163,18 @@ def ensure_global_settings_file(path: Path, interpreter: str, apply: bool) -> li
     if data.get("task.allowAutomaticTasks") != "on":
         data["task.allowAutomaticTasks"] = "on"
         changes.append("task.allowAutomaticTasks")
+    if data.get("git.autoRepositoryDetection") != "openEditors":
+        data["git.autoRepositoryDetection"] = "openEditors"
+        changes.append("git.autoRepositoryDetection")
+    if data.get("git.openRepositoryInParentFolders") != "never":
+        data["git.openRepositoryInParentFolders"] = "never"
+        changes.append("git.openRepositoryInParentFolders")
+    if data.get("git.untrackedChanges") != "mixed":
+        data["git.untrackedChanges"] = "mixed"
+        changes.append("git.untrackedChanges")
+    if data.get("git.repositoryScanMaxDepth") != 2:
+        data["git.repositoryScanMaxDepth"] = 2
+        changes.append("git.repositoryScanMaxDepth")
     if apply and changes:
         write_json(path, data)
     return changes
@@ -155,6 +198,18 @@ def ensure_workspace_file(path: Path, interpreter: str, apply: bool) -> list[str
     if settings.get("task.allowAutomaticTasks") != "on":
         settings["task.allowAutomaticTasks"] = "on"
         changes.append("settings.task.allowAutomaticTasks")
+    if settings.get("git.autoRepositoryDetection") != "openEditors":
+        settings["git.autoRepositoryDetection"] = "openEditors"
+        changes.append("settings.git.autoRepositoryDetection")
+    if settings.get("git.openRepositoryInParentFolders") != "never":
+        settings["git.openRepositoryInParentFolders"] = "never"
+        changes.append("settings.git.openRepositoryInParentFolders")
+    if settings.get("git.untrackedChanges") != "mixed":
+        settings["git.untrackedChanges"] = "mixed"
+        changes.append("settings.git.untrackedChanges")
+    if settings.get("git.repositoryScanMaxDepth") != 2:
+        settings["git.repositoryScanMaxDepth"] = 2
+        changes.append("settings.git.repositoryScanMaxDepth")
 
     if apply and changes:
         write_json(path, data)

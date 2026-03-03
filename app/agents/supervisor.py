@@ -48,11 +48,11 @@ class AgentSupervisor:
                 if data["status"] == "RUNNING" and (now - data["last_heartbeat"] > 60):
                     logger.warning(f"Agent {agent_id} unresponsive.")
                     self._handle_failure(agent_id, data)
-                
+
                 elif data["status"] == "ERROR" and (now >= data["next_retry"]):
                     logger.info(f"Attempting scheduled restart for agent {agent_id}.")
                     self._attempt_start(agent_id, data)
-                    
+
             self._stop_event.wait(15)
 
     def _handle_failure(self, agent_id: str, data: Dict[str, Any]):

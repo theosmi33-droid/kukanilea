@@ -30,13 +30,13 @@ def run_benchmark():
         "platform": platform.platform(),
         "python_version": sys.version
     }
-    
+
     # Save results (Step 19)
     report_file = Path("logs/reports/performance_report.json")
     report_file.parent.mkdir(parents=True, exist_ok=True)
     with open(report_file, "w") as f:
         json.dump(results, f, indent=2)
-        
+
     print("\n--- PERFORMANCE REPORT (Step 19) ---")
     print(json.dumps(results, indent=2))
     print(f"\nReport saved to: {report_file}")
@@ -53,10 +53,10 @@ def measure_db_speed():
     import sqlite3
     from app.config import Config
     db_path = Config.CORE_DB
-    
+
     if not db_path.exists():
         return "N/A (DB Missing)"
-        
+
     start = time.time()
     try:
         conn = sqlite3.connect(str(db_path))
@@ -100,14 +100,14 @@ def main():
     from app.core.boot_sequence import run_boot_sequence
     if run_boot_sequence() is False:
         sys.exit(1)
-        
+
     print(f"System ready. Starting Web Server on {args.host}:{args.port}...")
-    
+
     from app import create_app
     from waitress import serve
-    
+
     flask_app = create_app()
-    
+
     # Task 177: Waitress Tuning
     serve(flask_app, host=args.host, port=args.port, threads=8)
 

@@ -44,11 +44,11 @@ class LifecycleManager:
         now = time.time()
         elapsed = now - self._start_time
         logger.info(f"System State Change: {self._state.value} -> {state.value} ({details}) [T+{elapsed:.3f}s]")
-        
+
         # Performance Milestone Log
         if state == SystemState.READY:
             logger.info(f"🚀 KUKANILEA READY. Full boot time: {elapsed:.3f}s")
-            
+
         self._state = state
         self._details = details
 

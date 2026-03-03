@@ -26,7 +26,7 @@ def calculate_metadata_hash(payload: dict) -> str:
 def verify_vault():
     print("🔍 KUKANILEA EVIDENCE VAULT INTEGRITY CHECK")
     print("="*60)
-    
+
     entries = vault.verify_integrity()
     total = len(entries)
     valid = 0
@@ -36,19 +36,19 @@ def verify_vault():
         doc_id = entry['doc_id']
         stored_hash = entry['metadata_hash']
         payload = json.loads(entry['payload_json'])
-        
+
         # Recalculate hash from stored payload
         computed_hash = calculate_metadata_hash(payload)
-        
+
         if stored_hash != computed_hash:
             errors.append(f"❌ TAMPERING DETECTED: doc_id {doc_id} (Stored hash mismatch)")
             continue
-            
+
         valid += 1
 
     print(f"Total Entries: {total}")
     print(f"Verified OK:   {valid}")
-    
+
     if errors:
         print("\n🚨 CRITICAL FAILURES FOUND:")
         for err in errors:

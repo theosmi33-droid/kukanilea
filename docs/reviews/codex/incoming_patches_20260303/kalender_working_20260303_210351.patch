@@ -1,0 +1,137 @@
+diff --git a/app/knowledge/ics_source.py b/app/knowledge/ics_source.py
+index b4b571d..0b3a2f7 100644
+--- a/app/knowledge/ics_source.py
++++ b/app/knowledge/ics_source.py
+@@ -228,23 +228,102 @@ def _parse_ics_dt(value: str | None) -> str | None:
+     return None
+ 
+ 
++def _parse_ics_trigger(raw: str | None) -> timedelta | None:
++    """Parse an iCalendar TRIGGER duration string into a timedelta.
++
++    Only a very small subset of the full RFC 5545 duration syntax is
++    supported.  We recognise things like ``-P1D`` (one day before the event)
++    and ``-PT15M`` (fifteen minutes before).  A leading ``-`` is taken to mean
++    "before" the DTSTART, so the returned timedelta is always positive and
++    should be subtracted from the event start if you want the absolute
++    reminder time.
++
++    Returns ``None`` for anything we cannot interpret.
++    """
++
++    token = (raw or "").strip()
++    if not token:
++        return None
++
++    # sign handling
++    negative = False
++    if token.startswith("-"):
++        negative = True
++        token = token[1:]
++    elif token.startswith("+"):
++        token = token[1:]
++
++    # simple PnDTnHnM grammar, ignore weeks/months/years
++    if not token.startswith("P"):
++        return None
++    token = token[1:]
++
++    days = 0
++    hours = 0
++    minutes = 0
++
++    # split date and time parts
++    if "T" in token:
++        date_part, time_part = token.split("T", 1)
++    else:
++        date_part, time_part = token, ""
++
++    m = re.search(r"(\d+)D", date_part)
++    if m:
++        days = int(m.group(1))
++
++    m = re.search(r"(\d+)H", time_part)
++    if m:
++        hours = int(m.group(1))
++
++    m = re.search(r"(\d+)M", time_part)
++    if m:
++        minutes = int(m.group(1))
++
++    if days == 0 and hours == 0 and minutes == 0:
++        return None
++
++    delta = timedelta(days=days, hours=hours, minutes=minutes)
++    # we want a positive offset for a negative trigger (i.e. before the event)
++    if negative:
++        return delta
++    # positive triggers (after) are not used for reminders in our world
++    return None
++
++
+ def _parse_events(lines: list[str]) -> list[dict[str, str]]:
+     events: list[dict[str, str]] = []
+     in_event = False
+     current: dict[str, str] = {}
++    in_alarm = False
++    alarm_offset: timedelta | None = None
+     for line in lines:
+         tag = line.strip().upper()
+         if tag == "BEGIN:VEVENT":
+             in_event = True
+             current = {}
++            in_alarm = False
++            alarm_offset = None
+             continue
+         if tag == "END:VEVENT":
+             if in_event:
++                # if we parsed an alarm trigger and know the DTSTART we can
++                # compute an absolute reminder time and store it on the event
++                if alarm_offset and current.get("DTSTART"):
++                    try:
++                        base = datetime.fromisoformat(current["DTSTART"])
++                        remind_dt = base - alarm_offset
++                        # isoformat includes offset from UTC already
++                        current["REMINDER"] = remind_dt.isoformat()
++                    except Exception:
++                        pass
+                 events.append(current)
+                 if len(events) >= MAX_EVENTS_PARSED:
+                     break
+             in_event = False
+             current = {}
++            in_alarm = False
++            alarm_offset = None
+             continue
+         if not in_event:
+             continue
+@@ -253,6 +332,20 @@ def _parse_events(lines: list[str]) -> list[dict[str, str]]:
+         if not parsed:
+             continue
+         key, value = parsed
++        # alarm context has a very limited grammar
++        if in_alarm:
++            if key == "TRIGGER":
++                off = _parse_ics_trigger(value)
++                if off:
++                    alarm_offset = off
++            # ignore everything else inside VALARM
++            continue
++        if key == "BEGIN" and value.upper() == "VALARM":
++            in_alarm = True
++            continue
++        if key == "END" and value.upper() == "VALARM":
++            in_alarm = False
++            continue
+         if key in IGNORE_KEYS or key not in ALLOWED_KEYS:
+             continue
+         if key in current:
+@@ -276,6 +369,8 @@ def _event_body(event: dict[str, str]) -> str:
+         parts.append(f"summary {event['SUMMARY']}")
+     if event.get("LOCATION"):
+         parts.append(f"location {event['LOCATION']}")
++    if event.get("REMINDER"):
++        parts.append(f"reminder {event['REMINDER']}")
+     return _clean_text(" | ".join(parts), MAX_FIELD_LEN * 4)
+ 
+ 

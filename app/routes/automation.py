@@ -146,7 +146,7 @@ def automation_rule_create_action():
         if code == "db_locked":
             return _automation_error("db_locked", "Datenbank gesperrt.", 503)
         return _automation_error("validation_error", "Regel ungültig.", 400)
-    
+
     if _is_htmx():
         return redirect(url_for("automation.automation_rule_detail_page", rule_id=rule_id))
     return jsonify({"ok": True, "rule_id": rule_id})

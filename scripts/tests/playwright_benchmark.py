@@ -30,7 +30,7 @@ def test_db_search():
     logging.info("Testing DB Search KPI (<50ms)...")
     start = time.time()
     # Dummy request for demonstration
-    resp = requests.get(f"{BASE_URL}/api/health") 
+    resp = requests.get(f"{BASE_URL}/api/health")
     elapsed_ms = (time.time() - start) * 1000
     logging.info(f"DB Search (Health Check proxy) Time: {elapsed_ms:.2f}ms")
     if elapsed_ms > MAX_DB_SEARCH_MS:

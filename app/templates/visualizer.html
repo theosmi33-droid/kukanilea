@@ -1,43 +1,769 @@
 {% extends "layout.html" %}
-{% block title %}Excel Visualizer{% endblock %}
+{% block title %}Forensic Eye Visualizer{% endblock %}
+
+{% block extra_head %}
+<style>
+  .vz-shell { display:grid; grid-template-columns: 320px 1fr; gap: var(--spacing-4); min-height: calc(100vh - 170px); }
+  .vz-panel { border: 1px solid var(--color-border); border-radius: var(--radius-xl); background: var(--bg-secondary); overflow: hidden; }
+  .vz-side { display:flex; flex-direction:column; min-height: 620px; }
+  .vz-head { padding:14px 16px; border-bottom:1px solid var(--color-border); }
+  .vz-head h1 { margin:0; font-size:21px; }
+  .vz-sub { margin-top:5px; color:var(--color-text-muted); font-size:12px; }
+  .vz-search { margin-top:12px; width:100%; border:1px solid var(--color-border); border-radius:10px; background:var(--bg-tertiary); color:var(--color-text-main); padding:9px 11px; font-size:13px; }
+  .vz-list { list-style:none; margin:0; padding:8px; display:flex; flex-direction:column; gap:6px; overflow:auto; }
+  .vz-item { border:1px solid var(--color-border); border-radius:10px; background:var(--bg-tertiary); padding:9px; cursor:pointer; }
+  .vz-item.active { border-color:var(--color-primary); box-shadow:0 0 0 1px color-mix(in srgb, var(--color-primary) 25%, transparent); }
+  .vz-item-name { font-size:13px; font-weight:700; color:var(--color-text-main); word-break:break-word; }
+  .vz-item-meta { margin-top:4px; font-size:11px; color:var(--color-text-muted); display:flex; gap:8px; flex-wrap:wrap; }
+
+  .vz-main { display:grid; grid-template-rows:auto 1fr auto; min-height: 620px; }
+  .vz-toolbar { padding:10px 12px; border-bottom:1px solid var(--color-border); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .vz-group { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .vz-btn { height:34px; border:1px solid var(--color-border); border-radius:8px; background:var(--bg-tertiary); color:var(--color-text-main); padding:0 12px; font-size:12px; font-weight:700; cursor:pointer; }
+  .vz-btn:disabled { opacity:.45; cursor:not-allowed; }
+  .vz-input, .vz-select { height:34px; border:1px solid var(--color-border); border-radius:8px; background:var(--bg-tertiary); color:var(--color-text-main); padding:0 10px; font-size:12px; }
+  .vz-chip { border:1px solid var(--color-border); border-radius:999px; padding:6px 10px; font-size:11px; font-weight:700; background:var(--bg-tertiary); color:var(--color-text-muted); }
+  .vz-chip.ok { color:var(--color-success); border-color: color-mix(in srgb, var(--color-success) 55%, transparent); }
+  .vz-chip.warn { color:var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 55%, transparent); }
+
+  .vz-stage-wrap { padding:12px; overflow:auto; background: radial-gradient(circle at 8% 4%, color-mix(in srgb, var(--color-primary) 9%, transparent), transparent 40%), var(--bg-primary); }
+  .vz-empty { min-height:460px; border:1px dashed var(--color-border); border-radius:12px; display:grid; place-items:center; text-align:center; color:var(--color-text-muted); font-size:13px; padding:16px; }
+  .vz-viewport { transform-origin: top left; transition: transform .1s linear; width: fit-content; margin: 0 auto; }
+
+  .pdf-wrap, .img-wrap { position:relative; border:1px solid var(--color-border); border-radius:10px; overflow:hidden; background:#f8f8f8; }
+  .pdf-wrap img, .img-wrap img { display:block; max-width:min(100%, 1200px); height:auto; }
+  .layer { position:absolute; inset:0; pointer-events:none; }
+  .ocr-box { position:absolute; border:1px solid rgba(16,185,129,.58); background:rgba(16,185,129,.09); border-radius:2px; }
+  .meta-badge { position:absolute; border:1px solid rgba(59,130,246,.55); background:rgba(59,130,246,.20); color:#e8f2ff; border-radius:999px; font-size:10px; font-weight:700; padding:3px 8px; }
+
+  .text-wrap { border:1px solid var(--color-border); border-radius:10px; background:var(--bg-secondary); padding:16px; max-width: 1100px; margin: 0 auto; }
+  .text-content { white-space:pre-wrap; line-height:1.45; font-size:13px; color:var(--color-text-main); max-height:68vh; overflow:auto; }
+
+  .sheet-tools { margin-bottom:8px; display:flex; gap:8px; flex-wrap:wrap; }
+  .sheet-zone { border:1px solid var(--color-border); border-radius:10px; overflow:auto; max-height:70vh; background:var(--bg-secondary); }
+  .sheet-table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:12px; }
+  .sheet-table th, .sheet-table td { border:1px solid color-mix(in srgb, var(--color-border) 84%, transparent); padding:6px 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sheet-table th { position:sticky; top:0; background:var(--bg-tertiary); z-index:1; cursor:pointer; }
+  .row-head { width:56px; text-align:right; color:var(--color-text-muted); background:var(--bg-tertiary); font-weight:700; }
+  .heat { background-color: rgba(245,158,11, var(--heat, .08)); }
+
+  .vz-bottom { border-top:1px solid var(--color-border); padding:10px 12px; display:grid; grid-template-columns: 1fr 330px; gap:10px; }
+  .sum-box { border:1px solid var(--color-border); border-radius:10px; background:var(--bg-tertiary); padding:10px; }
+  .sum-box h3 { margin:0 0 8px 0; font-size:13px; }
+  .sum-text { min-height:80px; max-height:180px; overflow:auto; white-space:pre-wrap; font-size:12px; line-height:1.4; color:var(--color-text-main); }
+  .meta-tags { margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; }
+  .meta-tags .vz-chip { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .chart-panel { border:1px solid var(--color-border); border-radius:10px; background:var(--bg-tertiary); padding:10px; }
+  .chart-wrap { height:180px; border:1px solid var(--color-border); border-radius:8px; background:var(--bg-primary); display:grid; place-items:center; margin-top:8px; }
+  .chart-wrap canvas { width:100%; height:100%; }
+
+  @media (max-width: 1180px) {
+    .vz-shell { grid-template-columns:1fr; }
+    .vz-side { min-height:280px; }
+    .vz-bottom { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<div style="display: flex; flex-direction: column; gap: var(--spacing-6);">
-    <div class="panel">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-4);">
-            <div>
-                <h1 style="font-size: 24px; font-weight: 700; color: var(--color-text-main); margin: 0;">Excel Visualizer</h1>
-                <p style="color: var(--color-text-muted); font-size: 14px;">Analysieren Sie Ihre Kalkulationen und Tabellen visuell.</p>
-            </div>
-            <button class="btn btn-primary" style="height: 36px;">DATEI LADEN</button>
-        </div>
+<div class="vz-shell">
+  <aside class="vz-panel vz-side">
+    <div class="vz-head">
+      <h1>The Forensic Eye</h1>
+      <div class="vz-sub">Lokaler Deep-Dive für PDF, Office, Images, Text</div>
+      <input id="vz-search" class="vz-search" type="text" placeholder="Dokument suchen...">
+    </div>
+    <ul id="vz-list" class="vz-list"></ul>
+  </aside>
 
-        <!-- Empty State Visualizer -->
-        <div style="height: 400px; border: 2px dashed var(--color-border); border-radius: var(--radius-xl); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: rgba(255,255,255,0.01);">
-            <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(37,99,235,0.1); color: var(--color-accent); display: flex; align-items: center; justify-content: center;">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="3" x2="21" y1="15" y2="15"/><line x1="9" x2="9" y1="3" y2="21"/><line x1="15" x2="15" y1="3" y2="21"/></svg>
-            </div>
-            <div style="text-align: center;">
-                <div style="font-weight: 700; color: var(--color-text-main); font-size: 16px;">Keine Daten zum Visualisieren</div>
-                <div style="color: var(--color-text-muted); font-size: 13px; margin-top: 4px;">Wählen Sie eine .xlsx oder .csv Datei aus dem Archiv oder laden Sie eine neue hoch.</div>
-            </div>
-        </div>
+  <section class="vz-panel vz-main">
+    <div class="vz-toolbar">
+      <div class="vz-group">
+        <button id="vz-prev" class="vz-btn" type="button">Zurück</button>
+        <button id="vz-next" class="vz-btn" type="button">Weiter</button>
+        <span id="vz-page" class="vz-chip">Seite -/-</span>
+        <select id="vz-sheet" class="vz-select" style="display:none; min-width:130px;"></select>
+      </div>
+      <div class="vz-group">
+        <button id="vz-zoom-out" class="vz-btn" type="button">-</button>
+        <span id="vz-zoom-label" class="vz-chip">100%</span>
+        <button id="vz-zoom-in" class="vz-btn" type="button">+</button>
+        <button id="vz-fullscreen" class="vz-btn" type="button">Fullscreen</button>
+      </div>
+      <div class="vz-group">
+        <label class="vz-chip" style="display:flex; gap:6px; align-items:center;"><input id="vz-toggle-ocr" type="checkbox" checked>OCR</label>
+        <label class="vz-chip" style="display:flex; gap:6px; align-items:center;"><input id="vz-toggle-meta" type="checkbox" checked>Meta</label>
+        <label class="vz-chip" style="display:flex; gap:6px; align-items:center;"><input id="vz-force-ocr" type="checkbox">Force OCR</label>
+      </div>
+      <div class="vz-group">
+        <span id="vz-server" class="vz-chip">Server: -</span>
+        <span id="vz-client" class="vz-chip">Client: -</span>
+        <span id="vz-target" class="vz-chip">First render <2s</span>
+      </div>
     </div>
 
-    <!-- Stats Grid Mock -->
-    <div class="grid grid-cols-3 gap-6">
-        <div class="panel">
-            <div style="font-size: 12px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 8px;">Gesamtumsatz</div>
-            <div style="font-size: 24px; font-weight: 800; color: var(--color-success);">0,00 €</div>
-        </div>
-        <div class="panel">
-            <div style="font-size: 12px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 8px;">Offene Posten</div>
-            <div style="font-size: 24px; font-weight: 800; color: var(--color-danger);">0</div>
-        </div>
-        <div class="panel">
-            <div style="font-size: 12px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 8px;">Marge (Ø)</div>
-            <div style="font-size: 24px; font-weight: 800; color: var(--color-accent);">0.0%</div>
-        </div>
+    <div class="vz-stage-wrap" id="vz-stage-wrap">
+      <div id="vz-stage" class="vz-empty">Lade Quellen...</div>
     </div>
+
+    <div class="vz-bottom">
+      <div class="sum-box">
+        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center;">
+          <h3>Lokale KI-Zusammenfassung</h3>
+          <div class="vz-group">
+            <button id="vz-summary" class="vz-btn" type="button">Summary erstellen</button>
+            <button id="vz-save-note" class="vz-btn" type="button">Als Notiz speichern</button>
+            <button id="vz-export" class="vz-btn" type="button">Als PDF exportieren</button>
+          </div>
+        </div>
+        <div id="vz-summary-text" class="sum-text">Noch keine Zusammenfassung.</div>
+        <div id="vz-meta" class="meta-tags"></div>
+      </div>
+
+      <div class="chart-panel">
+        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center;">
+          <strong style="font-size:13px;">Chart (lokal)</strong>
+          <select id="vz-chart-type" class="vz-select">
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+            <option value="pie">Pie</option>
+          </select>
+        </div>
+        <div class="vz-group" style="margin-top:8px;">
+          <button id="vz-chart-generate" class="vz-btn" type="button">Chart erzeugen</button>
+          <select id="vz-projects" class="vz-select" style="min-width:140px;"></select>
+          <button id="vz-store-project" class="vz-btn" type="button">Im Projekt ablegen</button>
+        </div>
+        <div class="chart-wrap"><canvas id="vz-chart-canvas" width="300" height="180"></canvas></div>
+      </div>
+    </div>
+  </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const CSRF = "{{ csrf_token() }}";
+  const state = {
+    sources: [], filtered: [], activeId: "", payload: null,
+    page: 0, sheet: "", loading: false, zoom: 1,
+    sortCol: -1, sortDir: 1, filterText: "", summaryText: "", chartDataUrl: "",
+    firstRendered: false,
+  };
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    list: $("vz-list"), search: $("vz-search"), stage: $("vz-stage"), stageWrap: $("vz-stage-wrap"),
+    prev: $("vz-prev"), next: $("vz-next"), page: $("vz-page"), sheet: $("vz-sheet"),
+    ocr: $("vz-toggle-ocr"), meta: $("vz-toggle-meta"), force: $("vz-force-ocr"),
+    server: $("vz-server"), client: $("vz-client"), target: $("vz-target"),
+    zoomOut: $("vz-zoom-out"), zoomIn: $("vz-zoom-in"), zoomLabel: $("vz-zoom-label"), fullscreen: $("vz-fullscreen"),
+    summaryBtn: $("vz-summary"), saveNoteBtn: $("vz-save-note"), exportBtn: $("vz-export"), summaryText: $("vz-summary-text"), metaTags: $("vz-meta"),
+    chartType: $("vz-chart-type"), chartBtn: $("vz-chart-generate"), chartCanvas: $("vz-chart-canvas"),
+    projects: $("vz-projects"), storeProjectBtn: $("vz-store-project"),
+  };
+
+  const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
+  const n = (v) => Number(v || 0);
+
+  function humanBytes(bytes) {
+    let v = n(bytes); if (!v) return "0 B";
+    const units = ["B", "KB", "MB", "GB"]; let i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+    return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
+  }
+
+  function setZoom(value) {
+    state.zoom = Math.max(0.4, Math.min(2.5, value));
+    el.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+    const viewport = el.stage.querySelector(".vz-viewport");
+    if (viewport) viewport.style.transform = `scale(${state.zoom})`;
+  }
+
+  function updatePerf(payload, clientMs) {
+    const serverMs = n(payload?.perf?.server_ms);
+    const cache = Boolean(payload?.perf?.cache_hit);
+    el.server.textContent = `Server: ${serverMs.toFixed(1)}ms${cache ? " (Cache)" : ""}`;
+    el.client.textContent = `Client: ${n(clientMs).toFixed(1)}ms`;
+
+    const threshold = state.firstRendered ? 1000 : 2000;
+    const ok = serverMs <= threshold && n(clientMs) <= threshold;
+    el.target.textContent = state.firstRendered ? "Render <1s" : "First render <2s";
+    el.target.classList.remove("ok", "warn");
+    el.target.classList.add(ok ? "ok" : "warn");
+    state.firstRendered = true;
+  }
+
+  function updatePager(payload) {
+    if (!payload) {
+      el.page.textContent = "Seite -/-";
+      el.prev.disabled = true; el.next.disabled = true; el.sheet.style.display = "none";
+      return;
+    }
+    if (payload.kind === "pdf") {
+      const i = n(payload.page?.index), total = Math.max(1, n(payload.page?.count));
+      el.page.textContent = `Seite ${i + 1}/${total}`;
+      el.prev.disabled = i <= 0 || state.loading;
+      el.next.disabled = i >= total - 1 || state.loading;
+      el.sheet.style.display = "none";
+      return;
+    }
+    if (payload.kind === "sheet") {
+      const rows = n(payload.sheet?.rows), cols = n(payload.sheet?.cols);
+      el.page.textContent = `Grid ${rows}x${cols}`;
+      el.prev.disabled = true; el.next.disabled = true;
+      const names = Array.isArray(payload.sheet?.available) ? payload.sheet.available : [];
+      if (names.length > 1) {
+        el.sheet.style.display = "inline-flex";
+        el.sheet.innerHTML = names.map((name) => `<option value="${esc(name)}" ${name === payload.sheet?.name ? "selected" : ""}>${esc(name)}</option>`).join("");
+      } else {
+        el.sheet.style.display = "none";
+      }
+      return;
+    }
+    el.page.textContent = (payload.kind || "doc").toUpperCase();
+    el.prev.disabled = true; el.next.disabled = true; el.sheet.style.display = "none";
+  }
+
+  function renderMetaTags(payload) {
+    const tags = [];
+    const file = payload?.file || {};
+    tags.push(`Quelle: ${file.name || "-"}`);
+    tags.push(`Typ: ${(payload?.kind || "").toUpperCase()}`);
+    if (payload?.kind === "pdf") tags.push(`Seite: ${(n(payload.page?.index) + 1)}/${Math.max(1, n(payload.page?.count))}`);
+    if (payload?.kind === "sheet") tags.push(`Sheet: ${payload?.sheet?.name || "-"}`);
+
+    el.metaTags.innerHTML = tags.map((t) => `<span class="vz-chip" title="${esc(t)}">${esc(t)}</span>`).join("");
+  }
+
+  function createViewport(child) {
+    const vp = document.createElement("div");
+    vp.className = "vz-viewport";
+    vp.style.transform = `scale(${state.zoom})`;
+    vp.appendChild(child);
+    return vp;
+  }
+
+  function renderPdf(payload) {
+    const wrap = document.createElement("div");
+    wrap.className = "pdf-wrap";
+
+    const img = document.createElement("img");
+    img.src = `data:image/png;base64,${payload.page?.image_b64 || ""}`;
+    img.alt = payload.file?.name || "PDF";
+    wrap.appendChild(img);
+
+    const oLayer = document.createElement("div");
+    oLayer.className = "layer";
+    oLayer.style.display = el.ocr.checked ? "block" : "none";
+    for (const w of (Array.isArray(payload.layers?.ocr) ? payload.layers.ocr : []).slice(0, 700)) {
+      const box = document.createElement("div");
+      box.className = "ocr-box";
+      box.style.left = `${(n(w.x) * 100).toFixed(4)}%`;
+      box.style.top = `${(n(w.y) * 100).toFixed(4)}%`;
+      box.style.width = `${(n(w.w) * 100).toFixed(4)}%`;
+      box.style.height = `${(n(w.h) * 100).toFixed(4)}%`;
+      box.title = w.text || "";
+      oLayer.appendChild(box);
+    }
+    wrap.appendChild(oLayer);
+
+    const mLayer = document.createElement("div");
+    mLayer.className = "layer";
+    mLayer.style.display = el.meta.checked ? "block" : "none";
+    for (const m of (Array.isArray(payload.layers?.meta) ? payload.layers.meta : []).slice(0, 8)) {
+      const badge = document.createElement("div");
+      badge.className = "meta-badge";
+      badge.textContent = m.label || "";
+      badge.style.left = `${(n(m.x) * 100).toFixed(4)}%`;
+      badge.style.top = `${(n(m.y) * 100).toFixed(4)}%`;
+      mLayer.appendChild(badge);
+    }
+    wrap.appendChild(mLayer);
+
+    el.stage.innerHTML = "";
+    el.stage.className = "";
+    el.stage.appendChild(createViewport(wrap));
+  }
+
+  function renderImage(payload) {
+    const wrap = document.createElement("div");
+    wrap.className = "img-wrap";
+    const img = document.createElement("img");
+    img.src = `data:image/png;base64,${payload.image?.image_b64 || ""}`;
+    img.alt = payload.file?.name || "Image";
+    wrap.appendChild(img);
+    el.stage.innerHTML = "";
+    el.stage.className = "";
+    el.stage.appendChild(createViewport(wrap));
+  }
+
+  function sortedFilteredGrid(payload) {
+    const grid = Array.isArray(payload.grid) ? payload.grid.map((r) => Array.isArray(r) ? [...r] : []) : [];
+    if (!grid.length) return grid;
+    const filter = state.filterText.toLowerCase().trim();
+    let out = grid;
+    if (filter) {
+      out = out.filter((row) => row.some((c) => String(c || "").toLowerCase().includes(filter)));
+    }
+    if (state.sortCol >= 0) {
+      out.sort((a, b) => {
+        const av = String(a[state.sortCol] || "");
+        const bv = String(b[state.sortCol] || "");
+        const an = Number(av.replace(/[^0-9+\-.]/g, ""));
+        const bn = Number(bv.replace(/[^0-9+\-.]/g, ""));
+        if (Number.isFinite(an) && Number.isFinite(bn) && (av || bv)) return (an - bn) * state.sortDir;
+        return av.localeCompare(bv, "de") * state.sortDir;
+      });
+    }
+    return out;
+  }
+
+  function renderSheet(payload) {
+    const rows = n(payload.sheet?.rows), cols = n(payload.sheet?.cols);
+    const heat = new Map();
+    for (const h of (Array.isArray(payload.layers?.heat) ? payload.layers.heat : [])) {
+      heat.set(`${h.row || 0}:${h.col || 0}`, n(h.score));
+    }
+
+    const tools = document.createElement("div");
+    tools.className = "sheet-tools";
+    const filterInput = document.createElement("input");
+    filterInput.className = "vz-input";
+    filterInput.placeholder = "Filter...";
+    filterInput.value = state.filterText;
+    filterInput.addEventListener("input", () => { state.filterText = filterInput.value || ""; renderSheet(payload); });
+    tools.appendChild(filterInput);
+
+    const zone = document.createElement("div");
+    zone.className = "sheet-zone";
+    const table = document.createElement("table");
+    table.className = "sheet-table";
+
+    const header = document.createElement("thead");
+    const hr = document.createElement("tr");
+    const corner = document.createElement("th");
+    corner.className = "row-head";
+    corner.textContent = "#";
+    hr.appendChild(corner);
+
+    for (let c = 0; c < cols; c += 1) {
+      const th = document.createElement("th");
+      const name = String.fromCharCode(65 + (c % 26));
+      th.textContent = state.sortCol === c ? `${name} ${state.sortDir > 0 ? "▲" : "▼"}` : name;
+      th.addEventListener("click", () => {
+        if (state.sortCol === c) state.sortDir = state.sortDir * -1;
+        else { state.sortCol = c; state.sortDir = 1; }
+        renderSheet(payload);
+      });
+      hr.appendChild(th);
+    }
+    header.appendChild(hr);
+    table.appendChild(header);
+
+    const filtered = sortedFilteredGrid(payload);
+    const body = document.createElement("tbody");
+    const maxRows = Math.min(filtered.length, 140);
+    for (let r = 0; r < maxRows; r += 1) {
+      const tr = document.createElement("tr");
+      const rh = document.createElement("td");
+      rh.className = "row-head";
+      rh.textContent = String(r + 1);
+      tr.appendChild(rh);
+      const row = filtered[r] || [];
+      for (let c = 0; c < cols; c += 1) {
+        const td = document.createElement("td");
+        td.textContent = row[c] || "";
+        const score = n(heat.get(`${r + 1}:${c + 1}`));
+        if (score > 0) { td.classList.add("heat"); td.style.setProperty("--heat", (0.07 + score * 0.35).toFixed(3)); }
+        tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+    table.appendChild(body);
+    zone.appendChild(table);
+
+    const root = document.createElement("div");
+    root.appendChild(tools);
+    root.appendChild(zone);
+
+    el.stage.innerHTML = "";
+    el.stage.className = "";
+    el.stage.appendChild(createViewport(root));
+  }
+
+  function renderText(payload) {
+    const wrap = document.createElement("div");
+    wrap.className = "text-wrap";
+    const content = document.createElement("div");
+    content.className = "text-content";
+    content.textContent = payload.text?.content || "Kein Text extrahiert.";
+    wrap.appendChild(content);
+
+    if (el.meta.checked) {
+      const meta = document.createElement("div");
+      meta.className = "meta-tags";
+      for (const m of (Array.isArray(payload.layers?.meta) ? payload.layers.meta : [])) {
+        const chip = document.createElement("span");
+        chip.className = "vz-chip";
+        chip.textContent = m.label || "";
+        meta.appendChild(chip);
+      }
+      wrap.appendChild(meta);
+    }
+
+    el.stage.innerHTML = "";
+    el.stage.className = "";
+    el.stage.appendChild(createViewport(wrap));
+  }
+
+  function renderPayload(payload, clientMs) {
+    state.payload = payload;
+    if (!payload) {
+      el.stage.className = "vz-empty";
+      el.stage.textContent = "Keine Darstellungsdaten verfügbar.";
+      return;
+    }
+    if (payload.kind === "pdf") renderPdf(payload);
+    else if (payload.kind === "sheet") renderSheet(payload);
+    else if (payload.kind === "image") renderImage(payload);
+    else renderText(payload);
+
+    renderMetaTags(payload);
+    updatePager(payload);
+    updatePerf(payload, clientMs);
+  }
+
+  function renderList() {
+    const files = state.filtered;
+    if (!files.length) {
+      el.list.innerHTML = '<li class="vz-empty" style="min-height:120px;">Keine Dokumente gefunden.</li>';
+      return;
+    }
+    el.list.innerHTML = files.map((it) => {
+      const active = it.id === state.activeId ? "active" : "";
+      const ext = String(it.ext || "").replace(".", "").toUpperCase();
+      return `<li class="vz-item ${active}" data-id="${it.id}"><div class="vz-item-name">${esc(it.name || "(ohne Name)")}</div><div class="vz-item-meta"><span>${esc(ext)}</span><span>${humanBytes(it.size)}</span><span>${esc(it.source || "vault")}</span></div></li>`;
+    }).join("");
+
+    for (const node of el.list.querySelectorAll(".vz-item")) {
+      node.addEventListener("click", () => {
+        const id = node.getAttribute("data-id") || "";
+        if (!id || id === state.activeId) return;
+        state.activeId = id;
+        state.page = 0;
+        state.sheet = "";
+        state.sortCol = -1;
+        state.filterText = "";
+        state.summaryText = "";
+        el.summaryText.textContent = "Noch keine Zusammenfassung.";
+        renderList();
+        void loadRender();
+      });
+    }
+  }
+
+  function applyFilter() {
+    const q = String(el.search.value || "").toLowerCase().trim();
+    state.filtered = !q ? state.sources.slice() : state.sources.filter((x) => `${x.name || ""} ${x.ext || ""} ${x.source || ""}`.toLowerCase().includes(q));
+    if (!state.filtered.some((x) => x.id === state.activeId)) state.activeId = state.filtered[0]?.id || "";
+    renderList();
+  }
+
+  async function loadSources() {
+    el.stage.className = "vz-empty";
+    el.stage.textContent = "Dokumentquellen werden geladen...";
+    const res = await fetch("/api/visualizer/sources", { headers: { Accept: "application/json" } });
+    const data = await res.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    state.sources = items;
+    state.filtered = items.slice();
+    if (!state.activeId && items.length) state.activeId = items[0].id;
+    renderList();
+
+    if (!items.length) {
+      el.stage.className = "vz-empty";
+      el.stage.innerHTML = "Keine unterstützten Dokumente gefunden.<br>Bitte zuerst hochladen.";
+      updatePager(null);
+      return;
+    }
+    await loadRender();
+  }
+
+  async function loadProjects() {
+    try {
+      const res = await fetch("/api/visualizer/projects", { headers: { Accept: "application/json" } });
+      const data = await res.json();
+      const projects = Array.isArray(data.projects) ? data.projects : [];
+      if (!projects.length) {
+        el.projects.innerHTML = '<option value="">Kein Projekt</option>';
+        return;
+      }
+      el.projects.innerHTML = projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name || p.id)}</option>`).join("");
+    } catch {
+      el.projects.innerHTML = '<option value="">Projektfehler</option>';
+    }
+  }
+
+  async function loadRender() {
+    if (!state.activeId || state.loading) return;
+    state.loading = true;
+    const t0 = performance.now();
+    try {
+      const params = new URLSearchParams({ source: state.activeId, page: String(Math.max(0, n(state.page))) });
+      if (state.sheet) params.set("sheet", state.sheet);
+      if (el.force.checked) params.set("force_ocr", "1");
+      const res = await fetch(`/api/visualizer/render?${params.toString()}`, { headers: { Accept: "application/json" } });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.detail || payload?.error || "Render fehlgeschlagen");
+      requestAnimationFrame(() => renderPayload(payload, performance.now() - t0));
+    } catch (err) {
+      el.stage.className = "vz-empty";
+      el.stage.textContent = `Fehler beim Rendern: ${String(err.message || err)}`;
+    } finally {
+      state.loading = false;
+      updatePager(state.payload);
+    }
+  }
+
+  function gatherSimpleChartData() {
+    const payload = state.payload;
+    if (!payload || payload.kind !== "sheet") return null;
+    const grid = Array.isArray(payload.grid) ? payload.grid : [];
+    const labels = [];
+    const values = [];
+    for (const row of grid.slice(1, 13)) {
+      if (!Array.isArray(row) || !row.length) continue;
+      const label = String(row[0] || `R${labels.length + 1}`);
+      let value = NaN;
+      for (let c = 1; c < row.length; c += 1) {
+        const parsed = Number(String(row[c] || "").replace(/[^0-9+\-.]/g, ""));
+        if (Number.isFinite(parsed)) { value = parsed; break; }
+      }
+      if (!Number.isFinite(value)) continue;
+      labels.push(label.slice(0, 16));
+      values.push(value);
+    }
+    if (!labels.length) return null;
+    return { labels, values };
+  }
+
+  function renderChart() {
+    const data = gatherSimpleChartData();
+    const canvas = el.chartCanvas;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!data) {
+      ctx.fillStyle = "#64748b";
+      ctx.font = "12px sans-serif";
+      ctx.fillText("Keine numerischen Daten für Chart.", 12, 20);
+      state.chartDataUrl = "";
+      return;
+    }
+
+    const type = el.chartType.value;
+    const w = canvas.width;
+    const h = canvas.height;
+    const values = data.values;
+    const labels = data.labels;
+    const max = Math.max(...values, 1);
+
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, w, h);
+
+    if (type === "pie") {
+      const total = values.reduce((a, b) => a + b, 0) || 1;
+      let start = -Math.PI / 2;
+      values.forEach((v, i) => {
+        const frac = v / total;
+        const end = start + frac * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(w / 2, h / 2);
+        ctx.arc(w / 2, h / 2, Math.min(w, h) * 0.36, start, end);
+        ctx.closePath();
+        ctx.fillStyle = `hsl(${(i * 67) % 360} 70% 55%)`;
+        ctx.fill();
+        start = end;
+      });
+    } else {
+      const padL = 30;
+      const padB = 26;
+      const chartW = w - padL - 8;
+      const chartH = h - padB - 8;
+      ctx.strokeStyle = "#334155";
+      ctx.beginPath();
+      ctx.moveTo(padL, 8);
+      ctx.lineTo(padL, h - padB);
+      ctx.lineTo(w - 8, h - padB);
+      ctx.stroke();
+
+      if (type === "bar") {
+        const bw = chartW / values.length;
+        values.forEach((v, i) => {
+          const bh = (v / max) * (chartH - 6);
+          const x = padL + (i * bw) + 3;
+          const y = h - padB - bh;
+          ctx.fillStyle = "#3b82f6";
+          ctx.fillRect(x, y, Math.max(8, bw - 6), bh);
+        });
+      } else {
+        ctx.strokeStyle = "#22c55e";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        values.forEach((v, i) => {
+          const x = padL + (i / Math.max(1, values.length - 1)) * chartW;
+          const y = h - padB - (v / max) * (chartH - 6);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          ctx.fillStyle = "#22c55e";
+          ctx.beginPath();
+          ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "10px sans-serif";
+      labels.forEach((label, i) => {
+        const x = padL + (i / Math.max(1, labels.length - 1)) * chartW;
+        ctx.fillText(label, x - 10, h - 10);
+      });
+    }
+
+    state.chartDataUrl = canvas.toDataURL("image/png");
+  }
+
+  async function createSummary() {
+    if (!state.activeId) return;
+    el.summaryText.textContent = "Zusammenfassung wird lokal erzeugt...";
+    try {
+      const res = await fetch("/api/visualizer/summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": CSRF },
+        body: JSON.stringify({ source: state.activeId, page: state.page, sheet: state.sheet, force_ocr: el.force.checked }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || data?.error || "Summary fehlgeschlagen");
+      state.summaryText = data.summary || "";
+      el.summaryText.textContent = state.summaryText || "Keine Summary verfügbar.";
+      const src = data.source || {};
+      const model = data.model || "heuristic";
+      const tags = [
+        `Quelle: ${src.name || "-"}`,
+        `Dokumenttyp: ${(src.kind || "-").toUpperCase()}`,
+        `LLM: ${model}`,
+      ];
+      el.metaTags.innerHTML = tags.map((t) => `<span class="vz-chip">${esc(t)}</span>`).join("");
+    } catch (err) {
+      el.summaryText.textContent = `Summary-Fehler: ${String(err.message || err)}`;
+    }
+  }
+
+  async function saveNote() {
+    if (!state.activeId || !state.summaryText.trim()) return;
+    try {
+      const res = await fetch("/api/visualizer/note", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": CSRF },
+        body: JSON.stringify({
+          source: state.activeId,
+          summary: state.summaryText,
+          title: "Visualizer Summary",
+          chart_type: el.chartType.value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || data?.error || "Save fehlgeschlagen");
+      el.summaryText.textContent = `${state.summaryText}\n\n[Gespeichert als Note #${data.note?.id || "?"}]`;
+    } catch (err) {
+      el.summaryText.textContent = `Notizspeicherung fehlgeschlagen: ${String(err.message || err)}`;
+    }
+  }
+
+  async function storeToProject() {
+    if (!state.activeId) return;
+    const projectId = el.projects.value || "";
+    if (!projectId) {
+      el.summaryText.textContent = "Bitte ein Projekt auswählen.";
+      return;
+    }
+    try {
+      const res = await fetch("/api/visualizer/store-to-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": CSRF },
+        body: JSON.stringify({ source: state.activeId, project_id: projectId, summary: state.summaryText || "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || data?.error || "Ablage fehlgeschlagen");
+      el.summaryText.textContent = `${state.summaryText || ""}\n\n[Im Projekt abgelegt: Task ${data.task_id}]`;
+    } catch (err) {
+      el.summaryText.textContent = `Projekt-Ablage fehlgeschlagen: ${String(err.message || err)}`;
+    }
+  }
+
+  async function exportPdf() {
+    if (!state.activeId) return;
+    try {
+      const res = await fetch("/api/visualizer/export-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": CSRF },
+        body: JSON.stringify({
+          source: state.activeId,
+          page: state.page,
+          sheet: state.sheet,
+          force_ocr: el.force.checked,
+          summary: state.summaryText || "",
+          chart_png: state.chartDataUrl || "",
+        }),
+      });
+      if (!res.ok) {
+        let msg = "Export fehlgeschlagen";
+        try { const j = await res.json(); msg = j?.detail || j?.error || msg; } catch (_) {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "visualized-view.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      el.summaryText.textContent = `Export-Fehler: ${String(err.message || err)}`;
+    }
+  }
+
+  function bind() {
+    el.search.addEventListener("input", applyFilter);
+    el.prev.addEventListener("click", () => { if (state.payload?.kind !== "pdf") return; state.page = Math.max(0, n(state.page) - 1); void loadRender(); });
+    el.next.addEventListener("click", () => { if (state.payload?.kind !== "pdf") return; const total = Math.max(1, n(state.payload.page?.count)); state.page = Math.min(total - 1, n(state.page) + 1); void loadRender(); });
+    el.sheet.addEventListener("change", () => { state.sheet = String(el.sheet.value || ""); void loadRender(); });
+
+    el.ocr.addEventListener("change", () => { if (state.payload) renderPayload(state.payload, n(state.payload?.perf?.server_ms)); });
+    el.meta.addEventListener("change", () => { if (state.payload) renderPayload(state.payload, n(state.payload?.perf?.server_ms)); });
+    el.force.addEventListener("change", () => { state.page = 0; void loadRender(); });
+
+    el.zoomOut.addEventListener("click", () => setZoom(state.zoom - 0.1));
+    el.zoomIn.addEventListener("click", () => setZoom(state.zoom + 0.1));
+    el.fullscreen.addEventListener("click", () => {
+      if (!document.fullscreenElement) el.stageWrap.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    });
+
+    el.chartBtn.addEventListener("click", renderChart);
+    el.summaryBtn.addEventListener("click", () => void createSummary());
+    el.saveNoteBtn.addEventListener("click", () => void saveNote());
+    el.storeProjectBtn.addEventListener("click", () => void storeToProject());
+    el.exportBtn.addEventListener("click", () => void exportPdf());
+  }
+
+  bind();
+  setZoom(1);
+  void loadProjects();
+  void loadSources();
+})();
+</script>
 {% endblock %}

@@ -3,7 +3,7 @@
 
 {% block content %}
 <div style="display: flex; flex-direction: column; gap: var(--spacing-4);">
-  
+
   <!-- Stats Grid v2.0 -->
   <div class="grid grid-cols-3 gap-6">
     <div class="panel" style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
@@ -24,27 +24,31 @@
             <div style="font-size:24px; font-weight:800; color:var(--color-success);">100%</div>
         </div>
     </div>
-    <div class="panel" style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
-        <div id="syncStatusIcon" style="width:48px; height:48px; border-radius:12px; background:rgba(245,158,11,0.1); color:var(--color-warning); display:flex; align-items:center; justify-content:center;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a5.5 5.5 0 0 0 2.5-10.5 6 6 0 0 0-8-4.5 5.5 5.5 0 0 0-5 10.5"/><path d="m15 13-3 3-3-3"/><path d="M12 16V10"/></svg>
-        </div>
-        <div>
-            <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Sync-Warteschlange</div>
-            <div id="syncStatusLabel" style="font-size:24px; font-weight:800; color:var(--text-primary);">Prüfe...</div>
-        </div>
-    </div>
+    {% include "components/outbound_status_panel.html" %}
   </div>
 
+  <style>
+    .spin-mini { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    #dropZone.dragover { border-color: var(--color-accent); background: rgba(37,99,235,0.1); transform: scale(1.01); }
+  </style>
+
   <div class="panel">
-    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: var(--spacing-3);">
-      <div style="width:40px; height:40px;"><img src="/static/logo.svg" width="100%" height="100%"></div>
-      <h1 style="font-size: 24px; font-weight: 700; color: var(--color-text-main);">Beleg-Zentrale</h1>
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--spacing-3);">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <div style="width:40px; height:40px;"><img src="/static/logo.svg" width="100%" height="100%"></div>
+        <h1 style="font-size: 24px; font-weight: 700; color: var(--color-text-main);">Beleg-Zentrale</h1>
+      </div>
+      <div id="vault-check-status" style="font-size: 11px; color: var(--color-text-muted); display: flex; align-items: center; gap: 6px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Vault ist geschützt
+      </div>
     </div>
-    
-    <div id="dropZone" style="position: relative; border: 2px dashed var(--color-border); border-radius: var(--radius-xl); padding: var(--spacing-5); text-align: center; background: rgba(0,0,0,0.2); transition: all 0.2s; cursor: pointer;">
+
+    <div id="dropZone" style="position: relative; border: 2px dashed var(--color-border); border-radius: var(--radius-xl); padding: var(--spacing-5); text-align: center; background: rgba(0,0,0,0.2); transition: all 0.2s ease-out; cursor: pointer;">
       <input type="file" id="file" name="file" style="position: absolute; inset: 0; opacity: 0; cursor: pointer;" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.txt">
       <div style="margin-bottom: var(--spacing-3); display: flex; justify-content: center;">
-        <div style="height: 64px; width: 64px; border-radius: var(--radius-lg); background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; color: var(--color-accent); border: 1px solid var(--color-border);">
+        <div id="dropIcon" style="height: 64px; width: 64px; border-radius: var(--radius-lg); background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; color: var(--color-accent); border: 1px solid var(--color-border); transition: transform 0.2s;">
           <svg fill="none" stroke="currentColor" stroke-width="2" width="32" height="32" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
         </div>
       </div>
@@ -91,8 +95,12 @@
         </div>
         <div id="pLabel" style="font-size: 24px; font-weight: 800; color: var(--color-text-main);">0.0%</div>
       </div>
-      <div style="height: 12px; width: 100%; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;">
+      <div style="height: 12px; width: 100%; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; margin-bottom: 12px;">
         <div id="bar" style="height: 100%; background: var(--color-accent); width: 0%; transition: width 0.3s ease;"></div>
+      </div>
+      <div id="errorActions" style="display:none; justify-content: flex-end; gap: 8px;">
+        <button id="retryBtn" class="btn btn-sm" style="background: rgba(255,255,255,0.1); color: white;">Wiederholen</button>
+        <button id="cancelBtn" class="btn btn-sm btn-danger">Abbrechen</button>
       </div>
     </div>
   </div>
@@ -157,9 +165,9 @@ document.addEventListener("DOMContentLoaded", function() {
   const pLabel = document.getElementById("pLabel");
   const status = document.getElementById("status");
   const phase = document.getElementById("phase");
-  
+
   let stagedFiles = [];
-  
+
   const updateUI = () => {
     fileList.innerHTML = "";
     stagedFiles.forEach((f, i) => {
@@ -176,20 +184,28 @@ document.addEventListener("DOMContentLoaded", function() {
   };
 
   window._rm = (idx) => { stagedFiles.splice(idx, 1); updateUI(); };
-  
+
   clearStaging.addEventListener("click", () => { stagedFiles = []; updateUI(); fileInput.value = ""; });
-  
+
   fileInput.addEventListener("change", () => {
     stagedFiles = [...stagedFiles, ...Array.from(fileInput.files)];
     updateUI();
   });
-  
+
   const dropZone = document.getElementById("dropZone");
-  dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "var(--color-accent)"; });
-  dropZone.addEventListener("dragleave", () => { dropZone.style.borderColor = "var(--color-border)"; });
+  dropZone.addEventListener("dragover", (e) => { 
+    e.preventDefault(); 
+    dropZone.classList.add("dragover");
+    document.getElementById("dropIcon").style.transform = "translateY(-4px)";
+  });
+  dropZone.addEventListener("dragleave", () => { 
+    dropZone.classList.remove("dragover");
+    document.getElementById("dropIcon").style.transform = "translateY(0)";
+  });
   dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
-    dropZone.style.borderColor = "var(--color-border)";
+    dropZone.classList.remove("dragover");
+    document.getElementById("dropIcon").style.transform = "translateY(0)";
     if(e.dataTransfer.files.length > 0){
       stagedFiles = [...stagedFiles, ...Array.from(e.dataTransfer.files)];
       updateUI();
@@ -198,32 +214,33 @@ document.addEventListener("DOMContentLoaded", function() {
 
   const csrfToken = "{{ csrf_token() }}";
   
-  startBtn.addEventListener("click", () => {
+  const uploadAction = () => {
     if(stagedFiles.length === 0) return;
     stagingArea.style.display = "none";
     progressArea.style.display = "block";
+    document.getElementById("errorActions").style.display = "none";
     
     const formData = new FormData();
     stagedFiles.forEach(f => formData.append("file", f));
     formData.append("csrf_token", csrfToken);
-    
+
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/upload", true);
     let targetProgress = 0, currentProgress = 0;
-    
+
     const sim = setInterval(() => {
-      if(currentProgress < targetProgress) currentProgress += 1;
+      if(currentProgress < targetProgress) currentProgress += 0.5;
       bar.style.width = currentProgress + "%";
       pLabel.textContent = currentProgress.toFixed(1) + "%";
-    }, 50);
+    }, 30);
 
     xhr.upload.onprogress = (ev) => {
       if(ev.lengthComputable){
-        targetProgress = (ev.loaded / ev.total) * 35; // Upload phase
+        targetProgress = (ev.loaded / ev.total) * 35;
         phase.textContent = "Übertragung...";
       }
     };
-    
+
     xhr.onload = () => {
       if(xhr.status === 200){
         try {
@@ -233,7 +250,7 @@ document.addEventListener("DOMContentLoaded", function() {
             targetProgress = 35;
             phase.textContent = "KI Analyse...";
             status.textContent = "Dokumente werden analysiert...";
-            
+
             const check = setInterval(() => {
               const pXhr = new XMLHttpRequest();
               pXhr.open("GET", "/api/progress?tokens=" + tokens.join(","), true);
@@ -264,61 +281,46 @@ document.addEventListener("DOMContentLoaded", function() {
               pXhr.send();
             }, 1000);
           } else {
-            status.textContent = "Upload erfolgreich, Fehler bei KI-Start.";
+            status.textContent = "Upload erfolgreich, aber keine Dokumente zur Analyse gefunden.";
             clearInterval(sim);
           }
         } catch(e) {
-          status.textContent = "Fehlerhafte Server-Antwort.";
+          handleError("Fehlerhafte Server-Antwort.");
           clearInterval(sim);
         }
       } else {
-        status.textContent = "Fehler beim Upload. Bitte erneut versuchen.";
+        let msg = "Fehler beim Upload.";
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if(res.message) msg = res.message;
+          else if(res.error) msg = "Fehler: " + res.error;
+        } catch(e) {}
+        handleError(msg + " (Status: " + xhr.status + ")");
         clearInterval(sim);
       }
     };
-    
+
     xhr.onerror = () => {
-      status.textContent = "Netzwerkfehler.";
+      handleError("Netzwerkfehler beim Upload.");
       clearInterval(sim);
     };
     
+    const handleError = (msg) => {
+      status.textContent = msg;
+      status.style.color = "var(--color-danger)";
+      document.getElementById("errorActions").style.display = "flex";
+    };
+    
     xhr.send(formData);
-  });
-
-  // Sync Status Polling
-  const updateSyncStatus = () => {
-    fetch('/api/outbound/status')
-      .then(r => r.json())
-      .then(data => {
-        if(data.ok){
-          const pending = data.stats.pending || 0;
-          const failed = data.stats.failed || 0;
-          const label = document.getElementById("syncStatusLabel");
-          const icon = document.getElementById("syncStatusIcon");
-          
-          if(failed > 0){
-            label.textContent = `${failed} Fehler`;
-            label.style.color = "var(--color-danger)";
-            icon.style.background = "rgba(239,68,68,0.1)";
-            icon.style.color = "var(--color-danger)";
-          } else if(pending > 0){
-            label.textContent = `${pending} Ausstehend`;
-            label.style.color = "var(--color-warning)";
-            icon.style.background = "rgba(245,158,11,0.1)";
-            icon.style.color = "var(--color-warning)";
-            icon.classList.add("pulse");
-          } else {
-            label.textContent = "Bereit";
-            label.style.color = "var(--color-success)";
-            icon.style.background = "rgba(16,185,129,0.1)";
-            icon.style.color = "var(--color-success)";
-            icon.classList.remove("pulse");
-          }
-        }
-      });
   };
-  updateSyncStatus();
-  setInterval(updateSyncStatus, 10000);
+
+  startBtn.addEventListener("click", uploadAction);
+  document.getElementById("retryBtn").addEventListener("click", uploadAction);
+  document.getElementById("cancelBtn").addEventListener("click", () => {
+    progressArea.style.display = "none";
+    stagingArea.style.display = "flex";
+    status.style.color = "inherit";
+  });
 });
 </script>
 {% endblock %}

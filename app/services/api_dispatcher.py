@@ -61,7 +61,7 @@ class APIDispatcher:
     def _dispatch_job(self, con: sqlite3.Connection, job: sqlite3.Row):
         target = job["target_system"]
         job_id = job["id"]
-        
+
         success = False
         error_msg = ""
 
@@ -90,7 +90,7 @@ class APIDispatcher:
                     "UPDATE api_outbound_queue SET status = 'failed' WHERE id = ?",
                     (job_id,)
                 )
-        
+
         con.commit()
 
     def _handle_lexoffice(self, job: sqlite3.Row) -> tuple[bool, str]:
@@ -100,13 +100,13 @@ class APIDispatcher:
 
         payload = json.loads(job["payload"])
         file_path = Path(job["file_path"])
-        
+
         if not file_path.exists():
             return False, f"File not found: {file_path}"
 
         client = LexofficeClient(api_key)
         lex_id = client.upload_file(file_path, voucher_type=payload.get("voucher_type", "voucher"))
-        
+
         if lex_id:
             return True, ""
         else:
@@ -115,15 +115,15 @@ class APIDispatcher:
 def start_dispatcher_daemon(auth_db_path: str, interval: int = 60):
     """Simple background daemon loop."""
     import threading
-    
+
     dispatcher = APIDispatcher(auth_db_path)
-    
+
     def loop():
         logger.info("API Dispatcher Daemon started.")
         while True:
             dispatcher.process_queue()
             time.sleep(interval)
-            
+
     thread = threading.Thread(target=loop, daemon=True)
     thread.start()
     return thread
