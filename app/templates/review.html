@@ -49,7 +49,7 @@
       </div>
       {% endif %}
 
-      <form method="post" style="display: flex; flex-direction: column; gap: var(--spacing-3);">
+      <form method="post" style="display: flex; flex-direction: column; gap: var(--spacing-3);" onsubmit="const btn=this.querySelector('button[type=submit]'); setTimeout(() => { btn.disabled=true; btn.textContent='WIRD GESPEICHERT...'; }, 10);">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="confirm" value="1">
         
