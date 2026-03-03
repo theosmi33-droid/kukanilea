@@ -281,7 +281,7 @@ document.addEventListener("DOMContentLoaded", function() {
               pXhr.send();
             }, 1000);
           } else {
-            handleError("Upload erfolgreich, Fehler bei KI-Start.");
+            status.textContent = "Upload erfolgreich, aber keine Dokumente zur Analyse gefunden.";
             clearInterval(sim);
           }
         } catch(e) {
@@ -289,7 +289,13 @@ document.addEventListener("DOMContentLoaded", function() {
           clearInterval(sim);
         }
       } else {
-        handleError("Fehler beim Upload (Status " + xhr.status + ").");
+        let msg = "Fehler beim Upload.";
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if(res.message) msg = res.message;
+          else if(res.error) msg = "Fehler: " + res.error;
+        } catch(e) {}
+        handleError(msg + " (Status: " + xhr.status + ")");
         clearInterval(sim);
       }
     };
