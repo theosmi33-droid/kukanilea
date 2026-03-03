@@ -42,6 +42,18 @@ def run(cmd: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedPr
     return subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, check=check)
 
 
+def detect_repo_root() -> Path:
+    cp = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if cp.returncode == 0 and cp.stdout.strip():
+        return Path(cp.stdout.strip())
+    return Path(__file__).resolve().parents[2]
+
+
 def git_changed_files(repo_root: Path, base_branch: str) -> list[str]:
     cp = run(["git", "diff", "--name-only", base_branch, "--"], repo_root)
     return [line.strip() for line in cp.stdout.splitlines() if line.strip()]
@@ -73,9 +85,12 @@ def generate_patch_file(repo_root: Path, base_branch: str, files: list[str], pat
 
 
 def load_template(path: Path) -> str:
-    if not path.exists():
-        raise FileNotFoundError(f"Template not found: {path}")
-    return path.read_text()
+    if path.exists():
+        return path.read_text()
+    fallback = Path(__file__).resolve().parents[2] / "docs/templates/SCOPE_REQUEST_TEMPLATE.md"
+    if fallback.exists():
+        return fallback.read_text()
+    raise FileNotFoundError(f"Template not found: {path}")
 
 
 def write_scope_request(
@@ -170,7 +185,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = detect_repo_root()
 
     try:
         artifacts = build_artifacts(args, repo_root)

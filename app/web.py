@@ -466,9 +466,6 @@ def _card(kind: str, msg: str) -> str:
     s = styles.get(kind, styles["info"])
     return f'<div class="rounded-xl border {s} p-3 text-sm">{msg}</div>'
 
-from flask import render_template
-
-
 def _render_base(template_name: str, **kwargs) -> str:
     profile = _get_profile()
     kwargs.setdefault("branding", Config.get_branding())
@@ -555,9 +552,9 @@ HTML_BASE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <title>{{branding.app_name}} Systems</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="/static/js/tailwindcss.min.js"></script>
 <script>
-  const savedTheme = localStorage.getItem("ks_theme") || "dark";
+  const savedTheme = localStorage.getItem("ks_theme") || "light";
   const savedAccent = localStorage.getItem("ks_accent") || "brand";
   if(savedTheme === "light"){ document.documentElement.classList.add("light"); }
   document.documentElement.dataset.accent = savedAccent;

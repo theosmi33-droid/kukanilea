@@ -20,6 +20,8 @@ def run_server(port, auth_db_path, core_db_path, user_data_root):
     os.environ["KUKANILEA_AUTH_DB"] = str(auth_db_path)
     os.environ["KUKANILEA_CORE_DB"] = str(core_db_path)
     os.environ["KUKANILEA_USER_DATA_ROOT"] = str(user_data_root)
+    # E2E environments run without ClamAV daemon; keep upload flow testable.
+    os.environ["CLAMAV_OPTIONAL"] = "1"
 
     # NOW imports
     from app import create_app

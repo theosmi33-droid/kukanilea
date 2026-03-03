@@ -17,6 +17,22 @@ echo "[2/6] Ensuring DB tables..." | tee -a "$HEALTH_LOG"
 echo "[3/6] Running unit tests..." | tee -a "$HEALTH_LOG"
 pytest -q
 
+SERVER_PID=""
+cleanup() {
+  if [[ -n "$SERVER_PID" ]]; then
+    kill "$SERVER_PID" >/dev/null 2>&1 || true
+    wait "$SERVER_PID" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+if ! curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051/" | grep -Eq "^(200|302)$"; then
+  echo "[healthcheck] No server on :5051 detected, starting temporary local server..." | tee -a "$HEALTH_LOG"
+  "$PYTHON" kukanilea_app.py --host 127.0.0.1 --port 5051 >/tmp/kukanilea_healthcheck_server.log 2>&1 &
+  SERVER_PID=$!
+  sleep 4
+fi
+
 echo "[4/6] Checking routes (200/302)..." | tee -a "$HEALTH_LOG"
 URLS=("/" "/dashboard" "/upload" "/projects" "/tasks" "/messenger" "/email" "/calendar" "/time" "/visualizer" "/settings")
 for u in "${URLS[@]}"; do

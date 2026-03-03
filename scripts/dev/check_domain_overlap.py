@@ -7,8 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
 SHARED_CORE = {
     "app/web.py",
     "app/core/logic.py",
@@ -74,15 +72,29 @@ ALLOWLIST: dict[str, list[str]] = {
     "floating-widget-chatbot": [
         "app/templates/layout.html",
         "app/templates/partials/chat_widget.html",
+        "app/templates/partials/floating_chat.html",
         "app/static/js/chat_widget.js",
+        "app/static/js/chatbot.js",
         "app/static/css/chat_widget.css",
     ],
 }
 
 
-def _run_git(args: list[str]) -> str:
+def _detect_repo_root() -> Path:
     proc = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), *args],
+        ["git", "rev-parse", "--show-toplevel"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode == 0 and proc.stdout.strip():
+        return Path(proc.stdout.strip())
+    return Path(__file__).resolve().parents[2]
+
+
+def _run_git(repo_root: Path, args: list[str]) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), *args],
         check=False,
         capture_output=True,
         text=True,
@@ -92,11 +104,11 @@ def _run_git(args: list[str]) -> str:
     return proc.stdout.strip()
 
 
-def _rel(path: str) -> str:
+def _rel(repo_root: Path, path: str) -> str:
     p = Path(path)
     if p.is_absolute():
         try:
-            return str(p.resolve().relative_to(REPO_ROOT)).replace("\\", "/")
+            return str(p.resolve().relative_to(repo_root)).replace("\\", "/")
         except Exception:
             return str(p).replace("\\", "/")
     return str(p).replace("\\", "/").lstrip("./")
@@ -113,14 +125,14 @@ def _matches_allowlist(rel_path: str, allowlist: list[str]) -> bool:
     return False
 
 
-def _branch_file_set(branch: str, base_branch: str) -> set[str]:
-    base_ref = _run_git(["rev-parse", "--verify", base_branch])
+def _branch_file_set(repo_root: Path, branch: str, base_branch: str) -> set[str]:
+    base_ref = _run_git(repo_root, ["rev-parse", "--verify", base_branch])
     if not base_ref:
         return set()
-    merge_base = _run_git(["merge-base", branch, base_branch])
+    merge_base = _run_git(repo_root, ["merge-base", branch, base_branch])
     if not merge_base:
         return set()
-    out = _run_git(["diff", "--name-only", f"{merge_base}..{branch}"])
+    out = _run_git(repo_root, ["diff", "--name-only", f"{merge_base}..{branch}"])
     return {line.strip() for line in out.splitlines() if line.strip()}
 
 
@@ -129,27 +141,40 @@ def main() -> int:
     parser.add_argument("--reiter", required=True, choices=sorted(ALLOWLIST.keys()))
     parser.add_argument("--files", nargs="+", required=True)
     parser.add_argument("--base-branch", default="main")
+    parser.add_argument(
+        "--include-branch-overlaps",
+        action="store_true",
+        help="Treat overlaps with other local codex/* branches as hard failures",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
-    files = sorted({_rel(f) for f in args.files})
+    repo_root = _detect_repo_root()
+    files = sorted({_rel(repo_root, f) for f in args.files})
     allowlist = ALLOWLIST[args.reiter]
 
     outside_allowlist = [f for f in files if not _matches_allowlist(f, allowlist)]
     shared_core_touched = sorted([f for f in files if f in SHARED_CORE])
 
-    current_branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]) or ""
-    codex_branches_raw = _run_git(["for-each-ref", "--format=%(refname:short)", "refs/heads/codex/"])
-    codex_branches = [b for b in codex_branches_raw.splitlines() if b and b != current_branch]
-
     branch_overlaps: dict[str, list[str]] = {}
-    for branch in codex_branches:
-        changed = _branch_file_set(branch, args.base_branch)
-        overlap = sorted([f for f in files if f in changed])
-        if overlap:
-            branch_overlaps[branch] = overlap
+    current_branch = _run_git(repo_root, ["rev-parse", "--abbrev-ref", "HEAD"]) or ""
+    if args.include_branch_overlaps:
+        codex_branches_raw = _run_git(
+            repo_root,
+            ["for-each-ref", "--format=%(refname:short)", "refs/heads/codex/"],
+        )
+        codex_branches = [b for b in codex_branches_raw.splitlines() if b and b != current_branch]
+        for branch in codex_branches:
+            changed = _branch_file_set(repo_root, branch, args.base_branch)
+            overlap = sorted([f for f in files if f in changed])
+            if overlap:
+                branch_overlaps[branch] = overlap
 
-    has_overlap = bool(outside_allowlist or shared_core_touched or branch_overlaps)
+    has_overlap = bool(
+        outside_allowlist
+        or shared_core_touched
+        or (args.include_branch_overlaps and branch_overlaps)
+    )
 
     result = {
         "status": "DOMAIN_OVERLAP_DETECTED" if has_overlap else "OK",

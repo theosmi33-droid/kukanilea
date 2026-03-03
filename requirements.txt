@@ -7,6 +7,9 @@ pytest
 waitress
 platformdirs
 cryptography
+psutil
+PyMuPDF
+PyNaCl
 pyinstaller
 dmgbuild
 pip-audit

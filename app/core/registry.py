@@ -4,7 +4,7 @@ Strict Module Registry for KUKANILEA.
 Replaces auto-discovery with explicit registration for stability and security.
 """
 import logging
-from typing import Dict, Any, List, Type
+from typing import Any, Dict, Optional, Type
 
 logger = logging.getLogger("kukanilea.registry")
 
