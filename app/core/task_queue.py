@@ -5,7 +5,7 @@ Background worker queue for non-blocking operations.
 import queue
 import threading
 import logging
-from typing import Callable, Any, Tuple
+from typing import Callable, Any, Dict
 
 logger = logging.getLogger("kukanilea.task_queue")
 
@@ -15,6 +15,8 @@ class BackgroundTaskQueue:
         self.workers = []
         self.num_workers = num_workers
         self._stop_event = threading.Event()
+        self._failed_tasks = 0
+        self._stats_lock = threading.Lock()
 
     def start(self):
         self._stop_event.clear()
@@ -49,11 +51,26 @@ class BackgroundTaskQueue:
                 try:
                     func(*args, **kwargs)
                 except Exception as e:
+                    with self._stats_lock:
+                        self._failed_tasks += 1
                     logger.error(f"Task failed in background queue: {e}", exc_info=True)
                 finally:
                     self.q.task_done()
             except queue.Empty:
                 continue
 
+    def get_stats(self) -> Dict[str, int]:
+        with self._stats_lock:
+            failed = self._failed_tasks
+        return {
+            "pending": self.q.qsize(),
+            "workers": len(self.workers),
+            "failed": failed,
+        }
+
 # Global Instance
 task_queue = BackgroundTaskQueue()
+
+
+def get_queue_stats() -> Dict[str, int]:
+    return task_queue.get_stats()

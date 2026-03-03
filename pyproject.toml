@@ -17,6 +17,9 @@ dependencies = [
   "waitress",
   "platformdirs",
   "cryptography",
+  "psutil",
+  "PyMuPDF",
+  "PyNaCl",
   "yake",
 ]
 

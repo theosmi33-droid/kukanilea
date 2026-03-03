@@ -53,3 +53,5 @@ __pycache__/
 build_release.log
 build/
 *.spec
+.vscode/
+quarantine/dead_letter_uploads/

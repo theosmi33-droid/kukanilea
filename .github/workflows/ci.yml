@@ -2,9 +2,9 @@ name: KUKANILEA CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "codex/**"]
   schedule:
     - cron: "13 4 * * *"
   workflow_dispatch:
@@ -30,6 +30,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Validate VS Code config policy
+        run: |
+          python scripts/dev/enforce_vscode_configs.py --check
 
       - name: Run tests (without e2e)
         run: |

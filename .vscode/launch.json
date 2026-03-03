@@ -3,8 +3,9 @@
   "configurations": [
     {
       "name": "KUKANILEA: Debug App 5051",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
+      "python": "${workspaceFolder}/.build_venv/bin/python",
       "program": "${workspaceFolder}/kukanilea_app.py",
       "args": [
         "--host",

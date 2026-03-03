@@ -2,9 +2,9 @@ name: Build Windows Installer (RC1)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "codex/**"]
   workflow_dispatch:
 
 jobs:

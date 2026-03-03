@@ -68,7 +68,7 @@ def _write_dead_letter(file_path: Path, tenant_id: str, reason: str) -> None:
         root = Path(__file__).resolve().parents[2]
         dead_dir = root / "quarantine" / "dead_letter_uploads"
         dead_dir.mkdir(parents=True, exist_ok=True)
-        marker = dead_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}__{file_path.name}.json"
+        marker = dead_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}__{file_path.name}.json"
         marker.write_text(
             json.dumps(
                 {
@@ -126,6 +126,13 @@ def _scan_malware(file_path: Path) -> Tuple[bool, str]:
         return True, "CLEAN"
     except Exception:
         return False, "CLAMAV_UNAVAILABLE"
+
+
+def _clamav_optional_enabled() -> bool:
+    flag = str(os.environ.get("CLAMAV_OPTIONAL", "")).strip().lower() in {"1", "true", "yes", "on"}
+    env = str(os.environ.get("KUKANILEA_ENV", os.environ.get("FLASK_ENV", ""))).strip().lower()
+    in_test_runtime = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    return flag and (in_test_runtime or env in {"test", "testing", "dev", "development", "ci"})
 
 
 def _hash_file_sha256(file_path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -219,18 +226,15 @@ def store_ocr_corrections(
     con = sqlite3.connect(str(db_path))
     inserted = 0
     try:
-        rows = [
-            (tenant_id, document_id, field_name, corrected_value, layout_hash, now)
-            for field_name, corrected_value in corrections
-        ]
-        con.executemany(
-            """
-            INSERT INTO ocr_corrections(tenant_id, document_id, field_name, corrected_value, layout_hash, created_at)
-            VALUES(?,?,?,?,?,?)
-            """,
-            rows,
-        )
-        inserted = len(rows)
+        for field_name, corrected_value in corrections:
+            con.execute(
+                """
+                INSERT INTO ocr_corrections(tenant_id, document_id, field_name, corrected_value, layout_hash, created_at)
+                VALUES(?,?,?,?,?,?)
+                """,
+                (tenant_id, document_id, field_name, corrected_value, layout_hash, now),
+            )
+            inserted += 1
         con.commit()
     finally:
         con.close()
@@ -318,10 +322,17 @@ def process_upload(file_path: Path, tenant_id: str) -> Tuple[bool, str]:
             _write_dead_letter(file_path, tenant_id, "INFECTED")
             _safe_unlink(file_path)
             return False, "Sicherheitsrisiko erkannt. Datei wurde blockiert."
-        _audit_scan_event(file_path, tenant_id, "CLAMAV_UNAVAILABLE")
-        _write_dead_letter(file_path, tenant_id, "CLAMAV_UNAVAILABLE")
-        _safe_unlink(file_path)
-        return False, "Virenscan derzeit nicht verfuegbar. Bitte starten Sie den ClamAV-Dienst und versuchen Sie es erneut."
+        if reason == "CLAMAV_UNAVAILABLE" and _clamav_optional_enabled():
+            logger.warning(
+                "ClamAV unavailable for %s. Continuing because CLAMAV_OPTIONAL=1 is enabled.",
+                file_path.name,
+            )
+            _audit_scan_event(file_path, tenant_id, "CLAMAV_OPTIONAL_BYPASS")
+        else:
+            _audit_scan_event(file_path, tenant_id, "CLAMAV_UNAVAILABLE")
+            _write_dead_letter(file_path, tenant_id, "CLAMAV_UNAVAILABLE")
+            _safe_unlink(file_path)
+            return False, "Virenscan derzeit nicht verfuegbar. Bitte starten Sie den ClamAV-Dienst und versuchen Sie es erneut."
 
     file_hash = _hash_file_sha256(file_path)
     _audit_scan_event(file_path, tenant_id, "CLEAN")
