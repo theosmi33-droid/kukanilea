@@ -179,7 +179,8 @@ def main() -> int:
         [
             f
             for f in files
-            if f in SHARED_CORE or any(f.startswith(prefix) for prefix in SHARED_CORE_PREFIXES)
+            if (f in SHARED_CORE or any(f.startswith(prefix) for prefix in SHARED_CORE_PREFIXES))
+            and not _matches_allowlist(f, allowlist)
         ]
     )
 
