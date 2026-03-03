@@ -1,0 +1,60 @@
+{# Floating Widget Chatbot (Projekt 11) #}
+<section id="floating-chat-widget" class="floating-chat-widget" data-widget="chatbot" hidden>
+  <button
+    id="floating-chat-toggle"
+    type="button"
+    class="floating-chat-toggle"
+    aria-controls="floating-chat-panel"
+    aria-expanded="false"
+    aria-label="AI Companion öffnen"
+  >
+    <span class="floating-chat-toggle-label">KI</span>
+    <span id="floating-chat-unread-badge" class="floating-chat-unread-badge" hidden>0</span>
+  </button>
+
+  <div
+    id="floating-chat-panel"
+    class="floating-chat-panel"
+    role="dialog"
+    aria-modal="false"
+    aria-label="AI Companion"
+    hidden
+  >
+    <header class="floating-chat-header">
+      <div class="floating-chat-title-wrap">
+        <h3 class="floating-chat-title">AI Companion</h3>
+        <p id="floating-chat-status" class="floating-chat-status">Bereit</p>
+      </div>
+      <div class="floating-chat-controls">
+        <button id="floating-chat-minimize" type="button" class="floating-chat-icon-btn" aria-label="Minimieren">_</button>
+        <button id="floating-chat-close" type="button" class="floating-chat-icon-btn" aria-label="Schließen">x</button>
+      </div>
+    </header>
+
+    <div id="floating-chat-context-tag" class="floating-chat-context-tag">Kontext: /</div>
+    <div id="floating-chat-quick-actions" class="floating-chat-quick-actions"></div>
+
+    <div id="floating-chat-body" class="floating-chat-body">
+      <ul id="floating-chat-messages" class="floating-chat-messages" aria-live="polite" aria-relevant="additions"></ul>
+      <div id="floating-chat-thinking" class="floating-chat-thinking" hidden>
+        <span class="floating-chat-thinking-dot"></span>
+        Agent denkt...
+      </div>
+      <ol id="floating-chat-steps" class="floating-chat-steps"></ol>
+    </div>
+
+    <div id="floating-chat-confirm" class="floating-chat-confirm" hidden>
+      <p id="floating-chat-confirm-text"></p>
+      <div class="floating-chat-confirm-actions">
+        <button id="floating-chat-confirm-yes" type="button" class="btn btn-primary btn-sm">Ja, ausführen</button>
+        <button id="floating-chat-confirm-no" type="button" class="btn btn-secondary btn-sm">Abbrechen</button>
+      </div>
+    </div>
+
+    <form id="floating-chat-form" class="floating-chat-form" autocomplete="off">
+      <label for="floating-chat-input" class="sr-only">Nachricht</label>
+      <input id="floating-chat-input" name="message" type="text" maxlength="600" placeholder="Wie kann ich helfen?" />
+      <button id="floating-chat-send" type="submit" class="btn btn-primary btn-sm">Senden</button>
+    </form>
+  </div>
+</section>
