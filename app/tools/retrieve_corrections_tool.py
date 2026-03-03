@@ -28,20 +28,20 @@ class RetrieveCorrectionsTool(BaseTool):
         tenant_id = g.get("tenant_id")
         if not tenant_id:
             return {"error": "No tenant context found."}
-            
+
         auth_db = current_app.extensions.get("auth_db")
         if not auth_db:
             return {"error": "Database not initialized."}
-            
+
         manager = MemoryManager(str(auth_db.path))
         # We search specifically for memories of type 'ocr_correction'
         all_hits = manager.retrieve_context(tenant_id, query, limit=10)
-        
+
         corrections = [
-            hit for hit in all_hits 
+            hit for hit in all_hits
             if hit.get("metadata", {}).get("type") == "ocr_correction"
         ]
-        
+
         return {"corrections": corrections[:limit]}
 
 # Register tool

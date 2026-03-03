@@ -29,19 +29,33 @@ class OCRCorrector:
             return []
         try:
             hits = self.memory.retrieve_context(self.tenant_id, text[:1200], limit=max(4, limit * 3))
+            if not hits:
+                return []
+            
             corrections = [h for h in hits if h.get("metadata", {}).get("type") == "ocr_correction"]
             lines: List[str] = []
-            for hit in corrections[:limit]:
-                content = str(hit.get("content", "") or "")
-                fewshot_for_hit = False
+            for hit in corrections:
+                content = str(hit.get("content", "") or "").strip()
+                if not content:
+                    continue
+                
+                found_fewshot = False
                 for row in content.splitlines():
                     row = row.strip()
                     if row.startswith("FEWSHOT|"):
                         lines.append(row)
-                        fewshot_for_hit = True
-                if "KORREKTUR-WISSEN:" in content and not fewshot_for_hit:
-                    legacy = content.split("Kontext-Auszug:")[0].strip()
-                    lines.append(f"LEGACY|{legacy}")
+                        found_fewshot = True
+                
+                if "KORREKTUR-WISSEN:" in content and not found_fewshot:
+                    # Legacy fallback parsing
+                    parts = content.split("Kontext-Auszug:", 1)
+                    legacy = parts[0].replace("KORREKTUR-WISSEN:", "").strip()
+                    if legacy:
+                        lines.append(f"LEGACY|{legacy}")
+                
+                if len(lines) >= limit:
+                    break
+                    
             return lines[:limit]
         except Exception as exc:
             logger.warning("Failed loading semantic correction context: %s", exc)

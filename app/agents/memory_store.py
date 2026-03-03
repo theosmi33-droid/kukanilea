@@ -29,10 +29,10 @@ class MemoryManager:
         return con
 
     def store_memory(
-        self, 
-        tenant_id: str, 
-        agent_role: str, 
-        content: str, 
+        self,
+        tenant_id: str,
+        agent_role: str,
+        content: str,
         metadata: Optional[Dict[str, Any]] = None,
         importance_score: int = 5,
         category: str = "FAKT"
@@ -90,7 +90,7 @@ class MemoryManager:
                 # Unpack binary BLOB back to float list
                 vec_len = len(blob) // 4
                 db_vec = struct.unpack(f"{vec_len}f", blob)
-                
+
                 score = self._cosine_similarity(query_vec, db_vec)
                 results.append((score, {
                     "content": row["content"],

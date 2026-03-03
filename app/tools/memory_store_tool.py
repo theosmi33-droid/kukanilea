@@ -27,14 +27,14 @@ class MemoryStoreTool(BaseTool):
         tenant_id = g.get("tenant_id")
         if not tenant_id:
             return {"error": "No tenant context found."}
-            
+
         auth_db = current_app.extensions.get("auth_db")
         if not auth_db:
             return {"error": "Database not initialized."}
-            
+
         manager = MemoryManager(str(auth_db.path))
         success = manager.store_memory(tenant_id, "agent", content, metadata)
-        
+
         return {"status": "stored" if success else "failed"}
 
 # Register tool

@@ -3,8 +3,8 @@
 ## Context
 Domain `zeiterfassung` is blocked by Shared-Core ownership while critical UI/logic still live in core files.
 
-Date: 2026-03-03  
-Worktree: `/Users/gensuminguyen/Kukanilea/worktrees/zeiterfassung`  
+Date: 2026-03-03
+Worktree: `/Users/gensuminguyen/Kukanilea/worktrees/zeiterfassung`
 Branch: `codex/zeiterfassung`
 
 ## Requested Scope Expansion

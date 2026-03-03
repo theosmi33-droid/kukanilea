@@ -14,7 +14,7 @@ from app.agents.memory_store import MemoryManager
 
 def test_memory_system():
     print("Testing KUKANILEA Native Memory System...")
-    
+
     with tempfile.NamedTemporaryFile() as tmp:
         db_path = tmp.name
         con = sqlite3.connect(db_path)
@@ -33,9 +33,9 @@ def test_memory_system():
         """)
         con.commit()
         con.close()
-        
+
         manager = MemoryManager(db_path)
-        
+
         # Mock embeddings: simple deterministic floats
         def mock_embed(text):
             if "Zahlungsfrist" in text: return [1.0, 0.0, 0.0]
@@ -49,16 +49,16 @@ def test_memory_system():
             manager.store_memory("tenant_A", "system", "Die Zahlungsfrist beträgt 14 Tage.")
             manager.store_memory("tenant_A", "system", "Die Lieferzeit beträgt 5 Werktage.")
             manager.store_memory("tenant_B", "system", "Geheime Info von B.")
-            
+
             # 2. Retrieve context (Tenant Isolation Check)
             print("Retrieving context for Tenant A...")
             results = manager.retrieve_context("tenant_A", "Wie lange ist die Frist?", limit=1)
-            
+
             assert len(results) == 1
             assert "Zahlungsfrist" in results[0]["content"]
             assert results[0]["score"] > 0.8
             print(f"Result: {results[0]['content']} (Score: {results[0]['score']:.4f})")
-            
+
             # 3. Security Check: Tenant B should NOT see A's data
             print("Checking Tenant Isolation...")
             results_B = manager.retrieve_context("tenant_B", "Zahlungsfrist")

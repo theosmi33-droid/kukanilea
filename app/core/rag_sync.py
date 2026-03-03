@@ -4,6 +4,7 @@ import os
 import json
 import sqlite3
 import logging
+import threading
 from collections import Counter
 from pathlib import Path
 from datetime import datetime, timezone
@@ -19,6 +20,8 @@ from app.core.upload_pipeline import (
 
 logger = logging.getLogger("kukanilea.rag_sync")
 
+_SYNC_LOCK = threading.RLock()
+
 class RAGSync:
     """
     KUKANILEA v1.5 — RAG-SYNC Engine.
@@ -30,14 +33,14 @@ class RAGSync:
 
     def sync_tenant_intelligence(self, tenant_id: str):
         """
-        Extracts high-level intelligence from the individual DB 
+        Extracts high-level intelligence from the individual DB
         and updates the semantic MEMORY.md.
         """
         logger.info(f"RAG-SYNC: Synchronizing intelligence for tenant {tenant_id}...")
-        
+
         # 1. Fetch top weighted keywords from DB
         intelligence_data = self._extract_key_facts(tenant_id)
-        
+
         # 2. Format for MEMORY.md
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         entry = (
@@ -47,36 +50,46 @@ class RAGSync:
             f"- **Dokumenten-Volumen:** {intelligence_data['doc_count']} Belege archiviert.\n"
         )
         
-        # 3. Append to MEMORY.md (Local-First Long-term Memory)
-        try:
-            with open(self.memory_file, "a", encoding="utf-8") as f:
-                f.write(entry)
-            logger.info("RAG-SYNC: Semantic memory updated.")
-        except Exception as e:
-            logger.error(f"RAG-SYNC: Memory write failed: {e}")
+        # 3. Append and Truncate MEMORY.md (Local-First Long-term Memory)
+        with _SYNC_LOCK:
+            try:
+                content = ""
+                if self.memory_file.exists():
+                    content = self.memory_file.read_text(encoding="utf-8")
+                
+                # Keep only last 100kb or last 10 entries of memory if it grows too large
+                new_content = content + entry
+                if len(new_content) > 100 * 1024:
+                    # Basic truncation: keep last 50kb
+                    new_content = "... (older entries truncated)\n" + new_content[-50 * 1024:]
+                
+                self.memory_file.write_text(new_content, encoding="utf-8")
+                logger.info("RAG-SYNC: Semantic memory updated and maintained.")
+            except Exception as e:
+                logger.error(f"RAG-SYNC: Memory write failed: {e}")
 
     def _extract_key_facts(self, tenant_id: str) -> Dict[str, Any]:
         """Queries the individual DB for core facts."""
         facts = {"keywords": [], "top_customers": [], "doc_count": 0}
-        
+
         if not self.db_path.exists():
             return facts
 
         try:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
-            
+
             # Count
             res = conn.execute("SELECT COUNT(*) FROM docs_index WHERE tenant_id = ?", (tenant_id,)).fetchone()
             facts["doc_count"] = res[0] if res else 0
-            
+
             # Top Customers
             rows = conn.execute(
                 "SELECT customer_name, COUNT(*) as c FROM docs_index WHERE tenant_id = ? GROUP BY customer_name ORDER BY c DESC LIMIT 5",
                 (tenant_id,)
             ).fetchall()
             facts["top_customers"] = [r["customer_name"] for r in rows]
-            
+
             # Top Keywords (weighted via vocab if available)
             try:
                 k_rows = conn.execute(
@@ -92,11 +105,11 @@ class RAGSync:
                 for r in k_rows:
                     words.extend([w.lower() for w in r[0].replace("_", " ").replace(".", " ").split() if len(w) > 3])
                 facts["keywords"] = [w[0] for w in Counter(words).most_common(5)]
-                
+
             conn.close()
         except Exception as e:
             logger.error(f"RAG-SYNC: Fact extraction failed: {e}")
-            
+
         return facts
 
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
@@ -106,28 +119,28 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> List[str
     """
     if not text:
         return []
-        
+
     chunks = []
     start = 0
     text_len = len(text)
-    
+
     while start < text_len:
         end = start + chunk_size
         chunk = text[start:end]
         chunks.append(chunk)
-        
+
         if end >= text_len:
             break
-            
+
         start += (chunk_size - overlap)
-        
+
     return chunks
 
 def sync_document_to_memory(
-    tenant_id: str, 
-    doc_id: str, 
-    file_name: str, 
-    text: str, 
+    tenant_id: str,
+    doc_id: str,
+    file_name: str,
+    text: str,
     metadata: Optional[Dict[str, Any]] = None
 ) -> int:
     """
@@ -137,15 +150,32 @@ def sync_document_to_memory(
     if not text or len(text.strip()) < 10:
         return 0
         
-    # 1. Initialize Memory Manager
     auth_db_path = str(Config.AUTH_DB)
+    
+    # 1. Duplicate Check: Skip if this doc_id already has document_snippet chunks
+    try:
+        conn = sqlite3.connect(auth_db_path)
+        res = conn.execute(
+            "SELECT COUNT(*) FROM agent_memory WHERE tenant_id = ? AND agent_role = 'document_engine' AND json_extract(metadata, '$.doc_id') = ?",
+            (tenant_id, doc_id)
+        ).fetchone()
+        if res and res[0] > 0:
+            logger.info(f"RAG-SYNC: Document {doc_id} already exists in memory. Skipping sync.")
+            conn.close()
+            return 0
+        conn.close()
+    except Exception as e:
+        logger.warning(f"RAG-SYNC: Duplicate check failed for {doc_id}: {e}")
+        # Continue anyway, better to have duplicates than missing memory
+    
+    # 2. Initialize Memory Manager
     manager = MemoryManager(auth_db_path)
     
-    # 2. Chunk text
+    # 3. Chunk text
     chunks = chunk_text(text)
     logger.info(f"Syncing document {file_name} ({doc_id}) to memory. Generated {len(chunks)} chunks.")
     
-    # 3. Store each chunk
+    # 4. Store each chunk
     stored_count = 0
     for i, chunk in enumerate(chunks):
         chunk_meta = (metadata or {}).copy()
@@ -156,7 +186,7 @@ def sync_document_to_memory(
             "total_chunks": len(chunks),
             "type": "document_snippet"
         })
-        
+
         success = manager.store_memory(
             tenant_id=tenant_id,
             agent_role="document_engine",
@@ -165,7 +195,7 @@ def sync_document_to_memory(
         )
         if success:
             stored_count += 1
-            
+
     return stored_count
 
 def learn_from_correction(

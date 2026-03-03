@@ -58,7 +58,7 @@ def generate_json(prompt: str, schema: Optional[dict] = None) -> Optional[dict]:
     host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     # Similar model resolution logic as above...
     # For brevity, reusing the existing logic in a real implementation
-    
+
     url = f"{host}/api/generate"
     options = {"temperature": 0.0, "seed": 42}
     payload = {

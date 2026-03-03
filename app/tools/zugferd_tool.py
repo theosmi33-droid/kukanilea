@@ -51,10 +51,10 @@ class ZugferdTool(BaseTool):
                 total_vat=kwargs["amount_vat"],
                 total_gross=kwargs["amount_net"] + kwargs["amount_vat"]
             )
-            
+
             generator = ZugferdGenerator()
             xml_content = generator.generate_xml(data)
-            
+
             return {
                 "status": "success",
                 "xml": xml_content,

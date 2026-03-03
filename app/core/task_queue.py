@@ -46,7 +46,7 @@ class BackgroundTaskQueue:
                 if item == (None, None, None):
                     self.q.task_done()
                     break
-                
+
                 func, args, kwargs = item
                 try:
                     func(*args, **kwargs)

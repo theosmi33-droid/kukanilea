@@ -57,7 +57,7 @@ class LexofficeUploadTool(BaseTool):
                     (job_id, tenant_id, "lexoffice", json.dumps(payload), str(path.absolute()), ts)
                 )
                 con.commit()
-            
+
             return {
                 "status": "queued",
                 "job_id": job_id,

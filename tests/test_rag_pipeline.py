@@ -13,22 +13,22 @@ from app.agents.base import AgentContext
 
 def test_rag_pipeline():
     print("Testing KUKANILEA RAG Pipeline...")
-    
+
     # 1. Test Chunking
     text = "A" * 1000 + "B" * 1000
     chunks = chunk_text(text, chunk_size=800, overlap=100)
     print(f"Generated {len(chunks)} chunks.")
     assert len(chunks) >= 3
     assert chunks[0].startswith("A" * 800)
-    
+
     # 2. Test Hybrid Search Integration
     # We mock core and memory manager to test the logic flow
     mock_core = type("Core", (), {"assistant_search": lambda *args, **kwargs: []})()
     agent = SearchAgent(mock_core)
-    
+
     # Mock context
     context = AgentContext(tenant_id="test_tenant", user="test_user", role="ADMIN")
-    
+
     # Mock semantic hits
     mock_hits = [
         {
@@ -43,10 +43,10 @@ def test_rag_pipeline():
             }
         }
     ]
-    
+
     with patch("app.agents.memory_store.MemoryManager.retrieve_context", return_value=mock_hits):
         results, suggestions = agent.search("bau rechnung", context)
-        
+
         print(f"Search results: {results}")
         assert len(results) == 1
         assert "[Semantic Match]" in results[0]["file_name"]

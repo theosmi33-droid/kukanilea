@@ -21,7 +21,7 @@ def get_installed_models() -> List[str]:
             return [m["name"] for m in models]
     except Exception as e:
         logger.warning(f"Ollama detection failed: {e}")
-        
+
     return []
 
 def detect_gpu() -> Dict[str, Any]:
@@ -36,7 +36,7 @@ def switch_model(model_name: str) -> bool:
         logger.info(f"Switching to AI model: {model_name}")
         # Save to config/tenant settings in future
         return True
-        
+
     logger.error(f"Model {model_name} not found.")
     return False
 
