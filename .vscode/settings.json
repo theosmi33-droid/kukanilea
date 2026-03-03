@@ -16,17 +16,14 @@
 
   "ruff.lint.run": "onType",
   "ruff.nativeServer": "on",
-
   "editor.formatOnSave": false,
   "editor.codeActionsOnSave": {
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit"
   },
-
   "files.eol": "\n",
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
-
   "files.exclude": {
     "**/.pytest_cache": true,
     "**/.ruff_cache": true,
@@ -45,11 +42,9 @@
     "**/playwright-report": true,
     "**/test-results": true
   },
-
   "git.autofetch": true,
   "git.confirmSync": false,
   "githubPullRequests.pullBranch": "never",
-
   "terminal.integrated.defaultProfile.osx": "zsh",
   "terminal.integrated.cwd": "${workspaceFolder}",
   "terminal.integrated.env.osx": {
@@ -58,7 +53,6 @@
     "KUKANILEA_REMOTE_LLM_ENABLED": "0",
     "OLLAMA_HOST": "http://127.0.0.1:11434"
   },
-
   "workbench.editor.enablePreview": false,
   "workbench.startupEditor": "none",
   "task.allowAutomaticTasks": "on"
