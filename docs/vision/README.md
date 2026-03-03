@@ -13,9 +13,14 @@ This folder contains the canonical vision and execution documents for the Sovere
 - `SCOPE_REQUEST_EXAMPLE_DASHBOARD.md` — template for shared-core scope requests.
 - `KUKANILEA_CLI_MASTER_ANLEITUNG.md` — Codex/Gemini CLI operating model.
 - `quick_start_cli.sh` — local setup helper script.
+- `ATTACHMENTS_STATUS.md` — current applicability/state of all attachments.
 
 ## Collaboration guardrails for review account
 - Review/debug only by default.
 - No force-push, no direct merge to protected `main`.
 - Any shared-core change must go through scope request + PR checks.
 - Keep Zero-CDN, White-Mode-only, HTMX shell rules intact.
+
+## Current Attachment State
+For current status, ownership, and refresh process, see:
+- `ATTACHMENTS_STATUS.md`
