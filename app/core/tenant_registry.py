@@ -82,12 +82,23 @@ class TenantRegistry:
 
     def _save(self) -> None:
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.storage_path, "w", encoding="utf-8") as f:
-            json.dump(self._mappings, f, indent=2)
+        temp_path = self.storage_path.with_suffix(".tmp")
         try:
-            os.chmod(self.storage_path, 0o600)
-        except OSError:
-            pass
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(self._mappings, f, indent=2)
+            # Atomic swap
+            os.replace(temp_path, self.storage_path)
+            try:
+                os.chmod(self.storage_path, 0o600)
+            except OSError:
+                pass
+        except Exception as e:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+            raise e
 
     def validate_path(self, db_path: str, tenant_id: Optional[str] = None) -> bool:
         """
@@ -122,6 +133,9 @@ class TenantRegistry:
     def add_tenant(self, tenant_id: str, tenant_name: str, db_path: str) -> bool:
         normalized = self.normalize_tenant_id(tenant_id)
         if not normalized:
+            return False
+
+        if normalized in self._mappings:
             return False
 
         if not self.validate_path(db_path, normalized):
