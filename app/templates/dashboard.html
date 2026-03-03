@@ -156,9 +156,29 @@ document.addEventListener("DOMContentLoaded", function() {
     fileList.innerHTML = "";
     stagedFiles.forEach((f, i) => {
       const d = document.createElement("div");
-      d.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--radius-md); background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); font-size: 13px;";
+      d.draggable = true;
+      d.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--radius-md); background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); font-size: 13px; cursor: move;";
+      d.dataset.index = i;
+      
+      d.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', i);
+        d.style.opacity = '0.5';
+      });
+      d.addEventListener('dragend', () => d.style.opacity = '1');
+      d.addEventListener('dragover', (e) => e.preventDefault());
+      d.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+        const toIndex = i;
+        if (fromIndex !== toIndex) {
+          const movedItem = stagedFiles.splice(fromIndex, 1)[0];
+          stagedFiles.splice(toIndex, 0, movedItem);
+          updateUI();
+        }
+      });
+
       d.innerHTML = `
-        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--color-text-main);">${f.name}</div>
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--color-text-main); pointer-events: none;">${f.name}</div>
         <button style="background: none; border: none; color: var(--color-danger); cursor: pointer; font-weight: 600; padding: 4px 8px; font-size: 12px;" onclick="window._rm(${i})">Entfernen</button>
       `;
       fileList.appendChild(d);
