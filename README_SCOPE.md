@@ -1,7 +1,9 @@
 # README_SCOPE - Project 4: Messenger
 
-## Single Source of Truth
-- /Users/gensuminguyen/Kukanilea/kukanilea_production/docs/PRODUCT_DOMAINS_OVERVIEW.md
+## Ownership
+- Tab slug: dashboard
+- Branch: codex/dashboard
+- Worktree: /Users/gensuminguyen/Kukanilea/worktrees/dashboard
 
 ## Scope
 - Worktree: `/Users/gensuminguyen/Kukanilea/worktrees/messenger`
@@ -13,11 +15,7 @@
 - `messenger connector/services in domain scope`
 - `internal chat domain files`
 
-## Protected Cross-Domain Files (request required)
-- `app/web.py`
-- `app/db.py`
-- `app/core/logic.py`
-- `global layout/sidebar/auth/policy files`
+If a change touches shared core: emit CROSS_DOMAIN_WARNING and stop implementation.
 
 ## Mandatory Start Checklist
 1. Read SSOT and this scope file.
