@@ -13,7 +13,6 @@ Ziel: Launch-Readiness ist nur gültig, wenn sie reproduzierbar messbar ist. Kei
 ## Gate 0 (Schnell) — One-Command Reality Check
 
 ```bash
-cd /Users/gensuminguyen/Kukanilea/kukanilea_production
 scripts/ops/launch_evidence_gate.sh
 ```
 
