@@ -15,13 +15,15 @@ class MailAgent(BaseAgent):
     def handle(self, message: str, intent: str, context: AgentContext) -> AgentResult:
         text = message.lower()
         if "send" in text or "schick" in text:
+            attachments = context.meta.get("attachments", [])
             return AgentResult(
                 text="Ich habe einen Mail-Versand vorbereitet. Bitte bestätige die Aktion im Mail-Hub.",
                 actions=[{
                     "type": "mail_send",
                     "confirm_required": True,
                     "target": "customer",
-                    "reason": "user_request"
+                    "reason": "user_request",
+                    "attachments": attachments
                 }]
             )
         return AgentResult(
