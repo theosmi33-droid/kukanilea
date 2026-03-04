@@ -50,6 +50,7 @@ def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]
         item = dict(action)
         if item.get("type") in WRITE_ACTIONS:
             item["confirm_required"] = True
+            item["requires_confirm"] = True
         out.append(item)
     return out
 
