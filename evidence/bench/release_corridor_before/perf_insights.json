@@ -1,0 +1,12 @@
+{
+  "iterations": 200,
+  "legacy": {
+    "mean_ms": 3.974,
+    "p95_ms": 4.562
+  },
+  "optimized": {
+    "mean_ms": 3.409,
+    "p95_ms": 4.456
+  },
+  "delta_mean_percent": 14.21
+}

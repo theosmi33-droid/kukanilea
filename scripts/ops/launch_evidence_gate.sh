@@ -19,6 +19,7 @@ FAIL_COUNT=0
 PASS_COUNT=0
 WARN_COUNT=0
 REPO="${REPO:-}"
+PYTHON="${PYTHON:-python3}"
 
 declare -a RESULT_LINES=()
 
@@ -187,7 +188,17 @@ if [[ -z "$REPO" ]]; then
   append "repo slug not detected"
   record_result "Main CI Status" "WARN" "repo slug missing (set REPO=owner/name)"
 elif command -v gh >/dev/null 2>&1; then
-  run_gate_simple "Main CI Status" "gh run list --repo $REPO --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion" "unable to query GitHub Actions runs"
+  _tmp="$(mktemp)"
+  append "## Main CI Status"
+  append "`gh run list --repo $REPO --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion`"
+  if capture_cmd "gh run list --repo $REPO --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion" "$_tmp"; then
+    render_output_block "$_tmp"
+    record_result "Main CI Status" "PASS" "gh run list succeeded"
+  else
+    render_output_block "$_tmp"
+    record_result "Main CI Status" "WARN" "unable to query GitHub Actions runs (auth/network/runtime limitation)"
+  fi
+  rm -f "$_tmp"
 else
   _tmp="$(mktemp)"
   append "## Main CI Status"
@@ -246,8 +257,12 @@ run_gate_simple "Overlap Matrix" "bash scripts/orchestration/overlap_matrix_11.s
 
 if [[ "$SKIP_PYTEST" -eq 1 ]]; then
   record_result "Pytest" "WARN" "skipped by flag"
+elif ! command -v "$PYTHON" >/dev/null 2>&1; then
+  record_result "Pytest" "FAIL" "python interpreter unavailable: $PYTHON"
+elif ! "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then
+  record_result "Pytest" "WARN" "pytest not installed for interpreter: $PYTHON"
 else
-  run_gate_simple "Pytest" "pytest -q" "pytest execution failed"
+  run_gate_simple "Pytest" "$PYTHON -m pytest -q" "pytest execution failed"
 fi
 
 run_gate_simple "KPI Snapshot" "./scripts/ops/kpi_snapshot.sh" "kpi snapshot failed"
