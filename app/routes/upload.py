@@ -1,28 +1,84 @@
-from flask import Blueprint, render_template, current_app, json, request, jsonify
-from ..auth import login_required, current_tenant
-from ..security import csrf_protected
-from ..rate_limit import upload_limiter
-from app import core
-from datetime import datetime
+from __future__ import annotations
+import logging
+import json
+import os
+import re
 from pathlib import Path
-from app.core.malware_scanner import scan_file_stream
+from datetime import datetime
+from flask import Blueprint, current_app, jsonify, request, render_template, redirect, url_for, abort, send_file
 
+from app.auth import login_required, current_tenant, current_role, current_user
+from app.security import csrf_protected
+from app.config import Config
+from app import core
+from app.core.malware_scanner import scan_file_stream
+from app.core.upload_pipeline import process_upload
+from app.rate_limit import upload_limiter
+
+logger = logging.getLogger("kukanilea.upload")
 bp = Blueprint("upload", __name__)
+
+DOCTYPE_CHOICES = [
+    "ANGEBOT",
+    "RECHNUNG",
+    "AUFTRAGSBESTAETIGUNG",
+    "AW",
+    "MAHNUNG",
+    "NACHTRAG",
+    "SONSTIGES",
+    "FOTO",
+    "H_RECHNUNG",
+    "H_ANGEBOT",
+]
 
 def _core_get(name: str, default=None):
     return getattr(core, name, default)
 
+EINGANG = _core_get("EINGANG")
+PENDING_DIR = _core_get("PENDING_DIR")
+BASE_PATH = _core_get("BASE_PATH")
+DONE_DIR = _core_get("DONE_DIR")
+analyze_to_pending = _core_get("analyze_to_pending")
+read_pending = _core_get("read_pending")
+write_pending = _core_get("write_pending")
+delete_pending = _core_get("delete_pending")
+write_done = _core_get("write_done")
+read_done = _core_get("read_done")
+process_with_answers = _core_get("process_with_answers")
+
 def _norm_tenant(t: str) -> str:
-    return (t or "default").lower().replace(" ", "_")
+    return str(t or "default").strip().lower()
 
-def _safe_filename(filename: str) -> str:
-    from werkzeug.utils import secure_filename
-    return secure_filename(filename)
+def _safe_filename(name: str) -> str:
+    raw = (name or "").strip().replace("\\", "_").replace("/", "_")
+    raw = re.sub(r"[^a-zA-Z0-9._-]+", "_", raw).strip("._-")
+    return raw or "upload"
 
-@bp.get("/upload")
+def _render_base(template_name: str, **kwargs) -> str:
+    from app.web import _render_base as web_render_base
+    return web_render_base(template_name, **kwargs)
+
+def _render_sovereign_tool(tool_key: str, title: str, message: str, active_tab: str = "upload") -> str:
+    from app.web import _render_sovereign_tool as web_render_tool
+    return web_render_tool(tool_key, title, message, active_tab=active_tab)
+
+def _wizard_get(p: dict) -> dict:
+    w = p.get("wizard") or {}
+    for k in ["tenant", "kdnr", "use_existing", "name", "addr", "plzort", "doctype", "document_date"]:
+        w.setdefault(k, "")
+    return w
+
+def _wizard_save(token: str, p: dict, w: dict) -> None:
+    p["wizard"] = w
+    write_pending(token, p)
+
+def _card(kind: str, msg: str) -> str:
+    from app.web import _card as web_card
+    return web_card(kind, msg)
+
+@bp.route("/upload", methods=["GET"])
 @login_required
 def upload_page():
-    from ..web import _render_sovereign_tool
     return _render_sovereign_tool(
         "upload",
         "Upload",
@@ -30,7 +86,8 @@ def upload_page():
         active_tab="upload",
     )
 
-@bp.post("/upload")
+@bp.route("/upload", methods=["POST"])
+@login_required
 @csrf_protected
 @upload_limiter.limit_required
 def upload():
@@ -39,31 +96,23 @@ def upload():
         return jsonify(error="no_file"), 400
         
     tenant = _norm_tenant(current_tenant() or "default")
-    EINGANG = _core_get("EINGANG")
-    analyze_to_pending = _core_get("analyze_to_pending") or _core_get("start_background_analysis")
-    read_pending = _core_get("read_pending")
-    write_pending = _core_get("write_pending")
-
-    # Task 114: Disk Quota Management (100MB limit per tenant for now)
     QUOTA_LIMIT = 100 * 1024 * 1024 
-    current_usage = sum(f.stat().st_size for f in (EINGANG / tenant).glob("*") if f.is_file())
+    
+    tenant_eingang = EINGANG / tenant
+    tenant_eingang.mkdir(parents=True, exist_ok=True)
+    
+    current_usage = sum(f.stat().st_size for f in tenant_eingang.glob("*") if f.is_file())
     if current_usage > QUOTA_LIMIT:
         return jsonify(error="quota_exceeded", message="Speicherlimit für Mandant erreicht."), 403
 
     results = []
-    from app.core.upload_pipeline import process_upload
-
     for f in files:
         if not f.filename: continue
         filename = _safe_filename(f.filename)
-        
-        tenant_in = EINGANG / tenant
-        tenant_in.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        dest = tenant_in / f"{ts}__{filename}"
+        dest = tenant_eingang / f"{ts}__{filename}"
         f.save(dest)
         
-        # Phase 5: ClamAV Malware Scan
         if not scan_file_stream(dest):
             dest.unlink()
             return jsonify(error="malware_detected", message="Sicherheitsrisiko erkannt."), 403
@@ -84,3 +133,111 @@ def upload():
         results.append({"token": token, "filename": filename})
         
     return jsonify(tokens=results, tenant=tenant)
+
+@bp.route("/review/<token>/delete", methods=["POST"])
+@login_required
+@csrf_protected
+def review_delete(token: str):
+    try:
+        delete_pending(token)
+    except Exception: pass
+    return redirect(url_for("dashboard.dashboard_page"))
+
+@bp.route("/review/<token>/kdnr", methods=["GET", "POST"])
+@login_required
+@csrf_protected
+def review(token: str):
+    p = read_pending(token)
+    if not p:
+        return _render_base(_card("error", "Nicht gefunden."), active_tab="upload")
+    
+    if p.get("status") == "ANALYZING":
+        return _render_base(
+            "review.html",
+            active_tab="upload",
+            token=token,
+            filename=p.get("filename", ""),
+            is_pdf=True,
+            is_text=False,
+            preview=None,
+            w=_wizard_get(p),
+            doctypes=[],
+            kdnr_ranked=[],
+            name_suggestions=[],
+            suggested_doctype="SONSTIGES",
+            suggested_date="",
+            confidence=0,
+            msg="Analyse läuft noch. Bitte kurz warten oder zurück zur Übersicht."
+        )
+
+    w = _wizard_get(p)
+    w["tenant"] = _norm_tenant(current_tenant() or p.get("tenant", "") or "default")
+
+    if request.method == "POST":
+        # Handle review submission logic from web.py if needed, 
+        # but keep it simple for now or delegate back to web.py if too complex.
+        pass
+
+    suggested_doctype = (p.get("doctype_suggested") or "SONSTIGES").upper()
+    if not w.get("doctype"):
+        w["doctype"] = suggested_doctype if suggested_doctype in DOCTYPE_CHOICES else "SONSTIGES"
+    
+    suggested_date = (p.get("doc_date_suggested") or "").strip()
+    confidence = 40
+    if suggested_doctype and suggested_doctype != "SONSTIGES": confidence += 20
+    if suggested_date: confidence += 20
+
+    return _render_base(
+        "review.html",
+        active_tab="upload",
+        token=token,
+        filename=p.get("filename", ""),
+        is_pdf=True,
+        is_text=False,
+        preview=None,
+        w=w,
+        doctypes=DOCTYPE_CHOICES,
+        kdnr_ranked=p.get("kdnr_ranked", []),
+        name_suggestions=p.get("name_suggestions", []),
+        suggested_doctype=suggested_doctype,
+        suggested_date=suggested_date,
+        confidence=confidence
+    )
+
+@bp.route("/done/<token>")
+@login_required
+def done_view(token: str):
+    d = read_done(token) or {}
+    fp = d.get("final_path", "")
+    return _render_base("done.html", active_tab="upload", final_path=fp)
+
+@bp.route("/api/progress")
+@login_required
+def api_progress_multi():
+    tokens = request.args.get("tokens", "").split(",")
+    results = {}
+    for t in tokens:
+        if not t: continue
+        p = read_pending(t)
+        if p:
+            results[t] = {
+                "status": p.get("status", "ANALYZING"),
+                "progress": p.get("progress", 0),
+                "progress_phase": p.get("progress_phase", "")
+            }
+        else:
+            results[t] = {"status": "NOT_FOUND", "progress": 0}
+    return jsonify(results)
+
+@bp.route("/api/progress/<token>")
+@login_required
+def api_progress(token: str):
+    p = read_pending(token)
+    if not p:
+        return jsonify(error="not_found"), 404
+    return jsonify(
+        status=p.get("status", ""),
+        progress=float(p.get("progress", 0.0) or 0.0),
+        progress_phase=p.get("progress_phase", ""),
+        error=p.get("error", ""),
+    )
