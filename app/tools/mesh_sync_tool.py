@@ -27,10 +27,10 @@ class MeshSyncTool(BaseTool):
         auth_db = current_app.extensions.get("auth_db")
         if not auth_db:
             return {"error": "Database not initialized."}
-            
+
         manager = MeshNetworkManager(auth_db)
         success = manager.initiate_handshake(peer_ip, peer_port)
-        
+
         if success:
             return {
                 "status": "success",

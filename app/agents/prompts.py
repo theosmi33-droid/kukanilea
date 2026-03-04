@@ -29,15 +29,15 @@ def build_prompt(user_msg: str, facts: List[Dict[str, Any]]) -> str:
         pass
 
     lines = [
-        get_system_prompt(), 
+        get_system_prompt(),
         "",
         "### LONG-TERM MEMORY ###",
         memory_content or "- Keine historischen Daten vorhanden.",
         "",
-        "### USER INPUT ###", 
-        user_msg, 
-        "### END USER INPUT ###", 
-        "", 
+        "### USER INPUT ###",
+        user_msg,
+        "### END USER INPUT ###",
+        "",
         "FACTS:"
     ]
     if not facts:

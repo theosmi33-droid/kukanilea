@@ -9,7 +9,9 @@ import json
 import logging
 import os
 import sqlite3
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,6 +28,46 @@ INGESTION_TARGET_SECONDS = float(os.environ.get("KUKANILEA_INGESTION_TARGET_SECO
 MALWARE_SCAN_TIMEOUT_SECONDS = float(os.environ.get("KUKANILEA_CLAMAV_TIMEOUT_SECONDS", "4"))
 MAX_HASH_LINES = 40
 MAX_HASH_CHARS = 2400
+
+
+class UploadErrorCode(Enum):
+    CLEAN = "CLEAN"
+    CLEAN_UNSCANNED = "CLEAN_UNSCANNED"
+    FILE_NOT_FOUND = "FILE_NOT_FOUND"
+    FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    UNSUPPORTED_EXTENSION = "UNSUPPORTED_EXTENSION"
+    INFECTED = "INFECTED"
+    CLAMAV_UNAVAILABLE = "CLAMAV_UNAVAILABLE"
+    PIPELINE_ERROR = "PIPELINE_ERROR"
+
+
+@dataclass
+class UploadResult:
+    success: bool
+    file_hash: Optional[str] = None
+    error_code: Optional[UploadErrorCode] = None
+    error_message: Optional[str] = None
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def __iter__(self):
+        # Compatibility with (bool, str) return pattern
+        yield self.success
+        if self.success:
+            yield self.file_hash
+        else:
+            yield self.error_message or "Ein unbekannter Fehler ist aufgetreten."
+
+
+_ERROR_MESSAGES = {
+    UploadErrorCode.CLEAN: "Datei ist sauber.",
+    UploadErrorCode.CLEAN_UNSCANNED: "Datei wurde ohne Virenscan akzeptiert.",
+    UploadErrorCode.FILE_NOT_FOUND: "Datei wurde nicht gefunden.",
+    UploadErrorCode.FILE_TOO_LARGE: "Datei ist zu gross. Bitte reduzieren Sie die Dateigroesse.",
+    UploadErrorCode.UNSUPPORTED_EXTENSION: "Dateityp wird nicht unterstuetzt.",
+    UploadErrorCode.INFECTED: "Sicherheitsrisiko erkannt. Datei wurde blockiert.",
+    UploadErrorCode.CLAMAV_UNAVAILABLE: "Virenscan derzeit nicht verfuegbar. Bitte versuchen Sie es spaeter erneut.",
+    UploadErrorCode.PIPELINE_ERROR: "Ein interner Fehler ist aufgetreten.",
+}
 
 _CORRECTION_FIELDS: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
     (("doctype_suggested",), "doctype", "doctype"),
@@ -107,25 +149,30 @@ def _audit_scan_event(file_path: Path, tenant_id: str, status: str, details: str
         logger.warning("Audit event for %s failed: %s", file_path.name, exc)
 
 
-def _scan_malware(file_path: Path) -> Tuple[bool, str]:
+def _scan_malware(file_path: Path) -> Tuple[bool, UploadErrorCode]:
     """
     Mandatory ClamAV gate.
-    Returns: (is_clean, reason_code)
-    reason_code: CLEAN | INFECTED | CLAMAV_UNAVAILABLE
+    Returns: (is_clean, UploadErrorCode)
     """
     try:
         import pyclamd
 
         cd = pyclamd.ClamdUnixSocket()
         if not cd.ping():
-            return False, "CLAMAV_UNAVAILABLE"
+            if _clamav_optional_enabled():
+                return True, UploadErrorCode.CLAMAV_UNAVAILABLE
+            return False, UploadErrorCode.CLAMAV_UNAVAILABLE
+        
         result = cd.scan_file(str(file_path))
         if result:
-            logger.warning("Malware detected in %s", file_path.name)
-            return False, "INFECTED"
-        return True, "CLEAN"
-    except Exception:
-        return False, "CLAMAV_UNAVAILABLE"
+            logger.warning("Malware detected in %s: %s", file_path.name, result)
+            return False, UploadErrorCode.INFECTED
+        return True, UploadErrorCode.CLEAN
+    except Exception as exc:
+        logger.error("ClamAV scan error for %s: %s", file_path.name, exc)
+        if _clamav_optional_enabled():
+            return True, UploadErrorCode.CLAMAV_UNAVAILABLE
+        return False, UploadErrorCode.CLAMAV_UNAVAILABLE
 
 
 def _clamav_optional_enabled() -> bool:
@@ -297,45 +344,70 @@ def apply_layout_corrections(suggestions: Dict[str, Any], corrections: Dict[str,
     return updated, provenance
 
 
-def process_upload(file_path: Path, tenant_id: str) -> Tuple[bool, str]:
+def process_upload(file_path: Path, tenant_id: str) -> UploadResult:
     """
     Validates, scans, and prepares a file for the system.
     """
     started = perf_counter()
     if not file_path.exists():
-        return False, "Datei wurde nicht gefunden."
+        return UploadResult(
+            success=False,
+            error_code=UploadErrorCode.FILE_NOT_FOUND,
+            error_message=_ERROR_MESSAGES[UploadErrorCode.FILE_NOT_FOUND],
+        )
 
-    if file_path.stat().st_size > MAX_FILE_SIZE:
+    file_size = file_path.stat().st_size
+    if file_size > MAX_FILE_SIZE:
         _safe_unlink(file_path)
-        _write_dead_letter(file_path, tenant_id, "FILE_TOO_LARGE")
-        return False, "Datei ist zu gross. Bitte reduzieren Sie die Dateigroesse."
+        _write_dead_letter(file_path, tenant_id, UploadErrorCode.FILE_TOO_LARGE.value)
+        return UploadResult(
+            success=False,
+            error_code=UploadErrorCode.FILE_TOO_LARGE,
+            error_message=_ERROR_MESSAGES[UploadErrorCode.FILE_TOO_LARGE],
+            details={"file_size": file_size, "max_size": MAX_FILE_SIZE},
+        )
 
-    if file_path.suffix.lower() not in ALLOWED_EXTENSIONS:
+    suffix = file_path.suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
         _safe_unlink(file_path)
-        _write_dead_letter(file_path, tenant_id, "UNSUPPORTED_EXTENSION")
-        return False, "Dateityp wird nicht unterstuetzt."
+        _write_dead_letter(file_path, tenant_id, UploadErrorCode.UNSUPPORTED_EXTENSION.value)
+        return UploadResult(
+            success=False,
+            error_code=UploadErrorCode.UNSUPPORTED_EXTENSION,
+            error_message=_ERROR_MESSAGES[UploadErrorCode.UNSUPPORTED_EXTENSION],
+            details={"suffix": suffix, "allowed": list(ALLOWED_EXTENSIONS)},
+        )
 
     clean, reason = _scan_malware(file_path)
     if not clean:
-        if reason == "INFECTED":
-            _audit_scan_event(file_path, tenant_id, "INFECTED")
-            _write_dead_letter(file_path, tenant_id, "INFECTED")
-            _safe_unlink(file_path)
-            return False, "Sicherheitsrisiko erkannt. Datei wurde blockiert."
-        if reason == "CLAMAV_UNAVAILABLE" and _clamav_optional_enabled():
-            logger.warning(
-                "ClamAV unavailable for %s. Continuing because CLAMAV_OPTIONAL=1 is enabled.",
-                file_path.name,
-            )
-            _audit_scan_event(file_path, tenant_id, "CLAMAV_OPTIONAL_BYPASS")
-        else:
-            _audit_scan_event(file_path, tenant_id, "CLAMAV_UNAVAILABLE")
-            _write_dead_letter(file_path, tenant_id, "CLAMAV_UNAVAILABLE")
-            _safe_unlink(file_path)
-            return False, "Virenscan derzeit nicht verfuegbar. Bitte starten Sie den ClamAV-Dienst und versuchen Sie es erneut."
+        _audit_scan_event(file_path, tenant_id, reason.value)
+        _write_dead_letter(file_path, tenant_id, reason.value)
+        _safe_unlink(file_path)
+        return UploadResult(
+            success=False,
+            error_code=reason,
+            error_message=_ERROR_MESSAGES.get(reason, "Sicherheits-Fehler."),
+        )
 
-    file_hash = _hash_file_sha256(file_path)
-    _audit_scan_event(file_path, tenant_id, "CLEAN")
+    if reason == UploadErrorCode.CLAMAV_UNAVAILABLE:
+        _audit_scan_event(file_path, tenant_id, UploadErrorCode.CLEAN_UNSCANNED.value)
+        logger.warning(
+            "ClamAV unavailable for %s. Continuing because CLAMAV_OPTIONAL=1 is enabled.",
+            file_path.name,
+        )
+    else:
+        _audit_scan_event(file_path, tenant_id, UploadErrorCode.CLEAN.value)
+
+    try:
+        file_hash = _hash_file_sha256(file_path)
+    except Exception as exc:
+        logger.error("Hashing failed for %s: %s", file_path.name, exc)
+        _safe_unlink(file_path)
+        return UploadResult(
+            success=False,
+            error_code=UploadErrorCode.PIPELINE_ERROR,
+            error_message="Fehler beim Berechnen des Dateihash.",
+        )
 
     elapsed = perf_counter() - started
     if elapsed > INGESTION_TARGET_SECONDS:
@@ -346,4 +418,9 @@ def process_upload(file_path: Path, tenant_id: str) -> Tuple[bool, str]:
             elapsed,
             INGESTION_TARGET_SECONDS,
         )
-    return True, file_hash
+    
+    return UploadResult(
+        success=True,
+        file_hash=file_hash,
+        details={"elapsed": elapsed},
+    )

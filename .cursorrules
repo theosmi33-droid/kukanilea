@@ -1,0 +1,26 @@
+# KUKANILEA Cursor Rules
+
+## Sovereign-11 Non-Negotiables
+- White-Mode only.
+- Zero-CDN (nur lokale Assets).
+- HTMX Shell-Navigation (`hx-get`, `hx-target`, `hx-push-url`).
+- 8pt spacing system.
+
+## Shared-Core Protection
+Ohne Scope-Request keine direkten Aenderungen an:
+- `app/web.py`
+- `app/db.py`
+- `app/templates/layout.html`
+- globale Shell-Assets in `app/static/`
+
+## Domain Workflow
+1. Nur domain-owned Dateien aendern.
+2. Overlap-Check fuer geaenderte Dateien ausfuehren.
+3. Kleine, sichere Commits.
+4. Tests vor Commit.
+
+## Security / Reliability
+- Keine Secrets in Code oder Logs.
+- Keine stillen write-Aktionen ohne Confirm-Gate.
+- Keine destruktiven Git-Operationen.
+

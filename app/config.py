@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import secrets
 from pathlib import Path
 
 try:
@@ -18,10 +19,40 @@ def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
 
 
+def _is_dev_env() -> bool:
+    env = _env("KUKANILEA_ENV", _env("FLASK_ENV", "")).strip().lower()
+    if env in {"dev", "development", "local", "test", "testing"}:
+        return True
+    # pytest workers should never be blocked by production-only secret checks.
+    if _env("PYTEST_CURRENT_TEST"):
+        return True
+    return False
+
+
+def _resolve_secret_key() -> str:
+    key = _env("KUKANILEA_SECRET", "").strip()
+    if key:
+        return key
+
+    env = _env("KUKANILEA_ENV", _env("FLASK_ENV", "")).strip().lower()
+    if not env:
+        # Backward-compatible fallback for local runs where environment isn't explicitly set.
+        return f"kukanilea-dev-{secrets.token_urlsafe(24)}"
+
+    if _is_dev_env():
+        # Stable enough for local/dev convenience while avoiding a shared static secret.
+        return f"kukanilea-dev-{secrets.token_urlsafe(24)}"
+
+    raise RuntimeError(
+        "KUKANILEA_SECRET is required outside development/test environments. "
+        "Set KUKANILEA_SECRET to a strong random value."
+    )
+
+
 class Config:
     BASE_DIR = Path(__file__).resolve().parent.parent
     PORT = int(_env("PORT", "5051"))
-    SECRET_KEY = _env("KUKANILEA_SECRET", "kukanilea-dev-secret-change-me")
+    SECRET_KEY = _resolve_secret_key()
     MAX_CONTENT_LENGTH = int(_env("KUKANILEA_MAX_UPLOAD", str(100 * 1024 * 1024)))
 
     USER_DATA_ROOT = Path(

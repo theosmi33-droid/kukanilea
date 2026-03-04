@@ -3,7 +3,7 @@
 
 {% block content %}
 <div style="display: flex; flex-direction: column; gap: var(--spacing-6);">
-    
+
     <div class="panel">
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: var(--spacing-4);">
             <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(37,99,235,0.1); color: var(--color-accent); display: flex; align-items: center; justify-content: center;">
@@ -12,9 +12,9 @@
             <h2 style="font-size: 20px; font-weight: 700; margin: 0;">Neuen Mandanten verknüpfen</h2>
         </div>
 
-        <form hx-post="/admin/tenants/add" hx-target="#validation-result" hx-swap="innerHTML" style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 16px; align-items: flex-end;">
+        <form hx-post="/admin/tenants/add" hx-target="#validation-result" hx-swap="innerHTML" hx-confirm="Neuen Mandanten jetzt verknüpfen?" style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 16px; align-items: flex-end;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            
+
             <div class="input-group" style="margin-bottom: 0;">
                 <label>Anzeige-Name</label>
                 <input type="text" name="name" class="input" placeholder="z.B. Kunde XY" required>
@@ -27,13 +27,13 @@
 
             <button type="submit" class="btn btn-primary" style="height: 48px; padding: 0 24px;">VERKNÜPFEN</button>
         </form>
-        
+
         <div id="validation-result"></div>
     </div>
 
     <div class="panel">
         <h2 style="font-size: 18px; font-weight: 700; margin-bottom: var(--spacing-4);">Registrierte Mandanten</h2>
-        
+
         <div class="grid grid-cols-1 gap-4">
             {% for tenant in tenants %}
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px; border-radius: var(--radius-lg); background: rgba(255,255,255,0.02); border: 1px solid var(--color-border);">
@@ -47,7 +47,7 @@
                 </div>
             </div>
             {% endfor %}
-            
+
             {% if not tenants %}
             <div style="text-align: center; padding: 32px; color: var(--color-text-muted); font-style: italic;">
                 Noch keine externen Mandanten verknüpft.

@@ -33,4 +33,3 @@ fi
 if [[ "$INSTALL_HOOKS" == "1" ]]; then
   bash "$ROOT/scripts/dev/install_git_hooks.sh"
 fi
-

@@ -21,10 +21,10 @@ class Planner:
     def __init__(self, llm_provider=None):
         self.llm = llm_provider or get_default_provider()
 
-    def plan(self, intent: str, message: str, tenant_id: str = "default") -> Optional[Dict[str, Any]]:
+    def plan(self, intent: str, message: str, tenant_id: str = "default", history: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
         """
         Generates an execution plan by asking the LLM to think and choose a tool.
-        Includes relevant semantic context from the Memory System.
+        Includes relevant semantic context from the Memory System and history of previous steps.
         """
         # 1. Retrieve Context
         ctx_manager = ContextManager(tenant_id)
@@ -40,17 +40,26 @@ class Planner:
 
         tools_str = "\n".join(tool_descriptions)
 
+        # 3. Format History
+        history_str = ""
+        if history:
+            history_str = "\n".join([
+                f"Thought: {h.get('thought')}\nAction: {h.get('action')}({h.get('params')})\nObservation: {h.get('observation')}"
+                for h in history
+            ])
+
         prompt = (
             "Du bist der KUKANILEA Fleet Orchestrator. Deine Aufgabe ist es, einen Ausführungsplan basierend auf der Nutzeranfrage zu erstellen.\n"
-            "Nutze das ReAct-Format (Thought -> Action).\n\n"
-            f"{relevant_context}\n\n"
+            "Nutze das ReAct-Format (Thought -> Action -> Observation).\n\n"
+            f"KONTEXT:\n{relevant_context}\n\n"
+            f"VERLAUF:\n{history_str}\n\n"
             "VERFÜGBARE TOOLS:\n"
             f"{tools_str}\n\n"
             "REGELN:\n"
             "1. Antworte STRENG im JSON-Format für die Action.\n"
             "2. Das Format muss sein: Thought: [Deine Überlegung]\n"
             "Action: {\"tool\": \"name\", \"params\": {...}}\n"
-            "3. Wenn kein Tool passt, antworte mit null für die Action.\n\n"
+            "3. Wenn du fertig bist, nutze das Tool 'final_answer' mit der Antwort.\n\n"
             f"INTENT: {intent}\n"
             f"NACHRICHT: {message}\n"
         )
@@ -60,6 +69,10 @@ class Planner:
             response = self.llm.complete(prompt, temperature=0.0)
             logger.debug(f"Planner raw response: {response}")
 
+            thought = ""
+            if "Thought:" in response:
+                thought = response.split("Thought:")[1].split("Action:")[0].strip()
+
             if "Action:" in response:
                 action_part = response.split("Action:")[1].strip()
                 start_idx = action_part.find("{")
@@ -68,6 +81,7 @@ class Planner:
                     json_str = action_part[start_idx : end_idx + 1]
                     plan = json.loads(json_str)
                     if plan and "tool" in plan:
+                        plan["thought"] = thought
                         return plan
 
         except Exception as e:

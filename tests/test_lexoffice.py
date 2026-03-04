@@ -14,36 +14,36 @@ from app.config import Config
 
 def test_lexoffice_integration():
     print("Testing KUKANILEA Lexoffice Integration (Mocked)...")
-    
+
     # Setup Flask app for context
     app = Flask(__name__)
     app.config.from_object(Config)
-    
+
     # 1. Setup tool and dummy file
     tool = LexofficeUploadTool()
     dummy_file = Path("test_invoice.pdf")
     dummy_file.write_bytes(b"dummy pdf content")
-    
+
     try:
         # Mock Config and Client
         with app.app_context():
             # Mock g.tenant_id
             from flask import g
             g.tenant_id = "test_tenant"
-            
+
             with patch.object(Config, 'LEXOFFICE_API_KEY', 'test-key-123'):
                 # Mock AuthDB in app extensions
                 mock_auth_db = MagicMock()
                 app.extensions["auth_db"] = mock_auth_db
-                
+
                 # 2. Run tool (should now queue instead of upload)
                 result = tool.run(file_path=str(dummy_file))
-                
+
                 print(f"Tool result: {result}")
                 assert result["status"] == "queued"
                 assert "job_id" in result
                 assert "Postausgang" in result["message"]
-                
+
                 # Verify DB insert was called
                 assert mock_auth_db._db.return_value.__enter__.return_value.execute.called
 

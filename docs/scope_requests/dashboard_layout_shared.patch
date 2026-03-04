@@ -1,0 +1,12 @@
+diff --git a/app/templates/layout.html b/app/templates/layout.html
+index 617832c..c38fa97 100644
+--- a/app/templates/layout.html
++++ b/app/templates/layout.html
+@@ -15,6 +15,7 @@
+     })();
+   </script>
+   <script src="/static/js/state.js"></script>
++  <script src="/static/js/htmx.min.js"></script>
+   <script src="/static/js/command_palette.js"></script>
+   <script src="/static/vendor/htmx.min.js"></script>
+   <script>

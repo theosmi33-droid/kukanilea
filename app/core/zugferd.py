@@ -70,13 +70,13 @@ class ZugferdGenerator:
 
         # SupplyChainTradeTransaction
         transaction = ET.SubElement(root, f"{{{rsm}}}SupplyChainTradeTransaction")
-        
+
         # We'll skip individual LineItems for MINIMUM profile to keep it lightweight
         # and GoBD compliant for basic archiving.
-        
+
         # Agreement
         agreement = ET.SubElement(transaction, f"{{{ram}}}ApplicableHeaderTradeAgreement")
-        
+
         # Seller
         seller = ET.SubElement(agreement, f"{{{ram}}}SellerTradeParty")
         ET.SubElement(seller, f"{{{ram}}}Name").text = data.seller.name
@@ -85,7 +85,7 @@ class ZugferdGenerator:
         ET.SubElement(seller_addr, f"{{{ram}}}LineOne").text = data.seller.street
         ET.SubElement(seller_addr, f"{{{ram}}}CityName").text = data.seller.city
         ET.SubElement(seller_addr, f"{{{ram}}}CountryID").text = data.seller.country_code
-        
+
         if data.seller.vat_id:
             tax_reg = ET.SubElement(seller, f"{{{ram}}}SpecifiedTaxRegistration")
             ET.SubElement(tax_reg, f"{{{ram}}}ID", schemeID="VA").text = data.seller.vat_id
@@ -106,7 +106,7 @@ class ZugferdGenerator:
         # Settlement
         settlement = ET.SubElement(transaction, f"{{{ram}}}ApplicableHeaderTradeSettlement")
         ET.SubElement(settlement, f"{{{ram}}}InvoiceCurrencyCode").text = data.currency
-        
+
         # Summary
         monetary_sum = ET.SubElement(settlement, f"{{{ram}}}SpecifiedTradeSettlementHeaderMonetarySummation")
         ET.SubElement(monetary_sum, f"{{{ram}}}LineTotalAmount").text = f"{data.total_net:.2f}"
