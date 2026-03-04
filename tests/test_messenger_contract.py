@@ -28,9 +28,9 @@ def test_messenger_summary_endpoint_contract():
     resp = client.get("/api/messenger/summary")
     assert resp.status_code == 200
     body = resp.get_json()
-    assert body["ok"] is True
-    assert body["domain"] == "messenger"
-    assert body["summary"]["confirm_gate"] is True
+    assert body["tool"] == "messenger"
+    assert body["status"] == "ok"
+    assert body["details"]["confirm_gate"] is True
 
 
 def test_chat_parsing_and_confirm_gate(monkeypatch):
