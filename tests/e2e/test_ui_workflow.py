@@ -1,9 +1,12 @@
 import multiprocessing
 import os
+import socket
 
 # Add project root to path
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -46,6 +49,23 @@ def run_server(port, auth_db_path, core_db_path, user_data_root):
     app.run(port=port, debug=False, use_reloader=False)
 
 
+def _reserve_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_server(url: str, timeout_s: float = 15.0) -> None:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=1):
+                return
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
+            time.sleep(0.2)
+    raise RuntimeError(f"Server did not become ready in time: {url}")
+
+
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
     """Starts the KUKANILEA server for E2E testing."""
@@ -53,7 +73,7 @@ def server(tmp_path_factory):
     tmp_dir = tmp_path_factory.mktemp("e2e_data")
     auth_db_path = tmp_dir / "auth.db"
     core_db_path = tmp_dir / "core.db"
-    port = 5052
+    port = _reserve_free_port()
 
     p = multiprocessing.Process(
         target=run_server,
@@ -61,8 +81,7 @@ def server(tmp_path_factory):
     )
     p.start()
 
-    # Wait for server to be ready
-    time.sleep(3)
+    _wait_for_server(f"http://127.0.0.1:{port}/login")
     yield f"http://127.0.0.1:{port}"
 
     p.terminate()
