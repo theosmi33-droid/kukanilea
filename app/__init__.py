@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import timedelta
 
 from flask import Flask, request, session
 
 from .auth import init_auth
 from .autonomy import init_autonomy
-from .config import Config
+from .config import Config, _is_dev_env
 from .db import AuthDB
 from .errors import json_error
 from .license import load_runtime_license_state
@@ -54,9 +55,32 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
-    app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
-    app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
-    app.config.setdefault("SESSION_COOKIE_SECURE", False)
+    explicit_env = str(
+        os.environ.get("KUKANILEA_ENV", os.environ.get("FLASK_ENV", ""))
+    ).strip().lower()
+    secure_cookie_default = explicit_env not in {
+        "dev",
+        "development",
+        "local",
+        "test",
+        "testing",
+    }
+    # Flask may pre-seed cookie keys with None; enforce secure defaults explicitly.
+    app.config["SESSION_COOKIE_HTTPONLY"] = bool(
+        app.config.get("SESSION_COOKIE_HTTPONLY", True)
+    )
+    if app.config.get("SESSION_COOKIE_SAMESITE") in (None, ""):
+        app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # In non-dev environments, always force secure cookies.
+    if secure_cookie_default:
+        app.config["SESSION_COOKIE_SECURE"] = True
+    elif app.config.get("SESSION_COOKIE_SECURE") is None:
+        app.config["SESSION_COOKIE_SECURE"] = False
+    if secure_cookie_default:
+        app.config["SESSION_COOKIE_NAME"] = "__Host-kukanilea_session"
+    else:
+        app.config.setdefault("SESSION_COOKIE_NAME", "kukanilea_session")
+    app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(hours=8))
 
     _wire_runtime_env(app)
 
@@ -210,6 +234,7 @@ def create_app() -> Flask:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
 
     app.register_blueprint(web.bp)

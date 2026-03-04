@@ -374,6 +374,14 @@ def update_user_role():
 @login_required
 @require_role("ADMIN")
 def disable_user():
+    blocked = _reject_injection(("username", "confirm"))
+    if blocked:
+        return blocked
+
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
+
     username = (request.form.get("username") or "").strip().lower()
     actor = current_user() or ""
     if not username:
@@ -616,6 +624,14 @@ def save_branding():
 @login_required
 @require_role("ADMIN")
 def backup_run():
+    blocked = _reject_injection(("confirm",))
+    if blocked:
+        return blocked
+
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
+
     written = _run_backup()
     audit_log(
         user=current_user() or "system",
