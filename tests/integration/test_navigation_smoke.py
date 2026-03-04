@@ -15,6 +15,7 @@ HTMX_PATHS = [
     "/time",
     "/visualizer",
     "/settings",
+    "/assistant",
 ]
 
 
@@ -70,6 +71,7 @@ def test_main_navigation_and_main_paths(tmp_path, monkeypatch):
         body = response.get_data(as_text=True)
         assert "traceback" not in body.lower(), f"Error page returned for {path}"
         assert "Internal Server Error" not in body
+        assert "wird geladen" not in body.lower(), f"Loading placeholder returned for {path}"
 
 
 def test_dashboard_contract_matrix_has_11_tiles(tmp_path, monkeypatch):
