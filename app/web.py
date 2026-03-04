@@ -2134,12 +2134,30 @@ def api_chat():
         _audit("chat_injection_blocked", target="/api/chat", meta={"pattern": injection_pattern})
         return json_error("injection_blocked", "Eingabe durch Sicherheitsfilter blockiert.", status=400)
 
-    response = agent_answer(msg)
+    try:
+        response = agent_answer(msg)
+    except Exception:
+        current_app.logger.exception("api_chat_failed")
+        fallback = {
+            "ok": False,
+            "text": "Der Assistent ist aktuell nicht vollständig verfügbar. Bitte versuche es erneut.",
+            "response": "Der Assistent ist aktuell nicht vollständig verfügbar. Bitte versuche es erneut.",
+        }
+        if request.headers.get("HX-Request"):
+            return "<div class='text-sm'>Der Assistent ist aktuell nicht verfügbar.</div>", 200
+        return jsonify(fallback), 200
+
     # Compat: some widgets expect `response`, others `text`.
-    if isinstance(response, dict) and "text" in response and "response" not in response:
-        response["response"] = response.get("text", "")
+    if isinstance(response, dict):
+        if "text" in response and "response" not in response:
+            response["response"] = response.get("text", "")
+        if "response" in response and "text" not in response:
+            response["text"] = response.get("response", "")
     if request.headers.get("HX-Request"):
-        return f"<div class='text-sm'>{response.get('text', '')}</div>"
+        text = ""
+        if isinstance(response, dict):
+            text = str(response.get("text") or response.get("response") or "")
+        return f"<div class='text-sm'>{text}</div>"
     return jsonify(response)
 
 
@@ -3016,16 +3034,9 @@ Kontext/Stichpunkte:
 @bp.get("/mail")
 @login_required
 def mail_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "email",
-            "Emailpostfach",
-            "Mail-Modul wird geladen...",
-            active_tab="email",
-        )
     return _render_base(
         render_template_string(HTML_MAIL),
-        active_tab="mail",
+        active_tab="email",
     )
 
 
@@ -3061,13 +3072,6 @@ def settings_branding_save():
 @bp.get("/settings")
 @login_required
 def settings_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "settings",
-            "Einstellungen",
-            "System-Konfiguration wird geladen...",
-            active_tab="settings",
-        )
     if current_role() not in {"ADMIN", "DEV"}:
         return json_error("forbidden", "Nicht erlaubt.", status=403)
     auth_db: AuthDB = current_app.extensions["auth_db"]
@@ -3276,24 +3280,11 @@ def index():
     return redirect(url_for("web.dashboard_page"))
 
 
-@bp.get("/dashboard")
-@login_required
-def dashboard_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "dashboard",
-            "Dashboard",
-            "Dashboard-Widgets werden geladen...",
-            active_tab="dashboard",
-        )
-    # Get items for dashboard.html
-    auth_db = current_app.extensions["auth_db"]
-    con = auth_db._db()
-    tenant = _norm_tenant(current_tenant() or "default")
-    items = []
+def _dashboard_payload(tenant: str) -> dict:
+    items: list[str] = []
     if (PENDING_DIR / tenant).exists():
         items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
-    
+
     meta = {}
     for token in items:
         m_path = PENDING_DIR / tenant / token / "meta.json"
@@ -3303,7 +3294,6 @@ def dashboard_page():
         else:
             meta[token] = {"filename": "Unbekannt", "status": "PENDING"}
 
-    # Get recent from core
     recent = []
     if callable(_core_get("get_recent_docs")):
         recent = _core_get("get_recent_docs")(tenant, limit=6)
@@ -3312,61 +3302,93 @@ def dashboard_page():
     if callable(calendar_reminders_due):
         reminders = calendar_reminders_due(tenant)
 
+    return {
+        "items": items,
+        "meta": meta,
+        "recent": recent,
+        "reminders": reminders,
+        "suggestions": {"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
+        "keywords": ["Maler", "Sanitär", "Elektro"],
+    }
+
+
+@bp.get("/dashboard")
+@login_required
+def dashboard_page():
+    tenant = _norm_tenant(current_tenant() or "default")
+    payload = _dashboard_payload(tenant)
     return _render_base(
         "dashboard.html",
         active_tab="dashboard",
-        items=items,
-        meta=meta,
-        recent=recent,
-        reminders=reminders,
-        suggestions={"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
-        keywords=["Maler", "Sanitär", "Elektro"]
+        **payload,
     )
 
 
 @bp.route("/upload", methods=["GET"])
 @login_required
 def upload_page():
-    return _render_sovereign_tool(
-        "upload",
-        "Upload",
-        "Upload-Pipeline wird geladen...",
+    tenant = _norm_tenant(current_tenant() or "default")
+    payload = _dashboard_payload(tenant)
+    return _render_base(
+        "dashboard.html",
         active_tab="upload",
+        **payload,
     )
 
 
 @bp.get("/tasks")
 @login_required
 def tasks_page():
-    return _render_sovereign_tool(
-        "tasks",
-        "Aufgaben",
-        "Aufgaben-Modul wird geladen...",
+    from app.modules.projects.logic import ProjectManager
+
+    tenant_id = current_tenant()
+    if not tenant_id:
+        return redirect(url_for("web.login", next=request.path))
+
+    pm = ProjectManager(current_app.extensions["auth_db"])
+    try:
+        workspace = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
+        board = workspace["board"]
+        bundle = pm.list_tasks(str(board["id"])) or {}
+        items = bundle.get("items") or []
+        inbox = bundle.get("inbox") or []
+        notifications = bundle.get("notifications") or []
+    except Exception:
+        current_app.logger.exception("Fehler in /tasks")
+        items = []
+        inbox = []
+        notifications = []
+
+    return _render_base(
+        "tasks.html",
         active_tab="tasks",
+        tasks=items,
+        inbox=inbox,
+        notifications=notifications,
     )
 
 
 @bp.get("/email")
 @login_required
 def email_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "email",
-            "Emailpostfach",
-            "Mail-Modul wird geladen...",
-            active_tab="email",
-        )
     return mail_page()
 
 
 @bp.get("/calendar")
 @login_required
 def calendar_page():
-    return _render_sovereign_tool(
-        "calendar",
-        "Kalender",
-        "Kalender-Modul wird geladen...",
+    from app.knowledge.ics_source import knowledge_calendar_events_list
+
+    tenant_id = current_tenant() or session.get("tenant_id") or "default"
+    try:
+        events = knowledge_calendar_events_list(tenant_id)
+    except Exception:
+        current_app.logger.exception("Kalenderdaten konnten nicht geladen werden")
+        events = []
+    return _render_base(
+        "calendar.html",
         active_tab="calendar",
+        events=events,
     )
 
 
@@ -3695,13 +3717,6 @@ def assistant():
 @bp.route("/projects")
 @login_required
 def projects_list():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "projects",
-            "Projekte",
-            "Projektboard wird geladen...",
-            active_tab="projects",
-        )
     from app.modules.projects.logic import ProjectManager
 
     pm = ProjectManager(current_app.extensions["auth_db"])
@@ -3763,26 +3778,12 @@ def api_task_move(task_id: str):
 @bp.route("/messenger")
 @login_required
 def messenger_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "messenger",
-            "Messenger",
-            "Messenger wird geladen...",
-            active_tab="messenger",
-        )
     return _render_base("messenger.html", active_tab="messenger")
 
 
 @bp.route("/visualizer")
 @login_required
 def visualizer_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "visualizer",
-            "Visualizer",
-            "Dokumenten-Visualizer wird geladen...",
-            active_tab="visualizer",
-        )
     return _render_base("visualizer.html", active_tab="visualizer")
 
 
@@ -3948,7 +3949,11 @@ def api_system_status():
     status = get_system_status() or {}
     http_code = int(status.get("http_code") or 200)
     accept = (request.headers.get("Accept") or "").lower()
-    wants_html = "text/html" in accept or (request.args.get("format") or "").lower() == "html"
+    wants_html = (
+        "text/html" in accept
+        or (request.args.get("format") or "").lower() == "html"
+        or (request.headers.get("HX-Request") or "").lower() == "true"
+    )
     if wants_html:
         try:
             rendered = render_template("components/system_status.html", **status)
@@ -3982,13 +3987,6 @@ def admin_audit_verify():
 @bp.route("/time")
 @login_required
 def time_tracking():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "time",
-            "Zeiterfassung",
-            "Zeiterfassung wird geladen...",
-            active_tab="time",
-        )
     if not callable(time_entry_list):
         html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
           <div class='text-lg font-semibold'>Time Tracking</div>

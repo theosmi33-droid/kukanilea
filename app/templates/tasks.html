@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+{% block title %}Aufgaben{% endblock %}
+
+{% block content %}
+<style>
+  .tasks-grid { display: grid; gap: 12px; }
+  .tasks-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .tasks-card { border: 1px solid var(--color-border); background: var(--bg-secondary); border-radius: 12px; padding: 12px; }
+  .tasks-muted { color: var(--color-text-muted); font-size: 12px; }
+  .tasks-title { margin: 0 0 4px 0; font-size: 13px; text-transform: uppercase; color: var(--color-text-muted); letter-spacing: 0.06em; }
+  .tasks-value { font-size: 26px; font-weight: 700; margin: 0; }
+  .tasks-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tasks-table th, .tasks-table td { padding: 10px 8px; border-top: 1px solid var(--color-border); vertical-align: top; }
+  .tasks-badge { border: 1px solid var(--color-border); border-radius: 999px; padding: 2px 8px; font-size: 11px; display: inline-block; }
+  .tasks-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  @media (max-width: 980px) {
+    .tasks-stats { grid-template-columns: 1fr; }
+  }
+</style>
+
+<section class="tasks-grid">
+  <div class="tasks-stats">
+    <article class="tasks-card">
+      <p class="tasks-title">Gesamt</p>
+      <p class="tasks-value">{{ (tasks or [])|length }}</p>
+    </article>
+    <article class="tasks-card">
+      <p class="tasks-title">Inbox</p>
+      <p class="tasks-value">{{ (inbox or [])|length }}</p>
+    </article>
+    <article class="tasks-card">
+      <p class="tasks-title">Benachrichtigungen</p>
+      <p class="tasks-value">{{ (notifications or [])|length }}</p>
+    </article>
+  </div>
+
+  <article class="tasks-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px;">
+      <div>
+        <h2 style="margin:0;">Aufgabenübersicht</h2>
+        <div class="tasks-muted">Live aus dem Projekt-Task-Backend</div>
+      </div>
+      <div class="tasks-actions">
+        <a href="/projects" class="tasks-badge" style="text-decoration:none;">Zum Projektboard</a>
+      </div>
+    </div>
+
+    <div style="overflow:auto;">
+      <table class="tasks-table">
+        <thead>
+          <tr>
+            <th align="left">Titel</th>
+            <th align="left">Status</th>
+            <th align="left">Spalte</th>
+            <th align="left">Verantwortlich</th>
+            <th align="left">Fällig</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks or [] %}
+          <tr>
+            <td>
+              <strong>{{ t.get("title", "Ohne Titel") }}</strong>
+              {% if t.get("description") %}
+              <div class="tasks-muted">{{ t.get("description") }}</div>
+              {% endif %}
+            </td>
+            <td><span class="tasks-badge">{{ t.get("status", "-") }}</span></td>
+            <td>{{ t.get("column_name", "-") }}</td>
+            <td>{{ t.get("assigned_to") or t.get("assigned_user") or "-" }}</td>
+            <td>{{ t.get("due_at") or t.get("due_date") or "-" }}</td>
+          </tr>
+          {% endfor %}
+          {% if not tasks %}
+          <tr>
+            <td colspan="5" class="tasks-muted" style="text-align:center; padding:20px;">Keine Aufgaben vorhanden.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+{% endblock %}
+
