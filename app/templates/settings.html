@@ -69,6 +69,7 @@
           <option value="manager">Manager</option>
           <option value="mitarbeiter">Mitarbeiter</option>
         </select>
+        <input type="hidden" name="confirm" value="YES">
         <div><button class="router-btn" type="submit">User anlegen</button></div>
       </form>
       <div style="overflow:auto;">
@@ -84,6 +85,7 @@
               <td style="padding:8px 4px; display:flex; gap:6px; flex-wrap:wrap;">
                 <form method="post" action="/admin/settings/users/disable">
                   <input type="hidden" name="username" value="{{ u.username }}">
+                  <input type="hidden" name="confirm" value="YES">
                   <button class="router-btn" type="submit">Disable</button>
                 </form>
                 <form method="post" action="/admin/settings/users/update" style="display:flex; gap:6px;">
@@ -94,6 +96,7 @@
                     <option value="manager" {{ 'selected' if u.role_label == 'manager' }}>Manager</option>
                     <option value="mitarbeiter" {{ 'selected' if u.role_label == 'mitarbeiter' }}>Mitarbeiter</option>
                   </select>
+                  <input type="hidden" name="confirm" value="YES">
                   <button class="router-btn" type="submit">Role</button>
                 </form>
                 <form method="post" action="/admin/settings/users/delete" onsubmit="return confirmRisk(this)">
@@ -114,6 +117,7 @@
       <form method="post" action="/admin/settings/tenants/add" class="router-grid" style="margin-bottom:14px;">
         <input class="router-input" name="name" placeholder="Mandantenname" required>
         <input class="router-input" name="db_path" placeholder="Absoluter Pfad zur .sqlite3" required>
+        <input type="hidden" name="confirm" value="YES">
         <div><button class="router-btn" type="submit">Mandant anlegen</button></div>
       </form>
       <div style="overflow:auto;">
@@ -156,6 +160,7 @@
       <form method="post" action="/admin/settings/mesh/connect" class="router-grid" style="margin-bottom:12px;">
         <input class="router-input" name="peer_ip" placeholder="Peer IP" required>
         <input class="router-input" name="peer_port" placeholder="5051" value="5051" required>
+        <input type="hidden" name="confirm" value="YES">
         <div><button class="router-btn" type="submit">Peer verbinden</button></div>
       </form>
       <form method="post" action="/admin/settings/mesh/rotate-key" onsubmit="return confirmRisk(this)" style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
@@ -199,6 +204,7 @@
         </select>
         <label class="router-note"><input type="checkbox" name="mesh_mdns_enabled" {{ 'checked' if (system_settings.mesh_mdns_enabled if system_settings is mapping else true) }}> mDNS aktiv</label>
         <label class="router-note"><input type="checkbox" name="mesh_tailscale_enabled" {{ 'checked' if (system_settings.mesh_tailscale_enabled if system_settings is mapping else false) }}> Tailscale aktiv</label>
+        <input type="hidden" name="confirm" value="YES">
         <div><button class="router-btn" type="submit">System speichern</button></div>
       </form>
     </div>
@@ -209,6 +215,7 @@
         <input class="router-input" name="app_name" value="{{ branding.app_name }}" placeholder="App Name">
         <input class="router-input" type="color" name="primary_color" value="{{ branding.primary_color }}">
         <input class="router-input" name="footer_text" value="{{ branding.footer_text }}" placeholder="Footer">
+        <input type="hidden" name="confirm" value="YES">
         <div><button class="router-btn" type="submit">Branding speichern</button></div>
       </form>
     </div>
@@ -216,6 +223,7 @@
     <div id="backup" class="router-card">
       <h2 style="margin:0 0 8px 0;">Backup & Wiederherstellung</h2>
       <form method="post" action="/admin/settings/backup/run" data-testid="backup-run-form" style="margin-bottom:12px;">
+        <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
         <button class="router-btn" type="submit">Backup jetzt ausführen</button>
       </form>
       <div class="router-note" style="margin:8px 0 10px 0;">

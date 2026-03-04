@@ -96,8 +96,6 @@ def _requires_confirm(
         return not bool(user_confirmed)
     if action_type == "email_send":
         return not bool(user_confirmed)
-    if action_type == "webhook":
-        return False
     configured = bool(action_cfg.get("requires_confirm", True))
     if configured:
         return not bool(user_confirmed)

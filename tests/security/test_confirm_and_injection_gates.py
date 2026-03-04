@@ -105,17 +105,50 @@ def test_security_critical_routes_block_injection_payloads(admin_client, route: 
 @pytest.mark.parametrize(
     ("route", "payload"),
     [
+        ("/admin/settings/users/create", {"username": "new-admin", "password": "pw", "tenant_id": "KUKANILEA", "confirm": "YES"}),
+        ("/admin/settings/users/update", {"username": "other-admin", "tenant_id": "KUKANILEA", "role": "manager", "confirm": "YES"}),
         ("/admin/settings/users/disable", {"username": "other-admin", "confirm": "YES"}),
+        ("/admin/settings/tenants/add", {"name": "tenant-z", "db_path": "/workspace/kukanilea/README.md", "confirm": "YES"}),
+        ("/admin/settings/system", {"language": "de", "timezone": "Europe/Berlin", "backup_interval": "daily", "log_level": "INFO", "confirm": "YES"}),
+        ("/admin/settings/branding", {"app_name": "Kukanilea", "primary_color": "#2563eb", "footer_text": "x", "confirm": "YES"}),
+        ("/admin/settings/mesh/connect", {"peer_ip": "localhost", "peer_port": "5051", "confirm": "YES"}),
         ("/admin/settings/backup/run", {"confirm": "YES"}),
     ],
 )
-def test_additional_critical_write_routes_require_confirm_gate(admin_client, route: str, payload: dict[str, str]):
+def test_additional_critical_write_routes_require_confirm_gate(admin_client, monkeypatch, route: str, payload: dict[str, str]):
     _, client = admin_client
+    if route == "/admin/settings/tenants/add":
+        import app.routes.admin_tenants as admin_tenants
+        monkeypatch.setattr(admin_tenants.tenant_registry, "validate_path", lambda *_a, **_k: True)
+        monkeypatch.setattr(admin_tenants.tenant_registry, "add_tenant", lambda *_a, **_k: True)
+    if route == "/admin/settings/mesh/connect":
+        import app.routes.admin_tenants as admin_tenants
+
+        class _StubMesh:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def initiate_handshake(self, *_args, **_kwargs):
+                return True
+
+        monkeypatch.setattr(admin_tenants, "MeshNetworkManager", _StubMesh)
     response = client.post(route, data=payload)
     assert response.status_code in {302, 303}
 
 
-@pytest.mark.parametrize("route", ["/admin/settings/users/disable", "/admin/settings/backup/run"])
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/admin/settings/users/create",
+        "/admin/settings/users/update",
+        "/admin/settings/users/disable",
+        "/admin/settings/tenants/add",
+        "/admin/settings/system",
+        "/admin/settings/branding",
+        "/admin/settings/mesh/connect",
+        "/admin/settings/backup/run",
+    ],
+)
 def test_additional_critical_write_routes_reject_missing_confirm(admin_client, route: str):
     _, client = admin_client
     response = client.post(route, data={"confirm": ""})
@@ -134,3 +167,4 @@ def test_security_headers_use_hardened_csp(admin_client):
     assert "frame-ancestors 'self'" in csp
     assert "upgrade-insecure-requests" in csp
     assert "object-src 'self'" not in csp
+    assert "script-src 'self' 'unsafe-inline'" not in csp

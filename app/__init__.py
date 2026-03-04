@@ -175,7 +175,7 @@ def create_app() -> Flask:
             "/switch-tenant",
             "/admin/context/switch",
             "/admin/license",
-            "/admin/settings",
+            "/admin/settings/license/upload",
             "/api/auth/",
             "/api/chat",
             "/api/chat/compact",

@@ -312,9 +312,12 @@ def update_profile_preferences():
 @login_required
 @require_role("ADMIN")
 def create_user():
-    blocked = _reject_injection(("username", "password", "tenant_id"))
+    blocked = _reject_injection(("username", "password", "tenant_id", "confirm"))
     if blocked:
         return blocked
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
 
     username = (request.form.get("username") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
@@ -345,9 +348,12 @@ def create_user():
 @login_required
 @require_role("ADMIN")
 def update_user_role():
-    blocked = _reject_injection(("username", "tenant_id", "role"))
+    blocked = _reject_injection(("username", "tenant_id", "role", "confirm"))
     if blocked:
         return blocked
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
 
     username = (request.form.get("username") or "").strip().lower()
     tenant_id = (request.form.get("tenant_id") or "").strip() or "SYSTEM"
@@ -454,9 +460,12 @@ def delete_user():
 @login_required
 @require_role("ADMIN")
 def add_tenant():
-    blocked = _reject_injection(("name", "db_path"))
+    blocked = _reject_injection(("name", "db_path", "confirm"))
     if blocked:
         return blocked
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
 
     name = (request.form.get("name") or "").strip()
     db_path = (request.form.get("db_path") or "").strip()
@@ -512,7 +521,13 @@ def switch_context():
 @login_required
 @require_role("ADMIN")
 def upload_license():
-    confirm = request.form.get("confirm") or ""
+    blocked = _reject_injection(("license_json", "confirm"))
+    if blocked:
+        return blocked
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
+
     payload_text = (request.form.get("license_json") or "").strip()
 
     if not payload_text:
@@ -561,9 +576,12 @@ def upload_license():
 @login_required
 @require_role("ADMIN")
 def save_system_settings():
-    blocked = _reject_injection(("language", "timezone", "backup_interval", "log_level"))
+    blocked = _reject_injection(("language", "timezone", "backup_interval", "log_level", "confirm"))
     if blocked:
         return blocked
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
 
     payload = _load_system_settings()
     payload.update(
@@ -591,9 +609,12 @@ def save_system_settings():
 @login_required
 @require_role("ADMIN")
 def save_branding():
-    blocked = _reject_injection(("app_name", "primary_color", "footer_text"))
+    blocked = _reject_injection(("app_name", "primary_color", "footer_text", "confirm"))
     if blocked:
         return blocked
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
 
     payload = {
         "app_name": (request.form.get("app_name") or "KUKANILEA").strip(),
@@ -672,9 +693,12 @@ def backup_restore():
 @login_required
 @require_role("ADMIN")
 def mesh_connect():
-    blocked = _reject_injection(("peer_ip", "peer_port"))
+    blocked = _reject_injection(("peer_ip", "peer_port", "confirm"))
     if blocked:
         return blocked
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
 
     peer_ip = (request.form.get("peer_ip") or "").strip()
     peer_port_text = (request.form.get("peer_port") or "5051").strip()

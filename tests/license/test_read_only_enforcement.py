@@ -28,6 +28,17 @@ def test_post_blocked_when_read_only(tmp_path: Path, monkeypatch) -> None:
     assert "read_only" in resp.get_data(as_text=True)
 
 
+def test_admin_settings_write_blocked_when_read_only(tmp_path: Path, monkeypatch) -> None:
+    app = _app(tmp_path, monkeypatch)
+    app.config["READ_ONLY"] = True
+    client = app.test_client()
+    resp = client.post(
+        "/admin/settings/system",
+        data={"language": "de", "timezone": "Europe/Berlin", "backup_interval": "daily", "log_level": "INFO", "confirm": "YES"},
+    )
+    assert resp.status_code == 403
+
+
 def test_get_allowed_when_read_only(tmp_path: Path, monkeypatch) -> None:
     app = _app(tmp_path, monkeypatch)
     app.config["READ_ONLY"] = True
@@ -40,5 +51,8 @@ def test_license_upload_endpoint_not_blocked(tmp_path: Path, monkeypatch) -> Non
     app = _app(tmp_path, monkeypatch)
     app.config["READ_ONLY"] = True
     client = app.test_client()
-    resp = client.post("/admin/license")
+    resp = client.post(
+        "/admin/settings/license/upload",
+        data={"confirm": "YES", "license_json": "{}"},
+    )
     assert resp.status_code != 403
