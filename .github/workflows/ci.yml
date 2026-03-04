@@ -1,40 +1,68 @@
-name: KUKANILEA CI
+name: KUKANILEA CI Corridor
 
 on:
   push:
     branches: [main, "codex/**"]
   pull_request:
     branches: [main, "codex/**"]
-  schedule:
-    - cron: "13 4 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: ci-corridor-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  smoke-corridor:
+    name: smoke (lint + unit-smoke + healthcheck)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
+      BOOTSTRAP_SKIP_PLAYWRIGHT: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python from .python-version
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version-file: ".python-version"
           cache: "pip"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Bootstrap environment
+        run: make bootstrap
 
-      - name: Validate VS Code config policy
-        run: |
-          python scripts/dev/enforce_vscode_configs.py --check
+      - name: Lint
+        run: ./.build_venv/bin/ruff check .
 
-      - name: Run tests (without e2e)
-        run: |
-          pytest -q tests --ignore=tests/e2e
+      - name: Unit smoke
+        run: ./.build_venv/bin/pytest -q tests --ignore=tests/e2e
+
+      - name: Healthcheck
+        run: ./scripts/ops/healthcheck.sh --ci
+
+  full-validation:
+    name: full validation suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs: [smoke-corridor]
+    env:
+      OLLAMA_ENABLED: "0"
+      PYTHONUNBUFFERED: "1"
+      BOOTSTRAP_SKIP_PLAYWRIGHT: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python from .python-version
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+          cache: "pip"
+
+      - name: Bootstrap environment
+        run: make bootstrap
+
+      - name: Full tests (excluding e2e)
+        run: ./.build_venv/bin/pytest -q tests --ignore=tests/e2e

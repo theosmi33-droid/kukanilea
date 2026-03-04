@@ -20,15 +20,18 @@ KUKANILEA is a modern, high-performance Business Operating System designed for t
 ## Quick Start (Developer)
 
 ```bash
-# Install dependencies
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# One-command bootstrap (creates .build_venv, installs deps, playwright, pre-commit)
+make bootstrap
+
+# Validate local toolchain
+make doctor
 
 # Start the full-stack system
 # (optional for development: export KUKANILEA_ENV=development)
-python kukanilea_app.py --host 127.0.0.1 --port 5051
+./.build_venv/bin/python kukanilea_app.py --host 127.0.0.1 --port 5051
 ```
+
+See [docs/dev/BOOTSTRAP_AND_DOCTOR.md](docs/dev/BOOTSTRAP_AND_DOCTOR.md) for troubleshooting and CI parity.
 
 ## Data location (macOS)
 By default, all writable data is stored under:
