@@ -54,7 +54,7 @@ def ensure_settings(path: Path, interpreter: str, allowed_interpreters: set[str]
     changes: list[str] = []
     data = load_json(path)
     current = data.get("python.defaultInterpreterPath")
-    if current != interpreter:
+    if current not in allowed_interpreters:
         changes.append("python.defaultInterpreterPath")
         data["python.defaultInterpreterPath"] = interpreter
     if data.get("python.terminal.activateEnvironment") is not True:
@@ -272,7 +272,7 @@ def ensure_launch(path: Path, interpreter: str, allowed_interpreters: set[str], 
         if target.get("args") != args:
             target["args"] = args
             changes.append("configurations.args")
-        if target.get("python") != interpreter:
+        if target.get("python") not in allowed_interpreters:
             target["python"] = interpreter
             changes.append("configurations.python")
     if apply and changes:
@@ -408,6 +408,7 @@ def main() -> int:
         allowed_interpreters = {
             preferred_interpreter,
             absolute_interpreter,
+            "${workspaceFolder}/.build_venv/bin/python",
             "${workspaceFolder}/../kukanilea_production/.build_venv/bin/python",
         }
 

@@ -272,7 +272,10 @@ else
   run_gate_simple "Pytest" "pytest -q"
 fi
 
-# Gate 8: Guardrails (includes Zero-CDN checks)
+# Gate 8: KPI snapshot
+run_gate_simple "KPI Snapshot" "./scripts/ops/kpi_snapshot.sh"
+
+# Gate 9: Guardrails (includes Zero-CDN checks)
 tmp="$(mktemp)"
 append "## Guardrails Verify"
 append '`python scripts/ops/verify_guardrails.py`'
@@ -285,7 +288,7 @@ else
 fi
 rm -f "$tmp"
 
-# Gate 9: Dark mode scan
+# Gate 10: Dark mode scan
 tmp="$(mktemp)"
 append "## White-Mode Scan"
 DARK_PATTERN="dark:|themeToggle|classList\\.(add|toggle)\\((\"dark\"|'dark')\\)"
@@ -311,7 +314,7 @@ else
 fi
 rm -f "$tmp"
 
-# Gate 10: HTMX shell markers
+# Gate 11: HTMX shell markers
 tmp="$(mktemp)"
 append "## HTMX Shell Scan"
 append '`rg -n "hx-get|hx-target|hx-push-url" app/templates/layout.html app/templates -g "*.html" || true`'
@@ -324,7 +327,7 @@ else
 fi
 rm -f "$tmp"
 
-# Gate 11: Branch protection setting
+# Gate 12: Branch protection setting
 if command -v gh >/dev/null 2>&1; then
   tmp="$(mktemp)"
   append "## Branch Protection"

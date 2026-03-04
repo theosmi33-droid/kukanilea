@@ -10,7 +10,7 @@ INSTALL_HOOKS="0"
 
 for arg in "$@"; do
   case "$arg" in
-    --apply) MODE="apply" ;;
+    --apply|--fix) MODE="apply" ;;
     --check) MODE="check" ;;
     --install-hooks) INSTALL_HOOKS="1" ;;
     *)

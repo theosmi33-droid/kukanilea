@@ -5,6 +5,15 @@ import secrets
 
 from flask import abort, request, session
 
+from .csp import build_csp_header
+from .gates import (
+    DEFAULT_CONFIRM_TOKENS,
+    InjectionFinding,
+    confirm_gate,
+    detect_injection,
+    scan_payload_for_injection,
+)
+
 
 def get_csrf_token() -> str:
     token = session.get("csrf_token")
@@ -16,14 +25,7 @@ def get_csrf_token() -> str:
 
 def set_security_headers(response):
     """Set security headers."""
-    response.headers['Content-Security-Policy'] = (
-        "default-src 'self'; "
-        "font-src 'self' data:; "
-        "style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob:; "
-        "frame-src 'self' blob: data:;"
-    )
+    response.headers['Content-Security-Policy'] = build_csp_header()
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
