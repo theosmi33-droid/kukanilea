@@ -2,6 +2,30 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+CI_MODE=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ci)
+      CI_MODE=1
+      shift
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: ./scripts/ops/healthcheck.sh [--ci]
+
+Options:
+  --ci    Run in CI mode (non-interactive logging/behavior)
+EOF
+      exit 0
+      ;;
+    *)
+      echo "[healthcheck] Unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
 if [[ -z "${PYTHON:-}" ]]; then
   if [[ -x "$ROOT/.build_venv/bin/python" ]]; then
     PYTHON="$ROOT/.build_venv/bin/python"
@@ -14,6 +38,9 @@ HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
 : > "$HEALTH_LOG"
 
 echo "[healthcheck] Starting at $(date)" | tee -a "$HEALTH_LOG"
+if [[ "$CI_MODE" -eq 1 ]]; then
+  echo "[healthcheck] CI mode enabled" | tee -a "$HEALTH_LOG"
+fi
 
 echo "[1/7] Python compile check..." | tee -a "$HEALTH_LOG"
 find app -name '*.py' -print0 | xargs -0 "$PYTHON" -m py_compile
