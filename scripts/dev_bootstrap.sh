@@ -1,21 +1,119 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
 START_TS="$(date +%s)"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+RUN_HEALTHCHECK=1
+RUN_LAUNCH_EVIDENCE=1
+SEED_DATA=1
 
-if [ ! -d ".venv" ]; then
-  "$PYTHON_BIN" -m venv .venv
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-healthcheck) RUN_HEALTHCHECK=0 ;;
+    --skip-launch-evidence) RUN_LAUNCH_EVIDENCE=0 ;;
+    --skip-seed) SEED_DATA=0 ;;
+    -h|--help)
+      cat <<'USAGE'
+Usage: scripts/dev_bootstrap.sh [options]
+
+One-command bootstrap for reproducible local setup.
+
+Options:
+  --skip-seed             Skip seed scripts
+  --skip-healthcheck      Skip scripts/ops/healthcheck.sh
+  --skip-launch-evidence  Skip scripts/ops/launch_evidence_gate.sh --fast
+USAGE
+      exit 0
+      ;;
+    *)
+      echo "[bootstrap] Unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+choose_base_python() {
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    if command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+      command -v "$PYTHON_BIN"
+      return 0
+    fi
+    if [[ -x "$PYTHON_BIN" ]]; then
+      printf '%s\n' "$PYTHON_BIN"
+      return 0
+    fi
+    echo "[bootstrap] PYTHON_BIN is set but not executable: $PYTHON_BIN" >&2
+    exit 3
+  fi
+
+  if command -v pyenv >/dev/null 2>&1; then
+    local pyenv_python
+    pyenv_python="$(pyenv which python 2>/dev/null || true)"
+    if [[ -n "$pyenv_python" && -x "$pyenv_python" ]]; then
+      printf '%s\n' "$pyenv_python"
+      return 0
+    fi
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
+    return 0
+  fi
+
+  if command -v python >/dev/null 2>&1; then
+    command -v python
+    return 0
+  fi
+
+  echo "[bootstrap] No Python interpreter found. Install Python 3.11+ (or pyenv + local version)." >&2
+  exit 3
+}
+
+BASE_PYTHON="$(choose_base_python)"
+echo "[bootstrap] Base Python: $BASE_PYTHON ($($BASE_PYTHON --version 2>&1 | head -n1))"
+
+if [[ ! -d ".venv" ]]; then
+  echo "[bootstrap] Creating project virtualenv (.venv)"
+  "$BASE_PYTHON" -m venv .venv
 fi
-source .venv/bin/activate
-python -m pip -q install -U pip
-python -m pip -q install -r requirements.txt
 
-python3 scripts/seed_dev_users.py
-python3 scripts/seed_demo_data.py
-python3 -m app.smoke
+PYTHON="$ROOT/.venv/bin/python"
+if [[ ! -x "$PYTHON" ]]; then
+  echo "[bootstrap] Missing venv python: $PYTHON" >&2
+  exit 3
+fi
+
+"$PYTHON" -m pip -q install -U pip wheel
+"$PYTHON" -m pip -q install -r requirements.txt -r requirements-dev.txt
+
+if "$PYTHON" -m playwright --version >/dev/null 2>&1; then
+  echo "[bootstrap] Installing Playwright browsers (chromium)"
+  "$PYTHON" -m playwright install --with-deps chromium
+else
+  echo "[bootstrap] WARNING: python playwright module is unavailable in venv"
+fi
+
+echo "[bootstrap] Running doctor checks"
+PYTHON="$PYTHON" scripts/dev/doctor.sh --strict
+
+if [[ "$SEED_DATA" -eq 1 ]]; then
+  "$PYTHON" scripts/seed_dev_users.py
+  "$PYTHON" scripts/seed_demo_data.py
+fi
+"$PYTHON" -m app.smoke
+
+if [[ "$RUN_HEALTHCHECK" -eq 1 ]]; then
+  echo "[bootstrap] Running healthcheck"
+  PYTHON="$PYTHON" scripts/ops/healthcheck.sh
+fi
+
+if [[ "$RUN_LAUNCH_EVIDENCE" -eq 1 ]]; then
+  echo "[bootstrap] Running launch evidence gate (--fast)"
+  PYTHON="$PYTHON" scripts/ops/launch_evidence_gate.sh --fast
+fi
 
 END_TS="$(date +%s)"
-echo "✅ Bootstrap dry run complete in $((END_TS-START_TS))s"
+echo "✅ Bootstrap complete in $((END_TS-START_TS))s"
