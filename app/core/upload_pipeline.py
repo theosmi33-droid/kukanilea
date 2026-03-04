@@ -28,6 +28,7 @@ INGESTION_TARGET_SECONDS = float(os.environ.get("KUKANILEA_INGESTION_TARGET_SECO
 MALWARE_SCAN_TIMEOUT_SECONDS = float(os.environ.get("KUKANILEA_CLAMAV_TIMEOUT_SECONDS", "4"))
 MAX_HASH_LINES = 40
 MAX_HASH_CHARS = 2400
+STREAM_CHUNK_SIZE = 1024 * 1024
 
 
 class UploadErrorCode(Enum):
@@ -105,7 +106,12 @@ def _safe_unlink(file_path: Path) -> None:
         logger.warning("Rejected upload could not be deleted (%s): %s", file_path.name, exc)
 
 
-def _write_dead_letter(file_path: Path, tenant_id: str, reason: str) -> None:
+def write_dead_letter_marker(
+    file_path: Path,
+    tenant_id: str,
+    reason: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> None:
     try:
         root = Path(__file__).resolve().parents[2]
         dead_dir = root / "quarantine" / "dead_letter_uploads"
@@ -118,6 +124,7 @@ def _write_dead_letter(file_path: Path, tenant_id: str, reason: str) -> None:
                     "file_name": file_path.name,
                     "reason": reason,
                     "created_at": _utc_now(),
+                    "context": context or {},
                 },
                 ensure_ascii=True,
                 indent=2,
@@ -126,6 +133,34 @@ def _write_dead_letter(file_path: Path, tenant_id: str, reason: str) -> None:
         )
     except Exception as exc:
         logger.warning("Could not write dead-letter marker for %s: %s", file_path.name, exc)
+
+
+def _write_dead_letter(file_path: Path, tenant_id: str, reason: str) -> None:
+    write_dead_letter_marker(file_path, tenant_id, reason)
+
+
+def save_upload_stream(file_storage: Any, dest: Path, max_size: int = MAX_FILE_SIZE) -> int:
+    """
+    Persist Flask FileStorage stream in bounded chunks.
+    Raises ValueError("file_too_large") if max_size is exceeded.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    stream = getattr(file_storage, "stream", None)
+    if stream is None:
+        raise ValueError("invalid_stream")
+
+    with dest.open("wb") as handle:
+        while True:
+            chunk = stream.read(STREAM_CHUNK_SIZE)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_size:
+                raise ValueError("file_too_large")
+            handle.write(chunk)
+
+    return written
 
 
 def _audit_scan_event(file_path: Path, tenant_id: str, status: str, details: str = "") -> None:

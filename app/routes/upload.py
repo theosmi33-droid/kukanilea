@@ -11,8 +11,7 @@ from app.auth import login_required, current_tenant, current_role, current_user
 from app.security import csrf_protected
 from app.config import Config
 from app import core
-from app.core.malware_scanner import scan_file_stream
-from app.core.upload_pipeline import process_upload
+from app.core.upload_pipeline import process_upload, save_upload_stream
 from app.rate_limit import upload_limiter
 
 logger = logging.getLogger("kukanilea.upload")
@@ -111,22 +110,27 @@ def upload():
         filename = _safe_filename(f.filename)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         dest = tenant_eingang / f"{ts}__{filename}"
-        f.save(dest)
+        try:
+            save_upload_stream(f, dest)
+        except ValueError as exc:
+            if str(exc) == "file_too_large":
+                try:
+                    dest.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return jsonify(error="file_too_large", message="Datei ist zu gross."), 413
+            return jsonify(error="invalid_upload_stream"), 400
         
-        if not scan_file_stream(dest):
-            dest.unlink()
-            return jsonify(error="malware_detected", message="Sicherheitsrisiko erkannt."), 403
-        
-        is_safe, info = process_upload(dest, tenant)
-        if not is_safe:
-            current_app.logger.warning(f"Upload rejected: {filename} - {info}")
+        result = process_upload(dest, tenant)
+        if not result.success:
+            current_app.logger.warning("Upload rejected: %s - %s", filename, result.error_message)
             continue
             
         token = analyze_to_pending(dest)
         try:
             p = read_pending(token) or {}
             p["tenant"] = tenant
-            p["file_hash"] = info
+            p["file_hash"] = result.file_hash
             write_pending(token, p)
         except Exception: pass
         

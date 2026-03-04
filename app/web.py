@@ -43,7 +43,6 @@ from pathlib import Path
 from typing import List, Tuple
 
 from app.core.indexing_logic import IndividualIntelligence
-from app.core.malware_scanner import scan_file_stream
 from app.core.auto_evolution import SystemHealer
 
 from flask import (
@@ -3322,7 +3321,7 @@ def upload():
 
     results = []
     
-    from app.core.upload_pipeline import process_upload
+    from app.core.upload_pipeline import process_upload, save_upload_stream
 
     for f in files:
         if not f.filename: continue
@@ -3332,25 +3331,30 @@ def upload():
         tenant_in.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         dest = tenant_in / f"{ts}__{filename}"
-        f.save(dest)
-        
-        # Phase 5: ClamAV Malware Scan
-        if not scan_file_stream(dest):
-            dest.unlink()
-            return jsonify(error="malware_detected", message="Sicherheitsrisiko erkannt."), 403
-        
-        is_safe, info = process_upload(dest, tenant)
-        if not is_safe:
-            current_app.logger.warning(f"Upload rejected: {filename} - {info}")
+        try:
+            save_upload_stream(f, dest)
+        except ValueError as exc:
+            if str(exc) == "file_too_large":
+                try:
+                    dest.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return jsonify(error="file_too_large", message="Datei ist zu gross."), 413
+            return jsonify(error="invalid_upload_stream"), 400
+
+        result = process_upload(dest, tenant)
+        if not result.success:
+            current_app.logger.warning("Upload rejected: %s - %s", filename, result.error_message)
             continue
-            
+
         token = analyze_to_pending(dest)
         try:
             p = read_pending(token) or {}
             p["tenant"] = tenant
-            p["file_hash"] = info # info contains the SHA256 hash here
+            p["file_hash"] = result.file_hash
             write_pending(token, p)
-        except Exception: pass
+        except Exception:
+            pass
         
         results.append({"token": token, "filename": filename})
         

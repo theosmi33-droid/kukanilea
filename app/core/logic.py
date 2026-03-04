@@ -3720,7 +3720,19 @@ def _analyze_worker(token: str) -> None:
         d = read_pending(token) or {}
         force_ocr = d.get("force_ocr", False)
         
-        text, used_ocr = _extract_text(src, force_ocr=force_ocr)
+        try:
+            text, used_ocr = _extract_text(src, force_ocr=force_ocr)
+        except Exception as exc:
+            from app.core.upload_pipeline import write_dead_letter_marker
+
+            write_dead_letter_marker(
+                src,
+                tenant_id=d.get("tenant_suggested", "default"),
+                reason="OCR_EXTRACTION_FAILED",
+                context={"token": token, "error": str(exc)[:200]},
+            )
+            raise RuntimeError(f"ocr_extraction_failed: {exc}") from exc
+
         d["used_ocr"] = bool(used_ocr)
         d["extracted_text"] = text
         d["preview"] = _generate_thumbnail_b64(src) # Visual preview as requested

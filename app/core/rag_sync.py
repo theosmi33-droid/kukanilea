@@ -16,6 +16,7 @@ from app.core.upload_pipeline import (
     collect_manual_corrections,
     compute_layout_hash,
     store_ocr_corrections,
+    write_dead_letter_marker,
 )
 
 logger = logging.getLogger("kukanilea.rag_sync")
@@ -112,6 +113,22 @@ class RAGSync:
 
         return facts
 
+
+
+def _write_rag_sync_dlq(tenant_id: str, doc_id: str, file_name: str, chunk_index: int, reason: str) -> None:
+    marker_path = Path(f"{doc_id or file_name or 'unknown'}.rag")
+    write_dead_letter_marker(
+        marker_path,
+        tenant_id=tenant_id,
+        reason="RAG_SYNC_EMBEDDING_FAILED",
+        context={
+            "doc_id": doc_id,
+            "file_name": file_name,
+            "chunk_index": chunk_index,
+            "reason": reason[:200],
+        },
+    )
+
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
     """
     Lightweight text chunking with overlap.
@@ -187,14 +204,27 @@ def sync_document_to_memory(
             "type": "document_snippet"
         })
 
-        success = manager.store_memory(
-            tenant_id=tenant_id,
-            agent_role="document_engine",
-            content=chunk,
-            metadata=chunk_meta
-        )
+        try:
+            success = manager.store_memory(
+                tenant_id=tenant_id,
+                agent_role="document_engine",
+                content=chunk,
+                metadata=chunk_meta
+            )
+        except Exception as exc:
+            logger.warning("RAG-SYNC: Chunk store crashed for doc=%s idx=%s: %s", doc_id, i, exc)
+            success = False
+
         if success:
             stored_count += 1
+        else:
+            _write_rag_sync_dlq(
+                tenant_id=tenant_id,
+                doc_id=doc_id,
+                file_name=file_name,
+                chunk_index=i,
+                reason="embedding_or_storage_failed",
+            )
 
     return stored_count
 
