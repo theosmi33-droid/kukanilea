@@ -2,10 +2,14 @@ name: KUKANILEA CI/CD Pipeline
 
 on:
   push:
-    branches: [main, "codex/**"]
+    branches: [main]
   pull_request:
-    branches: [main, "codex/**"]
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-scan:
