@@ -1,9 +1,9 @@
 import sys
 from pathlib import Path
+from tests.time_utils import utc_now_iso
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from datetime import datetime
 
 
 
@@ -35,7 +35,7 @@ def test_forgot_blind_success_without_dev_mode(tmp_path, monkeypatch):
 
     with app.app_context():
         auth_db = app.extensions["auth_db"]
-        now = datetime.utcnow().isoformat()
+        now = utc_now_iso()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
