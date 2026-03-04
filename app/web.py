@@ -44,6 +44,12 @@ from typing import List, Tuple
 
 from app.core.indexing_logic import IndividualIntelligence
 from app.core.auto_evolution import SystemHealer
+from app.core.integration_contracts import (
+    TOOL_KEYS,
+    build_dashboard_aggregation,
+    build_health_contract,
+    build_summary_contract,
+)
 
 from jinja2 import TemplateNotFound
 
@@ -3242,43 +3248,20 @@ def dashboard_page():
             "Dashboard-Widgets werden geladen...",
             active_tab="dashboard",
         )
-    # Get items for dashboard.html
-    auth_db = current_app.extensions["auth_db"]
-    con = auth_db._db()
-    tenant = _norm_tenant(current_tenant() or "default")
-    items = []
-    if (PENDING_DIR / tenant).exists():
-        items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
-    
-    meta = {}
-    for token in items:
-        m_path = PENDING_DIR / tenant / token / "meta.json"
-        if m_path.exists():
-            with open(m_path, "r") as f:
-                meta[token] = json.load(f)
-        else:
-            meta[token] = {"filename": "Unbekannt", "status": "PENDING"}
 
-    # Get recent from core
-    recent = []
-    if callable(_core_get("get_recent_docs")):
-        recent = _core_get("get_recent_docs")(tenant, limit=6)
-
-    reminders = []
-    if callable(calendar_reminders_due):
-        reminders = calendar_reminders_due(tenant)
+    contract_snapshot = build_dashboard_aggregation()
 
     return _render_base(
         "dashboard.html",
         active_tab="dashboard",
-        items=items,
-        meta=meta,
-        recent=recent,
-        reminders=reminders,
+        items=[],
+        meta={},
+        recent=[],
+        reminders=[],
+        contract_snapshot=contract_snapshot,
         suggestions={"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
-        keywords=["Maler", "Sanitär", "Elektro"]
+        keywords=["Maler", "Sanitär", "Elektro"],
     )
-
 
 @bp.route("/upload", methods=["GET"])
 @login_required
@@ -3835,6 +3818,29 @@ def admin_audit():
         )
     return _render_base("audit_trail.html", active_tab="settings", trail=trail)
 
+
+
+
+@bp.get("/api/<tool>/summary")
+@login_required
+def api_tool_summary(tool: str):
+    if tool not in TOOL_KEYS:
+        return jsonify(error="unknown_tool", tool=tool), 404
+    return jsonify(build_summary_contract(tool))
+
+
+@bp.get("/api/<tool>/health")
+@login_required
+def api_tool_health(tool: str):
+    if tool not in TOOL_KEYS:
+        return jsonify(error="unknown_tool", tool=tool), 404
+    return jsonify(build_health_contract(tool))
+
+
+@bp.get("/api/dashboard/contracts")
+@login_required
+def api_dashboard_contracts():
+    return jsonify(build_dashboard_aggregation())
 
 @bp.route("/api/tools")
 @login_required
