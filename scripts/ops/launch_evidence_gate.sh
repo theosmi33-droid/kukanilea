@@ -19,6 +19,7 @@ FAIL_COUNT=0
 PASS_COUNT=0
 WARN_COUNT=0
 REPO="${REPO:-}"
+PYTHON="${PYTHON:-}"
 
 declare -a RESULT_LINES=()
 
@@ -146,6 +147,10 @@ if [[ "$FAST_MODE" -eq 1 ]]; then
   SKIP_PYTEST=1
 fi
 
+if [[ -z "$PYTHON" ]]; then
+  PYTHON="$($ROOT/scripts/dev/resolve_python.sh)"
+fi
+
 for dep in rg git bash; do
   command -v "$dep" >/dev/null 2>&1 || die "$EXIT_DEPENDENCY" "required dependency missing: $dep"
 done
@@ -211,7 +216,7 @@ else
 fi
 
 # Gate 3: Zero-CDN scan
-run_gate_simple "Zero-CDN Scan" "python3 scripts/ops/verify_guardrails.py" "guardrails verification failed"
+run_gate_simple "Zero-CDN Scan" "'$PYTHON' scripts/ops/verify_guardrails.py" "guardrails verification failed"
 
 # Gate 4: White-Mode evidence
 _tmp="$(mktemp)"
@@ -247,7 +252,7 @@ run_gate_simple "Overlap Matrix" "bash scripts/orchestration/overlap_matrix_11.s
 if [[ "$SKIP_PYTEST" -eq 1 ]]; then
   record_result "Pytest" "WARN" "skipped by flag"
 else
-  run_gate_simple "Pytest" "pytest -q" "pytest execution failed"
+  run_gate_simple "Pytest" "'$PYTHON' -m pytest -q" "pytest execution failed"
 fi
 
 run_gate_simple "KPI Snapshot" "./scripts/ops/kpi_snapshot.sh" "kpi snapshot failed"
