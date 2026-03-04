@@ -1,0 +1,48 @@
+{
+  "status": "DOMAIN_OVERLAP_DETECTED",
+  "reiter": "dashboard",
+  "current_branch": "codex/p0-core-route-stabilize",
+  "files": [
+    "app/agents/mail.py",
+    "app/knowledge/ics_source.py",
+    "app/modules/time/__init__.py",
+    "app/modules/time/logic.py",
+    "app/routes/calendar.py",
+    "app/static/css/design-system.css",
+    "app/static/css/system.css",
+    "app/templates/calendar.html",
+    "app/templates/dashboard.html",
+    "app/templates/layout.html",
+    "app/templates/messenger.html",
+    "app/templates/visualizer.html",
+    "docs/LAUNCH_EVIDENCE_CHECKLIST.md",
+    "gitignore",
+    "scripts/ops/healthcheck.sh",
+    "scripts/ops/launch_evidence_gate.sh",
+    "scripts/orchestration/overlap_matrix_11.sh",
+    "tests/agents/test_mail_hardening.py",
+    "tests/agents/test_messenger_hardening.py"
+  ],
+  "outside_allowlist": [
+    "app/agents/mail.py",
+    "app/knowledge/ics_source.py",
+    "app/modules/time/__init__.py",
+    "app/modules/time/logic.py",
+    "app/routes/calendar.py",
+    "app/static/css/design-system.css",
+    "app/static/css/system.css",
+    "app/templates/calendar.html",
+    "app/templates/layout.html",
+    "app/templates/messenger.html",
+    "app/templates/visualizer.html",
+    "docs/LAUNCH_EVIDENCE_CHECKLIST.md",
+    "gitignore",
+    "scripts/ops/healthcheck.sh",
+    "scripts/ops/launch_evidence_gate.sh",
+    "scripts/orchestration/overlap_matrix_11.sh"
+  ],
+  "shared_core_touched": [
+    "app/templates/layout.html"
+  ],
+  "branch_overlaps": {}
+}

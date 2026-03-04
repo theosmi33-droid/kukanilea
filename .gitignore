@@ -65,3 +65,5 @@ coverage/
 # generated evidence artifacts
 docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md
 docs/reviews/codex/OVERLAP_MATRIX_11_*.md
+docs/reviews/gemini/live/*_buildout_*.md
+docs/reviews/gemini/live/RUNBOOK_4_GEMINI_*.md

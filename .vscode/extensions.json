@@ -6,11 +6,11 @@
     "ms-python.vscode-pylance",
     "charliermarsh.ruff",
     "github.vscode-pull-request-github",
-    "github.vscode-github-actions",
-    "ms-playwright.playwright",
-    "eamodio.gitlens"
+    "ms-playwright.playwright"
   ],
   "unwantedRecommendations": [
-    "github.copilot-chat"
+    "github.copilot-chat",
+    "eamodio.gitlens",
+    "github.vscode-github-actions"
   ]
 }
