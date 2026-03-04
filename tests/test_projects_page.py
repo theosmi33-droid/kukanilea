@@ -72,4 +72,5 @@ def test_projects_hx_partial_returns_200(tmp_path, monkeypatch):
 
     resp = client.get("/projects", headers={"HX-Request": "true"})
     assert resp.status_code == 200
-    assert "Projektboard wird geladen" in resp.get_data(as_text=True)
+    body = resp.get_data(as_text=True).lower()
+    assert "kanban" in body or "project hub" in body

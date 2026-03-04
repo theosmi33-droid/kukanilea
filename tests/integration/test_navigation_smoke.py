@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 
 
 HTMX_PATHS = [
@@ -49,7 +50,7 @@ def _auth_client(app):
     return client
 
 
-def test_main_navigation_and_htmx_paths(tmp_path, monkeypatch):
+def test_main_navigation_and_main_paths(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
@@ -58,7 +59,10 @@ def test_main_navigation_and_htmx_paths(tmp_path, monkeypatch):
     assert root.status_code == 200
 
     for nav_path in HTMX_PATHS:
-        assert f'hx-get="{nav_path}"' in html
+        assert f'href="{nav_path}"' in html
+
+    # Main sidebar navigation is full-page by design (no sidebar htmx partial attributes).
+    assert not re.search(r'<a[^>]+data-route="[^"]+"[^>]+hx-get=', html)
 
     for path in HTMX_PATHS:
         response = client.get(path, headers={"HX-Request": "true"})
