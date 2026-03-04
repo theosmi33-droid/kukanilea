@@ -47,8 +47,17 @@ scripts/dev/doctor.sh --strict
 ## App starten
 
 ```bash
-source .venv/bin/activate
-python run.py server --host 127.0.0.1 --port 5051
+bash scripts/dev_run.sh
+```
+
+Optionale Flags:
+
+```bash
+# vorhandenes Setup nicht erneut bootstrapen
+bash scripts/dev_run.sh --skip-bootstrap
+
+# Seed beim Start überspringen
+bash scripts/dev_run.sh --skip-seed
 ```
 
 ## Verifikation

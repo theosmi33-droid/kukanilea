@@ -14,6 +14,15 @@ PYTHON="${PYTHON:-}"
 DOCTOR_STRICT=1
 SERVER_PID=""
 
+resolve_realpath() {
+  local p="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$p" 2>/dev/null || printf '%s\n' "$p"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
 log() {
   echo "$*" | tee -a "$HEALTH_LOG"
 }
@@ -111,6 +120,14 @@ done
 
 if [[ ! -x "$PYTHON" ]]; then
   fail "$EXIT_DEPENDENCY" "[healthcheck] Python interpreter is not executable: $PYTHON"
+fi
+
+if [[ -x "$ROOT/.venv/bin/python" ]]; then
+  EXPECTED_PYTHON="$(resolve_realpath "$ROOT/.venv/bin/python")"
+  ACTIVE_PYTHON="$(resolve_realpath "$PYTHON")"
+  if [[ "$EXPECTED_PYTHON" != "$ACTIVE_PYTHON" ]]; then
+    fail "$EXIT_DEPENDENCY" "[healthcheck] Interpreter drift detected: expected .venv python ($EXPECTED_PYTHON), got ($ACTIVE_PYTHON)"
+  fi
 fi
 
 if [[ "$DOCTOR_STRICT" -eq 1 ]]; then
