@@ -24,3 +24,9 @@ def test_scan_payload_for_injection_returns_first_finding():
     finding = scan_payload_for_injection(payload, ("username", "tenant_id"))
     assert finding is not None
     assert finding.field == "tenant_id"
+
+
+def test_detect_injection_blocks_prompt_injection_keywords():
+    assert detect_injection("SYSTEM OVERRIDE now") is not None
+    assert detect_injection("please ignore instructions") is not None
+    assert detect_injection("prompt jailbreak attempt") is not None
