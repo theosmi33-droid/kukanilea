@@ -11,7 +11,8 @@ test.describe('Sovereign navigation', () => {
     '/calendar',
     '/time',
     '/visualizer',
-    '/settings'
+    '/settings',
+    '/assistant'
   ];
 
   for (const route of routes) {
@@ -19,7 +20,8 @@ test.describe('Sovereign navigation', () => {
       const response = await page.goto(route);
       const status = response?.status() ?? 0;
       expect([200, 302]).toContain(status);
-      await expect(page.locator('body')).toContainText(/KUKANILEA|Dashboard|Upload|Projekt|Aufgabe|Kalender|Einstellungen|Login|Anmelden/i);
+      await expect(page.locator('body')).toContainText(/KUKANILEA|Dashboard|Upload|Projekt|Aufgabe|Kalender|Einstellungen|Assistant|Login|Anmelden/i);
+      await expect(page.locator('body')).not.toContainText(/wird geladen/i);
     });
   }
 });

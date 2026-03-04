@@ -1,0 +1,32 @@
+{
+  "active": {
+    "status": "active",
+    "read_only": false,
+    "reason": "ok",
+    "transition": "steady_active"
+  },
+  "blocked_expired": {
+    "status": "blocked",
+    "read_only": true,
+    "reason": "license_expired",
+    "transition": "active->blocked"
+  },
+  "grace_invalid": {
+    "status": "grace",
+    "read_only": false,
+    "reason": "license_invalid_grace",
+    "transition": "boot->grace"
+  },
+  "recovery_path": {
+    "status": "recover",
+    "read_only": true,
+    "reason": "recover_pending",
+    "transition": "blocked->recover"
+  },
+  "recover_to_active": {
+    "status": "active",
+    "read_only": false,
+    "reason": "recovered",
+    "transition": "recover->active"
+  }
+}

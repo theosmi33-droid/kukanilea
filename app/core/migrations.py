@@ -13,6 +13,21 @@ logger = logging.getLogger("kukanilea.migrations")
 # Current target schema version
 CURRENT_SCHEMA_VERSION = 6
 
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return bool(row)
+
+
+def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    if not _table_exists(conn, table_name):
+        return False
+    columns = [r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
+    return column_name in columns
+
 def _customer_stable_id(tenant_id: str, kdnr: str) -> str:
     raw = f"{tenant_id.strip()}|{kdnr.strip()}".encode("utf-8")
     return "cust_" + hashlib.sha256(raw).hexdigest()[:24]
@@ -177,11 +192,26 @@ def run_migrations(db_path: Path):
 
         if current_version < 6:
             # Task: Memory Intelligence (Importance & Category)
-            conn.execute("ALTER TABLE agent_memory ADD COLUMN importance_score INTEGER DEFAULT 5;")
-            conn.execute("ALTER TABLE agent_memory ADD COLUMN category TEXT DEFAULT 'FAKT';")
+            if _table_exists(conn, "agent_memory"):
+                if not _column_exists(conn, "agent_memory", "importance_score"):
+                    conn.execute("ALTER TABLE agent_memory ADD COLUMN importance_score INTEGER DEFAULT 5;")
+                if not _column_exists(conn, "agent_memory", "category"):
+                    conn.execute("ALTER TABLE agent_memory ADD COLUMN category TEXT DEFAULT 'FAKT';")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_memory_importance ON agent_memory(tenant_id, importance_score);"
+                )
             _set_user_version(conn, 6)
             conn.commit()
             logger.info("Migrated to version 6 (Memory Intelligence)")
+
+        # Always-on drift guard (idempotent)
+        if _table_exists(conn, "agent_memory"):
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_tenant_ts ON agent_memory(tenant_id, timestamp);")
+        if _table_exists(conn, "api_outbound_queue"):
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_api_queue_status ON api_outbound_queue(status);")
+        if _table_exists(conn, "customers") and _column_exists(conn, "customers", "id"):
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_id_unique ON customers(id);")
+        conn.commit()
 
     except Exception as e:
         logger.error(f"Migration failed: {e}", exc_info=True)
