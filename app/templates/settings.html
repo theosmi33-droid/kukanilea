@@ -60,7 +60,7 @@
     <div id="users" class="router-card">
       <h2 style="margin:0 0 8px 0;">Benutzer & Rollen</h2>
       <div class="router-note" style="margin-bottom:12px;">Rollen: Admin, Manager, Mitarbeiter. Delete nur mit Confirm-Gate.</div>
-      <form method="post" action="/admin/settings/users/create" class="router-grid" style="margin-bottom:14px;">
+      <form method="post" action="/admin/settings/users/create" class="router-grid" style="margin-bottom:14px;" onsubmit="return confirmRisk(this)">
         <input class="router-input" name="username" placeholder="username" required>
         <input class="router-input" name="password" placeholder="Startpasswort" required>
         <input class="router-input" name="tenant_id" placeholder="tenant_id (z.B. SYSTEM)" value="SYSTEM" required>
@@ -69,6 +69,7 @@
           <option value="manager">Manager</option>
           <option value="mitarbeiter">Mitarbeiter</option>
         </select>
+        <input class="router-input" name="confirm" placeholder="CONFIRM" required>
         <div><button class="router-btn" type="submit">User anlegen</button></div>
       </form>
       <div style="overflow:auto;">
@@ -82,11 +83,12 @@
               <td style="padding:8px 4px;">{{ u.role_label }}</td>
               <td style="padding:8px 4px;">{{ 'ja' if u.needs_reset else 'nein' }}</td>
               <td style="padding:8px 4px; display:flex; gap:6px; flex-wrap:wrap;">
-                <form method="post" action="/admin/settings/users/disable">
+                <form method="post" action="/admin/settings/users/disable" onsubmit="return confirmRisk(this)">
                   <input type="hidden" name="username" value="{{ u.username }}">
+                  <input class="router-input" style="width:95px;" name="confirm" placeholder="CONFIRM" required>
                   <button class="router-btn" type="submit">Disable</button>
                 </form>
-                <form method="post" action="/admin/settings/users/update" style="display:flex; gap:6px;">
+                <form method="post" action="/admin/settings/users/update" style="display:flex; gap:6px;" onsubmit="return confirmRisk(this)">
                   <input type="hidden" name="username" value="{{ u.username }}">
                   <input type="hidden" name="tenant_id" value="{{ u.tenant_id or 'SYSTEM' }}">
                   <select class="router-input" style="width:130px;" name="role">
@@ -94,6 +96,7 @@
                     <option value="manager" {{ 'selected' if u.role_label == 'manager' }}>Manager</option>
                     <option value="mitarbeiter" {{ 'selected' if u.role_label == 'mitarbeiter' }}>Mitarbeiter</option>
                   </select>
+                  <input class="router-input" style="width:95px;" name="confirm" placeholder="CONFIRM" required>
                   <button class="router-btn" type="submit">Role</button>
                 </form>
                 <form method="post" action="/admin/settings/users/delete" onsubmit="return confirmRisk(this)">
@@ -111,9 +114,10 @@
 
     <div id="tenants" class="router-card">
       <h2 style="margin:0 0 8px 0;">Mandanten</h2>
-      <form method="post" action="/admin/settings/tenants/add" class="router-grid" style="margin-bottom:14px;">
+      <form method="post" action="/admin/settings/tenants/add" class="router-grid" style="margin-bottom:14px;" onsubmit="return confirmRisk(this)">
         <input class="router-input" name="name" placeholder="Mandantenname" required>
         <input class="router-input" name="db_path" placeholder="Absoluter Pfad zur .sqlite3" required>
+        <input class="router-input" name="confirm" placeholder="CONFIRM" required>
         <div><button class="router-btn" type="submit">Mandant anlegen</button></div>
       </form>
       <div style="overflow:auto;">
@@ -153,9 +157,10 @@
     <div id="mesh" class="router-card">
       <h2 style="margin:0 0 8px 0;">Mesh-Netzwerk</h2>
       <div class="router-note" style="margin-bottom:8px;">Node ID: {{ mesh_node_id or '-' }}</div>
-      <form method="post" action="/admin/settings/mesh/connect" class="router-grid" style="margin-bottom:12px;">
+      <form method="post" action="/admin/settings/mesh/connect" class="router-grid" style="margin-bottom:12px;" onsubmit="return confirmRisk(this)">
         <input class="router-input" name="peer_ip" placeholder="Peer IP" required>
         <input class="router-input" name="peer_port" placeholder="5051" value="5051" required>
+        <input class="router-input" name="confirm" placeholder="CONFIRM" required>
         <div><button class="router-btn" type="submit">Peer verbinden</button></div>
       </form>
       <form method="post" action="/admin/settings/mesh/rotate-key" onsubmit="return confirmRisk(this)" style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
@@ -181,7 +186,7 @@
 
     <div id="system" class="router-card">
       <h2 style="margin:0 0 8px 0;">Systemsettings</h2>
-      <form method="post" action="/admin/settings/system" class="router-grid">
+      <form method="post" action="/admin/settings/system" class="router-grid" onsubmit="return confirmRisk(this)">
         <select class="router-input" name="language">
           <option value="de" {{ 'selected' if (system_settings.language if system_settings is mapping else 'de') == 'de' }}>Deutsch</option>
           <option value="en" {{ 'selected' if (system_settings.language if system_settings is mapping else '') == 'en' }}>English</option>
@@ -199,23 +204,26 @@
         </select>
         <label class="router-note"><input type="checkbox" name="mesh_mdns_enabled" {{ 'checked' if (system_settings.mesh_mdns_enabled if system_settings is mapping else true) }}> mDNS aktiv</label>
         <label class="router-note"><input type="checkbox" name="mesh_tailscale_enabled" {{ 'checked' if (system_settings.mesh_tailscale_enabled if system_settings is mapping else false) }}> Tailscale aktiv</label>
+        <input class="router-input" name="confirm" placeholder="CONFIRM" required>
         <div><button class="router-btn" type="submit">System speichern</button></div>
       </form>
     </div>
 
     <div id="branding" class="router-card">
       <h2 style="margin:0 0 8px 0;">Branding</h2>
-      <form method="post" action="/admin/settings/branding" class="router-grid">
+      <form method="post" action="/admin/settings/branding" class="router-grid" onsubmit="return confirmRisk(this)">
         <input class="router-input" name="app_name" value="{{ branding.app_name }}" placeholder="App Name">
         <input class="router-input" type="color" name="primary_color" value="{{ branding.primary_color }}">
         <input class="router-input" name="footer_text" value="{{ branding.footer_text }}" placeholder="Footer">
+        <input class="router-input" name="confirm" placeholder="CONFIRM" required>
         <div><button class="router-btn" type="submit">Branding speichern</button></div>
       </form>
     </div>
 
     <div id="backup" class="router-card">
       <h2 style="margin:0 0 8px 0;">Backup & Wiederherstellung</h2>
-      <form method="post" action="/admin/settings/backup/run" data-testid="backup-run-form" style="margin-bottom:12px;">
+      <form method="post" action="/admin/settings/backup/run" data-testid="backup-run-form" onsubmit="return confirmRisk(this)" style="margin-bottom:12px;">
+        <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
         <button class="router-btn" type="submit">Backup jetzt ausführen</button>
       </form>
       <div class="router-note" style="margin:8px 0 10px 0;">

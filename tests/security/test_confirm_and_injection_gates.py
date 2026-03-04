@@ -78,17 +78,17 @@ def test_delete_user_blocks_sql_pattern_in_confirm(admin_client):
     [
         (
             "/admin/settings/users/create",
-            {"username": "alice'; DROP TABLE users; --", "password": "pw", "tenant_id": "KUKANILEA"},
+            {"username": "alice'; DROP TABLE users; --", "password": "pw", "tenant_id": "KUKANILEA", "confirm": "CONFIRM"},
             "username",
         ),
         (
             "/admin/settings/tenants/add",
-            {"name": "KUKANILEA<script>alert(1)</script>", "db_path": "/tmp/core.sqlite3"},
+            {"name": "KUKANILEA<script>alert(1)</script>", "db_path": "/tmp/core.sqlite3", "confirm": "CONFIRM"},
             "name",
         ),
         (
             "/admin/settings/mesh/connect",
-            {"peer_ip": "javascript:alert(1)", "peer_port": "5051"},
+            {"peer_ip": "javascript:alert(1)", "peer_port": "5051", "confirm": "CONFIRM"},
             "peer_ip",
         ),
     ],
@@ -107,18 +107,38 @@ def test_security_critical_routes_block_injection_payloads(admin_client, route: 
     [
         ("/admin/settings/users/disable", {"username": "other-admin", "confirm": "YES"}),
         ("/admin/settings/backup/run", {"confirm": "YES"}),
+        ("/admin/settings/users/create", {"username": "new-admin", "password": "pw", "tenant_id": "KUKANILEA", "confirm": "YES"}),
+        ("/admin/settings/users/update", {"username": "other-admin", "tenant_id": "KUKANILEA", "role": "manager", "confirm": "YES"}),
+        ("/admin/settings/system", {"language": "de", "timezone": "Europe/Berlin", "backup_interval": "daily", "log_level": "INFO", "confirm": "YES"}),
+        ("/admin/settings/branding", {"app_name": "KUKANILEA", "primary_color": "#2563eb", "footer_text": "x", "confirm": "YES"}),
+        ("/admin/settings/mesh/connect", {"peer_ip": "localhost", "peer_port": "5051", "confirm": "YES"}),
     ],
 )
-def test_additional_critical_write_routes_require_confirm_gate(admin_client, route: str, payload: dict[str, str]):
+def test_additional_critical_write_routes_require_confirm_gate(admin_client, route: str, payload: dict[str, str], monkeypatch):
     _, client = admin_client
+    if route == "/admin/settings/mesh/connect":
+        import app.routes.admin_tenants as admin_routes
+
+        monkeypatch.setattr(admin_routes.MeshNetworkManager, "initiate_handshake", lambda *_args, **_kwargs: True)
     response = client.post(route, data=payload)
     assert response.status_code in {302, 303}
 
 
-@pytest.mark.parametrize("route", ["/admin/settings/users/disable", "/admin/settings/backup/run"])
-def test_additional_critical_write_routes_reject_missing_confirm(admin_client, route: str):
+@pytest.mark.parametrize(
+    "route,payload",
+    [
+        ("/admin/settings/users/disable", {"username": "other-admin"}),
+        ("/admin/settings/backup/run", {}),
+        ("/admin/settings/users/create", {"username": "new-admin", "password": "pw", "tenant_id": "KUKANILEA"}),
+        ("/admin/settings/users/update", {"username": "other-admin", "tenant_id": "KUKANILEA", "role": "manager"}),
+        ("/admin/settings/system", {"language": "de", "timezone": "Europe/Berlin", "backup_interval": "daily", "log_level": "INFO"}),
+        ("/admin/settings/branding", {"app_name": "KUKANILEA", "primary_color": "#2563eb", "footer_text": "x"}),
+        ("/admin/settings/mesh/connect", {"peer_ip": "localhost", "peer_port": "5051"}),
+    ],
+)
+def test_additional_critical_write_routes_reject_missing_confirm(admin_client, route: str, payload: dict[str, str]):
     _, client = admin_client
-    response = client.post(route, data={"confirm": ""})
+    response = client.post(route, data=payload)
     body = response.get_json()
     assert response.status_code == 400
     assert body["error"] == "confirm_required"
@@ -130,7 +150,9 @@ def test_security_headers_use_hardened_csp(admin_client):
     csp = response.headers.get("Content-Security-Policy", "")
     assert "connect-src 'self'" in csp
     assert "object-src 'none'" in csp
-    assert "frame-src 'self' blob:" in csp
+    assert "frame-src 'self'" in csp
     assert "frame-ancestors 'self'" in csp
     assert "upgrade-insecure-requests" in csp
+    assert "worker-src 'self'" in csp
+    assert "blob:" not in csp
     assert "object-src 'self'" not in csp
