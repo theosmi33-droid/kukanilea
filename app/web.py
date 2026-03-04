@@ -86,6 +86,7 @@ from .errors import json_error
 from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
 from .security import csrf_protected
+from app.contracts.tool_contracts import CONTRACT_TOOLS, build_tool_health, build_tool_matrix, build_tool_summary
 
 logger = logging.getLogger("kukanilea.web")
 
@@ -3841,6 +3842,33 @@ def admin_audit():
 def api_list_tools():
     from app.tools.registry import registry
     return jsonify(ok=True, tools=registry.list())
+
+
+@bp.get("/api/<tool>/summary")
+@login_required
+def api_tool_summary(tool: str):
+    if tool not in CONTRACT_TOOLS:
+        return jsonify(error="unknown_tool", tool=tool), 404
+    payload = build_tool_summary(tool, tenant=str(current_tenant() or "default"))
+    return jsonify(payload)
+
+
+@bp.get("/api/<tool>/health")
+@login_required
+def api_tool_health(tool: str):
+    if tool not in CONTRACT_TOOLS:
+        return jsonify(error="unknown_tool", tool=tool), 404
+    payload = build_tool_health(tool, tenant=str(current_tenant() or "default"))
+    code = 200 if payload.get("status") in {"ok", "degraded"} else 503
+    return jsonify(payload), code
+
+
+@bp.get("/api/dashboard/tool-matrix")
+@login_required
+def api_dashboard_tool_matrix():
+    matrix = build_tool_matrix(tenant=str(current_tenant() or "default"))
+    degraded = [row["tool"] for row in matrix if row.get("status") == "degraded"]
+    return jsonify(ok=True, total=len(matrix), degraded=degraded, tools=matrix)
 
 
 @bp.get("/api/system/status")

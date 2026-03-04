@@ -34,9 +34,11 @@ def messenger_page():
 @login_required
 def api_messenger_summary():
     return jsonify(
-        ok=True,
-        domain="messenger",
-        summary={
+        tool="messenger",
+        status="ok",
+        updated_at="runtime",
+        metrics={"confirm_gate": 1, "channels": 4},
+        details={
             "chat_endpoint": "/api/chat",
             "confirm_gate": True,
             "message_fields": ["q", "message", "msg"],
