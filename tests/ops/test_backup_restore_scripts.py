@@ -41,6 +41,7 @@ def test_backup_degraded_mode_writes_local_copy(tmp_path: Path) -> None:
 def test_restore_degraded_mode_reads_local_copy(tmp_path: Path) -> None:
     _prepare_instance(tmp_path)
     # make a backup archive first
+    (tmp_path / "instance" / "degraded_backups" / "DEMO_TENANT").mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["bash", "-c", "tar -C instance -cf - . | zstd -19 -T0 -o instance/degraded_backups/DEMO_TENANT/manual.tar.zst"],
         cwd=tmp_path,
