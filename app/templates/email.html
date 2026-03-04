@@ -1,0 +1,65 @@
+{% extends "layout.html" %}
+{% block title %}Email-Postfach{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--spacing-4);">
+  <section class="panel" style="margin-bottom:0;">
+    <h2 style="margin:0 0 var(--spacing-3); font-size:13px; text-transform:uppercase; color:var(--text-tertiary);">Ordner</h2>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <button class="btn btn-ghost" style="justify-content:flex-start;">Posteingang</button>
+      <button class="btn btn-ghost" style="justify-content:flex-start;">Entwürfe</button>
+      <button class="btn btn-ghost" style="justify-content:flex-start;">Gesendet</button>
+      <button class="btn btn-ghost" style="justify-content:flex-start;">Archiv</button>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-bottom:0; display:flex; flex-direction:column; gap:var(--spacing-3);">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <h1 style="margin:0; font-size:22px;">Email-Cockpit</h1>
+      <span class="badge">Lokale Verarbeitung · Zero-CDN</span>
+    </div>
+    <p style="margin:0; color:var(--text-tertiary);">Der Mail-Agent erstellt Entwürfe lokal und kann über die API `/api/mail/draft` angesteuert werden.</p>
+
+    <form id="email-draft-form" style="display:flex; flex-direction:column; gap:10px;">
+      <input id="draft-to" class="input" type="email" placeholder="Empfänger">
+      <input id="draft-subject" class="input" type="text" placeholder="Betreff">
+      <textarea id="draft-body" class="input" rows="6" placeholder="Nachricht"></textarea>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button type="button" id="draft-generate" class="btn btn-primary">KI-Entwurf erzeugen</button>
+        <span id="draft-status" style="font-size:12px; color:var(--text-tertiary);"></span>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('draft-generate')?.addEventListener('click', async () => {
+    const status = document.getElementById('draft-status');
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    status.textContent = 'Erzeuge Entwurf…';
+    try {
+      const res = await fetch('/api/mail/draft', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrf ? {'X-CSRF-Token': csrf} : {}),
+        },
+        body: JSON.stringify({
+          to: document.getElementById('draft-to')?.value || '',
+          subject: document.getElementById('draft-subject')?.value || '',
+          body: document.getElementById('draft-body')?.value || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      document.getElementById('draft-body').value = data?.draft?.body || document.getElementById('draft-body').value;
+      status.textContent = 'Entwurf aktualisiert.';
+    } catch (err) {
+      status.textContent = `Fehler: ${err.message || 'Unbekannt'}`;
+    }
+  });
+</script>
+{% endblock %}

@@ -514,19 +514,12 @@ def _is_hx_partial_request() -> bool:
 def _render_sovereign_tool(
     tool_key: str, title: str, message: str, active_tab: str = "dashboard"
 ) -> str:
-    if _is_hx_partial_request():
-        return render_template(
-            "skeletons/tool_partial.html",
-            tool_key=tool_key,
-            title=title,
-            message=message,
-        )
     return _render_base(
-        "skeletons/tool_page.html",
+        "generic_tool.html",
         active_tab=active_tab,
-        tool_key=tool_key,
         title=title,
         message=message,
+        extra_html=f"<div class='badge'>{tool_key.upper()} bereit</div>",
     )
 
 
@@ -2142,17 +2135,24 @@ def api_chat():
             "ok": False,
             "text": "Der Assistent ist aktuell nicht vollständig verfügbar. Bitte versuche es erneut.",
             "response": "Der Assistent ist aktuell nicht vollständig verfügbar. Bitte versuche es erneut.",
+            "error": "agent_unavailable",
         }
         if request.headers.get("HX-Request"):
             return "<div class='text-sm'>Der Assistent ist aktuell nicht verfügbar.</div>", 200
         return jsonify(fallback), 200
 
+    if not isinstance(response, dict):
+        response = {
+            "ok": True,
+            "text": str(response or ""),
+            "response": str(response or ""),
+        }
     # Compat: some widgets expect `response`, others `text`.
-    if isinstance(response, dict):
-        if "text" in response and "response" not in response:
-            response["response"] = response.get("text", "")
-        if "response" in response and "text" not in response:
-            response["text"] = response.get("response", "")
+    if "text" in response and "response" not in response:
+        response["response"] = response.get("text", "")
+    if "response" in response and "text" not in response:
+        response["text"] = response.get("response", "")
+    response.setdefault("ok", True)
     if request.headers.get("HX-Request"):
         text = ""
         if isinstance(response, dict):
