@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+import pytest
+
+
+def _make_app(tmp_path, monkeypatch):
+    from app import create_app
+    from app.config import Config
+
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+    monkeypatch.setattr(Config, "AUTH_DB", tmp_path / "auth.sqlite3")
+    monkeypatch.setattr(Config, "CORE_DB", tmp_path / "core.sqlite3")
+    monkeypatch.setattr(Config, "LICENSE_PATH", tmp_path / "license.json")
+    monkeypatch.setattr(Config, "TRIAL_PATH", tmp_path / "trial.json")
+    app = create_app()
+    app.config["TESTING"] = True
+    return app
+
+
+@pytest.fixture()
+def auth_client(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = datetime.utcnow().isoformat()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("admin", hash_password("admin"), now)
+        auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+    return client
