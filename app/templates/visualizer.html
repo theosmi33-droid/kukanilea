@@ -445,14 +445,19 @@
       el.stage.textContent = "Keine Darstellungsdaten verfügbar.";
       return;
     }
-    if (payload.kind === "pdf") renderPdf(payload);
-    else if (payload.kind === "sheet") renderSheet(payload);
-    else if (payload.kind === "image") renderImage(payload);
-    else renderText(payload);
+    try {
+      if (payload.kind === "pdf") renderPdf(payload);
+      else if (payload.kind === "sheet") renderSheet(payload);
+      else if (payload.kind === "image") renderImage(payload);
+      else renderText(payload);
 
-    renderMetaTags(payload);
-    updatePager(payload);
-    updatePerf(payload, clientMs);
+      renderMetaTags(payload);
+      updatePager(payload);
+      updatePerf(payload, clientMs);
+    } catch (err) {
+      el.stage.className = "vz-empty";
+      el.stage.textContent = `Darstellungsfehler: ${String(err.message || err)}`;
+    }
   }
 
   function renderList() {

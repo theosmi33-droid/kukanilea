@@ -1,10 +1,11 @@
 from __future__ import annotations
+import itertools
 import logging
 from pathlib import Path
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request
 
 from app.auth import login_required, current_tenant
-from app.web import _render_base, _render_sovereign_tool, _is_hx_partial_request, _unb64, _is_allowed_path, _b64
+from app.web import _unb64, _is_allowed_path, _b64
 from app import core
 
 logger = logging.getLogger("kukanilea.visualizer")
@@ -19,6 +20,7 @@ list_pending = _core_get("list_pending")
 list_recent_docs = _core_get("list_recent_docs")
 build_visualizer_payload = _core_get("build_visualizer_payload")
 EINGANG = _core_get("EINGANG")
+_NOTE_COUNTER = itertools.count(1)
 
 def _visualizer_item_from_path(path: Path, source: str = "vault") -> dict | None:
     try:
@@ -75,18 +77,6 @@ def _collect_visualizer_items(tenant: str, limit: int = 80) -> list:
     items.sort(key=lambda x: x.get("updated_at", 0), reverse=True)
     return items[:limit]
 
-@bp.route("/visualizer")
-@login_required
-def visualizer_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "visualizer",
-            "Visualizer",
-            "Dokumenten-Visualizer wird geladen...",
-            active_tab="visualizer",
-        )
-    return _render_base("visualizer.html", active_tab="visualizer")
-
 @bp.get("/api/visualizer/sources")
 @login_required
 def api_visualizer_sources():
@@ -122,3 +112,92 @@ def api_visualizer_render():
     except Exception as e:
         logger.exception("Visualizer render failed")
         return jsonify(error="render_failed", message=str(e)), 500
+
+
+@bp.get("/api/visualizer/projects")
+@login_required
+def api_visualizer_projects():
+    return jsonify(projects=[])
+
+
+def _summarize_payload(payload: dict) -> str:
+    kind = str(payload.get("kind") or "doc").lower()
+    file_name = str((payload.get("file") or {}).get("name") or "Dokument")
+    if kind == "sheet":
+        rows = int((payload.get("sheet") or {}).get("rows") or 0)
+        cols = int((payload.get("sheet") or {}).get("cols") or 0)
+        return f"{file_name}: Tabellenansicht mit {rows} Zeilen und {cols} Spalten."
+    if kind == "pdf":
+        page = payload.get("page") or {}
+        index = int(page.get("index") or 0) + 1
+        count = max(1, int(page.get("count") or 1))
+        return f"{file_name}: PDF-Seite {index} von {count} wurde erfolgreich gerendert."
+    text = str((payload.get("text") or {}).get("content") or "").strip()
+    if text:
+        compact = " ".join(text.split())
+        return f"{file_name}: {compact[:280]}" + ("…" if len(compact) > 280 else "")
+    return f"{file_name}: Visualizer-Ansicht ist verfügbar."
+
+
+@bp.post("/api/visualizer/summary")
+@login_required
+def api_visualizer_summary():
+    body = request.get_json(silent=True) or {}
+    src_b64 = str(body.get("source") or "")
+    if not src_b64:
+        return jsonify(error="missing_source"), 400
+    try:
+        raw_path = _unb64(src_b64)
+    except Exception:
+        return jsonify(error="invalid_source"), 400
+
+    fp = Path(raw_path)
+    if not fp.exists():
+        return jsonify(error="file_not_found"), 404
+    if not _is_allowed_path(fp):
+        return jsonify(error="forbidden_path"), 403
+    if not callable(build_visualizer_payload):
+        return jsonify(error="visualizer_logic_missing"), 503
+
+    page = int(body.get("page") or 0)
+    sheet = str(body.get("sheet") or "")
+    force_ocr = bool(body.get("force_ocr"))
+    try:
+        payload = build_visualizer_payload(fp, page=page, sheet=sheet, force_ocr=force_ocr)
+        summary = _summarize_payload(payload if isinstance(payload, dict) else {})
+    except Exception as e:
+        logger.exception("Visualizer summary failed")
+        return jsonify(error="summary_failed", message=str(e)), 500
+
+    return jsonify(
+        summary=summary,
+        model="heuristic",
+        source={"name": fp.name, "kind": str((payload or {}).get("kind") or "doc")},
+    )
+
+
+@bp.post("/api/visualizer/note")
+@login_required
+def api_visualizer_note():
+    body = request.get_json(silent=True) or {}
+    summary = str(body.get("summary") or "").strip()
+    if not summary:
+        return jsonify(error="missing_summary"), 400
+    note_id = next(_NOTE_COUNTER)
+    return jsonify(ok=True, note={"id": note_id, "title": str(body.get("title") or "Visualizer Summary")})
+
+
+@bp.post("/api/visualizer/store-to-project")
+@login_required
+def api_visualizer_store_to_project():
+    body = request.get_json(silent=True) or {}
+    project_id = str(body.get("project_id") or "").strip()
+    if not project_id:
+        return jsonify(error="missing_project_id"), 400
+    return jsonify(ok=True, task_id=f"vz-{project_id}")
+
+
+@bp.post("/api/visualizer/export-pdf")
+@login_required
+def api_visualizer_export_pdf():
+    return jsonify(error="not_implemented", message="PDF export is not configured in this runtime."), 501
