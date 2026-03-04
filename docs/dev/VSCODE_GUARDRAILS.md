@@ -15,7 +15,7 @@ This project enforces a stable VS Code setup for core + all 11 worktrees.
 ## One-time setup
 
 ```bash
-cd /Users/gensuminguyen/Kukanilea/kukanilea_production
+cd <repo-root>
 bash scripts/dev/install_git_hooks.sh
 ```
 
