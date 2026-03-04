@@ -79,6 +79,7 @@ def create_app() -> Flask:
     app.config["TRIAL_DAYS_LEFT"] = license_state["trial_days_left"]
     app.config["READ_ONLY"] = license_state["read_only"]
     app.config["LICENSE_REASON"] = license_state["reason"]
+    app.config["LICENSE_STATUS"] = license_state.get("status", "active")
     
     from flask import g
     
@@ -126,6 +127,7 @@ def create_app() -> Flask:
         return {
             "read_only": read_only and not is_dev,
             "license_reason": str(app.config.get("LICENSE_REASON", "")),
+            "license_status": str(app.config.get("LICENSE_STATUS", "active")),
             "plan": str(app.config.get("PLAN", "TRIAL")),
             "trial_active": bool(app.config.get("TRIAL", False)),
             "trial_days_left": int(app.config.get("TRIAL_DAYS_LEFT", 0)),
