@@ -19,19 +19,26 @@ need_cmd() {
 }
 
 need_cmd osascript
-need_cmd gemini
+if command -v Gemini >/dev/null 2>&1; then
+  GEMINI_CMD="Gemini"
+elif command -v gemini >/dev/null 2>&1; then
+  GEMINI_CMD="gemini"
+else
+  echo "error: missing required command 'Gemini' or 'gemini'"
+  exit 2
+fi
 
 mkdir -p "$RUN_DIR"
 
 count_gemini() {
-  pgrep -if '(^|[ /])gemini([ ]|$)' | wc -l | tr -d ' '
+  (pgrep -if '(^|[ /])gemini([ ]|$)' || true) | wc -l | tr -d ' '
 }
 
 open_terminal() {
   local worker="$1"
   local prompt="$2"
   local cmd
-  cmd="cd '$ROOT' && clear && printf '[KUKANILEA-GEMINI] ${worker}\nPrompt: ${prompt}\n\n1) GEMINI ist gestartet.\n2) Prompt-Datei oeffnen und vollstaendig einfuegen.\n3) Abschlussbericht nach docs/reviews/gemini/live schreiben.\n\n' && gemini"
+  cmd="cd '$ROOT' && clear && printf '[KUKANILEA-GEMINI] ${worker}\nPrompt: ${prompt}\n\n1) GEMINI ist gestartet.\n2) Prompt-Datei oeffnen und vollstaendig einfuegen.\n3) Abschlussbericht nach docs/reviews/gemini/live schreiben.\n\n' && ${GEMINI_CMD}"
 
   osascript <<OSA
 tell application "Terminal"
