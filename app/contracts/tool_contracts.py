@@ -54,6 +54,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "tenant": tenant,
         "matrix_endpoint": "/api/dashboard/tool-matrix",
         "aggregate_mode": "summary_only",
+        "write_scope": "none",
+        "cross_domain_writes": False,
     }
     return metrics, details, ""
 
@@ -130,6 +132,9 @@ def _collect_chatbot_summary(_tenant: str) -> tuple[dict, dict, str]:
     metrics = {"overlay": 1, "compact_api": 1}
     details = {
         "endpoints": ["/api/chat", "/api/chat/compact"],
+        "aggregate_mode": "read_only",
+        "write_scope": "none",
+        "cross_domain_writes": False,
         "payload_contract": {
             "request_fields": ["message", "msg", "q"],
             "response_fields": ["ok", "response"],
