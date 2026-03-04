@@ -79,3 +79,47 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
     assert "classList.add('light')" in html
     assert "JSON.stringify({ msg: text })" in html
     assert "data.text || data.response" in html
+
+
+def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = datetime.utcnow().isoformat()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("dev", hash_password("dev"), now)
+        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
+
+    import app.web as web
+
+    monkeypatch.setattr(web, "agent_answer", lambda *_args, **_kwargs: {"ok": True, "text": "bereit", "actions": []})
+
+    with client.session_transaction() as sess:
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
+        sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "csrf-test"
+
+    resp = client.post(
+        "/api/chat/compact",
+        json={"message": "Bitte sende die Nachricht an den Kunden", "current_context": "/messenger"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["requires_confirm"] is True
+    assert body["pending_id"]
+
+    yes = client.post(
+        "/api/chat/compact",
+        json={"confirm": True, "pending_id": body["pending_id"], "current_context": "/messenger"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert yes.status_code == 200
+    confirmed = yes.get_json()
+    assert confirmed["text"] == "Aktion bestätigt und ausgeführt."
+    assert confirmed["status"] == "Aktion ausgeführt"
