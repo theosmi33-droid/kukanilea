@@ -1,0 +1,6 @@
+mode=degraded_local
+tenant_id=OPS_EVIDENCE_1000
+backup_file=OPS_EVIDENCE_1000_2026-03-04_19-16.tar.gz
+target=instance/degraded_backups/OPS_EVIDENCE_1000/OPS_EVIDENCE_1000_2026-03-04_19-16.tar.gz
+rto_seconds=0
+rpo_seconds=0
