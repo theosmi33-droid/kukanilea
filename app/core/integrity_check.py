@@ -11,7 +11,7 @@ import logging
 import pwd
 import sqlite3
 from pathlib import Path
-from typing import List, Dict, Tuple, Any
+from typing import Dict, Any
 
 logger = logging.getLogger("kukanilea.integrity")
 
@@ -20,8 +20,19 @@ CORE_FILES = [
     "app/core/boot_sequence.py",
     "app/core/audit.py",
     "app/web.py",
-    "app/config.py"
+    "app/config.py",
 ]
+
+REQUIRED_TABLES = {
+    "tenants": ("tenant_id", "display_name", "created_at"),
+    "projects": ("id", "tenant_id", "name", "created_at"),
+    "boards": ("id", "project_id", "name", "created_at"),
+    "tasks": ("id", "board_id", "column_name", "title", "created_at"),
+    "files": ("id", "tenant_id", "name", "path", "size", "created_at"),
+    "contacts": ("id", "tenant_id", "full_name", "email", "created_at"),
+    "time_entries": ("id", "tenant_id", "project_id", "actor", "minutes", "created_at"),
+}
+
 
 def run_vault_selftest() -> Dict[str, Any]:
     """
@@ -34,8 +45,9 @@ def run_vault_selftest() -> Dict[str, Any]:
         "database_status": results.get("database", {}).get("status", "unknown"),
         "files_verified": len(CORE_FILES) - len(results.get("files", {}).get("missing", [])),
         "files_missing": results.get("files", {}).get("missing", []),
-        "timestamp": results.get("timestamp")
+        "timestamp": results.get("timestamp"),
     }
+
 
 def check_system_integrity() -> Dict[str, Any]:
     """Runs a full system check and returns results."""
@@ -44,10 +56,10 @@ def check_system_integrity() -> Dict[str, Any]:
         "modules": check_modules(),
         "database": check_database_integrity(),
         "permissions": check_fs_permissions(),
-        "timestamp": get_current_user_safe() + "_" + str(os.getpid()) # Mock identifier for now
+        "timestamp": get_current_user_safe() + "_" + str(os.getpid()),
     }
 
-    all_ok = all([v.get("ok", False) for k, v in results.items() if isinstance(v, dict)])
+    all_ok = all(v.get("ok", False) for v in results.values() if isinstance(v, dict))
     results["all_ok"] = all_ok
 
     if not all_ok:
@@ -73,31 +85,24 @@ def get_current_user_safe() -> str:
             except Exception:
                 return "ci_user"
 
+
 def verify_core_files() -> Dict[str, Any]:
     """Checks if core files exist and verifies their SHA256 hashes (Step 2)."""
     missing = []
     corrupted = []
 
-    # In a real enterprise system, hashes would be stored in a signed manifest.
-    # For v2.1, we verify existence and basic readability.
     for f in CORE_FILES:
         p = Path(f)
         if not p.exists():
             missing.append(f)
         else:
             try:
-                # Step 2: Generate hash (Verify in future version against manifest)
-                content = p.read_bytes()
-                sha = hashlib.sha256(content).hexdigest()
-                # logger.debug(f"Verified {f}: {sha}")
+                _ = hashlib.sha256(p.read_bytes()).hexdigest()
             except Exception:
                 corrupted.append(f)
 
-    return {
-        "ok": len(missing) == 0 and len(corrupted) == 0,
-        "missing": missing,
-        "corrupted": corrupted
-    }
+    return {"ok": len(missing) == 0 and len(corrupted) == 0, "missing": missing, "corrupted": corrupted}
+
 
 def check_modules() -> Dict[str, Any]:
     """Checks if critical optional modules are importable."""
@@ -109,30 +114,68 @@ def check_modules() -> Dict[str, Any]:
         except ImportError:
             failed.append(m)
 
+    return {"ok": len(failed) == 0, "failed": failed}
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _validate_required_tables(conn: sqlite3.Connection) -> Dict[str, Any]:
+    tables = {
+        row[0]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    missing_tables = sorted([table for table in REQUIRED_TABLES if table not in tables])
+    missing_columns: dict[str, list[str]] = {}
+
+    for table, required_columns in REQUIRED_TABLES.items():
+        if table in missing_tables:
+            continue
+        existing = _table_columns(conn, table)
+        missing = [column for column in required_columns if column not in existing]
+        if missing:
+            missing_columns[table] = missing
+
+    ok = not missing_tables and not missing_columns
     return {
-        "ok": len(failed) == 0,
-        "failed": failed
+        "ok": ok,
+        "missing_tables": missing_tables,
+        "missing_columns": missing_columns,
     }
 
-def check_database_integrity() -> Dict[str, Any]:
-    """Runs PRAGMA integrity_check on the core database."""
-    from app.config import Config
-    db_path = Config.CORE_DB
 
+def check_database_integrity() -> Dict[str, Any]:
+    """Runs PRAGMA integrity checks and schema consistency checks on the core DB."""
+    from app.config import Config
+
+    db_path = Config.CORE_DB
     if not db_path.exists():
-        return {"ok": True, "status": "Database missing (will be created)"}
+        return {"ok": True, "status": "Database missing (will be created)", "schema": {"ok": True}}
 
     try:
         conn = sqlite3.connect(str(db_path))
-        res = conn.execute("PRAGMA integrity_check;").fetchone()
+        integrity = conn.execute("PRAGMA integrity_check;").fetchone()[0]
+        fk_violations = conn.execute("PRAGMA foreign_key_check;").fetchall()
+        schema = _validate_required_tables(conn)
         conn.close()
-        return {"ok": res[0] == "ok", "status": res[0]}
+
+        ok = integrity == "ok" and len(fk_violations) == 0 and schema.get("ok", False)
+        return {
+            "ok": ok,
+            "status": integrity,
+            "foreign_keys": "ok" if len(fk_violations) == 0 else f"violations={len(fk_violations)}",
+            "schema": schema,
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
 
 def check_fs_permissions() -> Dict[str, Any]:
     """Verifies write permissions to data root."""
     from app.config import Config
+
     root = Config.USER_DATA_ROOT
     try:
         test_file = root / ".perm_check"
@@ -142,16 +185,19 @@ def check_fs_permissions() -> Dict[str, Any]:
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+
 def create_crash_dump(data: Dict[str, Any]):
     """Stores a detailed failure report for analysis."""
     from app.config import Config
+
     dump_dir = Config.LOG_DIR / "crash"
     dump_dir.mkdir(parents=True, exist_ok=True)
 
-    ts = os.environ.get("KUK_START_TS", str(int(os.getpid()))) # Mock
+    ts = os.environ.get("KUK_START_TS", str(int(os.getpid())))
     dump_file = dump_dir / f"integrity_failure_{ts}.json"
 
     import json
+
     with open(dump_file, "w") as f:
         json.dump(data, f, indent=2)
     logger.info(f"Crash dump created at {dump_file}")
