@@ -19,3 +19,5 @@ def test_production_session_defaults_are_secure(monkeypatch, tmp_path):
     assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
     assert app.config["SESSION_COOKIE_SECURE"] is True
     assert app.config["SESSION_COOKIE_NAME"].startswith("__Host-")
+    assert app.config["SESSION_COOKIE_DOMAIN"] is None
+    assert app.config["SESSION_COOKIE_PATH"] == "/"
