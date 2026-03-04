@@ -21,6 +21,20 @@ CORE_FILES = [
     "app/config.py"
 ]
 
+def run_vault_selftest() -> Dict[str, Any]:
+    """
+    Performs a targeted integrity check of the document vault and core system.
+    Returns a status dictionary suitable for the Dashboard UI.
+    """
+    results = check_system_integrity()
+    return {
+        "integrity_ok": results.get("all_ok", False),
+        "database_status": results.get("database", {}).get("status", "unknown"),
+        "files_verified": len(CORE_FILES) - len(results.get("files", {}).get("missing", [])),
+        "files_missing": results.get("files", {}).get("missing", []),
+        "timestamp": results.get("timestamp")
+    }
+
 def check_system_integrity() -> Dict[str, Any]:
     """Runs a full system check and returns results."""
     results = {
