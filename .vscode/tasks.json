@@ -4,12 +4,9 @@
     {
       "label": "KUKANILEA: VS Code Guardrails (Auto-Fix)",
       "type": "shell",
-      "command": "bash scripts/dev/vscode_guardrails.sh --apply --install-hooks",
+      "command": "bash scripts/dev/vscode_guardrails.sh --check",
       "options": {
         "cwd": "${workspaceFolder}"
-      },
-      "runOptions": {
-        "runOn": "folderOpen"
       },
       "presentation": {
         "reveal": "never",
