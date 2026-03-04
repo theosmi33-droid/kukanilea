@@ -67,6 +67,9 @@ def test_main_navigation_and_main_paths(tmp_path, monkeypatch):
     for path in HTMX_PATHS:
         response = client.get(path, headers={"HX-Request": "true"})
         assert response.status_code == 200, f"HTMX path failed: {path}"
+        body = response.get_data(as_text=True)
+        assert "traceback" not in body.lower(), f"Error page returned for {path}"
+        assert "Internal Server Error" not in body
 
 
 def test_dashboard_contract_matrix_has_11_tiles(tmp_path, monkeypatch):

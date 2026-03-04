@@ -60,10 +60,13 @@ def test_projects_route_returns_200_for_authenticated_user(tmp_path, monkeypatch
 
     resp = client.get("/projects", follow_redirects=False)
     assert resp.status_code == 200
-    assert "kanban" in resp.get_data(as_text=True).lower()
+    body = resp.get_data(as_text=True)
+    assert 'id="project-hub"' in body
+    assert 'id="kanban"' in body
+    assert "Projekte konnten nicht geladen werden" not in body
 
 
-def test_projects_hx_partial_returns_200(tmp_path, monkeypatch):
+def test_projects_hx_request_keeps_full_page_contract(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     _seed_admin(app)
     client = app.test_client()
@@ -72,5 +75,7 @@ def test_projects_hx_partial_returns_200(tmp_path, monkeypatch):
 
     resp = client.get("/projects", headers={"HX-Request": "true"})
     assert resp.status_code == 200
-    body = resp.get_data(as_text=True).lower()
-    assert "kanban" in body or "project hub" in body
+    body = resp.get_data(as_text=True)
+    assert "<html" in body.lower()
+    assert 'id="project-hub"' in body
+    assert "traceback" not in body.lower()
