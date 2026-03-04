@@ -3069,50 +3069,7 @@ def api_mail_eml():
 
 @bp.route("/")
 def index():
-    return redirect(url_for("web.dashboard_page"))
-
-
-@bp.get("/dashboard")
-@login_required
-def dashboard_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "dashboard",
-            "Dashboard",
-            "Dashboard-Widgets werden geladen...",
-            active_tab="dashboard",
-        )
-    # Get items for dashboard.html
-    auth_db = current_app.extensions["auth_db"]
-    con = auth_db._db()
-    tenant = _norm_tenant(current_tenant() or "default")
-    items = []
-    if (PENDING_DIR / tenant).exists():
-        items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
-    
-    meta = {}
-    for token in items:
-        m_path = PENDING_DIR / tenant / token / "meta.json"
-        if m_path.exists():
-            with open(m_path, "r") as f:
-                meta[token] = json.load(f)
-        else:
-            meta[token] = {"filename": "Unbekannt", "status": "PENDING"}
-
-    # Get recent from core
-    recent = []
-    if callable(_core_get("get_recent_docs")):
-        recent = _core_get("get_recent_docs")(tenant, limit=6)
-
-    return _render_base(
-        "dashboard.html",
-        active_tab="dashboard",
-        items=items,
-        meta=meta,
-        recent=recent,
-        suggestions={"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
-        keywords=["Maler", "Sanitär", "Elektro"]
-    )
+    return redirect(url_for("dashboard.dashboard_page"))
 
 
 @bp.route("/upload", methods=["GET"])
@@ -3545,19 +3502,6 @@ def messenger_page():
     return _render_base("messenger.html", active_tab="messenger")
 
 
-@bp.route("/visualizer")
-@login_required
-def visualizer_page():
-    if _is_hx_partial_request():
-        return _render_sovereign_tool(
-            "visualizer",
-            "Visualizer",
-            "Dokumenten-Visualizer wird geladen...",
-            active_tab="visualizer",
-        )
-    return _render_base("visualizer.html", active_tab="visualizer")
-
-
 @bp.route("/legal")
 def legal_page():
     return _render_base("legal.html", active_tab="settings")
@@ -3657,29 +3601,6 @@ def admin_audit():
 def api_list_tools():
     from app.tools.registry import registry
     return jsonify(ok=True, tools=registry.list())
-
-
-@bp.get("/api/system/status")
-@login_required
-def api_system_status():
-    """Dashboard status endpoint for HTMX/widget refresh."""
-    from app.core.observer import get_system_status
-
-    status = get_system_status() or {}
-    accept = (request.headers.get("Accept") or "").lower()
-    wants_html = "text/html" in accept or (request.args.get("format") or "").lower() == "html"
-    if wants_html:
-        return render_template("components/system_status.html", **status)
-    return jsonify(ok=True, status=status)
-
-
-@bp.get("/api/outbound/status")
-@login_required
-def api_outbound_status():
-    """Auth-protected proxy to existing outbound queue status implementation."""
-    from .api import outbound_status as _outbound_status
-
-    return _outbound_status()
 
 
 @bp.route("/admin/audit/verify", methods=["POST"])
