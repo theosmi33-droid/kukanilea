@@ -7,6 +7,10 @@ EXIT_GATE=4
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CI_MODE=0
+AUTH_DB="${KUKANILEA_AUTH_DB:-instance/auth.sqlite3}"
+HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
+PYTHON="${PYTHON:-}"
+SERVER_PID=""
 
 log() {
   echo "$*" | tee -a "$HEALTH_LOG"
@@ -19,64 +23,21 @@ fail() {
   exit "$code"
 }
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --ci)
-      CI_MODE=1
-      shift
-      ;;
-    -h|--help)
-      cat <<'EOF'
-Usage: ./scripts/ops/healthcheck.sh [--ci]
-
-Options:
-  --ci    Run in CI mode (non-interactive logging/behavior)
-EOF
-      exit 0
-      ;;
-    *)
-      echo "[healthcheck] Unknown argument: $1" >&2
-      exit "$EXIT_USAGE"
-      ;;
-  esac
-done
-
-if [[ -z "${PYTHON:-}" ]]; then
-  if [[ -x "$ROOT/.build_venv/bin/python" ]]; then
-    PYTHON="$ROOT/.build_venv/bin/python"
-  else
-    PYTHON="python3"
-  fi
-fi
-AUTH_DB="${KUKANILEA_AUTH_DB:-instance/auth.sqlite3}"
-HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
-: > "$HEALTH_LOG"
-
-for dep in curl find xargs sqlite3; do
+require_cmd() {
+  local dep="$1"
   if ! command -v "$dep" >/dev/null 2>&1; then
     fail "$EXIT_DEPENDENCY" "[healthcheck] Missing required dependency: $dep"
   fi
-done
+}
 
-log "[healthcheck] Starting at $(date)"
-if [[ "$CI_MODE" -eq 1 ]]; then
-  log "[healthcheck] CI mode enabled"
-fi
+run_gate() {
+  local gate="$1"
+  shift
+  if ! "$@"; then
+    fail "$EXIT_GATE" "[healthcheck] Gate failed: ${gate}"
+  fi
+}
 
-log "[1/7] Python compile check..."
-find app -name '*.py' -print0 | xargs -0 "$PYTHON" -m py_compile
-
-log "[2/7] Ensuring DB tables..."
-"$PYTHON" app/db/migrations/ensure_agent_memory.py | tee -a "$HEALTH_LOG"
-
-log "[3/7] Running unit tests..."
-if ! "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then
-  log "[healthcheck] pytest is not installed for interpreter: $PYTHON"
-  fail "$EXIT_DEPENDENCY" "[healthcheck] Install test dependencies (for example: $PYTHON -m pip install -r requirements-dev.txt)"
-fi
-"$PYTHON" -m pytest -q
-
-SERVER_PID=""
 cleanup() {
   if [[ -n "$SERVER_PID" ]]; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
@@ -100,41 +61,114 @@ wait_for_http() {
   return 1
 }
 
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ci)
+        CI_MODE=1
+        shift
+        ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: ./scripts/ops/healthcheck.sh [--ci]
+
+Options:
+  --ci    Run in CI mode (non-interactive logging/behavior)
+USAGE
+        exit 0
+        ;;
+      *)
+        echo "[healthcheck] Unknown argument: $1" >&2
+        exit "$EXIT_USAGE"
+        ;;
+    esac
+  done
+}
+
+parse_args "$@"
+
+: > "$HEALTH_LOG"
+
+if [[ -z "$PYTHON" ]]; then
+  if [[ -x "$ROOT/.build_venv/bin/python" ]]; then
+    PYTHON="$ROOT/.build_venv/bin/python"
+  else
+    PYTHON="python3"
+  fi
+fi
+
+for dep in curl find xargs sqlite3 "$PYTHON"; do
+  require_cmd "$dep"
+done
+
+log "[healthcheck] Starting at $(date -Iseconds)"
+log "[healthcheck] Root=$ROOT"
+log "[healthcheck] Python=$PYTHON"
+if [[ "$CI_MODE" -eq 1 ]]; then
+  log "[healthcheck] CI mode enabled"
+fi
+
+log "[1/7] Python compile check..."
+run_gate "Python compile check" bash -lc "cd '$ROOT' && find app -name '*.py' -print0 | xargs -0 '$PYTHON' -m py_compile"
+
+log "[2/7] Ensuring DB tables..."
+run_gate "DB migration check" bash -lc "cd '$ROOT' && '$PYTHON' app/db/migrations/ensure_agent_memory.py"
+
+log "[3/7] Running unit tests..."
+if ! "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then
+  fail "$EXIT_DEPENDENCY" "[healthcheck] pytest is not installed for interpreter: $PYTHON"
+fi
+run_gate "pytest" bash -lc "cd '$ROOT' && '$PYTHON' -m pytest -q"
+
 if ! curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051/" | grep -Eq "^(200|302)$"; then
   log "[healthcheck] No server on :5051 detected, starting temporary local server..."
-  "$PYTHON" kukanilea_app.py --host 127.0.0.1 --port 5051 >/tmp/kukanilea_healthcheck_server.log 2>&1 &
+  (cd "$ROOT" && "$PYTHON" kukanilea_app.py --host 127.0.0.1 --port 5051) >/tmp/kukanilea_healthcheck_server.log 2>&1 &
   SERVER_PID=$!
   if ! wait_for_http "http://127.0.0.1:5051/" 30 1; then
     log "[healthcheck] Server did not become ready on :5051 in time"
     log "[healthcheck] Last server log lines:"
     tail -n 80 /tmp/kukanilea_healthcheck_server.log | tee -a "$HEALTH_LOG"
-    exit "$EXIT_GATE"
+    fail "$EXIT_GATE" "[healthcheck] Core server readiness failed"
   fi
 fi
 
 log "[4/7] Checking routes (200/302)..."
-URLS=("/" "/dashboard" "/upload" "/projects" "/tasks" "/messenger" "/email" "/calendar" "/time" "/visualizer" "/settings")
-for u in "${URLS[@]}"; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051${u}" || true)
-  if [[ "$code" != "200" && "$code" != "302" ]]; then
-    fail "$EXIT_GATE" "[healthcheck] Route $u returned $code"
-  fi
-done
+check_routes() {
+  local code
+  local urls=("/" "/dashboard" "/upload" "/projects" "/tasks" "/messenger" "/email" "/calendar" "/time" "/visualizer" "/settings")
+  for u in "${urls[@]}"; do
+    code="$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051${u}" || true)"
+    if [[ "$code" != "200" && "$code" != "302" ]]; then
+      log "[healthcheck] Route ${u} returned ${code}"
+      return 1
+    fi
+  done
+}
+run_gate "Route health" check_routes
 
 log "[5/7] Checking homepage for external URLs..."
-external=$(curl -s http://127.0.0.1:5051/ | grep -oE 'https?://[^"'"'"' ]+' | grep -v '127.0.0.1' || true)
-if [[ -n "$external" ]]; then
-  log "[healthcheck] External URLs found:"
-  echo "$external" | tee -a "$HEALTH_LOG"
-  exit "$EXIT_GATE"
-fi
+check_external_urls() {
+  local external
+  external="$(curl -s http://127.0.0.1:5051/ | grep -oE 'https?://[^"'"'"' ]+' | grep -v '127.0.0.1' || true)"
+  if [[ -n "$external" ]]; then
+    log "[healthcheck] External URLs found:"
+    echo "$external" | tee -a "$HEALTH_LOG"
+    return 1
+  fi
+}
+run_gate "Zero external URLs on homepage" check_external_urls
 
 log "[6/7] DB sanity check..."
-if ! sqlite3 "$AUTH_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_memory';" | grep -q "agent_memory"; then
-  fail "$EXIT_GATE" "[healthcheck] agent_memory table missing"
-fi
+check_db() {
+  if [[ ! -f "$ROOT/$AUTH_DB" ]]; then
+    log "[healthcheck] Auth DB not found: $ROOT/$AUTH_DB"
+    return 1
+  fi
+  sqlite3 "$ROOT/$AUTH_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_memory';" | grep -q "agent_memory"
+}
+run_gate "agent_memory table" check_db
 
 log "[7/7] Verifying guardrails (CDN & HTMX confirm)..."
-"$PYTHON" scripts/ops/verify_guardrails.py | tee -a "$HEALTH_LOG"
+run_gate "guardrails verify" bash -lc "cd '$ROOT' && '$PYTHON' scripts/ops/verify_guardrails.py"
 
 log "[healthcheck] All checks passed"
