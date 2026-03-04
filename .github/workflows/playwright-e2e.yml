@@ -2,13 +2,18 @@ name: Playwright E2E Tests
 
 on:
   push:
-    branches: [main, "codex/**"]
+    branches: [main]
   pull_request:
-    branches: [main, "codex/**"]
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   e2e-tests:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-slow-checks') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
