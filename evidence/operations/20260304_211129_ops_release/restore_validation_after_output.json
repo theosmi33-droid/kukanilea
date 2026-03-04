@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "error": "database_not_found:instance/auth.sqlite3",
+  "db": "instance/auth.sqlite3"
+}

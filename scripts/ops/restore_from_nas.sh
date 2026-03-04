@@ -18,6 +18,7 @@ MODE="nas"
 START_EPOCH="$(date +%s)"
 NAS_RETRIES="${NAS_RETRIES:-3}"
 BASELINE_PATH="${BASELINE_PATH:-instance/restore_baseline.json}"
+VALIDATION_ARTIFACT="${VALIDATION_ARTIFACT:-evidence/operations/restore_validation_latest.json}"
 
 usage() {
   cat <<'USAGE'
@@ -93,6 +94,12 @@ TMP_DIR="/tmp/kukanilea_restore_${TENANT_ID}_$$"
 mkdir -p "$TMP_DIR"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ops/restore_validation.py" ]] && [[ ! -f "$BASELINE_PATH" ]] && [[ -f "instance/auth.sqlite3" ]]; then
+  log "Baseline missing -> creating pre-restore snapshot at ${BASELINE_PATH}"
+  python3 scripts/ops/restore_validation.py --phase before --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" >/dev/null \
+    || die "$EXIT_RUNTIME" "failed to create restore baseline"
+fi
+
 if [[ -z "$BACKUP_FILE" ]]; then
   if command -v smbclient >/dev/null 2>&1; then
     BACKUP_FILE="$(smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "cd ${TENANT_ID}; ls" 2>/dev/null | awk '/\.tar\.(zst|gz)(\.age)?/{print $1}' | tail -n 1 || true)"
@@ -103,7 +110,21 @@ if [[ -z "$BACKUP_FILE" ]]; then
   fi
 fi
 
-[[ -n "$BACKUP_FILE" ]] || die "$EXIT_RUNTIME" "no backup file found for tenant=${TENANT_ID}"
+if [[ -z "$BACKUP_FILE" ]]; then
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    {
+      echo "mode=dry_run_unresolved"
+      echo "tenant_id=$TENANT_ID"
+      echo "backup_file="
+      echo "issue=no_backup_file_found"
+      echo "rto_seconds=0"
+      echo "rpo_seconds=0"
+    } > "$REPORT_FILE"
+    log "Dry-run complete: no backup file found for tenant=${TENANT_ID} (mode=${MODE})"
+    exit 0
+  fi
+  die "$EXIT_RUNTIME" "no backup file found for tenant=${TENANT_ID}"
+fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   {
@@ -148,8 +169,9 @@ fi
 
 if [[ "$LOCAL_FILE" == *.age ]]; then
   command -v age >/dev/null 2>&1 || die "$EXIT_DEPENDENCY" "age binary required to decrypt .age backup"
-  age -d -i "${AGE_PRIVATE_KEY_FILE:-$HOME/.config/kukanilea/age_key.txt}" -o "${TMP_DIR}/backup.tar.bin" "$LOCAL_FILE" || die "$EXIT_RUNTIME" "age decryption failed"
-  LOCAL_FILE="${TMP_DIR}/backup.tar.bin"
+  DECRYPTED_FILE="${TMP_DIR}/${BACKUP_FILE%.age}"
+  age -d -i "${AGE_PRIVATE_KEY_FILE:-$HOME/.config/kukanilea/age_key.txt}" -o "$DECRYPTED_FILE" "$LOCAL_FILE" || die "$EXIT_RUNTIME" "age decryption failed"
+  LOCAL_FILE="$DECRYPTED_FILE"
 fi
 
 if [[ "$LOCAL_FILE" == *.tar.zst ]]; then
@@ -168,12 +190,15 @@ fi
 
 VALIDATION_STATUS="skipped"
 VALIDATION_ISSUES=""
-if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ops/restore_validation.py" ]] && [[ -f "$BASELINE_PATH" ]]; then
-  if VALIDATION_JSON="$(python3 scripts/ops/restore_validation.py --phase after --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" 2>/dev/null)"; then
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ops/restore_validation.py" ]]; then
+  mkdir -p "$(dirname "$VALIDATION_ARTIFACT")"
+  if VALIDATION_JSON="$(python3 scripts/ops/restore_validation.py --phase after --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" 2>&1)"; then
     VALIDATION_STATUS="ok"
+    printf '%s\n' "$VALIDATION_JSON" > "$VALIDATION_ARTIFACT"
   else
     VALIDATION_STATUS="failed"
     VALIDATION_ISSUES="$(printf '%s' "$VALIDATION_JSON" | tr '\n' ' ' | cut -c1-240)"
+    printf '%s\n' "$VALIDATION_JSON" > "$VALIDATION_ARTIFACT"
   fi
 fi
 
@@ -189,6 +214,7 @@ RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
   echo "checksum_verified=${CHECKSUM_EXPECTED:+true}"
   echo "restore_validation=$VALIDATION_STATUS"
   echo "restore_validation_issues=$VALIDATION_ISSUES"
+  echo "restore_validation_artifact=$VALIDATION_ARTIFACT"
   echo "restore_started_epoch=$START_EPOCH"
   echo "restore_completed_epoch=$END_EPOCH"
   echo "rto_seconds=$RTO_SECONDS"

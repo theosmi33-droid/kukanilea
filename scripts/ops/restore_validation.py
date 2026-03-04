@@ -62,6 +62,8 @@ def _stable_hash(rows: Iterable[sqlite3.Row]) -> str:
 
 
 def collect_snapshot(db_path: Path, tenant_id: str) -> Dict[str, Dict[str, Any]]:
+    if not db_path.exists():
+        raise FileNotFoundError(f"database_not_found:{db_path}")
     con = _connect(db_path)
     try:
         out: Dict[str, Dict[str, Any]] = {}
@@ -110,6 +112,9 @@ def compare_snapshots(before: Dict[str, Dict[str, Any]], after: Dict[str, Dict[s
     for table in TABLES:
         b = before.get(table, {})
         a = after.get(table, {})
+        if b.get("exists") != a.get("exists"):
+            ok = False
+            issues.append(f"{table}: exists mismatch {b.get('exists')} != {a.get('exists')}")
         if b.get("count") != a.get("count"):
             ok = False
             issues.append(f"{table}: count mismatch {b.get('count')} != {a.get('count')}")
@@ -134,7 +139,11 @@ def main() -> int:
 
     db_path = Path(args.db)
     baseline_path = Path(args.baseline)
-    snapshot = collect_snapshot(db_path, args.tenant)
+    try:
+        snapshot = collect_snapshot(db_path, args.tenant)
+    except FileNotFoundError as exc:
+        print(json.dumps({"ok": False, "error": str(exc), "db": str(db_path)}, indent=2))
+        return 2
 
     if args.phase == "before":
         baseline_path.parent.mkdir(parents=True, exist_ok=True)

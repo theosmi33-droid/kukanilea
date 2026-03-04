@@ -1,0 +1,6 @@
+mode=dry_run_unresolved
+tenant_id=DEMO_TENANT
+backup_file=
+issue=no_backup_file_found
+rto_seconds=0
+rpo_seconds=0

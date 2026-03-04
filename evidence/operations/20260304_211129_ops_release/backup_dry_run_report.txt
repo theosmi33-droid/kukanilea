@@ -1,0 +1,6 @@
+mode=dry_run
+tenant_id=DEMO_TENANT
+backup_file=dry-run
+target=none
+rto_seconds=0
+rpo_seconds=0
