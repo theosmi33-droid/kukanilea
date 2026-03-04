@@ -21,9 +21,30 @@ def _wire_runtime_env(app: Flask) -> None:
     os.environ["KUKANILEA_AUTH_DB"] = str(app.config["AUTH_DB"])
     os.environ["DB_FILENAME"] = str(app.config["CORE_DB"])
     os.environ.setdefault("TOPHANDWERK_DB_FILENAME", str(app.config["CORE_DB"]))
+    # Keep already-imported legacy logic module in sync with per-app DB path.
+    # Without this, tests that create multiple apps can keep writing to a stale DB.
+    try:
+        from pathlib import Path
+
+        from .core import logic as core_logic
+
+        core_logic.DB_PATH = Path(app.config["CORE_DB"])
+        core_logic._DB_INITIALIZED = False
+    except Exception:
+        # Non-fatal: module might not be imported yet in some boot paths.
+        pass
 
 
 from .lifecycle import SystemState, manager
+
+
+def _is_test_context(app: Flask) -> bool:
+    # Pytest sets this environment variable for each test case.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    if os.environ.get("KUKANILEA_DISABLE_DAEMONS") == "1":
+        return True
+    return bool(app.config.get("TESTING"))
 
 
 def create_app() -> Flask:
@@ -64,9 +85,11 @@ def create_app() -> Flask:
     from .security.session_manager import init_app as init_session_manager
     init_session_manager(app)
 
-    # Start Background API Dispatcher (Store & Forward)
-    from .services.api_dispatcher import start_dispatcher_daemon
-    start_dispatcher_daemon(str(auth_db.path), interval=60)
+    # Start background dispatcher only for real runtime, not test contexts.
+    if not _is_test_context(app):
+        from .services.api_dispatcher import start_dispatcher_daemon
+
+        start_dispatcher_daemon(str(auth_db.path), interval=60)
 
     manager.set_state(SystemState.INIT, "Loading license state...")
     license_state = load_runtime_license_state(
