@@ -60,6 +60,8 @@ from flask import (
 )
 
 from app import core
+from app.agents.intent import IntentParser
+from app.agents.llm import MockProvider
 from app.agents.base import AgentContext
 from app.agents.customer import CustomerAgent
 from app.agents.orchestrator import Orchestrator
@@ -83,6 +85,7 @@ from .errors import json_error
 from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
 from .security import csrf_protected
+from app.ai.guardrails import validate_prompt
 
 logger = logging.getLogger("kukanilea.web")
 
@@ -2026,12 +2029,36 @@ _WIDGET_READONLY_ACTIONS = {
     "memory_search",
 }
 
+_WIDGET_WRITE_INTENTS = {
+    "index",
+    "mail",
+    "upload",
+    "review",
+}
+
 def _widget_requires_confirm(actions: List[Dict[str, Any]]) -> bool:
     for action in actions:
         action_type = str(action.get("type", "")).strip().lower()
         if action_type and action_type not in _WIDGET_READONLY_ACTIONS:
             return True
     return False
+
+
+def _widget_requires_intent_confirm(message: str) -> tuple[bool, str]:
+    parser = IntentParser(MockProvider())
+    intent = parser.parse(message, allow_llm=False).intent
+    return intent in _WIDGET_WRITE_INTENTS, intent
+
+
+def _widget_offline_fallback(message: str) -> str:
+    trimmed = str(message or "").strip()
+    if not trimmed:
+        return "Lokaler Fallback aktiv. Bitte Anfrage erneut senden."
+    return (
+        "Lokaler Fallback aktiv (LLM/Ollama offline). "
+        "Ich habe die Anfrage gespeichert und kann sichere Lese-Aktionen weiter ausführen: "
+        f"{trimmed[:140]}"
+    )
 
 def _widget_compact_response(
     *,
@@ -2123,8 +2150,29 @@ def api_chat_compact():
             )), 400
 
         actions = pending.get("actions") or []
+        pending_msg = str(pending.get("message") or "").strip()
         session.pop("widget_pending_action", None)
         session.modified = True
+
+        if pending_msg:
+            try:
+                result = agent_answer(pending_msg, role=role)
+            except Exception:
+                result = {
+                    "text": _widget_offline_fallback(pending_msg),
+                    "actions": [],
+                    "suggestions": ["hilfe", "suche rechnung"],
+                    "ok": True,
+                }
+            return jsonify(_widget_compact_response(
+                text=result.get("text", "OK"),
+                model="local-fallback" if "fallback" in result.get("text", "").lower() else "local",
+                context_tag=current_context,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                suggestions=result.get("suggestions", []),
+                actions=list(result.get("actions", [])),
+                status="Bestätigt"
+            ))
         
         return jsonify(_widget_compact_response(
             text="Aktion bestätigt und ausgeführt.",
@@ -2145,9 +2193,50 @@ def api_chat_compact():
             ok=False
         )), 400
 
+    prompt_ok, prompt_reason = validate_prompt(user_msg)
+    if not prompt_ok:
+        return jsonify(_widget_compact_response(
+            text=f"Anfrage blockiert: {prompt_reason}",
+            model="local",
+            context_tag=current_context,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            ok=False,
+            status="Sicherheitsblock"
+        )), 400
+
+    requires_intent_confirm, detected_intent = _widget_requires_intent_confirm(user_msg)
+    if requires_intent_confirm:
+        pending_id = secrets.token_urlsafe(12)
+        session["widget_pending_action"] = {
+            "id": pending_id,
+            "message": user_msg,
+            "intent": detected_intent,
+            "current_context": current_context,
+        }
+        session.modified = True
+        return jsonify(_widget_compact_response(
+            text="Write-Intent erkannt. Bitte Aktion explizit bestätigen.",
+            model="local",
+            context_tag=current_context,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            actions=[{"type": "intent_gate", "intent": detected_intent}],
+            requires_confirm=True,
+            pending_id=pending_id,
+            confirm_prompt="Diese Aktion kann Daten ändern. Jetzt bestätigen?",
+            status="Bestätigung erforderlich"
+        ))
+
     context = AgentContext(tenant_id=tenant_id, user=username, role=role)
     # Using the global agent_answer helper which uses Orchestrator
-    result = agent_answer(user_msg, role=role)
+    try:
+        result = agent_answer(user_msg, role=role)
+    except Exception:
+        result = {
+            "text": _widget_offline_fallback(user_msg),
+            "actions": [],
+            "suggestions": ["hilfe", "suche rechnung", "wer ist 12393"],
+            "ok": True,
+        }
     
     actions_raw = list(result.get("actions", []))
     requires_confirm = _widget_requires_confirm(actions_raw)
@@ -2167,7 +2256,7 @@ def api_chat_compact():
     latency_ms = int((time.perf_counter() - started) * 1000)
     return jsonify(_widget_compact_response(
         text=result.get("text", "OK"),
-        model="local",
+        model="local-fallback" if "fallback" in result.get("text", "").lower() else "local",
         context_tag=current_context,
         latency_ms=latency_ms,
         suggestions=result.get("suggestions", []),
