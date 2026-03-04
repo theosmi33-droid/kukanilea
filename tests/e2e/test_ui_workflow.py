@@ -73,19 +73,36 @@ def server(tmp_path_factory):
     tmp_dir = tmp_path_factory.mktemp("e2e_data")
     auth_db_path = tmp_dir / "auth.db"
     core_db_path = tmp_dir / "core.db"
-    port = _reserve_free_port()
+    process = None
+    server_url = None
+    startup_error = None
 
-    p = multiprocessing.Process(
-        target=run_server,
-        args=(port, str(auth_db_path), str(core_db_path), str(tmp_dir)),
-    )
-    p.start()
+    for _ in range(3):
+        port = _reserve_free_port()
+        process = multiprocessing.Process(
+            target=run_server,
+            args=(port, str(auth_db_path), str(core_db_path), str(tmp_dir)),
+        )
+        process.start()
 
-    _wait_for_server(f"http://127.0.0.1:{port}/login")
-    yield f"http://127.0.0.1:{port}"
+        try:
+            _wait_for_server(f"http://127.0.0.1:{port}/login")
+            server_url = f"http://127.0.0.1:{port}"
+            break
+        except RuntimeError as exc:
+            startup_error = exc
+            process.terminate()
+            process.join(timeout=5)
 
-    p.terminate()
-    p.join()
+    if server_url is None:
+        raise RuntimeError(f"E2E server startup failed after retries: {startup_error}")
+
+    yield server_url
+
+    if process is not None and process.is_alive():
+        process.terminate()
+    if process is not None:
+        process.join(timeout=5)
 
 
 def test_full_workflow(page: Page, server: str):

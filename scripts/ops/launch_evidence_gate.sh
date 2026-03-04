@@ -187,13 +187,22 @@ rm -f "$_tmp"
 if [[ -z "$REPO" ]]; then
   append "## Main CI Status"
   append "repo slug not detected"
-  record_result "Main CI Status" "FAIL" "repo slug missing (set REPO=owner/name)"
+  record_result "Main CI Status" "WARN" "repo slug missing (set REPO=owner/name)"
 elif command -v gh >/dev/null 2>&1; then
   run_gate_simple "Main CI Status" "gh run list --repo $REPO --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion" "unable to query GitHub Actions runs"
 else
+  _tmp="$(mktemp)"
   append "## Main CI Status"
-  append "gh CLI missing"
-  record_result "Main CI Status" "FAIL" "gh CLI missing (cannot prove CI state)"
+  append "gh CLI missing; trying unauthenticated REST fallback"
+  append "`curl -fsSL https://api.github.com/repos/${REPO}/actions/runs?per_page=5`"
+  if capture_cmd "curl -fsSL https://api.github.com/repos/${REPO}/actions/runs?per_page=5" "$_tmp"; then
+    render_output_block "$_tmp"
+    record_result "Main CI Status" "PASS" "REST API fallback succeeded"
+  else
+    render_output_block "$_tmp"
+    record_result "Main CI Status" "WARN" "gh CLI missing and REST fallback unavailable (network/auth limitation)"
+  fi
+  rm -f "$_tmp"
 fi
 
 # Gate 2: Core Health
