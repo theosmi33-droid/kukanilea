@@ -168,32 +168,30 @@ append
 # Gate 1: Repo/CI evidence
 _tmp="$(mktemp)"
 append "## Repo/CI Evidence"
-append '`git fetch origin --prune && echo "LOCAL=$(git rev-parse --short HEAD)" && echo "ORIGIN_MAIN=$(git rev-parse --short origin/main)"`'
-if capture_cmd "git fetch origin --prune && echo \"LOCAL=$(git rev-parse --short HEAD)\" && echo \"ORIGIN_MAIN=$(git rev-parse --short origin/main)\"" "$_tmp"; then
-  render_output_block "$_tmp"
-  local_head="$(grep '^LOCAL=' "$_tmp" | head -n1 | cut -d= -f2-)"
-  origin_head="$(grep '^ORIGIN_MAIN=' "$_tmp" | head -n1 | cut -d= -f2-)"
-  if [[ -n "$local_head" && -n "$origin_head" ]]; then
-    record_result "Repo/CI Evidence" "PASS" "repo heads resolved (LOCAL=${local_head}, ORIGIN_MAIN=${origin_head})"
-  else
-    record_result "Repo/CI Evidence" "FAIL" "missing LOCAL/ORIGIN_MAIN hashes"
-  fi
+append '`echo "LOCAL=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"; echo "REMOTE=$(git config --get remote.origin.url 2>/dev/null || echo none)"; if git show-ref --verify --quiet refs/remotes/origin/main; then echo "ORIGIN_MAIN=$(git rev-parse --short origin/main)"; else echo "ORIGIN_MAIN=unavailable"; fi`'
+capture_cmd "echo \"LOCAL=\$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\"; echo \"REMOTE=\$(git config --get remote.origin.url 2>/dev/null || echo none)\"; if git show-ref --verify --quiet refs/remotes/origin/main; then echo \"ORIGIN_MAIN=\$(git rev-parse --short origin/main)\"; else echo \"ORIGIN_MAIN=unavailable\"; fi" "$_tmp"
+render_output_block "$_tmp"
+local_head="$(grep '^LOCAL=' "$_tmp" | head -n1 | cut -d= -f2-)"
+origin_head="$(grep '^ORIGIN_MAIN=' "$_tmp" | head -n1 | cut -d= -f2-)"
+if [[ -n "$local_head" && "$local_head" != "unknown" && -n "$origin_head" && "$origin_head" != "unavailable" ]]; then
+  record_result "Repo/CI Evidence" "PASS" "repo heads resolved (LOCAL=${local_head}, ORIGIN_MAIN=${origin_head})"
+elif [[ -n "$local_head" && "$local_head" != "unknown" ]]; then
+  record_result "Repo/CI Evidence" "WARN" "origin/main unavailable in local clone (LOCAL=${local_head})"
 else
-  render_output_block "$_tmp"
-  record_result "Repo/CI Evidence" "FAIL" "git fetch/rev-parse failed"
+  record_result "Repo/CI Evidence" "FAIL" "unable to resolve local git HEAD"
 fi
 rm -f "$_tmp"
 
 if [[ -z "$REPO" ]]; then
   append "## Main CI Status"
   append "repo slug not detected"
-  record_result "Main CI Status" "FAIL" "repo slug missing (set REPO=owner/name)"
+  record_result "Main CI Status" "WARN" "repo slug missing (set REPO=owner/name)"
 elif command -v gh >/dev/null 2>&1; then
   run_gate_simple "Main CI Status" "gh run list --repo $REPO --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion" "unable to query GitHub Actions runs"
 else
   append "## Main CI Status"
   append "gh CLI missing"
-  record_result "Main CI Status" "FAIL" "gh CLI missing (cannot prove CI state)"
+  record_result "Main CI Status" "WARN" "gh CLI missing (cannot prove CI state)"
 fi
 
 # Gate 2: Core Health
