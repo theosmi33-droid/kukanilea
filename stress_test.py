@@ -48,7 +48,7 @@ def user_session(user_id):
         print(f"[{user_id}] Sending chat message...")
         r = session.post(f"{BASE_URL}/api/chat", json={
             "message": "Hello from stress test user " + str(user_id)
-        }, headers={"X-CSRFToken": csrf_token})
+        }, headers={"X-CSRF-Token": csrf_token})
         print(f"[{user_id}] Chat API returned: {r.status_code}")
 
     except Exception as e:
