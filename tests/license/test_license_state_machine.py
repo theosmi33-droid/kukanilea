@@ -6,6 +6,8 @@ from app.license_state import LicenseInputs, evaluate_license_state, normalize_s
 def test_normalize_status_accepts_german_variants() -> None:
     assert normalize_status_hint("aktiv") == "active"
     assert normalize_status_hint("gesperrt") == "blocked"
+    assert normalize_status_hint("locked") == "blocked"
+    assert normalize_status_hint("recovery") == "recover"
 
 
 def test_active_state_is_writable() -> None:
@@ -50,3 +52,19 @@ def test_device_mismatch_forces_blocked() -> None:
     )
     assert out["status"] == "blocked"
     assert out["read_only"] is True
+
+
+def test_locked_alias_behaves_like_blocked() -> None:
+    out = evaluate_license_state(
+        LicenseInputs(valid=True, expired=False, device_mismatch=False, status_hint="locked", smb_reachable=True)
+    )
+    assert out["status"] == "recover"
+    assert out["transition"] == "blocked->recover"
+
+
+def test_recovery_alias_returns_to_active() -> None:
+    out = evaluate_license_state(
+        LicenseInputs(valid=True, expired=False, device_mismatch=False, status_hint="recovery", smb_reachable=True)
+    )
+    assert out["status"] == "active"
+    assert out["reason"] == "recovered"

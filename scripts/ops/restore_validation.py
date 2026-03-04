@@ -22,10 +22,9 @@ def _table_exists(con: sqlite3.Connection, table: str) -> bool:
     return bool(row)
 
 
-
-
 def _table_columns(con: sqlite3.Connection, table: str) -> List[str]:
     return [str(r[1]) for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
+
 
 def _sample_rows(con: sqlite3.Connection, table: str, tenant_id: str, limit: int = 5) -> List[sqlite3.Row]:
     cols = _table_columns(con, table)
@@ -48,6 +47,12 @@ def _sample_rows(con: sqlite3.Connection, table: str, tenant_id: str, limit: int
     return []
 
 
+def _business_entity_stub(table: str, row: sqlite3.Row) -> Dict[str, Any]:
+    payload = {k: row[k] for k in row.keys()}
+    keys = ["id", "tenant_id", "name", "title", "email", "status", "project_id", "task_id"]
+    return {"table": table, **{k: payload.get(k) for k in keys if k in payload}}
+
+
 def _stable_hash(rows: Iterable[sqlite3.Row]) -> str:
     digest = hashlib.sha256()
     for row in rows:
@@ -60,9 +65,10 @@ def collect_snapshot(db_path: Path, tenant_id: str) -> Dict[str, Dict[str, Any]]
     con = _connect(db_path)
     try:
         out: Dict[str, Dict[str, Any]] = {}
+        all_entities: List[Dict[str, Any]] = []
         for table in TABLES:
             if not _table_exists(con, table):
-                out[table] = {"exists": False, "count": 0, "sample_hash": "missing"}
+                out[table] = {"exists": False, "count": 0, "sample_hash": "missing", "sample_entities": []}
                 continue
             cols = _table_columns(con, table)
             if "tenant_id" in cols:
@@ -81,11 +87,18 @@ def collect_snapshot(db_path: Path, tenant_id: str) -> Dict[str, Dict[str, Any]]
             else:
                 count = 0
             rows = _sample_rows(con, table, tenant_id)
+            sample_entities = [_business_entity_stub(table, row) for row in rows]
+            all_entities.extend(sample_entities)
             out[table] = {
                 "exists": True,
                 "count": int(count),
                 "sample_hash": _stable_hash(rows),
+                "sample_entities": sample_entities,
             }
+        out["_business_entities_checksum"] = {
+            "sample_count": len(all_entities),
+            "checksum": hashlib.sha256(json.dumps(all_entities, sort_keys=True).encode("utf-8")).hexdigest(),
+        }
         return out
     finally:
         con.close()
@@ -103,6 +116,11 @@ def compare_snapshots(before: Dict[str, Dict[str, Any]], after: Dict[str, Dict[s
         if b.get("sample_hash") != a.get("sample_hash"):
             ok = False
             issues.append(f"{table}: sample_hash mismatch")
+    before_checksum = before.get("_business_entities_checksum", {}).get("checksum")
+    after_checksum = after.get("_business_entities_checksum", {}).get("checksum")
+    if before_checksum != after_checksum:
+        ok = False
+        issues.append("business_entities_checksum mismatch")
     return ok, issues
 
 

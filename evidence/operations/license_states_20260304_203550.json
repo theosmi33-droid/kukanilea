@@ -1,0 +1,26 @@
+{
+  "active": {
+    "status": "active",
+    "read_only": false,
+    "reason": "ok",
+    "transition": "steady_active"
+  },
+  "locked": {
+    "status": "recover",
+    "read_only": true,
+    "reason": "recover_pending",
+    "transition": "blocked->recover"
+  },
+  "grace": {
+    "status": "grace",
+    "read_only": false,
+    "reason": "grace",
+    "transition": "active->grace"
+  },
+  "recovery": {
+    "status": "active",
+    "read_only": false,
+    "reason": "recovered",
+    "transition": "recover->active"
+  }
+}

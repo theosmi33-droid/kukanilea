@@ -15,6 +15,8 @@ LOCAL_FALLBACK_DIR="${LOCAL_FALLBACK_DIR:-instance/degraded_backups}"
 REPORT_FILE="${REPORT_FILE:-instance/operator_report_backup_${TIMESTAMP}.txt}"
 DB_PATH="${DB_PATH:-instance/auth.sqlite3}"
 DRY_RUN=0
+START_EPOCH="$(date +%s)"
+NAS_RETRIES="${NAS_RETRIES:-3}"
 
 usage() {
   cat <<'USAGE'
@@ -34,6 +36,32 @@ die() {
   shift
   log "ERROR: $*"
   exit "$code"
+}
+
+sha256_file() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    die "$EXIT_DEPENDENCY" "sha256sum/shasum is required"
+  fi
+}
+
+nas_upload_with_retry() {
+  local source_file="$1"
+  local target_name="$2"
+  local tries=1
+  while [[ "$tries" -le "$NAS_RETRIES" ]]; do
+    if smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "mkdir ${TENANT_ID}; cd ${TENANT_ID}; put ${source_file} ${target_name}"; then
+      return 0
+    fi
+    log "WARN NAS upload attempt ${tries}/${NAS_RETRIES} failed for ${target_name}"
+    tries=$((tries + 1))
+    sleep 1
+  done
+  return 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -87,14 +115,20 @@ if command -v age >/dev/null 2>&1 && [[ -n "${NAS_PUBLIC_KEY:-}" ]]; then
   UPLOAD_FILE="${TMP_DIR}/${BACKUP_NAME}.age"
 fi
 
+BACKUP_HASH="$(sha256_file "$UPLOAD_FILE")"
+printf '%s  %s\n' "$BACKUP_HASH" "$(basename "$UPLOAD_FILE")" > "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256"
+
 TARGET_MODE="nas"
 TARGET_PATH=""
+CHECKSUM_PATH=""
 if command -v smbclient >/dev/null 2>&1; then
-  if smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "mkdir ${TENANT_ID}; cd ${TENANT_ID}; put ${UPLOAD_FILE} $(basename "$UPLOAD_FILE")"; then
+  if nas_upload_with_retry "$UPLOAD_FILE" "$(basename "$UPLOAD_FILE")" \
+    && nas_upload_with_retry "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256" "$(basename "$UPLOAD_FILE").sha256"; then
     TARGET_PATH="${NAS_SHARE}/${TENANT_ID}/$(basename "$UPLOAD_FILE")"
+    CHECKSUM_PATH="${TARGET_PATH}.sha256"
   else
     TARGET_MODE="degraded_local"
-    log "WARN NAS upload failed, switching to degraded local mode"
+    log "WARN NAS upload failed after retries, switching to degraded local mode"
   fi
 else
   TARGET_MODE="degraded_local"
@@ -104,16 +138,27 @@ fi
 if [[ "$TARGET_MODE" != "nas" ]]; then
   mkdir -p "$LOCAL_FALLBACK_DIR/$TENANT_ID"
   cp "$UPLOAD_FILE" "$LOCAL_FALLBACK_DIR/$TENANT_ID/" || die "$EXIT_RUNTIME" "failed to copy backup to local fallback"
+  cp "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256" "$LOCAL_FALLBACK_DIR/$TENANT_ID/" || die "$EXIT_RUNTIME" "failed to copy checksum to local fallback"
   TARGET_PATH="$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE")"
+  CHECKSUM_PATH="$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE").sha256"
 fi
+
+END_EPOCH="$(date +%s)"
+DB_MTIME="$(stat -c %Y "$DB_PATH" 2>/dev/null || date +%s)"
+RTO_SECONDS="$((END_EPOCH - START_EPOCH))"
+RPO_SECONDS="$((END_EPOCH - DB_MTIME))"
 
 {
   echo "mode=$TARGET_MODE"
   echo "tenant_id=$TENANT_ID"
   echo "backup_file=$(basename "$UPLOAD_FILE")"
   echo "target=$TARGET_PATH"
-  echo "rto_seconds=0"
-  echo "rpo_seconds=0"
+  echo "checksum_sha256=$BACKUP_HASH"
+  echo "checksum_file=$CHECKSUM_PATH"
+  echo "backup_started_epoch=$START_EPOCH"
+  echo "backup_completed_epoch=$END_EPOCH"
+  echo "rto_seconds=$RTO_SECONDS"
+  echo "rpo_seconds=$RPO_SECONDS"
 } > "$REPORT_FILE"
 
 rm -rf "$TMP_DIR"
