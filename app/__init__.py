@@ -166,6 +166,8 @@ def create_app() -> Flask:
         return response
 
     app.register_blueprint(web.bp)
+    from .routes import calendar
+    app.register_blueprint(calendar.bp)
     app.register_blueprint(api.bp)
     app.register_blueprint(system_logs.bp)
     app.register_blueprint(admin_tenants.bp)

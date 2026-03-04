@@ -150,6 +150,26 @@
     </div>
   </div>
 
+  <div style="display: flex; flex-direction: column; gap: var(--spacing-3);">
+    <h2 style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); padding: 0 8px;">Erinnerungen & Fristen</h2>
+    <div class="grid grid-cols-1 gap-4">
+      {% for rem in reminders %}
+      <div class="panel" style="margin-bottom: 0; border-left: 4px solid var(--color-accent); display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-size: 14px; font-weight: 600; color: var(--color-text-main);">{{ rem.title }}</div>
+          <div style="font-size: 12px; color: var(--color-text-muted);">{{ rem.start_at }} ({{ rem.source }})</div>
+        </div>
+        <div class="badge" style="background: rgba(37,99,235,0.1); color: var(--color-accent);">BEVORSTEHEND</div>
+      </div>
+      {% endfor %}
+      {% if not reminders %}
+      <div style="padding: var(--spacing-4); text-align: center; color: var(--color-text-muted); font-size: 13px; font-style: italic; background: rgba(255,255,255,0.02); border-radius: var(--radius-lg); border: 1px dashed var(--color-border);">
+        Keine aktuellen Erinnerungen.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
   <div style="display: flex; flex-direction: column; gap: var(--spacing-3); margin-top: var(--spacing-4);">
     <h2 style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); padding: 0 8px;">Quick Actions</h2>
     <div class="grid grid-cols-3 gap-6">
