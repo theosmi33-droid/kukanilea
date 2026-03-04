@@ -33,22 +33,18 @@ def generate_daily_insights(tenant_id: str, day_yyyy_mm_dd: str) -> dict[str, An
     with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
         con = legacy_core._db()  # type: ignore[attr-defined]
         try:
-            leads_new_24h = con.execute(
-                "SELECT COUNT(*) AS c FROM leads WHERE tenant_id=? AND datetime(created_at) >= datetime('now','-1 day')",
+            lead_aggregate = con.execute(
+                """
+                SELECT
+                  SUM(CASE WHEN datetime(created_at) >= datetime('now','-1 day') THEN 1 ELSE 0 END) AS leads_new_24h_count,
+                  SUM(CASE WHEN response_due IS NOT NULL AND datetime(response_due) < datetime('now') THEN 1 ELSE 0 END) AS leads_overdue_count,
+                  SUM(CASE WHEN status='screening' THEN 1 ELSE 0 END) AS leads_screening_count,
+                  SUM(CASE WHEN priority='high' AND (assigned_to IS NULL OR assigned_to='') THEN 1 ELSE 0 END) AS leads_unassigned_high_priority_count
+                FROM leads
+                WHERE tenant_id=?
+                """,
                 (t,),
-            ).fetchone()
-            leads_overdue = con.execute(
-                "SELECT COUNT(*) AS c FROM leads WHERE tenant_id=? AND response_due IS NOT NULL AND datetime(response_due) < datetime('now')",
-                (t,),
-            ).fetchone()
-            leads_screening = con.execute(
-                "SELECT COUNT(*) AS c FROM leads WHERE tenant_id=? AND status='screening'",
-                (t,),
-            ).fetchone()
-            leads_unassigned_high = con.execute(
-                "SELECT COUNT(*) AS c FROM leads WHERE tenant_id=? AND priority='high' AND (assigned_to IS NULL OR assigned_to='')",
-                (t,),
-            ).fetchone()
+            ).fetchone() or {}
             tasks_open = con.execute(
                 "SELECT COUNT(*) AS c FROM tasks WHERE tenant=? AND status='OPEN'",
                 (t,),
@@ -123,11 +119,11 @@ def generate_daily_insights(tenant_id: str, day_yyyy_mm_dd: str) -> dict[str, An
     latest = automation_latest_run(t) or {}
     return {
         "day": day,
-        "leads_new_24h_count": int((leads_new_24h and leads_new_24h["c"]) or 0),
-        "leads_overdue_count": int((leads_overdue and leads_overdue["c"]) or 0),
-        "leads_screening_count": int((leads_screening and leads_screening["c"]) or 0),
+        "leads_new_24h_count": int(lead_aggregate["leads_new_24h_count"] or 0),
+        "leads_overdue_count": int(lead_aggregate["leads_overdue_count"] or 0),
+        "leads_screening_count": int(lead_aggregate["leads_screening_count"] or 0),
         "leads_unassigned_high_priority_count": int(
-            (leads_unassigned_high and leads_unassigned_high["c"]) or 0
+            lead_aggregate["leads_unassigned_high_priority_count"] or 0
         ),
         "tasks_open_count": int((tasks_open and tasks_open["c"]) or 0),
         "unclaimed_leads_count": int((unclaimed and unclaimed["c"]) or 0),
