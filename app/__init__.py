@@ -172,6 +172,7 @@ def create_app() -> Flask:
     app.register_blueprint(system_logs.bp)
     app.register_blueprint(admin_tenants.bp)
     app.register_blueprint(automation.bp)
+    app.register_blueprint(dashboard.dashboard_bp, url_prefix="/api/dashboard")
     try:
         from .services.metrics_exporter import bp as metrics_bp
 
