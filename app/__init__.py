@@ -41,7 +41,7 @@ def create_app() -> Flask:
     manager.set_state(SystemState.INIT, "Initializing modules and databases...")
     # Import blueprints after env/path wiring so legacy modules read correct paths.
     from . import api, web
-    from .routes import system_logs, admin_tenants, automation
+    from .routes import system_logs, admin_tenants, automation, email
     from .core.tool_loader import load_all_tools
 
     load_all_tools()
@@ -166,6 +166,7 @@ def create_app() -> Flask:
         return response
 
     app.register_blueprint(web.bp)
+    app.register_blueprint(email.bp)
     app.register_blueprint(api.bp)
     app.register_blueprint(system_logs.bp)
     app.register_blueprint(admin_tenants.bp)

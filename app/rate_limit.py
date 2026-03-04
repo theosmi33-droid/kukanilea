@@ -28,6 +28,9 @@ class RateLimiter:
     def limit_required(self, fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
+            import os
+            if os.environ.get("KUKANILEA_DEBUG_STRESS") == "1":
+                return fn(*args, **kwargs)
             key = request.remote_addr or "unknown"
             if not self.allow(key):
                 abort(429, description="Too many requests. Please try again later.")
