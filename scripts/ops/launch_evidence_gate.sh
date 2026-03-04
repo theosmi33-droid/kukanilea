@@ -15,7 +15,21 @@ PASS_COUNT=0
 WARN_COUNT=0
 REPO="${REPO:-}"
 
+EXIT_OK=0
+EXIT_USAGE=2
+EXIT_PREREQ_FAIL=10
+EXIT_GATE_REPO_SYNC=20
+EXIT_GATE_OPEN_PRS=21
+EXIT_GATE_MAIN_CI=22
+EXIT_GATE_CI_ALIGNMENT=23
+EXIT_GATE_HEALTHCHECK=24
+EXIT_GATE_PYTEST=25
+EXIT_GATE_GUARDRAILS=26
+EXIT_GATE_OVERLAP=27
+EXIT_GATE_GENERIC=29
+
 declare -a RESULT_LINES=()
+declare -a FAILED_GATES=()
 
 usage() {
   cat <<'USAGE'
@@ -60,7 +74,7 @@ while [[ $# -gt 0 ]]; do
       shift
       if [[ $# -eq 0 ]]; then
         echo "missing value for --out" >&2
-        exit 2
+        exit "$EXIT_USAGE"
       fi
       OUT_FILE="$1"
       ;;
@@ -71,7 +85,7 @@ while [[ $# -gt 0 ]]; do
     *)
       echo "unknown argument: $1" >&2
       usage
-      exit 2
+      exit "$EXIT_USAGE"
       ;;
   esac
   shift
@@ -84,7 +98,7 @@ fi
 
 if ! command -v rg >/dev/null 2>&1; then
   echo "Error: rg (ripgrep) is not installed. Please install it to continue." >&2
-  exit 1
+  exit "$EXIT_PREREQ_FAIL"
 fi
 
 if [[ -z "$REPO" ]]; then
@@ -93,7 +107,7 @@ fi
 
 if [[ -z "$REPO" ]]; then
   echo "Error: unable to detect GitHub repository slug. Set REPO=owner/name." >&2
-  exit 1
+  exit "$EXIT_PREREQ_FAIL"
 fi
 
 mkdir -p "$(dirname "$OUT_FILE")"
@@ -128,7 +142,24 @@ record_result() {
   case "$status" in
     PASS) PASS_COUNT=$((PASS_COUNT + 1)) ;;
     WARN) WARN_COUNT=$((WARN_COUNT + 1)) ;;
-    FAIL) FAIL_COUNT=$((FAIL_COUNT + 1)) ;;
+    FAIL)
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+      FAILED_GATES+=("$gate")
+      ;;
+  esac
+}
+
+map_fail_code() {
+  case "$1" in
+    "Repo Sync") echo "$EXIT_GATE_REPO_SYNC" ;;
+    "Open PRs") echo "$EXIT_GATE_OPEN_PRS" ;;
+    "Main CI Status") echo "$EXIT_GATE_MAIN_CI" ;;
+    "Healthcheck-CI Alignment") echo "$EXIT_GATE_CI_ALIGNMENT" ;;
+    "Overlap Matrix") echo "$EXIT_GATE_OVERLAP" ;;
+    "Healthcheck") echo "$EXIT_GATE_HEALTHCHECK" ;;
+    "Pytest") echo "$EXIT_GATE_PYTEST" ;;
+    "Zero-CDN Scan") echo "$EXIT_GATE_GUARDRAILS" ;;
+    *) echo "$EXIT_GATE_GENERIC" ;;
   esac
 }
 
@@ -231,6 +262,19 @@ if command -v gh >/dev/null 2>&1; then
   fi
   rm -f "$tmp"
 fi
+
+# Gate 3b: CI/Healthcheck alignment
+tmp="$(mktemp)"
+append "## Healthcheck-CI Alignment"
+append '`python scripts/ops/release_ci_alignment.py`'
+if capture_cmd "python scripts/ops/release_ci_alignment.py" "$tmp"; then
+  render_output_block "$tmp"
+  record_result "Healthcheck-CI Alignment" "PASS" "healthcheck and CI workflow are aligned"
+else
+  render_output_block "$tmp"
+  record_result "Healthcheck-CI Alignment" "FAIL" "healthcheck and CI workflow are not aligned"
+fi
+rm -f "$tmp"
 
 # Gate 4: VS Code guardrails
 run_gate_simple "VSCode Guardrails" "bash scripts/dev/vscode_guardrails.sh --check"
@@ -354,6 +398,18 @@ for line in "${RESULT_LINES[@]}"; do
 done
 
 append
+append "## Fail Code Map"
+append
+append "- 20: Repo Sync failed"
+append "- 21: Open PR gate failed"
+append "- 22: Main CI status gate failed"
+append "- 23: Healthcheck-CI alignment failed"
+append "- 24: Healthcheck gate failed"
+append "- 25: Pytest gate failed"
+append "- 26: Zero-CDN scan gate failed"
+append "- 27: Overlap matrix gate failed"
+append "- 29: Other gate failed"
+append
 append "## Decision"
 append
 if [[ "$FAIL_COUNT" -eq 0 ]]; then
@@ -372,5 +428,9 @@ append "- FAIL: ${FAIL_COUNT}"
 
 echo "$OUT_FILE"
 if [[ "$FAIL_COUNT" -gt 0 ]]; then
-  exit 1
+  first_failed_gate="${FAILED_GATES[0]}"
+  fail_code="$(map_fail_code "$first_failed_gate")"
+  echo "FAIL_CODE=${fail_code} (first failed gate: ${first_failed_gate})" >&2
+  exit "$fail_code"
 fi
+exit "$EXIT_OK"

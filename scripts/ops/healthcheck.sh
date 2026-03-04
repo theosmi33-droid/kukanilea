@@ -2,6 +2,29 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+CI_MODE=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ci) CI_MODE=1 ;;
+    --help|-h)
+      cat <<'USAGE'
+Usage: scripts/ops/healthcheck.sh [--ci]
+
+Options:
+  --ci     CI mode (skip duplicate full pytest run)
+  --help   Show this help
+USAGE
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
 if [[ -z "${PYTHON:-}" ]]; then
   if [[ -x "$ROOT/.build_venv/bin/python" ]]; then
     PYTHON="$ROOT/.build_venv/bin/python"
@@ -22,7 +45,11 @@ echo "[2/7] Ensuring DB tables..." | tee -a "$HEALTH_LOG"
 "$PYTHON" app/db/migrations/ensure_agent_memory.py | tee -a "$HEALTH_LOG"
 
 echo "[3/7] Running unit tests..." | tee -a "$HEALTH_LOG"
-pytest -q
+if [[ "$CI_MODE" -eq 1 ]]; then
+  echo "[healthcheck] CI mode: skipping duplicate pytest -q run" | tee -a "$HEALTH_LOG"
+else
+  pytest -q
+fi
 
 SERVER_PID=""
 cleanup() {

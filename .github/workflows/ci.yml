@@ -35,6 +35,10 @@ jobs:
         run: |
           python scripts/dev/enforce_vscode_configs.py --check
 
+      - name: Run release healthcheck (CI aligned)
+        run: |
+          bash scripts/ops/healthcheck.sh --ci
+
       - name: Run tests (without e2e)
         run: |
           pytest -q tests --ignore=tests/e2e
