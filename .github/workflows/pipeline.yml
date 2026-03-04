@@ -1,4 +1,4 @@
-name: KUKANILEA CI/CD Pipeline
+name: KUKANILEA Full Suite Pipeline
 
 on:
   push:
@@ -8,43 +8,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint-and-scan:
+  full-suite:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
-          pip install bandit
-
-      - name: Compile sanity
-        run: |
-          python -m compileall app run.py kukanilea_app.py
-
-      - name: Security scan report (non-blocking)
-        run: |
-          bandit -r app -x app/static -f txt -o bandit-report.txt || true
-
-      - name: Upload bandit report
-        uses: actions/upload-artifact@v4
-        with:
-          name: bandit-report
-          path: bandit-report.txt
-
-  agent-logic-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [lint-and-scan]
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
     env:
       OLLAMA_ENABLED: "0"
     steps:
@@ -54,14 +24,33 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run selected core tests
+      - name: Lint and compile sanity
         run: |
-          pytest -q tests/test_memory_system.py tests/test_rag_pipeline.py tests/test_lexoffice.py tests/test_error_ux.py
+          python -m compileall app run.py kukanilea_app.py
+          python scripts/dev/enforce_vscode_configs.py --check
+
+      - name: Run full tests
+        run: make test-full
+
+      - name: CI gate report (pass)
+        if: success()
+        run: python scripts/ci/generate_ci_report.py --name full-suite --status pass --command "make test-full"
+
+      - name: CI gate report (fail)
+        if: failure()
+        run: python scripts/ci/generate_ci_report.py --name full-suite --status fail --command "make test-full"
+
+      - name: Upload full-suite artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-full-suite
+          path: ci-report.json
