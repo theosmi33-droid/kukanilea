@@ -1,7 +1,8 @@
 <div id="system-status-indicator"
      hx-get="/api/system/status"
-     hx-trigger="every 5s"
+     hx-trigger="load, every 5s"
      hx-swap="outerHTML"
+     hx-request='{"timeout": 5000}'
      style="display:flex; align-items:center; gap:10px; padding:6px 14px; border-radius:99px; background:rgba(255,255,255,0.05); border:1px solid var(--color-border); font-size:11px; font-weight:700; color:var(--text-tertiary);">
     
     <style>
@@ -13,7 +14,13 @@
         .status-dot { animation: status-pulse 2s infinite ease-in-out; }
     </style>
 
-    {% if status == 'HEALTHY' %}
+    {% if status == 'LOADING' %}
+    <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--text-tertiary);"></div>
+    <span>Lade Systemstatus…</span>
+    {% elif status == 'UNAVAILABLE' %}
+    <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-danger); box-shadow:0 0 8px var(--color-danger);"></div>
+    <span style="color:var(--color-danger);">Systemstatus nicht verfügbar</span>
+    {% elif status == 'HEALTHY' %}
     <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-success); box-shadow:0 0 8px var(--color-success);"></div>
     <span style="color:var(--color-success);">System Gesund</span>
     {% elif status == 'WARNING_SYNC' or status == 'WARNING_MEMORY' %}

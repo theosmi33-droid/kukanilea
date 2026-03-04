@@ -23,3 +23,18 @@ test.describe('Sovereign navigation', () => {
     });
   }
 });
+
+
+test('deep links stay routable', async ({ page }) => {
+  const deepLinks = [
+    '/dashboard#quick-actions',
+    '/dashboard?panel=reminders#reminders',
+    '/projects?view=kanban',
+  ];
+
+  for (const link of deepLinks) {
+    const response = await page.goto(link);
+    const status = response?.status() ?? 0;
+    expect([200, 302]).toContain(status);
+  }
+});

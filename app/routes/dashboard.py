@@ -77,18 +77,31 @@ def dashboard_page():
 @login_required
 def api_system_status():
     from app.core.observer import get_system_status
-    status = get_system_status() or {}
+
     accept = (request.headers.get("Accept") or "").lower()
     wants_html = "text/html" in accept or (request.args.get("format") or "").lower() == "html"
-    if wants_html:
-        return render_template("components/system_status.html", **status)
-    return jsonify(ok=True, status=status)
+    try:
+        status = get_system_status() or {}
+        if wants_html:
+            return render_template("components/system_status.html", **status)
+        return jsonify(ok=True, status=status)
+    except Exception as exc:
+        logger.warning("system status widget unavailable: %s", exc)
+        fallback = {"status": "UNAVAILABLE", "cpu_usage_pct": 0, "memory_rss_mb": 0}
+        if wants_html:
+            return render_template("components/system_status.html", **fallback), 503
+        return jsonify(ok=False, status=fallback, error="system-status-unavailable"), 503
 
 @bp.get("/api/outbound/status")
 @login_required
 def api_outbound_status():
     from app.api import outbound_status as _outbound_status
-    return _outbound_status()
+
+    try:
+        return _outbound_status()
+    except Exception as exc:
+        logger.warning("outbound status widget unavailable: %s", exc)
+        return render_template("components/outbound_status_panel.html", has_error=True), 503
 
 @bp.post("/api/dashboard/selftest")
 @login_required

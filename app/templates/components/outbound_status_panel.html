@@ -1,14 +1,31 @@
 {% set queue_stats = stats | default({}) %}
 {% set pending = queue_stats.get('pending', 0) | int %}
 {% set failed = queue_stats.get('failed', 0) | int %}
+{% set is_loading = is_loading | default(false) %}
+{% set has_error = has_error | default(false) %}
 
 <div id="outbound-status-panel"
      hx-get="/api/outbound/status"
      hx-trigger="load, every 10s"
      hx-swap="outerHTML"
+     hx-request='{"timeout": 5000}'
      class="panel"
      style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
-  {% if failed > 0 %}
+  {% if is_loading %}
+  <div style="width:48px; height:48px; border-radius:12px; background:rgba(148,163,184,0.15);"></div>
+  <div>
+      <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Sync-Warteschlange</div>
+      <div style="font-size:24px; font-weight:800; color:var(--text-tertiary);">Lade…</div>
+  </div>
+  {% elif has_error %}
+  <div style="width:48px; height:48px; border-radius:12px; background:rgba(239,68,68,0.1); color:var(--color-danger); display:flex; align-items:center; justify-content:center;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
+  </div>
+  <div>
+      <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">Sync-Warteschlange</div>
+      <div style="font-size:16px; font-weight:700; color:var(--color-danger);">Temporär nicht erreichbar</div>
+  </div>
+  {% elif failed > 0 %}
   <div style="width:48px; height:48px; border-radius:12px; background:rgba(239,68,68,0.1); color:var(--color-danger); display:flex; align-items:center; justify-content:center;">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
   </div>
