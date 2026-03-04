@@ -138,7 +138,7 @@
     {
       "label": "KUKANILEA: Gemini Batch Compliance",
       "type": "shell",
-      "command": "${workspaceFolder}/.build_venv/bin/python scripts/ai/batch_compliance_check.py",
+      "command": "${config:python.defaultInterpreterPath} scripts/ai/batch_compliance_check.py",
       "options": {
         "cwd": "${workspaceFolder}"
       },

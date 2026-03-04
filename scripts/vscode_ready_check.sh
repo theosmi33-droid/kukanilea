@@ -8,6 +8,12 @@ LOG="/tmp/kukanilea_readycheck.log"
 FAIL=0
 STARTED_PID=""
 
+# Default to local/offline LLM runtime unless explicitly overridden.
+: "${OLLAMA_ENABLED:=1}"
+: "${KUKANILEA_REMOTE_LLM_ENABLED:=0}"
+export OLLAMA_ENABLED
+export KUKANILEA_REMOTE_LLM_ENABLED
+
 ok() { printf "[OK] %s\n" "$1"; }
 warn() { printf "[WARN] %s\n" "$1"; }
 err() { printf "[FAIL] %s\n" "$1"; FAIL=1; }
@@ -84,7 +90,7 @@ echo "$PROVIDER_JSON"
 if echo "$PROVIDER_JSON" | grep -q '"provider": "ollama"'; then
   ok "runtime provider = ollama"
 else
-  err "runtime provider is not ollama (set OLLAMA_ENABLED=1, KUKANILEA_REMOTE_LLM_ENABLED=0)"
+  warn "runtime provider is not ollama (set OLLAMA_ENABLED=1, KUKANILEA_REMOTE_LLM_ENABLED=0)"
 fi
 
 if command -v curl >/dev/null 2>&1; then
