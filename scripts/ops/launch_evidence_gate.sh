@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
+
+EXIT_USAGE=2
+EXIT_DEPENDENCY=3
+EXIT_GATE_FAIL=4
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT_DIR="$ROOT/docs/reviews/codex"
@@ -28,6 +32,17 @@ Options:
   --out <path>        Custom markdown output path
   --help              Show this help
 USAGE
+}
+
+log_info() {
+  printf '[launch-evidence] %s\n' "$*" >&2
+}
+
+fail() {
+  local code="$1"
+  shift
+  log_info "$*"
+  exit "$code"
 }
 
 detect_repo() {
@@ -60,7 +75,7 @@ while [[ $# -gt 0 ]]; do
       shift
       if [[ $# -eq 0 ]]; then
         echo "missing value for --out" >&2
-        exit 2
+        exit "$EXIT_USAGE"
       fi
       OUT_FILE="$1"
       ;;
@@ -71,7 +86,7 @@ while [[ $# -gt 0 ]]; do
     *)
       echo "unknown argument: $1" >&2
       usage
-      exit 2
+      exit "$EXIT_USAGE"
       ;;
   esac
   shift
@@ -83,8 +98,7 @@ if [[ "$FAST_MODE" -eq 1 ]]; then
 fi
 
 if ! command -v rg >/dev/null 2>&1; then
-  echo "Error: rg (ripgrep) is not installed. Please install it to continue." >&2
-  exit 1
+  fail "$EXIT_DEPENDENCY" "Error: rg (ripgrep) is not installed. Please install it to continue."
 fi
 
 if [[ -z "$REPO" ]]; then
@@ -92,8 +106,7 @@ if [[ -z "$REPO" ]]; then
 fi
 
 if [[ -z "$REPO" ]]; then
-  echo "Error: unable to detect GitHub repository slug. Set REPO=owner/name." >&2
-  exit 1
+  fail "$EXIT_DEPENDENCY" "Error: unable to detect GitHub repository slug. Set REPO=owner/name."
 fi
 
 mkdir -p "$(dirname "$OUT_FILE")"
@@ -373,7 +386,8 @@ append "- PASS: ${PASS_COUNT}"
 append "- WARN: ${WARN_COUNT}"
 append "- FAIL: ${FAIL_COUNT}"
 
+log_info "Evidence report written to: $OUT_FILE"
 echo "$OUT_FILE"
 if [[ "$FAIL_COUNT" -gt 0 ]]; then
-  exit 1
+  exit "$EXIT_GATE_FAIL"
 fi
