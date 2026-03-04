@@ -1,3 +1,5 @@
+import importlib.util
+import pytest
 import sys
 from pathlib import Path
 from tests.time_utils import utc_now_iso
@@ -22,6 +24,8 @@ def _make_app(tmp_path, monkeypatch):
 
 
 def test_sidebar_toggle_persistence_and_running_badges_markup(tmp_path, monkeypatch):
+    if importlib.util.find_spec("flask") is None:
+        pytest.skip("flask not installed in current environment")
     app = _make_app(tmp_path, monkeypatch)
     client = app.test_client()
 

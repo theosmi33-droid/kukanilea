@@ -79,7 +79,7 @@
             <kbd style="font-size:10px; padding:4px 8px; background:var(--bg-tertiary); border:1px solid var(--color-border); border-radius:6px; color:var(--text-tertiary);">⌘ K</kbd>
         </div>
     </header>
-    <div id="main-content" hx-history-elt>
+    <div id="main-content" hx-history-elt hx-boost="true" hx-target="#main-content" hx-select="#main-content > *" hx-swap="innerHTML show:top" hx-push-url="true">
       {% block content %}{% endblock %}
     </div>
   </main>
@@ -140,6 +140,10 @@
       updateLabel();
       updateSidebarActive();
       document.body.addEventListener('htmx:afterSettle', updateSidebarActive);
+      document.body.addEventListener('htmx:responseError', (event) => {
+        const path = event?.detail?.pathInfo?.finalRequestPath;
+        if (path) window.location.assign(path);
+      });
     });
   </script>
 

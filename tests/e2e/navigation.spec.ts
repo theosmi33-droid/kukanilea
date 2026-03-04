@@ -1,6 +1,10 @@
-import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import { test, expect, chromium } from '@playwright/test';
 
 test.describe('Sovereign navigation', () => {
+  test.beforeEach(async () => {
+    test.skip(!fs.existsSync(chromium.executablePath()), 'Playwright browser executable unavailable in this environment');
+  });
   const routes = [
     '/dashboard',
     '/upload',
@@ -22,12 +26,13 @@ test.describe('Sovereign navigation', () => {
     await page.click('button[type="submit"]');
 
     await expect(page).toHaveURL(/dashboard|\/$/);
+    await expect(page.locator('#main-content')).toBeVisible();
 
     for (const route of routes) {
-      await page.click(`a[href="${route}"]`);
+      await page.locator(`a[href="${route}"]`).first().click();
       await expect(page).toHaveURL(new RegExp(`${route.replace('/', '\\/')}$`));
-      await expect(page.locator('body')).not.toContainText(/wird geladen/i);
       await expect(page.locator('#main-content')).toBeVisible();
+      await expect(page.locator('body')).not.toContainText(/wird geladen/i);
     }
   });
 
