@@ -1,0 +1,50 @@
+{% extends "layout.html" %}
+{% block title %}Assistant{% endblock %}
+
+{% block content %}
+<section class="panel" style="max-width: 980px; margin: 0 auto; display:flex; flex-direction:column; gap:16px;">
+  <div>
+    <h1 style="margin:0;">Assistant Suche</h1>
+    <p style="margin:6px 0 0 0; color:var(--color-text-muted);">Tenant-isolierte Suche über lokale Inhalte (Sovereign-11).</p>
+  </div>
+
+  <form method="get" style="display:grid; grid-template-columns: 1fr 180px auto; gap:10px;">
+    <input class="input" name="q" value="{{ q }}" placeholder="Suche..." />
+    <input class="input" name="kdnr" value="{{ kdnr }}" placeholder="KDNR optional" />
+    <button class="btn btn-primary" type="submit">Suchen</button>
+  </form>
+
+  <div class="badge" style="width:fit-content;">Treffer: {{ results|length }}</div>
+
+  <div style="border:1px solid var(--color-border); border-radius:12px; overflow:auto;">
+    <table style="width:100%; border-collapse: collapse; font-size: 13px;">
+      <thead style="background: var(--bg-secondary);">
+        <tr>
+          <th align="left" style="padding:10px; border-bottom:1px solid var(--color-border);">Titel</th>
+          <th align="left" style="padding:10px; border-bottom:1px solid var(--color-border);">Quelle</th>
+          <th align="left" style="padding:10px; border-bottom:1px solid var(--color-border);">Relevanz</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in results %}
+        <tr>
+          <td style="padding:10px; border-bottom:1px solid var(--color-border);">
+            <strong>{{ r.get('title') or r.get('file_name') or 'Eintrag' }}</strong>
+            {% if r.get('snippet') %}
+            <div style="color:var(--color-text-muted); margin-top:4px;">{{ r.get('snippet') }}</div>
+            {% endif %}
+          </td>
+          <td style="padding:10px; border-bottom:1px solid var(--color-border);">{{ r.get('source') or r.get('file_path') or '-' }}</td>
+          <td style="padding:10px; border-bottom:1px solid var(--color-border);">{{ r.get('score') or '-' }}</td>
+        </tr>
+        {% endfor %}
+        {% if not results %}
+        <tr>
+          <td colspan="3" style="padding:18px; text-align:center; color:var(--color-text-muted);">Keine Treffer – Suchbegriff eingeben.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

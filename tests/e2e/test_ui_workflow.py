@@ -34,15 +34,18 @@ def run_server(port, auth_db_path, core_db_path, user_data_root):
     adb = AuthDB(Path(auth_db_path))
     adb.init()
     now = "2024-01-01T00:00:00"
-    hpw = hash_password("admin")
-    adb.upsert_tenant("KUKANILEA", "KUKANILEA", now)
-    adb.upsert_user("admin", hpw, now)
-    adb.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+
+    for user, pw in (("admin", "admin"), ("dev", "dev")):
+        hpw = hash_password(pw)
+        adb.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        adb.upsert_user(user, hpw, now)
+        adb.upsert_membership(user, "KUKANILEA", "DEV", now)
 
     # Bypass first-run check by creating a license file
     lic_path = Path(user_data_root) / "license.json"
     lic_path.parent.mkdir(parents=True, exist_ok=True)
     import json
+
     lic_path.write_text(json.dumps({"valid": True, "plan": "ENTERPRISE"}))
 
     app = create_app()
@@ -105,16 +108,20 @@ def server(tmp_path_factory):
         process.join(timeout=5)
 
 
+def _login(page: Page, server: str, username: str = "dev", password: str = "dev"):
+    page.goto(f"{server}/login")
+    page.fill('input[name="username"]', username)
+    page.fill('input[name="password"]', password)
+    page.click('button[type="submit"]')
+    expect(page).to_have_url(re_compile(rf"{server}/(dashboard|settings).*"))
+
+
 def test_full_workflow(page: Page, server: str):
     """
     Tests the full UI workflow:
     Login -> Upload -> OCR Transition -> Review
     """
-    # 1. Login
-    page.goto(f"{server}/login")
-    page.fill('input[name="username"]', "admin")
-    page.fill('input[name="password"]', "admin")
-    page.click('button[type="submit"]')
+    _login(page, server, "admin", "admin")
 
     # Verify we are on the dashboard
     expect(page).to_have_url(f"{server}/dashboard")
@@ -150,6 +157,39 @@ def test_unauthorized_access(page: Page, server: str):
     page.goto(f"{server}/admin/mesh")
     # Should redirect to login because no session
     expect(page).to_have_url(re_compile(rf"{server}/login\?next=.*"))
+
+
+TOOLS = [
+    ("dashboard", "/dashboard", "Beleg-Zentrale"),
+    ("upload", "/upload", "Beleg-Zentrale"),
+    ("projects", "/projects", "Board +"),
+    ("tasks", "/tasks", "Aufgabenübersicht"),
+    ("messenger", "/messenger", "Messenger"),
+    ("email", "/email", "Email-Cockpit"),
+    ("calendar", "/calendar", "Kalender"),
+    ("time", "/time", "Zeiterfassung"),
+    ("visualizer", "/visualizer", "The Forensic Eye"),
+    ("settings", "/settings", "Systemsettings"),
+    ("assistant", "/assistant", "Assistant Suche"),
+]
+
+
+def test_tools_navigation_smoke_with_visual_baseline(page: Page, server: str):
+    _login(page, server, "dev", "dev")
+    visual_dir = Path(__file__).parent / "visual-baseline"
+    visual_dir.mkdir(exist_ok=True)
+
+    for tool, path, marker in TOOLS:
+        page.goto(f"{server}{path}")
+        expect(page.locator("#main-content")).to_be_visible()
+        expect(page.locator("body")).not_to_contain_text("wird geladen")
+        expect(page.locator("body")).not_to_contain_text("skeleton")
+        expect(page.get_by_text(marker, exact=False)).to_be_visible()
+
+        screenshot_path = visual_dir / f"{tool}.png"
+        page.screenshot(path=str(screenshot_path), full_page=True)
+        assert screenshot_path.exists()
+        assert screenshot_path.stat().st_size > 0
 
 
 def re_compile(pattern):

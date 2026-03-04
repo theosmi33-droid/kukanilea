@@ -39,3 +39,24 @@ const StateStore = {
 };
 
 document.addEventListener('DOMContentLoaded', () => StateStore.init());
+
+document.body.addEventListener('htmx:responseError', (event) => {
+    const path = event?.detail?.pathInfo?.requestPath;
+    if (path && typeof path === 'string') {
+        window.location.assign(path);
+    }
+});
+
+document.body.addEventListener('htmx:swapError', (event) => {
+    const path = event?.detail?.pathInfo?.requestPath;
+    if (path && typeof path === 'string') {
+        window.location.assign(path);
+    }
+});
+
+document.body.addEventListener('htmx:targetError', (event) => {
+    const path = event?.detail?.pathInfo?.requestPath;
+    if (path && typeof path === 'string') {
+        window.location.assign(path);
+    }
+});

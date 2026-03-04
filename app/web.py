@@ -3691,6 +3691,7 @@ def documents():
 
 
 @bp.route("/assistant")
+@login_required
 def assistant():
     # Ensure core searches within current tenant
     try:
@@ -3725,18 +3726,13 @@ def assistant():
                 results.append(r)
         except Exception:
             pass
-    html = """<div class='card p-5'>
-      <div class='text-lg font-semibold mb-1'>Assistant</div>
-      <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
-        <input class='w-full rounded-xl p-2 input' name='q' value='{q}' placeholder='Suche…' />
-        <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{kdnr}' placeholder='Kdnr optional' />
-        <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
-      </form>
-      <div class='muted text-xs'>Treffer: {n}</div>
-    </div>""".format(
-        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
+    return _render_base(
+        "assistant.html",
+        active_tab="assistant",
+        q=q,
+        kdnr=kdnr,
+        results=results,
     )
-    return _render_base(html, active_tab="assistant")
 
 
 @bp.route("/projects")
