@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request, render_template, redirect, url_for
+from jinja2 import TemplateNotFound
 
 from app.auth import login_required, current_tenant, current_role, current_user
 from app.config import Config
@@ -78,11 +79,16 @@ def dashboard_page():
 def api_system_status():
     from app.core.observer import get_system_status
     status = get_system_status() or {}
+    http_code = int(status.get("http_code") or 200)
     accept = (request.headers.get("Accept") or "").lower()
     wants_html = "text/html" in accept or (request.args.get("format") or "").lower() == "html"
     if wants_html:
-        return render_template("components/system_status.html", **status)
-    return jsonify(ok=True, status=status)
+        try:
+            rendered = render_template("components/system_status.html", **status)
+        except TemplateNotFound:
+            rendered = render_template("partials/system_status.html", **status)
+        return rendered, http_code
+    return jsonify(ok=True, status=status), http_code
 
 @bp.get("/api/outbound/status")
 @login_required
