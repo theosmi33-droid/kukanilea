@@ -150,6 +150,9 @@ task_list = _core_get("task_list")
 task_resolve = _core_get("task_resolve")
 task_dismiss = _core_get("task_dismiss")
 
+# Optional calendar reminders
+calendar_reminders_due = _core_get("knowledge_calendar_reminders_due")
+
 # Optional time tracking
 time_project_create = _core_get("time_project_create")
 time_project_list = _core_get("time_project_list")
@@ -3239,12 +3242,17 @@ def dashboard_page():
     if callable(_core_get("get_recent_docs")):
         recent = _core_get("get_recent_docs")(tenant, limit=6)
 
+    reminders = []
+    if callable(calendar_reminders_due):
+        reminders = calendar_reminders_due(tenant)
+
     return _render_base(
         "dashboard.html",
         active_tab="dashboard",
         items=items,
         meta=meta,
         recent=recent,
+        reminders=reminders,
         suggestions={"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
         keywords=["Maler", "Sanitär", "Elektro"]
     )
