@@ -107,6 +107,11 @@ def api_chat():
             if "text" in ans and "response" not in ans:
                 ans["response"] = ans.get("text", "")
         return jsonify(ans)
-    except Exception as e:
+    except Exception:
         logger.exception("Chat logic failed")
-        return jsonify(error="agent_error", details=str(e)), 500
+        return jsonify(
+            ok=False,
+            error="agent_error",
+            text="Der Assistent ist aktuell nicht verfügbar. Bitte erneut versuchen.",
+            response="Der Assistent ist aktuell nicht verfügbar. Bitte erneut versuchen.",
+        ), 200

@@ -17,10 +17,10 @@ def email_page():
         return _render_sovereign_tool(
             "email",
             "Email-Postfach",
-            "Email-System wird synchronisiert...",
+            "Email-Cockpit wird vorbereitet...",
             active_tab="email",
         )
-    return _render_base("messenger.html", active_tab="email")
+    return _render_base("email.html", active_tab="email")
 
 @bp.route("/api/mail/draft", methods=["POST"])
 @login_required
