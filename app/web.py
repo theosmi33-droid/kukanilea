@@ -3075,20 +3075,27 @@ def settings_page():
     if current_role() not in {"ADMIN", "DEV"}:
         return json_error("forbidden", "Nicht erlaubt.", status=403)
     auth_db: AuthDB = current_app.extensions["auth_db"]
-    
-    # Get current tenant DB path
-    t_id = current_tenant()
-    con = auth_db._db()
-    row = con.execute("SELECT core_db_path FROM tenants WHERE tenant_id = ?", (t_id,)).fetchone()
-    con.close()
-    tenant_db_path = row["core_db_path"] if row else ""
-    
+
+    tenant_db_path = ""
+    auth_schema = "unknown"
+    auth_tenants = 0
+    try:
+        t_id = current_tenant()
+        con = auth_db._db()
+        row = con.execute("SELECT core_db_path FROM tenants WHERE tenant_id = ?", (t_id,)).fetchone()
+        con.close()
+        tenant_db_path = row["core_db_path"] if row else ""
+        auth_schema = auth_db.get_schema_version()
+        auth_tenants = auth_db.count_tenants()
+    except Exception:
+        current_app.logger.exception("Settings page fallback activated")
+
     return _render_base(
         "settings.html",
         active_tab="settings",
         auth_db_path=str(auth_db.path),
-        auth_schema=auth_db.get_schema_version(),
-        auth_tenants=auth_db.count_tenants(),
+        auth_schema=auth_schema,
+        auth_tenants=auth_tenants,
         import_root=str(current_app.config.get("IMPORT_ROOT", "")),
         tenant_db_path=tenant_db_path
     )
@@ -3389,6 +3396,24 @@ def calendar_page():
         "calendar.html",
         active_tab="calendar",
         events=events,
+    )
+
+
+@bp.get("/calendar/export.ics")
+@login_required
+def calendar_export_ics():
+    from app.knowledge.ics_source import knowledge_ics_build_local_feed
+
+    tenant_id = current_tenant() or session.get("tenant_id") or "default"
+    try:
+        ics_content = knowledge_ics_build_local_feed(tenant_id)
+    except Exception:
+        current_app.logger.exception("Calendar export failed")
+        ics_content = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//KUKANILEA//EMPTY//DE\nEND:VCALENDAR\n"
+    return current_app.response_class(
+        ics_content,
+        mimetype="text/calendar",
+        headers={"Content-Disposition": "attachment; filename=calendar.ics"},
     )
 
 
@@ -3737,12 +3762,9 @@ def projects_list():
         activities = board_state.get("activities") or []
     except Exception:
         current_app.logger.exception("Fehler in /projects")
-        return (
-            _render_base(
-                "<div class='card p-4'><h2>Projekte konnten nicht geladen werden</h2></div>",
-                active_tab="projects",
-            ),
-            500,
+        return _render_base(
+            "<div class='card p-4'><h2>Projekte konnten nicht geladen werden</h2><p class='muted mt-2'>Leerer Zustand wird angezeigt, bis die Projekt-Daten wieder verfügbar sind.</p></div>",
+            active_tab="projects",
         )
 
     tasks = pm.list_tasks(board_id)

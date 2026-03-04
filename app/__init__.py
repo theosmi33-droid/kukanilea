@@ -63,7 +63,7 @@ def create_app() -> Flask:
     manager.set_state(SystemState.INIT, "Initializing modules and databases...")
     # Import blueprints after env/path wiring so legacy modules read correct paths.
     from . import api, web
-    from .routes import system_logs, admin_tenants, automation, dashboard, upload, dashboard_bp, visualizer
+    from .routes import system_logs, admin_tenants, automation, visualizer
     from .core.tool_loader import load_all_tools
 
     load_all_tools()
@@ -149,10 +149,12 @@ def create_app() -> Flask:
             "/login",
             "/logout",
             "/switch-tenant",
+            "/admin/context/switch",
             "/admin/license",
             "/admin/settings",
             "/api/auth/",
             "/api/chat",
+            "/api/chat/compact",
         )
         if any(path.startswith(prefix) for prefix in allow_prefixes):
             return None
@@ -211,8 +213,9 @@ def create_app() -> Flask:
         return response
 
     app.register_blueprint(web.bp)
-    from .routes import calendar
-    app.register_blueprint(calendar.bp)
+    # Canonical owner: app/web.py owns tool page endpoints to avoid
+    # competing rules for /upload, /calendar, /messenger, /email,
+    # /projects, /tasks, /time and /visualizer.
     app.register_blueprint(api.bp)
     app.register_blueprint(system_logs.bp)
     app.register_blueprint(admin_tenants.bp)
@@ -220,9 +223,7 @@ def create_app() -> Flask:
     app.register_blueprint(visualizer.bp)
     
     from .routes.dashboard_api import dashboard_bp
-    from .routes.upload import bp as upload_bp
     app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
-    app.register_blueprint(upload_bp)
     try:
         from .services.metrics_exporter import bp as metrics_bp
 
