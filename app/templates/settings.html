@@ -138,8 +138,9 @@
         <div><div class="router-note">Valid</div><div>{{ 'ja' if (license_info.valid if license_info is mapping else false) else 'nein' }}</div></div>
         <div><div class="router-note">Grund</div><div>{{ license_info.reason if license_info is mapping else '-' }}</div></div>
         <div><div class="router-note">Plan</div><div>{{ license_info.plan if license_info is mapping else '-' }}</div></div>
+        <div><div class="router-note">Status</div><div data-testid="license-status">{{ license_runtime_status or 'active' }}</div></div>
       </div>
-      <form method="post" action="/admin/settings/license/upload" onsubmit="return confirmRisk(this)">
+      <form method="post" action="/admin/settings/license/upload" data-testid="license-upload-form" onsubmit="return confirmRisk(this)">
         <textarea class="router-input" name="license_json" rows="8" placeholder='{"customer_id":"...","plan":"ENTERPRISE","signature":"..."}' required></textarea>
         <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
           <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
@@ -214,9 +215,17 @@
 
     <div id="backup" class="router-card">
       <h2 style="margin:0 0 8px 0;">Backup & Wiederherstellung</h2>
-      <form method="post" action="/admin/settings/backup/run" style="margin-bottom:12px;">
+      <form method="post" action="/admin/settings/backup/run" data-testid="backup-run-form" style="margin-bottom:12px;">
         <button class="router-btn" type="submit">Backup jetzt ausführen</button>
       </form>
+      <div class="router-note" style="margin:8px 0 10px 0;">
+        Backup-Ziele geprüft:
+        <ul style="margin:6px 0 0 18px; padding:0;">
+          {% for t in backup_targets or [] %}
+          <li data-testid="backup-target-{{ t.label }}">{{ t.label }} → <code>{{ t.path }}</code> ({{ 'ok' if t.exists else 'fehlt' }})</li>
+          {% endfor %}
+        </ul>
+      </div>
       <div style="overflow:auto; margin-bottom:10px;">
         <table style="width:100%; border-collapse:collapse; font-size:12px;">
           <thead><tr><th align="left">Datei</th><th align="left">Zeit</th><th align="left">Größe</th></tr></thead>
@@ -231,7 +240,7 @@
           </tbody>
         </table>
       </div>
-      <form method="post" action="/admin/settings/backup/restore" onsubmit="return confirmRisk(this)" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <form method="post" action="/admin/settings/backup/restore" data-testid="backup-restore-form" onsubmit="return confirmRisk(this)" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <select class="router-input" style="max-width:360px;" name="backup_name" required>
           {% for b in backups or [] %}
           <option value="{{ b.name }}">{{ b.name }}</option>

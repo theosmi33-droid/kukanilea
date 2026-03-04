@@ -48,6 +48,7 @@ class LicenseState:
     device_mismatch: bool
     read_only: bool
     reason: str
+    status: str
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -58,7 +59,19 @@ class LicenseState:
             "device_mismatch": self.device_mismatch,
             "read_only": self.read_only,
             "reason": self.reason,
+            "status": self.status,
         }
+
+
+def _normalize_license_status(value: Any) -> str:
+    raw = str(value or "active").strip().lower()
+    if raw in {"active", "aktiv"}:
+        return "active"
+    if raw in {"blocked", "gesperrt", "locked", "suspended"}:
+        return "blocked"
+    if raw in {"grace", "grace_period", "kulanz"}:
+        return "grace"
+    return "active"
 
 
 def _canonical_payload_bytes(payload: Dict[str, Any]) -> bytes:
@@ -194,6 +207,7 @@ def load_license(license_path: Path) -> Dict[str, Any]:
             "reason": "ok",
             "payload": payload,
             "plan": str(payload.get("plan") or "PRO"),
+            "status": _normalize_license_status(payload.get("status")),
             "expired": expired,
             "device_mismatch": device_mismatch,
             "algorithm": algorithm,
@@ -227,12 +241,17 @@ def load_runtime_license_state(
     if info.get("valid"):
         expired = bool(info.get("expired", False))
         device_mismatch = bool(info.get("device_mismatch", False))
-        read_only = expired or device_mismatch
+        status = _normalize_license_status(info.get("status"))
+        read_only = expired or device_mismatch or status == "blocked"
         reason = "ok"
         if expired:
             reason = "license_expired"
         elif device_mismatch:
             reason = "device_mismatch"
+        elif status == "blocked":
+            reason = "license_blocked"
+        elif status == "grace":
+            reason = "grace"
         state = LicenseState(
             plan=str(info.get("plan") or "PRO"),
             trial=False,
@@ -241,6 +260,7 @@ def load_runtime_license_state(
             device_mismatch=device_mismatch,
             read_only=read_only,
             reason=reason,
+            status=status,
         )
         return state.as_dict()
 
@@ -257,5 +277,6 @@ def load_runtime_license_state(
         device_mismatch=False,
         read_only=expired,
         reason="trial_expired" if expired else "trial",
+        status="grace" if not expired else "blocked",
     )
     return state.as_dict()

@@ -108,6 +108,28 @@ def _backup_dir() -> Path:
     return path
 
 
+def _backup_targets() -> dict[str, Path]:
+    return {
+        "auth.sqlite3": Config.AUTH_DB,
+        "core.sqlite3": Config.CORE_DB,
+        "license.json": Config.LICENSE_PATH,
+    }
+
+
+def _backup_targets_status() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for label, target in _backup_targets().items():
+        resolved = target.expanduser().resolve()
+        rows.append(
+            {
+                "label": label,
+                "path": str(resolved),
+                "exists": resolved.exists(),
+            }
+        )
+    return rows
+
+
 def _list_backups() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for item in sorted(_backup_dir().glob("*.bak"), key=lambda p: p.stat().st_mtime, reverse=True):
@@ -124,11 +146,7 @@ def _list_backups() -> list[dict[str, Any]]:
 
 def _run_backup() -> list[str]:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    targets = {
-        "auth.sqlite3": Config.AUTH_DB,
-        "core.sqlite3": Config.CORE_DB,
-        "license.json": Config.LICENSE_PATH,
-    }
+    targets = _backup_targets()
     written: list[str] = []
     for label, src in targets.items():
         if not src.exists():
@@ -144,11 +162,7 @@ def _run_backup() -> list[str]:
 
 
 def _restore_backup(backup_name: str) -> str:
-    allowed = {
-        "auth.sqlite3": Config.AUTH_DB,
-        "core.sqlite3": Config.CORE_DB,
-        "license.json": Config.LICENSE_PATH,
-    }
+    allowed = _backup_targets()
     src = (_backup_dir() / str(backup_name or "")).resolve()
     if not src.exists() or src.suffix.lower() != ".bak":
         raise ValueError("backup_not_found")
@@ -242,6 +256,7 @@ def settings_console():
         ).fetchall()
 
     license_info = load_license(Config.LICENSE_PATH)
+    runtime_status = str(current_app.config.get("LICENSE_STATUS", "active"))
     mesh_pub, mesh_node = ensure_mesh_identity()
 
     return render_template(
@@ -259,6 +274,7 @@ def settings_console():
         ],
         tenant_registry_rows=tenant_registry.list_tenants(),
         license_info=license_info,
+        license_runtime_status=runtime_status,
         mesh_peers=_list_mesh_peers(),
         mesh_config=settings,
         mesh_node_id=mesh_node,
@@ -266,6 +282,7 @@ def settings_console():
         system_settings=settings,
         branding=Config.get_branding(),
         backups=_list_backups(),
+        backup_targets=_backup_targets_status(),
         role_options=["admin", "manager", "mitarbeiter"],
     )
 
