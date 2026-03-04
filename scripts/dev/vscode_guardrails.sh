@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PY="$ROOT/.build_venv/bin/python"
+FALLBACK_PY="$(command -v python3 || true)"
 
 MODE="check"
 INSTALL_HOOKS="0"
@@ -20,8 +21,13 @@ for arg in "$@"; do
 done
 
 if [[ ! -x "$PY" ]]; then
-  echo "missing interpreter: $PY"
-  exit 2
+  if [[ -n "$FALLBACK_PY" ]]; then
+    echo "warning: missing interpreter $PY (using $FALLBACK_PY)"
+    PY="$FALLBACK_PY"
+  else
+    echo "missing interpreter: $PY"
+    exit 2
+  fi
 fi
 
 if [[ "$MODE" == "apply" ]]; then
