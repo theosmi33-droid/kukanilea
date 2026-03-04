@@ -70,6 +70,11 @@
   "git.openRepositoryInParentFolders": "never",
   "git.untrackedChanges": "hidden",
   "git.repositoryScanMaxDepth": 2,
+  "github.copilot.chat.codeGeneration.instructions": [
+    {
+      "file": ".github/copilot-instructions.md"
+    }
+  ],
   "githubPullRequests.pullBranch": "never",
   "terminal.integrated.defaultProfile.osx": "zsh-clean",
   "terminal.integrated.cwd": "${workspaceFolder}",
@@ -78,7 +83,9 @@
     "OLLAMA_ENABLED": "1",
     "KUKANILEA_REMOTE_LLM_ENABLED": "0",
     "OLLAMA_HOST": "http://127.0.0.1:11434",
-    "GEMINI_DEFAULT_MODEL": "gemini-2.5-flash"
+    "GEMINI_DEFAULT_MODEL": "gemini-2.5-flash",
+    "KUKANILEA_AI_INSTRUCTIONS": "${workspaceFolder}/docs/ai/AI_AGENT_OPERATING_CONTRACT.md",
+    "KUKANILEA_AI_REFERENCE_STACK": "${workspaceFolder}/docs/ai/GEMINI_REFERENCE_STACK.md"
   },
   "workbench.editor.enablePreview": false,
   "workbench.startupEditor": "none",
