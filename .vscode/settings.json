@@ -16,10 +16,9 @@
     "**/.venv/**",
     "**/__pycache__/**",
     "**/.pytest_cache/**",
-    "**/archive_legacy/**",
-    "**/docs/reviews/**",
-    "**/data/**",
-    "**/instance/**"
+    "**/.ruff_cache/**",
+    "**/node_modules/**",
+    "**/docs/reviews/**"
   ],
   "python.experiments.enabled": false,
   "python.useEnvironmentsExtension": true,
@@ -73,6 +72,18 @@
     "**/.git/objects/**": true,
     "**/.git/subtree-cache/**": true,
     "**/.build_venv/**": true,
-    "**/__pycache__/**": true
-  }
+    "**/__pycache__/**": true,
+    "**/.venv/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/node_modules/**": true
+  },
+  "python.analysis.autoSearchPaths": false,
+  "search.followSymlinks": false,
+  "search.useIgnoreFiles": true,
+  "task.autoDetect": "off",
+  "npm.autoDetect": "off",
+  "typescript.disableAutomaticTypeAcquisition": true,
+  "extensions.autoCheckUpdates": false,
+  "extensions.autoUpdate": false
 }
