@@ -1595,8 +1595,8 @@ def _guard_login():
     
     user = current_user()
     if not user:
-        auth_db = current_app.extensions.get("auth_db")
-        if auth_db and auth_db.count_users() == 0 and not p.startswith("/api/"):
+        user_count = _safe_auth_user_count()
+        if user_count == 0 and not p.startswith("/api/"):
             return redirect("/bootstrap")
 
         # Avoid full URLs in 'next' to prevent redirect issues
@@ -1627,6 +1627,22 @@ def _blind_success_message() -> str:
     return "Wenn ein passender Account existiert, wurde ein Code erzeugt."
 
 
+def _safe_auth_user_count() -> int | None:
+    """Return AuthDB user count while tolerating missing/incomplete stubs."""
+    auth_db = current_app.extensions.get("auth_db")
+    if not auth_db:
+        return None
+    try:
+        count_users = getattr(auth_db, "count_users", None)
+        if not callable(count_users):
+            logger.warning("AuthDB implementation has no count_users(); treating setup as incomplete")
+            return 0
+        return int(count_users())
+    except Exception:
+        logger.exception("Auth DB error while counting users")
+        return None
+
+
 @bp.before_app_request
 def check_onboarding():
     if (
@@ -1636,8 +1652,8 @@ def check_onboarding():
     ):
         return
 
-    auth_db = current_app.extensions.get("auth_db")
-    if auth_db and auth_db.count_users() == 0:
+    user_count = _safe_auth_user_count()
+    if user_count == 0:
         return redirect("/bootstrap")
 
 
@@ -1648,7 +1664,11 @@ def bootstrap():
     if not auth_db:
         abort(500)
 
-    if auth_db.count_users() > 0:
+    user_count = _safe_auth_user_count()
+    if user_count is None:
+        return json_error("auth_unavailable", "Authentifizierungsdatenbank nicht verfügbar.", status=503)
+
+    if user_count > 0:
         return redirect(url_for("web.login"))
 
     if not _is_local_request():
