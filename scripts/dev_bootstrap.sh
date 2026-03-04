@@ -8,6 +8,7 @@ START_TS="$(date +%s)"
 RUN_HEALTHCHECK=1
 RUN_LAUNCH_EVIDENCE=1
 SEED_DATA=1
+BOOTSTRAP_MARKER=".venv/.bootstrap_complete"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -114,6 +115,9 @@ if [[ "$RUN_LAUNCH_EVIDENCE" -eq 1 ]]; then
   echo "[bootstrap] Running launch evidence gate (--fast)"
   PYTHON="$PYTHON" scripts/ops/launch_evidence_gate.sh --fast
 fi
+
+touch "$BOOTSTRAP_MARKER"
+echo "[bootstrap] Wrote marker: $BOOTSTRAP_MARKER"
 
 END_TS="$(date +%s)"
 echo "✅ Bootstrap complete in $((END_TS-START_TS))s"

@@ -25,12 +25,12 @@ git clone <repo-url>
 cd kukanilea
 bash scripts/dev_bootstrap.sh
 
-# 2) Start app (separate terminal)
-source .venv/bin/activate
-python run.py server --host 127.0.0.1 --port 5051
+# 2) One-command dev start
+bash scripts/dev_run.sh
 ```
 
 `scripts/dev_bootstrap.sh` umfasst venv+deps, Playwright-Browser, Doctor-Checks, Smoke, Healthcheck und Launch-Evidence (`--fast`).
+`scripts/dev_run.sh` startet reproduzierbar über denselben `.venv`-Interpreter und führt Bootstrap bei Bedarf automatisch aus.
 
 Weitere Details: `docs/dev/BOOTSTRAP_QUICKSTART.md`
 
