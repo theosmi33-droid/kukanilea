@@ -546,6 +546,25 @@ def _time_range_params(range_name: str, date_value: str) -> tuple[str, str]:
     return start_at, end_at
 
 
+def _parse_required_id(value: object, field_name: str) -> int:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError(f"{field_name}_required")
+    if not raw.isdigit():
+        raise ValueError(f"{field_name}_invalid")
+    parsed = int(raw)
+    if parsed <= 0:
+        raise ValueError(f"{field_name}_invalid")
+    return parsed
+
+
+def _parse_optional_id(value: object, field_name: str) -> int | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    return _parse_required_id(raw, field_name)
+
+
 # -------- UI Templates ----------
 HTML_BASE = r"""<!doctype html>
 <html lang="de">
@@ -2388,6 +2407,19 @@ def api_tasks():
     return jsonify(ok=True, tasks=tasks)
 
 
+@bp.get("/api/tasks/summary")
+@login_required
+def api_tasks_summary():
+    tasks = []
+    if callable(task_list):
+        tasks = task_list(tenant=current_tenant(), status="OPEN", limit=500)  # type: ignore
+    by_status: dict[str, int] = {}
+    for task in tasks:
+        status = str(task.get("status") or "OPEN").upper()
+        by_status[status] = by_status.get(status, 0) + 1
+    return jsonify(ok=True, summary={"total": len(tasks), "by_status": by_status})
+
+
 @bp.get("/api/audit")
 @login_required
 @require_role("ADMIN")
@@ -2409,6 +2441,50 @@ def api_time_projects():
         )
     projects = time_project_list(tenant_id=current_tenant(), status="ACTIVE")  # type: ignore
     return jsonify(ok=True, projects=projects)
+
+
+@bp.get("/api/projects/summary")
+@login_required
+def api_projects_summary():
+    con = current_app.extensions["auth_db"]._db()
+    try:
+        tenant = current_tenant()
+        project_count = int(
+            con.execute("SELECT COUNT(*) FROM projects WHERE tenant_id=?", (tenant,)).fetchone()[0]
+        )
+        board_count = int(
+            con.execute(
+                """
+                SELECT COUNT(*)
+                FROM boards b
+                JOIN projects p ON p.id = b.project_id
+                WHERE p.tenant_id=?
+                """,
+                (tenant,),
+            ).fetchone()[0]
+        )
+        task_count = int(
+            con.execute(
+                """
+                SELECT COUNT(*)
+                FROM team_tasks t
+                JOIN boards b ON b.id = t.board_id
+                JOIN projects p ON p.id = b.project_id
+                WHERE p.tenant_id=?
+                """,
+                (tenant,),
+            ).fetchone()[0]
+        )
+    finally:
+        con.close()
+    return jsonify(
+        ok=True,
+        summary={
+            "project_count": project_count,
+            "board_count": board_count,
+            "task_count": task_count,
+        },
+    )
 
 
 @bp.post("/api/time/projects")
@@ -2446,13 +2522,16 @@ def api_time_start():
             "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
         )
     payload = request.get_json(silent=True) or {}
-    project_id = payload.get("project_id")
+    try:
+        project_id = _parse_optional_id(payload.get("project_id"), "project_id")
+    except ValueError as exc:
+        return json_error(str(exc), "Projekt-ID ist ungültig.", status=400)
     note = (payload.get("note") or "").strip()
     try:
         entry = time_entry_start(  # type: ignore
             tenant_id=current_tenant(),
             user=current_user() or "",
-            project_id=int(project_id) if project_id else None,
+            project_id=project_id,
             note=note,
         )
     except ValueError as exc:
@@ -2471,12 +2550,15 @@ def api_time_stop():
             "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
         )
     payload = request.get_json(silent=True) or {}
-    entry_id = payload.get("entry_id")
+    try:
+        entry_id = _parse_optional_id(payload.get("entry_id"), "entry_id")
+    except ValueError as exc:
+        return json_error(str(exc), "Eintrags-ID ist ungültig.", status=400)
     try:
         entry = time_entry_stop(  # type: ignore
             tenant_id=current_tenant(),
             user=current_user() or "",
-            entry_id=int(entry_id) if entry_id else None,
+            entry_id=entry_id,
         )
     except ValueError as exc:
         return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
@@ -2515,6 +2597,26 @@ def api_time_entries():
     return jsonify(ok=True, entries=entries, summary=summary_list, running=running)
 
 
+@bp.get("/api/time/summary")
+@login_required
+def api_time_summary():
+    if not callable(time_entry_list):
+        return json_error(
+            "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
+        )
+    date_value = datetime.now().date().isoformat()
+    start_at, end_at = _time_range_params("week", date_value)
+    entries = time_entry_list(  # type: ignore
+        tenant_id=current_tenant(),
+        user=current_user() or None,
+        start_at=start_at,
+        end_at=end_at,
+        limit=500,
+    )
+    total_seconds = sum(int(entry.get("duration_seconds") or 0) for entry in entries)
+    return jsonify(ok=True, summary={"entries": len(entries), "total_seconds": total_seconds})
+
+
 @bp.post("/api/time/entry/edit")
 @login_required
 @csrf_protected
@@ -2525,16 +2627,16 @@ def api_time_entry_edit():
             "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
         )
     payload = request.get_json(silent=True) or {}
-    entry_id = payload.get("entry_id")
-    if not entry_id:
-        return json_error("entry_id_required", "Eintrag fehlt.", status=400)
+    try:
+        entry_id = _parse_required_id(payload.get("entry_id"), "entry_id")
+        project_id = _parse_optional_id(payload.get("project_id"), "project_id")
+    except ValueError as exc:
+        return json_error(str(exc), "ID-Kontrakt verletzt.", status=400)
     try:
         entry = time_entry_update(  # type: ignore
             tenant_id=current_tenant(),
-            entry_id=int(entry_id),
-            project_id=(
-                int(payload.get("project_id")) if payload.get("project_id") else None
-            ),
+            entry_id=entry_id,
+            project_id=project_id,
             start_at=(payload.get("start_at") or None),
             end_at=(payload.get("end_at") or None),
             note=payload.get("note"),
@@ -2558,13 +2660,14 @@ def api_time_entry_approve():
             "feature_unavailable", "Time Tracking ist nicht verfügbar.", status=501
         )
     payload = request.get_json(silent=True) or {}
-    entry_id = payload.get("entry_id")
-    if not entry_id:
-        return json_error("entry_id_required", "Eintrag fehlt.", status=400)
+    try:
+        entry_id = _parse_required_id(payload.get("entry_id"), "entry_id")
+    except ValueError as exc:
+        return json_error(str(exc), "ID-Kontrakt verletzt.", status=400)
     try:
         entry = time_entry_approve(  # type: ignore
             tenant_id=current_tenant(),
-            entry_id=int(entry_id),
+            entry_id=entry_id,
             approved_by=current_user() or "",
         )
     except ValueError as exc:
@@ -3303,6 +3406,19 @@ def calendar_page():
     )
 
 
+@bp.get("/api/calendar/summary")
+@login_required
+def api_calendar_summary():
+    reminders = []
+    if callable(calendar_reminders_due):
+        reminders = calendar_reminders_due(current_tenant())
+    reminder_ids = [str(item.get("id")) for item in reminders if str(item.get("id") or "").strip()]
+    return jsonify(
+        ok=True,
+        summary={"reminder_count": len(reminder_ids), "reminder_ids": reminder_ids},
+    )
+
+
 @bp.route("/upload", methods=["POST"])
 @csrf_protected
 @upload_limiter.limit_required
@@ -3666,6 +3782,9 @@ def projects_list():
 @login_required
 @csrf_protected
 def api_task_move(task_id: str):
+    task_id = str(task_id or "").strip()
+    if not task_id or ":" in task_id:
+        return json_error("task_id_invalid", "Task-ID ist ungültig.", status=400)
     payload = request.get_json() or {}
     new_col = payload.get("column")
     if not new_col:
