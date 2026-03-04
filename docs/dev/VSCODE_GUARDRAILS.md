@@ -25,9 +25,15 @@ bash scripts/dev/install_git_hooks.sh
 # check only
 bash scripts/dev/vscode_guardrails.sh --check
 
-# apply fixes and install hooks
+# apply fixes only
+bash scripts/dev/vscode_guardrails.sh --apply
+
+# optional: apply + (re-)install hooks
 bash scripts/dev/vscode_guardrails.sh --apply --install-hooks
 ```
+
+If `.build_venv/bin/python` is missing, guardrails now fall back to `python3`
+so checks still run in fresh or partially initialized worktrees.
 
 ## Policy defaults
 
@@ -35,3 +41,8 @@ bash scripts/dev/vscode_guardrails.sh --apply --install-hooks
 - Worktree interpreter: `${workspaceFolder}/../kukanilea_production/.build_venv/bin/python`
 - Debugger type: `debugpy`
 - Automatic tasks allowed: `task.allowAutomaticTasks = "on"`
+- Background load reduction:
+  - `python.analysis.diagnosticMode = "openFilesOnly"`
+  - `python.analysis.indexing = false`
+  - automatic Task/NPM detection is disabled
+  - watcher excludes cover venv/cache/node_modules folders
