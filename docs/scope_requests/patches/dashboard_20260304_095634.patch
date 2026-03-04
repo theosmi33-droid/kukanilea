@@ -1,0 +1,749 @@
+diff --git a/app/__init__.py b/app/__init__.py
+index a6b6f04..f55adc8 100644
+--- a/app/__init__.py
++++ b/app/__init__.py
+@@ -41,7 +41,7 @@ def create_app() -> Flask:
+     manager.set_state(SystemState.INIT, "Initializing modules and databases...")
+     # Import blueprints after env/path wiring so legacy modules read correct paths.
+     from . import api, web
+-    from .routes import system_logs, admin_tenants, automation, dashboard
++    from .routes import system_logs, admin_tenants, automation, dashboard, upload, dashboard_bp
+     from .core.tool_loader import load_all_tools
+ 
+     load_all_tools()
+@@ -170,7 +170,9 @@ def create_app() -> Flask:
+     app.register_blueprint(system_logs.bp)
+     app.register_blueprint(admin_tenants.bp)
+     app.register_blueprint(automation.bp)
+-    app.register_blueprint(dashboard.dashboard_bp, url_prefix="/api/dashboard")
++    app.register_blueprint(dashboard)
++    app.register_blueprint(upload)
++    app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
+     try:
+         from .services.metrics_exporter import bp as metrics_bp
+ 
+diff --git a/app/core/logic.py b/app/core/logic.py
+index a0264a7..5a47426 100644
+--- a/app/core/logic.py
++++ b/app/core/logic.py
+@@ -1269,474 +1269,20 @@ def task_set_status(task_id: int, status: str, resolved_by: str = "") -> bool:
+ 
+ 
+ # ============================================================
+-# TIME TRACKING
+ # ============================================================
+-def _time_tenant(tenant_id: str) -> str:
+-    return (
+-        _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
+-    )
+-
+-
+-def _parse_iso(value: str) -> datetime:
+-    return datetime.fromisoformat(value)
+-
+-
+-def _duration_seconds(start_at: str, end_at: str) -> int:
+-    return max(0, int((_parse_iso(end_at) - _parse_iso(start_at)).total_seconds()))
+-
+-
+-def time_project_create(
+-    *,
+-    tenant_id: str,
+-    name: str,
+-    description: str = "",
+-    created_by: str = "",
+-) -> Dict[str, Any]:
+-    tenant_id = _time_tenant(tenant_id)
+-    name = normalize_component(name)
+-    description = (description or "").strip()
+-    created_by = normalize_component(created_by).lower()
+-    if not name:
+-        raise ValueError("project_name_required")
+-
+-    now = _now_iso()
+-    project_id = 0
+-    with _DB_LOCK:
+-        con = _db()
+-        try:
+-            cur = con.execute(
+-                """
+-                INSERT INTO time_projects(tenant_id, name, description, status, created_by, created_at, updated_at)
+-                VALUES (?,?,?,?,?,?,?)
+-                """,
+-                (tenant_id, name, description, "ACTIVE", created_by, now, now),
+-            )
+-            con.commit()
+-            project_id = int(cur.lastrowid or 0)
+-        finally:
+-            con.close()
+-    audit_log(
+-        user=created_by or "system",
+-        role="SYSTEM",
+-        action="TIME_PROJECT_CREATE",
+-        target=str(project_id),
+-        meta={"name": name},
+-        tenant_id=tenant_id,
+-    )
+-    return {
+-        "id": project_id,
+-        "tenant_id": tenant_id,
+-        "name": name,
+-        "description": description,
+-        "status": "ACTIVE",
+-        "created_by": created_by,
+-        "created_at": now,
+-        "updated_at": now,
+-    }
+-
+-
+-def time_project_list(
+-    *, tenant_id: str, status: str = "ACTIVE"
+-) -> List[Dict[str, Any]]:
+-    tenant_id = _time_tenant(tenant_id)
+-    status = normalize_component(status).upper() or "ACTIVE"
+-    with _DB_LOCK:
+-        con = _db()
+-        try:
+-            rows = con.execute(
+-                """
+-                SELECT * FROM time_projects
+-                WHERE tenant_id=? AND status=?
+-                ORDER BY name
+-                """,
+-                (tenant_id, status),
+-            ).fetchall()
+-            return [dict(r) for r in rows]
+-        finally:
+-            con.close()
+-
+-
+-def _time_project_lookup(
+-    con: sqlite3.Connection, tenant_id: str, project_id: Optional[int]
+-) -> Optional[dict]:
+-    if project_id is None:
+-        return None
+-    row = con.execute(
+-        "SELECT * FROM time_projects WHERE id=? AND tenant_id=?",
+-        (int(project_id), tenant_id),
+-    ).fetchone()
+-    return dict(row) if row else None
+-
+-
+-def time_entry_start(
+-    *,
+-    tenant_id: str,
+-    user: str,
+-    project_id: Optional[int] = None,
+-    note: str = "",
+-    started_at: Optional[str] = None,
+-) -> Dict[str, Any]:
+-    tenant_id = _time_tenant(tenant_id)
+-    user = normalize_component(user).lower()
+-    note = (note or "").strip()
+-    if not user:
+-        raise ValueError("user_required")
+-
+-    now = started_at or _now_iso()
+-    entry_id = 0
+-    with _DB_LOCK:
+-        con = _db()
+-        try:
+-            if project_id is not None and not _time_project_lookup(
+-                con, tenant_id, project_id
+-            ):
+-                raise ValueError("project_not_found")
+-            row = con.execute(
+-                "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL",
+-                (tenant_id, user),
+-            ).fetchone()
+-            if row:
+-                raise ValueError("running_timer_exists")
+-            cur = con.execute(
+-                """
+-                INSERT INTO time_entries(
+-                    tenant_id, project_id, user, start_at, end_at, duration_seconds, note,
+-                    approval_status, created_at, updated_at
+-                )
+-                VALUES (?,?,?,?,?,?,?,?,?,?)
+-                """,
+-                (
+-                    tenant_id,
+-                    project_id,
+-                    user,
+-                    now,
+-                    None,
+-                    None,
+-                    note,
+-                    "PENDING",
+-                    now,
+-                    now,
+-                ),
+-            )
+-            con.commit()
+-            entry_id = int(cur.lastrowid or 0)
+-        finally:
+-            con.close()
+-    audit_log(
+-        user=user,
+-        role="OPERATOR",
+-        action="TIME_ENTRY_START",
+-        target=str(entry_id),
+-        meta={"project_id": project_id or ""},
+-        tenant_id=tenant_id,
+-    )
+-    return time_entry_get(tenant_id=tenant_id, entry_id=entry_id) or {}
+-
+-
+-def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]:
+-    tenant_id = _time_tenant(tenant_id)
+-    with _DB_LOCK:
+-        con = _db()
+-        try:
+-            row = con.execute(
+-                """
+-                SELECT te.*, tp.name AS project_name
+-                FROM time_entries te
+-                LEFT JOIN time_projects tp ON tp.id = te.project_id
+-                WHERE te.tenant_id=? AND te.id=?
+-                """,
+-                (tenant_id, int(entry_id)),
+-            ).fetchone()
+-            if not row:
+-                return None
+-            entry = dict(row)
+-            if entry.get("end_at"):
+-                entry["duration_seconds"] = _duration_seconds(
+-                    entry["start_at"], entry["end_at"]
+-                )
+-            else:
+-                entry["duration_seconds"] = _duration_seconds(
+-                    entry["start_at"], _now_iso()
+-                )
+-            return entry
+-        finally:
+-            con.close()
+-
+-
+-def time_entry_stop(
+-    *,
+-    tenant_id: str,
+-    user: str,
+-    entry_id: Optional[int] = None,
+-    ended_at: Optional[str] = None,
+-) -> Dict[str, Any]:
+-    tenant_id = _time_tenant(tenant_id)
+-    user = normalize_component(user).lower()
+-    if not user:
+-        raise ValueError("user_required")
+-    end_ts = ended_at or _now_iso()
+-
+-    with _DB_LOCK:
+-        con = _db()
+-        try:
+-            if entry_id is None:
+-                row = con.execute(
+-                    """
+-                    SELECT id, start_at FROM time_entries
+-                    WHERE tenant_id=? AND user=? AND end_at IS NULL
+-                    """,
+-                    (tenant_id, user),
+-                ).fetchone()
+-            else:
+-                row = con.execute(
+-                    """
+-                    SELECT id, start_at FROM time_entries
+-                    WHERE tenant_id=? AND user=? AND id=?
+-                    """,
+-                    (tenant_id, user, int(entry_id)),
+-                ).fetchone()
+-            if not row:
+-                raise ValueError("no_running_timer")
+-            start_at = str(row["start_at"])
+-            if _parse_iso(end_ts) < _parse_iso(start_at):
+-                raise ValueError("invalid_time_range")
+-            duration = _duration_seconds(start_at, end_ts)
+-            con.execute(
+-                """
+-                UPDATE time_entries
+-                SET end_at=?, duration_seconds=?, updated_at=?
+-                WHERE id=? AND tenant_id=?
+-                """,
+-                (end_ts, duration, _now_iso(), int(row["id"]), tenant_id),
+-            )
+-            con.commit()
+-            stopped_id = int(row["id"])
+-        finally:
+-            con.close()
+-    audit_log(
+-        user=user,
+-        role="OPERATOR",
+-        action="TIME_ENTRY_STOP",
+-        target=str(stopped_id),
+-        meta={"duration_seconds": duration},
+-        tenant_id=tenant_id,
+-    )
+-    return time_entry_get(tenant_id=tenant_id, entry_id=stopped_id) or {}
+-
+-
+-def time_entry_update(
+-    *,
+-    tenant_id: str,
+-    entry_id: int,
+-    project_id: Optional[int] = None,
+-    start_at: Optional[str] = None,
+-    end_at: Optional[str] = None,
+-    note: Optional[str] = None,
+-    user: str = "",
+-) -> Dict[str, Any]:
+-    tenant_id = _time_tenant(tenant_id)
+-    user = normalize_component(user).lower()
+-
+-    with _DB_LOCK:
+-        con = _db()
+-        try:
+-            row = con.execute(
+-                "SELECT * FROM time_entries WHERE id=? AND tenant_id=?",
+-                (int(entry_id), tenant_id),
+-            ).fetchone()
+-            if not row:
+-                raise ValueError("entry_not_found")
+-            if project_id is not None and not _time_project_lookup(
+-                con, tenant_id, project_id
+-            ):
+-                raise ValueError("project_not_found")
+-            start_val = start_at or row["start_at"]
+-            end_val = end_at if end_at is not None else row["end_at"]
+-            duration_val = None
+-            if end_val:
+-                if _parse_iso(end_val) < _parse_iso(start_val):
+-                    raise ValueError("invalid_time_range")
+-                duration_val = _duration_seconds(start_val, end_val)
+-            con.execute(
+-                """
+-                UPDATE time_entries
+-                SET project_id=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
+-                WHERE id=? AND tenant_id=?
+-                """,
+-                (
+-                    project_id if project_id is not None else row["project_id"],
+-                    start_val,
+-                    end_val,
+-                    duration_val,
+-                    note if note is not None else row["note"],
+-                    _now_iso(),
+-                    int(entry_id),
+-                    tenant_id,
+-                ),
+-            )
+-            con.commit()
+-        finally:
+-            con.close()
+-    audit_log(
+-        user=user or "system",
+-        role="OPERATOR",
+-        action="TIME_ENTRY_EDIT",
+-        target=str(entry_id),
+-        meta={"project_id": project_id or "", "note_changed": note is not None},
+-        tenant_id=tenant_id,
+-    )
+-    return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
+-
+-
+-def time_entry_approve(
+-    *, tenant_id: str, entry_id: int, approved_by: str
+-) -> Dict[str, Any]:
+-    tenant_id = _time_tenant(tenant_id)
+-    approved_by = normalize_component(approved_by).lower()
+-    if not approved_by:
+-        raise ValueError("approved_by_required")
+-    now = _now_iso()
+-    with _DB_LOCK:
+-        con = _db()
+-        try:
+-            row = con.execute(
+-                "SELECT id FROM time_entries WHERE id=? AND tenant_id=?",
+-                (int(entry_id), tenant_id),
+-            ).fetchone()
+-            if not row:
+-                raise ValueError("entry_not_found")
+-            con.execute(
+-                """
+-                UPDATE time_entries
+-                SET approval_status=?, approved_by=?, approved_at=?, updated_at=?
+-                WHERE id=? AND tenant_id=?
+-                """,
+-                ("APPROVED", approved_by, now, now, int(entry_id), tenant_id),
+-            )
+-            con.commit()
+-        finally:
+-            con.close()
+-    audit_log(
+-        user=approved_by,
+-        role="ADMIN",
+-        action="TIME_ENTRY_APPROVE",
+-        target=str(entry_id),
+-        meta={},
+-        tenant_id=tenant_id,
+-    )
+-    return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
+-
+-
+-def time_entries_list(
+-    *,
+-    tenant_id: str,
+-    user: Optional[str] = None,
+-    start_at: Optional[str] = None,
+-    end_at: Optional[str] = None,
+-    limit: int = 500,
+-) -> List[Dict[str, Any]]:
+-    tenant_id = _time_tenant(tenant_id)
+-    user = normalize_component(user or "").lower()
+-    limit = max(1, min(int(limit), 2000))
+-
+-    clauses = ["te.tenant_id=?"]
+-    params: List[Any] = [tenant_id]
+-    if user:
+-        clauses.append("te.user=?")
+-        params.append(user)
+-    if start_at:
+-        clauses.append("te.start_at>=?")
+-        params.append(start_at)
+-    if end_at:
+-        clauses.append("te.start_at<=?")
+-        params.append(end_at)
+-
+-    where_sql = " AND ".join(clauses)
+-    with _DB_LOCK:
+-        con = _db()
+-        try:
+-            rows = con.execute(
+-                f"""
+-                SELECT te.*, tp.name AS project_name
+-                FROM time_entries te
+-                LEFT JOIN time_projects tp ON tp.id = te.project_id
+-                WHERE {where_sql}
+-                ORDER BY te.start_at DESC
+-                LIMIT ?
+-                """,
+-                (*params, limit),
+-            ).fetchall()
+-            entries = [dict(r) for r in rows]
+-            now = _now_iso()
+-            for entry in entries:
+-                if entry.get("end_at"):
+-                    entry["duration_seconds"] = _duration_seconds(
+-                        entry["start_at"], entry["end_at"]
+-                    )
+-                else:
+-                    entry["duration_seconds"] = _duration_seconds(
+-                        entry["start_at"], now
+-                    )
+-            return entries
+-        finally:
+-            con.close()
+-
+-
+-def time_entries_export_csv(
+-    *,
+-    tenant_id: str,
+-    user: Optional[str] = None,
+-    start_at: Optional[str] = None,
+-    end_at: Optional[str] = None,
+-    limit: int = 2000,
+-) -> str:
+-    entries = time_entries_list(
+-        tenant_id=tenant_id,
+-        user=user,
+-        start_at=start_at,
+-        end_at=end_at,
+-        limit=limit,
+-    )
+-    output = io.StringIO()
+-    writer = csv.writer(output)
+-    writer.writerow(
+-        [
+-            "entry_id",
+-            "project_id",
+-            "project_name",
+-            "user",
+-            "start_at",
+-            "end_at",
+-            "duration_seconds",
+-            "duration_hours",
+-            "note",
+-            "approval_status",
+-            "approved_by",
+-            "approved_at",
+-        ]
+-    )
+-    for entry in entries[:MAX_CSV_ROWS]:
+-        duration_seconds = int(entry.get("duration_seconds") or 0)
+-        writer.writerow(
+-            [
+-                entry.get("id"),
+-                entry.get("project_id"),
+-                entry.get("project_name") or "",
+-                entry.get("user"),
+-                entry.get("start_at"),
+-                entry.get("end_at") or "",
+-                duration_seconds,
+-                round(duration_seconds / 3600.0, 2),
+-                entry.get("note") or "",
+-                entry.get("approval_status") or "",
+-                entry.get("approved_by") or "",
+-                entry.get("approved_at") or "",
+-            ]
+-        )
+-    return output.getvalue()
+-
+-
++# TIME TRACKING
+ # ============================================================
++from app.modules.time.logic import (
++    time_project_create,
++    time_project_list,
++    time_entry_start,
++    time_entry_get,
++    time_entry_stop,
++    time_entry_update,
++    time_entry_approve,
++    time_entries_list,
++    time_entries_export_csv
++)
+ # REVIEW LOCKS (soft locking for concurrent review)
+ # ============================================================
+ _REVIEW_LOCK_TTL_SECONDS = int(_env("REVIEW_LOCK_TTL_SECONDS", "90") or 90)
+diff --git a/app/web.py b/app/web.py
+index 9ae7a55..e23a716 100644
+--- a/app/web.py
++++ b/app/web.py
+@@ -3069,65 +3069,11 @@ def api_mail_eml():
+ 
+ @bp.route("/")
+ def index():
+-    return redirect(url_for("web.dashboard_page"))
++    return redirect(url_for("dashboard.dashboard_page"))
+ 
+ 
+-@bp.get("/dashboard")
+ @login_required
+-def dashboard_page():
+-    if _is_hx_partial_request():
+-        return _render_sovereign_tool(
+-            "dashboard",
+-            "Dashboard",
+-            "Dashboard-Widgets werden geladen...",
+-            active_tab="dashboard",
+-        )
+-    # Get items for dashboard.html
+-    auth_db = current_app.extensions["auth_db"]
+-    con = auth_db._db()
+-    tenant = _norm_tenant(current_tenant() or "default")
+-    items = []
+-    if (PENDING_DIR / tenant).exists():
+-        items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
+-    
+-    meta = {}
+-    for token in items:
+-        m_path = PENDING_DIR / tenant / token / "meta.json"
+-        if m_path.exists():
+-            with open(m_path, "r") as f:
+-                meta[token] = json.load(f)
+-        else:
+-            meta[token] = {"filename": "Unbekannt", "status": "PENDING"}
+-
+-    # Get recent from core
+-    recent = []
+-    if callable(_core_get("get_recent_docs")):
+-        recent = _core_get("get_recent_docs")(tenant, limit=6)
+-
+-    return _render_base(
+-        "dashboard.html",
+-        active_tab="dashboard",
+-        items=items,
+-        meta=meta,
+-        recent=recent,
+-        suggestions={"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
+-        keywords=["Maler", "Sanitär", "Elektro"]
+-    )
+ 
+-
+-@bp.route("/upload", methods=["GET"])
+-@login_required
+-def upload_page():
+-    return _render_sovereign_tool(
+-        "upload",
+-        "Upload",
+-        "Upload-Pipeline wird geladen...",
+-        active_tab="upload",
+-    )
+-
+-
+-@bp.get("/tasks")
+-@login_required
+ def tasks_page():
+     return _render_sovereign_tool(
+         "tasks",
+@@ -3172,58 +3118,6 @@ def upload():
+     tenant = _norm_tenant(current_tenant() or "default")
+     
+     # Task 114: Disk Quota Management (100MB limit per tenant for now)
+-    QUOTA_LIMIT = 100 * 1024 * 1024 
+-    current_usage = sum(f.stat().st_size for f in (EINGANG / tenant).glob("*") if f.is_file())
+-    if current_usage > QUOTA_LIMIT:
+-        return jsonify(error="quota_exceeded", message="Speicherlimit für Mandant erreicht."), 403
+-
+-    results = []
+-    
+-    from app.core.upload_pipeline import process_upload
+-
+-    for f in files:
+-        if not f.filename: continue
+-        filename = _safe_filename(f.filename)
+-        
+-        tenant_in = EINGANG / tenant
+-        tenant_in.mkdir(parents=True, exist_ok=True)
+-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+-        dest = tenant_in / f"{ts}__{filename}"
+-        f.save(dest)
+-        
+-        # Phase 5: ClamAV Malware Scan
+-        if not scan_file_stream(dest):
+-            dest.unlink()
+-            return jsonify(error="malware_detected", message="Sicherheitsrisiko erkannt."), 403
+-        
+-        is_safe, info = process_upload(dest, tenant)
+-        if not is_safe:
+-            current_app.logger.warning(f"Upload rejected: {filename} - {info}")
+-            continue
+-            
+-        token = analyze_to_pending(dest)
+-        try:
+-            p = read_pending(token) or {}
+-            p["tenant"] = tenant
+-            p["file_hash"] = info # info contains the SHA256 hash here
+-            write_pending(token, p)
+-        except Exception: pass
+-        
+-        results.append({"token": token, "filename": filename})
+-        
+-    return jsonify(tokens=results, tenant=tenant)
+-
+-
+-@bp.route("/review/<token>/delete", methods=["POST"])
+-@csrf_protected
+-def review_delete(token: str):
+-    try:
+-        delete_pending(token)
+-    except Exception:
+-        pass
+-    return redirect(url_for("web.index"))
+-
+-
+ @bp.route("/file/<token>")
+ def file_preview(token: str):
+     p = read_pending(token)
+@@ -3464,31 +3358,8 @@ def assistant():
+                 results.append(r)
+         except Exception:
+             pass
+-    html = """<div class='card p-5'>
+-      <div class='text-lg font-semibold mb-1'>Assistant</div>
+-      <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
+-        <input class='w-full rounded-xl p-2 input' name='q' value='{q}' placeholder='Suche…' />
+-        <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{kdnr}' placeholder='Kdnr optional' />
+-        <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
+-      </form>
+-      <div class='muted text-xs'>Treffer: {n}</div>
+-    </div>""".format(
+-        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
+-    )
+-    return _render_base(html, active_tab="assistant")
+-
++    html = """<div class="card p-5"></div>"""
+ 
+-@bp.route("/projects")
+-@login_required
+-def projects_list():
+-    if _is_hx_partial_request():
+-        return _render_sovereign_tool(
+-            "projects",
+-            "Projekte",
+-            "Projektboard wird geladen...",
+-            active_tab="projects",
+-        )
+-    from app.modules.projects.logic import ProjectManager
+     pm = ProjectManager(current_app.extensions["auth_db"])
+     con = current_app.extensions["auth_db"]._db()
+     try:
+@@ -3658,6 +3529,25 @@ def api_list_tools():
+     return jsonify(ok=True, tools=registry.list())
+ 
+ 
++
++@bp.route("/admin/audit/verify", methods=["POST"])
++@login_required
++@require_role(["DEV", "ADMIN"])
++def admin_audit_verify():
++    from app.core.audit import vault
++    ok, errors = vault.verify_chain()
++    if ok:
++        return '<div class="badge pulse" style="background:rgba(16,185,129,0.1); color:var(--color-success); border-color:rgba(16,185,129,0.2);">CHAIN VERIFIZIERT (OK)</div>'
++    else:
++        return f'<div class="badge" style="background:rgba(239,68,68,0.1); color:var(--color-danger); border-color:rgba(239,68,68,0.2);">CHAIN MANIPULIERT ({len(errors)} FEHLER)</div>'
++
++
++
++
++@bp.route("/time")
++@login_required
++def time_tracking():
++    return _render_base("Time Tracking Placeholder", active_tab="time")
+ @bp.get("/api/system/status")
+ @login_required
+ def api_system_status():
+@@ -3671,7 +3561,6 @@ def api_system_status():
+         return render_template("components/system_status.html", **status)
+     return jsonify(ok=True, status=status)
+ 
+-
+ @bp.get("/api/outbound/status")
+ @login_required
+ def api_outbound_status():
+@@ -3679,36 +3568,3 @@ def api_outbound_status():
+     from .api import outbound_status as _outbound_status
+ 
+     return _outbound_status()
+-
+-
+-@bp.route("/admin/audit/verify", methods=["POST"])
+-@login_required
+-@require_role(["DEV", "ADMIN"])
+-def admin_audit_verify():
+-    from app.core.audit import vault
+-    ok, errors = vault.verify_chain()
+-    if ok:
+-        return '<div class="badge pulse" style="background:rgba(16,185,129,0.1); color:var(--color-success); border-color:rgba(16,185,129,0.2);">CHAIN VERIFIZIERT (OK)</div>'
+-    else:
+-        return f'<div class="badge" style="background:rgba(239,68,68,0.1); color:var(--color-danger); border-color:rgba(239,68,68,0.2);">CHAIN MANIPULIERT ({len(errors)} FEHLER)</div>'
+-
+-
+-@bp.route("/time")
+-@login_required
+-def time_tracking():
+-    if _is_hx_partial_request():
+-        return _render_sovereign_tool(
+-            "time",
+-            "Zeiterfassung",
+-            "Zeiterfassung wird geladen...",
+-            active_tab="time",
+-        )
+-    if not callable(time_entry_list):
+-        html = """<div class='rounded-2xl bg-slate-900/60 border border-slate-800 p-5 card'>
+-          <div class='text-lg font-semibold'>Time Tracking</div>
+-          <div class='muted text-sm mt-2'>Time Tracking ist im Core nicht verfügbar.</div>
+-        </div>"""
+-        return _render_base(html, active_tab="time")
+-    return _render_base(
+-        render_template_string(HTML_TIME, role=current_role()), active_tab="time"
+-    )

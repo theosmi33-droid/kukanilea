@@ -13,6 +13,7 @@ SKIP_HEALTHCHECK=0
 FAIL_COUNT=0
 PASS_COUNT=0
 WARN_COUNT=0
+REPO="${REPO:-}"
 
 declare -a RESULT_LINES=()
 
@@ -27,6 +28,27 @@ Options:
   --out <path>        Custom markdown output path
   --help              Show this help
 USAGE
+}
+
+detect_repo() {
+  local repo=""
+  local remote_url=""
+
+  if command -v gh >/dev/null 2>&1; then
+    repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)"
+    if [[ -n "$repo" ]]; then
+      printf '%s\n' "$repo"
+      return 0
+    fi
+  fi
+
+  remote_url="$(git -C "$ROOT" config --get remote.origin.url 2>/dev/null || true)"
+  if [[ "$remote_url" =~ github\.com[:/]([^/]+/[^/.]+)(\.git)?$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -58,6 +80,20 @@ done
 if [[ "$FAST_MODE" -eq 1 ]]; then
   SKIP_HEALTHCHECK=1
   SKIP_PYTEST=1
+fi
+
+if ! command -v rg >/dev/null 2>&1; then
+  echo "Error: rg (ripgrep) is not installed. Please install it to continue." >&2
+  exit 1
+fi
+
+if [[ -z "$REPO" ]]; then
+  REPO="$(detect_repo || true)"
+fi
+
+if [[ -z "$REPO" ]]; then
+  echo "Error: unable to detect GitHub repository slug. Set REPO=owner/name." >&2
+  exit 1
 fi
 
 mkdir -p "$(dirname "$OUT_FILE")"
@@ -143,8 +179,8 @@ rm -f "$tmp"
 if command -v gh >/dev/null 2>&1; then
   tmp="$(mktemp)"
   append "## Open PRs"
-  append '`gh pr list --repo theosmi33-droid/kukanilea --state open --json number,title,headRefName`'
-  if capture_cmd "gh pr list --repo theosmi33-droid/kukanilea --state open --json number,title,headRefName" "$tmp"; then
+  append "\`gh pr list --repo $REPO --state open --json number,title,headRefName\`"
+  if capture_cmd "gh pr list --repo $REPO --state open --json number,title,headRefName" "$tmp"; then
     render_output_block "$tmp"
     if command -v jq >/dev/null 2>&1; then
       pr_count="$(jq 'length' "$tmp" 2>/dev/null || echo "9999")"
@@ -171,8 +207,8 @@ fi
 if command -v gh >/dev/null 2>&1; then
   tmp="$(mktemp)"
   append "## Main CI Status"
-  append '`gh run list --repo theosmi33-droid/kukanilea --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion`'
-  if capture_cmd "gh run list --repo theosmi33-droid/kukanilea --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion" "$tmp"; then
+  append "\`gh run list --repo $REPO --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion\`"
+  if capture_cmd "gh run list --repo $REPO --branch main --limit 12 --json workflowName,displayTitle,headBranch,status,conclusion" "$tmp"; then
     render_output_block "$tmp"
     if command -v jq >/dev/null 2>&1; then
       if main_count="$(jq 'length' "$tmp" 2>/dev/null)" && bad_count="$(jq '[.[] | select(.status!="completed" or .conclusion!="success")] | length' "$tmp" 2>/dev/null)"; then
@@ -252,8 +288,9 @@ rm -f "$tmp"
 # Gate 9: Dark mode scan
 tmp="$(mktemp)"
 append "## White-Mode Scan"
-append '`rg -n "dark:|themeToggle|classList\\.add\\(\\x27dark\\x27\\)|classList\\.toggle\\(\\x27dark\\x27\\)" app/templates app/static --glob "!app/static/vendor/**" --glob "!app/static/js/tailwindcss.min.js" || true`'
-capture_cmd "rg -n \"dark:|themeToggle|classList\\.add\\('dark'\\)|classList\\.toggle\\('dark'\\)\" app/templates app/static --glob '!app/static/vendor/**' --glob '!app/static/js/tailwindcss.min.js' || true" "$tmp"
+DARK_PATTERN="dark:|themeToggle|classList\\.(add|toggle)\\((\"dark\"|'dark')\\)"
+append "\`rg -n \"$DARK_PATTERN\" app/templates app/static --glob \"!app/static/vendor/**\" --glob \"!app/static/js/tailwindcss.min.js\" || true\`"
+capture_cmd "rg -n \"$DARK_PATTERN\" app/templates app/static --glob '!app/static/vendor/**' --glob '!app/static/js/tailwindcss.min.js' || true" "$tmp"
 render_output_block "$tmp"
 if [[ ! -s "$tmp" ]]; then
   record_result "White-Mode Scan" "PASS" "no dark-mode toggles/patterns found"
@@ -291,8 +328,8 @@ rm -f "$tmp"
 if command -v gh >/dev/null 2>&1; then
   tmp="$(mktemp)"
   append "## Branch Protection"
-  append '`gh api repos/theosmi33-droid/kukanilea/branches/main/protection --jq ".required_pull_request_reviews.required_approving_review_count"`'
-  if capture_cmd "gh api repos/theosmi33-droid/kukanilea/branches/main/protection --jq '.required_pull_request_reviews.required_approving_review_count'" "$tmp"; then
+  append "\`gh api repos/$REPO/branches/main/protection --jq \".required_pull_request_reviews.required_approving_review_count\"\`"
+  if capture_cmd "gh api repos/$REPO/branches/main/protection --jq '.required_pull_request_reviews.required_approving_review_count'" "$tmp"; then
     render_output_block "$tmp"
     approvals="$(tr -d ' \r\n' < "$tmp")"
     if [[ "$approvals" == "1" ]]; then
