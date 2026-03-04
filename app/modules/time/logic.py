@@ -2,19 +2,53 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 # We need to import core functionality, but since we are decoupling,
 # we expect these to be passed or available via app.core
-from app import core as legacy_core
+try:
+    from app import core as legacy_core
+    from app.core.logic import _effective_tenant, TENANT_DEFAULT
+    _DB_LOCK = getattr(legacy_core, "_DB_LOCK", threading.Lock())
+    # Ensure these are available on legacy_core even if imported from logic
+    if not hasattr(legacy_core, "_db"):
+        from app.core.db_utils import _db
+        legacy_core._db = _db # type: ignore
+    if not hasattr(legacy_core, "normalize_component"):
+        from app.core.logic import normalize_component
+        legacy_core.normalize_component = normalize_component # type: ignore
+    if not hasattr(legacy_core, "audit_log"):
+        from app.core.logic import audit_log
+        legacy_core.audit_log = audit_log # type: ignore
+except ImportError:
+    class MockCore:
+        def _db(self):
+            path = os.environ.get("DB_FILENAME", "core.sqlite3")
+            conn = sqlite3.connect(path)
+            conn.row_factory = sqlite3.Row
+            return conn
+        def normalize_component(self, x): return str(x or "").strip()
+        def audit_log(self, **kwargs): pass
+        def _run_write_txn(self, fn):
+            with self._db() as con:
+                res = fn(con)
+                con.commit()
+                return res
+        def _run_read_txn(self, fn):
+            with self._db() as con:
+                return fn(con)
+    legacy_core = MockCore() # type: ignore
+    _effective_tenant = lambda x: x or "default"
+    TENANT_DEFAULT = "default"
+    _DB_LOCK = threading.Lock()
 
 # Re-implementing small helpers or importing from core
 def _time_tenant(tenant_id: str) -> str:
-    return (
-        legacy_core._effective_tenant(tenant_id) or legacy_core._effective_tenant(legacy_core.TENANT_DEFAULT) or "default"
-    )
+    return _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
 
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value)
@@ -41,7 +75,7 @@ def time_project_create(
 
     now = _now_iso()
     project_id = 0
-    with legacy_core._DB_LOCK:
+    with _DB_LOCK:
         con = legacy_core._db()
         try:
             cur = con.execute(
@@ -79,7 +113,7 @@ def time_project_list(
 ) -> List[Dict[str, Any]]:
     tenant_id = _time_tenant(tenant_id)
     status = legacy_core.normalize_component(status).upper() or "ACTIVE"
-    with legacy_core._DB_LOCK:
+    with _DB_LOCK:
         con = legacy_core._db()
         try:
             rows = con.execute(
@@ -121,7 +155,7 @@ def time_entry_start(
 
     now = started_at or _now_iso()
     entry_id = 0
-    with legacy_core._DB_LOCK:
+    with _DB_LOCK:
         con = legacy_core._db()
         try:
             if project_id is not None and not _time_project_lookup(
@@ -129,7 +163,7 @@ def time_entry_start(
             ):
                 raise ValueError("project_not_found")
             row = con.execute(
-                "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL",
+                "SELECT id FROM time_entries WHERE tenant_id=? AND username=? AND end_at IS NULL",
                 (tenant_id, user),
             ).fetchone()
             if row:
@@ -171,7 +205,7 @@ def time_entry_start(
 
 def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]:
     tenant_id = _time_tenant(tenant_id)
-    with legacy_core._DB_LOCK:
+    with _DB_LOCK:
         con = legacy_core._db()
         try:
             row = con.execute(
@@ -211,14 +245,14 @@ def time_entry_stop(
         raise ValueError("user_required")
     end_ts = ended_at or _now_iso()
 
-    with legacy_core._DB_LOCK:
+    with _DB_LOCK:
         con = legacy_core._db()
         try:
             if entry_id is None:
                 row = con.execute(
                     """
                     SELECT id, start_at FROM time_entries
-                    WHERE tenant_id=? AND user=? AND end_at IS NULL
+                    WHERE tenant_id=? AND username=? AND end_at IS NULL
                     """,
                     (tenant_id, user),
                 ).fetchone()
@@ -226,7 +260,7 @@ def time_entry_stop(
                 row = con.execute(
                     """
                     SELECT id, start_at FROM time_entries
-                    WHERE tenant_id=? AND user=? AND id=?
+                    WHERE tenant_id=? AND username=? AND id=?
                     """,
                     (tenant_id, user, int(entry_id)),
                 ).fetchone()
@@ -239,7 +273,7 @@ def time_entry_stop(
             con.execute(
                 """
                 UPDATE time_entries
-                SET end_at=?, duration_seconds=?, updated_at=?
+                SET end_at=?, duration=?, updated_at=?
                 WHERE id=? AND tenant_id=?
                 """,
                 (end_ts, duration, _now_iso(), int(row["id"]), tenant_id),
@@ -271,7 +305,7 @@ def time_entry_update(
     tenant_id = _time_tenant(tenant_id)
     user = legacy_core.normalize_component(user).lower()
 
-    with legacy_core._DB_LOCK:
+    with _DB_LOCK:
         con = legacy_core._db()
         try:
             row = con.execute(
@@ -294,7 +328,7 @@ def time_entry_update(
             con.execute(
                 """
                 UPDATE time_entries
-                SET project_id=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
+                SET project_id=?, start_at=?, end_at=?, duration=?, note=?, updated_at=?
                 WHERE id=? AND tenant_id=?
                 """,
                 (
@@ -329,7 +363,7 @@ def time_entry_approve(
     if not approved_by:
         raise ValueError("approved_by_required")
     now = _now_iso()
-    with legacy_core._DB_LOCK:
+    with _DB_LOCK:
         con = legacy_core._db()
         try:
             row = con.execute(
@@ -374,7 +408,7 @@ def time_entries_list(
     clauses = ["te.tenant_id=?"]
     params: List[Any] = [tenant_id]
     if user:
-        clauses.append("te.user=?")
+        clauses.append("te.username=?")
         params.append(user)
     if start_at:
         clauses.append("te.start_at>=?")
@@ -384,7 +418,7 @@ def time_entries_list(
         params.append(end_at)
 
     where_sql = " AND ".join(clauses)
-    with legacy_core._DB_LOCK:
+    with _DB_LOCK:
         con = legacy_core._db()
         try:
             rows = con.execute(

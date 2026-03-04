@@ -6,7 +6,10 @@ import math
 import struct
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+from flask import has_request_context, session
 
 from app.ai.embeddings import generate_embedding
 
@@ -15,6 +18,16 @@ DEFAULT_COLUMN_SPECS = (
     {"name": "Doing", "color": "#f59e0b"},
     {"name": "Done", "color": "#16a34a"},
 )
+
+ROLE_ORDER = ["READONLY", "MITARBEITER", "MANAGER", "ADMIN", "DEV"]
+STATUS_TO_COLUMN = {
+    "OPEN": "To Do",
+    "IN_PROGRESS": "Doing",
+    "DONE": "Done",
+    "REJECTED": "Rejected",
+}
+COLUMN_TO_STATUS = {value: key for key, value in STATUS_TO_COLUMN.items()}
+VALID_PRIORITIES = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
 
 
 class ProjectManager:
@@ -1352,51 +1365,211 @@ class ProjectManager:
     # ---------------------------------------------------------------------
     # Legacy task-table compatibility for existing web flows.
     # ---------------------------------------------------------------------
-    def create_task(
-        self, board_id: str, title: str, column: str = "To Do", **kwargs: Any
-    ) -> str:
-        t_id = str(uuid.uuid4())
-        now = self._now()
+    def create_task(self, board_id: str, title: str, column: str = "To Do", **kwargs: Any) -> str:
+        actor, role, tenant_id = self._context_identity()
+        status = COLUMN_TO_STATUS.get(column, "OPEN")
+        task_id = self.create_team_task(
+            tenant_id=tenant_id,
+            actor=actor,
+            actor_role=role,
+            title=title,
+            description=str(kwargs.get("content") or ""),
+            priority=str(kwargs.get("priority") or "MEDIUM"),
+            due_at=str(kwargs.get("due") or ""),
+            assigned_to=str(kwargs.get("assigned") or actor),
+            board_id=board_id,
+            source_type=str(kwargs.get("source_type") or ""),
+            source_ref=str(kwargs.get("source_ref") or ""),
+        )
+        if status != "OPEN":
+            self.update_task_column(task_id, STATUS_TO_COLUMN[status])
+        return task_id
+
+    def _fetch_task(self, con, task_id: str) -> dict[str, Any] | None:
+        row = con.execute("SELECT * FROM team_tasks WHERE id=?", (task_id,)).fetchone()
+        return dict(row) if row else None
+
+    def _transition_status(
+        self,
+        con,
+        *,
+        task: dict[str, Any],
+        actor: str,
+        actor_role: str,
+        new_status: str,
+        reason: str = "",
+    ) -> None:
+        current = str(task.get("status") or "OPEN")
+        task_id = str(task["id"])
+        tenant_id = str(task["tenant_id"])
+        assignee = str(task.get("assigned_to") or "")
+        title = str(task.get("title") or "")
+        allowed_for_actor = (
+            actor == assignee
+            or actor == str(task.get("created_by") or "")
+            or self._role_allows(actor_role, "MANAGER")
+        )
+        if not allowed_for_actor:
+            raise PermissionError("task_action_forbidden")
+        if new_status == "REJECTED" and not reason.strip():
+            raise ValueError("reject_reason_required")
+        if new_status == "DONE" and current not in {"IN_PROGRESS", "OPEN"}:
+            raise ValueError("invalid_transition_done")
+        if new_status == "IN_PROGRESS" and current not in {"OPEN", "IN_PROGRESS"}:
+            raise ValueError("invalid_transition_in_progress")
+        if new_status == "REJECTED" and current == "DONE":
+            raise ValueError("invalid_transition_rejected")
+
+        con.execute(
+            "UPDATE team_tasks SET status=?, rejection_reason=?, updated_at=? WHERE id=?",
+            (
+                new_status,
+                reason.strip() if new_status == "REJECTED" else None,
+                self._now_iso(),
+                task_id,
+            ),
+        )
+        self._log_task_event(
+            con,
+            task_id=task_id,
+            tenant_id=tenant_id,
+            actor=actor,
+            action=f"STATUS_{new_status}",
+            reason=reason,
+        )
+        self._audit_activity(
+            con,
+            tenant_id=tenant_id,
+            username=actor,
+            action="TASK_STATUS_CHANGED",
+            resource=f"team_task:{task_id}",
+            details=f"{current}->{new_status}",
+        )
+        self._notify(
+            con,
+            tenant_id=tenant_id,
+            username=str(task.get("created_by") or ""),
+            task_id=task_id,
+            kind="TASK_STATUS",
+            message=f"Aufgabe '{title[:80]}' ist jetzt {new_status}.",
+        )
+
+    def execute_task_command(self, command: dict[str, Any]) -> dict[str, Any]:
+        action = str(command.get("action") or "").strip().lower()
+        if not action:
+            raise ValueError("action_required")
+
+        actor, actor_role, tenant_id = self._context_identity()
         con = self.db._db()
         try:
-            con.execute(
-                """INSERT INTO tasks(id, board_id, column_name, title, content, assigned_user, due_date, priority, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (
-                    t_id,
-                    board_id,
-                    column,
-                    title,
-                    kwargs.get("content"),
-                    kwargs.get("assigned"),
-                    kwargs.get("due"),
-                    kwargs.get("priority"),
-                    now,
-                ),
-            )
-            tenant_row = con.execute(
-                """SELECT p.tenant_id
-                   FROM boards b
-                   JOIN projects p ON p.id = b.project_id
-                   WHERE b.id = ?""",
-                (board_id,),
-            ).fetchone()
-            tenant_id = (
-                str(tenant_row["tenant_id"]) if tenant_row else kwargs.get("tenant_id", "SYSTEM")
-            )
-            con.execute(
-                "INSERT INTO audit_log(ts, tenant_id, username, action, resource, details) VALUES (?,?,?,?,?,?)",
-                (
-                    now,
-                    tenant_id,
-                    kwargs.get("username") or "system",
-                    "TASK_CREATED",
-                    t_id,
-                    f"Task '{title}' created in '{column}'.",
-                ),
-            )
+            if action == "create":
+                task_id = self.create_team_task(
+                    tenant_id=tenant_id,
+                    actor=actor,
+                    actor_role=actor_role,
+                    title=str(command.get("title") or ""),
+                    description=str(command.get("description") or ""),
+                    priority=str(command.get("priority") or "MEDIUM"),
+                    due_at=str(command.get("due_at") or ""),
+                    assigned_to=str(command.get("assigned_to") or actor),
+                    board_id=str(command.get("board_id") or "") or None,
+                    source_type=str(command.get("source_type") or ""),
+                    source_ref=str(command.get("source_ref") or ""),
+                )
+                return {"ok": True, "task_id": task_id}
+
+            task_id = str(command.get("task_id") or "").strip()
+            if not task_id:
+                raise ValueError("task_id_required")
+            task = self._fetch_task(con, task_id)
+            if not task:
+                raise ValueError("task_not_found")
+            if str(task.get("tenant_id") or "") != tenant_id and not self._role_allows(
+                actor_role, "ADMIN"
+            ):
+                raise PermissionError("cross_tenant_forbidden")
+
+            if action in {"accept", "start"}:
+                self._transition_status(
+                    con,
+                    task=task,
+                    actor=actor,
+                    actor_role=actor_role,
+                    new_status="IN_PROGRESS",
+                )
+            elif action in {"complete", "done"}:
+                self._transition_status(
+                    con,
+                    task=task,
+                    actor=actor,
+                    actor_role=actor_role,
+                    new_status="DONE",
+                )
+            elif action == "reject":
+                self._transition_status(
+                    con,
+                    task=task,
+                    actor=actor,
+                    actor_role=actor_role,
+                    new_status="REJECTED",
+                    reason=str(command.get("reason") or ""),
+                )
+            elif action == "delegate":
+                to_user = str(command.get("to_user") or "").strip()
+                reason = str(command.get("reason") or "").strip()
+                if not to_user:
+                    raise ValueError("delegate_user_required")
+                if not self._user_exists(con, tenant_id, to_user):
+                    raise ValueError("delegate_target_not_registered")
+                assignee = str(task.get("assigned_to") or "")
+                if actor != assignee and not self._role_allows(actor_role, "MANAGER"):
+                    raise PermissionError("delegate_forbidden")
+                con.execute(
+                    "UPDATE team_tasks SET assigned_to=?, status='OPEN', updated_at=? WHERE id=?",
+                    (to_user, self._now_iso(), task_id),
+                )
+                self._log_task_event(
+                    con,
+                    task_id=task_id,
+                    tenant_id=tenant_id,
+                    actor=actor,
+                    action="TASK_DELEGATED",
+                    reason=reason,
+                    from_user=assignee,
+                    to_user=to_user,
+                )
+                self._audit_activity(
+                    con,
+                    tenant_id=tenant_id,
+                    username=actor,
+                    action="TASK_DELEGATED",
+                    resource=f"team_task:{task_id}",
+                    details=f"{assignee}->{to_user}",
+                )
+                self._notify(
+                    con,
+                    tenant_id=tenant_id,
+                    username=to_user,
+                    task_id=task_id,
+                    kind="TASK_DELEGATED",
+                    message=f"Dir wurde Aufgabe '{str(task.get('title') or '')[:100]}' delegiert.",
+                )
+            elif action == "mark_notification_read":
+                notification_id = int(command.get("notification_id") or 0)
+                if notification_id <= 0:
+                    raise ValueError("notification_id_required")
+                con.execute(
+                    """
+                    UPDATE team_task_notifications SET is_read=1
+                    WHERE id=? AND tenant_id=? AND username=?
+                    """,
+                    (notification_id, tenant_id, actor),
+                )
+            else:
+                raise ValueError(f"unsupported_action:{action}")
+
             con.commit()
-            return t_id
+            return {"ok": True, "task_id": task_id}
         finally:
             con.close()
 
@@ -1448,14 +1621,103 @@ class ProjectManager:
         finally:
             con.close()
 
-    def list_tasks(self, board_id: str) -> List[Dict[str, Any]]:
+    def _load_task_attachments(self, con, tenant_id: str) -> dict[str, list[dict[str, Any]]]:
+        rows = con.execute(
+            """
+            SELECT task_id, kind, value, scan_status, metadata_json
+            FROM team_task_attachments
+            WHERE tenant_id=?
+            ORDER BY created_at DESC
+            """,
+            (tenant_id,),
+        ).fetchall()
+        out: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            key = str(row["task_id"])
+            out.setdefault(key, []).append(
+                {
+                    "kind": str(row["kind"] or ""),
+                    "value": str(row["value"] or ""),
+                    "scan_status": str(row["scan_status"] or ""),
+                    "metadata": json.loads(str(row["metadata_json"] or "{}")),
+                }
+            )
+        return out
+
+    def list_tasks(self, board_id: str) -> dict[str, Any]:
+        actor, role, tenant_id = self._context_identity()
         con = self.db._db()
         try:
-            rows = con.execute(
-                "SELECT * FROM tasks WHERE board_id = ? ORDER BY created_at ASC",
-                (board_id,),
+            team_rows = con.execute(
+                """
+                SELECT *
+                FROM team_tasks
+                WHERE tenant_id=?
+                ORDER BY
+                  CASE priority
+                    WHEN 'CRITICAL' THEN 0
+                    WHEN 'HIGH' THEN 1
+                    WHEN 'MEDIUM' THEN 2
+                    ELSE 3
+                  END ASC,
+                  COALESCE(due_at, '9999-12-31T23:59:59') ASC,
+                  created_at DESC
+                """,
+                (tenant_id,),
             ).fetchall()
-            return [dict(r) for r in rows]
+            attachments_map = self._load_task_attachments(con, tenant_id)
+            notifications = [
+                dict(row)
+                for row in con.execute(
+                    """
+                    SELECT id, task_id, kind, message, is_read, created_at
+                    FROM team_task_notifications
+                    WHERE tenant_id=? AND username=?
+                    ORDER BY id DESC
+                    LIMIT 100
+                    """,
+                    (tenant_id, actor),
+                ).fetchall()
+            ]
+            users = [
+                str(row["username"] or "")
+                for row in con.execute(
+                    "SELECT username FROM memberships WHERE tenant_id=? ORDER BY username",
+                    (tenant_id,),
+                ).fetchall()
+            ]
+
+            tasks: list[dict[str, Any]] = []
+            for row in team_rows:
+                task = dict(row)
+                task_id = str(task["id"])
+                assignee = str(task.get("assigned_to") or "")
+                task["column_name"] = STATUS_TO_COLUMN.get(str(task.get("status") or "OPEN"), "To Do")
+                task["content"] = str(task.get("description") or "")
+                task["assigned_user"] = assignee
+                task["is_incoming"] = assignee == actor and str(task.get("status") or "") == "OPEN"
+                task["attachments"] = attachments_map.get(task_id, [])
+                task["can_accept"] = assignee == actor and str(task.get("status") or "") == "OPEN"
+                task["can_reject"] = assignee == actor and str(task.get("status") or "") in {"OPEN", "IN_PROGRESS"}
+                task["can_delegate"] = assignee == actor or self._role_allows(role, "MANAGER")
+                task["can_complete"] = assignee == actor and str(task.get("status") or "") in {"OPEN", "IN_PROGRESS"}
+                tasks.append(task)
+
+            if not tasks:
+                legacy_rows = con.execute(
+                    "SELECT * FROM tasks WHERE board_id = ? ORDER BY created_at DESC",
+                    (board_id,),
+                ).fetchall()
+                tasks = [dict(r) for r in legacy_rows]
+
+            return {
+                "items": tasks,
+                "inbox": [t for t in tasks if bool(t.get("is_incoming"))],
+                "notifications": notifications,
+                "badge_count": len([n for n in notifications if int(n.get("is_read") or 0) == 0]),
+                "users": users,
+                "viewer": {"user": actor, "role": role, "tenant_id": tenant_id},
+            }
         finally:
             con.close()
 
