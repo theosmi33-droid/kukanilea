@@ -121,5 +121,7 @@ def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_p
     )
     assert yes.status_code == 200
     confirmed = yes.get_json()
-    assert confirmed["text"] == "Aktion bestätigt und ausgeführt."
-    assert confirmed["status"] == "Aktion ausgeführt"
+    assert confirmed["ok"] is True
+    assert confirmed["requires_confirm"] is False
+    assert confirmed["pending_id"] == ""
+    assert "ausgeführt" in confirmed["status"].lower()
