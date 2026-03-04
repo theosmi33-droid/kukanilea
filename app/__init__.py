@@ -14,6 +14,7 @@ from .license import load_runtime_license_state
 from .log_utils import init_request_logging
 from .migrations.ensure_agent_memory import ensure_agent_memory_tables
 from .observability import init_observability
+from .logging.structured_logger import log_event
 
 
 def _wire_runtime_env(app: Flask) -> None:
@@ -131,6 +132,21 @@ def create_app() -> Flask:
         
         if manager.state == SystemState.ERROR:
             return json_error("system_error", f"System is in ERROR state: {manager.details}", status=503)
+        return None
+
+
+    @app.before_request
+    def _enforce_license_read_only():
+        if request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        path = request.path or "/"
+        allow_prefixes = ("/health", "/api/health", "/static/", "/admin/license", "/admin/settings")
+        if any(path.startswith(prefix) for prefix in allow_prefixes):
+            return None
+        if bool(app.config.get("READ_ONLY", False)):
+            reason = str(app.config.get("LICENSE_REASON", "license_read_only"))
+            log_event("license_write_blocked", {"path": path, "method": request.method, "reason": reason})
+            return json_error("read_only", f"License state blocks write operations: {reason}", status=403)
         return None
 
     @app.context_processor

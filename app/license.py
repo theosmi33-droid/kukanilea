@@ -11,6 +11,9 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict
 
+from app.license_state import LicenseInputs, evaluate_license_state, normalize_status_hint
+from app.logging.structured_logger import log_event
+
 # Backward compatibility: legacy Ed25519 licenses remain supported.
 PUBLIC_KEY_HEX = "d9213284c379d7ffd915619a57d2105fa4f39bbf2b25fa39d1d189bd57778b07"
 
@@ -62,16 +65,6 @@ class LicenseState:
             "status": self.status,
         }
 
-
-def _normalize_license_status(value: Any) -> str:
-    raw = str(value or "active").strip().lower()
-    if raw in {"active", "aktiv"}:
-        return "active"
-    if raw in {"blocked", "gesperrt", "locked", "suspended"}:
-        return "blocked"
-    if raw in {"grace", "grace_period", "kulanz"}:
-        return "grace"
-    return "active"
 
 
 def _canonical_payload_bytes(payload: Dict[str, Any]) -> bytes:
@@ -207,7 +200,7 @@ def load_license(license_path: Path) -> Dict[str, Any]:
             "reason": "ok",
             "payload": payload,
             "plan": str(payload.get("plan") or "PRO"),
-            "status": _normalize_license_status(payload.get("status")),
+            "status": normalize_status_hint(payload.get("status")),
             "expired": expired,
             "device_mismatch": device_mismatch,
             "algorithm": algorithm,
@@ -241,17 +234,17 @@ def load_runtime_license_state(
     if info.get("valid"):
         expired = bool(info.get("expired", False))
         device_mismatch = bool(info.get("device_mismatch", False))
-        status = _normalize_license_status(info.get("status"))
-        read_only = expired or device_mismatch or status == "blocked"
-        reason = "ok"
-        if expired:
-            reason = "license_expired"
-        elif device_mismatch:
-            reason = "device_mismatch"
-        elif status == "blocked":
-            reason = "license_blocked"
-        elif status == "grace":
-            reason = "grace"
+        machine = evaluate_license_state(LicenseInputs(
+            valid=True,
+            expired=expired,
+            device_mismatch=device_mismatch,
+            status_hint=info.get("status"),
+            smb_reachable=os.environ.get("KUKANILEA_SMB_REACHABLE", "1") != "0",
+        ))
+        status = str(machine["status"])
+        read_only = bool(machine["read_only"])
+        reason = str(machine["reason"])
+        log_event("license_transition", {"transition": machine.get("transition"), "status": status, "reason": reason})
         state = LicenseState(
             plan=str(info.get("plan") or "PRO"),
             trial=False,
