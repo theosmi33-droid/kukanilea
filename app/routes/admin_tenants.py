@@ -35,6 +35,7 @@ from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
 from app.license import load_license
+from app.security.gates import confirm_gate, scan_payload_for_injection
 
 bp = Blueprint("admin_tenants", __name__, url_prefix="/admin")
 
@@ -46,7 +47,6 @@ ROLE_LABEL_TO_DB = {
 ROLE_DB_TO_LABEL = {v: k for k, v in ROLE_LABEL_TO_DB.items()}
 HOSTNAME_PATTERN = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$")
 IP_PATTERN = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
-RISK_CONFIRM_TOKEN = "CONFIRM"
 SYSTEM_SETTINGS_FILE = Config.USER_DATA_ROOT / "system_settings.json"
 
 
@@ -95,7 +95,20 @@ def _save_system_settings(payload: dict[str, Any]) -> None:
 
 
 def _confirm_gate(value: str) -> bool:
-    return str(value or "").strip().upper() == RISK_CONFIRM_TOKEN
+    return confirm_gate(value)
+
+
+def _reject_injection(fields: tuple[str, ...]):
+    finding = scan_payload_for_injection(request.form, fields)
+    if finding:
+        return jsonify(ok=False, error="injection_blocked", field=finding.field), 400
+    return None
+
+
+def _require_confirm():
+    if not _confirm_gate(request.form.get("confirm")):
+        return jsonify(ok=False, error="confirm_required"), 400
+    return None
 
 
 def _auth_db():
@@ -299,6 +312,10 @@ def update_profile_preferences():
 @login_required
 @require_role("ADMIN")
 def create_user():
+    blocked = _reject_injection(("username", "password", "tenant_id"))
+    if blocked:
+        return blocked
+
     username = (request.form.get("username") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
     tenant_id = (request.form.get("tenant_id") or "").strip() or "SYSTEM"
@@ -328,6 +345,10 @@ def create_user():
 @login_required
 @require_role("ADMIN")
 def update_user_role():
+    blocked = _reject_injection(("username", "tenant_id", "role"))
+    if blocked:
+        return blocked
+
     username = (request.form.get("username") or "").strip().lower()
     tenant_id = (request.form.get("tenant_id") or "").strip() or "SYSTEM"
     role_label = (request.form.get("role") or "mitarbeiter").strip().lower()
@@ -382,12 +403,17 @@ def disable_user():
 @login_required
 @require_role("ADMIN")
 def delete_user():
+    blocked = _reject_injection(("username", "confirm"))
+    if blocked:
+        return blocked
+
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
+
     username = (request.form.get("username") or "").strip().lower()
-    confirm = request.form.get("confirm") or ""
     actor = current_user() or ""
 
-    if not _confirm_gate(confirm):
-        return jsonify(ok=False, error="confirm_required"), 400
     if not username:
         return jsonify(ok=False, error="username_required"), 400
     if username == actor:
@@ -420,6 +446,10 @@ def delete_user():
 @login_required
 @require_role("ADMIN")
 def add_tenant():
+    blocked = _reject_injection(("name", "db_path"))
+    if blocked:
+        return blocked
+
     name = (request.form.get("name") or "").strip()
     db_path = (request.form.get("db_path") or "").strip()
 
@@ -477,8 +507,6 @@ def upload_license():
     confirm = request.form.get("confirm") or ""
     payload_text = (request.form.get("license_json") or "").strip()
 
-    if not _confirm_gate(confirm):
-        return jsonify(ok=False, error="confirm_required"), 400
     if not payload_text:
         return jsonify(ok=False, error="license_required"), 400
 
@@ -525,6 +553,10 @@ def upload_license():
 @login_required
 @require_role("ADMIN")
 def save_system_settings():
+    blocked = _reject_injection(("language", "timezone", "backup_interval", "log_level"))
+    if blocked:
+        return blocked
+
     payload = _load_system_settings()
     payload.update(
         {
@@ -551,6 +583,10 @@ def save_system_settings():
 @login_required
 @require_role("ADMIN")
 def save_branding():
+    blocked = _reject_injection(("app_name", "primary_color", "footer_text"))
+    if blocked:
+        return blocked
+
     payload = {
         "app_name": (request.form.get("app_name") or "KUKANILEA").strip(),
         "primary_color": (request.form.get("primary_color") or "#2563eb").strip(),
@@ -595,12 +631,15 @@ def backup_run():
 @login_required
 @require_role("ADMIN")
 def backup_restore():
-    confirm = request.form.get("confirm") or ""
+    blocked = _reject_injection(("backup_name", "confirm"))
+    if blocked:
+        return blocked
+
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
+
     backup_name = (request.form.get("backup_name") or "").strip()
-
-    if not _confirm_gate(confirm):
-        return jsonify(ok=False, error="confirm_required"), 400
-
     target = _restore_backup(backup_name)
     audit_log(
         user=current_user() or "system",
@@ -617,6 +656,10 @@ def backup_restore():
 @login_required
 @require_role("ADMIN")
 def mesh_connect():
+    blocked = _reject_injection(("peer_ip", "peer_port"))
+    if blocked:
+        return blocked
+
     peer_ip = (request.form.get("peer_ip") or "").strip()
     peer_port_text = (request.form.get("peer_port") or "5051").strip()
     if not peer_ip:
@@ -651,9 +694,13 @@ def mesh_connect():
 @login_required
 @require_role("ADMIN")
 def mesh_rotate_key():
-    confirm = request.form.get("confirm") or ""
-    if not _confirm_gate(confirm):
-        return jsonify(ok=False, error="confirm_required"), 400
+    blocked = _reject_injection(("confirm",))
+    if blocked:
+        return blocked
+
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
 
     priv_path, pub_path = get_identity_paths()
     if priv_path.exists():

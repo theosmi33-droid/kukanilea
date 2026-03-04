@@ -150,18 +150,9 @@ def create_app() -> Flask:
 
     @app.after_request
     def add_security_headers(response):
-        # Strict CSP for Offline-First Compliance (Task 4)
-        # Keep inline styles/scripts for legacy templates, but avoid unsafe-eval.
-        csp = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "font-src 'self' data:; "
-            "img-src 'self' data: blob:; "
-            "frame-src 'self' blob: data:; "
-            "object-src 'self' blob: data:;"
-        )
-        response.headers["Content-Security-Policy"] = csp
+        from .security.csp import build_csp_header
+
+        response.headers["Content-Security-Policy"] = build_csp_header()
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
