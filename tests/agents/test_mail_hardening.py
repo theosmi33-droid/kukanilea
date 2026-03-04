@@ -12,8 +12,8 @@ def test_mail_agent_send_requires_confirm():
     result = agent.handle("schicke die Mail ab", "mail", context)
     
     assert len(result.actions) == 1
-    assert result.actions[0]['type'] == "mail_send"
-    assert result.actions[0]['confirm_required'] is True
+    assert result.actions[0]["type"] == "mail_send"
+    assert result.actions[0]["confirm_required"] is True
 
 def test_mail_agent_default_response():
     agent = MailAgent()
