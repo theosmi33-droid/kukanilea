@@ -87,6 +87,16 @@ from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
 from .security import csrf_protected
 from app.contracts.tool_contracts import CONTRACT_TOOLS, build_tool_health, build_tool_matrix, build_tool_summary
+from app.modules.aufgaben.contracts import build_health as build_aufgaben_health
+from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
+from app.modules.einstellungen.contracts import build_health as build_einstellungen_health
+from app.modules.einstellungen.contracts import build_summary as build_einstellungen_summary
+from app.modules.kalender.contracts import build_health as build_kalender_health
+from app.modules.kalender.contracts import build_summary as build_kalender_summary
+from app.modules.projekte.contracts import build_health as build_projekte_health
+from app.modules.projekte.contracts import build_summary as build_projekte_summary
+from app.modules.zeiterfassung.contracts import build_health as build_zeiterfassung_health
+from app.modules.zeiterfassung.contracts import build_summary as build_zeiterfassung_summary
 
 logger = logging.getLogger("kukanilea.web")
 
@@ -3848,18 +3858,43 @@ def api_list_tools():
 @bp.get("/api/<tool>/summary")
 @login_required
 def api_tool_summary(tool: str):
+    tenant = str(current_tenant() or "default")
+    domain_summary_builders = {
+        "kalender": build_kalender_summary,
+        "aufgaben": build_aufgaben_summary,
+        "zeiterfassung": build_zeiterfassung_summary,
+        "projekte": build_projekte_summary,
+        "einstellungen": build_einstellungen_summary,
+    }
+    builder = domain_summary_builders.get(tool)
+    if builder is not None:
+        return jsonify(builder(tenant))
+
     if tool not in CONTRACT_TOOLS:
         return jsonify(error="unknown_tool", tool=tool), 404
-    payload = build_tool_summary(tool, tenant=str(current_tenant() or "default"))
+    payload = build_tool_summary(tool, tenant=tenant)
     return jsonify(payload)
 
 
 @bp.get("/api/<tool>/health")
 @login_required
 def api_tool_health(tool: str):
+    tenant = str(current_tenant() or "default")
+    domain_health_builders = {
+        "kalender": build_kalender_health,
+        "aufgaben": build_aufgaben_health,
+        "zeiterfassung": build_zeiterfassung_health,
+        "projekte": build_projekte_health,
+        "einstellungen": build_einstellungen_health,
+    }
+    builder = domain_health_builders.get(tool)
+    if builder is not None:
+        payload, code = builder(tenant)
+        return jsonify(payload), code
+
     if tool not in CONTRACT_TOOLS:
         return jsonify(error="unknown_tool", tool=tool), 404
-    payload = build_tool_health(tool, tenant=str(current_tenant() or "default"))
+    payload = build_tool_health(tool, tenant=tenant)
     code = 200 if payload.get("status") in {"ok", "degraded"} else 503
     return jsonify(payload), code
 
