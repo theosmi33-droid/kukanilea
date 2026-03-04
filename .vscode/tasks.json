@@ -55,7 +55,7 @@
     {
       "label": "KUKANILEA: Start App (127.0.0.1:5051)",
       "type": "shell",
-      "command": "${workspaceFolder}/.build_venv/bin/python kukanilea_app.py --host 127.0.0.1 --port 5051",
+      "command": "${config:python.defaultInterpreterPath} kukanilea_app.py --host 127.0.0.1 --port 5051",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -84,7 +84,7 @@
     {
       "label": "KUKANILEA: Shared Memory Init",
       "type": "shell",
-      "command": "${workspaceFolder}/.build_venv/bin/python scripts/shared_memory.py init",
+      "command": "${config:python.defaultInterpreterPath} scripts/shared_memory.py init",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -93,7 +93,7 @@
     {
       "label": "KUKANILEA: Shared Memory Read",
       "type": "shell",
-      "command": "${workspaceFolder}/.build_venv/bin/python scripts/shared_memory.py read",
+      "command": "${config:python.defaultInterpreterPath} scripts/shared_memory.py read",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -102,7 +102,7 @@
     {
       "label": "KUKANILEA: Shared Memory Snapshot",
       "type": "shell",
-      "command": "${workspaceFolder}/.build_venv/bin/python scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
+      "command": "${config:python.defaultInterpreterPath} scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -138,7 +138,7 @@
     {
       "label": "KUKANILEA: Gemini Batch Compliance",
       "type": "shell",
-      "command": "${workspaceFolder}/.build_venv/bin/python scripts/ai/batch_compliance_check.py",
+      "command": "${config:python.defaultInterpreterPath} scripts/ai/batch_compliance_check.py",
       "options": {
         "cwd": "${workspaceFolder}"
       },

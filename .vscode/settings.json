@@ -1,5 +1,5 @@
 {
-  "python.defaultInterpreterPath": "/Users/gensuminguyen/Kukanilea/kukanilea_production/.build_venv/bin/python",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.build_venv/bin/python",
   "python.terminal.activateEnvironment": true,
   "python.testing.pytestEnabled": false,
   "python.testing.pytestArgs": [],
@@ -40,13 +40,13 @@
     "**/artifacts": true,
     "**/playwright-report": true,
     "**/test-results": true,
-    "**/.build_venv": true,
-    "**/.venv": true,
-    "**/node_modules": true,
     "docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": true,
     "docs/reviews/codex/OVERLAP_MATRIX_11_*.md": true,
     "docs/reviews/gemini/live/*_buildout_*.md": true,
-    "docs/scope_requests/patches/*.patch": true
+    "docs/scope_requests/patches/*.patch": true,
+    "**/.build_venv": true,
+    "**/.venv": true,
+    "**/node_modules": true
   },
   "search.exclude": {
     "**/.pytest_cache": true,
@@ -56,13 +56,13 @@
     "**/artifacts": true,
     "**/playwright-report": true,
     "**/test-results": true,
-    "**/.build_venv": true,
-    "**/.venv": true,
-    "**/node_modules": true,
     "docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": true,
     "docs/reviews/codex/OVERLAP_MATRIX_11_*.md": true,
     "docs/reviews/gemini/live/*_buildout_*.md": true,
-    "docs/scope_requests/patches/*.patch": true
+    "docs/scope_requests/patches/*.patch": true,
+    "**/.build_venv": true,
+    "**/.venv": true,
+    "**/node_modules": true
   },
   "git.autofetch": true,
   "git.confirmSync": false,
@@ -88,12 +88,12 @@
     "**/.git/subtree-cache/**": true,
     "**/.build_venv/**": true,
     "**/__pycache__/**": true,
-    "**/.git/**": true,
-    "**/.venv/**": true,
-    "**/node_modules/**": true,
     "**/docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": true,
     "**/docs/reviews/codex/OVERLAP_MATRIX_11_*.md": true,
-    "**/docs/reviews/gemini/live/*_buildout_*.md": true
+    "**/docs/reviews/gemini/live/*_buildout_*.md": true,
+    "**/.git/**": true,
+    "**/.venv/**": true,
+    "**/node_modules/**": true
   },
   "window.restoreWindows": "none",
   "search.followSymlinks": false,
