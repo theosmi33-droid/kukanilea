@@ -3669,7 +3669,13 @@ def projects_list():
     try:
         workspace = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
         project = workspace["project"]
-        board_id = str(workspace["board"]["id"])
+        board = workspace["board"]
+        board_id = str(board["id"])
+        boards = pm.list_boards(tenant_id=tenant_id, project_id=str(project["id"]))
+        board_state = pm.list_board_state(tenant_id=tenant_id, board_id=board_id)
+        columns = board_state.get("columns") or workspace.get("columns") or []
+        cards = board_state.get("cards") or []
+        activities = board_state.get("activities") or []
     except Exception:
         current_app.logger.exception("Fehler in /projects")
         return (
@@ -3681,7 +3687,17 @@ def projects_list():
         )
 
     tasks = pm.list_tasks(board_id)
-    return _render_base("kanban.html", active_tab="projects", project=project, tasks=tasks)
+    return _render_base(
+        "kanban.html",
+        active_tab="projects",
+        project=project,
+        board=board,
+        boards=boards,
+        columns=columns,
+        cards=cards,
+        activities=activities,
+        tasks=tasks,
+    )
 
 
 @bp.post("/api/tasks/<task_id>/move")

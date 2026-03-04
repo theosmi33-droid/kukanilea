@@ -35,11 +35,131 @@ class ProjectManager:
 
     def __init__(self, db_ext):
         self.db = db_ext
+        self._ensure_project_schema()
         self._ensure_team_task_schema()
 
     @staticmethod
     def _now_iso() -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _ensure_project_schema(self) -> None:
+        """Create/upgrade Project Hub tables required by route and board flows."""
+        con = self.db._db()
+        try:
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_boards(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  project_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  description TEXT,
+                  archived INTEGER NOT NULL DEFAULT 0,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_project_boards_project ON project_boards(project_id, tenant_id, created_at);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_columns(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  board_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  position INTEGER NOT NULL DEFAULT 0,
+                  color TEXT,
+                  archived INTEGER NOT NULL DEFAULT 0,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_project_columns_board ON project_columns(board_id, tenant_id, archived, position);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_cards(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  board_id TEXT NOT NULL,
+                  column_id TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  description TEXT,
+                  due_date TEXT,
+                  assignee TEXT,
+                  linked_task_id INTEGER,
+                  status TEXT NOT NULL DEFAULT 'OPEN',
+                  position INTEGER NOT NULL DEFAULT 0,
+                  archived INTEGER NOT NULL DEFAULT 0,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_project_cards_board ON project_cards(board_id, tenant_id, archived, column_id, position);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS card_comments(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  card_id TEXT NOT NULL,
+                  author TEXT NOT NULL,
+                  content TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_card_comments_card ON card_comments(card_id, tenant_id, created_at);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS card_attachments(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  card_id TEXT NOT NULL,
+                  file_name TEXT NOT NULL,
+                  file_path TEXT NOT NULL,
+                  uploaded_by TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_card_attachments_card ON card_attachments(card_id, tenant_id, created_at);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS card_activities(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  board_id TEXT,
+                  card_id TEXT,
+                  action TEXT NOT NULL,
+                  payload_json TEXT,
+                  actor TEXT,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_card_activities_board ON card_activities(board_id, tenant_id, created_at);"
+            )
+            con.commit()
+        finally:
+            con.close()
 
     def _ensure_team_task_schema(self) -> None:
         con = self.db._db()
