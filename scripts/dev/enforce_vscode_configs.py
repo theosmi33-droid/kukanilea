@@ -23,6 +23,39 @@ DOMAINS = [
     "floating-widget-chatbot",
 ]
 
+PERFORMANCE_SETTINGS: dict[str, Any] = {
+    "python.analysis.diagnosticMode": "openFilesOnly",
+    "python.analysis.indexing": False,
+    "python.analysis.autoSearchPaths": False,
+    "python.analysis.exclude": [
+        "**/.build_venv/**",
+        "**/.venv/**",
+        "**/__pycache__/**",
+        "**/.pytest_cache/**",
+        "**/.ruff_cache/**",
+        "**/node_modules/**",
+        "**/docs/reviews/**",
+    ],
+    "search.followSymlinks": False,
+    "search.useIgnoreFiles": True,
+    "task.autoDetect": "off",
+    "npm.autoDetect": "off",
+    "typescript.disableAutomaticTypeAcquisition": True,
+    "extensions.autoCheckUpdates": False,
+    "extensions.autoUpdate": False,
+}
+
+WATCHER_EXCLUDES: dict[str, bool] = {
+    "**/.git/objects/**": True,
+    "**/.git/subtree-cache/**": True,
+    "**/.build_venv/**": True,
+    "**/.venv/**": True,
+    "**/__pycache__/**": True,
+    "**/.pytest_cache/**": True,
+    "**/.ruff_cache/**": True,
+    "**/node_modules/**": True,
+}
+
 
 def detect_repo_root() -> Path:
     cp = subprocess.run(
@@ -75,19 +108,18 @@ def ensure_settings(path: Path, interpreter: str, allowed_interpreters: set[str]
         changes.append("git.repositoryScanMaxDepth")
         data["git.repositoryScanMaxDepth"] = 2
 
+    for key, value in PERFORMANCE_SETTINGS.items():
+        if data.get(key) != value:
+            data[key] = value
+            changes.append(key)
+
     watcher_exclude = data.get("files.watcherExclude")
     if not isinstance(watcher_exclude, dict):
         watcher_exclude = {}
         data["files.watcherExclude"] = watcher_exclude
         changes.append("files.watcherExclude")
 
-    desired_watcher = {
-        "**/.git/objects/**": True,
-        "**/.git/subtree-cache/**": True,
-        "**/.build_venv/**": True,
-        "**/__pycache__/**": True,
-    }
-    for key, value in desired_watcher.items():
+    for key, value in WATCHER_EXCLUDES.items():
         if watcher_exclude.get(key) != value:
             watcher_exclude[key] = value
             changes.append(f"files.watcherExclude.{key}")
@@ -175,6 +207,20 @@ def ensure_global_settings_file(path: Path, interpreter: str, apply: bool) -> li
     if data.get("git.repositoryScanMaxDepth") != 2:
         data["git.repositoryScanMaxDepth"] = 2
         changes.append("git.repositoryScanMaxDepth")
+    for key, value in PERFORMANCE_SETTINGS.items():
+        if data.get(key) != value:
+            data[key] = value
+            changes.append(key)
+
+    watcher_exclude = data.get("files.watcherExclude")
+    if not isinstance(watcher_exclude, dict):
+        watcher_exclude = {}
+        data["files.watcherExclude"] = watcher_exclude
+        changes.append("files.watcherExclude")
+    for key, value in WATCHER_EXCLUDES.items():
+        if watcher_exclude.get(key) != value:
+            watcher_exclude[key] = value
+            changes.append(f"files.watcherExclude.{key}")
     if apply and changes:
         write_json(path, data)
     return changes
@@ -210,6 +256,21 @@ def ensure_workspace_file(path: Path, interpreter: str, apply: bool) -> list[str
     if settings.get("git.repositoryScanMaxDepth") != 2:
         settings["git.repositoryScanMaxDepth"] = 2
         changes.append("settings.git.repositoryScanMaxDepth")
+
+    for key, value in PERFORMANCE_SETTINGS.items():
+        if settings.get(key) != value:
+            settings[key] = value
+            changes.append(f"settings.{key}")
+
+    watcher_exclude = settings.get("files.watcherExclude")
+    if not isinstance(watcher_exclude, dict):
+        watcher_exclude = {}
+        settings["files.watcherExclude"] = watcher_exclude
+        changes.append("settings.files.watcherExclude")
+    for key, value in WATCHER_EXCLUDES.items():
+        if watcher_exclude.get(key) != value:
+            watcher_exclude[key] = value
+            changes.append(f"settings.files.watcherExclude.{key}")
 
     if apply and changes:
         write_json(path, data)
