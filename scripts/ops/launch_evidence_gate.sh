@@ -168,8 +168,8 @@ append
 # Gate 1: Repo/CI evidence
 _tmp="$(mktemp)"
 append "## Repo/CI Evidence"
-append '`echo "LOCAL=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"; echo "REMOTE=$(git config --get remote.origin.url 2>/dev/null || echo none)"; if git show-ref --verify --quiet refs/remotes/origin/main; then echo "ORIGIN_MAIN=$(git rev-parse --short origin/main)"; else echo "ORIGIN_MAIN=unavailable"; fi`'
-capture_cmd "echo \"LOCAL=\$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\"; echo \"REMOTE=\$(git config --get remote.origin.url 2>/dev/null || echo none)\"; if git show-ref --verify --quiet refs/remotes/origin/main; then echo \"ORIGIN_MAIN=\$(git rev-parse --short origin/main)\"; else echo \"ORIGIN_MAIN=unavailable\"; fi" "$_tmp"
+append '`echo "LOCAL=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"; echo "REMOTE=$(git config --get remote.origin.url 2>/dev/null || echo none)"; if git rev-parse --verify --quiet refs/remotes/origin/main^{commit} >/dev/null; then echo "ORIGIN_MAIN=$(git rev-parse --short refs/remotes/origin/main^{commit} 2>/dev/null || echo unavailable)"; else echo "ORIGIN_MAIN=unavailable"; fi`'
+capture_cmd "echo \"LOCAL=\$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\"; echo \"REMOTE=\$(git config --get remote.origin.url 2>/dev/null || echo none)\"; if git rev-parse --verify --quiet refs/remotes/origin/main^\{commit\} >/dev/null; then echo \"ORIGIN_MAIN=\$(git rev-parse --short refs/remotes/origin/main^\{commit\} 2>/dev/null || echo unavailable)\"; else echo \"ORIGIN_MAIN=unavailable\"; fi" "$_tmp"
 render_output_block "$_tmp"
 local_head="$(grep '^LOCAL=' "$_tmp" | head -n1 | cut -d= -f2-)"
 origin_head="$(grep '^ORIGIN_MAIN=' "$_tmp" | head -n1 | cut -d= -f2-)"

@@ -13,6 +13,30 @@ HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
 PYTHON="${PYTHON:-}"
 SERVER_PID=""
 
+choose_python() {
+  local candidate
+  local -a candidates=()
+
+  if [[ -n "$PYTHON" ]]; then
+    candidates+=("$PYTHON")
+  fi
+  candidates+=(
+    "$ROOT/.build_venv/bin/python"
+    "$ROOT/.venv/bin/python"
+    "python3"
+    "python"
+  )
+
+  for candidate in "${candidates[@]}"; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; print(sys.version)' >/dev/null 2>&1; then
+      PYTHON="$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 log() {
   echo "$*" | tee -a "$HEALTH_LOG"
 }
@@ -95,13 +119,7 @@ parse_args "$@"
 
 : > "$HEALTH_LOG"
 
-if [[ -z "$PYTHON" ]]; then
-  if [[ -x "$ROOT/.build_venv/bin/python" ]]; then
-    PYTHON="$ROOT/.build_venv/bin/python"
-  else
-    PYTHON="python3"
-  fi
-fi
+choose_python || fail "$EXIT_DEPENDENCY" "[healthcheck] Could not resolve a working Python interpreter (checked .build_venv/.venv/python3/python)"
 
 for dep in curl find xargs sqlite3 "$PYTHON"; do
   require_cmd "$dep"
@@ -140,6 +158,15 @@ elif [[ "$CI_MODE" -eq 1 ]]; then
 else
   log "[healthcheck] WARNING: flask not available for interpreter: $PYTHON (skipping HTTP route probes)"
 fi
+
+for module in ruff playwright; do
+  if ! "$PYTHON" -c "import ${module}" >/dev/null 2>&1; then
+    if [[ "$CI_MODE" -eq 1 ]]; then
+      fail "$EXIT_DEPENDENCY" "[healthcheck] ${module} is not installed for interpreter: $PYTHON"
+    fi
+    log "[healthcheck] WARNING: ${module} not available for interpreter: $PYTHON"
+  fi
+done
 
 if [[ "$HAS_FLASK" -eq 1 ]]; then
   if ! curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051/" | grep -Eq "^(200|302)$"; then
