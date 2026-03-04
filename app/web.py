@@ -3659,30 +3659,45 @@ def projects_list():
             active_tab="projects",
         )
     from app.modules.projects.logic import ProjectManager
+
     pm = ProjectManager(current_app.extensions["auth_db"])
-    con = current_app.extensions["auth_db"]._db()
+    tenant_id = current_tenant()
+    if not tenant_id:
+        current_app.logger.warning("/projects called without tenant in session")
+        return redirect(url_for("web.login", next=request.path))
+
     try:
-        project = con.execute("SELECT * FROM projects LIMIT 1").fetchone()
-
-        # Ensure at least one project/board exists for first-run UX
-        if not project:
-            p_id = pm.create_project(
-                current_tenant(),
-                "Standard Projekt",
-                "Willkommen in Ihrer Projektverwaltung.",
-            )
-            pm.create_board(p_id, "Hauptboard")
-            return redirect(url_for("web.projects_list"))
-
-        board = con.execute(
-            "SELECT id FROM boards WHERE project_id = ? LIMIT 1", (project["id"],)
-        ).fetchone()
-        board_id = board["id"] if board else pm.create_board(project["id"], "Hauptboard")
-    finally:
-        con.close()
+        workspace = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
+        project = workspace["project"]
+        board = workspace["board"]
+        board_id = str(board["id"])
+        boards = pm.list_boards(tenant_id=tenant_id, project_id=str(project["id"]))
+        board_state = pm.list_board_state(tenant_id=tenant_id, board_id=board_id)
+        columns = board_state.get("columns") or workspace.get("columns") or []
+        cards = board_state.get("cards") or []
+        activities = board_state.get("activities") or []
+    except Exception:
+        current_app.logger.exception("Fehler in /projects")
+        return (
+            _render_base(
+                "<div class='card p-4'><h2>Projekte konnten nicht geladen werden</h2></div>",
+                active_tab="projects",
+            ),
+            500,
+        )
 
     tasks = pm.list_tasks(board_id)
-    return _render_base("kanban.html", active_tab="tasks", project=project, tasks=tasks)
+    return _render_base(
+        "kanban.html",
+        active_tab="projects",
+        project=project,
+        board=board,
+        boards=boards,
+        columns=columns,
+        cards=cards,
+        activities=activities,
+        tasks=tasks,
+    )
 
 
 @bp.post("/api/tasks/<task_id>/move")
