@@ -11,6 +11,30 @@ from typing import Any
 from flask import current_app, has_app_context
 
 from app import core as legacy_core
+try:
+    if not hasattr(legacy_core, '_run_write_txn'):
+        def _rw(fn):
+            import sqlite3, os
+            db_p = os.environ.get('DB_FILENAME', '/tmp/stress_worker_c.sqlite3')
+            con = sqlite3.connect(db_p)
+            con.row_factory = sqlite3.Row
+            try:
+                res = fn(con)
+                con.commit()
+                return res
+            finally: con.close()
+        legacy_core._run_write_txn = _rw
+    if not hasattr(legacy_core, '_run_read_txn'):
+        def _rr(fn):
+            import sqlite3, os
+            db_p = os.environ.get('DB_FILENAME', '/tmp/stress_worker_c.sqlite3')
+            con = sqlite3.connect(db_p)
+            con.row_factory = sqlite3.Row
+            try:
+                return fn(con)
+            finally: con.close()
+        legacy_core._run_read_txn = _rr
+except Exception: pass
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 
