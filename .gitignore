@@ -61,3 +61,7 @@ node_modules/
 playwright-report/
 test-results/
 coverage/
+
+# generated evidence artifacts
+docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md
+docs/reviews/codex/OVERLAP_MATRIX_11_*.md
