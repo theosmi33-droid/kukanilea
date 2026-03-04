@@ -175,10 +175,11 @@ def seed_demo_data(db_path: Path, tenant_id: str = "DEMO_TENANT") -> dict:
         con.commit()
 
         summary = {}
+        summary["tenant"] = con.execute("SELECT COUNT(*) FROM tenants WHERE tenant_id=?", (tenant_id,)).fetchone()[0]
         summary["contacts"] = con.execute("SELECT COUNT(*) FROM contacts WHERE tenant_id=?", (tenant_id,)).fetchone()[0]
         summary["projects"] = con.execute("SELECT COUNT(*) FROM projects WHERE tenant_id=?", (tenant_id,)).fetchone()[0]
         summary["time_entries"] = con.execute("SELECT COUNT(*) FROM time_entries WHERE tenant_id=?", (tenant_id,)).fetchone()[0]
-        summary["files"] = con.execute("SELECT COUNT(*) FROM files WHERE tenant_id=?", (tenant_id,)).fetchone()[0]
+        summary["documents"] = con.execute("SELECT COUNT(*) FROM files WHERE tenant_id=?", (tenant_id,)).fetchone()[0]
         summary["tasks"] = con.execute(
             """
             SELECT COUNT(*)
