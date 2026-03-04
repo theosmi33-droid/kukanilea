@@ -62,6 +62,7 @@ def get_system_status() -> Dict[str, Any]:
     if psutil is None:
         return {
             "status": "DEGRADED_NO_PSUTIL",
+            "http_code": 503,
             "cpu_usage_pct": None,
             "memory_rss_mb": None,
             "observer_active": True,
@@ -86,6 +87,7 @@ def get_system_status() -> Dict[str, Any]:
 
         return {
             "status": status,
+            "http_code": 503 if status.startswith("WARNING") else 200,
             "cpu_usage_pct": cpu_usage,
             "memory_rss_mb": memory_info.rss / (1024 * 1024),
             "observer_active": True,
@@ -99,6 +101,7 @@ def get_system_status() -> Dict[str, Any]:
         logger.error("Observer failed to collect system status: %s", exc)
         return {
             "status": "ERROR",
+            "http_code": 500,
             "error": str(exc),
             "observer_active": True,
             "sync_queue": sync_stats,
