@@ -22,7 +22,12 @@ echo "[2/7] Ensuring DB tables..." | tee -a "$HEALTH_LOG"
 "$PYTHON" app/db/migrations/ensure_agent_memory.py | tee -a "$HEALTH_LOG"
 
 echo "[3/7] Running unit tests..." | tee -a "$HEALTH_LOG"
-pytest -q
+if ! "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then
+  echo "[healthcheck] pytest is not installed for interpreter: $PYTHON" | tee -a "$HEALTH_LOG"
+  echo "[healthcheck] Install test dependencies (for example: $PYTHON -m pip install -r requirements-dev.txt)" | tee -a "$HEALTH_LOG"
+  exit 1
+fi
+"$PYTHON" -m pytest -q
 
 SERVER_PID=""
 cleanup() {
