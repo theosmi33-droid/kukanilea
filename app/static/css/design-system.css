@@ -81,22 +81,6 @@
     border-right: 1px solid var(--glass-border);
 }
 
- @media (prefers-color-scheme: dark) {
-  html:not(.light) {
-    --bg-primary: var(--color-gray-900); --bg-secondary: var(--color-gray-800); --bg-tertiary: var(--color-gray-700);
-    --text-primary: var(--color-gray-100); --text-secondary: var(--color-gray-300); --text-tertiary: var(--color-gray-500);
-    --border-color: var(--color-gray-700); --border-color-hover: var(--color-gray-600);
-    --color-border: var(--border-color);
-  }
-}
-
-html.dark {
-    --bg-primary: var(--color-gray-900); --bg-secondary: var(--color-gray-800); --bg-tertiary: var(--color-gray-700);
-    --text-primary: var(--color-gray-100); --text-secondary: var(--color-gray-300); --text-tertiary: var(--color-gray-500);
-    --border-color: var(--color-gray-700); --border-color-hover: var(--color-gray-600);
-    --color-border: var(--border-color);
-}
-
 html.light {
     --bg-primary: #ffffff; --bg-secondary: var(--color-gray-50); --bg-tertiary: var(--color-gray-100);
     --text-primary: var(--color-gray-900); --text-secondary: var(--color-gray-600); --text-tertiary: var(--color-gray-400);
