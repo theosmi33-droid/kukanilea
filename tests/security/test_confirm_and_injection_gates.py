@@ -102,6 +102,28 @@ def test_security_critical_routes_block_injection_payloads(admin_client, route: 
     assert body["field"] == blocked_field
 
 
+@pytest.mark.parametrize(
+    ("route", "payload"),
+    [
+        ("/admin/settings/users/disable", {"username": "other-admin", "confirm": "YES"}),
+        ("/admin/settings/backup/run", {"confirm": "YES"}),
+    ],
+)
+def test_additional_critical_write_routes_require_confirm_gate(admin_client, route: str, payload: dict[str, str]):
+    _, client = admin_client
+    response = client.post(route, data=payload)
+    assert response.status_code in {302, 303}
+
+
+@pytest.mark.parametrize("route", ["/admin/settings/users/disable", "/admin/settings/backup/run"])
+def test_additional_critical_write_routes_reject_missing_confirm(admin_client, route: str):
+    _, client = admin_client
+    response = client.post(route, data={"confirm": ""})
+    body = response.get_json()
+    assert response.status_code == 400
+    assert body["error"] == "confirm_required"
+
+
 def test_security_headers_use_hardened_csp(admin_client):
     _, client = admin_client
     response = client.get("/admin/settings")
@@ -109,4 +131,6 @@ def test_security_headers_use_hardened_csp(admin_client):
     assert "connect-src 'self'" in csp
     assert "object-src 'none'" in csp
     assert "frame-src 'self' blob:" in csp
+    assert "frame-ancestors 'self'" in csp
+    assert "upgrade-insecure-requests" in csp
     assert "object-src 'self'" not in csp

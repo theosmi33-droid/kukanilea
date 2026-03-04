@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import timedelta
 
 from flask import Flask, request, session
 
 from .auth import init_auth
 from .autonomy import init_autonomy
-from .config import Config
+from .config import Config, _is_dev_env
 from .db import AuthDB
 from .errors import json_error
 from .license import load_runtime_license_state
@@ -54,9 +55,15 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
+    secure_cookie_default = not _is_dev_env()
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
     app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
-    app.config.setdefault("SESSION_COOKIE_SECURE", False)
+    app.config.setdefault("SESSION_COOKIE_SECURE", secure_cookie_default)
+    app.config.setdefault(
+        "SESSION_COOKIE_NAME",
+        "__Host-kukanilea_session" if secure_cookie_default else "kukanilea_session",
+    )
+    app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(hours=8))
 
     _wire_runtime_env(app)
 
@@ -210,6 +217,7 @@ def create_app() -> Flask:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
 
     app.register_blueprint(web.bp)
