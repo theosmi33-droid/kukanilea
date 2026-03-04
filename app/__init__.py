@@ -66,17 +66,25 @@ def create_app() -> Flask:
         "testing",
     }
     # Flask may pre-seed cookie keys with None; enforce secure defaults explicitly.
-    app.config["SESSION_COOKIE_HTTPONLY"] = bool(
-        app.config.get("SESSION_COOKIE_HTTPONLY", True)
-    )
-    if app.config.get("SESSION_COOKIE_SAMESITE") in (None, ""):
+    # HTTPOnly must always remain enabled to reduce script-access to session cookies.
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+
+    same_site = str(app.config.get("SESSION_COOKIE_SAMESITE") or "").strip().lower()
+    if same_site == "strict":
+        app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
+    elif same_site == "lax":
         app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    else:
+        app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
     # In non-dev environments, always force secure cookies.
     if secure_cookie_default:
         app.config["SESSION_COOKIE_SECURE"] = True
     elif app.config.get("SESSION_COOKIE_SECURE") is None:
         app.config["SESSION_COOKIE_SECURE"] = False
+
     if secure_cookie_default:
+        # __Host- cookies require Secure + Path=/ + no Domain.
         app.config["SESSION_COOKIE_NAME"] = "__Host-kukanilea_session"
         app.config["SESSION_COOKIE_DOMAIN"] = None
         app.config["SESSION_COOKIE_PATH"] = "/"
