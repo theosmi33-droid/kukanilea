@@ -1,14 +1,11 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/.build_venv/bin/python",
+  "python.defaultInterpreterPath": "/Users/gensuminguyen/Kukanilea/kukanilea_production/.build_venv/bin/python",
   "python.terminal.activateEnvironment": true,
-  "python.testing.pytestEnabled": true,
-  "python.testing.pytestArgs": [
-    "tests",
-    "-q"
-  ],
+  "python.testing.pytestEnabled": false,
+  "python.testing.pytestArgs": [],
   "python.testing.unittestEnabled": false,
   "python.analysis.typeCheckingMode": "basic",
-  "python.analysis.autoImportCompletions": true,
+  "python.analysis.autoImportCompletions": false,
   "python.analysis.diagnosticMode": "openFilesOnly",
   "python.analysis.indexing": false,
   "python.analysis.exclude": [
@@ -19,7 +16,9 @@
     "**/archive_legacy/**",
     "**/docs/reviews/**",
     "**/data/**",
-    "**/instance/**"
+    "**/instance/**",
+    "**/.git/**",
+    "**/node_modules/**"
   ],
   "python.experiments.enabled": false,
   "python.useEnvironmentsExtension": true,
@@ -40,7 +39,14 @@
     "**/output": true,
     "**/artifacts": true,
     "**/playwright-report": true,
-    "**/test-results": true
+    "**/test-results": true,
+    "**/.build_venv": true,
+    "**/.venv": true,
+    "**/node_modules": true,
+    "docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": true,
+    "docs/reviews/codex/OVERLAP_MATRIX_11_*.md": true,
+    "docs/reviews/gemini/live/*_buildout_*.md": true,
+    "docs/scope_requests/patches/*.patch": true
   },
   "search.exclude": {
     "**/.pytest_cache": true,
@@ -49,30 +55,62 @@
     "**/output": true,
     "**/artifacts": true,
     "**/playwright-report": true,
-    "**/test-results": true
+    "**/test-results": true,
+    "**/.build_venv": true,
+    "**/.venv": true,
+    "**/node_modules": true,
+    "docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": true,
+    "docs/reviews/codex/OVERLAP_MATRIX_11_*.md": true,
+    "docs/reviews/gemini/live/*_buildout_*.md": true,
+    "docs/scope_requests/patches/*.patch": true
   },
   "git.autofetch": true,
   "git.confirmSync": false,
   "git.autoRepositoryDetection": "openEditors",
   "git.openRepositoryInParentFolders": "never",
-  "git.untrackedChanges": "mixed",
+  "git.untrackedChanges": "hidden",
   "git.repositoryScanMaxDepth": 2,
   "githubPullRequests.pullBranch": "never",
-  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.defaultProfile.osx": "zsh-clean",
   "terminal.integrated.cwd": "${workspaceFolder}",
   "terminal.integrated.env.osx": {
     "PYTHONUNBUFFERED": "1",
     "OLLAMA_ENABLED": "1",
     "KUKANILEA_REMOTE_LLM_ENABLED": "0",
-    "OLLAMA_HOST": "http://127.0.0.1:11434"
+    "OLLAMA_HOST": "http://127.0.0.1:11434",
+    "GEMINI_DEFAULT_MODEL": "gemini-2.5-flash"
   },
   "workbench.editor.enablePreview": false,
   "workbench.startupEditor": "none",
-  "task.allowAutomaticTasks": "on",
+  "task.allowAutomaticTasks": "off",
   "files.watcherExclude": {
     "**/.git/objects/**": true,
     "**/.git/subtree-cache/**": true,
     "**/.build_venv/**": true,
-    "**/__pycache__/**": true
-  }
+    "**/__pycache__/**": true,
+    "**/.git/**": true,
+    "**/.venv/**": true,
+    "**/node_modules/**": true,
+    "**/docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": true,
+    "**/docs/reviews/codex/OVERLAP_MATRIX_11_*.md": true,
+    "**/docs/reviews/gemini/live/*_buildout_*.md": true
+  },
+  "window.restoreWindows": "none",
+  "search.followSymlinks": false,
+  "terminal.integrated.profiles.osx": {
+    "zsh-no-login": {
+      "path": "/bin/zsh",
+      "args": [
+        "-i"
+      ]
+    },
+    "zsh-clean": {
+      "path": "/bin/zsh",
+      "args": [
+        "-f",
+        "-i"
+      ]
+    }
+  },
+  "python.testing.autoTestDiscoverOnSaveEnabled": false
 }
