@@ -13,6 +13,9 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)(?:--|/\*|\*/|;\s*(?:drop|delete|insert|update|select)\b)"),
     re.compile(r"(?i)<\s*script\b"),
     re.compile(r"(?i)\bjavascript:\s*"),
+    re.compile(r"(?i)\bsystem\s+override\b"),
+    re.compile(r"(?i)\bignore\s+instructions?\b"),
+    re.compile(r"(?i)\bprompt\s+jailbreak\b"),
 )
 
 

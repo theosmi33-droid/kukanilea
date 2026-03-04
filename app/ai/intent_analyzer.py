@@ -4,7 +4,7 @@ import re
 from typing import Tuple
 
 WRITE_VERBS = re.compile(
-    r"\b(create|delete|send|start|stop|archive|remove|upload|export|revoke|add|update|modify|schick|sende|lösch|erstelle)\b",
+    r"\b(create|delete|send|update|upload|remove|start|stop|archive|export|revoke|add|modify|schick|sende|lösch|erstelle)\b",
     re.IGNORECASE,
 )
 
@@ -27,4 +27,3 @@ def detect_write_intent(user_text: str) -> bool:
         return True
     ok, _ = semantic_guard.is_write_like(text)
     return bool(ok)
-

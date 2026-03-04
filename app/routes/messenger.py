@@ -7,6 +7,8 @@ from flask import Blueprint, jsonify, request
 
 from app.auth import login_required
 from app.web import _render_base, _render_sovereign_tool, _is_hx_partial_request
+from app.ai.intent_analyzer import detect_write_intent
+from app.security.gates import detect_injection
 from app.security import csrf_protected
 from app.rate_limit import chat_limiter
 from app.agents.orchestrator import answer as agent_answer
@@ -15,6 +17,25 @@ logger = logging.getLogger("kukanilea.messenger")
 bp = Blueprint("messenger", __name__)
 
 WRITE_ACTIONS = {"create_task", "create_appointment", "mail_generate", "messenger_send", "mail_send"}
+
+
+def _audit_chat_event(action: str, target: str = "/api/chat", meta: dict[str, Any] | None = None) -> None:
+    try:
+        from app import core
+        from app.auth import current_role, current_tenant, current_user
+
+        audit_log = getattr(core, "audit_log", None)
+        if callable(audit_log):
+            audit_log(
+                user=str(current_user() or ""),
+                role=str(current_role() or "USER"),
+                action=action,
+                target=target,
+                meta=meta or {},
+                tenant_id=current_tenant(),
+            )
+    except Exception:
+        logger.debug("audit_log_unavailable", exc_info=True)
 
 
 @bp.route("/messenger")
@@ -67,10 +88,22 @@ def api_chat():
     if not msg:
         return jsonify(error="empty_message"), 400
 
+    injection_pattern = detect_injection(msg)
+    if injection_pattern:
+        _audit_chat_event("chat_injection_blocked", meta={"pattern": injection_pattern})
+        return jsonify(error="injection_blocked"), 400
+
     try:
         ans = agent_answer(msg)
         if isinstance(ans, dict):
-            ans["actions"] = _enforce_confirm_gate(ans.get("actions", []))
+            actions = _enforce_confirm_gate(ans.get("actions", []))
+            write_intent = detect_write_intent(msg)
+            if write_intent:
+                actions = _enforce_confirm_gate(actions)
+                _audit_chat_event("chat_confirm_required", meta={"write_intent": True, "action_count": len(actions)})
+            ans["actions"] = actions
+            if write_intent:
+                ans["requires_confirm"] = True
             if "text" in ans and "response" not in ans:
                 ans["response"] = ans.get("text", "")
         return jsonify(ans)

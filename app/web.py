@@ -85,7 +85,7 @@ from .db import AuthDB
 from .errors import json_error
 from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
-from .security import csrf_protected
+from .security import csrf_protected, detect_injection
 from app.contracts.tool_contracts import CONTRACT_TOOLS, build_tool_health, build_tool_matrix, build_tool_summary
 
 logger = logging.getLogger("kukanilea.web")
@@ -2058,6 +2058,17 @@ def _widget_requires_confirm(actions: List[Dict[str, Any]]) -> bool:
             return True
     return False
 
+
+def _mark_actions_confirm_required(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    marked: List[Dict[str, Any]] = []
+    for action in actions or []:
+        item = dict(action)
+        item["requires_confirm"] = True
+        item["confirm_required"] = True
+        marked.append(item)
+    return marked
+
+
 def _widget_compact_response(
     *,
     text: str,
@@ -2107,6 +2118,11 @@ def api_chat():
 
     if not msg:
         return json_error("empty_query", "Leer.", status=400)
+
+    injection_pattern = detect_injection(msg)
+    if injection_pattern:
+        _audit("chat_injection_blocked", target="/api/chat", meta={"pattern": injection_pattern})
+        return json_error("injection_blocked", "Eingabe durch Sicherheitsfilter blockiert.", status=400)
 
     response = agent_answer(msg)
     # Compat: some widgets expect `response`, others `text`.
@@ -2170,13 +2186,28 @@ def api_chat_compact():
             ok=False
         )), 400
 
+    injection_pattern = detect_injection(user_msg)
+    if injection_pattern:
+        _audit("chat_compact_injection_blocked", target="/api/chat/compact", meta={"pattern": injection_pattern})
+        return jsonify(_widget_compact_response(
+            text="Eingabe durch Sicherheitsfilter blockiert.",
+            model="local",
+            context_tag=current_context,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            status="Blockiert",
+            ok=False,
+        )), 400
+
     context = AgentContext(tenant_id=tenant_id, user=username, role=role)
     # Using the global agent_answer helper which uses Orchestrator
     result = agent_answer(user_msg, role=role)
     
     actions_raw = list(result.get("actions", []))
-    requires_confirm = _widget_requires_confirm(actions_raw) or detect_write_intent(user_msg)
-    
+    write_intent = detect_write_intent(user_msg)
+    requires_confirm = _widget_requires_confirm(actions_raw) or write_intent
+    if requires_confirm:
+        actions_raw = _mark_actions_confirm_required(actions_raw)
+
     pending_id = ""
     confirm_prompt = ""
     if requires_confirm:
@@ -2188,6 +2219,7 @@ def api_chat_compact():
         }
         session.modified = True
         confirm_prompt = "Bestätigung für geplante Aktionen erforderlich."
+        _audit("chat_confirm_required", target="/api/chat/compact", meta={"write_intent": write_intent, "action_count": len(actions_raw)})
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     return jsonify(_widget_compact_response(
