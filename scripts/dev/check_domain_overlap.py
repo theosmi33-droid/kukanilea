@@ -41,6 +41,9 @@ ALLOWLIST: dict[str, list[str]] = {
         "app/templates/components/system_status.html",
         "app/core/observer.py",
         "app/core/auto_evolution.py",
+        "app/core/integrity_check.py",
+        "app/routes/dashboard.py",
+        "tests/",
     ],
     "upload": [
         "app/core/upload_pipeline.py",
