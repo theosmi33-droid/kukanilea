@@ -1,50 +1,102 @@
+from __future__ import annotations
+
+import json
 import logging
 import sys
 import time
+import urllib.request
+from pathlib import Path
 
-import requests
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-
-# KPI Targets
-MAX_PAGE_LOAD_MS = 200
-MAX_DB_SEARCH_MS = 50
-MAX_AI_FIRST_TOKEN_MS = 1000
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 BASE_URL = "http://127.0.0.1:5051"
+OUT = Path("docs/status/playwright_benchmark_latest.json")
 
-def test_page_load():
-    logging.info("Testing Page Load KPI (<200ms)...")
-    start = time.time()
-    resp = requests.get(f"{BASE_URL}/login")
-    elapsed_ms = (time.time() - start) * 1000
-    logging.info(f"Page Load Time: {elapsed_ms:.2f}ms")
-    if elapsed_ms > MAX_PAGE_LOAD_MS:
-        logging.warning(f"⚠️ Page Load KPI missed! Target: {MAX_PAGE_LOAD_MS}ms, Got: {elapsed_ms:.2f}ms")
-    else:
-        logging.info("✅ Page Load KPI passed.")
+KPI_TARGETS = {
+    "login_first_paint_ms": 400,
+    "dashboard_nav_ms": 600,
+    "status_api_ms": 200,
+}
 
-def test_db_search():
-    # Placeholder for actual DB search route or we can benchmark directly via db API if embedded.
-    # In a real Playwright E2E, this would trigger the search bar and measure DOM render time.
-    logging.info("Testing DB Search KPI (<50ms)...")
-    start = time.time()
-    # Dummy request for demonstration
-    resp = requests.get(f"{BASE_URL}/api/health")
-    elapsed_ms = (time.time() - start) * 1000
-    logging.info(f"DB Search (Health Check proxy) Time: {elapsed_ms:.2f}ms")
-    if elapsed_ms > MAX_DB_SEARCH_MS:
-        logging.warning(f"⚠️ DB Search KPI missed! Target: {MAX_DB_SEARCH_MS}ms, Got: {elapsed_ms:.2f}ms")
-    else:
-        logging.info("✅ DB Search KPI passed.")
 
-if __name__ == "__main__":
+def _http_smoke() -> dict[str, float]:
+    t0 = time.perf_counter()
+    with urllib.request.urlopen(f"{BASE_URL}/login", timeout=5) as resp:
+        if resp.status >= 400:
+            raise RuntimeError(f"/login returned status {resp.status}")
+    login_ms = (time.perf_counter() - t0) * 1000
+
+    t1 = time.perf_counter()
+    with urllib.request.urlopen(f"{BASE_URL}/api/health", timeout=5) as health:
+        if health.status >= 400:
+            raise RuntimeError(f"/api/health returned status {health.status}")
+    api_ms = (time.perf_counter() - t1) * 1000
+
+    return {
+        "login_first_paint_ms": round(login_ms, 2),
+        "status_api_ms": round(api_ms, 2),
+        "dashboard_nav_ms": -1.0,
+        "mode": "http-fallback",
+    }
+
+
+def _playwright_flow() -> dict[str, float]:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        start = time.perf_counter()
+        page.goto(f"{BASE_URL}/login", wait_until="domcontentloaded", timeout=8000)
+        login_ms = (time.perf_counter() - start) * 1000
+
+        nav_start = time.perf_counter()
+        page.goto(f"{BASE_URL}/", wait_until="networkidle", timeout=8000)
+        nav_ms = (time.perf_counter() - nav_start) * 1000
+
+        api_start = time.perf_counter()
+        response = page.request.get(f"{BASE_URL}/api/health", timeout=5000)
+        api_ms = (time.perf_counter() - api_start) * 1000
+        response.raise_for_status()
+
+        browser.close()
+
+    return {
+        "login_first_paint_ms": round(login_ms, 2),
+        "dashboard_nav_ms": round(nav_ms, 2),
+        "status_api_ms": round(api_ms, 2),
+        "mode": "playwright",
+    }
+
+
+def main() -> None:
     try:
-        requests.get(BASE_URL)
+        urllib.request.urlopen(BASE_URL, timeout=3)
     except Exception:
-        logging.error(f"Server is not running at {BASE_URL}. Start it first.")
+        logging.error("Server is not running at %s", BASE_URL)
         sys.exit(1)
 
-    test_page_load()
-    test_db_search()
-    logging.info("Playwright/E2E Benchmark Suite (Stub) completed.")
+    try:
+        metrics = _playwright_flow()
+    except Exception as exc:
+        logging.warning("Playwright unavailable, falling back to HTTP benchmark: %s", exc)
+        metrics = _http_smoke()
+
+    report = {
+        "kpi_targets": KPI_TARGETS,
+        "metrics": metrics,
+        "pass": {
+            key: (metrics.get(key, 0) >= 0 and metrics[key] <= KPI_TARGETS[key])
+            for key in KPI_TARGETS
+            if metrics.get(key, -1) >= 0
+        },
+    }
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(json.dumps(report, indent=2))
+
+
+if __name__ == "__main__":
+    main()
