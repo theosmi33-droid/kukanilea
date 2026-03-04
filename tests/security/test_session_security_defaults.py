@@ -4,14 +4,18 @@ from app import create_app
 from app.config import Config
 
 
-def test_production_session_defaults_are_secure(monkeypatch, tmp_path):
-    monkeypatch.setenv("KUKANILEA_ENV", "production")
+def _set_minimum_paths(monkeypatch, tmp_path):
     monkeypatch.setenv("KUKANILEA_SECRET", "test-secret")
     monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
     monkeypatch.setattr(Config, "AUTH_DB", tmp_path / "auth.sqlite3")
     monkeypatch.setattr(Config, "CORE_DB", tmp_path / "core.sqlite3")
     monkeypatch.setattr(Config, "LICENSE_PATH", tmp_path / "license.json")
     monkeypatch.setattr(Config, "TRIAL_PATH", tmp_path / "trial.json")
+
+
+def test_production_session_defaults_are_secure(monkeypatch, tmp_path):
+    monkeypatch.setenv("KUKANILEA_ENV", "production")
+    _set_minimum_paths(monkeypatch, tmp_path)
 
     app = create_app()
 
@@ -21,3 +25,17 @@ def test_production_session_defaults_are_secure(monkeypatch, tmp_path):
     assert app.config["SESSION_COOKIE_NAME"].startswith("__Host-")
     assert app.config["SESSION_COOKIE_DOMAIN"] is None
     assert app.config["SESSION_COOKIE_PATH"] == "/"
+
+
+def test_production_session_hardening_ignores_insecure_overrides(monkeypatch, tmp_path):
+    monkeypatch.setenv("KUKANILEA_ENV", "production")
+    _set_minimum_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(Config, "SESSION_COOKIE_HTTPONLY", False, raising=False)
+    monkeypatch.setattr(Config, "SESSION_COOKIE_SAMESITE", "None", raising=False)
+    monkeypatch.setattr(Config, "SESSION_COOKIE_SECURE", False, raising=False)
+
+    app = create_app()
+
+    assert app.config["SESSION_COOKIE_HTTPONLY"] is True
+    assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+    assert app.config["SESSION_COOKIE_SECURE"] is True
