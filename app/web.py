@@ -1649,6 +1649,7 @@ def check_onboarding():
     if (
         not request.endpoint
         or request.endpoint in ("web.onboarding", "web.bootstrap", "static")
+        or request.path in ("/health", "/api/health")
         or request.path.startswith("/api/")
     ):
         return

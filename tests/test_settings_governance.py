@@ -41,10 +41,14 @@ def test_license_status_flow_active_grace_blocked(monkeypatch, tmp_path: Path):
     statuses = [
         ("active", False, "ok"),
         ("grace", False, "grace"),
-        ("gesperrt", True, "license_blocked"),
+        ("gesperrt", True, "license_blocked_smb_unreachable"),
     ]
     for status, expected_read_only, expected_reason in statuses:
         monkeypatch.setattr(license_mod, "load_license", lambda _p, s=status: {**base, "status": s})
+        if status == "gesperrt":
+            monkeypatch.setenv("KUKANILEA_SMB_REACHABLE", "0")
+        else:
+            monkeypatch.delenv("KUKANILEA_SMB_REACHABLE", raising=False)
         state = license_mod.load_runtime_license_state(
             license_path=tmp_path / "license.json",
             trial_path=tmp_path / "trial.json",
