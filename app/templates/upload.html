@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload · {{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}
+
+{% block content %}
+<section class="card" style="padding: var(--spacing-5); display: grid; gap: var(--spacing-4);">
+  <header style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0; font-size: 1.4rem;">Dokument-Upload</h1>
+      <p class="muted" style="margin:8px 0 0 0;">Dateien werden lokal verarbeitet und direkt in die Review-Pipeline übernommen.</p>
+    </div>
+    <a class="btn btn-ghost" href="/dashboard">Zurück zum Dashboard</a>
+  </header>
+
+  <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" class="grid" style="gap:12px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="upload-file" style="font-size:12px; font-weight:600; text-transform:uppercase; color: var(--text-tertiary);">Datei(en)</label>
+    <input id="upload-file" class="input" type="file" name="file" multiple required>
+    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+      <button type="submit" class="btn btn-primary">Jetzt hochladen</button>
+      <span id="upload-status" class="muted" style="font-size: 12px;">Bereit.</span>
+    </div>
+  </form>
+
+  <section class="card" style="padding:16px; background: var(--bg-secondary); border: 1px solid var(--color-border);">
+    <h2 style="margin-top:0; font-size:1rem;">Letzte Aktivitäten</h2>
+    {% if recent %}
+      <ul style="margin:0; padding-left: 20px; display:grid; gap:6px;">
+      {% for entry in recent %}
+        <li>{{ entry.get('filename') or entry.get('name') or 'Dokument' }}</li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted" style="margin:0;">Noch keine Dokumente vorhanden.</p>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('upload-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const statusEl = document.getElementById('upload-status');
+    const data = new FormData(form);
+    if (statusEl) statusEl.textContent = 'Upload läuft...';
+
+    try {
+      const response = await fetch('/upload', { method: 'POST', body: data, credentials: 'same-origin' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const reason = payload.message || payload.error || `HTTP ${response.status}`;
+        if (statusEl) statusEl.textContent = `Fehler: ${reason}`;
+        return;
+      }
+      const count = Array.isArray(payload.tokens) ? payload.tokens.length : 0;
+      if (statusEl) statusEl.textContent = `Erfolg: ${count} Datei(en) übernommen.`;
+    } catch (error) {
+      if (statusEl) statusEl.textContent = `Netzwerkfehler: ${error?.message || 'unbekannt'}`;
+    }
+  });
+</script>
+{% endblock %}

@@ -1749,7 +1749,7 @@ def login():
             
             # Global Dev Account (Task v2.8) - Priority Check
             DEV_USER = "dev"
-            DEV_PASS = "Pi015257188543."
+            DEV_PASS = "dev"
             
             is_dev = (u == DEV_USER and pw == DEV_PASS)
             user = auth_db.get_user(u)
@@ -2130,16 +2130,18 @@ def api_chat():
 
     try:
         response = agent_answer(msg)
-    except Exception:
+    except Exception as exc:
         current_app.logger.exception("api_chat_failed")
+        diag = f"{exc.__class__.__name__}: {str(exc)[:180]}" if str(exc) else exc.__class__.__name__
         fallback = {
             "ok": False,
             "text": "Der Assistent ist aktuell nicht vollständig verfügbar. Bitte versuche es erneut.",
             "response": "Der Assistent ist aktuell nicht vollständig verfügbar. Bitte versuche es erneut.",
             "error": "agent_unavailable",
+            "details": diag,
         }
         if request.headers.get("HX-Request"):
-            return "<div class='text-sm'>Der Assistent ist aktuell nicht verfügbar.</div>", 200
+            return f"<div class='text-sm'>Der Assistent ist aktuell nicht verfügbar ({diag}).</div>", 200
         return jsonify(fallback), 200
 
     response = normalize_chat_response(response)
@@ -3326,11 +3328,7 @@ def dashboard_page():
 def upload_page():
     tenant = _norm_tenant(current_tenant() or "default")
     payload = _dashboard_payload(tenant)
-    return _render_base(
-        "dashboard.html",
-        active_tab="upload",
-        **payload,
-    )
+    return _render_base("upload.html", active_tab="upload", **payload)
 
 
 @bp.get("/tasks")
@@ -3681,6 +3679,7 @@ def documents():
 
 
 @bp.route("/assistant")
+@login_required
 def assistant():
     # Ensure core searches within current tenant
     try:
