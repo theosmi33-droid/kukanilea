@@ -140,7 +140,20 @@ def create_app() -> Flask:
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return None
         path = request.path or "/"
-        allow_prefixes = ("/health", "/api/health", "/static/", "/admin/license", "/admin/settings")
+        # Auth/session flows must remain writable even in read-only mode,
+        # otherwise users cannot log in to inspect or recover license state.
+        allow_prefixes = (
+            "/health",
+            "/api/health",
+            "/static/",
+            "/login",
+            "/logout",
+            "/switch-tenant",
+            "/admin/license",
+            "/admin/settings",
+            "/api/auth/",
+            "/api/chat",
+        )
         if any(path.startswith(prefix) for prefix in allow_prefixes):
             return None
         if bool(app.config.get("READ_ONLY", False)):
