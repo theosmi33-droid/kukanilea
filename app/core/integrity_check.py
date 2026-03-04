@@ -5,8 +5,10 @@ Ensures file consistency, module availability, and database health.
 """
 
 import os
+import getpass
 import hashlib
 import logging
+import pwd
 import sqlite3
 from pathlib import Path
 from typing import List, Dict, Tuple, Any
@@ -42,7 +44,7 @@ def check_system_integrity() -> Dict[str, Any]:
         "modules": check_modules(),
         "database": check_database_integrity(),
         "permissions": check_fs_permissions(),
-        "timestamp": os.getlogin() + "_" + str(os.getpid()) # Mock identifier for now
+        "timestamp": get_current_user_safe() + "_" + str(os.getpid()) # Mock identifier for now
     }
 
     all_ok = all([v.get("ok", False) for k, v in results.items() if isinstance(v, dict)])
@@ -53,6 +55,23 @@ def check_system_integrity() -> Dict[str, Any]:
         create_crash_dump(results)
 
     return results
+
+
+def get_current_user_safe() -> str:
+    """Resolve the current user in CI-safe way when no TTY is attached."""
+    try:
+        return os.getlogin()
+    except OSError:
+        user = os.environ.get("USER") or os.environ.get("LOGNAME")
+        if user:
+            return user
+        try:
+            return getpass.getuser()
+        except Exception:
+            try:
+                return pwd.getpwuid(os.getuid()).pw_name
+            except Exception:
+                return "ci_user"
 
 def verify_core_files() -> Dict[str, Any]:
     """Checks if core files exist and verifies their SHA256 hashes (Step 2)."""
