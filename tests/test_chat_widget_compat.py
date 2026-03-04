@@ -1,9 +1,9 @@
 import sys
 from pathlib import Path
+from tests.time_utils import utc_now_iso
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from datetime import datetime
 
 
 def _make_app(tmp_path, monkeypatch):
@@ -26,7 +26,7 @@ def test_api_chat_accepts_message_field_and_returns_response_alias(tmp_path, mon
 
     with app.app_context():
         auth_db = app.extensions["auth_db"]
-        now = datetime.utcnow().isoformat()
+        now = utc_now_iso()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
@@ -60,7 +60,7 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
 
     with app.app_context():
         auth_db = app.extensions["auth_db"]
-        now = datetime.utcnow().isoformat()
+        now = utc_now_iso()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
@@ -87,7 +87,7 @@ def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_p
 
     with app.app_context():
         auth_db = app.extensions["auth_db"]
-        now = datetime.utcnow().isoformat()
+        now = utc_now_iso()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
