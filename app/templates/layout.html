@@ -89,8 +89,8 @@
     <div id="ki-chat-window" style="display: none; width: 350px; height: 450px; background: var(--bg-secondary); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); flex-direction: column; overflow: hidden; backdrop-filter: blur(10px);">
         <div style="padding: 16px; background: var(--color-primary); color: white; display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <div id="chat-online-dot" style="width: 8px; height: 8px; background: #4ade80; border-radius: 50%; box-shadow: 0 0 8px #4ade80;"></div>
-                <span id="chat-status-text" style="font-weight: 700; font-size: 14px;">KI ASSISTENT</span>
+                <div style="width: 8px; height: 8px; background: #4ade80; border-radius: 50%; box-shadow: 0 0 8px #4ade80;"></div>
+                <span style="font-weight: 700; font-size: 14px;">KI ASSISTENT</span>
             </div>
             <button onclick="toggleChat()" style="background: none; border: none; color: white; cursor: pointer; padding: 4px;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -153,19 +153,6 @@
         }
     }
 
-    window.addEventListener('online', () => {
-        const dot = document.getElementById('chat-online-dot');
-        const text = document.getElementById('chat-status-text');
-        if(dot) { dot.style.background = '#4ade80'; dot.style.boxShadow = '0 0 8px #4ade80'; }
-        if(text) text.textContent = 'KI ASSISTENT';
-    });
-    window.addEventListener('offline', () => {
-        const dot = document.getElementById('chat-online-dot');
-        const text = document.getElementById('chat-status-text');
-        if(dot) { dot.style.background = '#f59e0b'; dot.style.boxShadow = '0 0 8px #f59e0b'; }
-        if(text) text.textContent = 'KI (OFFLINE)';
-    });
-
     async function sendChatMessage() {
         const input = document.getElementById('chat-input');
         const text = input.value.trim();
@@ -192,34 +179,8 @@
             
             // Add AI Message
             const aiDiv = document.createElement('div');
-            aiDiv.style.cssText = "background: var(--bg-tertiary); padding: 10px 14px; border-radius: 12px 12px 12px 2px; align-self: flex-start; max-width: 85%; line-height: 1.4; display: flex; flex-direction: column; gap: 8px;";
+            aiDiv.style.cssText = "background: var(--bg-tertiary); padding: 10px 14px; border-radius: 12px 12px 12px 2px; align-self: flex-start; max-width: 85%; line-height: 1.4;";
             aiDiv.textContent = data.text || data.response || data.message || "Entschuldigung, ich konnte die Anfrage nicht verarbeiten.";
-            
-            if (data.actions && data.actions.length) {
-                const actionsDiv = document.createElement('div');
-                actionsDiv.style.cssText = "display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;";
-                data.actions.forEach(action => {
-                    const btn = document.createElement('button');
-                    btn.textContent = `Aktion: ${action.type}`;
-                    btn.style.cssText = "font-size: 11px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--bg-secondary); cursor: pointer;";
-                    
-                    if (action.confirm_required) {
-                        btn.onclick = () => {
-                            const val = prompt(`Sicherheits-Check: Bitte geben Sie "CONFIRM" ein, um '${action.type}' auszuführen.`);
-                            if (val && val.trim().toUpperCase() === 'CONFIRM') {
-                                alert(`Aktion '${action.type}' wird ausgeführt.`);
-                                btn.disabled = true;
-                                btn.textContent += " (gestartet)";
-                            } else {
-                                alert("Abgebrochen.");
-                            }
-                        };
-                    }
-                    actionsDiv.appendChild(btn);
-                });
-                aiDiv.appendChild(actionsDiv);
-            }
-
             container.appendChild(aiDiv);
             container.scrollTop = container.scrollHeight;
         } catch (e) {
