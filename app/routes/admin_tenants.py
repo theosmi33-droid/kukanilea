@@ -30,6 +30,7 @@ from app.auth import (
     require_role,
 )
 from app.config import Config
+from app.core.logic import audit_log
 from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
@@ -294,6 +295,15 @@ def create_user():
     auth_db = _auth_db()
     auth_db.upsert_user(username, hash_password(password), now)
     auth_db.upsert_membership(username, tenant_id, role_db, now)
+
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="USER_CREATE",
+        target=username,
+        meta={"tenant_id": tenant_id, "role": role_db},
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="users"))
 
 
@@ -310,6 +320,15 @@ def update_user_role():
         return jsonify(ok=False, error="username_required"), 400
 
     _auth_db().upsert_membership(username, tenant_id, role_db, _now_iso())
+
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="USER_ROLE_UPDATE",
+        target=username,
+        meta={"tenant_id": tenant_id, "role": role_db},
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="users"))
 
 
@@ -331,6 +350,14 @@ def disable_user():
             (hash_password(random_pw), username),
         )
         con.commit()
+
+    audit_log(
+        user=actor,
+        role=current_role() or "ADMIN",
+        action="USER_DISABLE",
+        target=username,
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="users"))
 
 
@@ -362,6 +389,13 @@ def delete_user():
         con.execute("DELETE FROM users WHERE username=?", (username,))
         con.commit()
 
+    audit_log(
+        user=actor,
+        role=current_role() or "ADMIN",
+        action="USER_DELETE",
+        target=username,
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="users"))
 
 
@@ -440,7 +474,7 @@ def upload_license():
     try:
         temp_license.parent.mkdir(parents=True, exist_ok=True)
         temp_license.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        
+
         # Test validation before committing to final path
         parsed = load_license(temp_license)
         if not parsed.get("valid"):
@@ -454,6 +488,14 @@ def upload_license():
             os.chmod(Config.LICENSE_PATH, 0o600)
         except OSError:
             pass
+
+        audit_log(
+            user=current_user() or "system",
+            role=current_role() or "ADMIN",
+            action="LICENSE_UPLOAD",
+            meta={"plan": payload.get("plan"), "customer_id": payload.get("customer_id")},
+            tenant_id=current_tenant() or "SYSTEM",
+        )
     except Exception as e:
         if temp_license.exists():
             temp_license.unlink()
@@ -478,6 +520,13 @@ def save_system_settings():
         }
     )
     _save_system_settings(payload)
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="SYSTEM_SETTINGS_UPDATE",
+        meta=payload,
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="system"))
 
 
@@ -499,6 +548,14 @@ def save_branding():
         if temp_branding.exists():
             temp_branding.unlink()
         raise e
+
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="BRANDING_UPDATE",
+        meta=payload,
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="branding"))
 
 
@@ -506,7 +563,14 @@ def save_branding():
 @login_required
 @require_role("ADMIN")
 def backup_run():
-    _run_backup()
+    written = _run_backup()
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="BACKUP_RUN",
+        meta={"files": written},
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="backup"))
 
 
@@ -520,7 +584,15 @@ def backup_restore():
     if not _confirm_gate(confirm):
         return jsonify(ok=False, error="confirm_required"), 400
 
-    _restore_backup(backup_name)
+    target = _restore_backup(backup_name)
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="BACKUP_RESTORE",
+        target=backup_name,
+        meta={"restored_path": target},
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="backup"))
 
 
@@ -547,6 +619,14 @@ def mesh_connect():
     ok = manager.initiate_handshake(peer_ip, peer_port)
     if not ok:
         return jsonify(ok=False, error="handshake_failed"), 400
+
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="MESH_PEER_CONNECT",
+        target=f"{peer_ip}:{peer_port}",
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="mesh"))
 
 
@@ -565,4 +645,11 @@ def mesh_rotate_key():
         pub_path.unlink()
 
     ensure_mesh_identity()
+
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="MESH_KEY_ROTATE",
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console", section="mesh"))
