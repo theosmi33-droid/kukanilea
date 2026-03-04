@@ -17,6 +17,25 @@ KUKANILEA is a modern, high-performance Business Operating System designed for t
 2. Drag `KUKANILEA.app` to `Applications`.
 3. Start the app and open [http://127.0.0.1:5051](http://127.0.0.1:5051).
 
+## Quickstart (<10 min)
+
+```bash
+# 1) Clone + bootstrap + smoke in one run
+git clone <repo-url>
+cd kukanilea
+bash scripts/dev_bootstrap.sh
+
+# 2) Start app (separate terminal)
+source .venv/bin/activate
+python run.py server --host 127.0.0.1 --port 5051
+
+# 3) Optional: run smoke tests manually
+python -m app.smoke
+pytest -q
+```
+
+Weitere Details: `docs/dev/BOOTSTRAP_QUICKSTART.md`
+
 ## Quick Start (Developer)
 
 ```bash
@@ -27,7 +46,7 @@ pip install -r requirements.txt
 
 # Start the full-stack system
 # (optional for development: export KUKANILEA_ENV=development)
-python kukanilea_app.py --host 127.0.0.1 --port 5051
+python run.py server --host 127.0.0.1 --port 5051
 ```
 
 ## Data location (macOS)
