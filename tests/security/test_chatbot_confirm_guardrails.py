@@ -49,7 +49,12 @@ def test_web_chat_blocks_prompt_injection(tmp_path, monkeypatch):
     )
     assert response.status_code == 400
     body = response.get_json()
-    assert body["error"] == "injection_blocked"
+    # Support both legacy ("error": "code") and structured ("error": {"code": ...}) payloads.
+    error_field = body.get("error")
+    if isinstance(error_field, dict):
+        assert error_field.get("code") == "injection_blocked"
+    else:
+        assert error_field == "injection_blocked"
 
 
 def test_compact_chat_marks_write_actions_confirm_required(tmp_path, monkeypatch):

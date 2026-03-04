@@ -1,6 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock
-import sys
+from unittest.mock import patch
 
 # Mock login_required before importing the blueprint
 from flask import Flask
@@ -11,8 +10,13 @@ with patch('app.auth.login_required', mock_login_required):
 class TestDashboardAPI(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
+        self.app.secret_key = "test-secret"
         self.app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
         self.client = self.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["user"] = "dev"
+            sess["role"] = "DEV"
+            sess["tenant_id"] = "KUKANILEA"
 
     @patch('app.routes.dashboard_api.run_vault_selftest')
     def test_vault_selftest_success(self, mock_selftest):
