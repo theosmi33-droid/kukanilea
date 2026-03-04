@@ -26,6 +26,19 @@ Optional für schnellen Zwischenstand:
 scripts/ops/launch_evidence_gate.sh --fast
 ```
 
+Hinweis (wichtig für CI):
+- Bei Log-Pipelines immer mit `pipefail` ausführen, damit Gate-Fehler nicht als false-green enden:
+
+```bash
+set -o pipefail
+scripts/ops/launch_evidence_gate.sh | tee /tmp/gate.txt
+```
+- Exit-Code-Konvention:
+  - `0` = GO/GO with Notes
+  - `3` = fehlende Abhängigkeit/Umgebung (z. B. `gh`, `rg`, `REPO`)
+  - `4` = mindestens ein Gate ist FAIL
+
+
 ---
 
 ## Gate 1 — Repo & GitHub Truth (CLI only)
