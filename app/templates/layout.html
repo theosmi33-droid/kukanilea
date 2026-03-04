@@ -192,14 +192,21 @@
         let data = {};
         try { data = await res.json(); } catch (_) { data = {}; }
 
-        const reply = data.text || data.response || (res.ok ? '' : (data.error || `HTTP ${res.status}`));
+        const detailParts = [];
+        if (!res.ok) detailParts.push(`HTTP ${res.status}`);
+        if (data && data.error) detailParts.push(`Code: ${data.error}`);
+        if (data && data.details) detailParts.push(String(data.details));
+        const detailHint = detailParts.length ? ` (${detailParts.join(' · ')})` : '';
+
+        const reply = data.text || data.response || '';
         if (reply) {
           appendChatBubble(reply, false);
         } else {
-          appendChatBubble('Entschuldigung, ich konnte die Anfrage nicht verarbeiten.', false);
+          appendChatBubble(`Der Assistent konnte keine Antwort erzeugen${detailHint}.`, false);
         }
       } catch (err) {
-        appendChatBubble('Der Assistent ist aktuell nicht erreichbar. Bitte später erneut versuchen.', false);
+        const reason = err && err.message ? err.message : 'unbekannt';
+        appendChatBubble(`Der Assistent ist aktuell nicht erreichbar (Netzwerkfehler: ${reason}).`, false);
       } finally {
         input.disabled = false;
         sendBtn.disabled = false;
