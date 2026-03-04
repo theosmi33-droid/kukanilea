@@ -116,7 +116,10 @@ if ! sqlite3 "$AUTH_DB" "SELECT name FROM sqlite_master WHERE type='table' AND n
   exit 1
 fi
 
-echo "[7/7] Verifying guardrails (CDN & HTMX confirm)..." | tee -a "$HEALTH_LOG"
+echo "[7/8] Verifying guardrails (CDN & HTMX confirm)..." | tee -a "$HEALTH_LOG"
 "$PYTHON" scripts/ops/verify_guardrails.py | tee -a "$HEALTH_LOG"
+
+echo "[8/8] Enforcing zero external requests gate..." | tee -a "$HEALTH_LOG"
+"$PYTHON" scripts/ops/zero_external_requests_scan.py | tee -a "$HEALTH_LOG"
 
 echo "[healthcheck] All checks passed" | tee -a "$HEALTH_LOG"

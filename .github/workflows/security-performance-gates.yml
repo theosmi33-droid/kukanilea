@@ -1,0 +1,58 @@
+name: Security + Performance Gates
+
+on:
+  pull_request:
+    branches: [main, "codex/**"]
+  push:
+    branches: [main, "codex/**"]
+  workflow_dispatch:
+
+jobs:
+  security-perf-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OLLAMA_ENABLED: "0"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+          npm ci
+          python -m playwright install --with-deps chromium
+
+      - name: Security baseline gates
+        run: |
+          python scripts/ops/zero_external_requests_scan.py
+          python scripts/ops/verify_guardrails.py
+
+      - name: Mandatory test gates
+        run: |
+          ./scripts/ops/healthcheck.sh --ci
+          REPO=${{ github.repository }} ./scripts/ops/launch_evidence_gate.sh --skip-healthcheck
+          pytest -q tests/security tests/e2e
+
+      - name: Performance gate + KPI snapshot
+        run: |
+          python scripts/ops/performance_gate.py
+          ./scripts/ops/kpi_snapshot.sh
+
+      - name: Playwright smoke gate
+        run: |
+          npm run test:e2e

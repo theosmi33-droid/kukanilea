@@ -285,6 +285,32 @@ else
 fi
 rm -f "$tmp"
 
+# Gate 8b: Zero external requests scan
+tmp="$(mktemp)"
+append "## Zero External Requests Scan"
+append '`python3 scripts/ops/zero_external_requests_scan.py`'
+if capture_cmd "python3 scripts/ops/zero_external_requests_scan.py" "$tmp"; then
+  render_output_block "$tmp"
+  record_result "Zero External Requests" "PASS" "zero external references detected"
+else
+  render_output_block "$tmp"
+  record_result "Zero External Requests" "FAIL" "external references detected"
+fi
+rm -f "$tmp"
+
+# Gate 8c: Performance budget gate
+tmp="$(mktemp)"
+append "## Performance Budget Gate"
+append '`python3 scripts/ops/performance_gate.py`'
+if capture_cmd "python3 scripts/ops/performance_gate.py" "$tmp"; then
+  render_output_block "$tmp"
+  record_result "Performance Budget" "PASS" "cold start + render smoke budgets passed"
+else
+  render_output_block "$tmp"
+  record_result "Performance Budget" "FAIL" "budget gate failed"
+fi
+rm -f "$tmp"
+
 # Gate 9: Dark mode scan
 tmp="$(mktemp)"
 append "## White-Mode Scan"
