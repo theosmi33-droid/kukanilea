@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Callable
 
 from app import core
@@ -49,7 +49,12 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
     list_recent_docs = _core_get("list_recent_docs")
     docs = list_recent_docs(tenant, limit=6) if callable(list_recent_docs) else []
     metrics = {"recent_docs": len(docs), "widgets": 3}
-    details = {"source": "core.list_recent_docs", "tenant": tenant}
+    details = {
+        "source": "core.list_recent_docs",
+        "tenant": tenant,
+        "matrix_endpoint": "/api/dashboard/tool-matrix",
+        "aggregate_mode": "summary_only",
+    }
     return metrics, details, ""
 
 
@@ -123,7 +128,13 @@ def _collect_settings_summary(_tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_chatbot_summary(_tenant: str) -> tuple[dict, dict, str]:
     metrics = {"overlay": 1, "compact_api": 1}
-    details = {"endpoints": ["/api/chat", "/api/chat/compact"]}
+    details = {
+        "endpoints": ["/api/chat", "/api/chat/compact"],
+        "payload_contract": {
+            "request_fields": ["message", "msg", "q"],
+            "response_fields": ["ok", "response"],
+        },
+    }
     return metrics, details, ""
 
 
