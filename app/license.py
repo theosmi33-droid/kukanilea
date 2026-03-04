@@ -7,7 +7,7 @@ import json
 import os
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Dict
 
@@ -236,12 +236,42 @@ def load_runtime_license_state(
     license_path: Path,
     trial_path: Path,
     trial_days: int = 14,
+    smb_available: bool = True,
+    runtime_state_path: Path | None = None,
+    grace_days: int = 3,
 ) -> Dict[str, Any]:
+    runtime_state_path = runtime_state_path or trial_path.with_name("license_runtime_state.json")
+
+    def _load_runtime_state() -> Dict[str, Any]:
+        try:
+            return _load_json(runtime_state_path)
+        except Exception:
+            return {}
+
+    def _save_runtime_state(last_ok: date) -> None:
+        runtime_state_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_state_path.write_text(
+            json.dumps({"last_ok": last_ok.isoformat()}, indent=2),
+            encoding="utf-8",
+        )
+
     info = load_license(license_path)
     if info.get("valid"):
         expired = bool(info.get("expired", False))
         device_mismatch = bool(info.get("device_mismatch", False))
         status = _normalize_license_status(info.get("status"))
+        runtime_state = _load_runtime_state()
+
+        if not smb_available and status == "active":
+            last_ok = date.fromisoformat(
+                str(runtime_state.get("last_ok") or date.today().isoformat())
+            )
+            in_grace = date.today() <= (last_ok + timedelta(days=grace_days))
+            if in_grace:
+                status = "grace"
+            else:
+                status = "blocked"
+
         read_only = expired or device_mismatch or status == "blocked"
         reason = "ok"
         if expired:
@@ -249,9 +279,12 @@ def load_runtime_license_state(
         elif device_mismatch:
             reason = "device_mismatch"
         elif status == "blocked":
-            reason = "license_blocked"
+            reason = "license_transport_down" if not smb_available else "license_blocked"
         elif status == "grace":
-            reason = "grace"
+            reason = "license_transport_grace" if not smb_available else "grace"
+        else:
+            _save_runtime_state(date.today())
+
         state = LicenseState(
             plan=str(info.get("plan") or "PRO"),
             trial=False,

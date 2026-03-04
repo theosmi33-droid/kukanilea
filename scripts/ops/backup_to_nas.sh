@@ -1,35 +1,90 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TENANT_ID="$(cat instance/tenant_id.txt)"
-TIMESTAMP="$(date +%Y-%m-%d_%H-%M)"
-TMP_DIR="/tmp/kukanilea_backup_${TENANT_ID}"
-BACKUP_NAME="${TENANT_ID}_${TIMESTAMP}.tar.zst"
-NAS_SHARE="//192.168.0.2/KUKANILEA-BACKUPS"
-NAS_USER="${NAS_USER:-backupuser}"
-NAS_PASS="${NAS_PASS:-}"
+usage() {
+  cat <<USAGE
+Usage: ./scripts/ops/backup_to_nas.sh [--dry-run|--real-run] [--tenant TENANT_ID]
 
-mkdir -p "$TMP_DIR"
+Environment:
+  KUKANILEA_USER_DATA_ROOT   Data root containing auth/core/license files (default: ./instance)
+  KUKANILEA_NAS_DIR          Local NAS target directory for drills (default: ./evidence/nas)
+USAGE
+}
 
-sqlite3 instance/kukanilea.db .dump > "$TMP_DIR/db_dump.sql"
-tar -C instance -cf - . | zstd -19 -T0 -o "${TMP_DIR}/${BACKUP_NAME}"
+MODE="real"
+TENANT_ID="${TENANT_ID:-${TENANT_DEFAULT:-KUKANILEA}}"
 
-UPLOAD_FILE="${TMP_DIR}/${BACKUP_NAME}"
-if command -v age >/dev/null 2>&1 && [[ -n "${NAS_PUBLIC_KEY:-}" ]]; then
-  age -r "${NAS_PUBLIC_KEY}" -o "${TMP_DIR}/${BACKUP_NAME}.age" "${TMP_DIR}/${BACKUP_NAME}"
-  UPLOAD_FILE="${TMP_DIR}/${BACKUP_NAME}.age"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) MODE="dry" ;;
+    --real-run) MODE="real" ;;
+    --tenant) TENANT_ID="${2:?missing tenant value}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1"; usage; exit 1 ;;
+  esac
+  shift
+done
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+DATA_ROOT="${KUKANILEA_USER_DATA_ROOT:-${ROOT_DIR}/instance}"
+NAS_DIR="${KUKANILEA_NAS_DIR:-${ROOT_DIR}/evidence/nas}"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+COMPRESS_EXT="tar.zst"
+if ! command -v zstd >/dev/null 2>&1; then
+  COMPRESS_EXT="tar.gz"
+fi
+BACKUP_BASENAME="${TENANT_ID}_${TIMESTAMP}.${COMPRESS_EXT}"
+BACKUP_DIR="${NAS_DIR}/${TENANT_ID}"
+BACKUP_PATH="${BACKUP_DIR}/${BACKUP_BASENAME}"
+METRICS_PATH="${BACKUP_PATH}.metrics.json"
+MANIFEST_PATH="${ROOT_DIR}/evidence/ops/last_backup_manifest.json"
+
+AUTH_DB="${KUKANILEA_AUTH_DB:-${DATA_ROOT}/auth.sqlite3}"
+CORE_DB="${KUKANILEA_CORE_DB:-${DATA_ROOT}/core.sqlite3}"
+LICENSE_FILE="${KUKANILEA_LICENSE_PATH:-${DATA_ROOT}/license.json}"
+TRIAL_FILE="${KUKANILEA_TRIAL_PATH:-${DATA_ROOT}/trial.json}"
+
+mkdir -p "$BACKUP_DIR" "${ROOT_DIR}/evidence/ops"
+
+if [[ "$MODE" == "dry" ]]; then
+  echo "[DRY-RUN] tenant=${TENANT_ID}"
+  echo "[DRY-RUN] data_root=${DATA_ROOT}"
+  echo "[DRY-RUN] backup_path=${BACKUP_PATH}"
+  exit 0
 fi
 
-if command -v smbclient >/dev/null 2>&1; then
-  smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "mkdir ${TENANT_ID}; cd ${TENANT_ID}; put ${UPLOAD_FILE} $(basename "$UPLOAD_FILE")"
+python3 "${ROOT_DIR}/scripts/ops/restore_validation.py" snapshot \
+  --auth-db "$AUTH_DB" \
+  --core-db "$CORE_DB" \
+  --output "$METRICS_PATH"
+
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+mkdir -p "$TMP_DIR/payload"
+for fp in "$AUTH_DB" "$CORE_DB" "$LICENSE_FILE" "$TRIAL_FILE"; do
+  if [[ -f "$fp" ]]; then
+    cp "$fp" "$TMP_DIR/payload/$(basename "$fp")"
+  fi
+done
+
+if compgen -G "${DATA_ROOT}/*.sqlite3*" > /dev/null; then
+  cp -a "${DATA_ROOT}"/*.sqlite3* "$TMP_DIR/payload/" 2>/dev/null || true
+fi
+
+if [[ "$COMPRESS_EXT" == "tar.zst" ]]; then
+  tar -C "$TMP_DIR/payload" -cf - . | zstd -q -T0 -19 -o "$BACKUP_PATH"
 else
-  MOUNT_POINT="/mnt/kukanilea_nas"
-  sudo mkdir -p "$MOUNT_POINT"
-  sudo mount -t cifs "$NAS_SHARE" "$MOUNT_POINT" -o username="$NAS_USER",password="$NAS_PASS",vers=3.0
-  sudo mkdir -p "${MOUNT_POINT}/${TENANT_ID}"
-  sudo cp "$UPLOAD_FILE" "${MOUNT_POINT}/${TENANT_ID}/"
-  sudo umount "$MOUNT_POINT"
+  tar -C "$TMP_DIR/payload" -czf "$BACKUP_PATH" .
 fi
 
-rm -rf "$TMP_DIR"
-echo "Backup upload complete: $(basename "$UPLOAD_FILE")"
+cat > "$MANIFEST_PATH" <<JSON
+{
+  "tenant_id": "${TENANT_ID}",
+  "backup_path": "${BACKUP_PATH}",
+  "metrics_path": "${METRICS_PATH}",
+  "created_at": "${TIMESTAMP}"
+}
+JSON
+
+echo "Backup completed: ${BACKUP_PATH}"
