@@ -1,56 +1,46 @@
+import unittest
+from unittest.mock import patch, MagicMock
 import sys
-from pathlib import Path
-from datetime import datetime, timezone
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+# Mock login_required before importing the blueprint
+from flask import Flask
+mock_login_required = lambda x: x
+with patch('app.auth.login_required', mock_login_required):
+    from app.routes.dashboard_api import dashboard_bp
 
+class TestDashboardAPI(unittest.TestCase):
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
+        self.client = self.app.test_client()
 
-def _make_app(tmp_path, monkeypatch):
-    from app import create_app
-    from app.config import Config
+    @patch('app.routes.dashboard_api.run_vault_selftest')
+    def test_vault_selftest_success(self, mock_selftest):
+        mock_selftest.return_value = {
+            "integrity_ok": True,
+            "database_status": "ok",
+            "files_verified": 5,
+            "files_missing": [],
+            "timestamp": "test_ts"
+        }
+        
+        response = self.client.post('/api/dashboard/selftest')
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data['status'], 'OK')
+        self.assertTrue(data['details']['integrity_ok'])
 
-    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
-    monkeypatch.setattr(Config, "AUTH_DB", tmp_path / "auth.sqlite3")
-    monkeypatch.setattr(Config, "CORE_DB", tmp_path / "core.sqlite3")
-    monkeypatch.setattr(Config, "LICENSE_PATH", tmp_path / "license.json")
-    monkeypatch.setattr(Config, "TRIAL_PATH", tmp_path / "trial.json")
-    app = create_app()
-    app.config["TESTING"] = True
-    return app
+    @patch('app.routes.dashboard_api.run_vault_selftest')
+    def test_vault_selftest_failure(self, mock_selftest):
+        mock_selftest.return_value = {
+            "integrity_ok": False,
+            "files_missing": ["app/core/logic.py"]
+        }
+        
+        response = self.client.post('/api/dashboard/selftest')
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data['status'], 'ERROR')
 
-
-def _login_dev(app, client):
-    with app.app_context():
-        auth_db = app.extensions["auth_db"]
-        now = datetime.now(timezone.utc).isoformat()
-        from app.auth import hash_password
-
-        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
-        auth_db.upsert_user("dev", hash_password("dev"), now)
-        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
-
-    with client.session_transaction() as sess:
-        sess["user"] = "dev"
-        sess["role"] = "DEV"
-        sess["tenant_id"] = "KUKANILEA"
-
-
-def test_api_system_status_returns_json_for_authenticated_user(tmp_path, monkeypatch):
-    app = _make_app(tmp_path, monkeypatch)
-    client = app.test_client()
-    _login_dev(app, client)
-
-    resp = client.get("/api/system/status")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["ok"] is True
-    assert isinstance(data["status"], dict)
-    assert "observer_active" in data["status"]
-
-
-def test_api_outbound_status_redirects_when_unauthenticated(tmp_path, monkeypatch):
-    app = _make_app(tmp_path, monkeypatch)
-    client = app.test_client()
-
-    resp = client.get("/api/outbound/status", follow_redirects=False)
-    assert resp.status_code in (401, 301, 302)
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+{% block title %}Kalender{% endblock %}
+
+{% block content %}
+<div class="panel">
+    <h1>Kalender & Fristen</h1>
+    <p>Übersicht über alle Termine, Aufgaben-Deadlines und Beleg-Fristen.</p>
+
+    <div style="margin-top: 20px;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="text-align: left; border-bottom: 2px solid var(--color-border);">
+                    <th style="padding: 10px;">Datum</th>
+                    <th style="padding: 10px;">Ereignis</th>
+                    <th style="padding: 10px;">Typ</th>
+                    <th style="padding: 10px;">Notizen</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ev in events %}
+                <tr style="border-bottom: 1px solid var(--color-border);">
+                    <td style="padding: 10px;">{{ ev.start_at }}</td>
+                    <td style="padding: 10px; font-weight: 600;">{{ ev.title }}</td>
+                    <td style="padding: 10px;"><span class="badge">{{ ev.source }}</span></td>
+                    <td style="padding: 10px; font-size: 0.9em; color: var(--text-secondary);">{{ ev.notes }}</td>
+                </tr>
+                {% endfor %}
+                {% if not events %}
+                <tr>
+                    <td colspan="4" style="padding: 20px; text-align: center; font-style: italic;">Keine Termine gefunden.</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -150,9 +150,68 @@
     </div>
   </div>
 
+  <div style="display: flex; flex-direction: column; gap: var(--spacing-3); margin-top: var(--spacing-4);">
+    <h2 style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); padding: 0 8px;">Quick Actions</h2>
+    <div class="grid grid-cols-3 gap-6">
+      <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column; gap: 12px; justify-content: center; align-items: center; min-height: 120px; cursor: pointer; transition: all 0.2s;" 
+           onclick="DashboardActions.runSelfTest(this)">
+        <div style="width:40px; height:40px; border-radius:50%; background:rgba(37,99,235,0.1); color:var(--color-primary); display:flex; align-items:center; justify-content:center;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Vault Self-Test</div>
+          <div style="font-size: 11px; color: var(--text-tertiary);">Integrität prüfen</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
+const DashboardActions = {
+  runSelfTest: function(el) {
+    const icon = el.querySelector('svg');
+    const label = el.querySelector('div > div:first-child');
+    const sub = el.querySelector('div > div:last-child');
+    
+    if (el.classList.contains('processing')) return;
+    el.classList.add('processing');
+    el.style.opacity = '0.6';
+    label.textContent = 'Läuft...';
+    
+    fetch('/api/dashboard/selftest', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': '{{ csrf_token() }}' }
+    })
+    .then(r => r.json())
+    .then(data => {
+      el.classList.remove('processing');
+      el.style.opacity = '1';
+      if (data.status === 'OK') {
+        label.textContent = 'Vault OK';
+        label.style.color = 'var(--color-success)';
+        sub.textContent = 'Test bestanden';
+      } else {
+        label.textContent = 'Fehler';
+        label.style.color = 'var(--color-danger)';
+        sub.textContent = 'Integrität verletzt';
+      }
+      setTimeout(() => {
+        label.textContent = 'Vault Self-Test';
+        label.style.color = '';
+        sub.textContent = 'Integrität prüfen';
+      }, 3000);
+    })
+    .catch(err => {
+      el.classList.remove('processing');
+      el.style.opacity = '1';
+      label.textContent = 'Netzwerkfehler';
+      console.error(err);
+    });
+  }
+};
+
 document.addEventListener("DOMContentLoaded", function() {
   const fileInput = document.getElementById("file");
   const stagingArea = document.getElementById("stagingArea");
@@ -172,9 +231,29 @@ document.addEventListener("DOMContentLoaded", function() {
     fileList.innerHTML = "";
     stagedFiles.forEach((f, i) => {
       const d = document.createElement("div");
-      d.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--radius-md); background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); font-size: 13px;";
+      d.draggable = true;
+      d.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--radius-md); background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); font-size: 13px; cursor: move;";
+      d.dataset.index = i;
+      
+      d.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', i);
+        d.style.opacity = '0.5';
+      });
+      d.addEventListener('dragend', () => d.style.opacity = '1');
+      d.addEventListener('dragover', (e) => e.preventDefault());
+      d.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+        const toIndex = i;
+        if (fromIndex !== toIndex) {
+          const movedItem = stagedFiles.splice(fromIndex, 1)[0];
+          stagedFiles.splice(toIndex, 0, movedItem);
+          updateUI();
+        }
+      });
+
       d.innerHTML = `
-        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--color-text-main);">${f.name}</div>
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--color-text-main); pointer-events: none;">${f.name}</div>
         <button style="background: none; border: none; color: var(--color-danger); cursor: pointer; font-weight: 600; padding: 4px 8px; font-size: 12px;" onclick="window._rm(${i})">Entfernen</button>
       `;
       fileList.appendChild(d);
