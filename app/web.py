@@ -3637,29 +3637,20 @@ def projects_list():
         )
     from app.modules.projects.logic import ProjectManager
     pm = ProjectManager(current_app.extensions["auth_db"])
-    con = current_app.extensions["auth_db"]._db()
-    try:
-        project = con.execute("SELECT * FROM projects LIMIT 1").fetchone()
+    workspace = pm.ensure_default_hub(current_tenant())
+    project = workspace["project"]
+    board = workspace["board"]
+    columns = workspace.get("columns") or []
+    boards = pm.list_boards(current_tenant(), project["id"])
 
-        # Ensure at least one project/board exists for first-run UX
-        if not project:
-            p_id = pm.create_project(
-                current_tenant(),
-                "Standard Projekt",
-                "Willkommen in Ihrer Projektverwaltung.",
-            )
-            pm.create_board(p_id, "Hauptboard")
-            return redirect(url_for("web.projects_list"))
-
-        board = con.execute(
-            "SELECT id FROM boards WHERE project_id = ? LIMIT 1", (project["id"],)
-        ).fetchone()
-        board_id = board["id"] if board else pm.create_board(project["id"], "Hauptboard")
-    finally:
-        con.close()
-
-    tasks = pm.list_tasks(board_id)
-    return _render_base("kanban.html", active_tab="tasks", project=project, tasks=tasks)
+    return _render_base(
+        "kanban.html",
+        active_tab="projects",
+        project=project,
+        board=board,
+        boards=boards,
+        columns=columns,
+    )
 
 
 @bp.post("/api/tasks/<task_id>/move")
