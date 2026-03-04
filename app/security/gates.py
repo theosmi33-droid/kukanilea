@@ -16,6 +16,10 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bsystem\s+override\b"),
     re.compile(r"(?i)\bignore\s+instructions?\b"),
     re.compile(r"(?i)\bprompt\s+jailbreak\b"),
+    re.compile(r"(?i)\bdeveloper\s+mode\b"),
+    re.compile(r"(?i)\bdo\s+anything\s+now\b|\bdan\s+mode\b"),
+    re.compile(r"(?i)\b(?:bypass|disable)\s+(?:all\s+)?(?:security|guardrails?|safety)\b"),
+    re.compile(r"(?i)\b(?:reveal|print)\s+(?:the\s+)?(?:system\s+prompt|hidden\s+instructions?)\b"),
 )
 
 

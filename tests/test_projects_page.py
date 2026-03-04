@@ -1,11 +1,11 @@
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.auth import hash_password
+from tests.time_utils import utc_now_iso
 
 
 def _make_app(tmp_path, monkeypatch):
@@ -26,7 +26,7 @@ def _make_app(tmp_path, monkeypatch):
 def _seed_admin(app):
     with app.app_context():
         auth_db = app.extensions["auth_db"]
-        now = datetime.utcnow().isoformat()
+        now = utc_now_iso()
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
         auth_db.upsert_user("admin", hash_password("adminpass"), now)
         auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)

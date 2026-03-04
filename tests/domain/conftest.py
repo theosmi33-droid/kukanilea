@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from tests.time_utils import utc_now_iso
+
 
 import pytest
 
@@ -24,7 +25,7 @@ def auth_client(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     with app.app_context():
         auth_db = app.extensions["auth_db"]
-        now = datetime.utcnow().isoformat()
+        now = utc_now_iso()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)

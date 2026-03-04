@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import re
-from datetime import datetime
+from tests.time_utils import utc_now_iso
 
 
 
@@ -36,7 +36,7 @@ def test_forgot_shows_local_code_in_dev_mode_and_reset_works(tmp_path, monkeypat
 
     with app.app_context():
         auth_db = app.extensions["auth_db"]
-        now = datetime.utcnow().isoformat()
+        now = utc_now_iso()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)

@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
-if [ ! -d ".venv" ]; then
-  python3 -m venv .venv
+BASE_PYTHON="$(scripts/dev/resolve_python.sh)"
+
+if [[ ! -d ".venv" ]]; then
+  "$BASE_PYTHON" -m venv .venv
 fi
-source .venv/bin/activate
-python -m pip -q install -U pip
-python -m pip -q install -r requirements.txt
 
-python3 scripts/seed_dev_users.py
-python3 kukanilea_app.py
+PYTHON="$ROOT/.venv/bin/python"
+"$PYTHON" -m pip -q install -U pip
+"$PYTHON" -m pip -q install -r requirements.txt
+
+"$PYTHON" scripts/seed_dev_users.py
+"$PYTHON" kukanilea_app.py
