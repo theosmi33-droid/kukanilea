@@ -56,9 +56,14 @@ def create_app() -> Flask:
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
     secure_cookie_default = not _is_dev_env()
-    app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
-    app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
-    app.config.setdefault("SESSION_COOKIE_SECURE", secure_cookie_default)
+    # Flask may pre-seed cookie keys with None; enforce secure defaults explicitly.
+    app.config["SESSION_COOKIE_HTTPONLY"] = bool(
+        app.config.get("SESSION_COOKIE_HTTPONLY", True)
+    )
+    if app.config.get("SESSION_COOKIE_SAMESITE") in (None, ""):
+        app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    if app.config.get("SESSION_COOKIE_SECURE") is None:
+        app.config["SESSION_COOKIE_SECURE"] = secure_cookie_default
     app.config.setdefault(
         "SESSION_COOKIE_NAME",
         "__Host-kukanilea_session" if secure_cookie_default else "kukanilea_session",
