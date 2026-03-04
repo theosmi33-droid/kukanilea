@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PYTHON="${PYTHON:-python3}"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [[ -z "${PYTHON:-}" ]]; then
+  if [[ -x "$ROOT/.build_venv/bin/python" ]]; then
+    PYTHON="$ROOT/.build_venv/bin/python"
+  else
+    PYTHON="python3"
+  fi
+fi
 AUTH_DB="${KUKANILEA_AUTH_DB:-instance/auth.sqlite3}"
 HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
 : > "$HEALTH_LOG"
@@ -26,11 +33,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
+wait_for_http() {
+  local url="$1"
+  local retries="${2:-30}"
+  local delay="${3:-1}"
+  local i code
+  for ((i=1; i<=retries; i++)); do
+    code="$(curl -s -o /dev/null -w "%{http_code}" "$url" || true)"
+    if [[ "$code" == "200" || "$code" == "302" ]]; then
+      return 0
+    fi
+    sleep "$delay"
+  done
+  return 1
+}
+
 if ! curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051/" | grep -Eq "^(200|302)$"; then
   echo "[healthcheck] No server on :5051 detected, starting temporary local server..." | tee -a "$HEALTH_LOG"
   "$PYTHON" kukanilea_app.py --host 127.0.0.1 --port 5051 >/tmp/kukanilea_healthcheck_server.log 2>&1 &
   SERVER_PID=$!
-  sleep 4
+  if ! wait_for_http "http://127.0.0.1:5051/" 30 1; then
+    echo "[healthcheck] Server did not become ready on :5051 in time" | tee -a "$HEALTH_LOG"
+    echo "[healthcheck] Last server log lines:" | tee -a "$HEALTH_LOG"
+    tail -n 80 /tmp/kukanilea_healthcheck_server.log | tee -a "$HEALTH_LOG"
+    exit 1
+  fi
 fi
 
 echo "[4/7] Checking routes (200/302)..." | tee -a "$HEALTH_LOG"
