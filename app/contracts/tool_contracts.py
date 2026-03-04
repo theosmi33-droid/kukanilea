@@ -20,6 +20,8 @@ CONTRACT_TOOLS = [
 ]
 
 CONTRACT_STATUSES = {"ok", "degraded", "error"}
+CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
+CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
 
 
 def _core_get(name: str, default=None):
@@ -46,14 +48,22 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
 
 
 def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
-    list_recent_docs = _core_get("list_recent_docs")
-    docs = list_recent_docs(tenant, limit=6) if callable(list_recent_docs) else []
-    metrics = {"recent_docs": len(docs), "widgets": 3}
+    non_dashboard_tools = [tool for tool in CONTRACT_TOOLS if tool != "dashboard"]
+    rows = [build_tool_summary(tool, tenant) for tool in non_dashboard_tools]
+    degraded_tools = [row["tool"] for row in rows if row.get("status") == "degraded"]
+    error_tools = [row["tool"] for row in rows if row.get("status") == "error"]
+    metrics = {
+        "total_tools": len(rows),
+        "degraded_tools": len(degraded_tools),
+        "error_tools": len(error_tools),
+    }
     details = {
-        "source": "core.list_recent_docs",
+        "source": "contracts.tool_matrix",
         "tenant": tenant,
         "matrix_endpoint": "/api/dashboard/tool-matrix",
         "aggregate_mode": "summary_only",
+        "degraded": degraded_tools,
+        "errors": error_tools,
     }
     return metrics, details, ""
 
@@ -131,8 +141,8 @@ def _collect_chatbot_summary(_tenant: str) -> tuple[dict, dict, str]:
     details = {
         "endpoints": ["/api/chat", "/api/chat/compact"],
         "payload_contract": {
-            "request_fields": ["message", "msg", "q"],
-            "response_fields": ["ok", "response"],
+            "request_fields": CHATBOT_REQUEST_FIELDS,
+            "response_fields": CHATBOT_RESPONSE_FIELDS,
         },
     }
     return metrics, details, ""
@@ -152,6 +162,31 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "chatbot": _collect_chatbot_summary,
 }
 
+
+
+
+def extract_chat_message(payload: dict | None) -> str:
+    payload = payload or {}
+    for field in CHATBOT_REQUEST_FIELDS:
+        value = payload.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def normalize_chat_response(response: dict | str | None, *, fallback_ok: bool = True) -> dict:
+    if isinstance(response, dict):
+        normalized = dict(response)
+    else:
+        text = str(response or "")
+        normalized = {"ok": fallback_ok, "text": text, "response": text}
+
+    if "text" in normalized and "response" not in normalized:
+        normalized["response"] = normalized.get("text", "")
+    if "response" in normalized and "text" not in normalized:
+        normalized["text"] = normalized.get("response", "")
+    normalized.setdefault("ok", fallback_ok)
+    return normalized
 
 def build_tool_summary(tool: str, tenant: str = "default") -> dict:
     collector = SUMMARY_COLLECTORS.get(tool)

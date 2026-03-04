@@ -11,6 +11,7 @@ SKIP_PYTEST=0
 AUTH_DB="${KUKANILEA_AUTH_DB:-instance/auth.sqlite3}"
 HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
 PYTHON="${PYTHON:-}"
+DOCTOR_STRICT=1
 SERVER_PID=""
 
 log() {
@@ -73,13 +74,18 @@ parse_args() {
         SKIP_PYTEST=1
         shift
         ;;
+      --no-doctor)
+        DOCTOR_STRICT=0
+        shift
+        ;;
       -h|--help)
         cat <<'USAGE'
-Usage: ./scripts/ops/healthcheck.sh [--ci] [--skip-pytest]
+Usage: ./scripts/ops/healthcheck.sh [--ci] [--skip-pytest] [--no-doctor]
 
 Options:
   --ci           Run in CI mode (non-interactive logging/behavior)
   --skip-pytest  Skip pytest execution (local fallback for environment drift)
+  --no-doctor   Skip scripts/dev/doctor.sh --strict
 USAGE
         exit 0
         ;;
@@ -96,16 +102,20 @@ parse_args "$@"
 : > "$HEALTH_LOG"
 
 if [[ -z "$PYTHON" ]]; then
-  if [[ -x "$ROOT/.build_venv/bin/python" ]]; then
-    PYTHON="$ROOT/.build_venv/bin/python"
-  else
-    PYTHON="python3"
-  fi
+  PYTHON="$($ROOT/scripts/dev/resolve_python.sh)"
 fi
 
-for dep in curl find xargs sqlite3 "$PYTHON"; do
+for dep in curl find xargs sqlite3; do
   require_cmd "$dep"
 done
+
+if [[ ! -x "$PYTHON" ]]; then
+  fail "$EXIT_DEPENDENCY" "[healthcheck] Python interpreter is not executable: $PYTHON"
+fi
+
+if [[ "$DOCTOR_STRICT" -eq 1 ]]; then
+  run_gate "doctor" bash -lc "cd '$ROOT' && PYTHON='$PYTHON' scripts/dev/doctor.sh --strict"
+fi
 
 log "[healthcheck] Starting at $(date -Iseconds)"
 log "[healthcheck] Root=$ROOT"

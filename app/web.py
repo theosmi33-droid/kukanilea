@@ -86,7 +86,14 @@ from .errors import json_error
 from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
 from .security import csrf_protected, detect_injection
-from app.contracts.tool_contracts import CONTRACT_TOOLS, build_tool_health, build_tool_matrix, build_tool_summary
+from app.contracts.tool_contracts import (
+    CONTRACT_TOOLS,
+    build_tool_health,
+    build_tool_matrix,
+    build_tool_summary,
+    extract_chat_message,
+    normalize_chat_response,
+)
 from app.modules.aufgaben.contracts import build_health as build_aufgaben_health
 from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
 from app.modules.einstellungen.contracts import build_health as build_einstellungen_health
@@ -1742,7 +1749,7 @@ def login():
             
             # Global Dev Account (Task v2.8) - Priority Check
             DEV_USER = "dev"
-            DEV_PASS = "Pi015257188543."
+            DEV_PASS = "dev"
             
             is_dev = (u == DEV_USER and pw == DEV_PASS)
             user = auth_db.get_user(u)
@@ -2108,16 +2115,10 @@ def _widget_compact_response(
 @csrf_protected
 @chat_limiter.limit_required
 def api_chat():
-    payload = request.get_json(silent=True) or {}
-    msg = (
-        (payload.get("message") if isinstance(payload, dict) else None)
-        or
-        (payload.get("msg") if isinstance(payload, dict) else None)
-        or (payload.get("q") if isinstance(payload, dict) else None)
-        or request.form.get("msg")
-        or request.form.get("q")
-        or ""
-    ).strip()
+    payload = request.get_json(silent=True) if request.is_json else {}
+    msg = extract_chat_message(payload if isinstance(payload, dict) else {})
+    if not msg:
+        msg = str(request.form.get("message") or request.form.get("msg") or request.form.get("q") or "").strip()
 
     if not msg:
         return json_error("empty_query", "Leer.", status=400)
@@ -2129,30 +2130,21 @@ def api_chat():
 
     try:
         response = agent_answer(msg)
-    except Exception:
+    except Exception as exc:
         current_app.logger.exception("api_chat_failed")
+        diag = f"{exc.__class__.__name__}: {str(exc)[:180]}" if str(exc) else exc.__class__.__name__
         fallback = {
             "ok": False,
             "text": "Der Assistent ist aktuell nicht vollständig verfügbar. Bitte versuche es erneut.",
             "response": "Der Assistent ist aktuell nicht vollständig verfügbar. Bitte versuche es erneut.",
             "error": "agent_unavailable",
+            "details": diag,
         }
         if request.headers.get("HX-Request"):
-            return "<div class='text-sm'>Der Assistent ist aktuell nicht verfügbar.</div>", 200
+            return f"<div class='text-sm'>Der Assistent ist aktuell nicht verfügbar ({diag}).</div>", 200
         return jsonify(fallback), 200
 
-    if not isinstance(response, dict):
-        response = {
-            "ok": True,
-            "text": str(response or ""),
-            "response": str(response or ""),
-        }
-    # Compat: some widgets expect `response`, others `text`.
-    if "text" in response and "response" not in response:
-        response["response"] = response.get("text", "")
-    if "response" in response and "text" not in response:
-        response["text"] = response.get("response", "")
-    response.setdefault("ok", True)
+    response = normalize_chat_response(response)
     if request.headers.get("HX-Request"):
         text = ""
         if isinstance(response, dict):
@@ -2204,7 +2196,7 @@ def api_chat_compact():
             status="Aktion ausgeführt"
         ))
 
-    user_msg = (payload.get("message") or payload.get("msg") or payload.get("q") or "").strip()
+    user_msg = extract_chat_message(payload if isinstance(payload, dict) else {})
     if not user_msg:
         return jsonify(_widget_compact_response(
             text="Bitte Nachricht eingeben.",
@@ -3336,11 +3328,7 @@ def dashboard_page():
 def upload_page():
     tenant = _norm_tenant(current_tenant() or "default")
     payload = _dashboard_payload(tenant)
-    return _render_base(
-        "dashboard.html",
-        active_tab="upload",
-        **payload,
-    )
+    return _render_base("upload.html", active_tab="upload", **payload)
 
 
 @bp.get("/tasks")

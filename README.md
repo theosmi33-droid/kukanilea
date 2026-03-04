@@ -20,7 +20,7 @@ KUKANILEA is a modern, high-performance Business Operating System designed for t
 ## Quickstart (<10 min)
 
 ```bash
-# 1) Clone + bootstrap + smoke in one run
+# 1) Clone + reproducible bootstrap in one run
 git clone <repo-url>
 cd kukanilea
 bash scripts/dev_bootstrap.sh
@@ -28,11 +28,9 @@ bash scripts/dev_bootstrap.sh
 # 2) Start app (separate terminal)
 source .venv/bin/activate
 python run.py server --host 127.0.0.1 --port 5051
-
-# 3) Optional: run smoke tests manually
-python -m app.smoke
-pytest -q
 ```
+
+`scripts/dev_bootstrap.sh` umfasst venv+deps, Playwright-Browser, Doctor-Checks, Smoke, Healthcheck und Launch-Evidence (`--fast`).
 
 Weitere Details: `docs/dev/BOOTSTRAP_QUICKSTART.md`
 

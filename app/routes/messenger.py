@@ -6,7 +6,8 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 
 from app.auth import login_required
-from app.web import _render_base, _render_sovereign_tool, _is_hx_partial_request
+from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
+from app.contracts.tool_contracts import extract_chat_message, normalize_chat_response
 from app.ai.intent_analyzer import detect_write_intent
 from app.security.gates import detect_injection
 from app.security import csrf_protected
@@ -84,7 +85,7 @@ def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]
 @chat_limiter.limit_required
 def api_chat():
     payload = request.get_json(silent=True) or {}
-    msg = (payload.get("q") or payload.get("message") or payload.get("msg") or "").strip()
+    msg = extract_chat_message(payload if isinstance(payload, dict) else {})
     if not msg:
         return jsonify(error="empty_message"), 400
 
@@ -94,18 +95,15 @@ def api_chat():
         return jsonify(error="injection_blocked"), 400
 
     try:
-        ans = agent_answer(msg)
-        if isinstance(ans, dict):
-            actions = _enforce_confirm_gate(ans.get("actions", []))
-            write_intent = detect_write_intent(msg)
-            if write_intent:
-                actions = _enforce_confirm_gate(actions)
-                _audit_chat_event("chat_confirm_required", meta={"write_intent": True, "action_count": len(actions)})
-            ans["actions"] = actions
-            if write_intent:
-                ans["requires_confirm"] = True
-            if "text" in ans and "response" not in ans:
-                ans["response"] = ans.get("text", "")
+        ans = normalize_chat_response(agent_answer(msg))
+        actions = _enforce_confirm_gate(ans.get("actions", []))
+        write_intent = detect_write_intent(msg)
+        if write_intent:
+            actions = _enforce_confirm_gate(actions)
+            _audit_chat_event("chat_confirm_required", meta={"write_intent": True, "action_count": len(actions)})
+        ans["actions"] = actions
+        if write_intent:
+            ans["requires_confirm"] = True
         return jsonify(ans)
     except Exception:
         logger.exception("Chat logic failed")
