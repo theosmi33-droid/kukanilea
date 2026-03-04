@@ -63,6 +63,7 @@ from app import core
 from app.agents.base import AgentContext
 from app.agents.customer import CustomerAgent
 from app.agents.orchestrator import Orchestrator
+from app.ai.intent_analyzer import detect_write_intent
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.search import SearchAgent
@@ -2150,7 +2151,7 @@ def api_chat_compact():
     result = agent_answer(user_msg, role=role)
     
     actions_raw = list(result.get("actions", []))
-    requires_confirm = _widget_requires_confirm(actions_raw)
+    requires_confirm = _widget_requires_confirm(actions_raw) or detect_write_intent(user_msg)
     
     pending_id = ""
     confirm_prompt = ""
