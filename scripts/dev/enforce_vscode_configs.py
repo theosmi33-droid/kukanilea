@@ -54,12 +54,136 @@ def ensure_settings(path: Path, interpreter: str, allowed_interpreters: set[str]
     changes: list[str] = []
     data = load_json(path)
     current = data.get("python.defaultInterpreterPath")
-    if current not in allowed_interpreters:
+    if current != interpreter:
         changes.append("python.defaultInterpreterPath")
         data["python.defaultInterpreterPath"] = interpreter
     if data.get("python.terminal.activateEnvironment") is not True:
         changes.append("python.terminal.activateEnvironment")
         data["python.terminal.activateEnvironment"] = True
+    if data.get("python.useEnvironmentsExtension") is not True:
+        changes.append("python.useEnvironmentsExtension")
+        data["python.useEnvironmentsExtension"] = True
+
+    desired_scalar = {
+        "python.analysis.typeCheckingMode": "basic",
+        "python.analysis.diagnosticMode": "openFilesOnly",
+        "python.analysis.indexing": False,
+        "python.analysis.autoImportCompletions": False,
+        "python.experiments.enabled": False,
+        "python.testing.pytestEnabled": False,
+        "python.testing.unittestEnabled": False,
+        "python.testing.autoTestDiscoverOnSaveEnabled": False,
+        "python.testing.pytestArgs": [],
+        "ruff.lint.run": "onType",
+        "ruff.nativeServer": "on",
+        "editor.formatOnSave": False,
+        "files.eol": "\n",
+        "files.trimTrailingWhitespace": True,
+        "files.insertFinalNewline": True,
+        "git.autofetch": True,
+        "git.confirmSync": False,
+        "githubPullRequests.pullBranch": "never",
+        "terminal.integrated.defaultProfile.osx": "zsh-clean",
+        "terminal.integrated.cwd": "${workspaceFolder}",
+        "workbench.editor.enablePreview": False,
+        "workbench.startupEditor": "none",
+        "window.restoreWindows": "none",
+        "search.followSymlinks": False,
+        "task.allowAutomaticTasks": "off",
+    }
+    for key, value in desired_scalar.items():
+        if data.get(key) != value:
+            data[key] = value
+            changes.append(key)
+
+    code_actions = data.get("editor.codeActionsOnSave")
+    if not isinstance(code_actions, dict):
+        code_actions = {}
+        data["editor.codeActionsOnSave"] = code_actions
+        changes.append("editor.codeActionsOnSave")
+    for key, value in {
+        "source.fixAll": "explicit",
+        "source.organizeImports": "explicit",
+    }.items():
+        if code_actions.get(key) != value:
+            code_actions[key] = value
+            changes.append(f"editor.codeActionsOnSave.{key}")
+
+    analysis_exclude = data.get("python.analysis.exclude")
+    if not isinstance(analysis_exclude, list):
+        analysis_exclude = []
+        data["python.analysis.exclude"] = analysis_exclude
+        changes.append("python.analysis.exclude")
+    for pattern in [
+        "**/.git/**",
+        "**/.build_venv/**",
+        "**/.venv/**",
+        "**/node_modules/**",
+        "**/__pycache__/**",
+        "**/.pytest_cache/**",
+        "**/archive_legacy/**",
+        "**/docs/reviews/**",
+        "**/data/**",
+        "**/instance/**",
+    ]:
+        if pattern not in analysis_exclude:
+            analysis_exclude.append(pattern)
+            changes.append(f"python.analysis.exclude.{pattern}")
+
+    for key_name in ("files.exclude", "search.exclude"):
+        current = data.get(key_name)
+        if not isinstance(current, dict):
+            current = {}
+            data[key_name] = current
+            changes.append(key_name)
+        desired = {
+            "**/.build_venv": True,
+            "**/.venv": True,
+            "**/node_modules": True,
+            "**/.pytest_cache": True,
+            "**/.ruff_cache": True,
+            "**/__pycache__": True,
+            "**/output": True,
+            "**/artifacts": True,
+            "**/playwright-report": True,
+            "**/test-results": True,
+            "docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": True,
+            "docs/reviews/codex/OVERLAP_MATRIX_11_*.md": True,
+            "docs/reviews/gemini/live/*_buildout_*.md": True,
+            "docs/scope_requests/patches/*.patch": True,
+        }
+        for key, value in desired.items():
+            if current.get(key) != value:
+                current[key] = value
+                changes.append(f"{key_name}.{key}")
+
+    terminal_env = data.get("terminal.integrated.env.osx")
+    if not isinstance(terminal_env, dict):
+        terminal_env = {}
+        data["terminal.integrated.env.osx"] = terminal_env
+        changes.append("terminal.integrated.env.osx")
+    desired_env = {
+        "PYTHONUNBUFFERED": "1",
+        "OLLAMA_ENABLED": "1",
+        "KUKANILEA_REMOTE_LLM_ENABLED": "0",
+        "OLLAMA_HOST": "http://127.0.0.1:11434",
+        "GEMINI_DEFAULT_MODEL": "gemini-2.5-flash",
+    }
+    for key, value in desired_env.items():
+        if terminal_env.get(key) != value:
+            terminal_env[key] = value
+            changes.append(f"terminal.integrated.env.osx.{key}")
+
+    terminal_profiles = data.get("terminal.integrated.profiles.osx")
+    if not isinstance(terminal_profiles, dict):
+        terminal_profiles = {}
+        data["terminal.integrated.profiles.osx"] = terminal_profiles
+        changes.append("terminal.integrated.profiles.osx")
+    zsh_profile = terminal_profiles.get("zsh-clean")
+    desired_profile = {"path": "/bin/zsh", "args": ["-f", "-i"]}
+    if not isinstance(zsh_profile, dict) or zsh_profile != desired_profile:
+        terminal_profiles["zsh-clean"] = desired_profile
+        changes.append("terminal.integrated.profiles.osx.zsh-clean")
 
     # Keep VS Code Source Control responsive in large multi-worktree setups.
     if data.get("git.autoRepositoryDetection") != "openEditors":
@@ -68,9 +192,9 @@ def ensure_settings(path: Path, interpreter: str, allowed_interpreters: set[str]
     if data.get("git.openRepositoryInParentFolders") != "never":
         changes.append("git.openRepositoryInParentFolders")
         data["git.openRepositoryInParentFolders"] = "never"
-    if data.get("git.untrackedChanges") != "mixed":
+    if data.get("git.untrackedChanges") != "hidden":
         changes.append("git.untrackedChanges")
-        data["git.untrackedChanges"] = "mixed"
+        data["git.untrackedChanges"] = "hidden"
     if data.get("git.repositoryScanMaxDepth") != 2:
         changes.append("git.repositoryScanMaxDepth")
         data["git.repositoryScanMaxDepth"] = 2
@@ -82,10 +206,16 @@ def ensure_settings(path: Path, interpreter: str, allowed_interpreters: set[str]
         changes.append("files.watcherExclude")
 
     desired_watcher = {
+        "**/.git/**": True,
         "**/.git/objects/**": True,
         "**/.git/subtree-cache/**": True,
         "**/.build_venv/**": True,
+        "**/.venv/**": True,
+        "**/node_modules/**": True,
         "**/__pycache__/**": True,
+        "**/docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": True,
+        "**/docs/reviews/codex/OVERLAP_MATRIX_11_*.md": True,
+        "**/docs/reviews/gemini/live/*_buildout_*.md": True,
     }
     for key, value in desired_watcher.items():
         if watcher_exclude.get(key) != value:
@@ -142,7 +272,7 @@ def ensure_launch(path: Path, interpreter: str, allowed_interpreters: set[str], 
         if target.get("args") != args:
             target["args"] = args
             changes.append("configurations.args")
-        if target.get("python") not in allowed_interpreters:
+        if target.get("python") != interpreter:
             target["python"] = interpreter
             changes.append("configurations.python")
     if apply and changes:
@@ -160,8 +290,8 @@ def ensure_global_settings_file(path: Path, interpreter: str, apply: bool) -> li
     if data.get("python.useEnvironmentsExtension") is not True:
         data["python.useEnvironmentsExtension"] = True
         changes.append("python.useEnvironmentsExtension")
-    if data.get("task.allowAutomaticTasks") != "on":
-        data["task.allowAutomaticTasks"] = "on"
+    if data.get("task.allowAutomaticTasks") != "off":
+        data["task.allowAutomaticTasks"] = "off"
         changes.append("task.allowAutomaticTasks")
     if data.get("git.autoRepositoryDetection") != "openEditors":
         data["git.autoRepositoryDetection"] = "openEditors"
@@ -169,8 +299,8 @@ def ensure_global_settings_file(path: Path, interpreter: str, apply: bool) -> li
     if data.get("git.openRepositoryInParentFolders") != "never":
         data["git.openRepositoryInParentFolders"] = "never"
         changes.append("git.openRepositoryInParentFolders")
-    if data.get("git.untrackedChanges") != "mixed":
-        data["git.untrackedChanges"] = "mixed"
+    if data.get("git.untrackedChanges") != "hidden":
+        data["git.untrackedChanges"] = "hidden"
         changes.append("git.untrackedChanges")
     if data.get("git.repositoryScanMaxDepth") != 2:
         data["git.repositoryScanMaxDepth"] = 2
@@ -195,8 +325,8 @@ def ensure_workspace_file(path: Path, interpreter: str, apply: bool) -> list[str
     if settings.get("python.useEnvironmentsExtension") is not True:
         settings["python.useEnvironmentsExtension"] = True
         changes.append("settings.python.useEnvironmentsExtension")
-    if settings.get("task.allowAutomaticTasks") != "on":
-        settings["task.allowAutomaticTasks"] = "on"
+    if settings.get("task.allowAutomaticTasks") != "off":
+        settings["task.allowAutomaticTasks"] = "off"
         changes.append("settings.task.allowAutomaticTasks")
     if settings.get("git.autoRepositoryDetection") != "openEditors":
         settings["git.autoRepositoryDetection"] = "openEditors"
@@ -204,12 +334,45 @@ def ensure_workspace_file(path: Path, interpreter: str, apply: bool) -> list[str
     if settings.get("git.openRepositoryInParentFolders") != "never":
         settings["git.openRepositoryInParentFolders"] = "never"
         changes.append("settings.git.openRepositoryInParentFolders")
-    if settings.get("git.untrackedChanges") != "mixed":
-        settings["git.untrackedChanges"] = "mixed"
+    if settings.get("git.untrackedChanges") != "hidden":
+        settings["git.untrackedChanges"] = "hidden"
         changes.append("settings.git.untrackedChanges")
     if settings.get("git.repositoryScanMaxDepth") != 2:
         settings["git.repositoryScanMaxDepth"] = 2
         changes.append("settings.git.repositoryScanMaxDepth")
+
+    for key_name in ("files.exclude", "search.exclude", "files.watcherExclude"):
+        current = settings.get(key_name)
+        if not isinstance(current, dict):
+            current = {}
+            settings[key_name] = current
+            changes.append(f"settings.{key_name}")
+        desired = {
+            "**/.build_venv": True,
+            "**/.venv": True,
+            "**/node_modules": True,
+            "**/.pytest_cache": True,
+            "**/.ruff_cache": True,
+            "**/__pycache__": True,
+            "**/output": True,
+            "**/artifacts": True,
+            "**/playwright-report": True,
+            "**/test-results": True,
+            "**/.git/objects/**": True,
+            "**/.git/subtree-cache/**": True,
+            "**/.git/**": True,
+            "**/.build_venv/**": True,
+            "**/.venv/**": True,
+            "**/node_modules/**": True,
+            "docs/reviews/codex/LAUNCH_EVIDENCE_RUN_*.md": True,
+            "docs/reviews/codex/OVERLAP_MATRIX_11_*.md": True,
+            "docs/reviews/gemini/live/*_buildout_*.md": True,
+            "docs/scope_requests/patches/*.patch": True,
+        }
+        for key, value in desired.items():
+            if current.get(key) != value:
+                current[key] = value
+                changes.append(f"settings.{key_name}.{key}")
 
     if apply and changes:
         write_json(path, data)
@@ -239,9 +402,14 @@ def main() -> int:
             preferred_interpreter = "${workspaceFolder}/.build_venv/bin/python"
             absolute_interpreter = str(root / ".build_venv" / "bin" / "python")
         else:
-            preferred_interpreter = "${workspaceFolder}/../kukanilea_production/.build_venv/bin/python"
+            # Worktrees are siblings under /worktrees/*, so absolute path is safer and stable.
             absolute_interpreter = str(root / ".build_venv" / "bin" / "python")
-        allowed_interpreters = {preferred_interpreter, absolute_interpreter}
+            preferred_interpreter = absolute_interpreter
+        allowed_interpreters = {
+            preferred_interpreter,
+            absolute_interpreter,
+            "${workspaceFolder}/../kukanilea_production/.build_venv/bin/python",
+        }
 
         vscode = target / ".vscode"
         settings = vscode / "settings.json"

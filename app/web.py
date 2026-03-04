@@ -2014,6 +2014,54 @@ def _mock_generate(prompt: str) -> str:
     return f"[mocked] {prompt.strip()[:200]}"
 
 
+
+_WIDGET_READONLY_ACTIONS = {
+    "search_docs",
+    "open_token",
+    "show_customer",
+    "summarize_doc",
+    "list_tasks",
+    "memory_search",
+}
+
+def _widget_requires_confirm(actions: List[Dict[str, Any]]) -> bool:
+    for action in actions:
+        action_type = str(action.get("type", "")).strip().lower()
+        if action_type and action_type not in _WIDGET_READONLY_ACTIONS:
+            return True
+    return False
+
+def _widget_compact_response(
+    *,
+    text: str,
+    model: str,
+    context_tag: str,
+    latency_ms: int,
+    suggestions: List[str] | None = None,
+    actions: List[Dict[str, Any]] | None = None,
+    thinking_steps: List[str] | None = None,
+    requires_confirm: bool = False,
+    pending_id: str = "",
+    confirm_prompt: str = "",
+    status: str = "Bereit",
+    ok: bool = True,
+) -> Dict[str, Any]:
+    return {
+        "ok": ok,
+        "text": text,
+        "response": text,
+        "model": model,
+        "current_context": context_tag,
+        "status": status,
+        "latency_ms": int(latency_ms),
+        "suggestions": suggestions or [],
+        "actions": actions or [],
+        "thinking_steps": thinking_steps or [],
+        "requires_confirm": bool(requires_confirm),
+        "pending_id": pending_id,
+        "confirm_prompt": confirm_prompt,
+    }
+
 @bp.route("/api/chat", methods=["POST"])
 @login_required
 @csrf_protected
@@ -2040,6 +2088,93 @@ def api_chat():
     if request.headers.get("HX-Request"):
         return f"<div class='text-sm'>{response.get('text', '')}</div>"
     return jsonify(response)
+
+
+@bp.route("/api/chat/compact", methods=["GET", "POST"])
+@login_required
+@csrf_protected
+@chat_limiter.limit_required
+def api_chat_compact():
+    tenant_id = str(current_tenant() or "default")
+    username = str(current_user() or "dev")
+    role = str(current_role() or "USER")
+
+    if request.method == "GET":
+        # Simplified history for widget
+        return jsonify({"ok": True, "messages": []})
+
+    started = time.perf_counter()
+    payload = request.get_json(silent=True) or {}
+    current_context = (payload.get("current_context") or "/").strip()
+    
+    # Check for confirmation of pending action
+    if bool(payload.get("confirm")):
+        pending_id = str(payload.get("pending_id") or "").strip()
+        pending = session.get("widget_pending_action") or {}
+        if not pending_id or pending_id != str(pending.get("id", "")):
+            return jsonify(_widget_compact_response(
+                text="Keine ausstehende Aktion gefunden.",
+                model="local",
+                context_tag=current_context,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                ok=False
+            )), 400
+
+        actions = pending.get("actions") or []
+        session.pop("widget_pending_action", None)
+        session.modified = True
+        
+        return jsonify(_widget_compact_response(
+            text="Aktion bestätigt und ausgeführt.",
+            model="local",
+            context_tag=current_context,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            actions=actions,
+            status="Aktion ausgeführt"
+        ))
+
+    user_msg = (payload.get("message") or payload.get("msg") or payload.get("q") or "").strip()
+    if not user_msg:
+        return jsonify(_widget_compact_response(
+            text="Bitte Nachricht eingeben.",
+            model="local",
+            context_tag=current_context,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            ok=False
+        )), 400
+
+    context = AgentContext(tenant_id=tenant_id, user=username, role=role)
+    # Using the global agent_answer helper which uses Orchestrator
+    result = agent_answer(user_msg, role=role)
+    
+    actions_raw = list(result.get("actions", []))
+    requires_confirm = _widget_requires_confirm(actions_raw)
+    
+    pending_id = ""
+    confirm_prompt = ""
+    if requires_confirm:
+        pending_id = secrets.token_urlsafe(12)
+        session["widget_pending_action"] = {
+            "id": pending_id,
+            "actions": actions_raw,
+            "current_context": current_context
+        }
+        session.modified = True
+        confirm_prompt = "Bestätigung für geplante Aktionen erforderlich."
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    return jsonify(_widget_compact_response(
+        text=result.get("text", "OK"),
+        model="local",
+        context_tag=current_context,
+        latency_ms=latency_ms,
+        suggestions=result.get("suggestions", []),
+        actions=actions_raw,
+        requires_confirm=requires_confirm,
+        pending_id=pending_id,
+        confirm_prompt=confirm_prompt,
+        status="Bestätigung erforderlich" if requires_confirm else "Bereit"
+    ))
 
 
 @bp.post("/api/search")

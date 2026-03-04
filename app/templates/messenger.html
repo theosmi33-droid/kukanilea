@@ -50,9 +50,12 @@
         <div id="thread-title" class="ms-title">#support</div>
         <div id="thread-sub" class="ms-sub">Interner Teamchat • offline always</div>
       </div>
-      <div class="ms-toggle">
-        <input id="confirm-gate" type="checkbox" checked>
-        <label for="confirm-gate">Confirm-Gate aktiv</label>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+        <div id="offline-indicator" style="font-size:10px; color:#22c55e;">● Online</div>
+        <div class="ms-toggle">
+          <input id="confirm-gate" type="checkbox" checked>
+          <label for="confirm-gate">Confirm-Gate aktiv</label>
+        </div>
       </div>
     </div>
     <div id="message-list" class="ms-msgs"></div>
@@ -149,8 +152,12 @@
     providerList: document.getElementById('provider-list'),
     actionList: document.getElementById('action-list'),
     hints: document.getElementById('assistant-hints'),
-    confirmGate: document.getElementById('confirm-gate')
+    confirmGate: document.getElementById('confirm-gate'),
+    offlineInd: document.getElementById('offline-indicator')
   };
+
+  window.addEventListener('online', () => { refs.offlineInd.textContent = '● Online'; refs.offlineInd.style.color = '#22c55e'; });
+  window.addEventListener('offline', () => { refs.offlineInd.textContent = '● Offline-Mode'; refs.offlineInd.style.color = '#f59e0b'; });
 
   function renderThreads() {
     const q = (refs.threadSearch.value || '').trim().toLowerCase();
@@ -218,13 +225,19 @@
       return;
     }
     state.actions.slice(-15).reverse().forEach((a, idx) => {
+      if (a.status === 'confirmed') return;
       const card = document.createElement('div');
       card.className = 'ms-box';
       const i = state.actions.length - 1 - idx;
+      
+      const isHighRisk = ['send_external', 'create_task', 'create_appointment'].includes(a.type);
+      const confirmInput = isHighRisk ? `<input type="text" placeholder="Geben Sie 'CONFIRM' ein" class="ms-search" style="margin:4px 0;" id="conf-${i}">` : '';
       const btn = a.confirmRequired ? `<button class="ms-btn primary" data-confirm="${i}">Bestätigen</button>` : '';
+      
       card.innerHTML = `
         <div class="ms-title">${a.type}</div>
         <div class="ms-sub">${a.summary}</div>
+        ${confirmInput}
         ${btn}`;
       refs.actionList.appendChild(card);
     });
@@ -232,6 +245,15 @@
       el.onclick = () => {
         const index = Number(el.getAttribute('data-confirm'));
         if (!Number.isFinite(index)) return;
+        const a = state.actions[index];
+        const isHighRisk = ['send_external', 'create_task', 'create_appointment'].includes(a.type);
+        if (isHighRisk) {
+          const val = (document.getElementById(`conf-${index}`).value || '').trim().toUpperCase();
+          if (val !== 'CONFIRM') {
+            alert('Sicherheits-Check: Bitte geben Sie "CONFIRM" ein.');
+            return;
+          }
+        }
         state.actions[index].status = 'confirmed';
         state.actions[index].summary += ' • bestätigt';
         save();
