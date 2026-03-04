@@ -1746,7 +1746,7 @@ def login():
 
                     login_user(u, role, t_id)
                     _audit("login", target=u, meta={"role": role, "tenant": t_id})
-                    return redirect(nxt or url_for("web.index"))
+                    return redirect(nxt or url_for("dashboard.dashboard_page"))
             else:
                 # Task 69: Brute Force Protection
                 if user:
@@ -3069,7 +3069,7 @@ def api_mail_eml():
 
 @bp.route("/")
 def index():
-    return redirect(url_for("web.dashboard_page"))
+    return redirect(url_for("dashboard.dashboard_page"))
 
 
 @bp.get("/dashboard")
@@ -3221,7 +3221,7 @@ def review_delete(token: str):
         delete_pending(token)
     except Exception:
         pass
-    return redirect(url_for("web.index"))
+    return redirect(url_for("dashboard.dashboard_page"))
 
 
 @bp.route("/file/<token>")
@@ -3304,7 +3304,7 @@ def review(token: str):
                 except Exception:
                     pass
                 new_token = analyze_to_pending(src)
-                return redirect(url_for("web.review", token=new_token))
+                return redirect(url_for("upload.review", token=new_token))
             msg = "Quelle nicht gefunden – Re-Extract nicht möglich."
 
         if request.form.get("confirm") == "1":
@@ -3366,7 +3366,7 @@ def review(token: str):
                                 token, {"final_path": str(final_path), **answers}
                             )
                             delete_pending(token)
-                            return redirect(url_for("web.done_view", token=token))
+                            return redirect(url_for("upload.done_view", token=token))
                         except Exception as e:
                             msg = f"Ablage fehlgeschlagen: {e}"
 
