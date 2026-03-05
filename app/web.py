@@ -38,6 +38,7 @@ import os
 import re
 import secrets
 import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
@@ -66,6 +67,8 @@ from app.agents.base import AgentContext
 from app.agents.customer import CustomerAgent
 from app.agents.orchestrator import Orchestrator
 from app.ai.intent_analyzer import detect_write_intent
+from app.ai.guardrails import requires_confirm_for_prompt, validate_prompt
+from app.ai.skills_registry import skills_registry, suggest_skills
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.search import SearchAgent
@@ -2254,6 +2257,113 @@ def api_chat_compact():
         confirm_prompt=confirm_prompt,
         status="Bestätigung erforderlich" if requires_confirm else "Bereit"
     ))
+
+
+def _store_ai_snippet(*, tenant_id: str, user_id: str, prompt: str, response: str = "") -> None:
+    try:
+        auth_db = current_app.extensions["auth_db"]
+        payload = {
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "prompt": prompt[:500],
+            "response": response[:500],
+        }
+        import sqlite3
+
+        con = sqlite3.connect(str(auth_db.path))
+        try:
+            con.execute(
+                """
+                INSERT INTO agent_memory(
+                    tenant_id, timestamp, agent_role, content, embedding, metadata, importance_score, category
+                ) VALUES (?,?,?,?,?,?,?,?)
+                """,
+                (
+                    tenant_id,
+                    datetime.now().astimezone().isoformat(),
+                    "ai-runtime",
+                    prompt[:500],
+                    b"",
+                    json.dumps(payload, ensure_ascii=False),
+                    5,
+                    "CHAT",
+                ),
+            )
+            con.commit()
+        finally:
+            con.close()
+    except Exception:
+        logger.debug("ai_memory_store_failed", exc_info=True)
+
+
+@bp.route("/api/ai/plan", methods=["POST"])
+@login_required
+@csrf_protected
+@chat_limiter.limit_required
+def api_ai_plan():
+    payload = request.get_json(silent=True) or {}
+    prompt = extract_chat_message(payload if isinstance(payload, dict) else {})
+    if not prompt:
+        return jsonify(error="empty_message"), 400
+
+    valid, guard_reason = validate_prompt(prompt)
+    if not valid:
+        _audit("ai_plan_blocked", target="/api/ai/plan", meta={"reason": guard_reason})
+        return jsonify(error="injection_blocked", reason=guard_reason), 400
+
+    suggestions = suggest_skills(prompt)
+    write_or_uncertain = requires_confirm_for_prompt(prompt)
+    records = []
+    for skill in suggestions:
+        records.append(
+            {
+                "name": skill.name,
+                "read_only": skill.read_only,
+                "requires_confirm": bool(skill.requires_confirm or write_or_uncertain),
+                "audit_event": skill.audit_event,
+            }
+        )
+    _store_ai_snippet(
+        tenant_id=str(current_tenant() or "default"),
+        user_id=str(current_user() or "unknown"),
+        prompt=prompt,
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "suggested_skills": records,
+            "requires_confirm": bool(write_or_uncertain or any(item["requires_confirm"] for item in records)),
+        }
+    )
+
+
+@bp.route("/api/ai/execute", methods=["POST"])
+@login_required
+@csrf_protected
+@chat_limiter.limit_required
+def api_ai_execute():
+    payload = request.get_json(silent=True) or {}
+    skill_name = str(payload.get("skill") or "").strip().lower()
+    skill_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+    confirm = bool(payload.get("confirm"))
+
+    definition = skills_registry.get(skill_name)
+    if not definition:
+        return jsonify(error="skill_not_allowed"), 403
+
+    if definition.requires_confirm and not confirm:
+        _audit("ai_execute_denied", target="/api/ai/execute", meta={"skill": skill_name, "reason": "confirm_required"})
+        return jsonify(error="confirm_required"), 403
+
+    result = definition.handler(skill_payload)
+    _store_ai_snippet(
+        tenant_id=str(current_tenant() or "default"),
+        user_id=str(current_user() or "unknown"),
+        prompt=f"execute:{skill_name}",
+        response=json.dumps(result, ensure_ascii=False),
+    )
+    _audit(definition.audit_event, target="/api/ai/execute", meta={"skill": skill_name, "confirmed": confirm})
+    return jsonify({"ok": True, "skill": skill_name, "result": result, "audit_event": definition.audit_event})
 
 
 @bp.post("/api/search")
