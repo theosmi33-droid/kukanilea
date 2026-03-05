@@ -57,6 +57,8 @@ done
 
 if command -v playwright >/dev/null 2>&1; then
   ok "playwright CLI available ($(playwright --version 2>/dev/null || echo unknown))"
+elif "$PYTHON" -m playwright --version >/dev/null 2>&1; then
+  ok "playwright module CLI available via '$PYTHON -m playwright'"
 else
   warn "playwright CLI missing (use: $PYTHON -m playwright install --with-deps chromium)"
 fi
