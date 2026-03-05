@@ -78,18 +78,25 @@ def create_app() -> Flask:
         app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
     # In non-dev environments, always force secure cookies.
+    secure_raw = app.config.get("SESSION_COOKIE_SECURE")
+    secure_cookie_configured = (
+        secure_raw if isinstance(secure_raw, bool) else str(secure_raw or "").strip().lower() in {"1", "true", "yes", "on"}
+    )
     if secure_cookie_default:
         app.config["SESSION_COOKIE_SECURE"] = True
-    elif app.config.get("SESSION_COOKIE_SECURE") is None:
-        app.config["SESSION_COOKIE_SECURE"] = False
+    else:
+        app.config["SESSION_COOKIE_SECURE"] = secure_cookie_configured
 
-    if secure_cookie_default:
+    if app.config["SESSION_COOKIE_SECURE"]:
         # __Host- cookies require Secure + Path=/ + no Domain.
         app.config["SESSION_COOKIE_NAME"] = "__Host-kukanilea_session"
         app.config["SESSION_COOKIE_DOMAIN"] = None
         app.config["SESSION_COOKIE_PATH"] = "/"
     else:
-        app.config.setdefault("SESSION_COOKIE_NAME", "kukanilea_session")
+        cookie_name = str(app.config.get("SESSION_COOKIE_NAME") or "").strip()
+        if not cookie_name or cookie_name == "session":
+            app.config["SESSION_COOKIE_NAME"] = "kukanilea_session"
+        app.config["SESSION_COOKIE_DOMAIN"] = None
         app.config.setdefault("SESSION_COOKIE_PATH", "/")
     app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(hours=8))
 

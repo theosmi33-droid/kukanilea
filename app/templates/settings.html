@@ -27,7 +27,7 @@
     <div><div class="router-note">Rolle</div><div>{{ user_profile.role }}</div></div>
     <div><div class="router-note">Mandant</div><div>{{ user_profile.tenant_id or '-' }}</div></div>
   </div>
-  <form method="post" action="/admin/settings/profile" class="router-grid">
+  <form method="post" action="/admin/settings/profile" class="router-grid" onsubmit="return confirmRisk(this)">
     <div>
       <label class="router-note">Sprache</label>
       <select class="router-input" name="language">
@@ -40,6 +40,7 @@
       <input class="router-input" name="timezone" value="{{ user_profile.timezone or 'Europe/Berlin' }}">
     </div>
     <div>
+      <input class="router-input" name="confirm" placeholder="CONFIRM" required>
       <button class="router-btn" type="submit">Profil speichern</button>
     </div>
   </form>
@@ -101,7 +102,7 @@
                 </form>
                 <form method="post" action="/admin/settings/users/delete" onsubmit="return confirmRisk(this)">
                   <input type="hidden" name="username" value="{{ u.username }}">
-                  <input class="router-input" style="width:95px;" name="confirm" placeholder="CONFIRM">
+                  <input class="router-input" style="width:95px;" name="confirm" placeholder="CONFIRM" required>
                   <button class="router-btn router-btn-danger" type="submit">Delete</button>
                 </form>
               </td>
