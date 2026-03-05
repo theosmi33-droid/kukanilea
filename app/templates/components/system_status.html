@@ -2,40 +2,98 @@
      hx-get="/api/system/status"
      hx-trigger="every 5s"
      hx-swap="outerHTML"
-     style="display:flex; align-items:center; gap:10px; padding:6px 14px; border-radius:99px; background:rgba(255,255,255,0.05); border:1px solid var(--color-border); font-size:11px; font-weight:700; color:var(--text-tertiary);">
+     class="system-status-pills">
     
-    <style>
-        @keyframes status-pulse {
-            0% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.7; transform: scale(1.1); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-        .status-dot { animation: status-pulse 2s infinite ease-in-out; }
-    </style>
-
     {% if status == 'HEALTHY' %}
-    <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-success); box-shadow:0 0 8px var(--color-success);"></div>
-    <span style="color:var(--color-success);">System Gesund</span>
+    <div class="status-group">
+        <div class="status-dot status-ok"></div>
+        <span class="status-label-ok">System Gesund</span>
+    </div>
     {% elif status == 'WARNING_SYNC' or status == 'WARNING_MEMORY' %}
-    <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-warning); box-shadow:0 0 8px var(--color-warning);"></div>
-    <span style="color:var(--color-warning);">{{ 'Sync Fehler' if status == 'WARNING_SYNC' else 'Hoher RAM' }}</span>
+    <div class="status-group">
+        <div class="status-dot status-warn"></div>
+        <span class="status-label-warn">{{ 'Sync Fehler' if status == 'WARNING_SYNC' else 'Hoher RAM' }}</span>
+    </div>
     {% else %}
-    <div class="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-danger); box-shadow:0 0 8px var(--color-danger);"></div>
-    <span style="color:var(--color-danger);">{{ status }}</span>
+    <div class="status-group">
+        <div class="status-dot status-error"></div>
+        <span class="status-label-error">{{ status }}</span>
+    </div>
     {% endif %}
 
-    <div style="height:12px; width:1px; background:var(--color-border); margin:0 4px;"></div>
+    <div class="status-divider"></div>
 
-    <span style="font-family:monospace; color:var(--text-tertiary);">CPU: {{ cpu_usage_pct|default(0)|round(1) }}%</span>
-    <span style="font-family:monospace; color:var(--text-tertiary);">RAM: {{ memory_rss_mb|default(0)|round(0) }}MB</span>
+    <div class="system-metrics">
+        <span class="metric">CPU: {{ cpu_usage_pct|default(0)|round(1) }}%</span>
+        <span class="metric">RAM: {{ memory_rss_mb|default(0)|round(0) }}MB</span>
+    </div>
 
     <!-- Task GoBD: Outbound Status Badges -->
-    <span id="outbound-status-badges" style="display:flex; align-items:center; gap:6px; margin-left: 8px;">
+    <span id="outbound-status-badges" class="outbound-badges">
         {% if outbound_queue and outbound_queue.pending > 0 %}
-        <span style="padding: 2px 6px; border-radius: 4px; background: rgba(245,158,11,0.2); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); font-size: 9px;">SYNC: {{ outbound_queue.pending }}</span>
+        <span class="badge badge-warning badge-xs">SYNC: {{ outbound_queue.pending }}</span>
         {% endif %}
         {% if outbound_queue and outbound_queue.failed > 0 %}
-        <span style="padding: 2px 6px; border-radius: 4px; background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); font-size: 9px;">FAIL: {{ outbound_queue.failed }}</span>
+        <span class="badge badge-error badge-xs">FAIL: {{ outbound_queue.failed }}</span>
         {% endif %}
     </span>
 </div>
+
+<style>
+    .system-status-pills {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        padding: var(--space-1) var(--space-4);
+        border-radius: var(--radius-full);
+        background-color: var(--neutral-50);
+        border: 1px solid var(--border-light);
+        font-size: 11px;
+        font-weight: var(--weight-bold);
+    }
+    .status-group {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: var(--radius-full);
+        animation: status-pulse 2s infinite ease-in-out;
+    }
+    .status-ok { background-color: var(--success-500); box-shadow: 0 0 8px var(--success-500); }
+    .status-warn { background-color: var(--warning-500); box-shadow: 0 0 8px var(--warning-500); }
+    .status-error { background-color: var(--error-500); box-shadow: 0 0 8px var(--error-500); }
+    
+    .status-label-ok { color: var(--success-600); }
+    .status-label-warn { color: var(--warning-600); }
+    .status-label-error { color: var(--error-600); }
+
+    .status-divider {
+        height: 1rem;
+        width: 1px;
+        background-color: var(--border-base);
+    }
+    .system-metrics {
+        display: flex;
+        gap: var(--space-3);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
+    }
+    .outbound-badges {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-left: var(--space-2);
+    }
+    .badge-xs {
+        padding: 0 var(--space-1-5);
+        font-size: 9px;
+    }
+    @keyframes status-pulse {
+        0% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.7; transform: scale(1.1); }
+        100% { opacity: 1; transform: scale(1); }
+    }
+</style>

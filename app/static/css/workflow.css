@@ -1,0 +1,224 @@
+/* 
+  KUKANILEA Workflow CSS
+  Modern, Fast, Mobile-friendly, White-Mode only.
+  Focus: Consistent spacing, unified headers, clear interaction states.
+*/
+
+:root {
+  --wf-bg: var(--bg-primary);
+  --wf-card-bg: var(--bg-primary);
+  --wf-border: var(--border-color);
+  --wf-radius: var(--radius-xl);
+  --wf-spacing: var(--spacing-6);
+}
+
+/* --- Layout Container --- */
+.wf-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--wf-spacing);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wf-spacing);
+}
+
+/* --- Unified Header --- */
+.wf-header {
+  background: var(--wf-card-bg);
+  padding: var(--spacing-6);
+  border-radius: var(--wf-radius);
+  border: 1px solid var(--wf-border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--spacing-4);
+  flex-wrap: wrap;
+}
+
+.wf-header-content {
+  flex: 1;
+  min-width: 300px;
+}
+
+.wf-title {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.wf-subtitle {
+  margin-top: var(--spacing-1);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* --- Workflow Cards --- */
+.wf-card {
+  background: var(--wf-card-bg);
+  border-radius: var(--wf-radius);
+  border: 1px solid var(--wf-border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.wf-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.wf-card-header {
+  padding: var(--spacing-4) var(--spacing-6);
+  border-bottom: 1px solid var(--wf-border);
+  background: var(--bg-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.wf-card-body {
+  padding: var(--spacing-6);
+}
+
+/* --- Interaction Elements --- */
+.wf-btn-primary {
+  height: 48px;
+  padding: 0 var(--spacing-6);
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-lg);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+/* --- Enterprise Components --- */
+.badge-priority {
+  font-size: 9px;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.badge-priority.high { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+.badge-priority.medium { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
+.badge-priority.low { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2); }
+
+.sla-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.sla-overdue { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+.sla-warning { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+.sla-ok { background: #10b981; }
+
+.wf-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.wf-table th.sortable:hover {
+  background: var(--color-gray-100);
+}
+
+.enterprise-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-4);
+}
+
+.activity-feed-item {
+  padding-left: var(--spacing-6);
+  position: relative;
+  border-left: 2px solid var(--border-color);
+  padding-bottom: var(--spacing-4);
+}
+.activity-feed-item::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 2px solid var(--color-primary);
+}
+
+.wf-btn-primary:hover {
+  background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.wf-dropzone {
+  border: 2px dashed var(--color-gray-300);
+  border-radius: var(--radius-2xl);
+  padding: var(--spacing-10);
+  text-align: center;
+  background: var(--bg-secondary);
+  transition: all var(--transition-base);
+  cursor: pointer;
+}
+
+.wf-dropzone:hover, .wf-dropzone.active {
+  border-color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.05);
+}
+
+/* --- Responsive Table --- */
+.wf-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--wf-border);
+}
+
+.wf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.wf-table th {
+  text-align: left;
+  padding: var(--spacing-3) var(--spacing-4);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.wf-table td {
+  padding: var(--spacing-4);
+  border-top: 1px solid var(--wf-border);
+}
+
+.wf-table tr:hover td {
+  background: var(--bg-secondary);
+}
+
+/* --- Mobile Fixes --- */
+@media (max-width: 768px) {
+  .wf-container {
+    padding: var(--spacing-4);
+    gap: var(--spacing-4);
+  }
+  
+  .wf-header {
+    padding: var(--spacing-4);
+  }
+  
+  .wf-title {
+    font-size: var(--font-size-xl);
+  }
+}

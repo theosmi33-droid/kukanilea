@@ -1,88 +1,91 @@
 {% extends "layout.html" %}
 {% block title %}Upload · KUKANILEA{% endblock %}
 
-{% block content %}
-<div class="page-container p-6" style="max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-8);">
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/workflow.css">
+{% endblock %}
 
-  <header>
-    <h1 class="text-3xl font-bold tracking-tight">Dokument-Upload</h1>
-    <p class="text-secondary mt-2">Fügen Sie Dokumente Ihrer Pipeline hinzu. Die Verarbeitung erfolgt vollständig lokal.</p>
+{% block content %}
+<div class="wf-container">
+
+  <header class="wf-header">
+    <div class="wf-header-content">
+      <h1 class="wf-title">Dokument-Upload</h1>
+      <p class="wf-subtitle">Fügen Sie Dokumente Ihrer Pipeline hinzu. Die Verarbeitung erfolgt vollständig lokal.</p>
+    </div>
+    <div class="flex items-center gap-4">
+        <!-- Step Indicator (Mini) -->
+        <div class="flex gap-2 items-center bg-secondary px-4 py-2 rounded-full border border-light">
+            <span class="text-[10px] font-black text-primary uppercase">1. Auswahl</span>
+            <div class="w-1 h-1 rounded-full bg-neutral-300"></div>
+            <span class="text-[10px] font-bold text-muted uppercase">2. Analyse</span>
+        </div>
+    </div>
   </header>
 
-  <!-- Step Indicator -->
-  <div class="flex items-center justify-between px-4 mb-2" aria-hidden="true">
-      <div class="flex flex-column items-center gap-2">
-          <div class="w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center font-bold shadow-sm">1</div>
-          <span class="text-[10px] font-black uppercase tracking-widest text-primary-600">Auswahl</span>
-      </div>
-      <div class="h-0.5 bg-neutral-100 flex-1 mx-4 mb-6"></div>
-      <div class="flex flex-column items-center gap-2">
-          <div class="w-10 h-10 rounded-full bg-neutral-100 text-muted flex items-center justify-center font-bold">2</div>
-          <span class="text-[10px] font-bold text-muted uppercase tracking-widest">Analyse</span>
-      </div>
-      <div class="h-0.5 bg-neutral-100 flex-1 mx-4 mb-6"></div>
-      <div class="flex flex-column items-center gap-2">
-          <div class="w-10 h-10 rounded-full bg-neutral-100 text-muted flex items-center justify-center font-bold">3</div>
-          <span class="text-[10px] font-bold text-muted uppercase tracking-widest">Review</span>
-      </div>
-  </div>
-
   <!-- Upload Section -->
-  <div class="card card-featured shadow-md border-light">
-    <div class="card-body p-8">
+  <div class="wf-card">
+    <div class="wf-card-body p-10">
         
         <!-- Drop Zone -->
-        <div id="dropZone" class="border-2 border-dashed border-neutral-200 rounded-3xl p-16 text-center hover:border-primary-500 hover:bg-primary-50 transition-all cursor-pointer group relative">
+        <div id="dropZone" class="wf-dropzone">
             <input type="file" id="file" name="file" class="absolute inset-0 opacity-0 cursor-pointer" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.txt">
             <div class="mb-6 flex justify-center">
-                <div id="dropIcon" class="p-5 bg-neutral-50 text-neutral-400 rounded-2xl group-hover:bg-primary-100 group-hover:text-primary-600 transition-all duration-300">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                <div id="dropIcon" class="p-6 bg-white shadow-sm text-primary rounded-2xl border border-light">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
                 </div>
             </div>
-            <h2 class="text-xl font-bold text-main mb-2">Dateien ablegen oder klicken</h2>
-            <p class="text-secondary max-w-md mx-auto">Ziehen Sie Ihre Belege, Rechnungen oder Angebote direkt in dieses Fenster oder wählen Sie Dateien von Ihrem Computer aus.</p>
-            <div class="flex justify-center gap-4 mt-8">
-                <span class="text-[10px] font-bold text-muted uppercase tracking-widest px-3 py-1 bg-neutral-50 rounded-full border border-neutral-100">PDF</span>
-                <span class="text-[10px] font-bold text-muted uppercase tracking-widest px-3 py-1 bg-neutral-50 rounded-full border border-neutral-100">JPG/PNG</span>
-                <span class="text-[10px] font-bold text-muted uppercase tracking-widest px-3 py-1 bg-neutral-50 rounded-full border border-neutral-100">Max 100MB</span>
+            <h2 class="text-xl font-extrabold text-main mb-2">Dateien ablegen oder klicken</h2>
+            <p class="text-secondary max-w-md mx-auto text-sm">Ziehen Sie Ihre Belege, Rechnungen oder Angebote direkt in dieses Fenster.</p>
+            <div class="flex justify-center gap-3 mt-8">
+                <span class="text-[9px] font-black text-muted uppercase tracking-widest px-3 py-1 bg-white rounded-full border border-light shadow-xs">PDF</span>
+                <span class="text-[9px] font-black text-muted uppercase tracking-widest px-3 py-1 bg-white rounded-full border border-light shadow-xs">JPG/PNG</span>
+                <span class="text-[9px] font-black text-muted uppercase tracking-widest px-3 py-1 bg-white rounded-full border border-light shadow-xs">Max 100MB</span>
             </div>
         </div>
 
         <!-- Staging Area (Selection made) -->
-        <div id="stagingArea" class="mt-10 flex flex-column gap-6" style="display: none;">
-            <div class="flex justify-between items-center border-b border-neutral-50 pb-4">
-                <h3 class="text-sm font-bold text-main">Warteschlange (<span id="fileCount">0</span> Dateien)</h3>
-                <button id="clearStaging" class="btn btn-ghost btn-xs text-error font-bold">Alle entfernen</button>
+        <div id="stagingArea" class="mt-8 flex flex-column gap-6" style="display: none;">
+            <div class="flex justify-between items-center border-b border-light pb-4">
+                <h3 class="text-xs font-black text-main uppercase tracking-widest">Warteschlange (<span id="fileCount">0</span>)</h3>
+                <button id="clearStaging" class="btn btn-ghost btn-xs text-error font-bold">Liste leeren</button>
             </div>
             <div id="fileList" class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <!-- Staged files appear here -->
             </div>
-            <div class="pt-4">
-                <button id="startAnalysis" class="btn btn-primary btn-xl w-full text-lg shadow-lg group">
-                    <span>ANALYSE STARTEN</span>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="group-hover:translate-x-1 transition-transform"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-                </button>
+            <div class="pt-4 border-t border-light mt-4">
+                <div id="confirmGate" class="bg-secondary p-6 rounded-2xl border border-light mb-6 flex flex-column gap-4">
+                    <div class="flex gap-3 items-center">
+                        <div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+                        <span class="text-xs font-bold text-main uppercase">Bereit zur Analyse</span>
+                    </div>
+                    <p class="text-xs text-secondary leading-relaxed">Durch Klicken auf "Analyse starten" bestätigen Sie die Verarbeitung der oben genannten Dokumente. Dieser Vorgang kann je nach Anzahl der Seiten einige Momente dauern.</p>
+                    <button id="startAnalysis" class="wf-btn-primary w-full shadow-lg group">
+                        <span class="flex-1">ANALYSE STARTEN</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="group-hover:translate-x-1 transition-transform"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    </button>
+                </div>
             </div>
         </div>
 
         <!-- Progress Area -->
-        <div id="progressArea" class="mt-10" style="display: none;">
-            <div class="p-8 bg-neutral-25 rounded-3xl border border-neutral-100 shadow-inner">
+        <div id="progressArea" class="mt-8" style="display: none;">
+            <div class="p-8 bg-white rounded-3xl border border-light shadow-md">
                 <div class="flex justify-between items-end mb-6">
                     <div>
-                        <div id="phase" class="text-xs font-black text-primary-600 uppercase tracking-widest mb-2">Initialisiere...</div>
-                        <div id="status" class="text-xl font-bold text-main">Analyse läuft...</div>
+                        <div id="phase" class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">Initialisiere...</div>
+                        <div id="status" class="text-xl font-extrabold text-main">Analyse läuft...</div>
                     </div>
-                    <div id="pLabel" class="text-4xl font-black text-primary-600 tabular-nums">0.0%</div>
+                    <div id="pLabel" class="text-4xl font-black text-primary tabular-nums">0.0%</div>
                 </div>
-                <div class="w-full bg-neutral-200 rounded-full h-4 overflow-hidden mb-4 shadow-sm">
-                    <div id="bar" class="bg-primary-500 h-full transition-all duration-300 shadow-[0_0_12px_rgba(59,130,246,0.5)]" style="width: 0%"></div>
+                <div class="w-full bg-secondary rounded-full h-3 overflow-hidden mb-4 shadow-inner">
+                    <div id="bar" class="bg-primary h-full transition-all duration-300" style="width: 0%"></div>
                 </div>
-                <p class="text-xs text-muted leading-relaxed">Bitte das Fenster nicht schließen. Ihre Dokumente werden jetzt per OCR erfasst und klassifiziert.</p>
+                <p class="text-xs text-muted leading-relaxed italic">System arbeitet lokal. Ihre Daten bleiben geschützt.</p>
             </div>
             
             <div id="errorActions" class="mt-6 flex gap-4" style="display: none;">
-                <button id="retryBtn" class="btn btn-primary flex-1 py-4 font-bold">Erneut versuchen</button>
+                <button id="retryBtn" class="btn btn-primary flex-1 py-4 font-bold shadow-sm">Erneut versuchen</button>
                 <button id="cancelBtn" class="btn btn-secondary flex-1 py-4 font-bold">Abbrechen</button>
             </div>
         </div>
@@ -90,27 +93,27 @@
     </div>
   </div>
 
-  <section class="mt-4 px-4">
-      <h3 class="text-xs font-bold text-muted uppercase tracking-widest mb-4">Sicherheits-Check</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="flex gap-3 items-start">
-              <div class="p-2 bg-success-bg text-success rounded-lg">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              </div>
-              <div>
-                  <div class="text-xs font-bold text-main">Ende-zu-Ende Lokal</div>
-                  <div class="text-[11px] text-muted">Dateien verlassen niemals diesen Server.</div>
-              </div>
+  <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="wf-card p-6 flex flex-column gap-3">
+          <div class="w-10 h-10 rounded-xl bg-success-bg text-success flex items-center justify-center border border-success/20">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           </div>
-          <div class="flex gap-3 items-start">
-              <div class="p-2 bg-success-bg text-success rounded-lg">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
-              </div>
-              <div>
-                  <div class="text-xs font-bold text-main">Integrität gesichert</div>
-                  <div class="text-[11px] text-muted">Automatische Prüfsummen für jedes Dokument.</div>
-              </div>
+          <h3 class="text-xs font-black uppercase tracking-widest m-0">Lokal</h3>
+          <p class="text-xs text-muted leading-relaxed">Dateien verlassen niemals diesen Server.</p>
+      </div>
+      <div class="wf-card p-6 flex flex-column gap-3">
+          <div class="w-10 h-10 rounded-xl bg-primary-bg text-primary flex items-center justify-center border border-primary/20">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
           </div>
+          <h3 class="text-xs font-black uppercase tracking-widest m-0">Integrität</h3>
+          <p class="text-xs text-muted leading-relaxed">Validierung per Hash-Algorithmus.</p>
+      </div>
+      <div class="wf-card p-6 flex flex-column gap-3">
+          <div class="w-10 h-10 rounded-xl bg-warning-bg text-warning flex items-center justify-center border border-warning/20">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <h3 class="text-xs font-black uppercase tracking-widest m-0">Vertraulich</h3>
+          <p class="text-xs text-muted leading-relaxed">Souveräne Datenhoheit nach Sovereign-11.</p>
       </div>
   </section>
 
@@ -118,161 +121,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-/**
- * Upload Engine v3.0 (Worker 4 Refinement)
- */
-document.addEventListener("DOMContentLoaded", function() {
-  const fileInput = document.getElementById("file");
-  const stagingArea = document.getElementById("stagingArea");
-  const fileList = document.getElementById("fileList");
-  const fileCount = document.getElementById("fileCount");
-  const clearStaging = document.getElementById("clearStaging");
-  const startBtn = document.getElementById("startAnalysis");
-  const progressArea = document.getElementById("progressArea");
-  const bar = document.getElementById("bar");
-  const pLabel = document.getElementById("pLabel");
-  const status = document.getElementById("status");
-  const phase = document.getElementById("phase");
-  const dropZone = document.getElementById("dropZone");
-
-  let stagedFiles = [];
-
-  const updateUI = () => {
-    fileList.innerHTML = "";
-    stagedFiles.forEach((f, i) => {
-      const d = document.createElement("div");
-      d.className = "card card-tight border-light bg-subtle flex items-center justify-between p-4 rounded-xl";
-      d.innerHTML = `
-        <div class="flex items-center gap-3 overflow-hidden">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-muted shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <div class="truncate text-xs font-semibold text-main">${f.name}</div>
-        </div>
-        <button class="btn btn-ghost btn-xs text-error hover:bg-error-bg" onclick="window._rm(${i})">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-        </button>
-      `;
-      fileList.appendChild(d);
-    });
-    fileCount.textContent = stagedFiles.length;
-    stagingArea.style.display = stagedFiles.length > 0 ? "flex" : "none";
-    if (stagedFiles.length > 0) {
-        dropZone.style.display = "none";
-    } else {
-        dropZone.style.display = "block";
-    }
-  };
-
-  window._rm = (idx) => { stagedFiles.splice(idx, 1); updateUI(); };
-
-  clearStaging.addEventListener("click", () => { stagedFiles = []; updateUI(); fileInput.value = ""; });
-
-  fileInput.addEventListener("change", () => {
-    stagedFiles = [...stagedFiles, ...Array.from(fileInput.files)];
-    updateUI();
-  });
-
-  dropZone.addEventListener("dragover", (e) => { 
-    e.preventDefault(); 
-    dropZone.classList.add("border-primary-500", "bg-primary-50");
-  });
-  dropZone.addEventListener("dragleave", () => { 
-    dropZone.classList.remove("border-primary-500", "bg-primary-50");
-  });
-  dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("border-primary-500", "bg-primary-50");
-    if(e.dataTransfer.files.length > 0){
-      stagedFiles = [...stagedFiles, ...Array.from(e.dataTransfer.files)];
-      updateUI();
-    }
-  });
-
-  const csrfToken = "{{ csrf_token() }}";
-  
-  const uploadAction = () => {
-    if(stagedFiles.length === 0) return;
-    stagingArea.style.display = "none";
-    progressArea.style.display = "block";
-    document.getElementById("errorActions").style.display = "none";
-    
-    const formData = new FormData();
-    stagedFiles.forEach(f => formData.append("file", f));
-    formData.append("csrf_token", csrfToken);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/upload", true);
-    let targetProgress = 0, currentProgress = 0;
-
-    const sim = setInterval(() => {
-      if(currentProgress < targetProgress) currentProgress += 0.5;
-      bar.style.width = currentProgress + "%";
-      pLabel.textContent = currentProgress.toFixed(1) + "%";
-    }, 30);
-
-    xhr.upload.onprogress = (ev) => {
-      if(ev.lengthComputable){
-        targetProgress = (ev.loaded / ev.total) * 35;
-        phase.textContent = "Schritt 1: Übertragung...";
-      }
-    };
-
-    xhr.onload = () => {
-      if(xhr.status === 200){
-        try {
-          const res = JSON.parse(xhr.responseText);
-          if(res.tokens && res.tokens.length > 0){
-            const tokens = res.tokens.map(t => t.token);
-            targetProgress = 35;
-            phase.textContent = "Schritt 2: KI-Analyse...";
-            status.textContent = "Inhalte werden extrahiert...";
-
-            const check = setInterval(() => {
-              const pXhr = new XMLHttpRequest();
-              pXhr.open("GET", "/api/progress?tokens=" + tokens.join(","), true);
-              pXhr.onload = () => {
-                if(pXhr.status === 200){
-                  const data = JSON.parse(pXhr.responseText);
-                  let allDone = true;
-                  let minP = 100;
-                  Object.values(data).forEach(d => {
-                    if(d.status !== "READY" && d.status !== "ERROR") allDone = false;
-                    if(d.progress < minP) minP = d.progress;
-                  });
-                  targetProgress = 35 + (minP * 0.65);
-                  if(allDone){
-                    clearInterval(check);
-                    clearInterval(sim);
-                    bar.style.width = "100%";
-                    pLabel.textContent = "100%";
-                    phase.textContent = "Abgeschlossen";
-                    status.textContent = "Analyse fertig. Öffne Review...";
-                    if(tokens.length === 1){
-                      setTimeout(() => window.location.href = "/review/" + tokens[0] + "/kdnr", 800);
-                    } else {
-                      setTimeout(() => window.location.href = "/dashboard", 800);
-                    }
-                  }
-                }
-              };
-              pXhr.send();
-            }, 1000);
-          }
-        } catch(e) { handleError("Fehlerhafte Server-Antwort."); }
-      } else { handleError("Upload fehlgeschlagen."); }
-    };
-
-    const handleError = (msg) => {
-      clearInterval(sim);
-      status.textContent = msg;
-      status.classList.add("text-error");
-      document.getElementById("errorActions").style.display = "flex";
-    };
-    
-    xhr.send(formData);
-  };
-
-  startBtn.addEventListener("click", uploadAction);
-});
-</script>
+<script src="/static/js/upload-engine.js"></script>
 {% endblock %}

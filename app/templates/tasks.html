@@ -1,85 +1,121 @@
 {% extends "layout.html" %}
-{% block title %}Aufgaben{% endblock %}
+{% block title %}Aufgaben · KUKANILEA{% endblock %}
 
-{% block content %}
-<style>
-  .tasks-grid { display: grid; gap: 12px; }
-  .tasks-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .tasks-card { border: 1px solid var(--color-border); background: var(--bg-secondary); border-radius: 12px; padding: 12px; }
-  .tasks-muted { color: var(--color-text-muted); font-size: 12px; }
-  .tasks-title { margin: 0 0 4px 0; font-size: 13px; text-transform: uppercase; color: var(--color-text-muted); letter-spacing: 0.06em; }
-  .tasks-value { font-size: 26px; font-weight: 700; margin: 0; }
-  .tasks-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .tasks-table th, .tasks-table td { padding: 10px 8px; border-top: 1px solid var(--color-border); vertical-align: top; }
-  .tasks-badge { border: 1px solid var(--color-border); border-radius: 999px; padding: 2px 8px; font-size: 11px; display: inline-block; }
-  .tasks-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  @media (max-width: 980px) {
-    .tasks-stats { grid-template-columns: 1fr; }
-  }
-</style>
-
-<section class="tasks-grid">
-  <div class="tasks-stats">
-    <article class="tasks-card">
-      <p class="tasks-title">Gesamt</p>
-      <p class="tasks-value">{{ (tasks or [])|length }}</p>
-    </article>
-    <article class="tasks-card">
-      <p class="tasks-title">Inbox</p>
-      <p class="tasks-value">{{ (inbox or [])|length }}</p>
-    </article>
-    <article class="tasks-card">
-      <p class="tasks-title">Benachrichtigungen</p>
-      <p class="tasks-value">{{ (notifications or [])|length }}</p>
-    </article>
-  </div>
-
-  <article class="tasks-card">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px;">
-      <div>
-        <h2 style="margin:0;">Aufgabenübersicht</h2>
-        <div class="tasks-muted">Live aus dem Projekt-Task-Backend</div>
-      </div>
-      <div class="tasks-actions">
-        <a href="/projects" class="tasks-badge" style="text-decoration:none;">Zum Projektboard</a>
-      </div>
-    </div>
-
-    <div style="overflow:auto;">
-      <table class="tasks-table">
-        <thead>
-          <tr>
-            <th align="left">Titel</th>
-            <th align="left">Status</th>
-            <th align="left">Spalte</th>
-            <th align="left">Verantwortlich</th>
-            <th align="left">Fällig</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for t in tasks or [] %}
-          <tr>
-            <td>
-              <strong>{{ t.get("title", "Ohne Titel") }}</strong>
-              {% if t.get("description") %}
-              <div class="tasks-muted">{{ t.get("description") }}</div>
-              {% endif %}
-            </td>
-            <td><span class="tasks-badge">{{ t.get("status", "-") }}</span></td>
-            <td>{{ t.get("column_name", "-") }}</td>
-            <td>{{ t.get("assigned_to") or t.get("assigned_user") or "-" }}</td>
-            <td>{{ t.get("due_at") or t.get("due_date") or "-" }}</td>
-          </tr>
-          {% endfor %}
-          {% if not tasks %}
-          <tr>
-            <td colspan="5" class="tasks-muted" style="text-align:center; padding:20px;">Keine Aufgaben vorhanden.</td>
-          </tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
-  </article>
-</section>
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/workflow.css">
 {% endblock %}
 
+{% block content %}
+<div class="wf-container">
+
+  <!-- 1. Unified Task Header -->
+  <header class="wf-header">
+    <div class="wf-header-content">
+      <h1 class="wf-title">Aufgabenübersicht</h1>
+      <p class="wf-subtitle">Live-Status aller aktiven Aufgaben aus Ihren Projekten.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="/projects" class="wf-btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 9h18M9 21V9"/></svg>
+          <span>PROJEKTBOARD</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- 2. Statistics Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="wf-card p-6 flex flex-column gap-2">
+      <p class="text-[10px] font-black text-tertiary uppercase tracking-widest m-0">Gesamt</p>
+      <p class="text-3xl font-black text-main m-0">{{ (tasks or [])|length }}</p>
+    </div>
+    <div class="wf-card p-6 flex flex-column gap-2">
+      <p class="text-[10px] font-black text-tertiary uppercase tracking-widest m-0">Inbox</p>
+      <p class="text-3xl font-black text-main m-0">{{ (inbox or [])|length }}</p>
+    </div>
+    <div class="wf-card p-6 flex flex-column gap-2">
+      <p class="text-[10px] font-black text-tertiary uppercase tracking-widest m-0">Offen</p>
+      <p class="text-3xl font-black text-primary m-0">
+        {% set open_count = 0 %}
+        {% for t in tasks or [] %}
+          {% if t.get("status") != "Done" %}{% set open_count = open_count + 1 %}{% endif %}
+        {% endfor %}
+        {{ open_count }}
+      </p>
+    </div>
+  </div>
+
+  <!-- 3. Task List Table -->
+  <div class="wf-card">
+    <div class="wf-card-header bg-white">
+        <h3 class="text-xs font-black text-main uppercase tracking-widest">Alle Aufgaben</h3>
+        <div class="flex gap-2">
+            <button class="btn btn-ghost btn-xs flex gap-2 items-center text-primary font-bold" 
+                    hx-get="/tasks" hx-target=".wf-container" hx-select=".wf-container" hx-swap="outerHTML">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
+                <span>Aktualisieren</span>
+            </button>
+            <span class="text-[10px] font-bold text-tertiary bg-secondary px-2 py-1 rounded border border-light">Live-Daten</span>
+        </div>
+    </div>
+    <div class="wf-card-body p-0">
+        <div class="wf-table-wrap border-none rounded-none">
+          <table class="wf-table">
+            <thead>
+              <tr>
+                <th class="sortable">Priorität</th>
+                <th class="sortable">Titel & Dokument</th>
+                <th>SLA</th>
+                <th>Inhaber</th>
+                <th class="sortable">Fälligkeit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in tasks or [] %}
+              {% set p_class = t.get("priority", "MEDIUM")|lower %}
+              <tr>
+                <td>
+                    <span class="badge-priority {{ p_class }}">
+                        {{ t.get("priority", "MEDIUM") }}
+                    </span>
+                </td>
+                <td>
+                  <div class="flex flex-column gap-1">
+                    <span class="font-bold text-main">{{ t.get("title", "Ohne Titel") }}</span>
+                    {% if t.get("description") %}
+                    <span class="text-[10px] text-tertiary line-clamp-1 italic">{{ t.get("description") }}</span>
+                    {% endif %}
+                  </div>
+                </td>
+                <td>
+                    <div class="flex items-center gap-2">
+                        {% if t.get("status") == "Done" %}
+                            <div class="sla-indicator sla-ok"></div>
+                            <span class="text-[9px] font-bold text-success uppercase">Erledigt</span>
+                        {% else %}
+                            <div class="sla-indicator {{ 'sla-overdue' if t.get('is_overdue') else 'sla-ok' }}"></div>
+                            <span class="text-[9px] font-bold text-tertiary uppercase">In Zeit</span>
+                        {% endif %}
+                    </div>
+                </td>
+                <td><span class="text-xs font-bold text-main">{{ t.get("assigned_to") or t.get("assigned_user") or "-" }}</span></td>
+                <td><span class="text-xs font-medium text-tertiary">{{ t.get("due_at") or t.get("due_date") or "-" }}</span></td>
+              </tr>
+              {% endfor %}
+              {% if not tasks %}
+              <tr>
+                <td colspan="5" class="text-center py-20">
+                    <div class="flex flex-column items-center gap-4 opacity-30">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        <span class="text-xs font-bold uppercase tracking-widest">Keine Aufgaben gefunden</span>
+                    </div>
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,9 +1,22 @@
-<svg class="logo" viewBox="0 0 200 40" xmlns="http://www.w3.org/2000/svg">
-  <g class="logo-icon">
-    <path d="M10,5 L10,35 M10,20 L25,5 M10,20 L25,35" 
-          stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
-  </g>
-  <text x="35" y="28" font-family="var(--font-primary)" font-weight="700" font-size="20" fill="currentColor">
-    KUKANILEA
-  </text>
-</svg>
+<div class="flex items-center gap-3 logo-container">
+  <svg class="logo-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary-600)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+  </svg>
+  <span class="logo-text nav-text">KUKANILEA</span>
+</div>
+
+<style>
+  .logo-container {
+      padding: 0 var(--space-2);
+  }
+  .logo-text {
+      font-size: 1.125rem;
+      font-weight: 800;
+      color: var(--neutral-950);
+      letter-spacing: -0.02em;
+      text-transform: uppercase;
+  }
+  .sidebar-collapsed .logo-text {
+      display: none;
+  }
+</style>

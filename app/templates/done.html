@@ -1,13 +1,36 @@
 {% extends "layout.html" %}
-{% block title %}Erfolgreich archiviert{% endblock %}
+{% block title %}Erfolgreich archiviert · KUKANILEA{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/workflow.css">
+{% endblock %}
 
 {% block content %}
-<div class="panel" style="text-align: center; padding: var(--spacing-6); max-width: 500px; margin: 0 auto; margin-top: var(--spacing-5);">
-  <div style="height: 80px; width: 80px; border-radius: 50%; background: rgba(16, 185, 129, 0.1); color: var(--color-success); border: 1px solid rgba(16, 185, 129, 0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto; margin-bottom: var(--spacing-4); box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.1);">
-    <svg fill="none" stroke="currentColor" stroke-width="3" width="40" height="40" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+<div class="wf-container" style="max-width: 600px;">
+  <div class="wf-card p-10 text-center flex flex-column gap-6 items-center">
+    <div style="height: 100px; width: 100px; border-radius: 50%; background: rgba(16, 185, 129, 0.1); color: var(--color-success); border: 1px solid rgba(16, 185, 129, 0.2); display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.1);">
+      <svg fill="none" stroke="currentColor" stroke-width="3" width="48" height="48" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    
+    <div>
+      <h1 class="wf-title text-3xl">Erfolgreich archiviert</h1>
+      <p class="wf-subtitle text-base mt-2">Das Dokument wurde sicher im lokalen Ledger abgelegt und für die KI-Suche indiziert.</p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3 w-full pt-4">
+      <a href="/tasks" class="wf-btn-primary w-full shadow-lg">
+        <span class="flex-1">AUFGABENÜBERSICHT</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      </a>
+      <div class="grid grid-cols-2 gap-3 w-full">
+        <a href="/projects" class="btn btn-secondary py-4 font-black text-[10px] uppercase tracking-widest border-light">Projektboard</a>
+        <a href="/upload" class="btn btn-ghost py-4 font-black text-[10px] uppercase tracking-widest text-primary">Weiterer Upload</a>
+      </div>
+    </div>
+
+    <div class="mt-6 pt-6 border-t border-light w-full">
+        <p class="text-[9px] font-black text-tertiary uppercase tracking-[0.2em]">Sovereign-11 Local Intelligence</p>
+    </div>
   </div>
-  <h1 style="font-size: 28px; font-weight: 800; color: var(--color-text-main); margin-bottom: var(--spacing-2);">Archiviert</h1>
-  <p style="color: var(--color-text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: var(--spacing-5);">Dokument sicher im Ledger abgelegt</p>
-  <a href="/" class="btn btn-primary" style="padding: 0 48px; height: 48px; font-size: 16px;">Zur Übersicht</a>
 </div>
 {% endblock %}

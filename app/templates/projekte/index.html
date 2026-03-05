@@ -1,82 +1,156 @@
 {% extends "layout.html" %}
 {% block title %}{{ project.name }} · Project Hub · KUKANILEA{% endblock %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/workflow.css">
+<style>
+/* Specific Kanban Overrides for Workflow integration */
+.kanban-column {
+    width: 320px;
+    min-height: 70vh;
+    background: var(--bg-secondary);
+    border: 1px solid var(--wf-border);
+    border-radius: var(--radius-xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+    padding: var(--spacing-4);
+    flex-shrink: 0;
+}
+
+.kanban-column-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 var(--spacing-2);
+}
+
+.kanban-column-title {
+    font-size: 0.7rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.kanban-card-list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.kanban-add-card {
+    border: 1px dashed var(--wf-border);
+    background: transparent;
+    padding: var(--spacing-3);
+    border-radius: var(--radius-lg);
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kanban-add-card:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: rgba(37, 99, 235, 0.02);
+}
+
+.wf-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 480px;
+    background: var(--bg-primary);
+    box-shadow: var(--shadow-2xl);
+    border-left: 1px solid var(--wf-border);
+    z-index: 1100;
+    transform: translateX(100%);
+    transition: transform var(--transition-slow);
+}
+
+.wf-drawer.open {
+    transform: translateX(0);
+}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="page-container p-6 flex flex-column gap-6" id="project-hub" data-board-id="{{ board.id }}" data-project-id="{{ project.id }}">
+<div class="wf-container" id="project-hub" data-board-id="{{ board.id }}" data-project-id="{{ project.id }}">
 
   <!-- 1. Unified Project Header -->
-  <header class="flex justify-between items-end gap-6 flex-wrap bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm">
-    <div class="flex flex-column gap-1">
-        <nav class="breadcrumb text-[10px] font-black uppercase tracking-widest text-muted flex gap-2 items-center mb-2">
-            <a href="/projects" class="hover:text-primary-600">Projekte</a>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-            <span class="text-primary-600">{{ project.name }}</span>
+  <header class="wf-header">
+    <div class="wf-header-content">
+        <nav class="flex gap-2 items-center mb-3">
+            <a href="/projects" class="text-[10px] font-black uppercase text-muted hover:text-primary">Projekte</a>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="text-tertiary"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="text-[10px] font-black uppercase text-primary">{{ project.name }}</span>
         </nav>
-        <h1 class="m-0 text-3xl font-bold tracking-tight text-main">{{ project.name }}</h1>
-        <p class="text-secondary text-sm max-w-xl">{{ project.description or 'Lokales Kanban mit Aktivitaetsprotokoll fuer Ihre KI-Auswertungen.' }}</p>
+        <h1 class="wf-title">{{ project.name }}</h1>
+        <p class="wf-subtitle">{{ project.description or 'Lokales Kanban mit Aktivitaetsprotokoll fuer Ihre KI-Auswertungen.' }}</p>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-4">
       <div class="flex flex-column items-end gap-1">
-          <span class="text-[10px] font-bold text-muted uppercase tracking-wider">Aktives Board</span>
-          <select id="board-switch" class="input font-bold text-sm bg-neutral-50 border-neutral-100 rounded-lg px-3 py-1.5 focus:border-primary-500 transition-all">
+          <span class="text-[9px] font-black text-tertiary uppercase tracking-wider">Aktives Board</span>
+          <select id="board-switch" class="form-select" style="height:36px; padding:0 12px; font-weight:700; font-size:13px;">
             {% for b in boards %}
             <option value="{{ b.id }}" {{ 'selected' if b.id == board.id else '' }}>{{ b.name }}</option>
             {% endfor %}
           </select>
       </div>
-      <button class="btn btn-primary shadow-sm h-10 px-5" onclick="openAddCard()">
+      <button class="wf-btn-primary" id="create-card-btn-top">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          <span class="font-bold">Neu</span>
+          <span>NEU</span>
       </button>
     </div>
   </header>
 
-  <!-- 2. Board Status Line -->
-  <div class="status-bar h-6 flex items-center px-2">
-      <div id="status-line" class="text-[11px] font-medium text-muted italic">Bereit.</div>
+  <!-- 2. Board Status -->
+  <div class="flex items-center px-2 gap-2">
+      <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
+      <div id="status-line" class="text-[11px] font-bold text-tertiary uppercase tracking-tight">System Bereit</div>
   </div>
 
   <!-- 3. Scrollable Kanban Area -->
-  <div class="kanban-outer-wrap overflow-x-auto pb-6 -mx-6 px-6">
-    <div id="kanban" class="flex gap-6 items-start" style="min-width: max-content; --col-count: {{ columns|length if columns else 1 }};">
+  <div class="overflow-x-auto pb-8 -mx-6 px-6">
+    <div id="kanban" class="flex gap-6 items-start" style="min-width: max-content;">
       
       {% for col in columns %}
-      <section class="lane flex flex-column gap-4 bg-neutral-50/50 border border-neutral-100 rounded-3xl p-4 transition-colors" 
-               style="width: 320px; min-height: 650px;"
-               data-column-id="{{ col.id }}" data-column-name="{{ col.name }}">
-        
-        <header class="lane-header flex justify-between items-center px-2">
-            <div class="flex items-center gap-2">
-                <h3 class="text-xs font-black text-main uppercase tracking-widest">{{ col.name }}</h3>
-                <span class="bg-white text-neutral-500 font-bold border border-neutral-100 px-2 py-0.5 rounded-full text-[10px] shadow-sm" data-count>0</span>
+      <section class="kanban-column" data-column-id="{{ col.id }}" data-column-name="{{ col.name }}">
+        <header class="kanban-column-header">
+            <div class="flex items-center gap-3">
+                <h3 class="kanban-column-title">{{ col.name }}</h3>
+                <span class="bg-white text-tertiary font-black border border-light px-2 py-0.5 rounded-md text-[9px] shadow-xs" data-count>0</span>
             </div>
-            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button class="rename-col btn btn-ghost btn-xs p-1" title="Umbenennen">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-            </div>
+            <button class="rename-col btn btn-ghost btn-xs p-1 opacity-0 group-hover:opacity-100">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
         </header>
 
-        <div class="cards flex flex-column gap-3 flex-1" data-column-id="{{ col.id }}">
-            <!-- Cards are injected by JS -->
+        <div class="kanban-card-list" data-column-id="{{ col.id }}">
+            <!-- Cards injected by JS -->
         </div>
 
-        <button class="btn btn-ghost btn-sm w-full text-neutral-400 hover:text-primary-600 hover:bg-primary-50 border border-dashed border-transparent hover:border-primary-200 justify-start transition-all" 
-                onclick="openQuickAdd('{{ col.id }}')">
+        <button class="kanban-add-card" onclick="openQuickAdd('{{ col.id }}')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             <span>Aufgabe hinzufügen</span>
         </button>
       </section>
       {% endfor %}
 
-      <!-- Add Column -->
-      <button class="btn btn-ghost border-2 border-dashed border-neutral-200 rounded-3xl p-12 text-muted hover:border-neutral-300 hover:bg-neutral-50 transition-all flex flex-column gap-2" 
-              style="width: 320px; height: 200px; flex-shrink: 0;"
+      <button class="kanban-column border-2 border-dashed border-light bg-transparent items-center justify-center text-tertiary hover:border-primary/30 hover:text-primary transition-all group" 
+              style="height: 200px;"
               id="create-col-btn">
-        <div class="p-3 bg-white rounded-full shadow-sm border border-neutral-100">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <div class="p-4 bg-white rounded-2xl shadow-sm border border-light group-hover:shadow-md transition-all">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </div>
-        <span class="font-bold text-sm">Neue Spalte</span>
+        <span class="font-black text-[10px] uppercase mt-4">Neue Spalte</span>
       </button>
 
     </div>
@@ -84,103 +158,73 @@
 
 </div>
 
-<!-- 4. Modern Detail Drawer (Right Side) -->
-<aside id="detail-drawer" class="fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl border-l border-neutral-100 transform translate-x-full transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] z-50">
+<!-- 4. Unified Detail Drawer -->
+<aside id="detail-drawer" class="wf-drawer">
     <div class="h-full flex flex-column">
-        <header class="p-6 border-b border-neutral-50 flex justify-between items-start">
+        <header class="p-6 border-b border-light flex justify-between items-start bg-secondary">
             <div>
-                <h3 class="text-xl font-bold text-main" id="drawer-title">Aufgaben-Details</h3>
-                <p class="text-xs text-muted mt-1" id="drawer-subtitle">Zuletzt aktualisiert: gerade eben</p>
+                <h3 class="text-lg font-black text-main uppercase tracking-tight" id="drawer-title">Aufgaben-Details</h3>
+                <p class="text-[10px] text-tertiary font-bold uppercase mt-1 tracking-widest" id="drawer-subtitle">Synchronisiert</p>
             </div>
-            <button class="btn btn-ghost btn-icon hover:bg-neutral-50 rounded-full" onclick="closeDrawer()">
+            <button class="btn btn-ghost btn-sm" onclick="closeDrawer()" aria-label="Schließen">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </header>
         
         <div class="flex-1 overflow-y-auto p-8 flex flex-column gap-8">
-            <div id="no-selection" class="flex flex-column items-center justify-center py-20 text-center opacity-40">
-                <div class="mb-6 p-6 bg-neutral-50 rounded-full">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+            <div id="no-selection" class="flex flex-column items-center justify-center py-20 text-center opacity-30">
+                <div class="mb-6 p-8 bg-secondary rounded-3xl border border-light">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
                 </div>
-                <p class="text-sm font-medium">Karte auswählen,<br>um Details zu bearbeiten.</p>
+                <p class="text-xs font-bold uppercase tracking-widest">Keine Auswahl</p>
             </div>
             
             <div id="selection" style="display: none;" class="flex flex-column gap-8">
-                <!-- Editable Meta Fields -->
-                <div class="flex flex-column gap-4">
-                    <div class="flex flex-column gap-1.5">
-                        <label class="text-[10px] font-black uppercase tracking-widest text-muted">Titel</label>
-                        <input id="sel-title" class="input text-lg font-bold border-none bg-neutral-50 focus:bg-white px-4 py-3 rounded-xl transition-all" type="text" placeholder="Titel der Aufgabe">
+                <div class="flex flex-column gap-5">
+                    <div class="flex flex-column gap-2">
+                        <label class="text-[9px] font-black uppercase tracking-widest text-tertiary">Aufgabentitel</label>
+                        <input id="sel-title" class="form-input text-base font-bold bg-secondary border-light focus:bg-white p-4 rounded-xl" type="text">
                     </div>
-                    <div class="flex flex-column gap-1.5">
-                        <label class="text-[10px] font-black uppercase tracking-widest text-muted">Beschreibung</label>
-                        <textarea id="sel-description" class="input min-h-[120px] border-none bg-neutral-50 focus:bg-white px-4 py-3 rounded-xl transition-all resize-none" placeholder="Was ist zu tun?"></textarea>
+                    <div class="flex flex-column gap-2">
+                        <label class="text-[9px] font-black uppercase tracking-widest text-tertiary">Beschreibung</label>
+                        <textarea id="sel-description" class="form-textarea min-h-[140px] bg-secondary border-light focus:bg-white p-4 rounded-xl resize-none" placeholder="Notizen..."></textarea>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
-                    <div class="flex flex-column gap-1.5">
-                        <label class="text-[10px] font-black uppercase tracking-widest text-muted">Fälligkeit</label>
-                        <input id="sel-due" class="input border-none bg-neutral-50 px-4 py-2.5 rounded-xl text-sm" type="date">
+                    <div class="flex flex-column gap-2">
+                        <label class="text-[9px] font-black uppercase tracking-widest text-tertiary">Fälligkeit</label>
+                        <input id="sel-due" class="form-input bg-secondary border-light p-3 rounded-lg text-xs font-bold" type="date">
                     </div>
-                    <div class="flex flex-column gap-1.5">
-                        <label class="text-[10px] font-black uppercase tracking-widest text-muted">Verantwortlich</label>
-                        <input id="sel-assignee" class="input border-none bg-neutral-50 px-4 py-2.5 rounded-xl text-sm" type="text" placeholder="Name">
+                    <div class="flex flex-column gap-2">
+                        <label class="text-[9px] font-black uppercase tracking-widest text-tertiary">Inhaber</label>
+                        <input id="sel-assignee" class="form-input bg-secondary border-light p-3 rounded-lg text-xs font-bold" type="text" placeholder="Name">
                     </div>
                 </div>
 
-                <div class="flex gap-2 pt-4">
-                    <button id="save-card-btn" class="btn btn-primary flex-1 font-bold shadow-md">Änderungen speichern</button>
-                    <button id="del-card-btn" class="btn btn-ghost text-error hover:bg-error-bg font-bold">Löschen</button>
+                <div class="flex gap-3 pt-6">
+                    <button id="save-card-btn" class="wf-btn-primary flex-1 shadow-md">SPEICHERN</button>
+                    <button id="del-card-btn" class="btn btn-ghost text-error font-black text-[10px] uppercase px-4">Löschen</button>
                 </div>
 
-                <!-- Tabs for Details/Comments/Activity -->
-                <div class="mt-4 border-t border-neutral-100 pt-8">
-                    <div class="flex gap-6 border-b border-neutral-50 mb-6">
-                        <button class="pb-3 border-b-2 border-primary-600 text-sm font-bold text-main">Aktivität</button>
-                        <button class="pb-3 border-b-2 border-transparent text-sm font-medium text-muted hover:text-main transition-colors">Kommentare</button>
+                <div class="mt-6 border-t border-light pt-8">
+                    <div class="flex gap-6 border-b border-light mb-6">
+                        <button class="pb-3 border-b-2 border-primary text-[10px] font-black uppercase text-main">Aktivität</button>
+                        <button class="pb-3 border-b-2 border-transparent text-[10px] font-black uppercase text-tertiary hover:text-main">Kommentare</button>
                     </div>
-                    <ul class="activity-list flex flex-column gap-4 list-none p-0">
-                        <!-- Activities injected here -->
-                    </ul>
+                    <ul id="activity-list" class="activity-list flex flex-column gap-4 list-none p-0"></ul>
                 </div>
             </div>
         </div>
     </div>
 </aside>
-
-<style>
-/* Scoped Kanban Refinements */
-.card-drag {
-    cursor: grab;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.card-drag:active { cursor: grabbing; }
-.card-drag.dragging {
-    opacity: 0.4;
-    transform: scale(0.95);
-    background: var(--neutral-50);
-    border-style: dashed;
-}
-.cards.drop-target {
-    background: rgba(59, 130, 246, 0.03);
-    border-radius: 1rem;
-    outline: 2px dashed var(--primary-300);
-    outline-offset: -2px;
-}
-</style>
 {% endblock %}
 
 {% block scripts %}
 <script>
-/**
- * Project Hub Engine v2.0 (Worker 4 Polish)
- */
-// Reuse existing logic but with improved UI selectors
-const drawer = document.getElementById('detail-drawer');
-function openDrawer() { drawer.classList.remove('translate-x-full'); }
-function closeDrawer() { drawer.classList.add('translate-x-full'); }
-
-// Integration with existing project logic ...
+window._INITIAL_COLUMNS = {{ columns|tojson }};
+window._INITIAL_CARDS = {{ cards|tojson }};
+window._INITIAL_ACTIVITIES = {{ activities|tojson }};
 </script>
+<script src="/static/js/projects-hub.js"></script>
 {% endblock %}

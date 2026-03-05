@@ -1,0 +1,244 @@
+/**
+ * dashboard-situational.css (v3.0 - Enterprise C2)
+ * Command & Control Redesign for KUKANILEA.
+ * Market: High-Trust Enterprise, Local-First Observability.
+ */
+
+:root {
+    --dash-spacing: 24px;
+    --dash-radius: 12px;
+    --dash-radius-lg: 20px;
+    --dash-card-bg: #ffffff;
+    --dash-card-border: #f1f5f9;
+    --dash-glass-bg: rgba(255, 255, 255, 0.7);
+    --dash-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --dash-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.dashboard-root {
+    background: #f8fafc;
+    background-image: radial-gradient(#e2e8f0 1px, transparent 1px);
+    background-size: 32px 32px;
+    padding-bottom: 80px;
+}
+
+/* Glass-Panel Effect (White-Mode safe) */
+.glass-panel {
+    background: var(--dash-glass-bg);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: var(--dash-shadow-md);
+}
+
+/* Enterprise Command Header */
+.command-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 40px;
+    padding: 32px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--dash-radius-lg);
+    box-shadow: var(--dash-shadow-md);
+    margin-bottom: 32px;
+    align-items: center;
+}
+
+.situational-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 48px;
+    border-left: 1px solid #f1f5f9;
+    padding-left: 48px;
+}
+
+.situational-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.situational-label {
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+
+.situational-value {
+    font-size: 24px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+}
+
+/* Metric Gauges (Enterprise Style) */
+.metric-gauge {
+    width: 100%;
+    height: 6px;
+    background: #f1f5f9;
+    border-radius: 999px;
+    margin-top: 10px;
+    overflow: hidden;
+}
+
+.metric-fill {
+    height: 100%;
+    background: #3b82f6;
+    border-radius: 999px;
+    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.metric-fill.warning { background: #f59e0b; }
+.metric-fill.danger { background: #ef4444; }
+
+/* Glance Cards XL */
+.glance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+}
+
+.glance-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--dash-radius);
+    padding: 24px;
+    transition: all 0.2s ease;
+    box-shadow: var(--dash-shadow-sm);
+}
+
+.glance-card:hover {
+    border-color: #3b82f6;
+    box-shadow: var(--dash-shadow-md);
+}
+
+.glance-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    color: #334155;
+    border: 1px solid #f1f5f9;
+}
+
+/* Service Mesh Matrix (Enterprise Node Grid) */
+.matrix-container {
+    padding: 24px;
+    background: white;
+    border-radius: var(--dash-radius);
+    border: 1px solid #e2e8f0;
+}
+
+.tool-health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+}
+
+.tool-health-card {
+    padding: 14px;
+    background: #f8fafc;
+    border: 1px solid #f1f5f9;
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+}
+
+.tool-health-card:hover {
+    background: white;
+    border-color: #cbd5e1;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    position: relative;
+}
+
+.status-dot::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    opacity: 0.3;
+}
+
+.status-dot.ok { color: #10b981; background: #10b981; }
+.status-dot.degraded { color: #f59e0b; background: #f59e0b; }
+.status-dot.error { color: #ef4444; background: #ef4444; }
+
+.tool-name {
+    font-size: 13px;
+    font-weight: 800;
+    color: #1e293b;
+}
+
+.tool-meta {
+    font-size: 10px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Activity Feed (Enterprise Audit) */
+.audit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.audit-item {
+    padding: 12px 16px;
+    background: #f8fafc;
+    border: 1px solid #f1f5f9;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.audit-item:hover {
+    background: white;
+    border-color: #e2e8f0;
+}
+
+/* Animations */
+@keyframes pulse-ring {
+    0% { transform: scale(0.9); opacity: 0.5; }
+    50% { transform: scale(1.2); opacity: 0.2; }
+    100% { transform: scale(0.9); opacity: 0.5; }
+}
+
+.animate-pulse-soft .status-dot::after {
+    animation: pulse-ring 2s infinite ease-in-out;
+}
+
+/* Typography GOBD Compliance */
+.compliance-mark {
+    font-size: 10px;
+    font-weight: 800;
+    color: #10b981;
+    background: #ecfdf5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}

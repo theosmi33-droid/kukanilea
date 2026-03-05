@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/foundation.css">
   <link rel="stylesheet" href="/static/css/design-system.css">
   <link rel="stylesheet" href="/static/css/shell-navigation.css">
   <link rel="stylesheet" href="/static/css/toast.css">
@@ -56,6 +57,16 @@
     <div id="main-content" hx-history-elt data-page-ready="1">
       {% block content %}{% endblock %}
     </div>
+
+    <footer class="main-footer" aria-label="Seitenfuß">
+        <div class="flex justify-between items-center px-6 py-4 text-xs text-muted">
+            <span>{{ branding.footer_text if branding else 'KUKANILEA' }}</span>
+            <div class="flex gap-4">
+                <a href="/legal">Rechtliches</a>
+                <a href="{{ branding.support_url if branding else '#' }}">Support</a>
+            </div>
+        </div>
+    </footer>
 
     <!-- Mobile Bottom Navigation (Task 5) -->
     <nav class="mobile-bottom-nav" aria-label="Mobile Navigation">

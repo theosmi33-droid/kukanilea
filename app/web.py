@@ -3427,7 +3427,7 @@ def dashboard_page():
     tenant = _norm_tenant(current_tenant() or "default")
     payload = _dashboard_payload(tenant)
     return _render_base(
-        "dashboard.html",
+        "dashboard/situational.html",
         active_tab="dashboard",
         **payload,
     )
@@ -3738,6 +3738,24 @@ def review(token: str):
                             folder, final_path, created_new = process_with_answers(
                                 Path(p.get("path", "")), answers
                             )
+                            
+                            # Workflow: Optionally create a task in the default project board
+                            if request.form.get("create_task") == "1":
+                                try:
+                                    from app.modules.projects.logic import ProjectManager
+                                    pm = ProjectManager(current_app.extensions["auth_db"])
+                                    workspace = pm.ensure_default_hub(answers["tenant"], actor=current_user() or "system")
+                                    board_id = workspace["board"]["id"]
+                                    col_id = workspace["columns"][0]["id"] if workspace.get("columns") else None
+                                    
+                                    task_title = f"{answers['doctype']}: {answers['name']} ({answers['kdnr']})"
+                                    task_desc = f"Automatisch erstellt aus Dokument-Upload.\nDatei: {p.get('filename')}\nPfad: {final_path}"
+                                    
+                                    pm.create_task(board_id, task_title, content=task_desc, column_id=col_id)
+                                    _audit("workflow_task_created", target=str(final_path), meta={"board_id": board_id})
+                                except Exception as we:
+                                    logger.error(f"Workflow task creation failed: {we}")
+
                             write_done(
                                 token, {"final_path": str(final_path), **answers}
                             )
