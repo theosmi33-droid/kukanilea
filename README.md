@@ -77,3 +77,9 @@ Regeln:
 
 Details im Contributing Guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Für Lane-Resubmit/Open-PR-Check (mit `gh`-Fallback auf GitHub-API):
+
+```bash
+bash scripts/dev/open_pr_status.sh --repo theosmi33-droid/kukanilea --state open
+```
+
