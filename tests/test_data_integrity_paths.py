@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from app.core.migrations import run_migrations
+import sqlite3
+
+import pytest
+
+from app.core.migrations import run_migrations, validate_integrity
 from scripts.seed_demo_data import seed_demo_data
 
 
@@ -13,8 +17,6 @@ def test_run_migrations_is_idempotent(tmp_path):
 
     run_migrations(db_path)
     run_migrations(db_path)
-
-    import sqlite3
 
     conn = sqlite3.connect(db_path)
     try:
@@ -31,6 +33,22 @@ def test_run_migrations_is_idempotent(tmp_path):
             ).fetchall()
         }
         assert "idx_memory_tenant_ts" in idx_names
+        validate_integrity(conn)
+    finally:
+        conn.close()
+
+
+def test_validate_integrity_detects_missing_agent_memory_index(tmp_path):
+    db_path = tmp_path / "core_missing_idx.sqlite3"
+    run_migrations(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("DROP INDEX IF EXISTS idx_memory_tenant_ts")
+        conn.commit()
+
+        with pytest.raises(ValueError, match="missing_index:idx_memory_tenant_ts"):
+            validate_integrity(conn)
     finally:
         conn.close()
 

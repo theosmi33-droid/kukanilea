@@ -191,9 +191,41 @@ def _restore_backup(backup_name: str) -> str:
     if target.suffix.lower() in (".sqlite3", ".db", ".sqlite"):
         if not _sqlite_backup(src, target):
             raise RuntimeError(f"failed_to_restore_db:{label}")
+        _validate_sqlite_integrity(target, label)
     else:
         shutil.copy2(src, target)
     return str(target)
+
+
+def _validate_sqlite_integrity(db_path: Path, label: str) -> None:
+    """Validates post-restore SQLite files to avoid serving corrupted snapshots."""
+    try:
+        con = sqlite3.connect(str(db_path))
+    except sqlite3.Error as exc:
+        raise RuntimeError(f"restore_integrity_open_failed:{label}") from exc
+
+    try:
+        integrity = con.execute("PRAGMA integrity_check;").fetchone()
+        if not integrity or str(integrity[0]).lower() != "ok":
+            raise RuntimeError(f"restore_integrity_check_failed:{label}")
+
+        if label == "auth.sqlite3":
+            required = {"tenants", "users", "memberships"}
+        elif label == "core.sqlite3":
+            required = {"agent_memory", "api_outbound_queue"}
+        else:
+            required = set()
+
+        if required:
+            present = {
+                str(row[0])
+                for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
+            missing = sorted(required - present)
+            if missing:
+                raise RuntimeError(f"restore_missing_tables:{label}:{','.join(missing)}")
+    finally:
+        con.close()
 
 
 def _list_users_with_roles() -> list[dict[str, Any]]:

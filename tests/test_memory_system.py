@@ -70,3 +70,45 @@ def test_memory_system():
 
 if __name__ == "__main__":
     test_memory_system()
+
+
+def test_chatbot_memory_requires_nonempty_tenant_id(tmp_path: Path):
+    db_path = tmp_path / "memory.sqlite3"
+    con = sqlite3.connect(db_path)
+    con.execute("""
+        CREATE TABLE agent_memory(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tenant_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          agent_role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          embedding BLOB NOT NULL,
+          metadata TEXT,
+          importance_score INTEGER DEFAULT 5,
+          category TEXT DEFAULT 'FAKT'
+        );
+    """)
+    con.commit()
+    con.close()
+
+    manager = MemoryManager(str(db_path))
+
+    with patch("app.agents.memory_store.generate_embedding", return_value=[0.1, 0.2, 0.3]):
+        assert manager.store_memory("", "chatbot", "sensitive") is False
+        assert manager.retrieve_context("", "sensitive") == []
+
+        assert manager.store_messenger_message(
+            tenant_id="TENANT_OK",
+            provider="internal",
+            sender="u",
+            recipient="bot",
+            content="chat-memory",
+        ) is True
+
+    con = sqlite3.connect(db_path)
+    try:
+        rows = con.execute("SELECT tenant_id, agent_role, category FROM agent_memory").fetchall()
+    finally:
+        con.close()
+
+    assert rows == [("TENANT_OK", "messenger", "MESSENGER_MESSAGE")]

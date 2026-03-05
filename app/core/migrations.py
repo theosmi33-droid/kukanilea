@@ -14,6 +14,31 @@ logger = logging.getLogger("kukanilea.migrations")
 CURRENT_SCHEMA_VERSION = 6
 
 
+def validate_integrity(conn: sqlite3.Connection) -> None:
+    """Raises ValueError when mandatory migration invariants are missing."""
+    user_version = _get_user_version(conn)
+    if user_version < CURRENT_SCHEMA_VERSION:
+        raise ValueError(f"schema_version_outdated:{user_version}")
+
+    if not _table_exists(conn, "agent_memory"):
+        raise ValueError("missing_table:agent_memory")
+
+    required_columns = {"tenant_id", "timestamp", "importance_score", "category"}
+    present_columns = {r[1] for r in conn.execute("PRAGMA table_info(agent_memory)").fetchall()}
+    missing = sorted(required_columns - present_columns)
+    if missing:
+        raise ValueError(f"missing_columns:agent_memory:{','.join(missing)}")
+
+    index_names = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='agent_memory'"
+        ).fetchall()
+    }
+    if "idx_memory_tenant_ts" not in index_names:
+        raise ValueError("missing_index:idx_memory_tenant_ts")
+
+
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -212,6 +237,7 @@ def run_migrations(db_path: Path):
         if _table_exists(conn, "customers") and _column_exists(conn, "customers", "id"):
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_id_unique ON customers(id);")
         conn.commit()
+        validate_integrity(conn)
 
     except Exception as e:
         logger.error(f"Migration failed: {e}", exc_info=True)

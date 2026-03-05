@@ -33,7 +33,15 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reason: str = "") -> dict:
+def _contract_payload(
+    tool: str,
+    status: str,
+    metrics: dict,
+    details: dict,
+    reason: str = "",
+    *,
+    tenant: str = "default",
+) -> dict:
     if status not in CONTRACT_STATUSES:
         status = "error"
 
@@ -50,6 +58,7 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
 
     payload = {
         "tool": tool,
+        "tenant": tenant,
         "status": status,
         "updated_at": _now_iso(),
         "metrics": safe_metrics,
@@ -237,10 +246,20 @@ def build_tool_summary(tool: str, tenant: str = "default") -> dict:
             status="error",
             metrics={"collector_error": 1},
             details={"error": str(exc)},
+            tenant=tenant,
         )
 
     status = "degraded" if degraded_reason else "ok"
-    return _contract_payload(tool=tool, status=status, metrics=metrics, details=details, reason=degraded_reason)
+    safe_details = dict(details or {})
+    safe_details.setdefault("tenant", tenant)
+    return _contract_payload(
+        tool=tool,
+        status=status,
+        metrics=metrics,
+        details=safe_details,
+        reason=degraded_reason,
+        tenant=tenant,
+    )
 
 
 def build_tool_health(tool: str, tenant: str = "default") -> dict:

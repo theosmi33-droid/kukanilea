@@ -17,6 +17,8 @@ def test_summary_contract_for_each_tool(auth_client, tool):
     assert isinstance(body.get("metrics"), dict), f"{tool}: metrics must be a dict"
     assert isinstance(body.get("details"), dict), f"{tool}: details must be a dict"
     assert isinstance(body["details"].get("contract"), dict), f"{tool}: details.contract must be a dict"
+    assert body.get("tenant") == "KUKANILEA", f"{tool}: summary tenant must match active session"
+    assert body["details"].get("tenant") == "KUKANILEA", f"{tool}: details.tenant must match active session"
     assert isinstance(body["details"]["contract"].get("version"), str), f"{tool}: details.contract.version must be present"
     assert isinstance(body["details"]["contract"].get("read_only"), bool), f"{tool}: details.contract.read_only must be bool"
     if body["status"] == "degraded":

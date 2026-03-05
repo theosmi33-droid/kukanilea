@@ -7,6 +7,7 @@ def test_dashboard_summary_declares_aggregation_contract(auth_client):
 
     body = response.get_json()
     assert body["tool"] == "dashboard"
+    assert body["tenant"] == "KUKANILEA"
     assert body["details"]["matrix_endpoint"] == "/api/dashboard/tool-matrix"
     assert body["details"]["aggregate_mode"] == "summary_only"
     assert body["metrics"]["total_tools"] == 10
@@ -19,6 +20,8 @@ def test_chatbot_summary_declares_payload_aliases(auth_client):
 
     body = response.get_json()
     assert body["tool"] == "chatbot"
+    assert body["tenant"] == "KUKANILEA"
+    assert body["details"]["tenant"] == "KUKANILEA"
 
     contract = body["details"]["payload_contract"]
     assert contract["request_fields"] == ["message", "msg", "q"]

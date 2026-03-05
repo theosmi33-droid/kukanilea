@@ -97,3 +97,24 @@ def test_restore_backup_rejects_path_traversal(tmp_path: Path, monkeypatch):
         assert False, "expected invalid backup path"
     except ValueError as exc:
         assert str(exc) in {"backup_not_found", "invalid_backup_path"}
+
+
+def test_restore_backup_rejects_corrupt_sqlite_snapshot(tmp_path: Path, monkeypatch):
+    from app.config import Config
+    from app.routes import admin_tenants
+
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+    monkeypatch.setattr(Config, "AUTH_DB", tmp_path / "auth.sqlite3")
+    monkeypatch.setattr(Config, "CORE_DB", tmp_path / "core.sqlite3")
+    monkeypatch.setattr(Config, "LICENSE_PATH", tmp_path / "license.json")
+
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    bad = backup_dir / "auth.sqlite3__20260305_000000.bak"
+    bad.write_text("not a sqlite file", encoding="utf-8")
+
+    try:
+        admin_tenants._restore_backup(bad.name)
+        assert False, "expected restore integrity failure"
+    except RuntimeError as exc:
+        assert str(exc).startswith("failed_to_restore_db:auth.sqlite3") or str(exc).startswith("restore_integrity")

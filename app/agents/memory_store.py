@@ -40,6 +40,11 @@ class MemoryManager:
         """
         Generates an embedding and stores the memory in the database.
         """
+        tenant_id = str(tenant_id or "").strip()
+        if not tenant_id:
+            logger.warning("Rejected memory write without tenant context")
+            return False
+
         embedding = generate_embedding(content)
         if not embedding:
             logger.error("Could not store memory: Embedding generation failed.")
@@ -72,6 +77,11 @@ class MemoryManager:
         Retrieves relevant semantic context for a query.
         Performs Cosine Similarity search on the client side (Python) over the tenant's memories.
         """
+        tenant_id = str(tenant_id or "").strip()
+        if not tenant_id:
+            logger.warning("Rejected memory read without tenant context")
+            return []
+
         query_vec = generate_embedding(query)
         if not query_vec:
             return []
