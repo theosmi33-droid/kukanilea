@@ -6,7 +6,7 @@ EXIT_DEPENDENCY=3
 EXIT_RUNTIME=4
 
 TENANT_ID="${TENANT_ID:-$(cat instance/tenant_id.txt 2>/dev/null || echo DEMO_TENANT)}"
-TIMESTAMP="$(date +%Y-%m-%d_%H-%M)"
+TIMESTAMP="${BACKUP_TIMESTAMP:-$(date +%Y-%m-%d_%H-%M)}"
 TMP_DIR="/tmp/kukanilea_backup_${TENANT_ID}"
 NAS_SHARE="${NAS_SHARE:-//192.168.0.2/KUKANILEA-BACKUPS}"
 NAS_USER="${NAS_USER:-backupuser}"
@@ -149,6 +149,7 @@ RTO_SECONDS="$((END_EPOCH - START_EPOCH))"
 RPO_SECONDS="$((END_EPOCH - DB_MTIME))"
 
 {
+  echo "report_version=1"
   echo "mode=$TARGET_MODE"
   echo "tenant_id=$TENANT_ID"
   echo "backup_file=$(basename "$UPLOAD_FILE")"

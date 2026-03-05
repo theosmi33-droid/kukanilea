@@ -1,0 +1,36 @@
+{
+  "_business_entities_checksum": {
+    "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "sample_count": 0
+  },
+  "contacts": {
+    "count": 0,
+    "exists": false,
+    "sample_entities": [],
+    "sample_hash": "missing"
+  },
+  "files": {
+    "count": 0,
+    "exists": false,
+    "sample_entities": [],
+    "sample_hash": "missing"
+  },
+  "projects": {
+    "count": 0,
+    "exists": false,
+    "sample_entities": [],
+    "sample_hash": "missing"
+  },
+  "tasks": {
+    "count": 0,
+    "exists": false,
+    "sample_entities": [],
+    "sample_hash": "missing"
+  },
+  "time_entries": {
+    "count": 0,
+    "exists": false,
+    "sample_entities": [],
+    "sample_hash": "missing"
+  }
+}

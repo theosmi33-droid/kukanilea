@@ -1,0 +1,9 @@
+[doctor] OK: python=Python 3.12.3 (/root/.pyenv/shims/python3)
+[doctor] WARN: pip unavailable for interpreter /root/.pyenv/shims/python3
+[doctor] WARN: python module 'pytest' missing
+[doctor] WARN: python module 'flask' missing
+[doctor] WARN: python module 'ruff' missing
+[doctor] WARN: python module 'playwright' missing
+[doctor] WARN: playwright CLI missing (use: /root/.pyenv/shims/python3 -m playwright install --with-deps chromium)
+[doctor] FAIL: 6 missing/invalid checks.
+[healthcheck] Gate failed: doctor

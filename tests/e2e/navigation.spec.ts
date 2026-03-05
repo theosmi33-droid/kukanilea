@@ -28,6 +28,9 @@ test.describe('Sovereign navigation', () => {
       await expect(page).toHaveURL(new RegExp(`${route.replace('/', '\\/')}$`));
       await expect(page.locator('body')).not.toContainText(/wird geladen/i);
       await expect(page.locator('#main-content')).toBeVisible();
+      if (route === '/upload') {
+        await expect(page.locator('input[name="file"]')).toBeVisible();
+      }
     }
   });
 

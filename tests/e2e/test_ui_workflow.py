@@ -121,12 +121,15 @@ def test_full_workflow(page: Page, server: str):
     expect(page.locator("text=Beleg-Zentrale")).to_be_visible()
 
     # 2. Upload
+    page.goto(f"{server}/upload")
+    expect(page).to_have_url(f"{server}/upload")
+
     # Create a dummy file
     test_file = Path("test_e2e_document.txt")
     test_file.write_text("KDNR: 12345\nRechnung vom 01.01.2026\nBetrag: 100 EUR")
 
     page.set_input_files('input[name="file"]', str(test_file))
-    page.click('button:has-text("Analyse starten")')
+    page.click('#btn-upload')
 
     # 3. Wait for OCR and Transition (or expected ClamAV block in CI/dev)
     upload_blocked = False

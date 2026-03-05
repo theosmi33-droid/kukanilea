@@ -46,3 +46,29 @@ def test_sidebar_toggle_persistence_and_running_badges_markup(tmp_path, monkeypa
     assert "id=\"sidebar-toggle\"" in html
     assert "ks_sidebar_collapsed" in html
     assert "id=\"outbound-status-badges\"" in html
+
+
+
+def test_sidebar_disables_hx_boost_for_full_page_navigation(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("admin", hash_password("admin"), now)
+        auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+
+    resp = client.get("/", follow_redirects=True)
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert '<nav class="sidebar" hx-boost="false">' in html
