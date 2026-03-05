@@ -8,7 +8,8 @@ from flask import Blueprint, jsonify, request
 from app.auth import login_required
 from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
 from app.contracts.tool_contracts import build_tool_summary, extract_chat_message, normalize_chat_response
-from app.ai.intent_analyzer import detect_write_intent
+from app.ai.intent_analyzer import detect_standard_request, detect_write_intent
+from app.ai.guardrails import validate_prompt
 from app.security.gates import detect_injection
 from app.security import csrf_protected
 from app.rate_limit import chat_limiter
@@ -18,6 +19,49 @@ logger = logging.getLogger("kukanilea.messenger")
 bp = Blueprint("messenger", __name__)
 
 WRITE_ACTIONS = {"create_task", "create_appointment", "mail_generate", "messenger_send", "mail_send"}
+WRITE_PREFIXES = ("create_", "delete_", "update_", "send_", "mail_", "messenger_")
+
+
+def _summary_context() -> dict[str, Any]:
+    keys = ("dashboard", "tasks", "projects")
+    return {name: build_tool_summary(name) for name in keys}
+
+
+def _read_only_fallback(message: str, *, reason: str = "fallback") -> dict[str, Any]:
+    summaries = _summary_context()
+    tasks_open = summaries["tasks"].get("metrics", {}).get("tasks_open", 0)
+    projects_total = summaries["projects"].get("metrics", {}).get("total_projects", 0)
+    text = (
+        "Ich habe dafür aktuell keine präzise Aktion gefunden, kann aber read-only helfen: "
+        f"{tasks_open} offene Tasks, {projects_total} Projekte. "
+        "Frage z.B. nach Aufgabenstatus, Projektübersicht oder Dashboard-Status."
+    )
+    return {
+        "ok": True,
+        "text": text,
+        "response": text,
+        "actions": [],
+        "requires_confirm": False,
+        "data": {"reason": reason, "tool_summaries": summaries, "message": message[:200]},
+    }
+
+
+def _standard_response(kind: str) -> dict[str, Any] | None:
+    summaries = _summary_context()
+    if kind == "greeting":
+        text = "Hallo! Ich bin bereit. Ich kann dir Dashboard-, Task- und Projektstände direkt zusammenfassen."
+    elif kind == "self_test":
+        text = "Ja, ich funktioniere. Frag mich z.B. nach offenen Tasks, Projektstatus oder Dashboard-Zustand."
+    else:
+        return None
+    return {
+        "ok": True,
+        "text": text,
+        "response": text,
+        "actions": [],
+        "requires_confirm": False,
+        "data": {"tool_summaries": summaries, "request_kind": kind},
+    }
 
 
 def _audit_chat_event(action: str, target: str = "/api/chat", meta: dict[str, Any] | None = None) -> None:
@@ -62,7 +106,9 @@ def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]
     out: list[dict[str, Any]] = []
     for action in actions or []:
         item = dict(action)
-        if item.get("type") in WRITE_ACTIONS:
+        action_type = str(item.get("type") or "")
+        is_write = action_type in WRITE_ACTIONS or action_type.startswith(WRITE_PREFIXES)
+        if is_write:
             item["confirm_required"] = True
             item["requires_confirm"] = True
         out.append(item)
@@ -84,8 +130,21 @@ def api_chat():
         _audit_chat_event("chat_injection_blocked", meta={"pattern": injection_pattern})
         return jsonify(error="injection_blocked"), 400
 
+    valid, guard_reason = validate_prompt(msg)
+    if not valid:
+        _audit_chat_event("chat_guardrails_blocked", meta={"reason": guard_reason})
+        return jsonify(error="injection_blocked", reason=guard_reason), 400
+
+    standard_kind = detect_standard_request(msg)
+    if standard_kind:
+        _audit_chat_event("chat_standard_request", meta={"kind": standard_kind})
+        return jsonify(_standard_response(standard_kind))
+
     try:
         ans = normalize_chat_response(agent_answer(msg))
+        if (not ans.get("text")) or "keine treffer" in ans.get("text", "").lower():
+            _audit_chat_event("chat_readonly_fallback", meta={"reason": "empty_or_no_hits"})
+            return jsonify(_read_only_fallback(msg, reason="empty_or_no_hits"))
         actions = _enforce_confirm_gate(ans.get("actions", []))
         write_intent = detect_write_intent(msg)
         if write_intent:
@@ -94,12 +153,11 @@ def api_chat():
         ans["actions"] = actions
         if write_intent:
             ans["requires_confirm"] = True
+        ans.setdefault("data", {})
+        if isinstance(ans["data"], dict):
+            ans["data"].setdefault("tool_summaries", _summary_context())
         return jsonify(ans)
     except Exception:
         logger.exception("Chat logic failed")
-        return jsonify(
-            ok=False,
-            error="agent_error",
-            text="Der Assistent ist aktuell nicht verfügbar. Bitte erneut versuchen.",
-            response="Der Assistent ist aktuell nicht verfügbar. Bitte erneut versuchen.",
-        ), 200
+        _audit_chat_event("chat_readonly_fallback", meta={"reason": "agent_exception"})
+        return jsonify(_read_only_fallback(msg, reason="agent_exception")), 200
