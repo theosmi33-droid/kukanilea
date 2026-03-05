@@ -303,6 +303,14 @@ def settings_console():
 @bp.route("/settings/profile", methods=["POST"])
 @login_required
 def update_profile_preferences():
+    blocked = _reject_injection(("language", "timezone", "confirm"))
+    if blocked:
+        return blocked
+
+    confirm_error = _require_confirm()
+    if confirm_error:
+        return confirm_error
+
     session["ui_language"] = (request.form.get("language") or "de").strip().lower()
     session["ui_timezone"] = (request.form.get("timezone") or "Europe/Berlin").strip()
     return redirect(url_for("admin_tenants.settings_console"))

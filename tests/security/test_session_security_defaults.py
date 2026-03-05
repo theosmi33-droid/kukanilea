@@ -39,3 +39,28 @@ def test_production_session_hardening_ignores_insecure_overrides(monkeypatch, tm
     assert app.config["SESSION_COOKIE_HTTPONLY"] is True
     assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
     assert app.config["SESSION_COOKIE_SECURE"] is True
+
+
+def test_development_session_defaults_allow_non_secure_cookie(monkeypatch, tmp_path):
+    monkeypatch.setenv("KUKANILEA_ENV", "development")
+    _set_minimum_paths(monkeypatch, tmp_path)
+
+    app = create_app()
+
+    assert app.config["SESSION_COOKIE_HTTPONLY"] is True
+    assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+    assert app.config["SESSION_COOKIE_SECURE"] is False
+    assert app.config["SESSION_COOKIE_NAME"] == "kukanilea_session"
+
+
+def test_development_session_secure_override_is_normalized(monkeypatch, tmp_path):
+    monkeypatch.setenv("KUKANILEA_ENV", "development")
+    _set_minimum_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(Config, "SESSION_COOKIE_SECURE", "TRUE", raising=False)
+
+    app = create_app()
+
+    assert app.config["SESSION_COOKIE_SECURE"] is True
+    assert app.config["SESSION_COOKIE_NAME"].startswith("__Host-")
+    assert app.config["SESSION_COOKIE_DOMAIN"] is None
+    assert app.config["SESSION_COOKIE_PATH"] == "/"
