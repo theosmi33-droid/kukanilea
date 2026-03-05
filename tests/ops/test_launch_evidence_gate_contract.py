@@ -20,3 +20,10 @@ def test_launch_evidence_contains_hard_gates():
     assert "MIN_TESTS" in script
     assert "CI_GATE" in script
     assert "LAUNCH_GATE_AUTOMATION_REPORT_20260305.md" in script
+
+
+def test_launch_evidence_json_contains_gate_matrix():
+    script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
+    assert '"gates": gates' in script
+    assert '"name": names[i]' in script
+    assert '"status": statuses[i]' in script

@@ -40,6 +40,8 @@ from email.parser import BytesParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.core.gewerke_profiles import get_active_profile
+
 # Optional libs
 try:
     from pypdf import PdfReader  # type: ignore
@@ -3529,10 +3531,14 @@ def get_profile() -> Dict[str, Any]:
     name = _env("KUKANILEA_PROFILE", "").strip()
     if not name:
         name = f"db:{DB_PATH.stem}"
+    gewerk_profile = get_active_profile(tenant_id=TENANT_DEFAULT)
     return {
         "name": name,
         "db_path": str(DB_PATH),
         "base_path": str(BASE_PATH),
+        "profile_id": gewerk_profile.get("profile_id"),
+        "gewerk_name": gewerk_profile.get("gewerk_name"),
+        "gewerk_profile": gewerk_profile,
     }
 
 

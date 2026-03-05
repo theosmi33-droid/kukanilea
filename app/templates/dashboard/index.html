@@ -28,7 +28,7 @@
             </div>
             <div>
                 <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Archivierte Belege</div>
-                <div class="text-3xl font-bold text-main">{{ (recent|length if recent else 0) + (items|length if items else 0) }}</div>
+                <div class="text-3xl font-bold text-main">{{ recent|length + items|length }}</div>
             </div>
         </div>
     </div>

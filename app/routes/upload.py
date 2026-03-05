@@ -12,23 +12,11 @@ from app.security import csrf_protected
 from app.config import Config
 from app import core
 from app.core.upload_pipeline import process_upload, save_upload_stream
+from app.core.gewerke_profiles import get_active_profile
 from app.rate_limit import upload_limiter
 
 logger = logging.getLogger("kukanilea.upload")
 bp = Blueprint("upload", __name__)
-
-DOCTYPE_CHOICES = [
-    "ANGEBOT",
-    "RECHNUNG",
-    "AUFTRAGSBESTAETIGUNG",
-    "AW",
-    "MAHNUNG",
-    "NACHTRAG",
-    "SONSTIGES",
-    "FOTO",
-    "H_RECHNUNG",
-    "H_ANGEBOT",
-]
 
 def _core_get(name: str, default=None):
     return getattr(core, name, default)
@@ -52,6 +40,18 @@ def _safe_filename(name: str) -> str:
     raw = (name or "").strip().replace("\\", "_").replace("/", "_")
     raw = re.sub(r"[^a-zA-Z0-9._-]+", "_", raw).strip("._-")
     return raw or "upload"
+
+def _profile_for_current_tenant() -> dict:
+    tenant = _norm_tenant(current_tenant() or "default")
+    return get_active_profile(tenant_id=tenant)
+
+
+def _doctype_choices() -> list[str]:
+    profile = _profile_for_current_tenant()
+    values = profile.get("document_types") or []
+    choices = [str(v).strip().upper() for v in values if str(v or "").strip()]
+    return choices or ["SONSTIGES"]
+
 
 def _render_base(template_name: str, **kwargs) -> str:
     from app.web import _render_base as web_render_base
@@ -155,6 +155,8 @@ def review(token: str):
     if not p:
         return _render_base(_card("error", "Nicht gefunden."), active_tab="upload")
     
+    profile = _profile_for_current_tenant()
+
     if p.get("status") == "ANALYZING":
         return _render_base(
             "review.html",
@@ -165,7 +167,7 @@ def review(token: str):
             is_text=False,
             preview=None,
             w=_wizard_get(p),
-            doctypes=[],
+            doctypes=_doctype_choices(),
             kdnr_ranked=[],
             name_suggestions=[],
             suggested_doctype="SONSTIGES",
@@ -182,9 +184,10 @@ def review(token: str):
         # but keep it simple for now or delegate back to web.py if too complex.
         pass
 
+    doctype_choices = _doctype_choices()
     suggested_doctype = (p.get("doctype_suggested") or "SONSTIGES").upper()
     if not w.get("doctype"):
-        w["doctype"] = suggested_doctype if suggested_doctype in DOCTYPE_CHOICES else "SONSTIGES"
+        w["doctype"] = suggested_doctype if suggested_doctype in doctype_choices else "SONSTIGES"
     
     suggested_date = (p.get("doc_date_suggested") or "").strip()
     confidence = 40
@@ -200,12 +203,14 @@ def review(token: str):
         is_text=False,
         preview=None,
         w=w,
-        doctypes=DOCTYPE_CHOICES,
+        doctypes=doctype_choices,
         kdnr_ranked=p.get("kdnr_ranked", []),
         name_suggestions=p.get("name_suggestions", []),
         suggested_doctype=suggested_doctype,
         suggested_date=suggested_date,
-        confidence=confidence
+        confidence=confidence,
+        required_fields=profile.get("required_fields", []),
+        profile=profile,
     )
 
 @bp.route("/done/<token>")
