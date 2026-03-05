@@ -1,0 +1,47 @@
+<header class="topbar" aria-label="Seitenkopf">
+  <div style="display: flex; align-items: center; gap: var(--spacing-4);">
+    <button id="mobile-sidebar-toggle" class="btn btn-ghost btn-sm" type="button" aria-label="Menü öffnen" style="display: none;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <h1 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+      {% block context_title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}
+    </h1>
+  </div>
+
+  <div class="topbar-search-container" aria-label="Suche">
+    <svg class="topbar-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="search" class="topbar-search-input" placeholder="Suchen (⌘ K)..." aria-label="Systemweite Suche">
+  </div>
+
+  <div class="topbar-actions">
+    {% include 'components/system_status.html' %}
+    
+    <div style="height: 24px; width: 1px; background: var(--border-color); margin: 0 8px;"></div>
+
+    {% if roles in ['DEV', 'ADMIN'] and all_tenants %}
+    <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size: 10px; font-weight: 800; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em;">Mandant:</span>
+        <select class="form-select" style="height: 32px; padding: 0 8px; font-size: 12px; width: auto; background: var(--bg-secondary); border-radius: var(--radius-sm);" 
+                name="tenant_id"
+                hx-post="/admin/context/switch"
+                hx-confirm="Mandanten-Kontext wirklich wechseln?"
+                hx-trigger="change">
+            <option value="SYSTEM" {{ 'selected' if active_tenant_id == 'SYSTEM' }}>SYSTEM</option>
+            {% for t in all_tenants %}
+            <option value="{{ t.id }}" {{ 'selected' if active_tenant_id == t.id }}>{{ t.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+
+    <span class="mode-chip" style="font-size: 10px; font-weight: 800; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; background: var(--bg-secondary); border-radius: var(--radius-full);" aria-label="Farbmodus">White Mode</span>
+  </div>
+</header>
+
+<style>
+  @media (max-width: 768px) {
+    #mobile-sidebar-toggle { display: block !important; }
+    .topbar-search-container { display: none; }
+    .mode-chip { display: none; }
+  }
+</style>

@@ -160,16 +160,42 @@ if [[ "$MODE" == "degraded_local" ]]; then
   fi
 fi
 
-if [[ -f "${TMP_DIR}/${CHECKSUM_FILE}" ]]; then
+HAS_CHECKSUM=0
+HAS_METADATA=0
+HAS_SNAPSHOT=0
+[[ -f "${TMP_DIR}/${CHECKSUM_FILE}" ]] && HAS_CHECKSUM=1
+[[ -f "${TMP_DIR}/${METADATA_FILE}" ]] && HAS_METADATA=1
+[[ -f "${TMP_DIR}/${SNAPSHOT_FILE}" ]] && HAS_SNAPSHOT=1
+
+if [[ "$MODE" == "nas" ]]; then
+  [[ "$HAS_CHECKSUM" -eq 1 ]] || die "$EXIT_RUNTIME" "checksum file missing: ${CHECKSUM_FILE}"
+  [[ "$HAS_METADATA" -eq 1 ]] || die "$EXIT_RUNTIME" "metadata file missing: ${METADATA_FILE}"
+  [[ "$HAS_SNAPSHOT" -eq 1 ]] || die "$EXIT_RUNTIME" "snapshot file missing: ${SNAPSHOT_FILE}"
+else
+  # In degraded local mode manual emergency archives can exist without evidence artifacts.
+  # If evidence exists, metadata+snapshot must remain paired for deterministic validation.
+  if [[ "$HAS_METADATA" -eq 1 && "$HAS_SNAPSHOT" -eq 0 ]]; then
+    die "$EXIT_RUNTIME" "snapshot file missing: ${SNAPSHOT_FILE}"
+  fi
+  if [[ "$HAS_SNAPSHOT" -eq 1 && "$HAS_METADATA" -eq 0 ]]; then
+    die "$EXIT_RUNTIME" "metadata file missing: ${METADATA_FILE}"
+  fi
+fi
+
+if [[ "$HAS_CHECKSUM" -eq 1 ]]; then
   CHECKSUM_EXPECTED="$(awk '{print $1}' "${TMP_DIR}/${CHECKSUM_FILE}" | head -n1)"
   CHECKSUM_ACTUAL="$(sha256_file "$LOCAL_FILE")"
   [[ "$CHECKSUM_EXPECTED" == "$CHECKSUM_ACTUAL" ]] || die "$EXIT_RUNTIME" "checksum mismatch for ${BACKUP_FILE}"
+else
+  log "WARN checksum missing for ${BACKUP_FILE}; continuing in degraded mode"
 fi
-
 
 INTEGRITY_STATUS="ok"
 INTEGRITY_ISSUES=""
-if [[ -f "${TMP_DIR}/${METADATA_FILE}" ]] && command -v python3 >/dev/null 2>&1; then
+if [[ "$HAS_METADATA" -eq 0 ]]; then
+  INTEGRITY_STATUS="warn_missing_metadata"
+  INTEGRITY_ISSUES="metadata missing"
+elif command -v python3 >/dev/null 2>&1; then
   if ! python3 - "$TENANT_ID" "$BACKUP_FILE" "$LOCAL_FILE" "${TMP_DIR}/${METADATA_FILE}" <<'PYMETA'
 import json
 import os
@@ -195,8 +221,7 @@ PYMETA
     INTEGRITY_ISSUES="metadata mismatch"
   fi
 else
-  INTEGRITY_STATUS="warn_missing_metadata"
-  INTEGRITY_ISSUES="metadata missing"
+  die "$EXIT_DEPENDENCY" "python3 required for metadata verification"
 fi
 
 if [[ "$LOCAL_FILE" == *.age ]]; then
@@ -266,7 +291,7 @@ VALIDATION_ISSUES=""
 VALIDATION_FILE="${VALIDATION_FILE:-instance/restore_validation_after.json}"
 mkdir -p "$(dirname "$VALIDATION_FILE")"
 if command -v python3 >/dev/null 2>&1 && [[ -f "$VALIDATION_SCRIPT" ]]; then
-  if [[ -f "${TMP_DIR}/${SNAPSHOT_FILE}" ]]; then
+  if [[ "$HAS_SNAPSHOT" -eq 1 ]]; then
     BASELINE_PATH="${TMP_DIR}/${SNAPSHOT_FILE}"
   fi
   if [[ -f "$BASELINE_PATH" ]]; then

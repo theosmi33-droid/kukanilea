@@ -27,26 +27,42 @@ def verify_signature(pub_hex: str, payload: Dict[str, Any]) -> bool:
 
 def check_license_file(license_path: str, pub_hex_env: str) -> Dict[str, Any]:
     path = Path(license_path)
-    grace_days = int(os.environ.get("LICENSE_GRACE_DAYS", "0"))
+    try:
+        grace_days = int(os.environ.get("LICENSE_GRACE_DAYS", "0"))
+    except ValueError:
+        grace_days = 0
     now = datetime.now(timezone.utc)
 
     if not path.exists():
         return {"status": "LOCKED", "reason": "MISSING"}
 
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"status": "LOCKED", "reason": "INVALID_LICENSE_FILE"}
+
+    if not isinstance(payload, dict):
+        return {"status": "LOCKED", "reason": "INVALID_LICENSE_PAYLOAD"}
+
     pub_hex = os.environ.get(pub_hex_env)
     if not pub_hex:
-        raise RuntimeError(f"Public key env missing: {pub_hex_env}")
+        return {"status": "LOCKED", "reason": "MISSING_PUBLIC_KEY"}
 
     if not verify_signature(pub_hex, dict(payload)):
         return {"status": "LOCKED", "reason": "INVALID_SIGNATURE"}
 
     valid_until = payload.get("valid_until")
     if valid_until:
-        expires = datetime.strptime(valid_until, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        try:
+            expires = datetime.strptime(valid_until, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return {"status": "LOCKED", "reason": "INVALID_VALID_UNTIL"}
         if expires < now:
             grace_anchor_raw = payload.get("last_verified_at") or valid_until
-            grace_anchor = datetime.strptime(grace_anchor_raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            try:
+                grace_anchor = datetime.strptime(grace_anchor_raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                return {"status": "LOCKED", "reason": "INVALID_GRACE_ANCHOR"}
             grace_until = grace_anchor + timedelta(days=grace_days)
             if grace_days > 0 and now <= grace_until:
                 return {
