@@ -37,10 +37,10 @@ def main() -> None:
             raise SystemExit("health failed")
 
         login_page = client.get("/login")
-        token_match = re.search(
-            r"name=\"csrf-token\" content=\"([^\"]+)\"",
-            login_page.get_data(as_text=True),
-        )
+        login_html = login_page.get_data(as_text=True)
+        token_match = re.search(r'name="csrf-token"\s+content="([^"]+)"', login_html)
+        if not token_match:
+            token_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', login_html)
         csrf_token = token_match.group(1) if token_match else ""
         login_resp = client.post(
             "/login",
