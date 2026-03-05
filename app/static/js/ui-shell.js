@@ -52,26 +52,28 @@ const UIShell = {
         // Handle focus management after content updates
         document.body.addEventListener('htmx:afterSettle', (e) => {
             const target = e.detail.target;
-            
-            // If main content updated, reveal it
-            if (target.id === 'main-content') {
-                target.removeAttribute('data-page-ready');
-                // Force reflow
-                void target.offsetWidth;
-                target.setAttribute('data-page-ready', '1');
-                
-                // Focus the main element for screen readers
-                const main = document.getElementById('app-main');
-                if (main) main.focus();
-            }
 
-            // Reveal items if any
-            target.querySelectorAll('.reveal-item').forEach((item, index) => {
-                setTimeout(() => {
-                    item.classList.add('revealed');
-                }, index * 50);
+            requestAnimationFrame(() => {
+                // If main content updated, reveal it
+                if (target.id === 'main-content') {
+                    target.removeAttribute('data-page-ready');
+                    // Force reflow
+                    void target.offsetWidth;
+                    target.setAttribute('data-page-ready', '1');
+
+                    // Focus the main element for screen readers
+                    const main = document.getElementById('app-main');
+                    if (main) main.focus();
+                }
+
+                // Reveal items if any
+                target.querySelectorAll('.reveal-item').forEach((item, index) => {
+                    setTimeout(() => {
+                        item.classList.add('revealed');
+                    }, index * 40);
+                });
             });
-        });
+        }, { passive: true });
 
         // Show feedback on long requests
         document.body.addEventListener('htmx:send', () => {
