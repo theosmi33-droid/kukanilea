@@ -42,6 +42,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
+from urllib.parse import urlparse
 
 from app.core.indexing_logic import IndividualIntelligence
 from app.core.auto_evolution import SystemHealer
@@ -87,7 +88,7 @@ from .config import Config
 from .db import AuthDB
 from .errors import json_error
 from .license import load_license
-from .rate_limit import chat_limiter, search_limiter, upload_limiter
+from .rate_limit import chat_limiter, login_limiter, search_limiter, upload_limiter
 from .security import csrf_protected, detect_injection
 from app.contracts.tool_contracts import (
     CONTRACT_TOOLS,
@@ -186,7 +187,6 @@ time_entry_list = _core_get("time_entries_list")
 time_entry_update = _core_get("time_entry_update")
 time_entry_approve = _core_get("time_entry_approve")
 time_entries_export_csv = _core_get("time_entries_export_csv")
-time_absences_export_csv = _core_get("time_absences_export_csv")
 
 # Guard minimum contract
 _missing = []
@@ -1636,6 +1636,23 @@ def _is_local_request() -> bool:
     return remote in {"127.0.0.1", "::1", "localhost"}
 
 
+def validate_next(target: str | None) -> str:
+    """Allow only local absolute paths to prevent open redirects."""
+    if not target:
+        return "/"
+    candidate = target.strip()
+    if not candidate:
+        return "/"
+    parsed = urlparse(candidate)
+    if parsed.scheme or parsed.netloc:
+        return "/"
+    if candidate.startswith("//"):
+        return "/"
+    if not candidate.startswith("/"):
+        return "/"
+    return candidate
+
+
 def _dev_local_email_codes_enabled() -> bool:
     mail_mode = (os.environ.get("MAIL_MODE") or "").strip().lower()
     flag = (os.environ.get("DEV_LOCAL_EMAIL_CODES") or "0").strip().lower()
@@ -1741,11 +1758,12 @@ onboarding = bootstrap
 
 
 @bp.route("/login", methods=["GET", "POST"])
+@login_limiter.limit_required
 @csrf_protected
 def login():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     error = ""
-    nxt = request.args.get("next", "/")
+    nxt = validate_next(request.args.get("next", "/"))
     if request.method == "POST":
         u = (request.form.get("username") or "").strip().lower()
         pw = (request.form.get("password") or "").strip()
@@ -2640,17 +2658,12 @@ def api_time_start():
     payload = request.get_json(silent=True) or {}
     project_id = payload.get("project_id")
     note = (payload.get("note") or "").strip()
-    task_id = payload.get("task_id")
     try:
         entry = time_entry_start(  # type: ignore
             tenant_id=current_tenant(),
             user=current_user() or "",
             project_id=int(project_id) if project_id else None,
-            task_id=int(task_id) if task_id else None,
             note=note,
-            started_at=(payload.get("started_at") or None),
-            started_at_seconds=payload.get("started_at_seconds"),
-            entry_type=(payload.get("entry_type") or "WORK"),
         )
     except ValueError as exc:
         return json_error(str(exc), "Timer konnte nicht gestartet werden.", status=400)
@@ -2674,8 +2687,6 @@ def api_time_stop():
             tenant_id=current_tenant(),
             user=current_user() or "",
             entry_id=int(entry_id) if entry_id else None,
-            ended_at=(payload.get("ended_at") or None),
-            ended_at_seconds=payload.get("ended_at_seconds"),
         )
     except ValueError as exc:
         return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
@@ -2734,13 +2745,9 @@ def api_time_entry_edit():
             project_id=(
                 int(payload.get("project_id")) if payload.get("project_id") else None
             ),
-            task_id=(int(payload.get("task_id")) if payload.get("task_id") else None),
             start_at=(payload.get("start_at") or None),
-            start_at_seconds=payload.get("start_at_seconds"),
             end_at=(payload.get("end_at") or None),
-            end_at_seconds=payload.get("end_at_seconds"),
             note=payload.get("note"),
-            entry_type=payload.get("entry_type"),
             user=current_user() or "",
         )
     except ValueError as exc:
@@ -2799,25 +2806,6 @@ def api_time_export():
     )
     response = current_app.response_class(csv_payload, mimetype="text/csv")
     response.headers["Content-Disposition"] = "attachment; filename=time_entries.csv"
-    return response
-
-
-@bp.get("/api/time/absences/export")
-@login_required
-def api_time_absences_export():
-    if not callable(time_absences_export_csv):
-        return json_error(
-            "feature_unavailable", "Abwesenheits-Export ist nicht verfügbar.", status=501
-        )
-    user = (request.args.get("user") or "").strip()
-    if current_role() not in {"ADMIN", "DEV"}:
-        user = current_user() or ""
-    csv_payload = time_absences_export_csv(  # type: ignore
-        tenant_id=current_tenant(),
-        user=user or None,
-    )
-    response = current_app.response_class(csv_payload, mimetype="text/csv")
-    response.headers["Content-Disposition"] = "attachment; filename=time_absences.csv"
     return response
 
 

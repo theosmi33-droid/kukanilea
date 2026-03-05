@@ -29,7 +29,10 @@ class RateLimiter:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             import os
+            from flask import current_app
             if os.environ.get("KUKANILEA_DEBUG_STRESS") == "1":
+                return fn(*args, **kwargs)
+            if getattr(current_app, "testing", False):
                 return fn(*args, **kwargs)
             key = request.remote_addr or "unknown"
             if not self.allow(key):
@@ -42,3 +45,4 @@ class RateLimiter:
 chat_limiter = RateLimiter(limit=30, window_s=60)
 search_limiter = RateLimiter(limit=60, window_s=60)
 upload_limiter = RateLimiter(limit=20, window_s=60)
+login_limiter = RateLimiter(limit=10, window_s=60)
