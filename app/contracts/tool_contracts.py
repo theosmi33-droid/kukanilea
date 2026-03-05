@@ -429,6 +429,9 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
         "details": summary_details,
     }
     normalized, _ = _normalize_contract_payload(summary, tool, tenant=tenant)
+    # Compatibility: several legacy/API contract tests still read health details
+    # from top-level `details`.
+    normalized["details"] = dict(summary_details)
     return normalized
 
 
