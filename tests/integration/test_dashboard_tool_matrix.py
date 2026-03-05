@@ -76,3 +76,38 @@ def test_dashboard_matrix_marks_degraded_tool_instead_of_hard_fail(tmp_path, mon
     assert upload["status"] == "degraded"
     assert upload["degraded_reason"] == "simulated_gateway_unavailable"
     assert upload["details"]["contract"]["read_only"] is False
+
+
+def test_dashboard_matrix_handles_contract_type_violations_without_500(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    import app.contracts.tool_contracts as contracts
+
+    monkeypatch.setattr(contracts, "_collect_chatbot_summary", lambda _tenant: ([], {}, ""))
+    contracts.SUMMARY_COLLECTORS["chatbot"] = contracts._collect_chatbot_summary
+
+    response = client.get("/api/dashboard/tool-matrix")
+    assert response.status_code == 200
+
+    body = response.get_json()
+    chatbot = next(row for row in body["tools"] if row["tool"] == "chatbot")
+    assert chatbot["status"] == "degraded"
+    assert chatbot["degraded_reason"] == "collector_contract_invalid"
+
+
+def test_summary_endpoint_returns_error_payload_instead_of_500_on_collector_exception(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    import app.contracts.tool_contracts as contracts
+
+    monkeypatch.setattr(contracts, "_collect_upload_summary", lambda _tenant: (_ for _ in ()).throw(RuntimeError("boom")))
+    contracts.SUMMARY_COLLECTORS["upload"] = contracts._collect_upload_summary
+
+    response = client.get("/api/upload/summary")
+    assert response.status_code == 200
+
+    body = response.get_json()
+    assert body["status"] == "error"
+    assert body["metrics"]["collector_error"] == 1

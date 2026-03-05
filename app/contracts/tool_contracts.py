@@ -23,6 +23,8 @@ CONTRACT_STATUSES = {"ok", "degraded", "error"}
 CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
 CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
 CONTRACT_VERSION = "2026-03-05"
+REQUIRED_TOP_LEVEL_FIELDS = ("tool", "status", "updated_at", "metrics", "details")
+REQUIRED_CONTRACT_FIELDS = ("version", "read_only")
 
 
 def _core_get(name: str, default=None):
@@ -58,6 +60,69 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
     if status == "degraded":
         payload["degraded_reason"] = reason or "degraded_runtime"
     return payload
+
+
+def _as_dict(value: object, fallback: dict) -> dict:
+    return dict(value) if isinstance(value, dict) else dict(fallback)
+
+
+def _contract_errors(payload: dict) -> list[str]:
+    errors: list[str] = []
+    for field in REQUIRED_TOP_LEVEL_FIELDS:
+        if field not in payload:
+            errors.append(f"missing:{field}")
+
+    if not isinstance(payload.get("tool"), str):
+        errors.append("type:tool")
+    if payload.get("status") not in CONTRACT_STATUSES:
+        errors.append("type:status")
+    if not isinstance(payload.get("updated_at"), str):
+        errors.append("type:updated_at")
+    if not isinstance(payload.get("metrics"), dict):
+        errors.append("type:metrics")
+    if not isinstance(payload.get("details"), dict):
+        errors.append("type:details")
+
+    details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
+    contract = details.get("contract") if isinstance(details.get("contract"), dict) else {}
+
+    for field in REQUIRED_CONTRACT_FIELDS:
+        if field not in contract:
+            errors.append(f"missing:details.contract.{field}")
+    if not isinstance(contract.get("version"), str):
+        errors.append("type:details.contract.version")
+    if not isinstance(contract.get("read_only"), bool):
+        errors.append("type:details.contract.read_only")
+    return errors
+
+
+def _normalize_contract_payload(payload: dict, tool: str) -> tuple[dict, list[str]]:
+    safe_payload = {
+        "tool": str(payload.get("tool") or tool),
+        "status": payload.get("status") if payload.get("status") in CONTRACT_STATUSES else "error",
+        "updated_at": payload.get("updated_at") if isinstance(payload.get("updated_at"), str) else _now_iso(),
+        "metrics": _as_dict(payload.get("metrics"), {}),
+        "details": _as_dict(payload.get("details"), {}),
+    }
+    normalized = _contract_payload(
+        tool=safe_payload["tool"],
+        status=safe_payload["status"],
+        metrics=safe_payload["metrics"],
+        details=safe_payload["details"],
+        reason=str(payload.get("degraded_reason") or ""),
+    )
+    errors = _contract_errors(payload)
+    if errors:
+        normalized["status"] = "degraded"
+        normalized["degraded_reason"] = "contract_normalized"
+        normalized["details"] = {
+            **normalized["details"],
+            "normalization": {
+                "applied": True,
+                "issues": errors,
+            },
+        }
+    return normalized, errors
 
 
 def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
@@ -232,15 +297,36 @@ def build_tool_summary(tool: str, tenant: str = "default") -> dict:
     try:
         metrics, details, degraded_reason = collector(tenant)
     except Exception as exc:
-        return _contract_payload(
+        payload = _contract_payload(
             tool=tool,
             status="error",
             metrics={"collector_error": 1},
             details={"error": str(exc)},
         )
+        normalized, _ = _normalize_contract_payload(payload, tool)
+        return normalized
+
+    if not isinstance(metrics, dict) or not isinstance(details, dict) or not isinstance(degraded_reason, str):
+        payload = _contract_payload(
+            tool=tool,
+            status="degraded",
+            metrics=_as_dict(metrics, {"contract_violation": 1}),
+            details={
+                "collector_contract": {
+                    "metrics_is_dict": isinstance(metrics, dict),
+                    "details_is_dict": isinstance(details, dict),
+                    "degraded_reason_is_str": isinstance(degraded_reason, str),
+                },
+            },
+            reason="collector_contract_invalid",
+        )
+        normalized, _ = _normalize_contract_payload(payload, tool)
+        return normalized
 
     status = "degraded" if degraded_reason else "ok"
-    return _contract_payload(tool=tool, status=status, metrics=metrics, details=details, reason=degraded_reason)
+    payload = _contract_payload(tool=tool, status=status, metrics=metrics, details=details, reason=degraded_reason)
+    normalized, _ = _normalize_contract_payload(payload, tool)
+    return normalized
 
 
 def build_tool_health(tool: str, tenant: str = "default") -> dict:
@@ -255,7 +341,8 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
         **(summary.get("details") or {}),
         "checks": checks,
     }
-    return summary
+    normalized, _ = _normalize_contract_payload(summary, tool)
+    return normalized
 
 
 def build_tool_matrix(tenant: str = "default") -> list[dict]:
