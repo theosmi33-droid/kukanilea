@@ -5,7 +5,7 @@
   <div class="flex flex-wrap items-center justify-between gap-2">
     <h1 class="text-xl font-semibold">Automation Builder v1</h1>
     <div class="flex items-center gap-2">
-      {{ button_link('Pending Actions', '/automation/pending', kind='outline') }}
+      {{ button_link('Ausstehende Aktionen', '/automation/pending', kind='outline') }}
       <form method="post" action="/automation/run">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -27,7 +27,7 @@
           <th class="p-3">Version</th>
           <th class="p-3">Trigger</th>
           <th class="p-3">Conditions</th>
-          <th class="p-3">Actions</th>
+          <th class="p-3">Aktionen</th>
           <th class="p-3">Updated</th>
           <th class="p-3">Aktion</th>
         </tr>
@@ -62,7 +62,7 @@
 
   <div class="card p-4 space-y-2">
     <h2 class="font-semibold">Rule Import (safe JSON)</h2>
-    <p class="text-xs opacity-80">Trigger-Typen: <code>eventlog</code>, <code>cron</code>. Actions: <code>create_task</code>, <code>create_followup</code>, <code>create_postfach_draft</code>, <code>email_draft</code>, <code>email_send</code>, <code>webhook</code>.</p>
+    <p class="text-xs opacity-80">Trigger-Typen: <code>eventlog</code>, <code>cron</code>. Aktionen: <code>create_task</code>, <code>create_followup</code>, <code>create_postfach_draft</code>, <code>email_draft</code>, <code>email_send</code>, <code>webhook</code>.</p>
     <form method="post" action="/automation/import" class="grid gap-2">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
