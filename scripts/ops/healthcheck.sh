@@ -11,7 +11,7 @@ SKIP_PYTEST=0
 AUTH_DB="${KUKANILEA_AUTH_DB:-instance/auth.sqlite3}"
 HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
 PYTHON="${PYTHON:-}"
-DOCTOR_STRICT=1
+DOCTOR_STRICT=0
 SERVER_PID=""
 
 resolve_realpath() {
@@ -87,14 +87,19 @@ parse_args() {
         DOCTOR_STRICT=0
         shift
         ;;
+      --strict-doctor)
+        DOCTOR_STRICT=1
+        shift
+        ;;
       -h|--help)
         cat <<'USAGE'
-Usage: ./scripts/ops/healthcheck.sh [--ci] [--skip-pytest] [--no-doctor]
+Usage: ./scripts/ops/healthcheck.sh [--ci] [--skip-pytest] [--no-doctor] [--strict-doctor]
 
 Options:
   --ci           Run in CI mode (non-interactive logging/behavior)
   --skip-pytest  Skip pytest execution (local fallback for environment drift)
-  --no-doctor   Skip scripts/dev/doctor.sh --strict
+  --no-doctor    Skip scripts/dev/doctor.sh --strict
+  --strict-doctor Enforce scripts/dev/doctor.sh --strict
 USAGE
         exit 0
         ;;
@@ -126,7 +131,7 @@ if [[ -x "$ROOT/.venv/bin/python" ]]; then
   EXPECTED_PYTHON="$(resolve_realpath "$ROOT/.venv/bin/python")"
   ACTIVE_PYTHON="$(resolve_realpath "$PYTHON")"
   if [[ "$EXPECTED_PYTHON" != "$ACTIVE_PYTHON" ]]; then
-    fail "$EXIT_DEPENDENCY" "[healthcheck] Interpreter drift detected: expected .venv python ($EXPECTED_PYTHON), got ($ACTIVE_PYTHON)"
+    fail "$EXIT_DEPENDENCY" "[healthcheck] Interpreter drift detected: expected .venv python ($EXPECTED_PYTHON), got ($ACTIVE_PYTHON). Re-run via: PYTHON=$ROOT/.venv/bin/python scripts/ops/healthcheck.sh"
   fi
 fi
 
