@@ -93,7 +93,9 @@ def create_app() -> Flask:
         app.config["SESSION_COOKIE_DOMAIN"] = None
         app.config["SESSION_COOKIE_PATH"] = "/"
     else:
-        app.config.setdefault("SESSION_COOKIE_NAME", "kukanilea_session")
+        cookie_name = str(app.config.get("SESSION_COOKIE_NAME") or "").strip()
+        if not cookie_name or cookie_name == "session":
+            app.config["SESSION_COOKIE_NAME"] = "kukanilea_session"
         app.config["SESSION_COOKIE_DOMAIN"] = None
         app.config.setdefault("SESSION_COOKIE_PATH", "/")
     app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(hours=8))
