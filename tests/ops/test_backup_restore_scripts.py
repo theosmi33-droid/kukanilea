@@ -118,3 +118,34 @@ def test_backup_writes_verifiable_artifacts_and_restore_compares(tmp_path: Path)
     restore_report = (tmp_path / "instance" / "restore_report.txt").read_text(encoding="utf-8")
     assert "integrity_check=ok" in restore_report
     assert "restore_validation=ok" in restore_report
+
+
+def test_restore_fails_when_snapshot_missing(tmp_path: Path) -> None:
+    _prepare_instance(tmp_path)
+    env = os.environ.copy()
+    env["TENANT_ID"] = "DEMO_TENANT"
+    env["NAS_SHARE"] = "//127.0.0.1/does-not-exist"
+    env["LOCAL_FALLBACK_DIR"] = str(tmp_path / "instance" / "degraded_backups")
+    env["REPORT_FILE"] = str(tmp_path / "instance" / "backup_report.txt")
+    subprocess.run(["bash", str(Path.cwd() / "scripts/ops/backup_to_nas.sh")], cwd=tmp_path, env=env, check=True)
+
+    backup_report = (tmp_path / "instance" / "backup_report.txt").read_text(encoding="utf-8")
+    report_map = dict(line.split("=", 1) for line in backup_report.splitlines() if "=" in line)
+    backup_file = report_map["backup_file"]
+    snapshot_path = tmp_path / "instance" / "degraded_backups" / "DEMO_TENANT" / f"{backup_file}.snapshot.json"
+    snapshot_path.unlink()
+
+    restore_env = os.environ.copy()
+    restore_env["TENANT_ID"] = "DEMO_TENANT"
+    restore_env["LOCAL_FALLBACK_DIR"] = str(tmp_path / "instance" / "degraded_backups")
+    restore_env["REPORT_FILE"] = str(tmp_path / "instance" / "restore_report.txt")
+    result = subprocess.run(
+        ["bash", str(Path.cwd() / "scripts/ops/restore_from_nas.sh")],
+        cwd=tmp_path,
+        env=restore_env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 4
+    assert "snapshot file missing" in result.stdout

@@ -110,15 +110,26 @@ write_reports() {
     echo "- FAIL: $FAIL_COUNT"
   } > "$OUT_FILE"
 
-  python3 - "$JSON_FILE" "$ts" "$DECISION" "$EXIT_CODE" "$PASS_COUNT" "$WARN_COUNT" "$FAIL_COUNT" <<'PY'
+  python3 - "$JSON_FILE" "$ts" "$DECISION" "$EXIT_CODE" "$PASS_COUNT" "$WARN_COUNT" "$FAIL_COUNT" \
+    "$(printf '%s\n' "${GATE_NAMES[@]}")" \
+    "$(printf '%s\n' "${GATE_STATUS[@]}")" \
+    "$(printf '%s\n' "${GATE_NOTES[@]}")" <<'PY'
 import json, sys
-out, ts, decision, exit_code, p, w, f = sys.argv[1:8]
+out, ts, decision, exit_code, p, w, f, gate_names, gate_status, gate_notes = sys.argv[1:11]
 Path = __import__("pathlib").Path
+names = gate_names.splitlines()
+statuses = gate_status.splitlines()
+notes = gate_notes.splitlines()
+gates = [
+  {"name": names[i], "status": statuses[i], "note": notes[i]}
+  for i in range(min(len(names), len(statuses), len(notes)))
+]
 Path(out).write_text(json.dumps({
   "timestamp": ts,
   "decision": decision,
   "exit_code": int(exit_code),
   "counts": {"pass": int(p), "warn": int(w), "fail": int(f)},
+  "gates": gates,
 }, indent=2) + "\n", encoding="utf-8")
 PY
 }
