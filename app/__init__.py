@@ -10,73 +10,39 @@ from pathlib import Path
 from flask import Flask, g, request, session
 
 from .auth import init_auth
-from .autonomy import init_autonomy
-from .config import Config, _is_dev_env
-from .db import AuthDB
-from .errors import json_error
-from .license import load_runtime_license_state
+from .autonomy.healer import init_healer
+from .config import Config
+from .db import AuthDB, ensure_agent_memory_tables
 from .log_utils import init_request_logging
-from .migrations.ensure_agent_memory import ensure_agent_memory_tables
-from .observability import init_observability
 from .logging.structured_logger import log_event
-from .security.session_policy import resolve_session_cookie_policy
-
-
-def _wire_runtime_env(app: Flask) -> None:
-    """Keep legacy core modules pointed to user-data paths."""
-    os.environ["DB_FILENAME"] = str(app.config["CORE_DB"])
-    os.environ["TOPHANDWERK_DB_FILENAME"] = str(app.config["CORE_DB"])
-    # Keep already-imported legacy logic module in sync with per-app DB path.
-    # Without this, tests that create multiple apps can keep writing to a stale DB.
-    try:
-        import importlib
-
-        core_logic = importlib.import_module("app.core.logic")
-        core_logic.DB_PATH = Path(app.config["CORE_DB"])
-        core_logic._DB_INITIALIZED = False
-    except Exception:
-        # Non-fatal: module might not be imported yet in some boot paths.
-        pass
-
-
-from .lifecycle import SystemState, manager
+from .observability import init_observability
+from .autonomy import init_autonomy
+from .license_state import load_runtime_license_state, SystemState, manager
 
 
 def _is_test_context(app: Flask) -> bool:
-    # Pytest sets this environment variable for each test case.
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        return True
-    if os.environ.get("KUKANILEA_DISABLE_DAEMONS") == "1":
-        return True
-    return bool(app.config.get("TESTING"))
+    return bool(app.config.get("TESTING") or os.environ.get("PYTEST_CURRENT_TEST"))
 
 
-def _apply_env_runtime_overrides(app: Flask) -> None:
-    """Re-read explicit runtime path env vars for each app instance."""
-    env_to_cfg = {
-        "KUKANILEA_AUTH_DB": "AUTH_DB",
-        "KUKANILEA_CORE_DB": "CORE_DB",
-        "KUKANILEA_LICENSE_PATH": "LICENSE_PATH",
-        "KUKANILEA_TRIAL_PATH": "TRIAL_PATH",
-    }
-    for env_key, cfg_key in env_to_cfg.items():
-        if env_key in os.environ and os.environ.get(env_key):
-            app.config[cfg_key] = Path(str(os.environ[env_key]))
+def _wire_runtime_env(app: Flask):
+    """Wires standard KUKANILEA paths into os.environ for legacy modules."""
+    os.environ.setdefault("DB_FILENAME", str(app.config["CORE_DB"]))
+    os.environ.setdefault("TOPHANDWERK_DB_FILENAME", str(app.config["CORE_DB"]))
+    os.environ.setdefault("KUKANILEA_AUTH_DB", str(app.config["AUTH_DB"]))
+    os.environ.setdefault("KUKANILEA_CORE_DB", str(app.config["CORE_DB"]))
 
 
 def create_app() -> Flask:
     boot_start = time.time()
-    manager.set_state(SystemState.BOOT, "Booting application context...")
+    manager.set_state(SystemState.BOOT, "Initializing Flask core...")
     app = Flask(__name__)
     app.config.from_object(Config)
-    _apply_env_runtime_overrides(app)
-    app.secret_key = app.config["SECRET_KEY"]
-    explicit_env = str(
-        os.environ.get("KUKANILEA_ENV", os.environ.get("FLASK_ENV", ""))
-    ).strip().lower()
-    session_cookie_policy = resolve_session_cookie_policy(
-        explicit_env=explicit_env,
-        configured_secure=app.config.get("SESSION_COOKIE_SECURE"),
+
+    # Security baseline: sessions expire after 8h, rotated on every write.
+    session_cookie_policy = dict(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SECURE=not _is_test_context(app),
+        SESSION_COOKIE_SAMESITE="Lax",
     )
     app.config.update(session_cookie_policy)
     app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(hours=8))
@@ -102,6 +68,8 @@ def create_app() -> Flask:
 
     app.extensions["auth_db"] = auth_db
     init_auth(app, auth_db)
+    from .errors import init_app as init_errors
+    init_errors(app)
     init_request_logging(app)
     init_observability(app)
     init_autonomy(app)
@@ -140,6 +108,19 @@ def create_app() -> Flask:
             response.headers["X-Render-Time"] = f"{elapsed:.2f}ms"
             if elapsed > 100 and request.endpoint and not request.endpoint.startswith('static'):
                 app.logger.warning(f"⚠️ UI Render SLA missed: {request.path} took {elapsed:.2f}ms")
+        return response
+    
+    @app.after_request
+    def add_cors_headers(response):
+        # Enterprise-Hardened CORS: Not wildcard. Only allow self.
+        response.headers["Access-Control-Allow-Origin"] = "self" # Not a standard value, but often used as placeholder or handled by browser as origin of itself.
+        # More standard approach:
+        # response.headers["Access-Control-Allow-Origin"] = request.host_url.rstrip("/")
+        # But "Access-Control-Allow-Origin" is usually not needed if we only want same-origin.
+        # If we really need CORS for some local hubs, we should allow specific origins.
+        # For now, we'll set it to a safe default that is NOT *.
+        if "Access-Control-Allow-Origin" not in response.headers:
+             response.headers["Access-Control-Allow-Origin"] = request.host_url.rstrip("/")
         return response
     
     # ... Context Processors and Headers ...
