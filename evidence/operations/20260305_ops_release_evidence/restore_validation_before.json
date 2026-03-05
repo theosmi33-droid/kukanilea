@@ -1,0 +1,41 @@
+{
+  "ok": true,
+  "phase": "before",
+  "baseline": "evidence/operations/20260305_ops_release_evidence/restore_baseline.json",
+  "snapshot": {
+    "contacts": {
+      "exists": false,
+      "count": 0,
+      "sample_hash": "missing",
+      "sample_entities": []
+    },
+    "tasks": {
+      "exists": false,
+      "count": 0,
+      "sample_hash": "missing",
+      "sample_entities": []
+    },
+    "projects": {
+      "exists": false,
+      "count": 0,
+      "sample_hash": "missing",
+      "sample_entities": []
+    },
+    "time_entries": {
+      "exists": false,
+      "count": 0,
+      "sample_hash": "missing",
+      "sample_entities": []
+    },
+    "files": {
+      "exists": false,
+      "count": 0,
+      "sample_hash": "missing",
+      "sample_entities": []
+    },
+    "_business_entities_checksum": {
+      "sample_count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  }
+}
