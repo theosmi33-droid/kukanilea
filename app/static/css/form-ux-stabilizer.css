@@ -1,0 +1,42 @@
+form.has-validation-errors .form-ux-invalid,
+.form-ux-invalid {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+}
+
+.form-ux-valid {
+  border-color: #16a34a !important;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
+}
+
+.form-ux-error {
+  color: #b91c1c;
+  font-size: 12px;
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+
+.form-ux-hint {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+
+form.is-submitting {
+  opacity: 0.92;
+}
+
+.form-ux-retry {
+  margin-top: 10px;
+}
+
+form.submit-failed {
+  outline: 2px solid rgba(220, 38, 38, 0.35);
+  outline-offset: 6px;
+}
+
+form.submit-success {
+  outline: 2px solid rgba(22, 163, 74, 0.35);
+  outline-offset: 6px;
+}
