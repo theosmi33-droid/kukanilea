@@ -53,14 +53,23 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
                     }
                 )
 
+    action0 = {}
+    suggested_raw = payload.get("suggested_actions")
+    if isinstance(suggested_raw, list) and suggested_raw and isinstance(suggested_raw[0], dict):
+        action0 = suggested_raw[0]
+
+    due_date = str(payload.get("due_date") or action0.get("due_date") or "").strip() or None
+    project_hint = str(payload.get("project_hint") or action0.get("project_hint") or "").strip() or None
+    calendar_hint = str(payload.get("calendar_hint") or action0.get("calendar_hint") or "").strip() or None
+
     title = subject or (snippets[0] if snippets else "Neue Anfrage")
     suggested_actions = [
         {
             "type": "create_task",
             "title": title[:180],
-            "due_date": str(payload.get("due_date") or "").strip() or None,
-            "project_hint": str(payload.get("project_hint") or "").strip() or None,
-            "calendar_hint": str(payload.get("calendar_hint") or "").strip() or None,
+            "due_date": due_date,
+            "project_hint": project_hint,
+            "calendar_hint": calendar_hint,
             "requires_confirm": True,
             "read_only": True,
         }
