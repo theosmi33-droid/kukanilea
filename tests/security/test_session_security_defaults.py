@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app import create_app
 from app.config import Config
+from app.security.session_policy import resolve_session_cookie_policy
 
 
 def _set_minimum_paths(monkeypatch, tmp_path):
@@ -64,3 +65,25 @@ def test_development_session_secure_override_is_normalized(monkeypatch, tmp_path
     assert app.config["SESSION_COOKIE_NAME"].startswith("__Host-")
     assert app.config["SESSION_COOKIE_DOMAIN"] is None
     assert app.config["SESSION_COOKIE_PATH"] == "/"
+
+
+def test_test_environment_defaults_to_non_secure_cookie_for_local_pytest(monkeypatch, tmp_path):
+    monkeypatch.setenv("KUKANILEA_ENV", "test")
+    _set_minimum_paths(monkeypatch, tmp_path)
+
+    app = create_app()
+
+    assert app.config["SESSION_COOKIE_SECURE"] is False
+    assert app.config["SESSION_COOKIE_NAME"] == "kukanilea_session"
+
+
+def test_unknown_environment_falls_back_to_secure_cookie_policy():
+    policy = resolve_session_cookie_policy("qa-preview", configured_secure=False)
+    assert policy["SESSION_COOKIE_SECURE"] is True
+    assert policy["SESSION_COOKIE_NAME"].startswith("__Host-")
+
+
+def test_test_policy_honors_explicit_secure_override_for_https_ci():
+    policy = resolve_session_cookie_policy("testing", configured_secure="1")
+    assert policy["SESSION_COOKIE_SECURE"] is True
+    assert policy["SESSION_COOKIE_NAME"].startswith("__Host-")
