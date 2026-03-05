@@ -51,7 +51,10 @@ def _time_tenant(tenant_id: str) -> str:
     return _effective_tenant(tenant_id) or _effective_tenant(TENANT_DEFAULT) or "default"
 
 def _parse_iso(value: str) -> datetime:
-    return datetime.fromisoformat(value)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 def _duration_seconds(start_at: str, end_at: str) -> int:
     return max(0, int((_parse_iso(end_at) - _parse_iso(start_at)).total_seconds()))
@@ -163,7 +166,7 @@ def time_entry_start(
             ):
                 raise ValueError("project_not_found")
             row = con.execute(
-                "SELECT id FROM time_entries WHERE tenant_id=? AND username=? AND end_at IS NULL",
+                "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL",
                 (tenant_id, user),
             ).fetchone()
             if row:
@@ -252,7 +255,7 @@ def time_entry_stop(
                 row = con.execute(
                     """
                     SELECT id, start_at FROM time_entries
-                    WHERE tenant_id=? AND username=? AND end_at IS NULL
+                    WHERE tenant_id=? AND user=? AND end_at IS NULL
                     """,
                     (tenant_id, user),
                 ).fetchone()
@@ -260,7 +263,7 @@ def time_entry_stop(
                 row = con.execute(
                     """
                     SELECT id, start_at FROM time_entries
-                    WHERE tenant_id=? AND username=? AND id=?
+                    WHERE tenant_id=? AND user=? AND id=?
                     """,
                     (tenant_id, user, int(entry_id)),
                 ).fetchone()
@@ -273,7 +276,7 @@ def time_entry_stop(
             con.execute(
                 """
                 UPDATE time_entries
-                SET end_at=?, duration=?, updated_at=?
+                SET end_at=?, duration_seconds=?, updated_at=?
                 WHERE id=? AND tenant_id=?
                 """,
                 (end_ts, duration, _now_iso(), int(row["id"]), tenant_id),
@@ -328,7 +331,7 @@ def time_entry_update(
             con.execute(
                 """
                 UPDATE time_entries
-                SET project_id=?, start_at=?, end_at=?, duration=?, note=?, updated_at=?
+                SET project_id=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
                 WHERE id=? AND tenant_id=?
                 """,
                 (
@@ -408,7 +411,7 @@ def time_entries_list(
     clauses = ["te.tenant_id=?"]
     params: List[Any] = [tenant_id]
     if user:
-        clauses.append("te.username=?")
+        clauses.append("te.user=?")
         params.append(user)
     if start_at:
         clauses.append("te.start_at>=?")
@@ -427,7 +430,7 @@ def time_entries_list(
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
                 WHERE {where_sql}
-                ORDER BY te.start_at DESC
+                ORDER BY te.start_at DESC, te.id DESC
                 LIMIT ?
                 """,
                 (*params, limit),
