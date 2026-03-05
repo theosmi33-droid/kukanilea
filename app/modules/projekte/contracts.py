@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 from app import core
 
+CONTRACT_VERSION = "2026-03-05"
+
 
 def _timestamp() -> str:
     return datetime.now(UTC).isoformat()
@@ -12,21 +14,30 @@ def _timestamp() -> str:
 def build_summary(_tenant: str) -> dict:
     project_list = getattr(core, "project_list", None)
     projects = project_list() if callable(project_list) else []
+    status = "ok" if callable(project_list) else "degraded"
     return {
-        "status": "ok" if callable(project_list) else "degraded",
-        "timestamp": _timestamp(),
-        "metrics": {
+        "tool": "projekte",
+        "version": CONTRACT_VERSION,
+        "status": status,
+        "ts": _timestamp(),
+        "summary": {
             "total_projects": len(projects),
+            "contract_version": CONTRACT_VERSION,
         },
+        "warnings": [] if status == "ok" else ["projects_backend_missing"],
+        "links": [{"rel": "health", "href": "/api/projekte/health"}],
     }
 
 
 def build_health(tenant: str) -> tuple[dict, int]:
     payload = build_summary(tenant)
-    payload["metrics"] = {
-        **payload["metrics"],
-        "backend_ready": int(payload["status"] == "ok"),
-        "offline_safe": 1,
+    payload["summary"] = {
+        **payload.get("summary", {}),
+        "checks": {
+            "summary_contract": True,
+            "backend_ready": payload["status"] == "ok",
+            "offline_safe": True,
+        },
     }
-    code = 200 if payload["status"] in {"ok", "degraded"} else 503
+    code = 200 if payload["status"] == "ok" else 503
     return payload, code

@@ -5,15 +5,19 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from app.auth import current_tenant, login_required
-from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
-from app.contracts.tool_contracts import build_tool_summary, extract_chat_message, normalize_chat_response
-from app.ai.intent_analyzer import detect_standard_request, detect_write_intent
-from app.ai.guardrails import validate_prompt
-from app.security.gates import detect_injection
-from app.security import csrf_protected
-from app.rate_limit import chat_limiter
 from app.agents.orchestrator import answer as agent_answer
+from app.ai.guardrails import validate_prompt
+from app.ai.intent_analyzer import detect_standard_request, detect_write_intent
+from app.auth import current_tenant, login_required
+from app.contracts.tool_contracts import (
+    build_tool_summary,
+    extract_chat_message,
+    normalize_chat_response,
+)
+from app.rate_limit import chat_limiter
+from app.security import csrf_protected
+from app.security.gates import detect_injection
+from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
 
 logger = logging.getLogger("kukanilea.messenger")
 bp = Blueprint("messenger", __name__)
@@ -30,8 +34,8 @@ def _summary_context() -> dict[str, Any]:
 
 def _read_only_fallback(message: str, *, reason: str = "fallback") -> dict[str, Any]:
     summaries = _summary_context()
-    tasks_open = summaries["tasks"].get("metrics", {}).get("tasks_open", 0)
-    projects_total = summaries["projects"].get("metrics", {}).get("total_projects", 0)
+    tasks_open = summaries["tasks"].get("summary", {}).get("tasks_open", 0)
+    projects_total = summaries["projects"].get("summary", {}).get("total_projects", 0)
     text = (
         "Ich habe dafür aktuell keine präzise Aktion gefunden, kann aber read-only helfen: "
         f"{tasks_open} offene Tasks, {projects_total} Projekte. "

@@ -91,6 +91,7 @@ from app.contracts.tool_contracts import (
     build_tool_health,
     build_tool_matrix,
     build_tool_summary,
+    contract_status_code,
     extract_chat_message,
     normalize_chat_response,
 )
@@ -3929,12 +3930,13 @@ def api_tool_summary(tool: str):
     }
     builder = domain_summary_builders.get(tool)
     if builder is not None:
-        return jsonify(builder(tenant))
+        payload = builder(tenant)
+        return jsonify(payload), contract_status_code(payload, health=False)
 
     if tool not in CONTRACT_TOOLS:
         return jsonify(error="unknown_tool", tool=tool), 404
     payload = build_tool_summary(tool, tenant=tenant)
-    return jsonify(payload)
+    return jsonify(payload), contract_status_code(payload, health=False)
 
 
 @bp.get("/api/<tool>/health")
@@ -3956,8 +3958,7 @@ def api_tool_health(tool: str):
     if tool not in CONTRACT_TOOLS:
         return jsonify(error="unknown_tool", tool=tool), 404
     payload = build_tool_health(tool, tenant=tenant)
-    code = 200 if payload.get("status") in {"ok", "degraded"} else 503
-    return jsonify(payload), code
+    return jsonify(payload), contract_status_code(payload, health=True)
 
 
 @bp.get("/api/dashboard/tool-matrix")
