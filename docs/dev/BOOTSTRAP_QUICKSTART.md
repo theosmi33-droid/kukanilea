@@ -11,10 +11,10 @@ bash scripts/dev_bootstrap.sh
 ```
 
 Der One-Command-Run erledigt automatisch:
-1. Python-Basisauflösung mit Fallback-Policy (`PYTHON_BIN` → `pyenv` → `python3` → `python`)
+1. Python-Basisauflösung mit Fallback-Policy (`PYTHON_BIN` → `.python-version` via `pyenv` → `python3` → `python`)
 2. `.venv` erstellen (falls nicht vorhanden)
 3. Pip/Dev-Abhängigkeiten installieren (`requirements.txt` + `requirements-dev.txt`)
-4. Playwright Browser installieren (`chromium`, inkl. `--with-deps`)
+4. Playwright Browser installieren (`chromium`, lokal via `python -m playwright install`)
 5. Doctor-Checks (`pytest`, `flask`, `ruff`, `playwright`)
 6. Seed + Smoke (`scripts/seed_dev_users.py`, `scripts/seed_demo_data.py`, `python -m app.smoke`)
 7. `scripts/ops/healthcheck.sh`
@@ -60,11 +60,12 @@ bash scripts/dev_run.sh --skip-bootstrap
 bash scripts/dev_run.sh --skip-seed
 ```
 
-## Verifikation
+## Pflicht-Verifikation
 
 ```bash
-PYTHON=.venv/bin/python scripts/ops/healthcheck.sh
-PYTHON=.venv/bin/python scripts/ops/launch_evidence_gate.sh --fast
+bash -n scripts/dev_bootstrap.sh scripts/dev_run.sh scripts/ops/healthcheck.sh scripts/ops/launch_evidence_gate.sh
+./scripts/ops/healthcheck.sh
+scripts/ops/launch_evidence_gate.sh
 ```
 
 ## Known issues / Fallback
