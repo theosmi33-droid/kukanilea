@@ -108,7 +108,11 @@ def _collect_tasks_summary(_tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_messenger_summary(_tenant: str) -> tuple[dict, dict, str]:
     metrics = {"confirm_gate": 1, "channels": 4}
-    details = {"chat_endpoint": "/api/chat", "message_fields": ["q", "message", "msg"]}
+    details = {
+        "chat_endpoint": "/api/chat",
+        "message_fields": ["q", "message", "msg"],
+        "confirm_gate": True,
+    }
     return metrics, details, ""
 
 
