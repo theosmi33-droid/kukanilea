@@ -4,8 +4,10 @@ import sqlite3
 from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, render_template, request, session
 
-from app.mail.intake import normalize_intake_payload
+from app.mail.intake import envelope_from_payload, normalize_intake_payload
 from app.modules.aufgaben.contracts import create_task
+from app.modules.kalender.contracts import build_health as build_kalender_health
+from app.modules.kalender.contracts import build_summary as build_kalender_summary
 from app.modules.kalender.contracts import create_event
 from app.modules.projekte.contracts import create_project
 
@@ -54,6 +56,21 @@ def health():
     )
 
 
+@bp.get("/kalender/summary")
+@search_limiter.limit_required
+def kalender_summary():
+    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    return jsonify(build_kalender_summary(tenant))
+
+
+@bp.get("/kalender/health")
+@search_limiter.limit_required
+def kalender_health():
+    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    payload, code = build_kalender_health(tenant)
+    return jsonify(payload), code
+
+
 @bp.post("/intake/normalize")
 def intake_normalize():
     payload = request.get_json(silent=True) or {}
@@ -65,7 +82,7 @@ def intake_normalize():
 def intake_execute():
     payload = request.get_json(silent=True) or {}
     envelope_payload = payload.get("envelope") if isinstance(payload.get("envelope"), dict) else {}
-    envelope = normalize_intake_payload(envelope_payload)
+    envelope = envelope_from_payload(envelope_payload)
 
     if not bool(payload.get("requires_confirm", True)):
         return jsonify(ok=False, error="confirm_required_flag_missing"), 400
@@ -85,11 +102,19 @@ def intake_execute():
 
     project_payload = None
     if action.get("project_hint"):
-        project_payload = create_project(
-            tenant=tenant_id,
-            name=str(action.get("project_hint") or "Projekt aus Intake"),
-            description=f"Auto-Vorschlag aus Intake {envelope.thread_id}",
-        )
+        try:
+            project_payload = create_project(
+                tenant=tenant_id,
+                name=str(action.get("project_hint") or "Projekt aus Intake"),
+                description=f"Auto-Vorschlag aus Intake {envelope.thread_id}",
+            )
+        except Exception as exc:
+            current_app.logger.warning("Project creation failed after confirm: %s", exc)
+            project_payload = {
+                "status": "proposal_only",
+                "reason": "project_backend_unavailable",
+                "name": str(action.get("project_hint") or "Projekt aus Intake"),
+            }
 
     task_payload = create_task(
         tenant=tenant_id,
@@ -103,13 +128,32 @@ def intake_execute():
     )
 
     calendar_payload = None
-    if action.get("calendar_hint") and action.get("due_date"):
-        calendar_payload = create_event(
-            tenant=tenant_id,
-            title=str(action.get("calendar_hint") or action.get("title") or "Intake Termin"),
-            starts_at=str(action.get("due_date")),
-            created_by=actor,
-        )
+    appointment_action = next(
+        (item for item in envelope.suggested_actions if str(item.get("type") or "") == "create_appointment"),
+        {},
+    )
+    starts_at = appointment_action.get("starts_at") or action.get("due_date")
+    if starts_at:
+        try:
+            calendar_payload = create_event(
+                tenant=tenant_id,
+                title=str(
+                    appointment_action.get("title")
+                    or action.get("calendar_hint")
+                    or action.get("title")
+                    or "Intake Termin"
+                ),
+                starts_at=str(starts_at),
+                created_by=actor,
+            )
+        except Exception as exc:
+            current_app.logger.warning("Appointment creation failed after confirm: %s", exc)
+            calendar_payload = {
+                "status": "proposal_only",
+                "reason": "calendar_backend_unavailable",
+                "starts_at": str(starts_at),
+                "title": str(appointment_action.get("title") or action.get("title") or "Intake Termin"),
+            }
 
     from app import core
     from app.eventlog import event_append
