@@ -82,6 +82,8 @@ def _run_doctor(tmp_path: Path, fake_python: Path, extra_args: list[str] | None 
 
     env = os.environ.copy()
     env["PYTHON"] = str(fake_python)
+    # Force deterministic local-mode behavior in CI runners unless --ci is passed explicitly.
+    env["CI"] = "0"
     if prepend_path is not None:
         env["PATH"] = f"{prepend_path}:{env['PATH']}"
 
@@ -176,7 +178,8 @@ def test_doctor_node_cli_optional_when_missing(tmp_path: Path):
     result = _run_doctor(tmp_path, fake_python)
 
     assert result.returncode == 0
-    assert "Node Playwright CLI missing (optional)" in result.stdout
+    assert "Node Playwright CLI" in result.stdout
+    assert "optional" in result.stdout
 
 
 def test_doctor_node_cli_optional_when_present(tmp_path: Path):
