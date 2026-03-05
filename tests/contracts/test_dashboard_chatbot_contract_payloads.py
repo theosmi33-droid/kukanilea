@@ -25,7 +25,9 @@ def test_chatbot_summary_declares_payload_aliases(auth_client):
 
     contract = body["details"]["payload_contract"]
     assert contract["request_fields"] == ["message", "msg", "q"]
-    assert contract["response_fields"] == ["ok", "response"]
+    assert contract["response_fields"] == ["ok", "response", "text", "actions", "requires_confirm"]
+    assert body["details"]["summary_sources"] == ["dashboard", "tasks", "projects"]
+    assert body["metrics"]["summary_sources"] == 3
     assert body["details"]["contract"]["read_only"] is True
 
 

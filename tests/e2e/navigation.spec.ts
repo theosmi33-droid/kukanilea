@@ -26,8 +26,8 @@ test.describe('Sovereign navigation', () => {
     for (const route of routes) {
       await page.click(`a[href="${route}"]`);
       await expect(page).toHaveURL(new RegExp(`${route.replace('/', '\\/')}$`));
-      await expect(page.locator('body')).not.toContainText(/wird geladen/i);
-      await expect(page.locator('#main-content')).toBeVisible();
+      await expect(page.locator('body')).not.toContainText(/wird geladen|Lade Quellen/i);
+      await expect(page.locator('#main-content[data-page-ready="1"]')).toBeVisible();
       if (route === '/upload') {
         await expect(page.locator('input[name="file"]')).toBeVisible();
       }
@@ -40,7 +40,7 @@ test.describe('Sovereign navigation', () => {
       const status = response?.status() ?? 0;
       expect([200, 302]).toContain(status);
       await expect(page.locator('body')).toContainText(/KUKANILEA|Dashboard|Upload|Projekt|Aufgabe|Kalender|Einstellungen|Assistant|Login|Anmelden/i);
-      await expect(page.locator('body')).not.toContainText(/wird geladen/i);
+      await expect(page.locator('body')).not.toContainText(/wird geladen|Lade Quellen/i);
     });
   }
 });
