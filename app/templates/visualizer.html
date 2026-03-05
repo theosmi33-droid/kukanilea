@@ -498,22 +498,28 @@
 
   async function loadSources() {
     el.stage.className = "vz-empty";
-    el.stage.textContent = "Dokumentquellen werden geladen...";
-    const res = await fetch("/api/visualizer/sources", { headers: { Accept: "application/json" } });
-    const data = await res.json();
-    const items = Array.isArray(data.items) ? data.items : [];
-    state.sources = items;
-    state.filtered = items.slice();
-    if (!state.activeId && items.length) state.activeId = items[0].id;
-    renderList();
+    el.stage.textContent = "Quellen werden vorbereitet…";
+    try {
+      const res = await fetch("/api/visualizer/sources", { headers: { Accept: "application/json" } });
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      state.sources = items;
+      state.filtered = items.slice();
+      if (!state.activeId && items.length) state.activeId = items[0].id;
+      renderList();
 
-    if (!items.length) {
+      if (!items.length) {
+        el.stage.className = "vz-empty";
+        el.stage.innerHTML = "Keine unterstützten Dokumente gefunden.<br>Bitte zuerst hochladen.";
+        updatePager(null);
+        return;
+      }
+      await loadRender();
+    } catch (err) {
       el.stage.className = "vz-empty";
-      el.stage.innerHTML = "Keine unterstützten Dokumente gefunden.<br>Bitte zuerst hochladen.";
+      el.stage.textContent = `Quellen konnten nicht geladen werden: ${String(err.message || err)}`;
       updatePager(null);
-      return;
     }
-    await loadRender();
   }
 
   async function loadProjects() {
