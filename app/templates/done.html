@@ -8,6 +8,10 @@
   </div>
   <h1 style="font-size: 28px; font-weight: 800; color: var(--color-text-main); margin-bottom: var(--spacing-2);">Archiviert</h1>
   <p style="color: var(--color-text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: var(--spacing-5);">Dokument sicher im Ledger abgelegt</p>
-  <a href="/" class="btn btn-primary" style="padding: 0 48px; height: 48px; font-size: 16px;">Zur Übersicht</a>
+  <div style="display:flex; flex-direction:column; gap:10px;">
+    <a href="/tasks?origin=upload" class="btn btn-primary" style="padding: 0 48px; height: 48px; font-size: 16px;">Weiter zu Aufgaben</a>
+    <a href="/projects?origin=upload" class="btn btn-secondary" style="padding: 0 48px; height: 44px; font-size: 14px;">Direkt ins Projektboard</a>
+    <a href="/" class="btn btn-ghost" style="padding: 0 48px; height: 40px; font-size: 13px;">Zur Übersicht</a>
+  </div>
 </div>
 {% endblock %}

@@ -2,11 +2,15 @@
 {% block title %}Upload · KUKANILEA{% endblock %}
 
 {% block content %}
-<div class="page-container p-6" style="max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-8);">
+<div class="page-container page-shell p-6">
 
-  <header>
-    <h1 class="text-3xl font-bold tracking-tight">Dokument-Upload</h1>
-    <p class="text-secondary mt-2">Fügen Sie Dokumente Ihrer Pipeline hinzu. Die Verarbeitung erfolgt vollständig lokal.</p>
+  <header class="page-header">
+    <div>
+      <p class="page-kicker">Upload</p>
+      <h1 class="text-3xl font-bold tracking-tight m-0">Dokument-Upload</h1>
+      <p class="text-secondary mt-2 mb-0">Fügen Sie Dokumente Ihrer Pipeline hinzu. Die Verarbeitung erfolgt vollständig lokal.</p>
+    </div>
+    <a href="/dashboard" class="btn btn-secondary btn-sm">Zur Übersicht</a>
   </header>
 
   <!-- Step Indicator -->

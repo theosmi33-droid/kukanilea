@@ -48,3 +48,9 @@ Prevent cross-domain coding and enforce deterministic ownership per tab.
 - `excel-docs-visualizer`
 - `einstellungen`
 - `floating-widget-chatbot`
+
+## Parallel UI branch guard (Conflict Preventer)
+- Canonical lane ownership and CI thresholds live in `.github/policy/ui_conflict_guardrails.json`.
+- Merge sequencing for UI lanes lives in `docs/MERGE_ORDER_UI.md`.
+- CI gate command: `python scripts/dev/ui_conflict_preventer.py --base-branch origin/main`.
+- Hard requirement: each run executes at least `2100` scoped ownership checks (`owner_rules_checked`).

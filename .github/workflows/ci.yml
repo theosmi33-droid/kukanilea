@@ -34,10 +34,30 @@ jobs:
         run: |
           bash scripts/dev/pr_quality_guard.sh --ci
 
+  ui-conflict-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [pr-quality-guard]
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Enforce scoped ownership + merge order gate
+        run: |
+          python scripts/dev/ui_conflict_preventer.py --base-branch origin/main
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [pr-quality-guard]
+    needs: [pr-quality-guard, ui-conflict-guard]
     env:
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"

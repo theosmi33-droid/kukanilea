@@ -42,8 +42,8 @@
   --bg-secondary: var(--color-gray-50);
   --bg-tertiary: var(--color-gray-100);
   --text-primary: var(--color-gray-900);
-  --text-secondary: var(--color-gray-600);
-  --text-tertiary: var(--color-gray-500);
+  --text-secondary: var(--color-gray-700);
+  --text-tertiary: var(--color-gray-600);
   --border-color: var(--color-gray-200);
   --border-color-hover: var(--color-gray-300);
 
@@ -131,8 +131,8 @@ html.light {
   --bg-secondary: var(--color-gray-50);
   --bg-tertiary: var(--color-gray-100);
   --text-primary: var(--color-gray-900);
-  --text-secondary: var(--color-gray-600);
-  --text-tertiary: var(--color-gray-500);
+  --text-secondary: var(--color-gray-700);
+  --text-tertiary: var(--color-gray-600);
   --border-color: var(--color-gray-200);
   --border-color-hover: var(--color-gray-300);
   --color-bg-root: var(--bg-secondary);
@@ -184,6 +184,19 @@ html { font-size: 16px; }
   flex: 0;
   margin-bottom: var(--spacing-2);
 }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   margin: 0; font-family: var(--font-primary); font-size: var(--font-size-base);
   font-weight: var(--font-weight-normal); line-height: var(--line-height-normal);
@@ -307,3 +320,33 @@ html.sidebar-collapsed .sidebar .btn { min-width: 32px; }
 .logo { height: 40px; width: auto; color: var(--color-primary); transition: color var(--transition-base); }
 .logo:hover { color: var(--color-primary-hover); }
  @media (max-width: 768px) { .logo { height: 32px; } }
+
+
+/* Cross-page layout consistency */
+.page-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+.page-shell--wide { max-width: 1400px; }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  padding: var(--spacing-4);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(37,99,235,0.03), rgba(37,99,235,0));
+}
+.page-kicker {
+  margin: 0 0 6px 0;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: var(--font-weight-semibold);
+}

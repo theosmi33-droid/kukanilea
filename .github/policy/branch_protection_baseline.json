@@ -8,6 +8,7 @@
       "required_status_checks_strict": true,
       "required_status_checks": [
         "test",
+        "ui-conflict-guard",
         "lint-and-scan",
         "agent-logic-tests",
         "e2e-tests",
@@ -28,6 +29,7 @@
       "required_status_checks_strict": true,
       "required_status_checks": [
         "test",
+        "ui-conflict-guard",
         "lint-and-scan",
         "agent-logic-tests",
         "e2e-tests",

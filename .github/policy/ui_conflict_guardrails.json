@@ -1,0 +1,56 @@
+{
+  "min_actions": 2100,
+  "merge_order_doc": "docs/MERGE_ORDER_UI.md",
+  "ui_file_globs": [
+    "app/templates/**/*.html",
+    "app/static/js/**/*.js",
+    "app/static/css/**/*.css"
+  ],
+  "owners": {
+    "dashboard": [
+      "app/templates/dashboard.html",
+      "app/templates/dashboard/",
+      "app/templates/forensic_dashboard.html",
+      "app/templates/components/system_status.html"
+    ],
+    "upload": [
+      "app/templates/done.html",
+      "app/templates/review.html",
+      "app/templates/upload.html",
+      "app/templates/upload/"
+    ],
+    "automation": [
+      "app/templates/automation/"
+    ],
+    "messenger": [
+      "app/templates/messenger.html",
+      "app/templates/partials/floating_chat.html",
+      "app/static/js/chatbot.js"
+    ],
+    "kalender": [
+      "app/templates/kalender"
+    ],
+    "aufgaben_projekte": [
+      "app/templates/kanban.html",
+      "app/templates/tasks.html",
+      "app/templates/projekte/"
+    ],
+    "system_pages": [
+      "app/templates/login.html",
+      "app/templates/settings.html",
+      "app/templates/visualizer.html"
+    ],
+    "shared_ui_shell": [
+      "app/templates/layout.html",
+      "app/templates/partials/",
+      "app/templates/skeletons/",
+      "app/static/css/design-system.css",
+      "app/static/css/motion.css",
+      "app/static/css/shell-navigation.css",
+      "app/static/js/command_palette.js",
+      "app/static/js/ui-",
+      "app/static/js/app.js"
+    ]
+  },
+  "validation_rounds": 6
+}
