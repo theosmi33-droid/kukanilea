@@ -1,6 +1,20 @@
 from __future__ import annotations
 
-from app.license_state import LicenseInputs, evaluate_license_state, normalize_status_hint
+import importlib.util
+import sys
+from pathlib import Path
+
+
+_LICENSE_STATE_PATH = Path(__file__).resolve().parents[2] / "app" / "license_state.py"
+_LICENSE_SPEC = importlib.util.spec_from_file_location("license_state", _LICENSE_STATE_PATH)
+assert _LICENSE_SPEC and _LICENSE_SPEC.loader
+_LICENSE_MODULE = importlib.util.module_from_spec(_LICENSE_SPEC)
+sys.modules[_LICENSE_SPEC.name] = _LICENSE_MODULE
+_LICENSE_SPEC.loader.exec_module(_LICENSE_MODULE)
+
+LicenseInputs = _LICENSE_MODULE.LicenseInputs
+evaluate_license_state = _LICENSE_MODULE.evaluate_license_state
+normalize_status_hint = _LICENSE_MODULE.normalize_status_hint
 
 
 def test_normalize_status_accepts_german_variants() -> None:
@@ -36,6 +50,7 @@ def test_blocked_with_smb_reachable_enters_recover() -> None:
     )
     assert out["status"] == "recover"
     assert out["read_only"] is True
+    assert out["transition"] == "blocked->recover"
 
 
 def test_recover_to_active_when_smb_available() -> None:
@@ -44,6 +59,7 @@ def test_recover_to_active_when_smb_available() -> None:
     )
     assert out["status"] == "active"
     assert out["reason"] == "recovered"
+    assert out["transition"] == "recover->active"
 
 
 def test_device_mismatch_forces_blocked() -> None:
