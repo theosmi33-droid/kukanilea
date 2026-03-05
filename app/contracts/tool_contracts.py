@@ -31,6 +31,13 @@ INTAKE_ENVELOPE_FIELDS = [
     "attachments",
     "suggested_actions",
 ]
+UPLOAD_INTAKE_CONTRACT = {
+    "normalize_endpoint": "/api/intake/normalize",
+    "execute_endpoint": "/api/intake/execute",
+    "requires_explicit_confirm": True,
+    "envelope_fields": INTAKE_ENVELOPE_FIELDS,
+    "execute_fields": ["envelope", "requires_confirm", "confirm"],
+}
 CONTRACT_VERSION = "2026-03-05"
 REQUIRED_TOP_LEVEL_FIELDS = ("tool", "status", "updated_at", "metrics", "details")
 REQUIRED_CONTRACT_FIELDS = ("version", "read_only")
@@ -51,6 +58,8 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
     safe_metrics = dict(metrics or {})
     safe_details = dict(details or {})
     safe_details["tenant"] = str(tenant or "default")
+    if tool == "upload":
+        safe_details.setdefault("intake_contract", dict(UPLOAD_INTAKE_CONTRACT))
     contract_payload = safe_details.get("contract")
     if isinstance(contract_payload, dict):
         contract_meta = dict(contract_payload)
@@ -205,13 +214,7 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     details = {
         "source": "core.list_pending",
         "tenant": tenant,
-        "intake_contract": {
-            "normalize_endpoint": "/api/intake/normalize",
-            "execute_endpoint": "/api/intake/execute",
-            "requires_explicit_confirm": True,
-            "envelope_fields": INTAKE_ENVELOPE_FIELDS,
-            "execute_fields": ["envelope", "requires_confirm", "confirm"],
-        },
+        "intake_contract": dict(UPLOAD_INTAKE_CONTRACT),
     }
     if pending_error:
         details["pending_error"] = pending_error
