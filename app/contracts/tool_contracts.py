@@ -22,6 +22,15 @@ CONTRACT_TOOLS = [
 CONTRACT_STATUSES = {"ok", "degraded", "error"}
 CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
 CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
+INTAKE_ENVELOPE_FIELDS = [
+    "source",
+    "thread_id",
+    "sender",
+    "subject",
+    "snippets",
+    "attachments",
+    "suggested_actions",
+]
 CONTRACT_VERSION = "2026-03-05"
 REQUIRED_TOP_LEVEL_FIELDS = ("tool", "status", "updated_at", "metrics", "details")
 REQUIRED_CONTRACT_FIELDS = ("version", "read_only")
@@ -172,7 +181,17 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     list_pending = _core_get("list_pending")
     pending = list_pending() if callable(list_pending) else []
     metrics = {"pending_items": len(pending), "accepts_batch": 1}
-    details = {"source": "core.list_pending", "tenant": tenant}
+    details = {
+        "source": "core.list_pending",
+        "tenant": tenant,
+        "intake_contract": {
+            "normalize_endpoint": "/api/intake/normalize",
+            "execute_endpoint": "/api/intake/execute",
+            "requires_explicit_confirm": True,
+            "envelope_fields": INTAKE_ENVELOPE_FIELDS,
+            "execute_fields": ["envelope", "requires_confirm", "confirm"],
+        },
+    }
     reason = "pending_pipeline_unavailable" if not callable(list_pending) else ""
     return metrics, details, reason
 
