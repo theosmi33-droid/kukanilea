@@ -28,6 +28,19 @@ class MemoryManager:
         con.row_factory = sqlite3.Row
         return con
 
+    def _generate_embedding_safe(self, text: str) -> list[float]:
+        try:
+            embedding = generate_embedding(text)
+        except Exception as exc:
+            logger.warning("Embedding backend unavailable: %s", exc)
+            return []
+        if not embedding:
+            return []
+        try:
+            return [float(v) for v in embedding]
+        except Exception:
+            return []
+
     def store_memory(
         self,
         tenant_id: str,
@@ -40,15 +53,20 @@ class MemoryManager:
         """
         Generates an embedding and stores the memory in the database.
         """
-        embedding = generate_embedding(content)
+        embedding = self._generate_embedding_safe(content)
+        degraded_embedding = False
         if not embedding:
-            logger.error("Could not store memory: Embedding generation failed.")
-            return False
+            degraded_embedding = True
+            embedding = [0.0]
 
         # Convert float list to binary BLOB (float32)
         blob = struct.pack(f"{len(embedding)}f", *embedding)
         ts = datetime.now(timezone.utc).isoformat() + "Z"
-        meta_json = json.dumps(metadata or {})
+        safe_metadata = dict(metadata or {})
+        if degraded_embedding:
+            safe_metadata["embedding_status"] = "degraded"
+            safe_metadata["embedding_backend"] = "unavailable"
+        meta_json = json.dumps(safe_metadata)
 
         con = self._get_con()
         try:
@@ -72,9 +90,9 @@ class MemoryManager:
         Retrieves relevant semantic context for a query.
         Performs Cosine Similarity search on the client side (Python) over the tenant's memories.
         """
-        query_vec = generate_embedding(query)
+        query_vec = self._generate_embedding_safe(query)
         if not query_vec:
-            return []
+            return self._retrieve_recent_context(tenant_id=tenant_id, limit=limit)
 
         con = self._get_con()
         try:
@@ -88,7 +106,9 @@ class MemoryManager:
             for row in rows:
                 blob = row["embedding"]
                 # Unpack binary BLOB back to float list
-                vec_len = len(blob) // 4
+                vec_len = len(blob) // 4 if blob else 0
+                if not vec_len:
+                    continue
                 db_vec = struct.unpack(f"{vec_len}f", blob)
 
                 score = self._cosine_similarity(query_vec, db_vec)
@@ -108,6 +128,37 @@ class MemoryManager:
 
         except Exception as e:
             logger.error(f"Failed to retrieve context: {e}")
+            return []
+        finally:
+            con.close()
+
+    def _retrieve_recent_context(self, tenant_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+        con = self._get_con()
+        try:
+            rows = con.execute(
+                """
+                SELECT content, agent_role, metadata, timestamp, importance_score, category
+                FROM agent_memory
+                WHERE tenant_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (tenant_id, max(int(limit or 1), 1)),
+            ).fetchall()
+            return [
+                {
+                    "content": row["content"],
+                    "role": row["agent_role"],
+                    "metadata": json.loads(row["metadata"]),
+                    "timestamp": row["timestamp"],
+                    "importance_score": row["importance_score"],
+                    "category": row["category"],
+                    "score": 0.0,
+                }
+                for row in rows
+            ]
+        except Exception as exc:
+            logger.error("Failed fallback context retrieval: %s", exc)
             return []
         finally:
             con.close()

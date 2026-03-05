@@ -35,12 +35,13 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reason: str = "") -> dict:
+def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reason: str = "", *, tenant: str = "default") -> dict:
     if status not in CONTRACT_STATUSES:
         status = "error"
 
     safe_metrics = dict(metrics or {})
     safe_details = dict(details or {})
+    safe_details["tenant"] = str(tenant or "default")
     contract_payload = safe_details.get("contract")
     if isinstance(contract_payload, dict):
         contract_meta = dict(contract_payload)
@@ -96,13 +97,15 @@ def _contract_errors(payload: dict) -> list[str]:
     return errors
 
 
-def _normalize_contract_payload(payload: dict, tool: str) -> tuple[dict, list[str]]:
+def _normalize_contract_payload(payload: dict, tool: str, tenant: str = "default") -> tuple[dict, list[str]]:
+    payload_details = _as_dict(payload.get("details"), {})
+    payload_details["tenant"] = str(payload_details.get("tenant") or tenant or "default")
     safe_payload = {
         "tool": str(payload.get("tool") or tool),
         "status": payload.get("status") if payload.get("status") in CONTRACT_STATUSES else "error",
         "updated_at": payload.get("updated_at") if isinstance(payload.get("updated_at"), str) else _now_iso(),
         "metrics": _as_dict(payload.get("metrics"), {}),
-        "details": _as_dict(payload.get("details"), {}),
+        "details": payload_details,
     }
     normalized = _contract_payload(
         tool=safe_payload["tool"],
@@ -110,6 +113,7 @@ def _normalize_contract_payload(payload: dict, tool: str) -> tuple[dict, list[st
         metrics=safe_payload["metrics"],
         details=safe_payload["details"],
         reason=str(payload.get("degraded_reason") or ""),
+        tenant=str(tenant or "default"),
     )
     errors = _contract_errors(payload)
     if errors:
@@ -120,6 +124,21 @@ def _normalize_contract_payload(payload: dict, tool: str) -> tuple[dict, list[st
             "normalization": {
                 "applied": True,
                 "issues": errors,
+            },
+        }
+    if normalized.get("details", {}).get("tenant") != str(tenant or "default"):
+        normalized["status"] = "degraded"
+        normalized["degraded_reason"] = "tenant_scope_corrected"
+        normalized["details"] = {
+            **(normalized.get("details") or {}),
+            "tenant": str(tenant or "default"),
+            "normalization": {
+                **_as_dict((normalized.get("details") or {}).get("normalization"), {}),
+                "applied": True,
+                "issues": [
+                    *_as_dict((normalized.get("details") or {}).get("normalization"), {}).get("issues", []),
+                    "tenant_scope_mismatch",
+                ],
             },
         }
     return normalized, errors
@@ -158,45 +177,46 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     return metrics, details, reason
 
 
-def _collect_projects_summary(_tenant: str) -> tuple[dict, dict, str]:
+def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
     list_projects = _core_get("project_list")
     projects = list_projects() if callable(list_projects) else []
     metrics = {"total_projects": len(projects)}
     reason = "projects_backend_missing" if not callable(list_projects) else ""
-    return metrics, {"source": "core.project_list"}, reason
+    return metrics, {"source": "core.project_list", "tenant": tenant}, reason
 
 
-def _collect_tasks_summary(_tenant: str) -> tuple[dict, dict, str]:
+def _collect_tasks_summary(tenant: str) -> tuple[dict, dict, str]:
     task_list = _core_get("task_list")
     tasks = task_list() if callable(task_list) else []
     open_count = sum(1 for t in tasks if str(t.get("status", "")).lower() != "done") if tasks else 0
     metrics = {"tasks_total": len(tasks), "tasks_open": open_count}
     reason = "tasks_backend_missing" if not callable(task_list) else ""
-    return metrics, {"source": "core.task_list"}, reason
+    return metrics, {"source": "core.task_list", "tenant": tenant}, reason
 
 
-def _collect_messenger_summary(_tenant: str) -> tuple[dict, dict, str]:
+def _collect_messenger_summary(tenant: str) -> tuple[dict, dict, str]:
     metrics = {"confirm_gate": 1, "channels": 4}
     details = {
         "chat_endpoint": "/api/chat",
         "message_fields": ["q", "message", "msg"],
         "confirm_gate": True,
+        "tenant": tenant,
     }
     return metrics, details, ""
 
 
-def _collect_email_summary(_tenant: str) -> tuple[dict, dict, str]:
+def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
     metrics = {"draft_supported": 1, "send_supported": 1}
-    details = {"draft_endpoint": "/api/mail/draft", "eml_endpoint": "/api/mail/eml"}
+    details = {"draft_endpoint": "/api/mail/draft", "eml_endpoint": "/api/mail/eml", "tenant": tenant}
     return metrics, details, ""
 
 
-def _collect_calendar_summary(_tenant: str) -> tuple[dict, dict, str]:
+def _collect_calendar_summary(tenant: str) -> tuple[dict, dict, str]:
     reminders_due = _core_get("knowledge_calendar_reminders_due")
-    reminders = reminders_due(_tenant) if callable(reminders_due) else []
+    reminders = reminders_due(tenant) if callable(reminders_due) else []
     metrics = {"due_reminders": len(reminders), "ics_export": 1}
     reason = "calendar_source_missing" if not callable(reminders_due) else ""
-    return metrics, {"source": "core.knowledge_calendar_reminders_due"}, reason
+    return metrics, {"source": "core.knowledge_calendar_reminders_due", "tenant": tenant}, reason
 
 
 def _collect_time_summary(tenant: str) -> tuple[dict, dict, str]:
@@ -208,20 +228,20 @@ def _collect_time_summary(tenant: str) -> tuple[dict, dict, str]:
     return metrics, {"source": "core.time_entry_list", "tenant": tenant}, reason
 
 
-def _collect_visualizer_summary(_tenant: str) -> tuple[dict, dict, str]:
+def _collect_visualizer_summary(tenant: str) -> tuple[dict, dict, str]:
     build_visualizer_payload = _core_get("build_visualizer_payload")
     metrics = {"sources_endpoint": 1, "summary_endpoint": 1}
     reason = "visualizer_logic_missing" if not callable(build_visualizer_payload) else ""
-    return metrics, {"source": "core.build_visualizer_payload"}, reason
+    return metrics, {"source": "core.build_visualizer_payload", "tenant": tenant}, reason
 
 
-def _collect_settings_summary(_tenant: str) -> tuple[dict, dict, str]:
+def _collect_settings_summary(tenant: str) -> tuple[dict, dict, str]:
     metrics = {"security_headers": 1, "admin_tools": 1}
-    details = {"pages": ["/settings", "/admin/logs", "/admin/audit"]}
+    details = {"pages": ["/settings", "/admin/logs", "/admin/audit"], "tenant": tenant}
     return metrics, details, ""
 
 
-def _collect_chatbot_summary(_tenant: str) -> tuple[dict, dict, str]:
+def _collect_chatbot_summary(tenant: str) -> tuple[dict, dict, str]:
     metrics = {"overlay": 1, "compact_api": 1, "summary_sources": 3}
     details = {
         "endpoints": ["/api/chat", "/api/chat/compact"],
@@ -233,6 +253,7 @@ def _collect_chatbot_summary(_tenant: str) -> tuple[dict, dict, str]:
         "contract": {
             "read_only": True,
         },
+        "tenant": tenant,
     }
     return metrics, details, ""
 
@@ -303,8 +324,9 @@ def build_tool_summary(tool: str, tenant: str = "default") -> dict:
             status="error",
             metrics={"collector_error": 1},
             details={"error": str(exc)},
+            tenant=tenant,
         )
-        normalized, _ = _normalize_contract_payload(payload, tool)
+        normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
         return normalized
 
     if not isinstance(metrics, dict) or not isinstance(details, dict) or not isinstance(degraded_reason, str):
@@ -320,13 +342,25 @@ def build_tool_summary(tool: str, tenant: str = "default") -> dict:
                 },
             },
             reason="collector_contract_invalid",
+            tenant=tenant,
         )
-        normalized, _ = _normalize_contract_payload(payload, tool)
+        normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
         return normalized
 
-    status = "degraded" if degraded_reason else "ok"
-    payload = _contract_payload(tool=tool, status=status, metrics=metrics, details=details, reason=degraded_reason)
-    normalized, _ = _normalize_contract_payload(payload, tool)
+    details_tenant = str(details.get("tenant") or tenant) if isinstance(details, dict) else str(tenant)
+    tenant_mismatch = details_tenant != str(tenant)
+    status = "degraded" if degraded_reason or tenant_mismatch else "ok"
+    if tenant_mismatch and not degraded_reason:
+        degraded_reason = "tenant_scope_corrected"
+    payload = _contract_payload(
+        tool=tool,
+        status=status,
+        metrics=metrics,
+        details=details,
+        reason=degraded_reason,
+        tenant=tenant,
+    )
+    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
     return normalized
 
 
@@ -342,7 +376,7 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
         **(summary.get("details") or {}),
         "checks": checks,
     }
-    normalized, _ = _normalize_contract_payload(summary, tool)
+    normalized, _ = _normalize_contract_payload(summary, tool, tenant=tenant)
     return normalized
 
 

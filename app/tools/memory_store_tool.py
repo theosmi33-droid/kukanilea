@@ -34,8 +34,13 @@ class MemoryStoreTool(BaseTool):
 
         manager = MemoryManager(str(auth_db.path))
         success = manager.store_memory(tenant_id, "agent", content, metadata)
-
-        return {"status": "stored" if success else "failed"}
+        if success:
+            return {"status": "stored", "tenant": tenant_id}
+        return {
+            "status": "degraded",
+            "tenant": tenant_id,
+            "error": "memory_store_unavailable",
+        }
 
 # Register tool
 registry.register(MemoryStoreTool())
