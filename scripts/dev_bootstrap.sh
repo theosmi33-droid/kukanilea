@@ -143,6 +143,8 @@ if ! "$PYTHON" -m pip -q install -r requirements.txt -r requirements-dev.txt; th
   exit 4
 fi
 
+BOOTSTRAP_PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
 if [[ -n "${CI:-}" ]]; then
   PLAYWRIGHT_ARGS=(install chromium)
 else
@@ -161,10 +163,10 @@ echo "[bootstrap] Running doctor checks"
 PYTHON="$PYTHON" scripts/dev/doctor.sh --strict
 
 if [[ "$SEED_DATA" -eq 1 ]]; then
-  "$PYTHON" scripts/seed_dev_users.py
-  "$PYTHON" scripts/seed_demo_data.py
+  PYTHONPATH="$BOOTSTRAP_PYTHONPATH" "$PYTHON" scripts/seed_dev_users.py
+  PYTHONPATH="$BOOTSTRAP_PYTHONPATH" "$PYTHON" scripts/seed_demo_data.py
 fi
-"$PYTHON" -m app.smoke
+PYTHONPATH="$BOOTSTRAP_PYTHONPATH" "$PYTHON" -m app.smoke
 
 if [[ "$RUN_HEALTHCHECK" -eq 1 ]]; then
   echo "[bootstrap] Running healthcheck"
