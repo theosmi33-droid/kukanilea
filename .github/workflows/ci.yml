@@ -14,9 +14,24 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  pr-quality-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR quality guard
+        run: |
+          bash scripts/dev/pr_quality_guard.sh --ci
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [pr-quality-guard]
     env:
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
