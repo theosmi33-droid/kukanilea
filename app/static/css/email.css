@@ -1,0 +1,50 @@
+/**
+ * KUKANILEA Email Cockpit UX
+ */
+
+.email-hub {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-6);
+}
+
+@media (max-width: 900px) {
+    .email-hub {
+        grid-template-columns: 1fr;
+    }
+}
+
+.email-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.email-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--size-sm);
+    font-weight: var(--weight-medium);
+    text-decoration: none;
+    transition: var(--transition-base);
+}
+
+.email-nav-item:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-main);
+}
+
+.email-nav-item.active {
+    background-color: var(--primary-50);
+    color: var(--primary-700);
+}
+
+.email-composer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}

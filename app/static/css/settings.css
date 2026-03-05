@@ -1,0 +1,200 @@
+/**
+ * KUKANILEA Settings & Trust UX
+ * Enterprise-level settings styling.
+ */
+
+.settings-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-8);
+    align-items: start;
+}
+
+@media (max-width: 980px) {
+    .settings-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* --- Sidebar Menu --- */
+.settings-menu {
+    position: sticky;
+    top: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.settings-menu-item {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--size-sm);
+    font-weight: var(--weight-medium);
+    text-decoration: none;
+    transition: var(--transition-base);
+    border: 1px solid transparent;
+}
+
+.settings-menu-item:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-main);
+}
+
+.settings-menu-item.active {
+    background-color: var(--primary-50);
+    color: var(--primary-700);
+    border-color: var(--primary-100);
+}
+
+/* --- Content Sections --- */
+.settings-section {
+    margin-bottom: var(--space-10);
+    scroll-margin-top: var(--space-20);
+}
+
+.settings-section-header {
+    margin-bottom: var(--space-6);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.settings-section-title {
+    font-size: var(--size-2xl);
+    font-weight: var(--weight-bold);
+    color: var(--text-main);
+    margin-bottom: var(--space-1);
+}
+
+.settings-section-desc {
+    font-size: var(--size-sm);
+    color: var(--text-muted);
+}
+
+/* --- Status Indicators --- */
+.trust-status-card {
+    padding: var(--space-6);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-base);
+    background-color: var(--bg-card);
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    margin-bottom: var(--space-8);
+    box-shadow: var(--shadow-refined);
+}
+
+.trust-status-indicator {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.trust-status-indicator svg {
+    width: 32px;
+    height: 32px;
+}
+
+.status-ok { background-color: var(--success-bg); color: var(--success); }
+.status-warn { background-color: var(--warning-bg); color: var(--warning); }
+.status-locked { background-color: var(--error-bg); color: var(--error); }
+
+.trust-status-info {
+    flex: 1;
+}
+
+.trust-status-label {
+    font-size: var(--size-xs);
+    font-weight: var(--weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: var(--space-1);
+}
+
+.trust-status-value {
+    font-size: var(--size-xl);
+    font-weight: var(--weight-bold);
+    margin-bottom: var(--space-1);
+}
+
+.trust-status-desc {
+    font-size: var(--size-sm);
+    color: var(--text-secondary);
+}
+
+/* --- Forms & Controls --- */
+.settings-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--space-6);
+}
+
+.confirm-gate {
+    margin-top: var(--space-4);
+    padding: var(--space-4);
+    background-color: var(--error-bg);
+    border: 1px solid rgba(239, 68, 68, 0.1);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.confirm-gate-label {
+    font-size: var(--size-xs);
+    font-weight: var(--weight-semibold);
+    color: var(--error);
+    text-transform: uppercase;
+}
+
+.confirm-gate-input {
+    border: 1px solid var(--error);
+    background: white;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-weight: var(--weight-bold);
+    letter-spacing: 0.1em;
+}
+
+.confirm-gate-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2);
+}
+
+/* --- Tables in Settings --- */
+.settings-table-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border-base);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-top: var(--space-4);
+}
+
+.settings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--size-sm);
+}
+
+.settings-table th {
+    background: var(--neutral-50);
+    text-align: left;
+    padding: var(--space-3) var(--space-4);
+    font-weight: var(--weight-semibold);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-base);
+}
+
+.settings-table td {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.settings-table tr:last-child td {
+    border-bottom: none;
+}
