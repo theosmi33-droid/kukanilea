@@ -19,6 +19,7 @@ MODE="nas"
 START_EPOCH="$(date +%s)"
 NAS_RETRIES="${NAS_RETRIES:-3}"
 BASELINE_PATH="${BASELINE_PATH:-instance/restore_baseline.json}"
+VALIDATION_SCRIPT="scripts/ops/restore_validation.py"
 
 usage() {
   cat <<'USAGE'
@@ -121,12 +122,16 @@ fi
 LOCAL_FILE="${TMP_DIR}/${BACKUP_FILE}"
 CHECKSUM_EXPECTED=""
 CHECKSUM_FILE="${BACKUP_FILE}.sha256"
+METADATA_FILE="${BACKUP_FILE}.metadata.json"
+SNAPSHOT_FILE="${BACKUP_FILE}.snapshot.json"
 if [[ "$MODE" == "nas" ]] && command -v smbclient >/dev/null 2>&1; then
   if ! nas_get_with_retry "$BACKUP_FILE" "$LOCAL_FILE"; then
     MODE="degraded_local"
     log "WARN NAS download failed, switching to degraded local mode"
   else
     nas_get_with_retry "$CHECKSUM_FILE" "${TMP_DIR}/${CHECKSUM_FILE}" || true
+    nas_get_with_retry "$METADATA_FILE" "${TMP_DIR}/${METADATA_FILE}" || true
+    nas_get_with_retry "$SNAPSHOT_FILE" "${TMP_DIR}/${SNAPSHOT_FILE}" || true
   fi
 elif [[ "$MODE" == "nas" ]]; then
   MODE="degraded_local"
@@ -139,12 +144,51 @@ if [[ "$MODE" == "degraded_local" ]]; then
   if [[ -f "$LOCAL_FALLBACK_DIR/$TENANT_ID/$CHECKSUM_FILE" ]]; then
     cp "$LOCAL_FALLBACK_DIR/$TENANT_ID/$CHECKSUM_FILE" "${TMP_DIR}/${CHECKSUM_FILE}" || die "$EXIT_RUNTIME" "failed to copy local fallback checksum"
   fi
+  if [[ -f "$LOCAL_FALLBACK_DIR/$TENANT_ID/$METADATA_FILE" ]]; then
+    cp "$LOCAL_FALLBACK_DIR/$TENANT_ID/$METADATA_FILE" "${TMP_DIR}/${METADATA_FILE}" || die "$EXIT_RUNTIME" "failed to copy local fallback metadata"
+  fi
+  if [[ -f "$LOCAL_FALLBACK_DIR/$TENANT_ID/$SNAPSHOT_FILE" ]]; then
+    cp "$LOCAL_FALLBACK_DIR/$TENANT_ID/$SNAPSHOT_FILE" "${TMP_DIR}/${SNAPSHOT_FILE}" || die "$EXIT_RUNTIME" "failed to copy local fallback snapshot"
+  fi
 fi
 
 if [[ -f "${TMP_DIR}/${CHECKSUM_FILE}" ]]; then
   CHECKSUM_EXPECTED="$(awk '{print $1}' "${TMP_DIR}/${CHECKSUM_FILE}" | head -n1)"
   CHECKSUM_ACTUAL="$(sha256_file "$LOCAL_FILE")"
   [[ "$CHECKSUM_EXPECTED" == "$CHECKSUM_ACTUAL" ]] || die "$EXIT_RUNTIME" "checksum mismatch for ${BACKUP_FILE}"
+fi
+
+
+INTEGRITY_STATUS="ok"
+INTEGRITY_ISSUES=""
+if [[ -f "${TMP_DIR}/${METADATA_FILE}" ]] && command -v python3 >/dev/null 2>&1; then
+  if ! python3 - "$TENANT_ID" "$BACKUP_FILE" "$LOCAL_FILE" "${TMP_DIR}/${METADATA_FILE}" <<'PYMETA'
+import json
+import os
+import sys
+from pathlib import Path
+
+tenant, backup_file, local_file, metadata_file = sys.argv[1:5]
+meta = json.loads(Path(metadata_file).read_text(encoding="utf-8"))
+issues = []
+if meta.get("tenant_id") != tenant:
+    issues.append("tenant mismatch")
+if meta.get("backup_file") != backup_file:
+    issues.append("backup file mismatch")
+size = os.path.getsize(local_file)
+if int(meta.get("backup_size_bytes", -1)) != int(size):
+    issues.append("size mismatch")
+if issues:
+    print("; ".join(issues))
+    raise SystemExit(1)
+PYMETA
+  then
+    INTEGRITY_STATUS="failed"
+    INTEGRITY_ISSUES="metadata mismatch"
+  fi
+else
+  INTEGRITY_STATUS="warn_missing_metadata"
+  INTEGRITY_ISSUES="metadata missing"
 fi
 
 if [[ "$LOCAL_FILE" == *.age ]]; then
@@ -171,9 +215,12 @@ VALIDATION_STATUS="skipped"
 VALIDATION_ISSUES=""
 VALIDATION_FILE="${VALIDATION_FILE:-instance/restore_validation_after.json}"
 mkdir -p "$(dirname "$VALIDATION_FILE")"
-if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ops/restore_validation.py" ]]; then
+if command -v python3 >/dev/null 2>&1 && [[ -f "$VALIDATION_SCRIPT" ]]; then
+  if [[ -f "${TMP_DIR}/${SNAPSHOT_FILE}" ]]; then
+    BASELINE_PATH="${TMP_DIR}/${SNAPSHOT_FILE}"
+  fi
   if [[ -f "$BASELINE_PATH" ]]; then
-    if python3 scripts/ops/restore_validation.py --phase after --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" > "$VALIDATION_FILE" 2>&1; then
+    if python3 "$VALIDATION_SCRIPT" --phase after --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" > "$VALIDATION_FILE" 2>&1; then
       VALIDATION_STATUS="ok"
     else
       VALIDATION_STATUS="failed"
@@ -200,6 +247,9 @@ RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
   else
     echo "checksum_verified=false"
   fi
+  echo "integrity_check=$INTEGRITY_STATUS"
+  echo "integrity_issues=$INTEGRITY_ISSUES"
+  echo "metadata_file=$METADATA_FILE"
   echo "restore_validation=$VALIDATION_STATUS"
   echo "restore_validation_issues=$VALIDATION_ISSUES"
   echo "restore_validation_file=$VALIDATION_FILE"
@@ -208,5 +258,12 @@ RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
   echo "rto_seconds=$RTO_SECONDS"
   echo "rpo_seconds=$RPO_SECONDS"
 } > "$REPORT_FILE"
+
+if [[ "$INTEGRITY_STATUS" == "failed" ]]; then
+  die "$EXIT_RUNTIME" "metadata integrity check failed"
+fi
+if [[ "$VALIDATION_STATUS" == "failed" ]]; then
+  die "$EXIT_RUNTIME" "restore validation after compare failed"
+fi
 
 log "Restore complete (mode=$MODE validation=$VALIDATION_STATUS)."

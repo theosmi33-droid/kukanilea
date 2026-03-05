@@ -83,3 +83,32 @@ def test_restore_operator_report_contains_mode(tmp_path: Path) -> None:
     env["REPORT_FILE"] = str(report)
     subprocess.run(["bash", str(Path.cwd() / "scripts/ops/restore_from_nas.sh")], cwd=tmp_path, env=env, check=True)
     assert "mode=" in report.read_text(encoding="utf-8")
+
+
+def test_backup_writes_verifiable_artifacts_and_restore_compares(tmp_path: Path) -> None:
+    _prepare_instance(tmp_path)
+    env = os.environ.copy()
+    env["TENANT_ID"] = "DEMO_TENANT"
+    env["NAS_SHARE"] = "//127.0.0.1/does-not-exist"
+    env["LOCAL_FALLBACK_DIR"] = str(tmp_path / "instance" / "degraded_backups")
+    env["REPORT_FILE"] = str(tmp_path / "instance" / "backup_report.txt")
+    subprocess.run(["bash", str(Path.cwd() / "scripts/ops/backup_to_nas.sh")], cwd=tmp_path, env=env, check=True)
+
+    backup_report = (tmp_path / "instance" / "backup_report.txt").read_text(encoding="utf-8")
+    assert "checksum_sha256=" in backup_report
+    assert "backup_size_bytes=" in backup_report
+    assert "tenant_id=DEMO_TENANT" in backup_report
+
+    backup_file = [line for line in backup_report.splitlines() if line.startswith("backup_file=")][0].split("=", 1)[1]
+    degraded_dir = tmp_path / "instance" / "degraded_backups" / "DEMO_TENANT"
+    assert (degraded_dir / f"{backup_file}.metadata.json").exists()
+    assert (degraded_dir / f"{backup_file}.snapshot.json").exists()
+
+    restore_env = os.environ.copy()
+    restore_env["TENANT_ID"] = "DEMO_TENANT"
+    restore_env["LOCAL_FALLBACK_DIR"] = str(tmp_path / "instance" / "degraded_backups")
+    restore_env["REPORT_FILE"] = str(tmp_path / "instance" / "restore_report.txt")
+    subprocess.run(["bash", str(Path.cwd() / "scripts/ops/restore_from_nas.sh")], cwd=tmp_path, env=restore_env, check=True)
+    restore_report = (tmp_path / "instance" / "restore_report.txt").read_text(encoding="utf-8")
+    assert "integrity_check=ok" in restore_report
+    assert "restore_validation=ok" in restore_report
