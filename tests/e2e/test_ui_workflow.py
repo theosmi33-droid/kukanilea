@@ -129,7 +129,11 @@ def test_full_workflow(page: Page, server: str):
     test_file.write_text("KDNR: 12345\nRechnung vom 01.01.2026\nBetrag: 100 EUR")
 
     page.set_input_files('input[name="file"]', str(test_file))
-    page.click('#btn-upload')
+    # Shell/UI moved from legacy #btn-upload to #startAnalysis.
+    upload_cta = page.locator("#startAnalysis")
+    if upload_cta.count() == 0:
+        upload_cta = page.locator("#btn-upload")
+    upload_cta.click()
 
     # 3. Wait for OCR and Transition (or expected ClamAV block in CI/dev)
     upload_blocked = False
@@ -140,7 +144,9 @@ def test_full_workflow(page: Page, server: str):
 
     if upload_blocked:
         expect(page).not_to_have_url(re_compile(r".*/review/.*/kdnr"))
-        expect(page.locator('input[name="file"]')).to_be_visible()
+        # In current shell variants the file input can be visually hidden while
+        # the user remains on upload (staging/progress/error state).
+        expect(page.locator('input[name="file"]')).to_have_count(1)
     else:
         expect(page.get_by_text("Metadaten", exact=True)).to_be_visible()
 
