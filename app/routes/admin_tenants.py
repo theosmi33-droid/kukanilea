@@ -35,7 +35,7 @@ from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
 from app.license import load_license
-from app.security.gates import confirm_gate, scan_payload_for_injection
+from app.security.gates import CRITICAL_CONFIRM_GATE_BY_ROUTE, confirm_gate, scan_payload_for_injection
 
 bp = Blueprint("admin_tenants", __name__, url_prefix="/admin")
 
@@ -108,6 +108,18 @@ def _reject_injection(fields: tuple[str, ...]):
 def _require_confirm():
     if not _confirm_gate(request.form.get("confirm")):
         return jsonify(ok=False, error="confirm_required"), 400
+    return None
+
+
+def _enforce_critical_gate(route: str):
+    policy = CRITICAL_CONFIRM_GATE_BY_ROUTE.get(route)
+    if not policy:
+        return None
+    blocked = _reject_injection(policy.fields)
+    if blocked:
+        return blocked
+    if policy.required:
+        return _require_confirm()
     return None
 
 
@@ -303,11 +315,7 @@ def settings_console():
 @bp.route("/settings/profile", methods=["POST"])
 @login_required
 def update_profile_preferences():
-    blocked = _reject_injection(("language", "timezone", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/profile")
     if confirm_error:
         return confirm_error
 
@@ -320,11 +328,7 @@ def update_profile_preferences():
 @login_required
 @require_role("ADMIN")
 def create_user():
-    blocked = _reject_injection(("username", "password", "tenant_id", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/users/create")
     if confirm_error:
         return confirm_error
 
@@ -357,11 +361,7 @@ def create_user():
 @login_required
 @require_role("ADMIN")
 def update_user_role():
-    blocked = _reject_injection(("username", "tenant_id", "role", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/users/update")
     if confirm_error:
         return confirm_error
 
@@ -390,11 +390,7 @@ def update_user_role():
 @login_required
 @require_role("ADMIN")
 def disable_user():
-    blocked = _reject_injection(("username", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/users/disable")
     if confirm_error:
         return confirm_error
 
@@ -427,11 +423,7 @@ def disable_user():
 @login_required
 @require_role("ADMIN")
 def delete_user():
-    blocked = _reject_injection(("username", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/users/delete")
     if confirm_error:
         return confirm_error
 
@@ -470,11 +462,7 @@ def delete_user():
 @login_required
 @require_role("ADMIN")
 def add_tenant():
-    blocked = _reject_injection(("name", "db_path", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/tenants/add")
     if confirm_error:
         return confirm_error
 
@@ -532,11 +520,7 @@ def switch_context():
 @login_required
 @require_role("ADMIN")
 def upload_license():
-    blocked = _reject_injection(("confirm", "license_json"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/license/upload")
     if confirm_error:
         return confirm_error
 
@@ -588,11 +572,7 @@ def upload_license():
 @login_required
 @require_role("ADMIN")
 def save_system_settings():
-    blocked = _reject_injection(("language", "timezone", "backup_interval", "log_level", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/system")
     if confirm_error:
         return confirm_error
 
@@ -622,11 +602,7 @@ def save_system_settings():
 @login_required
 @require_role("ADMIN")
 def save_branding():
-    blocked = _reject_injection(("app_name", "primary_color", "footer_text", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/branding")
     if confirm_error:
         return confirm_error
 
@@ -659,11 +635,7 @@ def save_branding():
 @login_required
 @require_role("ADMIN")
 def backup_run():
-    blocked = _reject_injection(("confirm",))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/backup/run")
     if confirm_error:
         return confirm_error
 
@@ -682,11 +654,7 @@ def backup_run():
 @login_required
 @require_role("ADMIN")
 def backup_restore():
-    blocked = _reject_injection(("backup_name", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/backup/restore")
     if confirm_error:
         return confirm_error
 
@@ -707,11 +675,7 @@ def backup_restore():
 @login_required
 @require_role("ADMIN")
 def mesh_connect():
-    blocked = _reject_injection(("peer_ip", "peer_port", "confirm"))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/mesh/connect")
     if confirm_error:
         return confirm_error
 
@@ -749,11 +713,7 @@ def mesh_connect():
 @login_required
 @require_role("ADMIN")
 def mesh_rotate_key():
-    blocked = _reject_injection(("confirm",))
-    if blocked:
-        return blocked
-
-    confirm_error = _require_confirm()
+    confirm_error = _enforce_critical_gate("/admin/settings/mesh/rotate-key")
     if confirm_error:
         return confirm_error
 
