@@ -1,13 +1,13 @@
 # Developer Bootstrap Flow (<10 Minuten)
 
-Ziel: `clone -> bootstrap -> smoke tests` mit einem Time-to-green unter 10 Minuten.
+Ziel: `clone -> bootstrap -> healthcheck -> targeted tests` mit einem Time-to-green unter 10 Minuten.
 
 ## One-Command Setup
 
 ```bash
 git clone <repo-url>
 cd kukanilea
-bash scripts/dev_bootstrap.sh
+bash scripts/dev_bootstrap.sh --local
 ```
 
 Der One-Command-Run erledigt automatisch:
@@ -15,7 +15,7 @@ Der One-Command-Run erledigt automatisch:
 2. `.venv` erstellen (falls nicht vorhanden)
 3. Pip/Dev-Abhängigkeiten installieren (`requirements.txt` + `requirements-dev.txt`)
 4. Playwright Browser installieren (`chromium`, lokal via `python -m playwright install`)
-5. Doctor-Checks (`pytest`, `flask`, `ruff`, `playwright`)
+5. Doctor-Checks (`pytest`, `flask`, `ruff`, `playwright`) mit deterministischem Modus (`--local`/`--ci`)
 6. Seed + Smoke (`scripts/seed_dev_users.py`, `scripts/seed_demo_data.py`, `python -m app.smoke`)
 7. `scripts/ops/healthcheck.sh`
 8. `scripts/ops/launch_evidence_gate.sh --fast`
@@ -41,7 +41,7 @@ bash scripts/dev_bootstrap.sh --skip-seed
 bash scripts/dev_bootstrap.sh --skip-healthcheck --skip-launch-evidence
 
 # Tool-Diagnose standalone
-scripts/dev/doctor.sh --strict          # lokal: Browser-Binaries nur Warnung
+scripts/dev/doctor.sh --strict --local  # lokal: Browser-Binaries nur Warnung
 scripts/dev/doctor.sh --strict --ci     # CI: Browser-Binaries Pflicht
 ```
 
@@ -76,8 +76,8 @@ bash scripts/dev_run.sh --skip-seed
 
 ```bash
 bash -n scripts/dev_bootstrap.sh scripts/dev_run.sh scripts/ops/healthcheck.sh scripts/ops/launch_evidence_gate.sh
-./scripts/ops/healthcheck.sh
-scripts/ops/launch_evidence_gate.sh
+./scripts/ops/healthcheck.sh --strict-doctor
+pytest -q tests/ops/test_doctor_playwright_checks.py tests/ops/test_script_drift_guards.py
 ```
 
 ## Known issues / Fallback

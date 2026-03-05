@@ -31,14 +31,14 @@ jobs:
           fetch-depth: 0
 
       - name: PR quality guard
-        run: |
-          bash scripts/dev/pr_quality_guard.sh --ci
+        run: bash scripts/dev/pr_quality_guard.sh --ci
 
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [pr-quality-guard]
     env:
+      CI: "1"
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
     steps:
@@ -53,16 +53,27 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Validate VS Code config policy
-        run: |
-          python scripts/dev/enforce_vscode_configs.py --check
+        run: python scripts/dev/enforce_vscode_configs.py --check
 
-      - name: Run tests (without e2e)
+      - name: Bootstrap smoke (deterministic CI mode)
         run: |
-          pytest -q tests --ignore=tests/e2e
+          set -euo pipefail
+          bash scripts/dev_bootstrap.sh --ci --skip-seed --skip-healthcheck --skip-launch-evidence
+
+      - name: Healthcheck (CI deterministic, concise logs)
+        run: |
+          set -euo pipefail
+          ./scripts/ops/healthcheck.sh --ci --skip-pytest --strict-doctor
+
+      - name: Targeted CI reliability tests
+        run: |
+          set -euo pipefail
+          pytest -q tests/ops/test_doctor_playwright_checks.py tests/ops/test_script_drift_guards.py
 
   perf-kpi-gate:
     runs-on: ubuntu-latest

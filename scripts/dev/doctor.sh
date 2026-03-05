@@ -5,13 +5,14 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PYTHON="${PYTHON:-$($ROOT/scripts/dev/resolve_python.sh)}"
 STRICT=0
 CI_MODE="${CI:-0}"
+MODE_SOURCE="env:CI"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --strict) STRICT=1 ;;
     -h|--help)
       cat <<'USAGE'
-Usage: scripts/dev/doctor.sh [--strict] [--ci]
+Usage: scripts/dev/doctor.sh [--strict] [--ci|--local]
 
 Checks local dev tooling for reproducible setup:
 - python/pip
@@ -22,10 +23,18 @@ Checks local dev tooling for reproducible setup:
 
 --strict exits non-zero if any required check is missing.
 --ci enforces CI requirements (Playwright browser binary availability).
+--local forces local-mode semantics even if CI=true is present in env.
 USAGE
       exit 0
       ;;
-    --ci) CI_MODE=1 ;;
+    --ci)
+      CI_MODE=1
+      MODE_SOURCE="flag:--ci"
+      ;;
+    --local)
+      CI_MODE=0
+      MODE_SOURCE="flag:--local"
+      ;;
     *)
       echo "[doctor] Unknown argument: $1" >&2
       exit 2
@@ -48,10 +57,10 @@ is_truthy() {
 
 if is_truthy "$CI_MODE"; then
   CI_MODE=1
-  ok "CI mode enabled (Playwright browser binaries required)"
+  ok "CI mode enabled (Playwright browser binaries required; source=${MODE_SOURCE})"
 else
   CI_MODE=0
-  ok "Local mode enabled (Playwright browser binaries optional)"
+  ok "Local mode enabled (Playwright browser binaries optional; source=${MODE_SOURCE})"
 fi
 
 if [[ ! -x "$PYTHON" ]]; then

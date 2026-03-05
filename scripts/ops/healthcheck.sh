@@ -11,7 +11,7 @@ SKIP_PYTEST=0
 AUTH_DB="${KUKANILEA_AUTH_DB:-instance/auth.sqlite3}"
 HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
 PYTHON="${PYTHON:-}"
-DOCTOR_STRICT=0
+DOCTOR_STRICT=1
 SERVER_PID=""
 
 resolve_realpath() {
@@ -44,8 +44,14 @@ require_cmd() {
 run_gate() {
   local gate="$1"
   shift
-  if ! "$@"; then
-    fail "$EXIT_GATE" "[healthcheck] Gate failed: ${gate}"
+  local output
+  if ! output="$("$@" 2>&1)"; then
+    log "[healthcheck] Gate failed: ${gate}"
+    if [[ -n "$output" ]]; then
+      log "[healthcheck] ${gate} output (last 40 lines):"
+      printf '%s\n' "$output" | tail -n 40 | tee -a "$HEALTH_LOG"
+    fi
+    exit "$EXIT_GATE"
   fi
 }
 
@@ -98,7 +104,7 @@ Usage: ./scripts/ops/healthcheck.sh [--ci] [--skip-pytest] [--no-doctor] [--stri
 Options:
   --ci           Run in CI mode (non-interactive logging/behavior)
   --skip-pytest  Skip pytest execution (local fallback for environment drift)
-  --no-doctor    Skip scripts/dev/doctor.sh --strict
+  --no-doctor    Skip scripts/dev/doctor.sh --strict (--ci in CI mode)
   --strict-doctor Enforce scripts/dev/doctor.sh --strict
 USAGE
         exit 0

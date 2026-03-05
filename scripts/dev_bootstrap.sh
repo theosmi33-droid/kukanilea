@@ -9,11 +9,14 @@ RUN_HEALTHCHECK=1
 RUN_LAUNCH_EVIDENCE=1
 SEED_DATA=1
 BOOTSTRAP_MARKER=".venv/.bootstrap_complete"
+DOCTOR_MODE="auto"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-healthcheck) RUN_HEALTHCHECK=0 ;;
     --skip-launch-evidence) RUN_LAUNCH_EVIDENCE=0 ;;
+    --ci) DOCTOR_MODE="ci" ;;
+    --local) DOCTOR_MODE="local" ;;
     --skip-seed) SEED_DATA=0 ;;
     -h|--help)
       cat <<'USAGE'
@@ -25,6 +28,8 @@ Options:
   --skip-seed             Skip seed scripts
   --skip-healthcheck      Skip scripts/ops/healthcheck.sh
   --skip-launch-evidence  Skip scripts/ops/launch_evidence_gate.sh --fast
+  --ci                    Force CI doctor semantics
+  --local                 Force local doctor semantics
 USAGE
       exit 0
       ;;
@@ -111,15 +116,33 @@ else
   PLAYWRIGHT_ARGS=(install --with-deps chromium)
 fi
 
+if [[ "$DOCTOR_MODE" == "auto" ]]; then
+  if [[ -n "${CI:-}" ]]; then
+    DOCTOR_MODE="ci"
+  else
+    DOCTOR_MODE="local"
+  fi
+fi
+
 if "$PYTHON" -m playwright --version >/dev/null 2>&1; then
   echo "[bootstrap] Installing Playwright browsers (chromium): ${PLAYWRIGHT_ARGS[*]}"
-  "$PYTHON" -m playwright "${PLAYWRIGHT_ARGS[@]}"
+  if ! "$PYTHON" -m playwright "${PLAYWRIGHT_ARGS[@]}"; then
+    if [[ "$DOCTOR_MODE" == "ci" ]]; then
+      echo "[bootstrap] ERROR: Playwright browser install failed in CI mode" >&2
+      exit 4
+    fi
+    echo "[bootstrap] WARNING: Playwright browser install failed locally; continuing"
+  fi
 else
   echo "[bootstrap] WARNING: python playwright module is unavailable in venv"
 fi
 
-echo "[bootstrap] Running doctor checks"
-PYTHON="$PYTHON" scripts/dev/doctor.sh --strict
+echo "[bootstrap] Running doctor checks (mode=$DOCTOR_MODE)"
+if [[ "$DOCTOR_MODE" == "ci" ]]; then
+  PYTHON="$PYTHON" scripts/dev/doctor.sh --strict --ci
+else
+  PYTHON="$PYTHON" scripts/dev/doctor.sh --strict --local
+fi
 
 if [[ "$SEED_DATA" -eq 1 ]]; then
   "$PYTHON" scripts/seed_dev_users.py

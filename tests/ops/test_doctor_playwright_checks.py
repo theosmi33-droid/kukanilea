@@ -199,6 +199,32 @@ def test_doctor_node_cli_optional_when_present(tmp_path: Path):
     assert "Node Playwright CLI available" in result.stdout
 
 
+
+
+def test_doctor_local_flag_overrides_ci_env(tmp_path: Path):
+    fake_python = _write_fake_python(
+        tmp_path,
+        module_playwright=True,
+        playwright_module_cli=True,
+        browser_present=False,
+    )
+
+    env = os.environ.copy()
+    env["PYTHON"] = str(fake_python)
+    env["CI"] = "1"
+
+    result = subprocess.run(
+        ["bash", str(DOCTOR), "--strict", "--local"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "Local mode enabled" in result.stdout
+    assert "source=flag:--local" in result.stdout
+
 def test_doctor_non_strict_returns_zero_with_warning_summary(tmp_path: Path):
     fake_python = _write_fake_python(
         tmp_path,
