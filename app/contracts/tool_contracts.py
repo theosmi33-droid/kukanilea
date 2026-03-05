@@ -106,6 +106,11 @@ def _contract_errors(payload: dict) -> list[str]:
 
 
 def _normalize_contract_payload(payload: dict, tool: str) -> tuple[dict, list[str]]:
+    tenant = str(
+        payload.get("tenant")
+        or (payload.get("details") or {}).get("tenant")
+        or "default"
+    )
     safe_payload = {
         "tool": str(payload.get("tool") or tool),
         "status": payload.get("status") if payload.get("status") in CONTRACT_STATUSES else "error",
@@ -113,12 +118,14 @@ def _normalize_contract_payload(payload: dict, tool: str) -> tuple[dict, list[st
         "metrics": _as_dict(payload.get("metrics"), {}),
         "details": _as_dict(payload.get("details"), {}),
     }
+    safe_payload["details"].setdefault("tenant", tenant)
     normalized = _contract_payload(
         tool=safe_payload["tool"],
         status=safe_payload["status"],
         metrics=safe_payload["metrics"],
         details=safe_payload["details"],
         reason=str(payload.get("degraded_reason") or ""),
+        tenant=tenant,
     )
     errors = _contract_errors(payload)
     if errors:

@@ -47,8 +47,9 @@ class MemoryManager:
 
         embedding = generate_embedding(content)
         if not embedding:
-            logger.error("Could not store memory: Embedding generation failed.")
-            return False
+            # Degrade gracefully in local/offline environments without embedding backend.
+            logger.warning("Embedding unavailable, storing memory with fallback vector.")
+            embedding = [0.0] * 8
 
         # Convert float list to binary BLOB (float32)
         blob = struct.pack(f"{len(embedding)}f", *embedding)
@@ -83,8 +84,7 @@ class MemoryManager:
             return []
 
         query_vec = generate_embedding(query)
-        if not query_vec:
-            return []
+        query_text = str(query or "").strip().lower()
 
         con = self._get_con()
         try:
@@ -97,11 +97,16 @@ class MemoryManager:
             results: List[Tuple[float, Dict[str, Any]]] = []
             for row in rows:
                 blob = row["embedding"]
-                # Unpack binary BLOB back to float list
-                vec_len = len(blob) // 4
-                db_vec = struct.unpack(f"{vec_len}f", blob)
+                # Unpack binary BLOB back to float list.
+                vec_len = len(blob) // 4 if blob else 0
+                db_vec = struct.unpack(f"{vec_len}f", blob) if vec_len > 0 else ()
 
-                score = self._cosine_similarity(query_vec, db_vec)
+                if query_vec and db_vec:
+                    score = self._cosine_similarity(query_vec, db_vec)
+                else:
+                    # Fallback lexical scoring when embeddings are unavailable.
+                    content_text = str(row["content"] or "").lower()
+                    score = 1.0 if query_text and query_text in content_text else 0.01
                 results.append((score, {
                     "content": row["content"],
                     "role": row["agent_role"],
