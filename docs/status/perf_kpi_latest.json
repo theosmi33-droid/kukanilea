@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-03-05T09:14:32.194393+00:00",
+  "samples": 3,
+  "metrics": {
+    "app_start_time_ms": {
+      "p50_ms": 50.62,
+      "p95_ms": 830.96,
+      "max_ms": 830.96,
+      "avg_ms": 309.63
+    },
+    "dashboard_ttfb_ms": {
+      "p50_ms": 36.58,
+      "p95_ms": 41.64,
+      "max_ms": 41.64,
+      "avg_ms": 37.9
+    },
+    "api_summary_latency_ms": {
+      "p50_ms": 2.21,
+      "p95_ms": 3.91,
+      "max_ms": 3.91,
+      "avg_ms": 2.53,
+      "by_tool": {
+        "aufgaben": {
+          "p50_ms": 3.74,
+          "p95_ms": 3.91,
+          "max_ms": 3.91,
+          "avg_ms": 3.66
+        },
+        "projekte": {
+          "p50_ms": 1.97,
+          "p95_ms": 2.21,
+          "max_ms": 2.21,
+          "avg_ms": 1.99
+        },
+        "kalender": {
+          "p50_ms": 1.88,
+          "p95_ms": 2.27,
+          "max_ms": 2.27,
+          "avg_ms": 1.95
+        }
+      }
+    }
+  },
+  "gate": {
+    "app_start_time_ms": {
+      "status": "pass",
+      "threshold": {
+        "warn_ms": 1500.0,
+        "fail_ms": 2500.0
+      },
+      "p95_ms": 830.96
+    },
+    "dashboard_ttfb_ms": {
+      "status": "pass",
+      "threshold": {
+        "warn_ms": 250.0,
+        "fail_ms": 450.0
+      },
+      "p95_ms": 41.64
+    },
+    "api_summary_latency_ms": {
+      "status": "pass",
+      "threshold": {
+        "warn_ms": 180.0,
+        "fail_ms": 320.0
+      },
+      "p95_ms": 3.91
+    },
+    "overall_status": "pass"
+  }
+}
