@@ -171,7 +171,10 @@ if [[ "$TARGET_MODE" != "nas" ]]; then
   cp "$UPLOAD_FILE" "$LOCAL_FALLBACK_DIR/$TENANT_ID/" || die "$EXIT_RUNTIME" "failed to copy backup to local fallback"
   cp "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256" "$LOCAL_FALLBACK_DIR/$TENANT_ID/" || die "$EXIT_RUNTIME" "failed to copy checksum to local fallback"
   cp "$METADATA_FILE" "$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE").metadata.json" || die "$EXIT_RUNTIME" "failed to copy metadata to local fallback"
-  [[ ! -f "$SNAPSHOT_FILE" ]] || cp "$SNAPSHOT_FILE" "$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE").snapshot.json" || die "$EXIT_RUNTIME" "failed to copy snapshot to local fallback"
+  if [[ -f "$SNAPSHOT_FILE" ]]; then
+    cp "$SNAPSHOT_FILE" "$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE").snapshot.json" \
+      || die "$EXIT_RUNTIME" "failed to copy snapshot to local fallback"
+  fi
   TARGET_PATH="$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE")"
   CHECKSUM_PATH="$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE").sha256"
 fi

@@ -99,7 +99,8 @@ def test_backup_writes_verifiable_artifacts_and_restore_compares(tmp_path: Path)
     assert "backup_size_bytes=" in backup_report
     assert "tenant_id=DEMO_TENANT" in backup_report
 
-    backup_file = [line for line in backup_report.splitlines() if line.startswith("backup_file=")][0].split("=", 1)[1]
+    report_map = dict(line.split("=", 1) for line in backup_report.splitlines() if "=" in line)
+    backup_file = report_map["backup_file"]
     degraded_dir = tmp_path / "instance" / "degraded_backups" / "DEMO_TENANT"
     assert (degraded_dir / f"{backup_file}.metadata.json").exists()
     assert (degraded_dir / f"{backup_file}.snapshot.json").exists()

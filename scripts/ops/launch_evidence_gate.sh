@@ -150,6 +150,13 @@ fi
 if [[ -z "$PYTHON" ]]; then
   PYTHON="$($ROOT/scripts/dev/resolve_python.sh)"
 fi
+if [[ ! -x "$PYTHON" ]]; then
+  if command -v "$PYTHON" >/dev/null 2>&1; then
+    PYTHON="$(command -v "$PYTHON")"
+  else
+    die "$EXIT_DEPENDENCY" "python interpreter is not executable/resolvable: $PYTHON"
+  fi
+fi
 
 for dep in rg git bash; do
   command -v "$dep" >/dev/null 2>&1 || die "$EXIT_DEPENDENCY" "required dependency missing: $dep"
@@ -236,8 +243,8 @@ rm -f "$_tmp"
 # Gate 4b: License state evidence
 _tmp="$(mktemp)"
 append "## License Evidence Matrix"
-append "`$PYTHON -m pytest -q tests/license/test_license_state_machine.py`"
-if capture_cmd "$PYTHON -m pytest -q tests/license/test_license_state_machine.py" "$_tmp"; then
+append "\`'$PYTHON' -m pytest -q tests/license/test_license_state_machine.py\`"
+if capture_cmd "'$PYTHON' -m pytest -q tests/license/test_license_state_machine.py" "$_tmp"; then
   render_output_block "$_tmp"
   if capture_cmd "rg -n 'grace|blocked|active|license_blocked_smb_unreachable' tests/license/test_license_state_machine.py" "$_tmp.license"; then
     append "`rg -n 'grace|blocked|active|license_blocked_smb_unreachable' tests/license/test_license_state_machine.py`"
