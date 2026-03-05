@@ -1,17 +1,22 @@
 /**
  * app/static/css/motion.css
  * Interaction & Motion System for KUKANILEA.
- * 
+ *
  * Rules:
  * - Motion is subtle and functional.
+ * - Motion supports orientation, transition clarity, and feedback.
+ * - Motion never blocks task completion.
  * - Respects prefers-reduced-motion.
  */
 
 :root {
     --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
     --ease-in-out-sine: cubic-bezier(0.445, 0.05, 0.55, 0.95);
+    --ease-feedback: cubic-bezier(0.2, 0.7, 0.15, 1);
     --reveal-duration: 0.6s;
     --reveal-delay: 0.1s;
+    --feedback-duration: 0.18s;
+    --settle-duration: 0.28s;
 }
 
 /* Page Load & Reveal */
@@ -31,33 +36,83 @@
 }
 
 /* Content Reveal (for dynamic updates) */
-.reveal-item {
+.reveal-item,
+.card,
+.table tbody tr,
+.section,
+article {
     opacity: 0;
-    transform: translateY(12px);
-    transition: opacity var(--reveal-duration) var(--ease-out-expo),
-                transform var(--reveal-duration) var(--ease-out-expo);
+    transform: translateY(8px);
+    transition: opacity var(--settle-duration) var(--ease-out-expo),
+                transform var(--settle-duration) var(--ease-out-expo);
 }
 
-.reveal-item.revealed {
+.reveal-item.revealed,
+.card.revealed,
+.table tbody tr.revealed,
+.section.revealed,
+article.revealed {
     opacity: 1;
     transform: translateY(0);
 }
 
 /* Subtle Interactive Motion */
-.btn, .nav-link, .card {
-    transition: transform 0.2s var(--ease-out-expo), 
-                box-shadow 0.2s var(--ease-out-expo),
-                background-color 0.2s var(--ease-out-expo),
-                border-color 0.2s var(--ease-out-expo);
+.btn,
+.button,
+.nav-link,
+.mobile-nav-item,
+.card,
+.input,
+select,
+textarea,
+a,
+[role="button"] {
+    transition: transform var(--feedback-duration) var(--ease-feedback),
+                box-shadow var(--feedback-duration) var(--ease-feedback),
+                background-color var(--feedback-duration) var(--ease-feedback),
+                border-color var(--feedback-duration) var(--ease-feedback),
+                color var(--feedback-duration) var(--ease-feedback),
+                opacity var(--feedback-duration) var(--ease-feedback);
+    will-change: transform;
 }
 
-.btn:active {
-    transform: scale(0.98);
+.btn:hover,
+.button:hover,
+[role="button"]:hover {
+    transform: translateY(-1px);
+}
+
+.btn:active,
+.button:active,
+[role="button"]:active {
+    transform: translateY(0) scale(0.985);
+}
+
+.input:focus,
+select:focus,
+textarea:focus {
+    transform: translateY(-1px);
 }
 
 .card:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
+}
+
+/* HTMX + async feedback */
+.htmx-request {
+    opacity: 0.8;
+    transition: opacity var(--feedback-duration) ease;
+}
+
+[aria-busy="true"],
+.is-loading {
+    animation: subtlePulse 1.2s var(--ease-in-out-sine) infinite;
+}
+
+@keyframes subtlePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.72; }
 }
 
 /* Toast Motion */
@@ -66,17 +121,17 @@
 }
 
 .toast {
-    animation: toastIn 0.4s var(--ease-out-expo) both;
+    animation: toastIn 0.32s var(--ease-out-expo) both;
 }
 
 .toast.hiding {
-    animation: toastOut 0.3s var(--ease-in-out-sine) both;
+    animation: toastOut 0.24s var(--ease-in-out-sine) both;
 }
 
 @keyframes toastIn {
     from {
         opacity: 0;
-        transform: translateX(40px) scale(0.9);
+        transform: translateX(20px) scale(0.97);
     }
     to {
         opacity: 1;
@@ -91,18 +146,18 @@
     }
     to {
         opacity: 0;
-        transform: translateX(20px) scale(0.95);
+        transform: translateX(10px) scale(0.98);
     }
 }
 
 /* Confirm Dialog Motion */
 .confirm-backdrop {
-    animation: fadeIn 0.2s var(--ease-in-out-sine) both;
+    animation: fadeIn 0.18s var(--ease-in-out-sine) both;
     backdrop-filter: blur(4px);
 }
 
 .confirm-dialog {
-    animation: dialogIn 0.3s var(--ease-out-expo) both;
+    animation: dialogIn 0.24s var(--ease-out-expo) both;
 }
 
 @keyframes fadeIn {
@@ -113,7 +168,7 @@
 @keyframes dialogIn {
     from {
         opacity: 0;
-        transform: scale(0.95) translateY(10px);
+        transform: scale(0.98) translateY(6px);
     }
     to {
         opacity: 1;
@@ -121,12 +176,49 @@
     }
 }
 
+/* Chat widget transitions (inline styles in layout; transitions applied by id) */
+#ki-chat-window {
+    transform-origin: bottom right;
+    transition: opacity var(--settle-duration) var(--ease-feedback),
+                transform var(--settle-duration) var(--ease-feedback);
+}
+
+#ki-chat-widget > button {
+    transition: transform var(--feedback-duration) var(--ease-feedback),
+                box-shadow var(--feedback-duration) var(--ease-feedback);
+}
+
+#ki-chat-widget > button:hover {
+    transform: translateY(-2px) scale(1.02);
+}
+
 /* Reduced Motion Support */
 @media (prefers-reduced-motion: reduce) {
+    html:focus-within {
+        scroll-behavior: auto;
+    }
+
     *, ::before, ::after {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
         scroll-behavior: auto !important;
+    }
+
+    [data-page-ready="1"],
+    .reveal-item,
+    .card,
+    .table tbody tr,
+    .section,
+    article,
+    .toast,
+    .confirm-backdrop,
+    .confirm-dialog,
+    #ki-chat-window,
+    #ki-chat-widget > button {
+        animation: none !important;
+        transform: none !important;
+        opacity: 1 !important;
     }
 }
