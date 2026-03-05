@@ -34,6 +34,22 @@ test.describe('Sovereign navigation', () => {
     }
   });
 
+  test('visual smoke snapshots for primary routes', async ({ page }) => {
+    await page.goto('/login');
+    await page.fill('input[name="username"]', 'dev');
+    await page.fill('input[name="password"]', 'dev');
+    await page.click('button[type="submit"]');
+
+    for (const route of routes.slice(0, 10)) {
+      await page.goto(route);
+      await expect(page.locator('#main-content')).toBeVisible();
+      await expect(page.locator('#main-content')).toHaveScreenshot(`nav-smoke-${route.replace('/', '')}.png`, {
+        animations: 'disabled',
+        maxDiffPixelRatio: 0.05
+      });
+    }
+  });
+
   for (const route of routes) {
     test(`route responds and renders ${route}`, async ({ page }) => {
       const response = await page.goto(route);

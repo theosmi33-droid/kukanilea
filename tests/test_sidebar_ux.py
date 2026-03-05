@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+
 from tests.time_utils import utc_now_iso
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -137,3 +138,31 @@ def test_page_ready_marker_present_on_main_content(tmp_path, monkeypatch):
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert 'id="main-content" hx-history-elt data-page-ready="1"' in html
+
+
+def test_skip_link_and_aria_labels_are_present(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("admin", hash_password("admin"), now)
+        auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+
+    resp = client.get("/dashboard", follow_redirects=True)
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert 'class="skip-link" href="#main-content"' in html
+    assert 'data-nav-mode="full-page"' in html
+    assert 'aria-label="Sovereign-11 Hauptseiten"' in html
+    assert 'aria-label="Assistant öffnen"' in html
