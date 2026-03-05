@@ -165,7 +165,12 @@ elif ! "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then
   fi
   log "[healthcheck] WARNING: pytest not available for interpreter: $PYTHON (continuing outside CI mode)"
 else
-  run_gate "pytest" bash -lc "cd '$ROOT' && '$PYTHON' -m pytest -q"
+  PYTEST_CMD=("$PYTHON" -m pytest -q)
+  if ! "$PYTHON" -c 'import playwright' >/dev/null 2>&1; then
+    log "[healthcheck] Optional dependency 'playwright' not available (excluding tests/e2e)"
+    PYTEST_CMD+=(--ignore=tests/e2e)
+  fi
+  run_gate "pytest" bash -lc "cd '$ROOT' && ${PYTEST_CMD[*]@Q}"
 fi
 
 HAS_FLASK=0
@@ -180,7 +185,7 @@ fi
 if [[ "$HAS_FLASK" -eq 1 ]]; then
   if ! curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051/" | grep -Eq "^(200|302)$"; then
     log "[healthcheck] No server on :5051 detected, starting temporary local server..."
-    (cd "$ROOT" && "$PYTHON" kukanilea_app.py --host 127.0.0.1 --port 5051) >/tmp/kukanilea_healthcheck_server.log 2>&1 &
+    (cd "$ROOT" && KUK_SAFE_MODE=1 "$PYTHON" kukanilea_app.py --host 127.0.0.1 --port 5051) >/tmp/kukanilea_healthcheck_server.log 2>&1 &
     SERVER_PID=$!
     if ! wait_for_http "http://127.0.0.1:5051/" 30 1; then
       log "[healthcheck] Server did not become ready on :5051 in time"
