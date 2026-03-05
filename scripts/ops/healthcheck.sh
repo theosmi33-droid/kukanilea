@@ -136,7 +136,11 @@ if [[ -x "$ROOT/.venv/bin/python" ]]; then
 fi
 
 if [[ "$DOCTOR_STRICT" -eq 1 ]]; then
-  run_gate "doctor" bash -lc "cd '$ROOT' && PYTHON='$PYTHON' scripts/dev/doctor.sh --strict"
+  if [[ "$CI_MODE" -eq 1 ]]; then
+    run_gate "doctor" bash -lc "cd '$ROOT' && PYTHON='$PYTHON' scripts/dev/doctor.sh --strict --ci"
+  else
+    run_gate "doctor" bash -lc "cd '$ROOT' && PYTHON='$PYTHON' scripts/dev/doctor.sh --strict"
+  fi
 fi
 
 log "[healthcheck] Starting at $(date -Iseconds)"

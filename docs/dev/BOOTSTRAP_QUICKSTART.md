@@ -41,8 +41,20 @@ bash scripts/dev_bootstrap.sh --skip-seed
 bash scripts/dev_bootstrap.sh --skip-healthcheck --skip-launch-evidence
 
 # Tool-Diagnose standalone
-scripts/dev/doctor.sh --strict
+scripts/dev/doctor.sh --strict          # lokal: Browser-Binaries nur Warnung
+scripts/dev/doctor.sh --strict --ci     # CI: Browser-Binaries Pflicht
 ```
+
+
+## Doctor Playwright Semantik
+
+`doctor.sh` trennt die Playwright-Prüfungen jetzt explizit:
+- Python-Modul `playwright` vorhanden (Pflicht)
+- Python-CLI via `python -m playwright` nutzbar (Pflicht)
+- Node-CLI `playwright` im `PATH` (optional, nur Hinweis)
+- Chromium-Browser-Binary installiert (`--ci` Pflicht, lokal nur Warnung)
+
+Recovery-Hinweise stehen direkt in den FAIL/WARN-Meldungen.
 
 ## App starten
 
