@@ -46,7 +46,13 @@ def test_dashboard_matrix_returns_all_tools(tmp_path, monkeypatch):
     body = response.get_json()
     assert body["ok"] is True
     assert body["total"] == 11
+    assert body["read_only_contract"] is True
     assert len(body["tools"]) == 11
+
+    for row in body["tools"]:
+        assert isinstance(row.get("metrics"), dict)
+        assert isinstance(row.get("details"), dict)
+        assert isinstance(row["details"].get("contract"), dict)
 
 
 def test_dashboard_matrix_marks_degraded_tool_instead_of_hard_fail(tmp_path, monkeypatch):
@@ -69,3 +75,4 @@ def test_dashboard_matrix_marks_degraded_tool_instead_of_hard_fail(tmp_path, mon
     upload = next(row for row in body["tools"] if row["tool"] == "upload")
     assert upload["status"] == "degraded"
     assert upload["degraded_reason"] == "simulated_gateway_unavailable"
+    assert upload["details"]["contract"]["read_only"] is False
