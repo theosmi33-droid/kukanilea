@@ -1,17 +1,27 @@
-/* KUKANILEA Enterprise Design System - System Tokens */
+/* KUKANILEA Enterprise Design System - White Mode Foundation */
 :root {
-  /* Colors */
-  --color-bg-root: #0f1115;
-  --color-bg-panel: rgba(30, 41, 59, 0.5);
-  --color-bg-panel-hover: rgba(30, 41, 59, 0.8);
-  --color-border: rgba(255, 255, 255, 0.1);
-  --color-text-main: #f8fafc;
-  --color-text-muted: #94a3b8;
+  color-scheme: light;
+
+  /* Semantic Color Tokens (White Mode only) */
+  --color-bg-root: #f8fafc;
+  --color-bg-panel: #ffffff;
+  --color-bg-panel-hover: #f1f5f9;
+  --color-border: #dbe3ee;
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
-  --color-danger: #ef4444;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
+  --color-danger: #dc2626;
+  --color-success: #059669;
+  --color-warning: #d97706;
+
+  /* Alias bridge for regression-safe compatibility */
+  --bg-primary: var(--color-bg-panel);
+  --bg-secondary: var(--color-bg-root);
+  --bg-tertiary: var(--color-bg-panel-hover);
+  --text-primary: var(--color-text-main);
+  --text-secondary: var(--color-text-muted);
+  --border-color: var(--color-border);
 
   /* Spacing Grid (8px baseline) */
   --spacing-1: 8px;
@@ -66,7 +76,6 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Animations */
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .7; transform: scale(0.95); }
@@ -79,15 +88,24 @@ a:hover {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-/* Task 153: Skeleton Screens */
-.skeleton {
+
+.skeleton,
+.skeleton-tag {
   background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s infinite;
   border-radius: var(--radius-sm);
   display: inline-block;
+}
+
+.skeleton {
   height: 1em;
   width: 100%;
+}
+
+.skeleton-tag {
+  height: 24px;
+  width: 80px;
 }
 
 @keyframes skeleton-loading {
@@ -95,7 +113,6 @@ a:hover {
   100% { background-position: -200% 0; }
 }
 
-/* Task 156: Boot Animation Overlay */
 #boot-splash {
   position: fixed;
   inset: 0;
@@ -127,7 +144,7 @@ a:hover {
   width: 200px;
   height: 2px;
   background: var(--bg-tertiary);
-  margin-top: 24px;
+  margin-top: var(--spacing-3);
   border-radius: 1px;
   overflow: hidden;
   position: relative;
@@ -143,26 +160,10 @@ a:hover {
   transition: width 0.3s ease;
 }
 
-/* Phase 4: Physical Haptics */
-.btn:active, .badge:active {
+.btn:active,
+.badge:active {
   transform: scale(0.95);
   transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-/* Phase 4: Skeleton Screens */
-.skeleton-tag {
-  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-loading 1.5s infinite;
-  height: 24px;
-  width: 80px;
-  border-radius: var(--radius-sm);
-  display: inline-block;
-}
-
-@keyframes skeleton-loading {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
 }
 
 .animate-fade-in {
@@ -178,15 +179,5 @@ a:hover {
 }
 
 .cmd-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* White Mode Support */
-:root {
-  --color-bg-root: #f8fafc;
-  --color-bg-panel: #ffffff;
-  --color-bg-panel-hover: #f1f5f9;
-  --color-border: #e2e8f0;
-  --color-text-main: #0f172a;
-  --color-text-muted: #64748b;
+  background: var(--color-bg-panel-hover);
 }
