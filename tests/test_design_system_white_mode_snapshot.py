@@ -24,9 +24,38 @@ def test_white_mode_design_tokens_snapshot():
 
 
 def test_white_mode_hardening_actions_snapshot_contract():
-    actions = json.loads(Path("tests/snapshots/white_mode_hardening_actions.json").read_text(encoding="utf-8"))
-    assert len(actions) >= 2300
-    assert all(action["scope"] == "white-mode" and action["status"] == "applied" for action in actions)
+    css_text = Path("app/static/css/design-system.css").read_text(encoding="utf-8")
+    declared_tokens = set(re.findall(r"(--[a-z0-9-]+)\s*:", css_text))
+
+    required_tokens = {
+        "--bg-primary",
+        "--text-primary",
+        "--color-bg-root",
+        "--color-bg-panel",
+        "--color-text-main",
+        "--color-accent",
+        "--color-danger",
+        "--border-color",
+        "--spacing-1",
+        "--spacing-2",
+        "--shadow-sm",
+        "--shadow-md",
+        "--radius-md",
+        "--transition-base",
+    }
+    assert required_tokens.issubset(declared_tokens)
+
+    color_tokens = [token for token in declared_tokens if token.startswith("--color-")]
+    spacing_tokens = [token for token in declared_tokens if token.startswith("--spacing-")]
+    shadow_tokens = [token for token in declared_tokens if token.startswith("--shadow-")]
+    radius_tokens = [token for token in declared_tokens if token.startswith("--radius-")]
+    assert len(color_tokens) >= 18
+    assert len(spacing_tokens) >= 8
+    assert len(shadow_tokens) >= 5
+    assert len(radius_tokens) >= 4
+
+    assert "color-scheme: light;" in css_text
+    assert "@media (prefers-color-scheme: dark)" not in css_text
 
 
 def test_no_dark_mode_overrides_in_system_css():
