@@ -20,7 +20,7 @@ KUKANILEA is a modern, high-performance Business Operating System designed for t
 ## Quickstart (<10 min)
 
 ```bash
-# 1) Clone + reproducible bootstrap in one run
+# 1) Clone + bootstrap (inkl. Healthcheck + Smoke) in einem Lauf
 git clone <repo-url>
 cd kukanilea
 bash scripts/dev_bootstrap.sh
@@ -29,7 +29,7 @@ bash scripts/dev_bootstrap.sh
 bash scripts/dev_run.sh
 ```
 
-`scripts/dev_bootstrap.sh` umfasst venv+deps, Playwright-Browser, Doctor-Checks, Smoke, Healthcheck und Launch-Evidence (`--fast`).
+`scripts/dev_bootstrap.sh` umfasst venv+deps, Playwright-Browser, Doctor-Checks, Healthcheck, Smoke und Launch-Evidence (`--fast`).
 `scripts/dev_run.sh` startet reproduzierbar über denselben `.venv`-Interpreter und führt Bootstrap bei Bedarf automatisch aus.
 
 ### Verifikation (Time-to-Green)
@@ -41,6 +41,21 @@ scripts/ops/launch_evidence_gate.sh
 ```
 
 Weitere Details: `docs/dev/BOOTSTRAP_QUICKSTART.md`
+
+## Token-saver Workflow (für schnelle Debug/PR-Zyklen)
+
+```bash
+# Zielgerichtete Suche statt Vollausgabe
+rg -n "bootstrap|healthcheck|smoke|doctor" README.md docs/dev/BOOTSTRAP_QUICKSTART.md scripts/
+
+# Kleine, fokussierte Diffs statt riesiger Kontext-Blöcke
+git diff -- README.md docs/dev/BOOTSTRAP_QUICKSTART.md
+
+# Selektiv anzeigen (z. B. nur erste 120 Zeilen)
+sed -n '1,120p' docs/dev/BOOTSTRAP_QUICKSTART.md
+```
+
+Regel: `rg`/`grep -n` bevorzugen, keine großen `cat`-Dumps über ganze Verzeichnisbäume, und Diffs immer dateiweise eingrenzen.
 
 ## Quick Start (Developer)
 
@@ -82,4 +97,3 @@ Für Lane-Resubmit/Open-PR-Check (mit `gh`-Fallback auf GitHub-API):
 ```bash
 bash scripts/dev/open_pr_status.sh --repo theosmi33-droid/kukanilea --state open
 ```
-

@@ -1,6 +1,6 @@
 # Developer Bootstrap Flow (<10 Minuten)
 
-Ziel: `clone -> bootstrap -> smoke tests` mit einem Time-to-green unter 10 Minuten.
+Ziel: `clone -> bootstrap -> healthcheck -> smoke tests` reproduzierbar unter 10 Minuten.
 
 ## One-Command Setup
 
@@ -16,9 +16,30 @@ Der One-Command-Run erledigt automatisch:
 3. Pip/Dev-Abhängigkeiten installieren (`requirements.txt` + `requirements-dev.txt`)
 4. Playwright Browser installieren (`chromium`, lokal via `python -m playwright install`)
 5. Doctor-Checks (`pytest`, `flask`, `ruff`, `playwright`)
-6. Seed + Smoke (`scripts/seed_dev_users.py`, `scripts/seed_demo_data.py`, `python -m app.smoke`)
-7. `scripts/ops/healthcheck.sh`
+6. `scripts/ops/healthcheck.sh`
+7. Seed + Smoke (`scripts/seed_dev_users.py`, `scripts/seed_demo_data.py`, `python -m app.smoke`)
 8. `scripts/ops/launch_evidence_gate.sh --fast`
+
+## Repro-Runbook (exakte Kommandos)
+
+```bash
+# 0) Frischer Clone
+git clone <repo-url>
+cd kukanilea
+
+# 1) Bootstrap (führt Healthcheck + Smoke automatisch aus)
+bash scripts/dev_bootstrap.sh
+
+# 2) Einzelprüfungen explizit wiederholbar
+./scripts/ops/healthcheck.sh
+python -m app.smoke
+```
+
+Zeitmessung (optional, für CI/DevEx-Nachweis):
+
+```bash
+time bash scripts/dev_bootstrap.sh
+```
 
 ## Python-Fallback (robust)
 
@@ -79,6 +100,21 @@ bash -n scripts/dev_bootstrap.sh scripts/dev_run.sh scripts/ops/healthcheck.sh s
 ./scripts/ops/healthcheck.sh
 scripts/ops/launch_evidence_gate.sh
 ```
+
+## Token-saver Workflow
+
+```bash
+# Suchraum klein halten
+rg -n "healthcheck|smoke|bootstrap|doctor" docs/dev/BOOTSTRAP_QUICKSTART.md README.md scripts/
+
+# Statt großer Dumps gezielte Ausschnitte lesen
+sed -n '1,140p' docs/dev/BOOTSTRAP_QUICKSTART.md
+
+# Nur betroffene Dateien diffen
+git diff -- docs/dev/BOOTSTRAP_QUICKSTART.md README.md
+```
+
+Leitlinie: erst `rg`/`grep -n`, dann kleine Ausschnitte/targeted diffs; keine absoluten Pfade und keine ungerichteten Full-File/Tree-Ausgaben.
 
 ## Known issues / Fallback
 
