@@ -5,6 +5,7 @@ import secrets
 import time
 import re
 from datetime import timedelta
+from pathlib import Path
 
 from flask import Flask, g, request, session
 
@@ -23,16 +24,14 @@ from .security.session_policy import resolve_session_cookie_policy
 
 def _wire_runtime_env(app: Flask) -> None:
     """Keep legacy core modules pointed to user-data paths."""
-    os.environ["KUKANILEA_AUTH_DB"] = str(app.config["AUTH_DB"])
     os.environ["DB_FILENAME"] = str(app.config["CORE_DB"])
-    os.environ.setdefault("TOPHANDWERK_DB_FILENAME", str(app.config["CORE_DB"]))
+    os.environ["TOPHANDWERK_DB_FILENAME"] = str(app.config["CORE_DB"])
     # Keep already-imported legacy logic module in sync with per-app DB path.
     # Without this, tests that create multiple apps can keep writing to a stale DB.
     try:
-        from pathlib import Path
+        import importlib
 
-        from .core import logic as core_logic
-
+        core_logic = importlib.import_module("app.core.logic")
         core_logic.DB_PATH = Path(app.config["CORE_DB"])
         core_logic._DB_INITIALIZED = False
     except Exception:
@@ -52,11 +51,25 @@ def _is_test_context(app: Flask) -> bool:
     return bool(app.config.get("TESTING"))
 
 
+def _apply_env_runtime_overrides(app: Flask) -> None:
+    """Re-read explicit runtime path env vars for each app instance."""
+    env_to_cfg = {
+        "KUKANILEA_AUTH_DB": "AUTH_DB",
+        "KUKANILEA_CORE_DB": "CORE_DB",
+        "KUKANILEA_LICENSE_PATH": "LICENSE_PATH",
+        "KUKANILEA_TRIAL_PATH": "TRIAL_PATH",
+    }
+    for env_key, cfg_key in env_to_cfg.items():
+        if env_key in os.environ and os.environ.get(env_key):
+            app.config[cfg_key] = Path(str(os.environ[env_key]))
+
+
 def create_app() -> Flask:
     boot_start = time.time()
     manager.set_state(SystemState.BOOT, "Booting application context...")
     app = Flask(__name__)
     app.config.from_object(Config)
+    _apply_env_runtime_overrides(app)
     app.secret_key = app.config["SECRET_KEY"]
     explicit_env = str(
         os.environ.get("KUKANILEA_ENV", os.environ.get("FLASK_ENV", ""))

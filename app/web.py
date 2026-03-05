@@ -1578,16 +1578,19 @@ def _get_tenant_db_path() -> Path:
         except Exception:
             pass
             
-    return Config.CORE_DB
+    return Path(current_app.config.get("CORE_DB", Config.CORE_DB))
 
 
 @bp.before_app_request
 def _apply_tenant_context():
     """Binds the global core logic to the current tenant's database."""
-    from app import core as _core
+    import importlib
+
     try:
         db_path = _get_tenant_db_path()
-        _core.logic.DB_PATH = db_path
+        core_logic = importlib.import_module("app.core.logic")
+        core_logic.DB_PATH = db_path
+        core_logic._DB_INITIALIZED = False
     except Exception:
         pass
 
