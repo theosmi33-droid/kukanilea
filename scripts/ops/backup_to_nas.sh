@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 EXIT_USAGE=2
 EXIT_DEPENDENCY=3
 EXIT_RUNTIME=4
@@ -14,7 +16,7 @@ NAS_PASS="${NAS_PASS:-}"
 LOCAL_FALLBACK_DIR="${LOCAL_FALLBACK_DIR:-instance/degraded_backups}"
 REPORT_FILE="${REPORT_FILE:-instance/operator_report_backup_${TIMESTAMP}.txt}"
 DB_PATH="${DB_PATH:-instance/auth.sqlite3}"
-VALIDATION_SCRIPT="scripts/ops/restore_validation.py"
+VALIDATION_SCRIPT="${VALIDATION_SCRIPT:-$SCRIPT_DIR/restore_validation.py}"
 DRY_RUN=0
 START_EPOCH="$(date +%s)"
 NAS_RETRIES="${NAS_RETRIES:-3}"

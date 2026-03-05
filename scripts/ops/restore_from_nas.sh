@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 EXIT_USAGE=2
 EXIT_DEPENDENCY=3
 EXIT_RUNTIME=4
@@ -19,7 +21,7 @@ MODE="nas"
 START_EPOCH="$(date +%s)"
 NAS_RETRIES="${NAS_RETRIES:-3}"
 BASELINE_PATH="${BASELINE_PATH:-instance/restore_baseline.json}"
-VALIDATION_SCRIPT="scripts/ops/restore_validation.py"
+VALIDATION_SCRIPT="${VALIDATION_SCRIPT:-$SCRIPT_DIR/restore_validation.py}"
 
 usage() {
   cat <<'USAGE'
