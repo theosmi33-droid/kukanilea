@@ -8,6 +8,8 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from app.core.gewerke_profiles import get_active_profile
+
 # We need to import core functionality, but since we are decoupling,
 # we expect these to be passed or available via app.core
 try:
@@ -450,6 +452,13 @@ def time_entries_list(
         finally:
             con.close()
 
+def _apply_rounding(seconds: int, rounding_minutes: int) -> int:
+    rounding_seconds = max(60, int(rounding_minutes) * 60)
+    if seconds <= 0:
+        return 0
+    return int((seconds + rounding_seconds - 1) // rounding_seconds * rounding_seconds)
+
+
 def time_entries_export_csv(
     *,
     tenant_id: str,
@@ -465,40 +474,47 @@ def time_entries_export_csv(
         end_at=end_at,
         limit=limit,
     )
+    profile = get_active_profile(tenant_id=tenant_id)
+    rules = profile.get("time_export_rules") or {}
+    decimal_places = max(0, min(4, int(rules.get("decimal_places") or 2)))
+    rounding_minutes = max(1, int(rules.get("rounding_minutes") or 1))
+    include_approval_fields = bool(rules.get("include_approval_fields", True))
+
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(
-        [
-            "entry_id",
-            "project_id",
-            "project_name",
-            "user",
-            "start_at",
-            "end_at",
-            "duration_seconds",
-            "duration_hours",
-            "note",
-            "approval_status",
-            "approved_by",
-            "approved_at",
-        ]
-    )
+    headers = [
+        "entry_id",
+        "project_id",
+        "project_name",
+        "user",
+        "start_at",
+        "end_at",
+        "duration_seconds",
+        "duration_hours",
+        "note",
+    ]
+    if include_approval_fields:
+        headers.extend(["approval_status", "approved_by", "approved_at"])
+    writer.writerow(headers)
     for entry in entries[:2000]: # MAX_CSV_ROWS
         duration_seconds = int(entry.get("duration_seconds") or 0)
-        writer.writerow(
-            [
-                entry.get("id"),
-                entry.get("project_id"),
-                entry.get("project_name") or "",
-                entry.get("user"),
-                entry.get("start_at"),
-                entry.get("end_at") or "",
-                duration_seconds,
-                round(duration_seconds / 3600.0, 2),
-                entry.get("note") or "",
+        rounded_seconds = _apply_rounding(duration_seconds, rounding_minutes)
+        row = [
+            entry.get("id"),
+            entry.get("project_id"),
+            entry.get("project_name") or "",
+            entry.get("user"),
+            entry.get("start_at"),
+            entry.get("end_at") or "",
+            rounded_seconds,
+            round(rounded_seconds / 3600.0, decimal_places),
+            entry.get("note") or "",
+        ]
+        if include_approval_fields:
+            row.extend([
                 entry.get("approval_status") or "",
                 entry.get("approved_by") or "",
                 entry.get("approved_at") or "",
-            ]
-        )
+            ])
+        writer.writerow(row)
     return output.getvalue()

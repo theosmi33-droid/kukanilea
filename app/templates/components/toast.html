@@ -1,0 +1,14 @@
+<!-- app/templates/components/toast.html -->
+<div id="toast-container" 
+     class="toast-container" 
+     aria-live="polite" 
+     aria-atomic="true"
+     style="position: fixed; top: 24px; right: 24px; z-index: 10000; display: flex; flex-direction: column; gap: 12px; pointer-events: none;">
+</div>
+
+<style>
+    /* Inline minimal styling for the container to ensure it works immediately */
+    .toast-container .toast {
+        pointer-events: auto;
+    }
+</style>
