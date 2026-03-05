@@ -37,3 +37,10 @@ The integration suite `tests/integration/test_runtime_db_binding.py` validates:
 - DB rebind across consecutive requests
 - health/ping route reachability with override paths
 
+## Operational Guardrails
+
+- Write actions remain blocked when confirm tokens are missing.
+- Runtime path overrides are deterministic across repeated app startups.
+- Tenant-path rebinding is request-driven to avoid stale cross-tenant state.
+- Health probes stay available for diagnostics even in strict environments.
+- The contract is intentionally local-first and does not require cloud services.
