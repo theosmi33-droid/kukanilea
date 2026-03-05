@@ -25,11 +25,13 @@ def test_preflight_handles_missing_gh_and_prod_path(tmp_path: Path) -> None:
         capture_output=True,
     )
 
-    assert "gh not installed; skipped" in result.stdout
+    assert "--- Open PRs" in result.stdout
+    assert "[warn] Open PRs failed" in result.stdout
     assert "missing path:" in result.stdout
     assert "Test-Result: NOT_RUN" in result.stdout
     assert "Lane:" in result.stdout
     assert "PR-Link: https://github.com/theosmi33-droid/kukanilea/pull/123" in result.stdout
+    assert "Checks: gh=warn, runs=warn, prod=warn" in result.stdout
 
 
 def test_preflight_prints_scope_summary() -> None:
