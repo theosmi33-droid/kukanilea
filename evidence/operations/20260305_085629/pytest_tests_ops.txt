@@ -1,0 +1,8 @@
+sssss.....                                                               [100%]
+============================= slowest 10 durations =============================
+0.04s call     tests/ops/test_restore_validation.py::test_compare_snapshots_detects_mismatch
+0.03s call     tests/ops/test_restore_validation.py::test_collect_snapshot_counts_and_hashes
+0.02s call     tests/ops/test_restore_validation.py::test_compare_snapshots_ok_when_same
+
+(7 durations < 0.005s hidden.  Use -vv to show these durations.)
+5 passed, 5 skipped in 0.14s

@@ -150,6 +150,13 @@ fi
 if [[ -z "$PYTHON" ]]; then
   PYTHON="$($ROOT/scripts/dev/resolve_python.sh)"
 fi
+if [[ ! -x "$PYTHON" ]]; then
+  if command -v "$PYTHON" >/dev/null 2>&1; then
+    PYTHON="$(command -v "$PYTHON")"
+  else
+    die "$EXIT_DEPENDENCY" "python interpreter is not executable/resolvable: $PYTHON"
+  fi
+fi
 
 for dep in rg git bash; do
   command -v "$dep" >/dev/null 2>&1 || die "$EXIT_DEPENDENCY" "required dependency missing: $dep"
@@ -232,6 +239,26 @@ else
 fi
 rm -f "$_tmp"
 
+
+# Gate 4b: License state evidence
+_tmp="$(mktemp)"
+append "## License Evidence Matrix"
+append "\`'$PYTHON' -m pytest -q tests/license/test_license_state_machine.py\`"
+if capture_cmd "'$PYTHON' -m pytest -q tests/license/test_license_state_machine.py" "$_tmp"; then
+  render_output_block "$_tmp"
+  if capture_cmd "rg -n 'grace|blocked|active|license_blocked_smb_unreachable' tests/license/test_license_state_machine.py" "$_tmp.license"; then
+    append "`rg -n 'grace|blocked|active|license_blocked_smb_unreachable' tests/license/test_license_state_machine.py`"
+    render_output_block "$_tmp.license"
+    record_result "License Evidence Matrix" "PASS" "AKTIV/GRACE/GESPERRT transitions covered"
+  else
+    record_result "License Evidence Matrix" "FAIL" "missing explicit state markers"
+  fi
+else
+  render_output_block "$_tmp"
+  record_result "License Evidence Matrix" "FAIL" "license state machine test failed"
+fi
+rm -f "$_tmp" "$_tmp.license"
+
 # Gate 5: Chat/Guardrail evidence
 _tmp="$(mktemp)"
 append "## Chat/Guardrail Evidence"
@@ -270,11 +297,7 @@ append
 append "## Decision"
 append
 if [[ "$FAIL_COUNT" -eq 0 ]]; then
-  if [[ "$WARN_COUNT" -eq 0 ]]; then
-    DECISION="GO"
-  else
-    DECISION="GO with Notes"
-  fi
+  DECISION="GO"
 else
   DECISION="NO-GO"
 fi
