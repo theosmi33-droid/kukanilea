@@ -77,6 +77,14 @@ else
   TEST_RESULT="NOT_RUN (set RUN_PREFLIGHT_TESTS=1)"
 fi
 
+EXIT_CODE=0
+if [[ "$GUARD_RESULT" == "FAIL" ]]; then
+  EXIT_CODE=1
+fi
+if [[ "$TEST_RESULT" == "FAIL" ]]; then
+  EXIT_CODE=1
+fi
+
 echo ""
 echo "=== Release Conductor Summary ==="
 echo "Lane: ${LANE}"
@@ -87,3 +95,4 @@ echo "Test-Result: ${TEST_RESULT}"
 echo "PR-Link: https://github.com/${REPO_SLUG}/pull/${PR_NUMBER}"
 
 echo "Checks: gh=${GH_STATUS}, runs=${RUN_STATUS}, prod=${PROD_STATUS}"
+exit "$EXIT_CODE"
