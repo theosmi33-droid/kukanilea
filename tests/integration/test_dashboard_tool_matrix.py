@@ -47,12 +47,14 @@ def test_dashboard_matrix_returns_all_tools(tmp_path, monkeypatch):
     assert body["ok"] is True
     assert body["total"] == 11
     assert body["read_only_contract"] is True
+    assert body["tenant"] == "KUKANILEA"
     assert len(body["tools"]) == 11
 
     for row in body["tools"]:
         assert isinstance(row.get("metrics"), dict)
         assert isinstance(row.get("details"), dict)
         assert isinstance(row["details"].get("contract"), dict)
+        assert row["details"].get("tenant") == "KUKANILEA"
 
 
 def test_dashboard_matrix_marks_degraded_tool_instead_of_hard_fail(tmp_path, monkeypatch):

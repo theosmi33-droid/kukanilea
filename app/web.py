@@ -3963,10 +3963,12 @@ def api_tool_health(tool: str):
 @bp.get("/api/dashboard/tool-matrix")
 @login_required
 def api_dashboard_tool_matrix():
-    matrix = build_tool_matrix(tenant=str(current_tenant() or "default"))
+    tenant = str(current_tenant() or "default")
+    matrix = build_tool_matrix(tenant=tenant)
     degraded = [row["tool"] for row in matrix if row.get("status") == "degraded"]
     return jsonify(
         ok=True,
+        tenant=tenant,
         total=len(matrix),
         degraded=degraded,
         read_only_contract=True,

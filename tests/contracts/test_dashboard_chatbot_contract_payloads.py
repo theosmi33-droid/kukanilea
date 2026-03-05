@@ -11,6 +11,7 @@ def test_dashboard_summary_declares_aggregation_contract(auth_client):
     assert body["details"]["aggregate_mode"] == "summary_only"
     assert body["metrics"]["total_tools"] == 10
     assert body["details"]["contract"]["read_only"] is True
+    assert body["details"]["tenant"] == "KUKANILEA"
 
 
 def test_chatbot_summary_declares_payload_aliases(auth_client):
@@ -26,6 +27,7 @@ def test_chatbot_summary_declares_payload_aliases(auth_client):
     assert body["details"]["summary_sources"] == ["dashboard", "tasks", "projects"]
     assert body["metrics"]["summary_sources"] == 3
     assert body["details"]["contract"]["read_only"] is True
+    assert body["details"]["tenant"] == "KUKANILEA"
 
 
 def test_chat_endpoint_standardizes_payload_aliases(auth_client, monkeypatch):
