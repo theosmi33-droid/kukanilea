@@ -90,6 +90,42 @@ html.light {
 
 * { box-sizing: border-box; }
 html { font-size: 16px; }
+
+
+.skip-link {
+  position: absolute;
+  left: var(--spacing-2);
+  top: -44px;
+  z-index: 1400;
+  background: var(--color-primary);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-weight: var(--font-weight-semibold);
+}
+.skip-link:focus-visible {
+  top: var(--spacing-2);
+  text-decoration: none;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid rgba(37,99,235,0.45);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.sidebar-section-label {
+  margin: var(--spacing-2) var(--spacing-4) var(--spacing-1);
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: var(--font-weight-semibold);
+}
+.nav-list-secondary {
+  flex: 0;
+  margin-bottom: var(--spacing-2);
+}
 body {
   margin: 0; font-family: var(--font-primary); font-size: var(--font-size-base);
   font-weight: var(--font-weight-normal); line-height: var(--line-height-normal);
@@ -187,6 +223,11 @@ code, pre { font-family: var(--font-mono); font-size: 0.875em; }
 }
 .nav-link:hover { background: var(--bg-secondary); color: var(--text-primary); }
 .nav-link.active { background: var(--color-primary); color: white; font-weight: var(--font-weight-medium); }
+.nav-link:focus-visible {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-decoration: none;
+}
 .nav-icon { margin-right: var(--spacing-2); flex-shrink: 0; }
 .nav-text { flex: 1; }
 .main-content { margin-left: 260px; padding: var(--spacing-6); }

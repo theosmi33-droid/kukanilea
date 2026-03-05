@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from html import unescape
 from typing import Any, Iterable, Mapping
+from urllib.parse import unquote
 
 DEFAULT_CONFIRM_TOKENS = frozenset({"CONFIRM", "YES", "TRUE", "1"})
 
@@ -21,6 +23,10 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bdo\s+anything\s+now\b|\bdan\s+mode\b"),
     re.compile(r"(?i)\b(?:bypass|disable)\s+(?:all\s+)?(?:security|guardrails?|safety)\b"),
     re.compile(r"(?i)\b(?:reveal|print)\s+(?:the\s+)?(?:system\s+prompt|hidden\s+instructions?)\b"),
+    re.compile(r"(?i)\b(?:xp_cmdshell|exec\s*\()"),
+    re.compile(r"(?i)\b(?:sleep\s*\(|benchmark\s*\()"),
+    re.compile(r"(?i)\b(?:information_schema|pg_catalog|sqlite_master)\b"),
+    re.compile(r"(?i)\.\./|\.\.\\"),
 )
 
 
@@ -52,6 +58,7 @@ CRITICAL_CONFIRM_GATE_MATRIX: tuple[ConfirmGatePolicy, ...] = (
     ConfirmGatePolicy(route="/admin/settings/backup/restore", fields=("backup_name", "confirm")),
     ConfirmGatePolicy(route="/admin/settings/mesh/connect", fields=("peer_ip", "peer_port", "confirm")),
     ConfirmGatePolicy(route="/admin/settings/mesh/rotate-key", fields=("confirm",)),
+    ConfirmGatePolicy(route="/admin/context/switch", fields=("tenant_id",), required=False),
 )
 
 CRITICAL_CONFIRM_GATE_BY_ROUTE = {row.route: row for row in CRITICAL_CONFIRM_GATE_MATRIX}
@@ -67,9 +74,14 @@ def detect_injection(value: str | None) -> str | None:
     text = str(value or "").strip()
     if not text:
         return None
-    for pattern in INJECTION_PATTERNS:
-        if pattern.search(text):
-            return pattern.pattern
+    candidates = (text, unquote(text), unescape(text), unescape(unquote(text)))
+    for candidate in candidates:
+        normalized = candidate.strip()
+        if not normalized:
+            continue
+        for pattern in INJECTION_PATTERNS:
+            if pattern.search(normalized):
+                return pattern.pattern
     return None
 
 
