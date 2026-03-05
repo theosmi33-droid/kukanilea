@@ -7,8 +7,8 @@ export const DEV_CREDENTIALS = {
 
 export async function loginAsDev(page: Page): Promise<void> {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('textbox', { name: /username/i }).fill(DEV_CREDENTIALS.username);
-  await page.getByRole('textbox', { name: /password/i }).fill(DEV_CREDENTIALS.password);
+  await page.locator('input[name="username"]').fill(DEV_CREDENTIALS.username);
+  await page.locator('input[name="password"]').fill(DEV_CREDENTIALS.password);
   await Promise.all([
     page.waitForURL(/dashboard|\/$/, { waitUntil: 'networkidle' }),
     page.getByRole('button', { name: /anmelden|login|system betreten|submit/i }).click(),
