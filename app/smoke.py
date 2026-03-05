@@ -38,10 +38,13 @@ def main() -> None:
 
         login_page = client.get("/login")
         login_html = login_page.get_data(as_text=True)
-        token_match = re.search(r'name="csrf-token"\s+content="([^"]+)"', login_html)
-        if not token_match:
-            token_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', login_html)
-        csrf_token = token_match.group(1) if token_match else ""
+        with client.session_transaction() as sess:
+            csrf_token = str(sess.get("csrf_token", "") or "")
+        if not csrf_token:
+            token_match = re.search(r'name="csrf-token"\s+content="([^"]+)"', login_html)
+            if not token_match:
+                token_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', login_html)
+            csrf_token = token_match.group(1) if token_match else ""
         login_resp = client.post(
             "/login",
             data={"username": "dev", "password": "dev", "csrf_token": csrf_token},
