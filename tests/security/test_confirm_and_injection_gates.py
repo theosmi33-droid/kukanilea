@@ -188,6 +188,43 @@ def test_additional_critical_write_routes_reject_missing_confirm(admin_client, r
     assert body["error"] == "confirm_required"
 
 
+def test_confirm_gate_rejection_emits_audit_event(admin_client, monkeypatch):
+    _, client = admin_client
+    import app.routes.admin_tenants as admin_routes
+
+    events: list[str] = []
+
+    def _capture(**kwargs):
+        events.append(str(kwargs.get("action") or ""))
+
+    monkeypatch.setattr(admin_routes, "audit_log", _capture)
+
+    response = client.post("/admin/settings/backup/run", data={})
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "confirm_required"
+    assert "SECURITY_CONFIRM_REQUIRED" in events
+
+
+def test_injection_rejection_emits_audit_event(admin_client, monkeypatch):
+    _, client = admin_client
+    import app.routes.admin_tenants as admin_routes
+
+    events: list[str] = []
+
+    def _capture(**kwargs):
+        events.append(str(kwargs.get("action") or ""))
+
+    monkeypatch.setattr(admin_routes, "audit_log", _capture)
+
+    response = client.post(
+        "/admin/settings/users/create",
+        data={"username": "admin<script>alert(1)</script>", "password": "pw", "tenant_id": "KUKANILEA", "confirm": "YES"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "injection_blocked"
+    assert "SECURITY_INJECTION_BLOCKED" in events
+
+
 def test_security_headers_use_hardened_csp(admin_client):
     _, client = admin_client
     response = client.get("/admin/settings")

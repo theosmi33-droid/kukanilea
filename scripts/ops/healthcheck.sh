@@ -180,7 +180,7 @@ fi
 if [[ "$HAS_FLASK" -eq 1 ]]; then
   if ! curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5051/" | grep -Eq "^(200|302)$"; then
     log "[healthcheck] No server on :5051 detected, starting temporary local server..."
-    (cd "$ROOT" && "$PYTHON" kukanilea_app.py --host 127.0.0.1 --port 5051) >/tmp/kukanilea_healthcheck_server.log 2>&1 &
+    (cd "$ROOT" && KUK_SAFE_MODE=1 "$PYTHON" kukanilea_app.py --host 127.0.0.1 --port 5051) >/tmp/kukanilea_healthcheck_server.log 2>&1 &
     SERVER_PID=$!
     if ! wait_for_http "http://127.0.0.1:5051/" 30 1; then
       log "[healthcheck] Server did not become ready on :5051 in time"

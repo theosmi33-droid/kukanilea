@@ -36,6 +36,13 @@ def test_intake_execute_requires_explicit_confirm(tmp_path, monkeypatch):
     normalized = client.post("/api/intake/normalize", json=_payload())
     assert normalized.status_code == 200
 
+    with app.app_context():
+        con = sqlite3.connect(app.config["CORE_DB"])
+        try:
+            before_count = con.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        finally:
+            con.close()
+
     resp = client.post(
         "/api/intake/execute",
         json={"envelope": normalized.get_json()["envelope"], "requires_confirm": True, "confirm": "no"},
@@ -50,7 +57,7 @@ def test_intake_execute_requires_explicit_confirm(tmp_path, monkeypatch):
             count = con.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
         finally:
             con.close()
-    assert count == 0
+    assert count == before_count
 
 
 def test_intake_execute_confirm_creates_task_and_logs(tmp_path, monkeypatch):
@@ -61,6 +68,16 @@ def test_intake_execute_confirm_creates_task_and_logs(tmp_path, monkeypatch):
     _seed_session(client)
 
     envelope = client.post("/api/intake/normalize", json=_payload()).get_json()["envelope"]
+
+    with app.app_context():
+        con = sqlite3.connect(app.config["CORE_DB"])
+        try:
+            before_task_count = con.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            before_audit_count = con.execute("SELECT COUNT(*) FROM audit WHERE action='intake_execute_confirmed'").fetchone()[0]
+            before_event_count = con.execute("SELECT COUNT(*) FROM events WHERE event_type='intake_execute_confirmed'").fetchone()[0]
+        finally:
+            con.close()
+
     resp = client.post(
         "/api/intake/execute",
         json={"envelope": envelope, "requires_confirm": True, "confirm": "YES"},
@@ -80,6 +97,6 @@ def test_intake_execute_confirm_creates_task_and_logs(tmp_path, monkeypatch):
         finally:
             con.close()
 
-    assert task_count == 1
-    assert audit_count == 1
-    assert event_count == 1
+    assert task_count == before_task_count + 1
+    assert audit_count == before_audit_count + 1
+    assert event_count == before_event_count + 1

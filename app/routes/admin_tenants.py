@@ -121,9 +121,27 @@ def _enforce_critical_gate(route: str):
         return None
     blocked = _reject_injection(policy.fields)
     if blocked:
+        audit_log(
+            user=current_user() or "system",
+            role=current_role() or "ADMIN",
+            action="SECURITY_INJECTION_BLOCKED",
+            target=route,
+            meta={"route": route},
+            tenant_id=current_tenant() or "SYSTEM",
+        )
         return blocked
     if policy.required:
-        return _require_confirm()
+        confirm_error = _require_confirm()
+        if confirm_error:
+            audit_log(
+                user=current_user() or "system",
+                role=current_role() or "ADMIN",
+                action="SECURITY_CONFIRM_REQUIRED",
+                target=route,
+                meta={"route": route},
+                tenant_id=current_tenant() or "SYSTEM",
+            )
+            return confirm_error
     return None
 
 
@@ -325,6 +343,13 @@ def update_profile_preferences():
 
     session["ui_language"] = (request.form.get("language") or "de").strip().lower()
     session["ui_timezone"] = (request.form.get("timezone") or "Europe/Berlin").strip()
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "READONLY",
+        action="PROFILE_PREFERENCES_UPDATE",
+        meta={"language": session["ui_language"], "timezone": session["ui_timezone"]},
+        tenant_id=current_tenant() or "SYSTEM",
+    )
     return redirect(url_for("admin_tenants.settings_console"))
 
 
@@ -496,6 +521,15 @@ def add_tenant():
         )
         con.commit()
 
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="TENANT_CREATE",
+        target=tenant_id,
+        meta={"display_name": name, "core_db_path": str(path.resolve())},
+        tenant_id=current_tenant() or "SYSTEM",
+    )
+
     return redirect(url_for("admin_tenants.settings_console", section="tenants"))
 
 
@@ -518,6 +552,14 @@ def switch_context():
     session["tenant_id"] = tenant_id
     session["tenant_name"] = tenant["name"]
     session["tenant_db_path"] = tenant["db_path"]
+    audit_log(
+        user=current_user() or "system",
+        role=current_role() or "ADMIN",
+        action="TENANT_CONTEXT_SWITCH",
+        target=tenant_id,
+        meta={"tenant_name": tenant["name"]},
+        tenant_id=current_tenant() or "SYSTEM",
+    )
 
     response = jsonify(ok=True)
     response.headers["HX-Refresh"] = "true"
