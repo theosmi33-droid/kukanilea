@@ -45,3 +45,4 @@ class RateLimiter:
 chat_limiter = RateLimiter(limit=30, window_s=60)
 search_limiter = RateLimiter(limit=60, window_s=60)
 upload_limiter = RateLimiter(limit=20, window_s=60)
+login_limiter = RateLimiter(limit=10, window_s=60)

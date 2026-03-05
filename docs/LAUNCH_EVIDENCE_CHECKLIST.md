@@ -6,7 +6,7 @@ Ziel: Launch-Readiness ist nur gültig, wenn sie reproduzierbar messbar ist. Kei
 
 - Vor jedem RC-Release und vor jeder Kundeninstallation ausführen.
 - Ergebnis unter `docs/reviews/codex/` oder `docs/status/` ablegen.
-- `GO` nur bei 6/6 PASS.
+- `GO` nur bei 7/7 PASS.
 
 ---
 
@@ -23,7 +23,7 @@ Akzeptanz:
 Optional für schnellen Zwischenstand:
 
 ```bash
-scripts/ops/launch_evidence_gate.sh --fast
+scripts/ops/launch_evidence_gate.sh --skip-healthcheck
 ```
 
 Hinweis (wichtig für CI):
@@ -35,8 +35,7 @@ scripts/ops/launch_evidence_gate.sh | tee /tmp/gate.txt
 ```
 - Exit-Code-Konvention:
   - `0` = GO/GO with Notes
-  - `3` = fehlende Abhängigkeit/Umgebung (z. B. `gh`, `rg`, `REPO`)
-  - `4` = mindestens ein Gate ist FAIL
+  - `3` = NO-GO (mindestens ein P0-Gate ist FAIL oder kritischer Fehler)
 
 
 ---
@@ -79,7 +78,7 @@ pytest -q
 
 PASS wenn:
 - Keine unerwarteten lokalen Änderungen für den Release-Scope.
-- Healthcheck Exit-Code 0.
+- Healthcheck Exit-Code 0 (inkl. Security- und Contract-Gates).
 - Pytest ohne Failures.
 
 Evidence:
@@ -90,10 +89,11 @@ Evidence:
 
 ---
 
-## Gate 3 — Offline/Zero-CDN
+## Gate 3 — Offline/Zero-CDN & External Requests
 
 ```bash
 python scripts/ops/verify_guardrails.py
+./scripts/ops/no_external_requests_gate.sh
 ```
 
 Manuell:
@@ -108,17 +108,37 @@ python kukanilea_app.py --host 127.0.0.1 --port 5051
 
 PASS wenn:
 - Keine externen Asset-Requests im produktiven Renderpfad (Guardrail-Check grün).
+- Keine unauthorized external URLs in Templates/Static assets.
 - UI bleibt vollständig nutzbar.
 
 Evidence:
-- Scan:
+- Guardrail Scan:
+- External URL Scan:
 - Offline-Start:
 - UI-Sichtprüfung:
 - Ergebnis: `PASS | FAIL`
 
 ---
 
-## Gate 4 — Lizenzsteuerung (inkl. Sperrfall)
+## Gate 4 — Security Baseline & Contracts
+
+```bash
+./scripts/ops/security_gate.sh
+./scripts/ops/contract_gate.sh
+```
+
+PASS wenn:
+- Security baseline (CORS, Open Redirects, Error Handling, Rate Limiting) erfüllt ist.
+- Alle 11 Tools die `/api/<tool>/summary` und `/api/<tool>/health` Contracts erfüllen.
+
+Evidence:
+- Security Gate:
+- Contract Gate:
+- Ergebnis: `PASS | FAIL`
+
+---
+
+## Gate 5 — Lizenzsteuerung (inkl. Sperrfall)
 
 Pflichttests:
 1. `AKTIV` => Normalbetrieb.
@@ -142,7 +162,7 @@ Evidence:
 
 ---
 
-## Gate 5 — Backup & Restore Drill
+## Gate 6 — Backup & Restore Drill
 
 Pflichttests:
 1. Backup erstellen (verschlüsselt, mandantengetrennt).
@@ -163,7 +183,7 @@ Evidence:
 
 ---
 
-## Gate 6 — KI lokal + Guardrails + Confirm-Gates
+## Gate 7 — KI lokal + Guardrails + Confirm-Gates
 
 Pflichttests:
 1. Lokales Modell ist aktiv (inkl. Fallback-Path).
@@ -200,9 +220,10 @@ Evidence:
 - Gate 4: `PASS | FAIL`
 - Gate 5: `PASS | FAIL`
 - Gate 6: `PASS | FAIL`
+- Gate 7: `PASS | FAIL`
 
 Freigabe:
-- `GO` nur bei 6/6 PASS.
+- `GO` nur bei 7/7 PASS.
 - Sonst: `NO-GO` + P0/P1-Owner + ETA.
 
 ---
