@@ -7,7 +7,7 @@ import re
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, g, request, session
+from flask import Flask, g, request, session, jsonify
 
 from .auth import init_auth
 from .autonomy import init_autonomy
@@ -20,6 +20,7 @@ from .migrations.ensure_agent_memory import ensure_agent_memory_tables
 from .observability import init_observability
 from .logging.structured_logger import log_event
 from .security.session_policy import resolve_session_cookie_policy
+from .security.http_policy import parse_cors_allowlist
 
 
 def _wire_runtime_env(app: Flask) -> None:
@@ -228,6 +229,19 @@ def create_app() -> Flask:
     def _csp_context():
         return {"csp_nonce": lambda: getattr(g, "csp_nonce", "")}
 
+    cors_allowlist = parse_cors_allowlist(str(os.environ.get("KUKANILEA_CORS_ORIGINS", "")))
+
+    @app.before_request
+    def _cors_preflight_guard():
+        if request.method != "OPTIONS":
+            return None
+        origin = (request.headers.get("Origin") or "").strip().lower()
+        if not origin:
+            return None
+        if origin not in cors_allowlist:
+            return jsonify(ok=False, error="cors_origin_denied"), 403
+        return None
+
     @app.before_request
     def _set_csp_nonce():
         g.csp_nonce = secrets.token_urlsafe(16)
@@ -241,6 +255,13 @@ def create_app() -> Flask:
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        origin = (request.headers.get("Origin") or "").strip().lower()
+        if origin and origin in cors_allowlist:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Vary"] = "Origin"
         content_type = str(response.headers.get("Content-Type") or "").lower()
         if "text/html" in content_type and getattr(g, "csp_nonce", ""):
             body = response.get_data(as_text=True)

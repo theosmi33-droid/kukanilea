@@ -89,6 +89,7 @@ from .errors import json_error
 from .license import load_license
 from .rate_limit import chat_limiter, search_limiter, upload_limiter
 from .security import csrf_protected, detect_injection
+from .security.http_policy import is_allowed_redirect_target
 from app.contracts.tool_contracts import (
     CONTRACT_TOOLS,
     build_tool_health,
@@ -1744,6 +1745,7 @@ def login():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     error = ""
     nxt = request.args.get("next", "/")
+    allowed_redirect_hosts = {request.host}
     if request.method == "POST":
         u = (request.form.get("username") or "").strip().lower()
         pw = (request.form.get("password") or "").strip()
@@ -1789,7 +1791,8 @@ def login():
 
                     login_user(u, role, t_id)
                     _audit("login", target=u, meta={"role": role, "tenant": t_id})
-                    return redirect(nxt or url_for("web.index"))
+                    safe_target = nxt if is_allowed_redirect_target(nxt, allowed_redirect_hosts) else url_for("web.index")
+                    return redirect(safe_target)
             else:
                 # Task 69: Brute Force Protection
                 if user:

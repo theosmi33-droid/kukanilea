@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import secrets
 import time
 from typing import Optional
 
@@ -35,10 +36,15 @@ def _load_user(db: AuthDB) -> None:
 
 
 def login_user(username: str, role: str, tenant_id: str) -> None:
+    # Session fixation defense: drop any previously supplied session payload
+    # and issue a fresh session identifier for the authenticated context.
+    session.clear()
     session["user"] = username
     session["role"] = role
     session["tenant_id"] = tenant_id
     session["last_active"] = time.time()
+    session["session_issued_at"] = time.time()
+    session["session_sid"] = secrets.token_urlsafe(24)
 
 
 def logout_user() -> None:

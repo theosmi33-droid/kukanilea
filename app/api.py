@@ -9,7 +9,8 @@ from app.modules.aufgaben.contracts import create_task
 from app.modules.kalender.contracts import create_event
 from app.modules.projekte.contracts import create_project
 
-from .rate_limit import search_limiter
+from .auth import login_required, require_role
+from .rate_limit import search_limiter, chat_limiter
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -55,6 +56,9 @@ def health():
 
 
 @bp.post("/intake/normalize")
+@login_required
+@require_role("OPERATOR")
+@chat_limiter.limit_required
 def intake_normalize():
     payload = request.get_json(silent=True) or {}
     envelope = normalize_intake_payload(payload)
@@ -62,6 +66,9 @@ def intake_normalize():
 
 
 @bp.post("/intake/execute")
+@login_required
+@require_role("OPERATOR")
+@chat_limiter.limit_required
 def intake_execute():
     payload = request.get_json(silent=True) or {}
     envelope_payload = payload.get("envelope") if isinstance(payload.get("envelope"), dict) else {}
@@ -142,6 +149,7 @@ def intake_execute():
 
 
 @bp.post("/mesh/handshake")
+@search_limiter.limit_required
 def mesh_handshake():
     """Handles incoming handshake requests from peer Hubs."""
     from flask import request
@@ -185,6 +193,9 @@ def mesh_handshake():
 
 
 @bp.get("/outbound/status")
+@login_required
+@require_role("ADMIN")
+@search_limiter.limit_required
 def outbound_status():
     """Returns the current status of the API outbound queue."""
     auth_db = current_app.extensions["auth_db"]
@@ -214,5 +225,6 @@ def outbound_status():
             if wants_html:
                 return render_template("components/outbound_status_panel.html", **payload)
             return jsonify(**payload)
-    except Exception as e:
-        return jsonify(ok=False, error=str(e)), 500
+    except Exception:
+        current_app.logger.exception("outbound_status_failed")
+        return jsonify(ok=False, error="internal_error"), 500
