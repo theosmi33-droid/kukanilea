@@ -7,6 +7,7 @@ from app import core
 
 CONTRACT_TOOLS = [
     "dashboard",
+    "intake",
     "upload",
     "projects",
     "tasks",
@@ -177,6 +178,32 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     return metrics, details, reason
 
 
+def _collect_intake_summary(tenant: str) -> tuple[dict, dict, str]:
+    metrics = {
+        "confirm_gate": 1,
+        "envelope_schema": 1,
+        "handoff_targets": 3,
+    }
+    details = {
+        "normalize_endpoint": "/api/intake/normalize",
+        "execute_endpoint": "/api/intake/execute",
+        "handoff_targets": ["tasks", "projects", "calendar"],
+        "envelope_fields": [
+            "source",
+            "thread_id",
+            "sender",
+            "subject",
+            "snippets",
+            "attachments",
+            "suggested_actions",
+            "requires_confirm",
+            "created_at",
+        ],
+        "tenant": tenant,
+    }
+    return metrics, details, ""
+
+
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
     list_projects = _core_get("project_list")
     projects = list_projects() if callable(list_projects) else []
@@ -260,6 +287,7 @@ def _collect_chatbot_summary(tenant: str) -> tuple[dict, dict, str]:
 
 SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "dashboard": _collect_dashboard_summary,
+    "intake": _collect_intake_summary,
     "upload": _collect_upload_summary,
     "projects": _collect_projects_summary,
     "tasks": _collect_tasks_summary,
