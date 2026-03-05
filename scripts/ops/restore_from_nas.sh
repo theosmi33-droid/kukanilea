@@ -102,7 +102,11 @@ if [[ -z "$BACKUP_FILE" ]]; then
     BACKUP_FILE="$(smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "cd ${TENANT_ID}; ls" 2>/dev/null | awk '/\.tar\.(zst|gz)(\.age)?/{print $1}' | tail -n 1 || true)"
   fi
   if [[ -z "$BACKUP_FILE" ]]; then
-    BACKUP_FILE="$(ls -1 "$LOCAL_FALLBACK_DIR/$TENANT_ID"/*.tar.* 2>/dev/null | awk -F/ '{print $NF}' | tail -n 1 || true)"
+    BACKUP_FILE="$(
+      find "$LOCAL_FALLBACK_DIR/$TENANT_ID" -maxdepth 1 -type f \
+        \( -name '*.tar.zst' -o -name '*.tar.gz' -o -name '*.tar.zst.age' -o -name '*.tar.gz.age' \) \
+        -print 2>/dev/null | awk -F/ '{print $NF}' | sort | tail -n 1 || true
+    )"
     MODE="degraded_local"
   fi
 fi
