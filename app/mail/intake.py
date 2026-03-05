@@ -4,6 +4,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from app.core.gewerk_profiles import DEFAULT_PROFILE_ID, get_profile
+
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
@@ -19,6 +21,8 @@ class IntakeEnvelope:
     attachments: list[dict[str, Any]] = field(default_factory=list)
     suggested_actions: list[dict[str, Any]] = field(default_factory=list)
     requires_confirm: bool = True
+    profile_id: str = DEFAULT_PROFILE_ID
+    gewerk_name: str = "Bau"
     created_at: str = field(default_factory=_utc_now)
 
     def to_dict(self) -> dict[str, Any]:
@@ -53,6 +57,7 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
                     }
                 )
 
+    profile = get_profile(payload.get("profile_id"))
     title = subject or (snippets[0] if snippets else "Neue Anfrage")
     suggested_actions = [
         {
@@ -63,6 +68,10 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
             "calendar_hint": str(payload.get("calendar_hint") or "").strip() or None,
             "requires_confirm": True,
             "read_only": True,
+            "profile_id": profile.profile_id,
+            "gewerk_name": profile.gewerk_name,
+            "dokumenttypen": list(profile.dokumenttypen),
+            "pflichtfelder": list(profile.pflichtfelder),
         }
     ]
 
@@ -74,4 +83,6 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
         snippets=snippets,
         attachments=attachments,
         suggested_actions=suggested_actions,
+        profile_id=profile.profile_id,
+        gewerk_name=profile.gewerk_name,
     )

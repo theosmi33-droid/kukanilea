@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+
 from flask import Blueprint, current_app, jsonify, render_template, request, session
 
+from app.core.gewerk_profiles import (
+    build_action_ledger,
+    flow_matrix,
+    get_profile,
+    list_profiles,
+    profile_context,
+)
 from app.mail.intake import normalize_intake_payload
 from app.modules.aufgaben.contracts import create_task
 from app.modules.kalender.contracts import create_event
@@ -58,7 +66,7 @@ def health():
 def intake_normalize():
     payload = request.get_json(silent=True) or {}
     envelope = normalize_intake_payload(payload)
-    return jsonify(ok=True, envelope=envelope.to_dict())
+    return jsonify(ok=True, envelope=envelope.to_dict(), profile=profile_context(envelope.profile_id))
 
 
 @bp.post("/intake/execute")
@@ -82,6 +90,7 @@ def intake_execute():
     tenant_id = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
     actor = str(session.get("user") or "system")
     action = envelope.suggested_actions[0] if envelope.suggested_actions else {}
+    profile = get_profile(action.get("profile_id") or envelope.profile_id)
 
     project_payload = None
     if action.get("project_hint"):
@@ -94,7 +103,7 @@ def intake_execute():
     task_payload = create_task(
         tenant=tenant_id,
         title=str(action.get("title") or envelope.subject or "Neue Anfrage"),
-        details="\n".join(envelope.snippets),
+        details="\n".join(envelope.snippets + [f"Gewerk: {profile.gewerk_name}"]),
         due_date=action.get("due_date"),
         project_hint=action.get("project_hint"),
         calendar_hint=action.get("calendar_hint"),
@@ -126,7 +135,7 @@ def intake_execute():
         "intake_execute_confirmed",
         "task",
         int(task_payload["task_id"]),
-        {"thread_id": envelope.thread_id, "source": envelope.source, "actor": actor},
+        {"thread_id": envelope.thread_id, "source": envelope.source, "actor": actor, "profile_id": profile.profile_id},
     )
 
     return jsonify(
@@ -137,17 +146,34 @@ def intake_execute():
         calendar=calendar_payload,
         audit_logged=True,
         event_log_id=event_id,
+        profile=profile.to_dict(),
     )
 
+
+@bp.get("/gewerke/profiles")
+def gewerke_profiles():
+    return jsonify(ok=True, profiles=list_profiles())
+
+
+@bp.get("/gewerke/matrix")
+def gewerke_matrix():
+    ledger = build_action_ledger()
+    return jsonify(ok=True, matrix=flow_matrix(), action_ledger=ledger)
 
 
 @bp.post("/mesh/handshake")
 def mesh_handshake():
     """Handles incoming handshake requests from peer Hubs."""
-    from flask import request
-    from app.core.mesh_network import MeshNetworkManager
-    from app.core.mesh_identity import verify_signature, sign_message, ensure_mesh_identity
     import json
+
+    from flask import request
+
+    from app.core.mesh_identity import (
+        ensure_mesh_identity,
+        sign_message,
+        verify_signature,
+    )
+    from app.core.mesh_network import MeshNetworkManager
 
     body = request.json
     data = body.get("data")
