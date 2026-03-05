@@ -620,6 +620,7 @@ HTML_BASE = r"""<!doctype html>
   .app-nav{
     width:240px; background:var(--bg-elev); border-right:1px solid var(--border);
     padding:24px 18px; position:sticky; top:0; height:100vh;
+    overflow-y:auto;
   }
   .app-main{ flex:1; display:flex; flex-direction:column; }
   .app-topbar{
@@ -633,6 +634,15 @@ HTML_BASE = r"""<!doctype html>
   }
   .nav-link:hover{ background:rgba(148,163,184,.08); color:var(--text); }
   .nav-link.active{ background:rgba(99,102,241,.15); color:var(--text); border:1px solid rgba(99,102,241,.25); }
+  .nav-section{ margin-top:16px; }
+  .nav-section-label{
+    color:var(--muted);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    margin:0 0 8px 10px;
+  }
+  .nav-link-meta{ margin-left:auto; font-size:10px; color:var(--muted); }
   .badge{ font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
   .card{ background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow); }
   .btn-primary{ background:var(--accent-600); color:white; border-radius:12px; }
@@ -640,6 +650,16 @@ HTML_BASE = r"""<!doctype html>
   .input{ background:transparent; border:1px solid var(--border); border-radius:12px; }
   .muted{ color:var(--muted); }
   .pill{ background:rgba(99,102,241,.12); color:var(--text); border:1px solid rgba(99,102,241,.2); padding:2px 8px; border-radius:999px; font-size:11px; }
+  .route-chip{
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:4px 10px;
+    font-size:11px;
+    color:var(--muted);
+    text-decoration:none;
+    transition:all .15s ease;
+  }
+  .route-chip:hover{ color:var(--text); border-color:rgba(99,102,241,.35); background:rgba(99,102,241,.08); }
 </style>
 </head>
 <body>
@@ -652,16 +672,57 @@ HTML_BASE = r"""<!doctype html>
         <div class="text-[11px] muted">Agent Orchestra</div>
       </div>
     </div>
-    <nav class="space-y-2">
-      <a class="nav-link {{'active' if active_tab=='upload' else ''}}" href="/">[+] Upload</a>
-      <a class="nav-link {{'active' if active_tab=='tasks' else ''}}" href="/tasks">[/] Tasks</a>
-      <a class="nav-link {{'active' if active_tab=='time' else ''}}" href="/time">[@] Time</a>
-      <a class="nav-link {{'active' if active_tab=='assistant' else ''}}" href="/assistant">[*] Assistant</a>
-      <a class="nav-link {{'active' if active_tab=='chat' else ''}}" href="/chat">[>] Chat</a>
-      <a class="nav-link {{'active' if active_tab=='mail' else ''}}" href="/mail">[#] Mail</a>
+    <div class="rounded-xl border p-3 text-xs mb-5" style="border-color:var(--border);">
+      <div class="font-medium mb-1">Schnellstart</div>
+      <div class="muted">Nutze die Bereiche unten oder gehe direkt zu Kernrouten über den Header.</div>
+    </div>
+    {% set workspace_routes = [
+      {'key':'upload', 'href':'/', 'icon':'[+]', 'label':'Upload', 'hint':'Dokumente erfassen'},
+      {'key':'tasks', 'href':'/tasks', 'icon':'[/]', 'label':'Tasks', 'hint':'Arbeitsstapel prüfen'},
+      {'key':'time', 'href':'/time', 'icon':'[@]', 'label':'Time', 'hint':'Zeiten buchen'}
+    ] %}
+    {% set support_routes = [
+      {'key':'assistant', 'href':'/assistant', 'icon':'[*]', 'label':'Assistant', 'hint':'Guided Workflows'},
+      {'key':'chat', 'href':'/chat', 'icon':'[>]', 'label':'Chat', 'hint':'Freie Fragen'},
+      {'key':'mail', 'href':'/mail', 'icon':'[#]', 'label':'Mail', 'hint':'Inbox & Aktionen'}
+    ] %}
+    <nav>
+      <div class="nav-section">
+        <div class="nav-section-label">Core workspace</div>
+        <div class="space-y-2">
+          {% for route in workspace_routes %}
+          <a class="nav-link {{'active' if active_tab==route.key else ''}}" href="{{route.href}}" title="{{route.hint}}">
+            <span>{{route.icon}}</span>
+            <span>{{route.label}}</span>
+            <span class="nav-link-meta">{{route.hint}}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">Communication</div>
+        <div class="space-y-2">
+          {% for route in support_routes %}
+          <a class="nav-link {{'active' if active_tab==route.key else ''}}" href="{{route.href}}" title="{{route.hint}}">
+            <span>{{route.icon}}</span>
+            <span>{{route.label}}</span>
+            <span class="nav-link-meta">{{route.hint}}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
       {% if roles in ['DEV', 'ADMIN'] %}
-      <a class="nav-link {{'active' if active_tab=='mesh' else ''}}" href="/admin/mesh">[^] Mesh</a>
-      <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings">[%] Settings</a>
+      <div class="nav-section">
+        <div class="nav-section-label">Admin</div>
+        <div class="space-y-2">
+          <a class="nav-link {{'active' if active_tab=='mesh' else ''}}" href="/admin/mesh" title="Agent mesh status">
+            <span>[^]</span><span>Mesh</span><span class="nav-link-meta">Cluster</span>
+          </a>
+          <a class="nav-link {{'active' if active_tab=='settings' else ''}}" href="/settings" title="System und Profil">
+            <span>[%]</span><span>Settings</span><span class="nav-link-meta">System</span>
+          </a>
+        </div>
+      </div>
       {% endif %}
     </nav>
     <div class="mt-8 text-xs muted">
@@ -673,6 +734,13 @@ HTML_BASE = r"""<!doctype html>
       <div>
         <div class="text-lg font-semibold">Workspace</div>
         <div class="text-xs muted">Upload → Review → Ablage</div>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <a class="route-chip" href="/">Neue Datei</a>
+          <a class="route-chip" href="/tasks">Offene Tasks</a>
+          <a class="route-chip" href="/chat">Chat starten</a>
+          <a class="route-chip" href="/assistant">Assistent öffnen</a>
+          <a class="route-chip" href="/time">Zeit erfassen</a>
+        </div>
       </div>
       <div class="flex items-center gap-3">
         <span class="badge">User: {{user}}</span>
