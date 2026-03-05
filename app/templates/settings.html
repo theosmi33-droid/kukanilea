@@ -13,6 +13,17 @@
   .router-btn { border:1px solid var(--color-border); border-radius:10px; background:var(--bg-primary); color:var(--color-text-main); padding:8px 12px; font-size:12px; cursor:pointer; }
   .router-btn-danger { border-color:#dc2626; color:#fca5a5; }
   .router-note { font-size:11px; color:var(--color-text-muted); }
+  .trust-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; margin-bottom:14px; }
+  .trust-item { border:1px solid var(--color-border); border-radius:12px; padding:10px; background: var(--bg-primary); }
+  .trust-label { font-size:11px; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:0.04em; }
+  .trust-value { font-size:14px; font-weight:700; margin-top:3px; }
+  .state-ok { color:#86efac; }
+  .state-warn { color:#fde68a; }
+  .state-danger { color:#fca5a5; }
+  .a11y-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
+  .audit-list { list-style:none; margin:8px 0 0 0; padding:0; display:grid; gap:8px; }
+  .audit-list li { border:1px solid var(--color-border); border-radius:10px; padding:8px; background: var(--bg-primary); }
+  .audit-head { display:flex; justify-content:space-between; gap:10px; font-size:12px; font-weight:600; }
   @media (max-width: 980px) { .router-wrap { grid-template-columns: 1fr; } .router-menu { position: static; } .router-grid { grid-template-columns: 1fr; } }
 </style>
 
@@ -55,9 +66,39 @@
     <a class="router-link" href="#system">System</a>
     <a class="router-link" href="#branding">Branding</a>
     <a class="router-link" href="#backup">Backup & Restore</a>
+    <a class="router-link" href="#audit">Audit</a>
   </aside>
 
   <section>
+    <div class="router-card" aria-live="polite">
+      <h2 style="margin:0 0 8px 0;">Trust-Center</h2>
+      <div class="router-note" style="margin-bottom:10px;">Kompakte Sicht auf Lizenz, Sicherung und Nachvollziehbarkeit kritischer Aktionen.</div>
+      <div class="trust-grid">
+        {% set lic_valid = license_info.valid if license_info is mapping else false %}
+        {% set lic_status = license_runtime_status or 'active' %}
+        <div class="trust-item" role="status">
+          <div class="trust-label">Lizenz-Vertrauen</div>
+          <div class="trust-value {{ 'state-ok' if lic_valid and lic_status == 'active' else ('state-warn' if lic_status == 'grace' else 'state-danger') }}">{{ lic_status }}</div>
+          <div class="router-note">{{ license_info.reason if license_info is mapping else 'Keine Lizenzinfos vorhanden.' }}</div>
+        </div>
+        <div class="trust-item" role="status">
+          <div class="trust-label">Backup-Bereitschaft</div>
+          <div class="trust-value {{ 'state-ok' if (backup_targets or [])|selectattr('exists')|list|length >= 2 else 'state-warn' }}">{{ (backup_targets or [])|selectattr('exists')|list|length }}/{{ (backup_targets or [])|length }} Ziele verfügbar</div>
+          <div class="router-note">Sichtbarkeit über alle Pflichtziele inkl. Lizenz-Datei.</div>
+        </div>
+        <div class="trust-item" role="status">
+          <div class="trust-label">Restore-Basis</div>
+          <div class="trust-value {{ 'state-ok' if (backups or [])|length > 0 else 'state-danger' }}">{{ (backups or [])|length }} Backup-Dateien</div>
+          <div class="router-note">Restore ist nur sicher, wenn mindestens ein gültiges Backup vorliegt.</div>
+        </div>
+        <div class="trust-item" role="status">
+          <div class="trust-label">Audit-Sichtbarkeit</div>
+          <div class="trust-value {{ 'state-ok' if (recent_audit_events or [])|length > 0 else 'state-warn' }}">{{ (recent_audit_events or [])|length }} letzte Events</div>
+          <div class="router-note">Live-Transparenz für kritische Änderungen und Nachweise.</div>
+        </div>
+      </div>
+    </div>
+
     <div id="users" class="router-card">
       <h2 style="margin:0 0 8px 0;">Benutzer & Rollen</h2>
       <div class="router-note" style="margin-bottom:12px;">Rollen: Admin, Manager, Mitarbeiter. Delete nur mit Confirm-Gate.</div>
@@ -146,11 +187,12 @@
         <div><div class="router-note">Status</div><div data-testid="license-status">{{ license_runtime_status or 'active' }}</div></div>
       </div>
       <form method="post" action="/admin/settings/license/upload" data-testid="license-upload-form" onsubmit="return confirmRisk(this)">
-        <textarea class="router-input" name="license_json" rows="8" placeholder='{"customer_id":"...","plan":"ENTERPRISE","signature":"..."}' required></textarea>
+        <label class="a11y-only" for="license-json">Lizenz JSON</label>
+        <textarea id="license-json" aria-describedby="license-help" class="router-input" name="license_json" rows="8" placeholder='{"customer_id":"...","plan":"ENTERPRISE","signature":"..."}' required></textarea>
         <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
           <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
           <button class="router-btn" type="submit">Lizenz hochladen</button>
-          <span class="router-note">Confirm-Gate aktiv.</span>
+          <span class="router-note" id="license-help">Confirm-Gate aktiv. Nur signiertes JSON verwenden.</span>
         </div>
       </form>
     </div>
@@ -224,7 +266,7 @@
     <div id="backup" class="router-card">
       <h2 style="margin:0 0 8px 0;">Backup & Wiederherstellung</h2>
       <form method="post" action="/admin/settings/backup/run" data-testid="backup-run-form" onsubmit="return confirmRisk(this)" style="margin-bottom:12px;">
-        <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
+        <input aria-label="Backup bestätigen" class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
         <button class="router-btn" type="submit">Backup jetzt ausführen</button>
       </form>
       <div class="router-note" style="margin:8px 0 10px 0;">
@@ -250,15 +292,34 @@
         </table>
       </div>
       <form method="post" action="/admin/settings/backup/restore" data-testid="backup-restore-form" onsubmit="return confirmRisk(this)" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <select class="router-input" style="max-width:360px;" name="backup_name" required>
+        <label class="a11y-only" for="backup-name">Backup-Datei wählen</label>
+        <select id="backup-name" class="router-input" style="max-width:360px;" name="backup_name" required>
           {% for b in backups or [] %}
           <option value="{{ b.name }}">{{ b.name }}</option>
           {% endfor %}
         </select>
-        <input class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
+        <input aria-label="Restore bestätigen" class="router-input" style="max-width:120px;" name="confirm" placeholder="CONFIRM" required>
         <button class="router-btn router-btn-danger" type="submit">Restore</button>
       </form>
       <div class="router-note" style="margin-top:8px;">Riskante Aktion: Confirm-Gate ist verpflichtend.</div>
+    </div>
+
+    <div id="audit" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Audit-Transparenz</h2>
+      <div class="router-note">Letzte sicherheitsrelevante Vorgänge zur schnellen Plausibilitätsprüfung.</div>
+      <ul class="audit-list">
+        {% for event in recent_audit_events or [] %}
+        <li>
+          <div class="audit-head">
+            <span>{{ event.action or 'event' }}</span>
+            <span>{{ event.ts or '-' }}</span>
+          </div>
+          <div class="router-note">User: {{ event.user or '-' }} · Ziel: {{ event.target or '-' }}</div>
+        </li>
+        {% else %}
+        <li><div class="router-note">Noch keine Audit-Ereignisse verfügbar.</div></li>
+        {% endfor %}
+      </ul>
     </div>
   </section>
 </div>

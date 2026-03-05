@@ -30,7 +30,7 @@ from app.auth import (
     require_role,
 )
 from app.config import Config
-from app.core.logic import audit_log
+from app.core.logic import audit_list, audit_log
 from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
@@ -288,6 +288,12 @@ def settings_console():
     runtime_status = str(current_app.config.get("LICENSE_STATUS", "active"))
     mesh_pub, mesh_node = ensure_mesh_identity()
 
+    recent_audit_events: list[dict[str, Any]] = []
+    try:
+        recent_audit_events = audit_list(tenant_id=current_tenant() or "", limit=8)
+    except Exception:
+        current_app.logger.exception("Could not load recent audit events for settings console")
+
     return render_template(
         "settings.html",
         active_tab="settings",
@@ -312,6 +318,7 @@ def settings_console():
         branding=Config.get_branding(),
         backups=_list_backups(),
         backup_targets=_backup_targets_status(),
+        recent_audit_events=recent_audit_events,
         role_options=["admin", "manager", "mitarbeiter"],
     )
 
