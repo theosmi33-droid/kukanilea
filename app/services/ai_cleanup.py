@@ -11,6 +11,7 @@ from pathlib import Path
 logger = logging.getLogger("ai_cleanup")
 
 MEMORY_ROOT = os.environ.get("KUKANILEA_AI_MEMORY_ROOT", "instance/ai_memory")
+DEFAULT_AUTH_DB = os.environ.get("KUKANILEA_AUTH_DB", "instance/auth.sqlite3")
 
 
 def cleanup_tenant_db(db_path: str, days: int = 60, min_importance: int = 8) -> int:
@@ -42,5 +43,34 @@ def cleanup_all_tenants() -> None:
             logger.exception("Cleanup failed for %s", db_file)
 
 
-if __name__ == "__main__":
+def cleanup_auth_memory(db_path: str = DEFAULT_AUTH_DB, days: int = 60) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    conn = sqlite3.connect(db_path)
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(agent_memory)").fetchall()}
+        if "created_at" in columns:
+            conn.execute("DELETE FROM agent_memory WHERE created_at < ?", (cutoff.isoformat(),))
+        elif "timestamp" in columns:
+            conn.execute("DELETE FROM agent_memory WHERE timestamp < ?", (cutoff.isoformat(),))
+        else:
+            return 0
+        deleted = conn.total_changes
+        conn.commit()
+        logger.info("Cleanup auth memory %s -> deleted %d rows", db_path, deleted)
+        return deleted
+    finally:
+        conn.close()
+
+
+def run_nightly_cleanup(days: int = 60) -> None:
+    """Entry-point for nightly retention job."""
+
     cleanup_all_tenants()
+    try:
+        cleanup_auth_memory(days=days)
+    except Exception:
+        logger.exception("Cleanup failed for auth memory")
+
+
+if __name__ == "__main__":
+    run_nightly_cleanup()
