@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% block title %}Messenger{% endblock %}
+{% block title %}Nachrichtenzentrale{% endblock %}
 
 {% block content %}
 <style>
@@ -61,7 +61,7 @@
     <div id="message-list" class="ms-msgs"></div>
     <div class="ms-input">
       <button id="attach-btn" class="ms-btn" type="button">Anhang</button>
-      <input id="composer" class="ms-search" placeholder="Nachricht schreiben, z.B. '@KUKANILEA erstelle Task aus Nachricht'">
+      <input id="composer" class="ms-search" placeholder="Nachricht schreiben, z.B. '@KUKANILEA erstelle Aufgabe aus Nachricht'">
       <button id="send-btn" class="ms-btn primary" type="button">Senden</button>
     </div>
     <div style="padding:0 12px 12px;">
@@ -93,7 +93,7 @@
     ],
     messages: {
       'thread-support': [
-        msg('internal','in','Willkommen im Messenger-Hub. Interner Chat funktioniert immer offline.'),
+        msg('internal','in','Willkommen im Nachrichtenzentrale. Interner Chat funktioniert immer offline.'),
         msg('internal','in','@KUKANILEA kann Vorschläge machen, aber Aktionen brauchen Confirm-Gate.')
       ],
       'thread-admin': [msg('internal','in','Bitte morgen Termin mit Kunde abstimmen: +49 170 1234567')],

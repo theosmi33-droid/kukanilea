@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% block title %}Forensic Eye Visualizer{% endblock %}
+{% block title %}Forensik-Analyseansicht{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -112,7 +112,7 @@
         <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center;">
           <h3>Lokale KI-Zusammenfassung</h3>
           <div class="vz-group">
-            <button id="vz-summary" class="vz-btn" type="button">Summary erstellen</button>
+            <button id="vz-summary" class="vz-btn" type="button">Zusammenfassung erstellen</button>
             <button id="vz-save-note" class="vz-btn" type="button">Als Notiz speichern</button>
             <button id="vz-export" class="vz-btn" type="button">Als PDF exportieren</button>
           </div>
@@ -675,9 +675,9 @@
         body: JSON.stringify({ source: state.activeId, page: state.page, sheet: state.sheet, force_ocr: el.force.checked }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || data?.error || "Summary fehlgeschlagen");
+      if (!res.ok) throw new Error(data?.detail || data?.error || "Zusammenfassung fehlgeschlagen");
       state.summaryText = data.summary || "";
-      el.summaryText.textContent = state.summaryText || "Keine Summary verfügbar.";
+      el.summaryText.textContent = state.summaryText || "Keine Zusammenfassung verfügbar.";
       const src = data.source || {};
       const model = data.model || "heuristic";
       const tags = [
@@ -687,7 +687,7 @@
       ];
       el.metaTags.innerHTML = tags.map((t) => `<span class="vz-chip">${esc(t)}</span>`).join("");
     } catch (err) {
-      el.summaryText.textContent = `Summary-Fehler: ${String(err.message || err)}`;
+      el.summaryText.textContent = `Fehler in der Zusammenfassung: ${String(err.message || err)}`;
     }
   }
 
@@ -700,12 +700,12 @@
         body: JSON.stringify({
           source: state.activeId,
           summary: state.summaryText,
-          title: "Visualizer Summary",
+          title: "Analyse-Zusammenfassung",
           chart_type: el.chartType.value,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || data?.error || "Save fehlgeschlagen");
+      if (!res.ok) throw new Error(data?.detail || data?.error || "Speichern fehlgeschlagen");
       el.summaryText.textContent = `${state.summaryText}\n\n[Gespeichert als Note #${data.note?.id || "?"}]`;
     } catch (err) {
       el.summaryText.textContent = `Notizspeicherung fehlgeschlagen: ${String(err.message || err)}`;
@@ -727,7 +727,7 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || data?.error || "Ablage fehlgeschlagen");
-      el.summaryText.textContent = `${state.summaryText || ""}\n\n[Im Projekt abgelegt: Task ${data.task_id}]`;
+      el.summaryText.textContent = `${state.summaryText || ""}\n\n[Im Projekt abgelegt: Aufgabe ${data.task_id}]`;
     } catch (err) {
       el.summaryText.textContent = `Projekt-Ablage fehlgeschlagen: ${String(err.message || err)}`;
     }

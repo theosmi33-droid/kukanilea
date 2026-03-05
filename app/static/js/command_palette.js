@@ -5,7 +5,7 @@
 const CommandPalette = {
     isOpen: false,
     commands: [
-        { id: 'nav-dash', title: 'Dashboard', subtitle: 'Zur Übersicht', icon: 'layout', action: () => window.location.href = '/' },
+        { id: 'nav-dash', title: 'Übersicht', subtitle: 'Zur Übersicht', icon: 'layout', action: () => window.location.href = '/' },
         { id: 'nav-crm', title: 'CRM - Kontakte', subtitle: 'Kunden verwalten', icon: 'users', action: () => window.location.href = '/crm/contacts' },
         { id: 'nav-tasks', title: 'Aufgaben', subtitle: 'To-Dos und Projekte', icon: 'check-square', action: () => window.location.href = '/tasks' },
         { id: 'nav-docs', title: 'Dokumente', subtitle: 'Archiv durchsuchen', icon: 'file-text', action: () => window.location.href = '/documents' },
