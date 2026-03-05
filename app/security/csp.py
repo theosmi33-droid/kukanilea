@@ -8,9 +8,6 @@ def build_csp_header(script_nonce: str | None = None) -> str:
     script_src = "script-src 'self'"
     if nonce_value:
         script_src = f"{script_src} 'nonce-{nonce_value}'"
-    else:
-        # Fallback mode for health checks/non-html requests where nonces are not wired.
-        script_src = f"{script_src} 'unsafe-inline'"
 
     directives = [
         "default-src 'self'",

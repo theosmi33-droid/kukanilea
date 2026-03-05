@@ -15,7 +15,8 @@ def test_csp_contains_nonce_based_script_policy():
     assert "unsafe-eval" not in csp
 
 
-def test_csp_fallback_mode_is_explicit_for_non_nonce_responses():
+def test_csp_without_nonce_has_no_unsafe_inline_script_fallback():
     csp = build_csp_header()
-    assert "script-src 'self' 'unsafe-inline'" in csp
+    assert "script-src 'self'" in csp
+    assert "script-src 'self' 'unsafe-inline'" not in csp
     assert "script-src-attr 'none'" in csp
