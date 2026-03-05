@@ -80,6 +80,10 @@ def _load_system_settings() -> dict[str, Any]:
         "timezone": "Europe/Berlin",
         "backup_interval": "daily",
         "log_level": "INFO",
+        "external_apis_enabled": False,
+        "memory_retention_days": 60,
+        "backup_verify_hook_enabled": True,
+        "restore_verify_hook_enabled": True,
         "mesh_mdns_enabled": True,
         "mesh_tailscale_enabled": False,
     }
@@ -585,12 +589,21 @@ def save_system_settings():
         return confirm_error
 
     payload = _load_system_settings()
+    retention_raw = (request.form.get("memory_retention_days") or payload.get("memory_retention_days") or 60)
+    try:
+        retention_days = max(1, int(retention_raw))
+    except (TypeError, ValueError):
+        retention_days = int(payload.get("memory_retention_days") or 60)
     payload.update(
         {
             "language": (request.form.get("language") or payload.get("language") or "de").strip().lower(),
             "timezone": (request.form.get("timezone") or payload.get("timezone") or "Europe/Berlin").strip(),
             "backup_interval": (request.form.get("backup_interval") or payload.get("backup_interval") or "daily").strip().lower(),
             "log_level": (request.form.get("log_level") or payload.get("log_level") or "INFO").strip().upper(),
+            "external_apis_enabled": (request.form.get("external_apis_enabled") or "off") == "on",
+            "memory_retention_days": retention_days,
+            "backup_verify_hook_enabled": (request.form.get("backup_verify_hook_enabled") or "off") == "on",
+            "restore_verify_hook_enabled": (request.form.get("restore_verify_hook_enabled") or "off") == "on",
             "mesh_mdns_enabled": (request.form.get("mesh_mdns_enabled") or "off") == "on",
             "mesh_tailscale_enabled": (request.form.get("mesh_tailscale_enabled") or "off") == "on",
         }
