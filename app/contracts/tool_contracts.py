@@ -222,12 +222,13 @@ def _collect_settings_summary(_tenant: str) -> tuple[dict, dict, str]:
 
 
 def _collect_chatbot_summary(_tenant: str) -> tuple[dict, dict, str]:
-    metrics = {"overlay": 1, "compact_api": 1}
+    metrics = {"overlay": 1, "compact_api": 1, "summary_sources": 3}
     details = {
         "endpoints": ["/api/chat", "/api/chat/compact"],
+        "summary_sources": ["dashboard", "tasks", "projects"],
         "payload_contract": {
             "request_fields": CHATBOT_REQUEST_FIELDS,
-            "response_fields": CHATBOT_RESPONSE_FIELDS,
+            "response_fields": [*CHATBOT_RESPONSE_FIELDS, "text", "actions", "requires_confirm"],
         },
         "contract": {
             "read_only": True,
