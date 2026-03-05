@@ -13,23 +13,37 @@ concurrency:
 
 jobs:
   e2e-tests:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-slow-checks') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
     steps:
+      - name: Decide if full E2E should run
+        id: gate
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "run_full=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ contains(github.event.pull_request.labels.*.name, 'run-slow-checks') }}" == "true" ]]; then
+            echo "run_full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_full=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.gate.outputs.run_full == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Python
+        if: steps.gate.outputs.run_full == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
+        if: steps.gate.outputs.run_full == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
@@ -43,5 +57,10 @@ jobs:
           done
 
       - name: Run Playwright tests
+        if: steps.gate.outputs.run_full == 'true'
         run: |
           pytest -q tests/e2e/test_ui_workflow.py || pytest -q tests/e2e/test_ui_workflow.py --lf
+
+      - name: Mark skipped policy path as success
+        if: steps.gate.outputs.run_full != 'true'
+        run: echo "Skipping full E2E on pull requests without 'run-slow-checks' label."
