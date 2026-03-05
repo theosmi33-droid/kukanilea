@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 
-def build_csp_header() -> str:
-    # Keep a strict baseline while preserving legacy inline template compatibility.
-    # Unsafe inline remains only where migration to nonced/static assets is pending.
-    # No remote origins and no blob/eval allowances are permitted.
+def build_csp_header(script_nonce: str | None = None) -> str:
+    # Enterprise baseline: block remote origins, object embedding and mixed content.
+    # Inline scripts are only allowed via per-request nonces.
+    nonce_value = (script_nonce or "").strip()
+    script_src = "script-src 'self'"
+    if nonce_value:
+        script_src = f"{script_src} 'nonce-{nonce_value}'"
+    else:
+        # Fallback mode for health checks/non-html requests where nonces are not wired.
+        script_src = f"{script_src} 'unsafe-inline'"
+
     directives = [
         "default-src 'self'",
         "base-uri 'self'",
         "form-action 'self'",
         "frame-ancestors 'self'",
-        "script-src 'self' 'unsafe-inline'",
+        script_src,
+        "script-src-attr 'none'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
         "font-src 'self' data:",
