@@ -33,10 +33,14 @@ def check_license_file(license_path: str, pub_hex_env: str) -> Dict[str, Any]:
     if not path.exists():
         return {"status": "LOCKED", "reason": "MISSING"}
 
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"status": "LOCKED", "reason": "INVALID_PAYLOAD"}
+
     pub_hex = os.environ.get(pub_hex_env)
     if not pub_hex:
-        raise RuntimeError(f"Public key env missing: {pub_hex_env}")
+        return {"status": "LOCKED", "reason": "PUBKEY_MISSING"}
 
     if not verify_signature(pub_hex, dict(payload)):
         return {"status": "LOCKED", "reason": "INVALID_SIGNATURE"}

@@ -35,3 +35,19 @@ def test_license_warn_grace(monkeypatch, tmp_path):
 
 def test_license_locked_when_missing(tmp_path):
     assert check_license_file(str(tmp_path / "missing.json"), "ANY")["status"] == "LOCKED"
+
+
+def test_license_locked_when_pubkey_env_missing(tmp_path):
+    valid_until = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%d")
+    lic, _pub = _write_signed(tmp_path, {"tenant_id": "T1", "valid_until": valid_until})
+    payload = check_license_file(str(lic), "MISSING_ENV")
+    assert payload["status"] == "LOCKED"
+    assert payload["reason"] == "PUBKEY_MISSING"
+
+
+def test_license_locked_on_invalid_payload(tmp_path):
+    lic = tmp_path / "license.json"
+    lic.write_text("{not-json", encoding="utf-8")
+    payload = check_license_file(str(lic), "ANY")
+    assert payload["status"] == "LOCKED"
+    assert payload["reason"] == "INVALID_PAYLOAD"
