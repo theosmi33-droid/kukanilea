@@ -11,7 +11,7 @@ const CommandPalette = {
         { id: 'nav-docs', title: 'Dokumente', subtitle: 'Archiv durchsuchen', icon: 'file-text', action: () => window.location.href = '/documents' },
         { id: 'nav-assistant', title: 'KI-Assistent', subtitle: 'Frag die KI', icon: 'cpu', action: () => window.location.href = '/assistant' },
         { id: 'nav-audit', title: 'Audit Trail', subtitle: 'GoBD Compliance prüfen', icon: 'shield', action: () => window.location.href = '/admin/audit' },
-        { id: 'action-theme', title: 'Farbschema wechseln', subtitle: 'Hell / Dunkel Modus', icon: 'moon', action: () => StateStore.toggleTheme() },
+        { id: 'action-theme', title: 'White Mode sichern', subtitle: 'Sovereign-11 White-Mode-Only aktivieren', icon: 'sun', action: () => StateStore.toggleTheme() },
         { id: 'nav-settings', title: 'Einstellungen', subtitle: 'System-Konfiguration', icon: 'settings', action: () => window.location.href = '/settings' },
     ],
 

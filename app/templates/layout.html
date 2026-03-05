@@ -30,6 +30,7 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Zum Hauptinhalt springen</a>
   <!-- Task 156: Boot Splash -->
   <div id="boot-splash">
     <div class="boot-logo-animate">
@@ -54,13 +55,13 @@
   </script>
 
   {% include 'partials/sidebar.html' %}
-  <main class="main-content">
-    <header style="display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--spacing-4); padding:0 var(--spacing-2);">
+  <main class="main-content" id="app-main" tabindex="-1" aria-label="Seiteninhalt">
+    <header class="runtime-header" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--spacing-4); padding:0 var(--spacing-2);" aria-label="Seitenkopf">
         <div>
             {% include 'components/system_status.html' %}
         </div>
         <div style="display:flex; align-items:center; gap:16px;">
-            <span style="font-size: 11px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;">White Mode</span>
+            <span class="mode-chip" style="font-size: 11px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;" aria-label="Farbmodus">White Mode</span>
             {% if roles in ['DEV', 'ADMIN'] and all_tenants %}
             <div style="display:flex; align-items:center; gap:8px;">
                 <span style="font-size: 11px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;">Kontext:</span>
@@ -92,7 +93,7 @@
                 <div style="width: 8px; height: 8px; background: #4ade80; border-radius: 50%; box-shadow: 0 0 8px #4ade80;"></div>
                 <span style="font-weight: 700; font-size: 14px;">KI ASSISTENT</span>
             </div>
-            <button onclick="toggleChat()" style="background: none; border: none; color: white; cursor: pointer; padding: 4px;">
+            <button onclick="toggleChat()" aria-label="KI-Chat schließen" style="background: none; border: none; color: white; cursor: pointer; padding: 4px;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </div>
@@ -102,13 +103,13 @@
             </div>
         </div>
         <div style="padding: 12px; border-top: 1px solid var(--color-border); display: flex; gap: 8px; background: var(--bg-primary);">
-            <input type="text" id="chat-input" placeholder="Nachricht schreiben..." style="flex: 1; background: var(--bg-tertiary); border: 1px solid var(--color-border); border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-size: 13px; outline: none;">
-            <button id="chat-send-btn" onclick="sendChatMessage()" style="background: var(--color-primary); color: white; border: none; border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+            <input type="text" id="chat-input" aria-label="Nachricht an KI-Assistent" placeholder="Nachricht schreiben..." style="flex: 1; background: var(--bg-tertiary); border: 1px solid var(--color-border); border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-size: 13px; outline: none;">
+            <button id="chat-send-btn" onclick="sendChatMessage()" aria-label="Nachricht senden" style="background: var(--color-primary); color: white; border: none; border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
             </button>
         </div>
     </div>
-    <button onclick="toggleChat()" style="width: 56px; height: 56px; border-radius: 50%; background: var(--color-primary); color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); display: flex; align-items: center; justify-content: center; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+    <button onclick="toggleChat()" aria-label="KI-Chat öffnen oder schließen" style="width: 56px; height: 56px; border-radius: 50%; background: var(--color-primary); color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); display: flex; align-items: center; justify-content: center; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     </button>
   </div>
@@ -118,7 +119,7 @@
       const btn = document.getElementById('sidebar-toggle');
       const updateLabel = () => {
         const collapsed = document.documentElement.classList.contains('sidebar-collapsed');
-        if (btn) btn.textContent = collapsed ? '→' : '←';
+        if (btn) { btn.textContent = collapsed ? '→' : '←'; btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true'); btn.setAttribute('aria-label', collapsed ? 'Sidebar ausklappen' : 'Sidebar einklappen'); btn.title = collapsed ? 'Sidebar ausklappen' : 'Sidebar einklappen'; }
       };
       if (btn) {
         btn.addEventListener('click', () => {

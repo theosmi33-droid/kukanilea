@@ -31,10 +31,11 @@ const StateStore = {
     },
 
     toggleTheme() {
-        const newTheme = this.state.theme === 'light' ? 'dark' : 'light';
-        localStorage.setItem('ks_theme', newTheme);
-        this.update('theme', newTheme);
-        document.documentElement.classList.toggle('dark', newTheme === 'dark');
+        // Sovereign-11 runtime contract: white mode only.
+        localStorage.setItem('ks_theme', 'light');
+        document.documentElement.classList.add('light');
+        document.documentElement.classList.remove('dark');
+        this.update('theme', 'light');
     }
 };
 

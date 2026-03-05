@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from tests.time_utils import utc_now_iso
-
 import re
 
+from tests.time_utils import utc_now_iso
 
 HTMX_PATHS = [
     "/dashboard",
@@ -62,6 +61,9 @@ def test_main_navigation_and_main_paths(tmp_path, monkeypatch):
 
     for nav_path in HTMX_PATHS:
         assert f'href="{nav_path}"' in html
+
+    assert "Hauptseiten (10/10)" in html
+    assert "data-nav-mode=\"full-page\"" in html
 
     # Main sidebar navigation is full-page by design (no sidebar htmx partial attributes).
     assert not re.search(r'<a[^>]+data-route="[^"]+"[^>]+hx-get=', html)
