@@ -1,0 +1,12 @@
+tasks:
+  - id: ORCH-20260305-001
+    title: Observer outbound queue DB fallback should use repo-local instance path
+    lane: dashboard
+    file_scope:
+      - app/core/observer.py
+      - tests/test_observer_outbound_queue.py
+      - docs/status/STATUS_20260305.md
+    status: done
+    priority: high
+    type: reliability
+    root_cause: Hardcoded developer-specific auth DB fallback path caused outbound queue metrics to silently degrade on other environments.
