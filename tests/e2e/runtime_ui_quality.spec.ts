@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { loginAsDev, navigateViaSidebar, waitForShellReady } from './support/uiStability';
 
 const mainTabs = [
   '/dashboard',
@@ -13,21 +14,12 @@ const mainTabs = [
   '/settings',
 ];
 
-async function loginAsDev(page: Page) {
-  await page.goto('/login');
-  await page.fill('input[name="username"]', 'dev');
-  await page.fill('input[name="password"]', 'dev');
-  await page.click('button[type="submit"]');
-  await expect(page).toHaveURL(/dashboard|\/$/);
-}
-
 test.describe('runtime-ui enterprise UX quality', () => {
   test('main navigation smoke keeps semantic consistency on all main tabs', async ({ page }) => {
     await loginAsDev(page);
 
     for (const route of mainTabs) {
-      await page.click(`a[href="${route}"]`);
-      await expect(page).toHaveURL(new RegExp(`${route.replace('/', '\\/')}$`));
+      await navigateViaSidebar(page, route);
 
       const activeLink = page.locator(`.nav-link[data-route="${route}"]`);
       await expect(activeLink).toHaveAttribute('aria-current', 'page');
@@ -40,8 +32,8 @@ test.describe('runtime-ui enterprise UX quality', () => {
     await loginAsDev(page);
 
     for (const route of ['/dashboard', '/upload', '/visualizer']) {
-      await page.goto(route);
-      await expect(page.locator('#main-content[data-page-ready="1"]')).toBeVisible();
+      await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await waitForShellReady(page);
       await expect(page.locator('body')).not.toContainText(/Lade\s+Quellen\.\.\.|wird geladen\.\.\./i);
     }
   });
@@ -50,7 +42,7 @@ test.describe('runtime-ui enterprise UX quality', () => {
     await loginAsDev(page);
 
     for (const route of mainTabs) {
-      await page.goto(route);
+      await page.goto(route, { waitUntil: 'domcontentloaded' });
       await expect(page.locator('#main-content')).toHaveAttribute('data-page-ready', '1');
     }
   });
@@ -58,7 +50,8 @@ test.describe('runtime-ui enterprise UX quality', () => {
   test('white mode remains enforced after navigation changes', async ({ page }) => {
     await loginAsDev(page);
     for (const route of ['/dashboard', '/settings', '/visualizer']) {
-      await page.goto(route);
+      await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await waitForShellReady(page);
       await expect(page.locator('html')).toHaveClass(/light/);
     }
   });
@@ -76,7 +69,8 @@ test.describe('runtime-ui enterprise UX quality', () => {
 
   test('visual baseline desktop dashboard', async ({ page }) => {
     await loginAsDev(page);
-    await page.goto('/dashboard');
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    await waitForShellReady(page);
     await expect(page.locator('#main-content')).toHaveScreenshot('runtime-ui-dashboard-desktop.png', {
       maxDiffPixelRatio: 0.02,
     });
@@ -84,9 +78,10 @@ test.describe('runtime-ui enterprise UX quality', () => {
 
   test('visual baseline mobile dashboard', async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-    const page = await context.newPage();
+    const page: Page = await context.newPage();
     await loginAsDev(page);
-    await page.goto('/dashboard');
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    await waitForShellReady(page);
     await expect(page.locator('#main-content')).toHaveScreenshot('runtime-ui-dashboard-mobile.png', {
       maxDiffPixelRatio: 0.03,
     });
@@ -98,7 +93,7 @@ test.describe('runtime-ui enterprise UX quality', () => {
     await page.route('**/api/visualizer/sources', async (route) => {
       await route.abort('failed');
     });
-    await page.goto('/visualizer');
+    await page.goto('/visualizer', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#vz-stage')).toContainText(/Quellen konnten nicht geladen werden/i);
     await expect(page.locator('#vz-stage')).not.toContainText(/Lade Quellen/i);
   });
