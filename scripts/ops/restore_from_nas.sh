@@ -121,12 +121,19 @@ fi
 LOCAL_FILE="${TMP_DIR}/${BACKUP_FILE}"
 CHECKSUM_EXPECTED=""
 CHECKSUM_FILE="${BACKUP_FILE}.sha256"
+SNAPSHOT_FILE="${BACKUP_FILE}.snapshot.json"
+METADATA_FILE="${BACKUP_FILE}.metadata.json"
+SNAPSHOT_BASELINE="${TMP_DIR}/${SNAPSHOT_FILE}"
+SNAPSHOT_STATUS="missing"
+SNAPSHOT_ISSUES=""
 if [[ "$MODE" == "nas" ]] && command -v smbclient >/dev/null 2>&1; then
   if ! nas_get_with_retry "$BACKUP_FILE" "$LOCAL_FILE"; then
     MODE="degraded_local"
     log "WARN NAS download failed, switching to degraded local mode"
   else
     nas_get_with_retry "$CHECKSUM_FILE" "${TMP_DIR}/${CHECKSUM_FILE}" || true
+    nas_get_with_retry "$SNAPSHOT_FILE" "$SNAPSHOT_BASELINE" || true
+    nas_get_with_retry "$METADATA_FILE" "${TMP_DIR}/${METADATA_FILE}" || true
   fi
 elif [[ "$MODE" == "nas" ]]; then
   MODE="degraded_local"
@@ -138,6 +145,12 @@ if [[ "$MODE" == "degraded_local" ]]; then
   cp "$LOCAL_FALLBACK_DIR/$TENANT_ID/$BACKUP_FILE" "$LOCAL_FILE" || die "$EXIT_RUNTIME" "failed to copy local fallback backup"
   if [[ -f "$LOCAL_FALLBACK_DIR/$TENANT_ID/$CHECKSUM_FILE" ]]; then
     cp "$LOCAL_FALLBACK_DIR/$TENANT_ID/$CHECKSUM_FILE" "${TMP_DIR}/${CHECKSUM_FILE}" || die "$EXIT_RUNTIME" "failed to copy local fallback checksum"
+  fi
+  if [[ -f "$LOCAL_FALLBACK_DIR/$TENANT_ID/$SNAPSHOT_FILE" ]]; then
+    cp "$LOCAL_FALLBACK_DIR/$TENANT_ID/$SNAPSHOT_FILE" "$SNAPSHOT_BASELINE" || die "$EXIT_RUNTIME" "failed to copy local fallback snapshot"
+  fi
+  if [[ -f "$LOCAL_FALLBACK_DIR/$TENANT_ID/$METADATA_FILE" ]]; then
+    cp "$LOCAL_FALLBACK_DIR/$TENANT_ID/$METADATA_FILE" "${TMP_DIR}/${METADATA_FILE}" || die "$EXIT_RUNTIME" "failed to copy local fallback metadata"
   fi
 fi
 
@@ -171,17 +184,44 @@ VALIDATION_STATUS="skipped"
 VALIDATION_ISSUES=""
 VALIDATION_FILE="${VALIDATION_FILE:-instance/restore_validation_after.json}"
 mkdir -p "$(dirname "$VALIDATION_FILE")"
+
+if [[ -f "$SNAPSHOT_BASELINE" ]]; then
+  if command -v python3 >/dev/null 2>&1 && python3 -m json.tool "$SNAPSHOT_BASELINE" >/dev/null 2>&1; then
+    SNAPSHOT_STATUS="loaded"
+  else
+    SNAPSHOT_STATUS="corrupted"
+    SNAPSHOT_ISSUES="snapshot baseline is not valid JSON: ${SNAPSHOT_FILE}"
+  fi
+fi
+
 if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ops/restore_validation.py" ]]; then
-  if [[ -f "$BASELINE_PATH" ]]; then
+  if [[ "$SNAPSHOT_STATUS" == "loaded" ]]; then
+    if python3 scripts/ops/restore_validation.py --phase after --tenant "$TENANT_ID" --baseline "$SNAPSHOT_BASELINE" > "$VALIDATION_FILE" 2>&1; then
+      VALIDATION_STATUS="ok"
+    else
+      VALIDATION_STATUS="failed"
+      VALIDATION_ISSUES="$(tr '\n' ' ' < "$VALIDATION_FILE" | cut -c1-240)"
+    fi
+  elif [[ -f "$BASELINE_PATH" ]]; then
     if python3 scripts/ops/restore_validation.py --phase after --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" > "$VALIDATION_FILE" 2>&1; then
       VALIDATION_STATUS="ok"
+      if [[ "$SNAPSHOT_STATUS" == "corrupted" ]]; then
+        VALIDATION_STATUS="warn_corrupted_snapshot"
+        VALIDATION_ISSUES="$SNAPSHOT_ISSUES"
+      fi
     else
       VALIDATION_STATUS="failed"
       VALIDATION_ISSUES="$(tr '\n' ' ' < "$VALIDATION_FILE" | cut -c1-240)"
     fi
   else
     VALIDATION_STATUS="warn_missing_baseline"
-    VALIDATION_ISSUES="missing baseline: $BASELINE_PATH"
+    if [[ "$SNAPSHOT_STATUS" == "corrupted" ]]; then
+      VALIDATION_ISSUES="$SNAPSHOT_ISSUES"
+    elif [[ "$SNAPSHOT_STATUS" == "missing" ]]; then
+      VALIDATION_ISSUES="missing snapshot and baseline: ${SNAPSHOT_FILE} ${BASELINE_PATH}"
+    else
+      VALIDATION_ISSUES="missing baseline: $BASELINE_PATH"
+    fi
   fi
 fi
 
@@ -203,6 +243,8 @@ RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
   echo "restore_validation=$VALIDATION_STATUS"
   echo "restore_validation_issues=$VALIDATION_ISSUES"
   echo "restore_validation_file=$VALIDATION_FILE"
+  echo "snapshot_status=$SNAPSHOT_STATUS"
+  echo "snapshot_file=$SNAPSHOT_FILE"
   echo "restore_started_epoch=$START_EPOCH"
   echo "restore_completed_epoch=$END_EPOCH"
   echo "rto_seconds=$RTO_SECONDS"

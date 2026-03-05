@@ -17,6 +17,7 @@ DB_PATH="${DB_PATH:-instance/auth.sqlite3}"
 DRY_RUN=0
 START_EPOCH="$(date +%s)"
 NAS_RETRIES="${NAS_RETRIES:-3}"
+SNAPSHOT_SOURCE="generated"
 
 usage() {
   cat <<'USAGE'
@@ -117,13 +118,46 @@ fi
 
 BACKUP_HASH="$(sha256_file "$UPLOAD_FILE")"
 printf '%s  %s\n' "$BACKUP_HASH" "$(basename "$UPLOAD_FILE")" > "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256"
+METADATA_FILE="${TMP_DIR}/$(basename "$UPLOAD_FILE").metadata.json"
+SNAPSHOT_FILE="${TMP_DIR}/$(basename "$UPLOAD_FILE").snapshot.json"
+
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ops/restore_validation.py" ]] && [[ -f "$DB_PATH" ]]; then
+  if python3 scripts/ops/restore_validation.py \
+    --phase before \
+    --tenant "$TENANT_ID" \
+    --db "$DB_PATH" \
+    --baseline "$SNAPSHOT_FILE" >/dev/null 2>&1; then
+    SNAPSHOT_SOURCE="generated"
+  else
+    SNAPSHOT_SOURCE="fallback_error"
+    printf '{"ok":false,"error":"snapshot_generation_failed","tenant_id":"%s"}\n' "$TENANT_ID" > "$SNAPSHOT_FILE"
+  fi
+else
+  SNAPSHOT_SOURCE="fallback_missing_dependency"
+  printf '{"ok":false,"error":"snapshot_generation_unavailable","tenant_id":"%s"}\n' "$TENANT_ID" > "$SNAPSHOT_FILE"
+fi
+
+cat > "$METADATA_FILE" <<EOF
+{
+  "report_version": 1,
+  "tenant_id": "${TENANT_ID}",
+  "backup_file": "$(basename "$UPLOAD_FILE")",
+  "archive_file": "$(basename "$BACKUP_NAME")",
+  "checksum_sha256": "${BACKUP_HASH}",
+  "backup_started_epoch": ${START_EPOCH},
+  "db_path": "${DB_PATH}",
+  "snapshot_source": "${SNAPSHOT_SOURCE}"
+}
+EOF
 
 TARGET_MODE="nas"
 TARGET_PATH=""
 CHECKSUM_PATH=""
 if command -v smbclient >/dev/null 2>&1; then
   if nas_upload_with_retry "$UPLOAD_FILE" "$(basename "$UPLOAD_FILE")" \
-    && nas_upload_with_retry "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256" "$(basename "$UPLOAD_FILE").sha256"; then
+    && nas_upload_with_retry "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256" "$(basename "$UPLOAD_FILE").sha256" \
+    && nas_upload_with_retry "$METADATA_FILE" "$(basename "$UPLOAD_FILE").metadata.json" \
+    && nas_upload_with_retry "$SNAPSHOT_FILE" "$(basename "$UPLOAD_FILE").snapshot.json"; then
     TARGET_PATH="${NAS_SHARE}/${TENANT_ID}/$(basename "$UPLOAD_FILE")"
     CHECKSUM_PATH="${TARGET_PATH}.sha256"
   else
@@ -139,6 +173,8 @@ if [[ "$TARGET_MODE" != "nas" ]]; then
   mkdir -p "$LOCAL_FALLBACK_DIR/$TENANT_ID"
   cp "$UPLOAD_FILE" "$LOCAL_FALLBACK_DIR/$TENANT_ID/" || die "$EXIT_RUNTIME" "failed to copy backup to local fallback"
   cp "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256" "$LOCAL_FALLBACK_DIR/$TENANT_ID/" || die "$EXIT_RUNTIME" "failed to copy checksum to local fallback"
+  cp "$METADATA_FILE" "$LOCAL_FALLBACK_DIR/$TENANT_ID/" || die "$EXIT_RUNTIME" "failed to copy metadata to local fallback"
+  cp "$SNAPSHOT_FILE" "$LOCAL_FALLBACK_DIR/$TENANT_ID/" || die "$EXIT_RUNTIME" "failed to copy snapshot to local fallback"
   TARGET_PATH="$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE")"
   CHECKSUM_PATH="$LOCAL_FALLBACK_DIR/$TENANT_ID/$(basename "$UPLOAD_FILE").sha256"
 fi
@@ -156,6 +192,9 @@ RPO_SECONDS="$((END_EPOCH - DB_MTIME))"
   echo "target=$TARGET_PATH"
   echo "checksum_sha256=$BACKUP_HASH"
   echo "checksum_file=$CHECKSUM_PATH"
+  echo "metadata_file=${TARGET_PATH}.metadata.json"
+  echo "snapshot_file=${TARGET_PATH}.snapshot.json"
+  echo "snapshot_source=$SNAPSHOT_SOURCE"
   echo "backup_started_epoch=$START_EPOCH"
   echo "backup_completed_epoch=$END_EPOCH"
   echo "rto_seconds=$RTO_SECONDS"
