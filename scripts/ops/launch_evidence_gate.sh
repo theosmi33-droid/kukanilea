@@ -15,7 +15,6 @@ PYTHON="${PYTHON:-}"
 REPO="${REPO:-}"
 
 SKIP_HEALTHCHECK=0
-
 PASS_COUNT=0
 WARN_COUNT=0
 FAIL_COUNT=0
@@ -26,12 +25,7 @@ declare -a GATE_NAMES=()
 declare -a GATE_STATUS=()
 declare -a GATE_NOTES=()
 
-die() {
-  local code="$1"
-  shift
-  printf '[launch-evidence] ERROR: %s\n' "$*" >&2
-  exit "$code"
-}
+die() { local code="$1"; shift; printf '[launch-evidence] ERROR: %s\n' "$*" >&2; exit "$code"; }
 
 usage() {
   cat <<'USAGE'
@@ -46,13 +40,10 @@ USAGE
 }
 
 record_result() {
-  local name="$1"
-  local status="$2"
-  local note="$3"
+  local name="$1" status="$2" note="$3"
   GATE_NAMES+=("$name")
   GATE_STATUS+=("$status")
   GATE_NOTES+=("$note")
-
   case "$status" in
     PASS) PASS_COUNT=$((PASS_COUNT + 1)) ;;
     WARN) WARN_COUNT=$((WARN_COUNT + 1)) ;;
@@ -62,24 +53,12 @@ record_result() {
 }
 
 run_cmd_gate() {
-  local gate_name="$1"
-  local cmd="$2"
-  local pass_note="$3"
-  local fail_note="$4"
-  local warn_note="${5:-}"
-  local tmp
-  tmp="$(mktemp)"
-
-  if (cd "$ROOT" && bash -lc "$cmd") >"$tmp" 2>&1; then
+  local gate_name="$1" cmd="$2" pass_note="$3" fail_note="$4"
+  if (cd "$ROOT" && bash -lc "$cmd") >/dev/null 2>&1; then
     record_result "$gate_name" "PASS" "$pass_note"
   else
-    if [[ -n "$warn_note" ]]; then
-      record_result "$gate_name" "WARN" "$warn_note"
-    else
-      record_result "$gate_name" "FAIL" "$fail_note"
-    fi
+    record_result "$gate_name" "FAIL" "$fail_note"
   fi
-  rm -f "$tmp"
 }
 
 detect_repo() {
@@ -87,9 +66,7 @@ detect_repo() {
   remote_url="$(git -C "$ROOT" config --get remote.origin.url 2>/dev/null || true)"
   if [[ "$remote_url" =~ github\.com[:/]([^/]+/[^/.]+)(\.git)?$ ]]; then
     printf '%s\n' "${BASH_REMATCH[1]}"
-    return 0
   fi
-  return 1
 }
 
 compute_scope_metrics() {
@@ -99,24 +76,17 @@ compute_scope_metrics() {
   elif git -C "$ROOT" rev-parse --verify HEAD~1 >/dev/null 2>&1; then
     base_ref="HEAD~1"
   else
-    base_ref=""
-  fi
-
-  if [[ -z "$base_ref" ]]; then
     printf '0 0\n'
     return 0
   fi
-
   files="$(git -C "$ROOT" diff --name-only "$base_ref"...HEAD | sed '/^$/d' | wc -l | tr -d ' ')"
   loc="$(git -C "$ROOT" diff --numstat "$base_ref"...HEAD | awk '{a+=$1; d+=$2} END {print a+d+0}')"
   printf '%s %s\n' "$files" "$loc"
 }
 
 write_reports() {
-  local ts
-  ts="$(date -Iseconds)"
+  local ts; ts="$(date -Iseconds)"
   mkdir -p "$OUT_DIR"
-
   {
     echo "# Launch Evidence Gate Automation Report"
     echo
@@ -140,67 +110,26 @@ write_reports() {
     echo "- FAIL: $FAIL_COUNT"
   } > "$OUT_FILE"
 
-  local gates_tsv
-  gates_tsv="$(mktemp)"
-  for i in "${!GATE_NAMES[@]}"; do
-    printf "%s\t%s\t%s\n" "${GATE_NAMES[$i]}" "${GATE_STATUS[$i]}" "${GATE_NOTES[$i]}" >> "$gates_tsv"
-  done
-
-  python3 - "$JSON_FILE" "$ts" "$DECISION" "$EXIT_CODE" "$PASS_COUNT" "$WARN_COUNT" "$FAIL_COUNT" "$gates_tsv" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-out = Path(sys.argv[1])
-ts = sys.argv[2]
-decision = sys.argv[3]
-exit_code = int(sys.argv[4])
-pass_count = int(sys.argv[5])
-warn_count = int(sys.argv[6])
-fail_count = int(sys.argv[7])
-gates_path = Path(sys.argv[8])
-
-gates = []
-for line in gates_path.read_text(encoding="utf-8").splitlines():
-    if not line.strip():
-        continue
-    name, status, note = line.split("\t", 2)
-    gates.append({"name": name, "status": status, "note": note})
-
-payload = {
-    "timestamp": ts,
-    "decision": decision,
-    "exit_code": exit_code,
-    "counts": {"pass": pass_count, "warn": warn_count, "fail": fail_count},
-    "gates": gates,
-}
-out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+  python3 - "$JSON_FILE" "$ts" "$DECISION" "$EXIT_CODE" "$PASS_COUNT" "$WARN_COUNT" "$FAIL_COUNT" <<'PY'
+import json, sys
+out, ts, decision, exit_code, p, w, f = sys.argv[1:8]
+Path = __import__("pathlib").Path
+Path(out).write_text(json.dumps({
+  "timestamp": ts,
+  "decision": decision,
+  "exit_code": int(exit_code),
+  "counts": {"pass": int(p), "warn": int(w), "fail": int(f)},
+}, indent=2) + "\n", encoding="utf-8")
 PY
-
-  rm -f "$gates_tsv"
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-healthcheck) SKIP_HEALTHCHECK=1 ;;
-    --out)
-      shift
-      [[ $# -gt 0 ]] || die "$EXIT_USAGE" "missing value for --out"
-      OUT_FILE="$1"
-      ;;
-    --json-out)
-      shift
-      [[ $# -gt 0 ]] || die "$EXIT_USAGE" "missing value for --json-out"
-      JSON_FILE="$1"
-      ;;
-    --help|-h)
-      usage
-      exit 0
-      ;;
-    *)
-      usage >&2
-      die "$EXIT_USAGE" "unknown argument: $1"
-      ;;
+    --out) shift; OUT_FILE="$1" ;;
+    --json-out) shift; JSON_FILE="$1" ;;
+    --help|-h) usage; exit 0 ;;
+    *) usage >&2; die "$EXIT_USAGE" "unknown argument: $1" ;;
   esac
   shift
 done
@@ -208,22 +137,16 @@ done
 for dep in bash git rg python3; do
   command -v "$dep" >/dev/null 2>&1 || die "$EXIT_DEPENDENCY" "required dependency missing: $dep"
 done
+[[ -n "$PYTHON" ]] || PYTHON="$($ROOT/scripts/dev/resolve_python.sh)"
+[[ -n "$REPO" ]] || REPO="$(detect_repo || true)"
 
-if [[ -z "$PYTHON" ]]; then
-  PYTHON="$($ROOT/scripts/dev/resolve_python.sh)"
-fi
-if [[ -z "$REPO" ]]; then
-  REPO="$(detect_repo || true)"
-fi
-
-# Gate 1: Repo/CI
+# Repo/CI
 if git -C "$ROOT" rev-parse --short HEAD >/dev/null 2>&1; then
   record_result "Repo/CI" "PASS" "git HEAD resolvable"
 else
   record_result "Repo/CI" "FAIL" "git HEAD unresolved"
 fi
 
-# Hard-Gate MIN_SCOPE (>=8 files OR >=230 LOC)
 read -r scope_files scope_loc < <(compute_scope_metrics)
 if (( scope_files >= 8 || scope_loc >= 230 )); then
   record_result "MIN_SCOPE" "PASS" "files=$scope_files loc=$scope_loc"
@@ -231,17 +154,14 @@ else
   record_result "MIN_SCOPE" "FAIL" "files=$scope_files loc=$scope_loc (need files>=8 or loc>=230; origin/main unavailable in local clone possible)"
 fi
 
-# Gate 2: Health
 if [[ "$SKIP_HEALTHCHECK" -eq 1 ]]; then
   record_result "Health" "WARN" "skipped by flag"
 else
   run_cmd_gate "Health" "./scripts/ops/healthcheck.sh" "healthcheck passed" "healthcheck failed"
 fi
 
-# Gate 3: Zero-CDN
 run_cmd_gate "Zero-CDN" "'$PYTHON' scripts/ops/verify_guardrails.py" "guardrails passed" "guardrails failed"
 
-# Gate 4: White-mode only
 DARK_PATTERN="dark:|themeToggle|classList\\.(add|toggle)\\((\"dark\"|'dark')\\)"
 if (cd "$ROOT" && rg -n "$DARK_PATTERN" app/templates app/static --glob '!app/static/vendor/**' --glob '!app/static/js/tailwindcss.min.js') >/dev/null 2>&1; then
   record_result "White-mode" "FAIL" "dark mode signatures found"
@@ -249,24 +169,49 @@ else
   record_result "White-mode" "PASS" "no dark mode signatures"
 fi
 
-# Gate 5: License
-if [[ -f "$ROOT/LICENSE" || -f "$ROOT/LICENSE.md" ]]; then
-  record_result "License" "PASS" "license file present"
+# License
+LICENSE_FILE="${LICENSE_FILE:-$ROOT/instance/license.json}"
+LICENSE_PUBKEY_ENV="${LICENSE_PUBKEY_ENV:-LICENSE_PUBLIC_KEY_HEX}"
+license_status="$(cd "$ROOT" && "$PYTHON" - "$LICENSE_FILE" "$LICENSE_PUBKEY_ENV" <<'PY'
+import sys
+from app.core.license_checker import check_license_file
+license_file, pub_env = sys.argv[1:3]
+try:
+    payload = check_license_file(license_file, pub_env)
+except Exception as exc:
+    print(f"ERROR:{exc}")
+    raise SystemExit(2)
+print(f"{payload.get('status','LOCKED')}:{payload.get('reason','unknown')}")
+raise SystemExit(0)
+PY
+)" || true
+if [[ "$license_status" == OK:* ]]; then
+  record_result "License" "PASS" "status=$license_status"
+elif [[ "$license_status" == WARN:* ]]; then
+  record_result "License" "WARN" "status=$license_status"
 else
-  record_result "License" "FAIL" "license file missing"
+  record_result "License" "FAIL" "status=${license_status:-LOCKED:unknown}"
 fi
 
-# Gate 6: Backup
-run_cmd_gate "Backup" "'$PYTHON' -m pytest -q tests/ops/test_backup_restore_scripts.py tests/ops/test_restore_validation.py" "backup tests passed" "backup tests failed"
+# Backup / restore evidence drill
+BACKUP_REPORT="${BACKUP_REPORT:-$ROOT/instance/evidence_backup_report.txt}"
+RESTORE_REPORT="${RESTORE_REPORT:-$ROOT/instance/evidence_restore_report.txt}"
+if (cd "$ROOT" && TENANT_ID="${TENANT_ID:-DEMO_TENANT}" REPORT_FILE="$BACKUP_REPORT" bash scripts/ops/backup_to_nas.sh && TENANT_ID="${TENANT_ID:-DEMO_TENANT}" REPORT_FILE="$RESTORE_REPORT" EXPECTED_RESTORE_DIRS="${EXPECTED_RESTORE_DIRS:-}" bash scripts/ops/restore_from_nas.sh); then
+  if (cd "$ROOT" && rg -q '^checksum_sha256=' "$BACKUP_REPORT" && rg -q '^backup_size_bytes=' "$BACKUP_REPORT" && rg -q '^target_path=' "$BACKUP_REPORT" && rg -q '^verify_db=ok' "$RESTORE_REPORT" && rg -q '^verify_files=ok' "$RESTORE_REPORT" && rg -q '^restore_validation=ok' "$RESTORE_REPORT"); then
+    record_result "Backup" "PASS" "backup/restore evidence verified"
+  else
+    record_result "Backup" "FAIL" "backup/restore reports missing required evidence"
+  fi
+else
+  record_result "Backup" "FAIL" "backup/restore drill execution failed"
+fi
 
-# Gate 7: AI
 if [[ -f "$ROOT/docs/ai/AI_AGENT_OPERATING_CONTRACT.md" ]]; then
   record_result "AI" "PASS" "AI operating contract present"
 else
   record_result "AI" "FAIL" "AI operating contract missing"
 fi
 
-# Hard-Gate MIN_TESTS (>=7 tests in tests/ops)
 ops_test_count="$(cd "$ROOT" && rg -n '^def test_' tests/ops/*.py | wc -l | tr -d ' ')"
 if (( ops_test_count >= 7 )); then
   record_result "MIN_TESTS" "PASS" "tests/ops test-count=$ops_test_count"
@@ -274,10 +219,8 @@ else
   record_result "MIN_TESTS" "FAIL" "tests/ops test-count=$ops_test_count (need >=7)"
 fi
 
-# Hard-Gate CI_GATE
 run_cmd_gate "CI_GATE" "'$PYTHON' -m pytest -q tests/ops" "pytest tests/ops passed" "pytest tests/ops failed"
 
-# Hard-Gate Evidence
 if [[ "$OUT_FILE" == "$ROOT/docs/reviews/codex/LAUNCH_GATE_AUTOMATION_REPORT_20260305.md" ]]; then
   record_result "Evidence" "PASS" "evidence path matches required target"
 else
@@ -299,5 +242,4 @@ write_reports
 printf '[launch-evidence] markdown: %s\n' "$OUT_FILE" >&2
 printf '[launch-evidence] json: %s\n' "$JSON_FILE" >&2
 printf '%s\n' "$OUT_FILE"
-
 exit "$EXIT_CODE"

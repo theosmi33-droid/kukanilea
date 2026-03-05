@@ -254,3 +254,14 @@ Freigabe:
   2. Restore nutzt lokale Fallback-Artefakte.
   3. Incident im Operations-Report vermerken.
   4. Nach NAS-Recovery Replikation/Abgleich starten.
+
+
+## Ops Evidence Drill (License + Backup/Restore)
+
+- Lizenzstatus muss in Evidence als `OK`, `WARN` oder `LOCKED` auftauchen.
+- `LOCKED` ist **fail-closed** und führt deterministisch zu `NO-GO`.
+- Backup-Evidence pro Tenant: `tenant_id`, `target_path`, `checksum_sha256`, `backup_size_bytes`, `compression_ratio`.
+- Restore-Evidence: `verify_db=ok` und `verify_files=ok` plus `restore_validation=ok` und gemessene `rto_seconds`.
+- Keine Secrets in Reports/Logs dokumentieren.
+
+Siehe Beispiel: `docs/status/EVIDENCE_SAMPLE.md`.
