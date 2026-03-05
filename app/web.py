@@ -2097,6 +2097,7 @@ def _widget_compact_response(
     requires_confirm: bool = False,
     pending_id: str = "",
     confirm_prompt: str = "",
+    pending_approvals: List[Dict[str, Any]] | None = None,
     status: str = "Bereit",
     ok: bool = True,
 ) -> Dict[str, Any]:
@@ -2114,7 +2115,42 @@ def _widget_compact_response(
         "requires_confirm": bool(requires_confirm),
         "pending_id": pending_id,
         "confirm_prompt": confirm_prompt,
+        "pending_approvals": pending_approvals or [],
     }
+
+
+def _get_widget_pending_queue() -> List[Dict[str, Any]]:
+    queue = session.get("widget_pending_actions")
+    if isinstance(queue, list):
+        return [item for item in queue if isinstance(item, dict)]
+    legacy = session.get("widget_pending_action")
+    if isinstance(legacy, dict) and legacy.get("id"):
+        return [legacy]
+    return []
+
+
+def _set_widget_pending_queue(queue: List[Dict[str, Any]]) -> None:
+    session["widget_pending_actions"] = queue
+    session.pop("widget_pending_action", None)
+    session.modified = True
+
+
+def _serialize_pending_approvals(queue: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    serialized: List[Dict[str, Any]] = []
+    for item in queue:
+        pending_id = str(item.get("id") or "").strip()
+        if not pending_id:
+            continue
+        actions = item.get("actions") if isinstance(item.get("actions"), list) else []
+        serialized.append(
+            {
+                "pending_id": pending_id,
+                "current_context": str(item.get("current_context") or "/"),
+                "confirm_prompt": str(item.get("confirm_prompt") or "Bestätigung erforderlich."),
+                "action_count": len(actions),
+            }
+        )
+    return serialized
 
 @bp.route("/api/chat", methods=["POST"])
 @login_required
@@ -2169,6 +2205,9 @@ def api_chat_compact():
     role = str(current_role() or "USER")
 
     if request.method == "GET":
+        if request.args.get("pending") == "1":
+            pending_queue = _get_widget_pending_queue()
+            return jsonify({"ok": True, "pending_approvals": _serialize_pending_approvals(pending_queue)})
         # Simplified history for widget
         return jsonify({"ok": True, "messages": []})
 
@@ -2176,22 +2215,32 @@ def api_chat_compact():
     payload = request.get_json(silent=True) or {}
     current_context = (payload.get("current_context") or "/").strip()
     
+    pending_queue = _get_widget_pending_queue()
+
     # Check for confirmation of pending action
     if bool(payload.get("confirm")):
         pending_id = str(payload.get("pending_id") or "").strip()
-        pending = session.get("widget_pending_action") or {}
-        if not pending_id or pending_id != str(pending.get("id", "")):
+        pending_index = -1
+        pending: Dict[str, Any] = {}
+        for index, item in enumerate(pending_queue):
+            if pending_id and pending_id == str(item.get("id", "")):
+                pending_index = index
+                pending = item
+                break
+
+        if pending_index < 0:
             return jsonify(_widget_compact_response(
                 text="Keine ausstehende Aktion gefunden.",
                 model="local",
                 context_tag=current_context,
                 latency_ms=int((time.perf_counter() - started) * 1000),
+                pending_approvals=_serialize_pending_approvals(pending_queue),
                 ok=False
             )), 400
 
         actions = pending.get("actions") or []
-        session.pop("widget_pending_action", None)
-        session.modified = True
+        pending_queue.pop(pending_index)
+        _set_widget_pending_queue(pending_queue)
         
         return jsonify(_widget_compact_response(
             text="Aktion bestätigt und ausgeführt.",
@@ -2199,6 +2248,7 @@ def api_chat_compact():
             context_tag=current_context,
             latency_ms=int((time.perf_counter() - started) * 1000),
             actions=actions,
+            pending_approvals=_serialize_pending_approvals(pending_queue),
             status="Aktion ausgeführt"
         ))
 
@@ -2238,13 +2288,15 @@ def api_chat_compact():
     confirm_prompt = ""
     if requires_confirm:
         pending_id = secrets.token_urlsafe(12)
-        session["widget_pending_action"] = {
+        pending_item = {
             "id": pending_id,
             "actions": actions_raw,
-            "current_context": current_context
+            "current_context": current_context,
+            "confirm_prompt": "Bestätigung für geplante Aktionen erforderlich.",
         }
-        session.modified = True
-        confirm_prompt = "Bestätigung für geplante Aktionen erforderlich."
+        pending_queue.append(pending_item)
+        _set_widget_pending_queue(pending_queue)
+        confirm_prompt = str(pending_item["confirm_prompt"])
         _audit("chat_confirm_required", target="/api/chat/compact", meta={"write_intent": write_intent, "action_count": len(actions_raw)})
 
     latency_ms = int((time.perf_counter() - started) * 1000)
@@ -2258,6 +2310,7 @@ def api_chat_compact():
         requires_confirm=requires_confirm,
         pending_id=pending_id,
         confirm_prompt=confirm_prompt,
+        pending_approvals=_serialize_pending_approvals(pending_queue),
         status="Bestätigung erforderlich" if requires_confirm else "Bereit"
     ))
 

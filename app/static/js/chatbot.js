@@ -23,6 +23,7 @@
     confirmText: document.getElementById("floating-chat-confirm-text"),
     confirmYes: document.getElementById("floating-chat-confirm-yes"),
     confirmNo: document.getElementById("floating-chat-confirm-no"),
+    pendingQueue: document.getElementById("floating-chat-pending-queue"),
     form: document.getElementById("floating-chat-form"),
     input: document.getElementById("floating-chat-input"),
   };
@@ -54,6 +55,9 @@
 
   function getQuickActions(pathname) {
     const actions = [
+      { label: "Notiz erfassen", prompt: "quick capture note: " },
+      { label: "Lead erfassen", prompt: "quick capture lead: " },
+      { label: "Task vorschlagen", prompt: "quick capture task suggestion: " },
       { label: "Hilfe", prompt: "hilfe" },
       { label: "Suche Rechnung", prompt: "suche rechnung" },
     ];
@@ -193,6 +197,34 @@
     pendingConfirmId = "";
     if (els.confirm) els.confirm.hidden = true;
     if (els.confirmText) els.confirmText.textContent = "";
+  }
+
+  function renderPendingQueue(items) {
+    if (!els.pendingQueue) return;
+    const queue = Array.isArray(items) ? items : [];
+    els.pendingQueue.innerHTML = "";
+    if (!queue.length) {
+      els.pendingQueue.hidden = true;
+      return;
+    }
+
+    const title = document.createElement("p");
+    title.className = "floating-chat-pending-title";
+    title.textContent = "Pending approvals (" + queue.length + ")";
+    els.pendingQueue.appendChild(title);
+
+    const list = document.createElement("ul");
+    for (const item of queue) {
+      const li = document.createElement("li");
+      const pid = String(item.pending_id || "");
+      const prompt = String(item.confirm_prompt || "Bestätigung erforderlich.");
+      const count = Number(item.action_count || 0);
+      li.textContent = (count > 0 ? count + " Aktion(en): " : "") + prompt;
+      li.dataset.pendingId = pid;
+      list.appendChild(li);
+    }
+    els.pendingQueue.appendChild(list);
+    els.pendingQueue.hidden = false;
   }
 
   function showConfirmGate(confirmText, pendingId, actions) {
@@ -370,6 +402,8 @@
         hideConfirmGate();
       }
 
+      renderPendingQueue(data.pending_approvals);
+
       setStatus(data.status || "Bereit");
 
       if (!state.open || state.minimized) {
@@ -436,6 +470,17 @@
       });
     }
 
+    if (els.pendingQueue) {
+      els.pendingQueue.addEventListener("click", function (event) {
+        const row = event.target.closest("li[data-pending-id]");
+        if (!row) return;
+        pendingConfirmId = row.dataset.pendingId || "";
+        if (pendingConfirmId) {
+          showConfirmGate("Bestätigung für ausstehende Aktion erforderlich.", pendingConfirmId, []);
+        }
+      });
+    }
+
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape" && state.open) {
         closePanel();
@@ -458,6 +503,7 @@
     loadState();
     setContextTag();
     renderQuickActions();
+    renderPendingQueue([]);
     setUnread(state.unread);
 
     applySize();
