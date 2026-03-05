@@ -86,3 +86,19 @@ def test_chat_accepts_nested_payload_alias(auth_client, monkeypatch):
     body = response.get_json()
     assert body["text"] == "pong"
     assert body["response"] == "pong"
+
+
+def test_upload_summary_declares_intake_contract(auth_client):
+    response = auth_client.get("/api/upload/summary")
+    assert response.status_code == 200
+
+    body = response.get_json()
+    assert body["tool"] == "upload"
+
+    intake_contract = body["details"]["intake_contract"]
+    assert intake_contract["normalize_endpoint"] == "/api/intake/normalize"
+    assert intake_contract["execute_endpoint"] == "/api/intake/execute"
+    assert intake_contract["requires_explicit_confirm"] is True
+    assert intake_contract["execute_fields"] == ["envelope", "requires_confirm", "confirm"]
+    assert "suggested_actions" in intake_contract["envelope_fields"]
+    assert body["details"]["tenant"] == "KUKANILEA"

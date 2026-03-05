@@ -22,6 +22,22 @@ CONTRACT_TOOLS = [
 CONTRACT_STATUSES = {"ok", "degraded", "error"}
 CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
 CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
+INTAKE_ENVELOPE_FIELDS = [
+    "source",
+    "thread_id",
+    "sender",
+    "subject",
+    "snippets",
+    "attachments",
+    "suggested_actions",
+]
+UPLOAD_INTAKE_CONTRACT = {
+    "normalize_endpoint": "/api/intake/normalize",
+    "execute_endpoint": "/api/intake/execute",
+    "requires_explicit_confirm": True,
+    "envelope_fields": INTAKE_ENVELOPE_FIELDS,
+    "execute_fields": ["envelope", "requires_confirm", "confirm"],
+}
 CONTRACT_VERSION = "2026-03-05"
 REQUIRED_TOP_LEVEL_FIELDS = ("tool", "status", "updated_at", "metrics", "details")
 REQUIRED_CONTRACT_FIELDS = ("version", "read_only")
@@ -42,6 +58,8 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
     safe_metrics = dict(metrics or {})
     safe_details = dict(details or {})
     safe_details["tenant"] = str(tenant or "default")
+    if tool == "upload":
+        safe_details.setdefault("intake_contract", dict(UPLOAD_INTAKE_CONTRACT))
     contract_payload = safe_details.get("contract")
     if isinstance(contract_payload, dict):
         contract_meta = dict(contract_payload)
@@ -170,11 +188,37 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     list_pending = _core_get("list_pending")
-    pending = list_pending() if callable(list_pending) else []
+    pending: list[dict] | list = []
+    degraded_reason = ""
+    pending_error = ""
+    if callable(list_pending):
+        try:
+            raw_pending = list_pending()
+            if isinstance(raw_pending, list):
+                pending = raw_pending
+            elif raw_pending is None:
+                pending = []
+                degraded_reason = degraded_reason or "pending_pipeline_unavailable"
+                pending_error = pending_error or "list_pending returned null"
+            else:
+                pending = []
+                degraded_reason = degraded_reason or "pending_pipeline_unavailable"
+                pending_error = pending_error or f"list_pending returned {type(raw_pending).__name__}"
+        except Exception as exc:
+            pending = []
+            degraded_reason = "pending_pipeline_unavailable"
+            pending_error = str(exc)
+    else:
+        degraded_reason = "pending_pipeline_unavailable"
     metrics = {"pending_items": len(pending), "accepts_batch": 1}
-    details = {"source": "core.list_pending", "tenant": tenant}
-    reason = "pending_pipeline_unavailable" if not callable(list_pending) else ""
-    return metrics, details, reason
+    details = {
+        "source": "core.list_pending",
+        "tenant": tenant,
+        "intake_contract": dict(UPLOAD_INTAKE_CONTRACT),
+    }
+    if pending_error:
+        details["pending_error"] = pending_error
+    return metrics, details, degraded_reason
 
 
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
