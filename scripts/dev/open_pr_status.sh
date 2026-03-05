@@ -77,12 +77,13 @@ if [[ -z "$SOURCE" ]]; then
   exit 2
 fi
 
-python - "$REPO" "$STATE" "$SOURCE" <<'PY' <<<"$JSON"
+PR_STATUS_JSON="$JSON" python - "$REPO" "$STATE" "$SOURCE" <<'PY'
 import json
+import os
 import sys
 
 repo, state, source = sys.argv[1:4]
-items = json.load(sys.stdin)
+items = json.loads(os.environ.get("PR_STATUS_JSON", "[]"))
 
 # Normalize gh output vs REST output.
 rows = []
