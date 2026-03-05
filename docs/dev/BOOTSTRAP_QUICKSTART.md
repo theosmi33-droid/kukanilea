@@ -5,9 +5,8 @@ Ziel: `clone -> bootstrap -> smoke tests` mit einem Time-to-green unter 10 Minut
 ## One-Command Setup
 
 ```bash
-git clone <repo-url>
-cd kukanilea
-bash scripts/dev_bootstrap.sh
+# Aus Repo-Root
+./scripts/dev_bootstrap.sh
 ```
 
 Der One-Command-Run erledigt automatisch:
@@ -35,37 +34,37 @@ Resolver: `scripts/dev/resolve_python.sh`
 
 ```bash
 # Nur Setup ohne Seeds
-bash scripts/dev_bootstrap.sh --skip-seed
+./scripts/dev_bootstrap.sh --skip-seed
 
 # Healthcheck / Launch-Evidence separat skippen
-bash scripts/dev_bootstrap.sh --skip-healthcheck --skip-launch-evidence
+./scripts/dev_bootstrap.sh --skip-healthcheck --skip-launch-evidence
 
 # Tool-Diagnose standalone
-scripts/dev/doctor.sh --strict
+./scripts/dev/doctor.sh --strict
 ```
 
 ## App starten
 
 ```bash
-bash scripts/dev_run.sh
+./scripts/dev_run.sh
 ```
 
 Optionale Flags:
 
 ```bash
 # vorhandenes Setup nicht erneut bootstrapen
-bash scripts/dev_run.sh --skip-bootstrap
+./scripts/dev_run.sh --skip-bootstrap
 
 # Seed beim Start überspringen
-bash scripts/dev_run.sh --skip-seed
+./scripts/dev_run.sh --skip-seed
 ```
 
 ## Pflicht-Verifikation
 
 ```bash
-bash -n scripts/dev_bootstrap.sh scripts/dev_run.sh scripts/ops/healthcheck.sh scripts/ops/launch_evidence_gate.sh
+bash -n ./scripts/dev_bootstrap.sh ./scripts/dev_run.sh ./scripts/ops/healthcheck.sh ./scripts/ops/launch_evidence_gate.sh
 ./scripts/ops/healthcheck.sh
-scripts/ops/launch_evidence_gate.sh
+./scripts/ops/launch_evidence_gate.sh
 ```
 
 ## Known issues / Fallback

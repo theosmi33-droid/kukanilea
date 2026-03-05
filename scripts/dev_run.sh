@@ -72,9 +72,20 @@ if [[ "$RUN_BOOTSTRAP" -eq 1 ]]; then
   fi
 fi
 
-PYTHON="${PYTHON:-$ROOT/.venv/bin/python}"
+if [[ -n "${PYTHON:-}" ]]; then
+  PYTHON_RESOLVED="$PYTHON"
+else
+  PYTHON_RESOLVED="$("$ROOT/scripts/dev/resolve_python.sh")"
+fi
+
+PYTHON="$PYTHON_RESOLVED"
 if [[ ! -x "$PYTHON" ]]; then
-  die "python interpreter unavailable: $PYTHON (run scripts/dev_bootstrap.sh)"
+  die "python interpreter unavailable: $PYTHON (Action: run ./scripts/dev_bootstrap.sh to create .venv)"
+fi
+
+if [[ -x "$ROOT/.venv/bin/python" && "$PYTHON" != "$ROOT/.venv/bin/python" ]]; then
+  echo "[dev-run] WARNING: using non-.venv interpreter: $PYTHON"
+  echo "[dev-run] Action: export PYTHON=$ROOT/.venv/bin/python for deterministic local runs."
 fi
 
 if [[ "$SEED_DATA" -eq 1 ]]; then

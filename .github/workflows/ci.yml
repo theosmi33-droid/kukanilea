@@ -16,8 +16,9 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
+      CI: "1"
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
     steps:
@@ -30,15 +31,35 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Shell syntax fast-fail
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          set -euxo pipefail
+          bash -n ./scripts/dev_bootstrap.sh ./scripts/dev_run.sh ./scripts/ops/healthcheck.sh
+
+      - name: Repro bootstrap (without launch evidence)
+        run: |
+          set -euxo pipefail
+          ./scripts/dev_bootstrap.sh --skip-launch-evidence
+
+      - name: Focused security baseline test
+        run: |
+          set -euxo pipefail
+          ./.venv/bin/python -m pytest -q tests/security/test_session_security_defaults.py
+
+      - name: Full test suite (without e2e)
+        run: |
+          set -euxo pipefail
+          ./.venv/bin/python -m pytest -q tests --ignore=tests/e2e
 
       - name: Validate VS Code config policy
         run: |
-          python scripts/dev/enforce_vscode_configs.py --check
+          set -euxo pipefail
+          ./.venv/bin/python scripts/dev/enforce_vscode_configs.py --check
 
-      - name: Run tests (without e2e)
-        run: |
-          pytest -q tests --ignore=tests/e2e
+      - name: Upload healthcheck log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: healthcheck-log
+          path: /tmp/kukanilea_healthcheck.log
+          if-no-files-found: ignore

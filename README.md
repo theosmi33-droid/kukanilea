@@ -20,13 +20,11 @@ KUKANILEA is a modern, high-performance Business Operating System designed for t
 ## Quickstart (<10 min)
 
 ```bash
-# 1) Clone + reproducible bootstrap in one run
-git clone <repo-url>
-cd kukanilea
-bash scripts/dev_bootstrap.sh
+# From repo root: reproducible bootstrap
+./scripts/dev_bootstrap.sh
 
-# 2) One-command dev start
-bash scripts/dev_run.sh
+# One-command dev start
+./scripts/dev_run.sh
 ```
 
 `scripts/dev_bootstrap.sh` umfasst venv+deps, Playwright-Browser, Doctor-Checks, Smoke, Healthcheck und Launch-Evidence (`--fast`).
@@ -35,9 +33,9 @@ bash scripts/dev_run.sh
 ### Verifikation (Time-to-Green)
 
 ```bash
-bash -n scripts/dev_bootstrap.sh scripts/dev_run.sh scripts/ops/healthcheck.sh scripts/ops/launch_evidence_gate.sh
+bash -n ./scripts/dev_bootstrap.sh ./scripts/dev_run.sh ./scripts/ops/healthcheck.sh ./scripts/ops/launch_evidence_gate.sh
 ./scripts/ops/healthcheck.sh
-scripts/ops/launch_evidence_gate.sh
+./scripts/ops/launch_evidence_gate.sh
 ```
 
 Weitere Details: `docs/dev/BOOTSTRAP_QUICKSTART.md`

@@ -57,6 +57,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+sanitize_output() {
+  sed 's/fatal: Needed a single revision/[healthcheck] git revision metadata unavailable (non-fatal)/g'
+}
+
 wait_for_http() {
   local url="$1"
   local retries="${2:-30}"
@@ -181,9 +185,13 @@ if [[ "$HAS_FLASK" -eq 1 ]]; then
     if ! wait_for_http "http://127.0.0.1:5051/" 30 1; then
       log "[healthcheck] Server did not become ready on :5051 in time"
       log "[healthcheck] Last server log lines:"
-      tail -n 80 /tmp/kukanilea_healthcheck_server.log | tee -a "$HEALTH_LOG"
+      tail -n 80 /tmp/kukanilea_healthcheck_server.log | sanitize_output | tee -a "$HEALTH_LOG"
       fail "$EXIT_GATE" "[healthcheck] Core server readiness failed"
     fi
+  fi
+
+  if grep -q "fatal: Needed a single revision" /tmp/kukanilea_healthcheck_server.log 2>/dev/null; then
+    log "[healthcheck] NOTICE: git revision metadata unavailable during app startup; continuing with runtime checks."
   fi
 
   log "[4/7] Checking routes (200/302)..."
