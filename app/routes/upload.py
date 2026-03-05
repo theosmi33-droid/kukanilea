@@ -13,6 +13,8 @@ from app.config import Config
 from app import core
 from app.core.upload_pipeline import process_upload, save_upload_stream
 from app.core.gewerke_profiles import get_active_profile
+from app.contracts.tool_contracts import build_tool_health, build_tool_summary
+from app.modules.upload.ingestion import ingest_unstructured_input
 from app.rate_limit import upload_limiter
 
 logger = logging.getLogger("kukanilea.upload")
@@ -250,3 +252,55 @@ def api_progress(token: str):
         progress_phase=p.get("progress_phase", ""),
         error=p.get("error", ""),
     )
+
+
+@bp.route("/api/upload/ingest", methods=["POST"])
+@login_required
+def api_upload_ingest():
+    tenant = _norm_tenant(current_tenant() or "default")
+    body = request.get_json(silent=True) if request.is_json else None
+
+    source = "text"
+    raw_text = ""
+    metadata: dict = {}
+    if isinstance(body, dict):
+        source = str(body.get("source") or "text")
+        raw_text = str(body.get("text") or body.get("transcript") or "")
+        metadata = dict(body.get("metadata") or {}) if isinstance(body.get("metadata"), dict) else {}
+    else:
+        source = str(request.form.get("source") or "text")
+        raw_text = str(request.form.get("text") or request.form.get("transcript") or "")
+        metadata = {}
+
+    if not raw_text.strip() and request.files.get("file") is not None:
+        file_storage = request.files.get("file")
+        if file_storage is not None and file_storage.filename:
+            source = str(request.form.get("source") or Path(file_storage.filename).suffix.lstrip(".") or "text")
+            file_bytes = file_storage.read()
+            raw_text = file_bytes.decode("utf-8", errors="replace")
+            metadata["filename"] = file_storage.filename
+            metadata["content_type"] = str(file_storage.content_type or "")
+
+    payload = ingest_unstructured_input(
+        source=source,
+        tenant=tenant,
+        text=raw_text,
+        metadata=metadata,
+    )
+    return jsonify(payload), 200
+
+
+@bp.route("/api/upload/summary", methods=["GET"])
+@login_required
+def api_upload_summary():
+    tenant = str(current_tenant() or "default")
+    return jsonify(build_tool_summary("upload", tenant=tenant))
+
+
+@bp.route("/api/upload/health", methods=["GET"])
+@login_required
+def api_upload_health():
+    tenant = str(current_tenant() or "default")
+    payload = build_tool_health("upload", tenant=tenant)
+    code = 200 if payload.get("status") in {"ok", "degraded"} else 503
+    return jsonify(payload), code

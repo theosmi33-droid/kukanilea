@@ -105,6 +105,7 @@ from app.modules.kalender.contracts import build_health as build_kalender_health
 from app.modules.kalender.contracts import build_summary as build_kalender_summary
 from app.modules.projekte.contracts import build_health as build_projekte_health
 from app.modules.projekte.contracts import build_summary as build_projekte_summary
+from app.modules.upload.ingestion import ingest_unstructured_input
 from app.modules.zeiterfassung.contracts import build_health as build_zeiterfassung_health
 from app.modules.zeiterfassung.contracts import build_summary as build_zeiterfassung_summary
 
@@ -4078,6 +4079,27 @@ def api_tool_summary(tool: str):
     if tool not in CONTRACT_TOOLS:
         return jsonify(error="unknown_tool", tool=tool), 404
     payload = build_tool_summary(tool, tenant=tenant)
+    return jsonify(payload)
+
+
+@bp.post("/api/upload/ingest")
+@login_required
+def api_upload_ingest():
+    tenant = str(current_tenant() or "default")
+    body = request.get_json(silent=True) if request.is_json else None
+    source = "text"
+    raw_text = ""
+    metadata: dict[str, Any] = {}
+    if isinstance(body, dict):
+        source = str(body.get("source") or "text")
+        raw_text = str(body.get("text") or body.get("transcript") or "")
+        metadata = dict(body.get("metadata") or {}) if isinstance(body.get("metadata"), dict) else {}
+    payload = ingest_unstructured_input(
+        source=source,
+        tenant=tenant,
+        text=raw_text,
+        metadata=metadata,
+    )
     return jsonify(payload)
 
 
