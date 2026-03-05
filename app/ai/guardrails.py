@@ -15,6 +15,11 @@ JAILBREAK = re.compile(
     r"bypass (all )?(security|guardrails?|safety)",
     re.IGNORECASE,
 )
+WRITE_INTENT = re.compile(
+    r"\b(create|delete|update|send|write|ändern|loeschen|löschen|post|execute)\b",
+    re.IGNORECASE,
+)
+UNCERTAIN_INTENT = re.compile(r"\b(maybe|unsure|idk|not sure|egal|whatever|irgendwas)\b", re.IGNORECASE)
 
 
 def validate_prompt(prompt: str, max_len: int = 500) -> Tuple[bool, str]:
@@ -31,3 +36,14 @@ def validate_prompt(prompt: str, max_len: int = 500) -> Tuple[bool, str]:
     if JAILBREAK.search(prompt):
         return False, "Jailbreak-Attempt erkannt"
     return True, "OK"
+
+
+def requires_confirm_for_prompt(prompt: str) -> bool:
+    """Gate risky prompts; defaults to deny-by-default on uncertain intent."""
+
+    text = str(prompt or "")
+    if not text.strip():
+        return True
+    if UNCERTAIN_INTENT.search(text):
+        return True
+    return bool(WRITE_INTENT.search(text))

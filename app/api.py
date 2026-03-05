@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
-from flask import Blueprint, current_app, jsonify, render_template, request
+from flask import Blueprint, current_app, jsonify, render_template, request, session
+
+from app.mail.intake import normalize_intake_payload
+from app.modules.aufgaben.contracts import create_task
+from app.modules.kalender.contracts import create_event
+from app.modules.projekte.contracts import create_project
 
 from .rate_limit import search_limiter
 
@@ -47,6 +52,93 @@ def health():
         profile=profile or None,
         db_path=db_path,
     )
+
+
+@bp.post("/intake/normalize")
+def intake_normalize():
+    payload = request.get_json(silent=True) or {}
+    envelope = normalize_intake_payload(payload)
+    return jsonify(ok=True, envelope=envelope.to_dict())
+
+
+@bp.post("/intake/execute")
+def intake_execute():
+    payload = request.get_json(silent=True) or {}
+    envelope_payload = payload.get("envelope") if isinstance(payload.get("envelope"), dict) else {}
+    envelope = normalize_intake_payload(envelope_payload)
+
+    if not bool(payload.get("requires_confirm", True)):
+        return jsonify(ok=False, error="confirm_required_flag_missing"), 400
+
+    confirm_value = str(payload.get("confirm") or "").strip().lower()
+    if confirm_value not in {"yes", "y", "true", "1"}:
+        return jsonify(
+            ok=False,
+            status="blocked",
+            error="explicit_confirm_required",
+            envelope=envelope.to_dict(),
+        ), 409
+
+    tenant_id = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    actor = str(session.get("user") or "system")
+    action = envelope.suggested_actions[0] if envelope.suggested_actions else {}
+
+    project_payload = None
+    if action.get("project_hint"):
+        project_payload = create_project(
+            tenant=tenant_id,
+            name=str(action.get("project_hint") or "Projekt aus Intake"),
+            description=f"Auto-Vorschlag aus Intake {envelope.thread_id}",
+        )
+
+    task_payload = create_task(
+        tenant=tenant_id,
+        title=str(action.get("title") or envelope.subject or "Neue Anfrage"),
+        details="\n".join(envelope.snippets),
+        due_date=action.get("due_date"),
+        project_hint=action.get("project_hint"),
+        calendar_hint=action.get("calendar_hint"),
+        created_by=actor,
+        source_ref=envelope.thread_id,
+    )
+
+    calendar_payload = None
+    if action.get("calendar_hint") and action.get("due_date"):
+        calendar_payload = create_event(
+            tenant=tenant_id,
+            title=str(action.get("calendar_hint") or action.get("title") or "Intake Termin"),
+            starts_at=str(action.get("due_date")),
+            created_by=actor,
+        )
+
+    from app import core
+    from app.eventlog import event_append
+
+    core.audit_log(
+        actor,
+        str(session.get("role") or "SYSTEM"),
+        "intake_execute_confirmed",
+        target=envelope.thread_id,
+        meta={"source": envelope.source, "task_id": task_payload["task_id"]},
+        tenant_id=tenant_id,
+    )
+    event_id = event_append(
+        "intake_execute_confirmed",
+        "task",
+        int(task_payload["task_id"]),
+        {"thread_id": envelope.thread_id, "source": envelope.source, "actor": actor},
+    )
+
+    return jsonify(
+        ok=True,
+        status="executed",
+        task=task_payload,
+        project=project_payload,
+        calendar=calendar_payload,
+        audit_logged=True,
+        event_log_id=event_id,
+    )
+
 
 
 @bp.post("/mesh/handshake")
