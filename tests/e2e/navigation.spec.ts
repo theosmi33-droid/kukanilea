@@ -40,9 +40,8 @@ test.describe('Sovereign navigation', () => {
       await expect(page).toHaveURL(new RegExp(`${route.replace('/', '\\/')}$`));
       await expect(page.locator('body')).not.toContainText(/wird geladen/i);
       const ready = readyStateByRoute[route];
-      if (ready) await expect(page.locator(`[data-ready-state=\"${ready}\"]`)).toBeVisible();
+      if (ready) await expect(page.locator(`[data-ready-state="${ready}"]`)).toBeVisible();
       await expect(page.locator('#main-content')).toBeVisible();
-      await expect(page.locator(`[data-ready-state="${readyStateByRoute[route]}"]`)).toBeVisible();
       if (route === '/upload') {
         await expect(page.locator('input[name="file"]')).toBeVisible();
       }
@@ -57,7 +56,7 @@ test.describe('Sovereign navigation', () => {
       await expect(page.locator('body')).toContainText(/KUKANILEA|Dashboard|Upload|Projekt|Aufgabe|Kalender|Einstellungen|Login|Anmelden/i);
       await expect(page.locator('body')).not.toContainText(/wird geladen/i);
       const ready = readyStateByRoute[route];
-      if (ready) await expect(page.locator(`[data-ready-state=\"${ready}\"]`)).toBeVisible();
+      if (ready) await expect(page.locator(`[data-ready-state="${ready}"]`)).toBeVisible();
     });
   }
 });
