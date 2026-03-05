@@ -184,7 +184,17 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     pending_error = ""
     if callable(list_pending):
         try:
-            pending = list_pending()
+            raw_pending = list_pending()
+            if isinstance(raw_pending, list):
+                pending = raw_pending
+            elif raw_pending is None:
+                pending = []
+                degraded_reason = degraded_reason or "pending_pipeline_unavailable"
+                pending_error = pending_error or "list_pending returned null"
+            else:
+                pending = []
+                degraded_reason = degraded_reason or "pending_pipeline_unavailable"
+                pending_error = pending_error or f"list_pending returned {type(raw_pending).__name__}"
         except Exception as exc:
             pending = []
             degraded_reason = "pending_pipeline_unavailable"
