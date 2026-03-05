@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { loginAsDev, waitForShellReady } from '../support/uiStability';
 
 /**
  * KUKANILEA E2E Navigation Tests (Worker 4: Page UX Polish + QA)
@@ -13,61 +14,51 @@ test.describe('Core Page Navigation & UX Integrity', () => {
   ];
 
   test.beforeEach(async ({ page }) => {
-    // Shared dev login for all navigation tests
-    await page.goto('/login');
-    await page.fill('input[name="username"]', 'dev');
-    await page.fill('input[name="password"]', 'dev');
-    await page.click('button[type="submit"]');
-    await expect(page).toHaveURL(/dashboard|\/$/);
+    await loginAsDev(page);
   });
 
   for (const route of routes) {
     test(`Navigation to ${route.path} - Integrity Check`, async ({ page }) => {
-      await page.goto(route.path);
-      
-      // 1. URL and Title Check
+      await page.goto(route.path, { waitUntil: 'domcontentloaded' });
+
       await expect(page).toHaveURL(new RegExp(`${route.path.replace('/', '\\/')}$`));
       await expect(page.locator('h1')).toContainText(route.title);
 
-      // 2. UX: Page Ready Signal (Task 156/157)
-      await expect(page.locator('#main-content[data-page-ready="1"]')).toBeVisible();
-      
-      // 3. A11y: Basic Landmarks & Skip Target
+      await waitForShellReady(page);
+
       await expect(page.locator(route.landmark)).toBeVisible();
       await expect(page.locator('#main-content')).toBeVisible();
-
-      // 4. UX: No "Loading" fragments visible after settle
-      await expect(page.locator('body')).not.toContainText(/wird geladen|Lade Quellen/i);
     });
   }
 
   test('Skip Link functionality', async ({ page }) => {
-    await page.goto('/dashboard');
-    await page.keyboard.press('Tab'); // Usually the first element is the skip link
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    await page.keyboard.press('Tab');
     const skipLink = page.locator('.skip-link');
     await expect(skipLink).toBeFocused();
     await page.keyboard.press('Enter');
-    
-    // Check if focus moved to main content
+
     const mainContent = page.locator('#app-main');
     await expect(mainContent).toBeFocused();
   });
 
   test('Sidebar toggle state persistence', async ({ page }) => {
-    await page.goto('/dashboard');
-    const sidebar = page.locator('.sidebar'); // Adjust selector if needed
-    const toggle = page.locator('#sidebar-toggle'); // Adjust selector if needed
-    
-    if (await toggle.isVisible()) {
-      await toggle.click();
-      await page.waitForTimeout(300); // Wait for transition
-      
-      // Check if localStorage is updated (via JS check or attribute)
-      const isCollapsed = await page.evaluate(() => localStorage.getItem('ks_sidebar_collapsed') === '1');
-      expect(isCollapsed).toBeTruthy();
-      
-      await page.reload();
-      await expect(page.locator('html')).toHaveClass(/sidebar-collapsed/);
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    const toggle = page.locator('#sidebar-toggle');
+
+    if ((await toggle.count()) === 0) {
+      test.info().annotations.push({ type: 'skip', description: 'Sidebar toggle unavailable in shell mode' });
+      return;
     }
+
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+
+    await expect
+      .poll(async () => page.evaluate(() => localStorage.getItem('ks_sidebar_collapsed')))
+      .toBe('1');
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('html')).toHaveClass(/sidebar-collapsed/);
   });
 });

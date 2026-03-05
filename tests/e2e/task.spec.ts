@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 
 test('tasks page renders', async ({ page }) => {
-  const response = await page.goto('/tasks');
+  const response = await page.goto('/tasks', { waitUntil: 'domcontentloaded' });
   const status = response?.status() ?? 0;
   expect([200, 302]).toContain(status);
-  await expect(page.locator('body')).toContainText(/Aufgabe|Task|Offen|Login|Anmelden|System betreten|Enterprise Core Access/i);
+  await expect(page.locator('main, #main-content, body').first()).toContainText(
+    /Aufgabe|Task|Offen|Login|Anmelden|System betreten|Enterprise Core Access/i,
+  );
 });
