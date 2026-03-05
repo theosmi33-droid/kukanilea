@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import secrets
 import time
+import re
 from datetime import timedelta
 
-from flask import Flask, request, session
+from flask import Flask, g, request, session
 
 from .auth import init_auth
 from .autonomy import init_autonomy
@@ -16,6 +18,7 @@ from .log_utils import init_request_logging
 from .migrations.ensure_agent_memory import ensure_agent_memory_tables
 from .observability import init_observability
 from .logging.structured_logger import log_event
+from .security.session_policy import resolve_session_cookie_policy
 
 
 def _wire_runtime_env(app: Flask) -> None:
@@ -58,46 +61,11 @@ def create_app() -> Flask:
     explicit_env = str(
         os.environ.get("KUKANILEA_ENV", os.environ.get("FLASK_ENV", ""))
     ).strip().lower()
-    secure_cookie_default = explicit_env not in {
-        "dev",
-        "development",
-        "local",
-        "test",
-        "testing",
-    }
-    # Flask may pre-seed cookie keys with None; enforce secure defaults explicitly.
-    # HTTPOnly must always remain enabled to reduce script-access to session cookies.
-    app.config["SESSION_COOKIE_HTTPONLY"] = True
-
-    same_site = str(app.config.get("SESSION_COOKIE_SAMESITE") or "").strip().lower()
-    if same_site == "strict":
-        app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
-    elif same_site == "lax":
-        app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    else:
-        app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-
-    # In non-dev environments, always force secure cookies.
-    secure_raw = app.config.get("SESSION_COOKIE_SECURE")
-    secure_cookie_configured = (
-        secure_raw if isinstance(secure_raw, bool) else str(secure_raw or "").strip().lower() in {"1", "true", "yes", "on"}
+    session_cookie_policy = resolve_session_cookie_policy(
+        explicit_env=explicit_env,
+        configured_secure=app.config.get("SESSION_COOKIE_SECURE"),
     )
-    if secure_cookie_default:
-        app.config["SESSION_COOKIE_SECURE"] = True
-    else:
-        app.config["SESSION_COOKIE_SECURE"] = secure_cookie_configured
-
-    if app.config["SESSION_COOKIE_SECURE"]:
-        # __Host- cookies require Secure + Path=/ + no Domain.
-        app.config["SESSION_COOKIE_NAME"] = "__Host-kukanilea_session"
-        app.config["SESSION_COOKIE_DOMAIN"] = None
-        app.config["SESSION_COOKIE_PATH"] = "/"
-    else:
-        cookie_name = str(app.config.get("SESSION_COOKIE_NAME") or "").strip()
-        if not cookie_name or cookie_name == "session":
-            app.config["SESSION_COOKIE_NAME"] = "kukanilea_session"
-        app.config["SESSION_COOKIE_DOMAIN"] = None
-        app.config.setdefault("SESSION_COOKIE_PATH", "/")
+    app.config.update(session_cookie_policy)
     app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(hours=8))
 
     _wire_runtime_env(app)
@@ -147,7 +115,6 @@ def create_app() -> Flask:
     app.config["LICENSE_REASON"] = license_state["reason"]
     app.config["LICENSE_STATUS"] = license_state.get("status", "active")
     
-    from flask import g
     
     @app.before_request
     def start_timer():
@@ -244,15 +211,29 @@ def create_app() -> Flask:
 
         return {"csrf_token": get_csrf_token}
 
+    @app.context_processor
+    def _csp_context():
+        return {"csp_nonce": lambda: getattr(g, "csp_nonce", "")}
+
+    @app.before_request
+    def _set_csp_nonce():
+        g.csp_nonce = secrets.token_urlsafe(16)
+
     @app.after_request
     def add_security_headers(response):
         from .security.csp import build_csp_header
 
-        response.headers["Content-Security-Policy"] = build_csp_header()
+        response.headers["Content-Security-Policy"] = build_csp_header(getattr(g, "csp_nonce", ""))
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        content_type = str(response.headers.get("Content-Type") or "").lower()
+        if "text/html" in content_type and getattr(g, "csp_nonce", ""):
+            body = response.get_data(as_text=True)
+            script_pattern = re.compile(r"<script(?![^>]*\bnonce=)([^>]*)>", re.IGNORECASE)
+            body = script_pattern.sub(lambda m: f'<script nonce="{g.csp_nonce}"{m.group(1)}>', body)
+            response.set_data(body)
         return response
 
     app.register_blueprint(web.bp)

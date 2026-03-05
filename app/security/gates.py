@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
-from typing import Iterable, Mapping
+from typing import Any, Iterable, Mapping
 
 DEFAULT_CONFIRM_TOKENS = frozenset({"CONFIRM", "YES", "TRUE", "1"})
 
@@ -30,6 +31,32 @@ class InjectionFinding:
     pattern: str
 
 
+@dataclass(frozen=True)
+class ConfirmGatePolicy:
+    route: str
+    fields: tuple[str, ...]
+    required: bool = True
+
+
+CRITICAL_CONFIRM_GATE_MATRIX: tuple[ConfirmGatePolicy, ...] = (
+    ConfirmGatePolicy(route="/admin/settings/profile", fields=("language", "timezone", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/users/create", fields=("username", "password", "tenant_id", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/users/update", fields=("username", "tenant_id", "role", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/users/disable", fields=("username", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/users/delete", fields=("username", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/tenants/add", fields=("name", "db_path", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/license/upload", fields=("confirm", "license_json")),
+    ConfirmGatePolicy(route="/admin/settings/system", fields=("language", "timezone", "backup_interval", "log_level", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/branding", fields=("app_name", "primary_color", "footer_text", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/backup/run", fields=("confirm",)),
+    ConfirmGatePolicy(route="/admin/settings/backup/restore", fields=("backup_name", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/mesh/connect", fields=("peer_ip", "peer_port", "confirm")),
+    ConfirmGatePolicy(route="/admin/settings/mesh/rotate-key", fields=("confirm",)),
+)
+
+CRITICAL_CONFIRM_GATE_BY_ROUTE = {row.route: row for row in CRITICAL_CONFIRM_GATE_MATRIX}
+
+
 def confirm_gate(value: str | None, accepted_tokens: Iterable[str] = DEFAULT_CONFIRM_TOKENS) -> bool:
     token = str(value or "").strip().upper()
     normalized = {str(item).strip().upper() for item in accepted_tokens if str(item).strip()}
@@ -52,4 +79,42 @@ def scan_payload_for_injection(payload: Mapping[str, str | None], fields: Iterab
         matched = detect_injection(raw)
         if matched:
             return InjectionFinding(field=field, value=str(raw or ""), pattern=matched)
+    return None
+
+
+def parse_json_object(raw_payload: str | bytes | None) -> dict[str, Any] | None:
+    if raw_payload is None:
+        return None
+    text = raw_payload.decode("utf-8", errors="ignore") if isinstance(raw_payload, bytes) else str(raw_payload)
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, dict):
+        return parsed
+    return None
+
+
+def scan_nested_payload_for_injection(payload: Any, field: str = "payload") -> InjectionFinding | None:
+    if payload is None:
+        return None
+    if isinstance(payload, str):
+        matched = detect_injection(payload)
+        if matched:
+            return InjectionFinding(field=field, value=payload, pattern=matched)
+        return None
+    if isinstance(payload, Mapping):
+        for key, value in payload.items():
+            hit = scan_nested_payload_for_injection(value, f"{field}.{key}")
+            if hit:
+                return hit
+        return None
+    if isinstance(payload, (list, tuple, set)):
+        for index, value in enumerate(payload):
+            hit = scan_nested_payload_for_injection(value, f"{field}[{index}]")
+            if hit:
+                return hit
     return None

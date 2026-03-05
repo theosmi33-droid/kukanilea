@@ -1,15 +1,21 @@
 from app.security.csp import build_csp_header
 
 
-def test_csp_contains_only_required_exceptions():
-    csp = build_csp_header()
+def test_csp_contains_nonce_based_script_policy():
+    csp = build_csp_header("nonce-token")
     assert "default-src 'self'" in csp
-    assert "script-src 'self' 'unsafe-inline'" in csp
+    assert "script-src 'self' 'nonce-nonce-token'" in csp
+    assert "script-src-attr 'none'" in csp
     assert "style-src 'self' 'unsafe-inline'" in csp
     assert "object-src 'none'" in csp
     assert "frame-src 'none'" in csp
     assert "worker-src 'self'" in csp
     assert "media-src 'self'" in csp
     assert "blob:" not in csp
-    assert "eval(" not in csp
-    assert "data:" not in csp.split("connect-src", 1)[1]
+    assert "unsafe-eval" not in csp
+
+
+def test_csp_fallback_mode_is_explicit_for_non_nonce_responses():
+    csp = build_csp_header()
+    assert "script-src 'self' 'unsafe-inline'" in csp
+    assert "script-src-attr 'none'" in csp

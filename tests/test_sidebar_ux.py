@@ -71,4 +71,69 @@ def test_sidebar_disables_hx_boost_for_full_page_navigation(tmp_path, monkeypatc
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
-    assert '<nav class="sidebar" hx-boost="false">' in html
+    assert '<nav class="sidebar" hx-boost="false"' in html
+
+
+def test_sidebar_main_tabs_have_consistent_semantics(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("admin", hash_password("admin"), now)
+        auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+
+    resp = client.get("/dashboard", follow_redirects=True)
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    main_tabs = [
+        "dashboard",
+        "upload",
+        "projects",
+        "tasks",
+        "messenger",
+        "email",
+        "calendar",
+        "time",
+        "visualizer",
+        "settings",
+    ]
+    for tab in main_tabs:
+        assert f'data-nav-key="{tab}"' in html
+
+    assert html.count('data-nav-active="') >= len(main_tabs)
+    assert html.count('aria-current="') >= len(main_tabs)
+
+
+def test_page_ready_marker_present_on_main_content(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("admin", hash_password("admin"), now)
+        auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+
+    resp = client.get("/dashboard", follow_redirects=True)
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="main-content" hx-history-elt data-page-ready="1"' in html

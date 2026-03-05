@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-03-05T09:15:04+00:00",
+  "decision": "NO-GO",
+  "exit_code": 3,
+  "counts": {
+    "pass": 9,
+    "warn": 0,
+    "fail": 2
+  },
+  "gates": [
+    {
+      "name": "Repo/CI",
+      "status": "PASS",
+      "note": "git HEAD resolvable"
+    },
+    {
+      "name": "MIN_SCOPE",
+      "status": "PASS",
+      "note": "files=8 loc=140"
+    },
+    {
+      "name": "Health",
+      "status": "FAIL",
+      "note": "healthcheck failed"
+    },
+    {
+      "name": "Zero-CDN",
+      "status": "PASS",
+      "note": "guardrails passed"
+    },
+    {
+      "name": "White-mode",
+      "status": "PASS",
+      "note": "no dark mode signatures"
+    },
+    {
+      "name": "License",
+      "status": "FAIL",
+      "note": "license file missing"
+    },
+    {
+      "name": "Backup",
+      "status": "PASS",
+      "note": "backup tests passed"
+    },
+    {
+      "name": "AI",
+      "status": "PASS",
+      "note": "AI operating contract present"
+    },
+    {
+      "name": "MIN_TESTS",
+      "status": "PASS",
+      "note": "tests/ops test-count=17"
+    },
+    {
+      "name": "CI_GATE",
+      "status": "PASS",
+      "note": "pytest tests/ops passed"
+    },
+    {
+      "name": "Evidence",
+      "status": "PASS",
+      "note": "evidence path matches required target"
+    }
+  ]
+}
