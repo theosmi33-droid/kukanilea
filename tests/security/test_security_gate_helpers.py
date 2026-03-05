@@ -62,3 +62,14 @@ def test_scan_nested_payload_for_injection_returns_path_qualified_field():
 def test_confirm_matrix_routes_are_unique():
     routes = [item.route for item in CRITICAL_CONFIRM_GATE_MATRIX]
     assert len(routes) == len(set(routes))
+
+
+def test_detect_injection_decodes_url_and_html_encoded_payloads():
+    assert detect_injection("KUKANILEA%27%20OR%201%3D1--") is not None
+    assert detect_injection("&lt;script&gt;alert(1)&lt;/script&gt;") is not None
+
+
+def test_confirm_matrix_contains_context_switch_injection_guard_only():
+    row = next(item for item in CRITICAL_CONFIRM_GATE_MATRIX if item.route == "/admin/context/switch")
+    assert row.required is False
+    assert row.fields == ("tenant_id",)
