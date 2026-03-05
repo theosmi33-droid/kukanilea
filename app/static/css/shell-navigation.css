@@ -220,3 +220,145 @@ html.sidebar-collapsed .nav-link.active::before {
     padding: var(--spacing-4);
   }
 }
+
+/* --- Mobile-first hardening (320px → 1440px) --- */
+html,
+body {
+  width: 100%;
+  overflow-x: clip;
+}
+
+main,
+#main-content,
+.panel,
+.card,
+.topbar,
+.topbar-actions,
+.topbar-search-container {
+  min-width: 0;
+}
+
+:where(p, h1, h2, h3, h4, h5, h6, span, a, button, label, td, th, pre, code) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+:where(img, svg, video, canvas, iframe, table) {
+  max-width: 100%;
+}
+
+table {
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+:where(button, .btn, .nav-link, .mobile-nav-item, .topbar-action, .form-input, .form-select) {
+  min-height: 44px;
+}
+
+.mobile-nav-item {
+  min-width: 44px;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+
+#ki-chat-widget {
+  right: max(12px, env(safe-area-inset-right)) !important;
+  bottom: calc(74px + env(safe-area-inset-bottom)) !important;
+  z-index: 1035 !important;
+}
+
+#ki-chat-widget button {
+  touch-action: manipulation;
+}
+
+#ki-chat-window {
+  width: min(350px, calc(100vw - 24px)) !important;
+  height: min(450px, calc(100vh - 170px)) !important;
+  max-height: calc(100dvh - 170px) !important;
+}
+
+@media (max-width: 1024px) {
+  .topbar {
+    padding-inline: var(--spacing-3);
+    gap: var(--spacing-2);
+  }
+
+  .topbar-actions {
+    gap: var(--spacing-2);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  #main-content {
+    padding: var(--spacing-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    min-height: 64px;
+    height: auto;
+    padding-block: 8px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .topbar-search-container {
+    max-width: none;
+    width: 100%;
+    order: 2;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  #main-content {
+    padding: var(--spacing-3);
+  }
+
+  .mobile-bottom-nav {
+    min-height: 68px;
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+
+  #ki-chat-widget {
+    right: max(10px, env(safe-area-inset-right)) !important;
+    bottom: calc(82px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: clamp(1.4rem, 6vw, 1.9rem);
+  }
+
+  h2 {
+    font-size: clamp(1.2rem, 5vw, 1.55rem);
+  }
+
+  .topbar {
+    padding-inline: var(--spacing-2);
+  }
+
+  .topbar-search-input {
+    font-size: 16px;
+  }
+
+  #main-content {
+    padding: var(--spacing-2);
+  }
+
+  #ki-chat-window {
+    width: calc(100vw - 20px) !important;
+    height: min(64dvh, 420px) !important;
+  }
+
+  #ki-chat-widget > button {
+    width: 52px !important;
+    height: 52px !important;
+  }
+}
