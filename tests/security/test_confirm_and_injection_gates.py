@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from tests.time_utils import utc_now_iso
-
 from pathlib import Path
 
 import pytest
+
+from tests.time_utils import utc_now_iso
 
 
 @pytest.mark.parametrize(
@@ -117,6 +117,18 @@ def test_security_critical_routes_block_injection_payloads(admin_client, route: 
     assert response.status_code == 400
     assert body["error"] == "injection_blocked"
     assert body["field"] == blocked_field
+
+
+def test_context_switch_blocks_injection_payload_without_confirm(admin_client):
+    _, client = admin_client
+    response = client.post(
+        "/admin/context/switch",
+        data={"tenant_id": "KUKANILEA%27%20OR%201%3D1--"},
+    )
+    body = response.get_json()
+    assert response.status_code == 400
+    assert body["error"] == "injection_blocked"
+    assert body["field"] == "tenant_id"
 
 
 @pytest.mark.parametrize(

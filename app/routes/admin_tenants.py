@@ -35,7 +35,11 @@ from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
 from app.license import load_license
-from app.security.gates import CRITICAL_CONFIRM_GATE_BY_ROUTE, confirm_gate, scan_payload_for_injection
+from app.security.gates import (
+    CRITICAL_CONFIRM_GATE_BY_ROUTE,
+    confirm_gate,
+    scan_payload_for_injection,
+)
 
 bp = Blueprint("admin_tenants", __name__, url_prefix="/admin")
 
@@ -499,6 +503,10 @@ def add_tenant():
 @login_required
 @require_role("ADMIN")
 def switch_context():
+    gate_error = _enforce_critical_gate("/admin/context/switch")
+    if gate_error:
+        return gate_error
+
     tenant_id = request.form.get("tenant_id")
     if not tenant_id:
         return "", 400
