@@ -5,6 +5,14 @@ from tests.time_utils import utc_now_iso
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 
+def test_standard_request_detector_handles_common_messages():
+    from app.ai.intent_analyzer import detect_standard_request
+
+    assert detect_standard_request("Hallo") == "greeting"
+    assert detect_standard_request("test") == "self_test"
+    assert detect_standard_request("Funktionierst du?") == "self_test"
+
+
 
 def _make_app(tmp_path, monkeypatch):
     from app import create_app

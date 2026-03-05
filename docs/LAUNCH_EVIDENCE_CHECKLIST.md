@@ -214,3 +214,43 @@ Freigabe:
 - Installationszeit Start/Ende:
 - Offene Punkte:
 - Nächster Termin:
+
+
+## OPS-Release Nachschärfung (Production-Grade)
+
+### Verifizierbare Backup-Artefakte (Pflicht)
+- Backup-Run schreibt **immer**:
+  - `checksum_sha256`
+  - `backup_size_bytes`
+  - `tenant_id`
+  - `*.metadata.json` (Tenant, Dateiname, Größe, Checksum)
+  - `*.snapshot.json` (Baseline für Restore-Compare)
+- Bei SMB/NAS-Ausfall (`smbclient` fehlt/down) muss `mode=degraded_local` gesetzt sein und Artefakte lokal unter `instance/degraded_backups/<tenant>/` liegen.
+
+### Restore-Datenintegrität (Pflicht)
+- Restore muss Integrität vor Entpacken prüfen:
+  - Checksum-Verify (`.sha256`)
+  - Metadata-Verify (tenant/dateiname/size)
+- Restore muss **Before/After-Compare** durchführen:
+  - Baseline aus Backup-Snapshot (`*.snapshot.json`)
+  - `restore_validation.py --phase after` gegen diese Baseline
+
+### Lizenzzustände + Audit-Evidence (Pflicht)
+- Zustände müssen nachweisbar durch Tests/Artefakte abgedeckt sein:
+  - `AKTIV`
+  - `GESPERRT`
+  - `GRACE` (inkl. SMB down / unreachable)
+- Nachweis: `tests/license/test_license_state_machine.py` + Gate-Evidence-Output.
+
+### Deterministische Launch-Entscheidung
+- Gate-Matrix bleibt `PASS/WARN/FAIL` pro Gate.
+- Gesamtentscheidung ist deterministisch:
+  - `GO` wenn `FAIL=0`
+  - `NO-GO` wenn `FAIL>0`
+
+### Degraded-Mode (SMB down) dokumentiert
+- Betriebsanweisung:
+  1. Backup läuft lokal weiter (`mode=degraded_local`).
+  2. Restore nutzt lokale Fallback-Artefakte.
+  3. Incident im Operations-Report vermerken.
+  4. Nach NAS-Recovery Replikation/Abgleich starten.

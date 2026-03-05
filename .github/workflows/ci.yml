@@ -8,15 +8,36 @@ on:
   schedule:
     - cron: "13 4 * * *"
   workflow_dispatch:
+    inputs:
+      run_perf_gate:
+        description: "Run optional perf KPI gate job"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  pr-quality-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR quality guard
+        run: |
+          bash scripts/dev/pr_quality_guard.sh --ci
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [pr-quality-guard]
     env:
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
@@ -42,3 +63,38 @@ jobs:
       - name: Run tests (without e2e)
         run: |
           pytest -q tests --ignore=tests/e2e
+
+  perf-kpi-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    env:
+      OLLAMA_ENABLED: "0"
+      PYTHONUNBUFFERED: "1"
+      RUN_PERF_GATE: ${{ github.event.inputs.run_perf_gate || vars.CI_PERF_GATE || '0' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Perf gate skip policy
+        if: env.RUN_PERF_GATE != '1' && env.RUN_PERF_GATE != 'true'
+        run: |
+          echo "Skipping perf gate by policy."
+          echo "Enable via workflow_dispatch input run_perf_gate=true or repository variable CI_PERF_GATE=1."
+
+      - name: Perf benchmark harness + tests
+        if: env.RUN_PERF_GATE == '1' || env.RUN_PERF_GATE == 'true'
+        run: |
+          python scripts/perf/benchmark_gate.py --samples 3
+          pytest -q tests/perf
