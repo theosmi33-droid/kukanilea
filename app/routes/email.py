@@ -5,7 +5,6 @@ from flask import Blueprint, jsonify, request, current_app, Response
 from app.auth import login_required, current_tenant
 from app.web import _render_base, _render_sovereign_tool, _is_hx_partial_request
 from app.security import csrf_protected
-from app.agents.mail import mail_agent_draft
 from app.modules.mail.logic import classify_message, generate_reply_draft
 from app.modules.mail.contracts import build_summary as build_mail_summary
 from app.modules.mail.contracts import build_health as build_mail_health
@@ -31,7 +30,8 @@ def email_page():
 def api_mail_draft():
     payload = request.get_json(silent=True) or {}
     try:
-        draft = mail_agent_draft(payload)
+        message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
+        draft = generate_reply_draft(message, read_only_default=True, external_api_enabled=False)
         return jsonify(ok=True, draft=draft)
     except Exception as e:
         return jsonify(error="draft_error", details=str(e)), 500
