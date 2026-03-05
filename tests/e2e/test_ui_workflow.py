@@ -10,7 +10,11 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, expect
+
+playwright = pytest.importorskip("playwright.sync_api", reason="playwright is required for e2e browser workflow tests")
+Page = playwright.Page
+PlaywrightTimeoutError = playwright.TimeoutError
+expect = playwright.expect
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
