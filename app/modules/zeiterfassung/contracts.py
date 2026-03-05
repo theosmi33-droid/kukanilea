@@ -11,8 +11,12 @@ def _timestamp() -> str:
 
 def build_summary(tenant: str) -> dict:
     time_entry_list = getattr(core, "time_entry_list", None)
-    entries = time_entry_list(tenant=tenant) if callable(time_entry_list) else []
-    running = sum(1 for entry in entries if not entry.get("ended_at")) if entries else 0
+    entries = (
+        time_entry_list(tenant_id=tenant, limit=500)
+        if callable(time_entry_list)
+        else []
+    )
+    running = sum(1 for entry in entries if not entry.get("end_at")) if entries else 0
     return {
         "status": "ok" if callable(time_entry_list) else "degraded",
         "timestamp": _timestamp(),

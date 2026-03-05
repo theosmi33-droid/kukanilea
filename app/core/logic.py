@@ -33,7 +33,7 @@ import threading
 import time
 import unicodedata
 import zipfile
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from difflib import SequenceMatcher
 from email import policy
 from email.parser import BytesParser
@@ -210,7 +210,7 @@ MAX_DOCX_PARAS = 4000
 # UTIL
 # ============================================================
 def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _audit_to_file(msg: str) -> None:
@@ -1278,7 +1278,10 @@ def _time_tenant(tenant_id: str) -> str:
 
 
 def _parse_iso(value: str) -> datetime:
-    return datetime.fromisoformat(value)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _duration_seconds(start_at: str, end_at: str) -> int:
@@ -1661,7 +1664,7 @@ def time_entries_list(
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
                 WHERE {where_sql}
-                ORDER BY te.start_at DESC
+                ORDER BY te.start_at DESC, te.id DESC
                 LIMIT ?
                 """,
                 (*params, limit),
