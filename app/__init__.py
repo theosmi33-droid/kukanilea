@@ -85,7 +85,7 @@ def create_app() -> Flask:
     if secure_cookie_default:
         app.config["SESSION_COOKIE_SECURE"] = True
     else:
-        app.config["SESSION_COOKIE_SECURE"] = bool(secure_cookie_configured)
+        app.config["SESSION_COOKIE_SECURE"] = secure_cookie_configured
 
     if app.config["SESSION_COOKIE_SECURE"]:
         # __Host- cookies require Secure + Path=/ + no Domain.
