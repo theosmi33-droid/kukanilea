@@ -8,6 +8,7 @@ from jinja2 import TemplateNotFound
 from app.auth import login_required, current_tenant, current_role, current_user
 from app.config import Config
 from app import core
+from app.core.gewerke_profiles import get_active_profile
 
 logger = logging.getLogger("kukanilea.dashboard")
 bp = Blueprint("dashboard", __name__)
@@ -64,14 +65,17 @@ def dashboard_page():
     if callable(get_recent):
         recent = get_recent(tenant, limit=6)
 
+    profile = get_active_profile(tenant_id=tenant)
+
     return _render_base(
         "dashboard.html",
         active_tab="dashboard",
         items=items,
         meta=meta,
         recent=recent,
-        suggestions={"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
-        keywords=["Maler", "Sanitär", "Elektro"]
+        suggestions={"doctypes": profile.get("document_types", [])},
+        keywords=profile.get("task_templates", []),
+        profile_config=profile,
     )
 
 @bp.get("/api/system/status")
