@@ -260,14 +260,8 @@ def load_runtime_license_state(
     trial = _ensure_trial(trial_path)
     start = date.fromisoformat(str(trial["start"]))
     elapsed = (date.today() - start).days
-    
-    # In test context, we don't want trials to expire automatically due to 
-    # shared environment issues, unless explicitly requested.
-    is_test = os.environ.get("PYTEST_CURRENT_TEST") is not None
-    
     days_left = max(0, trial_days - elapsed)
-    expired = elapsed >= trial_days and not is_test
-    
+    expired = elapsed >= trial_days
     state = LicenseState(
         plan="TRIAL",
         trial=True,
