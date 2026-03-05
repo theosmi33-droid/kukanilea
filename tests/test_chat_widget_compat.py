@@ -125,3 +125,128 @@ def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_p
     assert confirmed["requires_confirm"] is False
     assert confirmed["pending_id"] == ""
     assert "ausgeführt" in confirmed["status"].lower()
+
+
+def test_compact_chat_smalltalk_hallo_returns_reliable_response(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("dev", hash_password("dev"), now)
+        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
+        sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "csrf-test"
+
+    resp = client.post(
+        "/api/chat/compact",
+        json={"message": "Hallo", "current_context": "/dashboard"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert "hallo" in body["text"].lower() or "bereit" in body["text"].lower()
+
+
+def test_compact_chat_smalltalk_test_returns_ready_signal(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("dev", hash_password("dev"), now)
+        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
+        sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "csrf-test"
+
+    resp = client.post(
+        "/api/chat/compact",
+        json={"message": "Funktionierst du?", "current_context": "/tasks"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert "aktiv" in body["text"].lower() or "bereit" in body["text"].lower()
+
+
+def test_compact_chat_status_uses_tool_summary_for_projects_context(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("dev", hash_password("dev"), now)
+        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
+        sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "csrf-test"
+
+    resp = client.post(
+        "/api/chat/compact",
+        json={"message": "Status Übersicht", "current_context": "/projects"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert "status" in body["text"].lower()
+    assert "checks" in body["text"].lower()
+
+
+def test_compact_chat_write_intent_always_sets_confirm_and_audits(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("dev", hash_password("dev"), now)
+        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
+
+    import app.web as web
+    monkeypatch.setattr(web, "agent_answer", lambda *_args, **_kwargs: {"ok": True, "text": "verstanden", "actions": []})
+    events = []
+    monkeypatch.setattr(web, "_audit", lambda action, target="", meta=None: events.append((action, target, meta or {})))
+
+    with client.session_transaction() as sess:
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
+        sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "csrf-test"
+
+    resp = client.post(
+        "/api/chat/compact",
+        json={"message": "Bitte sende die Nachricht sofort an den Kunden", "current_context": "/dashboard"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["requires_confirm"] is True
+    assert body["pending_id"]
+    assert any(item[0] == "chat_confirm_required" for item in events)

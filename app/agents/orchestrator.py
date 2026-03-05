@@ -25,12 +25,30 @@ from app.agents.search import SearchAgent
 from app.agents.summary import SummaryAgent
 from app.agents.upload import UploadAgent
 from app.agents.weather import WeatherAgent
+from app.ai.intent_analyzer import classify_intent_risk
 
 from .intent import IntentParser
 from .policy import PolicyEngine
 from .tool_registry import ToolRegistry
 
 logger = logging.getLogger("kukanilea.agents.messenger")
+
+
+_SMALLTALK_PATTERNS = (
+    re.compile(r"(?i)^\s*(hallo|hi|hey|moin|servus|guten\s+(morgen|tag|abend))\s*[!.?]*\s*$"),
+    re.compile(r"(?i)^\s*(test|ping|funktionierst\s+du\??|bist\s+du\s+da\??)\s*[!.?]*\s*$"),
+)
+
+
+def _smalltalk_response(message: str) -> str | None:
+    text = str(message or "").strip()
+    lowered = text.lower()
+    if any(p.search(text) for p in _SMALLTALK_PATTERNS):
+        if any(token in lowered for token in ("test", "ping", "funktionierst", "bist du da")):
+            return "Ja, ich funktioniere. Nenne mir eine konkrete Aufgabe (z. B. Suche, Kunde, Zusammenfassung)."
+        return "Hallo! Ich bin bereit. Frag mich nach Suche, Kundeninfo oder Dokument-Zusammenfassung."
+    return None
+
 
 
 @dataclass
@@ -251,6 +269,19 @@ class Orchestrator:
             context.meta["db_path"] = str(auth_db)
 
         safe_mode = bool(context.meta.get("safe_mode"))
+        risk = classify_intent_risk(message)
+        smalltalk = _smalltalk_response(message)
+        if smalltalk:
+            return OrchestratorResult(
+                text=smalltalk,
+                actions=[],
+                intent="smalltalk",
+                data={"intent_type": risk.intent_type, "reason": risk.reason},
+                suggestions=build_safe_suggestions(["suche rechnung", "wer ist 12393", "zusammenfassung token abc"]),
+                ok=True,
+                error=None,
+            )
+
         intent_result = self.intent_parser.parse(message, allow_llm=not safe_mode)
         intent = intent_result.intent
         injection, reasons = detect_prompt_injection(message)

@@ -20,6 +20,11 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bdo\s+anything\s+now\b|\bdan\s+mode\b"),
     re.compile(r"(?i)\b(?:bypass|disable)\s+(?:all\s+)?(?:security|guardrails?|safety)\b"),
     re.compile(r"(?i)\b(?:reveal|print)\s+(?:the\s+)?(?:system\s+prompt|hidden\s+instructions?)\b"),
+    re.compile(r"(?i)\b(?:act\s+as|you\s+are\s+now)\s+(?:an?|the)?\s*(?:admin|system|developer)\b"),
+    re.compile(r"(?i)\b(?:forget|discard)\s+(?:all\s+)?(?:previous|prior)\s+instructions?\b"),
+    re.compile(r"(?i)\b(?:simulate|enable)\s+(?:god\s*mode|root\s*mode|developer\s*mode)\b"),
+    re.compile(r"(?i)```\s*(?:system|developer|assistant)"),
+    re.compile(r"(?i)<\s*/?\s*(?:system|developer|assistant)\s*>")
 )
 
 

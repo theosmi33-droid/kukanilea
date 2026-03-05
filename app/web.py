@@ -65,7 +65,7 @@ from app import core
 from app.agents.base import AgentContext
 from app.agents.customer import CustomerAgent
 from app.agents.orchestrator import Orchestrator
-from app.ai.intent_analyzer import detect_write_intent
+from app.ai.intent_analyzer import classify_intent_risk, detect_write_intent
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.search import SearchAgent
@@ -2052,6 +2052,50 @@ def _mock_generate(prompt: str) -> str:
 
 
 
+_WIDGET_CONTEXT_TOOL = {
+    "/dashboard": "dashboard",
+    "/tasks": "tasks",
+    "/projects": "projects",
+}
+
+
+def _is_widget_smalltalk(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return bool(re.fullmatch(r"(hallo|hi|hey|moin|servus|test|ping|funktionierst du\??)", text))
+
+
+def _widget_smalltalk_response(message: str, current_context: str) -> str:
+    msg = str(message or "").strip().lower()
+    if "test" in msg or "ping" in msg or "funktionierst" in msg:
+        return "Ja, ich bin aktiv und bereit. Sag mir einfach, was ich für dich prüfen soll."
+    route_hint = ""
+    if current_context in _WIDGET_CONTEXT_TOOL:
+        route_hint = f" Kontext erkannt: {current_context}."
+    return f"Hallo! Ich unterstütze dich direkt im Assistant-Widget.{route_hint}"
+
+
+def _widget_tool_summary_text(current_context: str) -> str | None:
+    tool = _WIDGET_CONTEXT_TOOL.get(current_context)
+    if not tool:
+        return None
+    tenant = str(current_tenant() or "default")
+    try:
+        summary = build_tool_summary(tool, tenant=tenant)
+    except Exception:
+        logger.exception("widget_tool_summary_failed", extra={"tool": tool, "tenant": tenant})
+        return f"{tool.title()}: Status unbekannt. Bitte später erneut versuchen."
+    health = summary.get("health") or {}
+    title = str(summary.get("title") or tool.title())
+    status = str(health.get("status") or "unknown")
+    checks = health.get("checks") or {}
+    total = len(checks) if isinstance(checks, dict) else 0
+    degraded = 0
+    if isinstance(checks, dict):
+        degraded = sum(1 for item in checks.values() if str(item).lower() not in {"ok", "healthy", "ready"})
+    return f"{title}: Status {status}. Checks: {total}, davon auffällig: {degraded}."
+
 _WIDGET_READONLY_ACTIONS = {
     "search_docs",
     "open_token",
@@ -2206,6 +2250,26 @@ def api_chat_compact():
             ok=False
         )), 400
 
+    if _is_widget_smalltalk(user_msg):
+        return jsonify(_widget_compact_response(
+            text=_widget_smalltalk_response(user_msg, current_context),
+            model="local",
+            context_tag=current_context,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            status="Bereit",
+        ))
+
+    if re.search(r"(?i)\b(status|tool|summary|übersicht)\b", user_msg):
+        tool_summary_text = _widget_tool_summary_text(current_context)
+        if tool_summary_text:
+            return jsonify(_widget_compact_response(
+                text=tool_summary_text,
+                model="local",
+                context_tag=current_context,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                status="Bereit",
+            ))
+
     injection_pattern = detect_injection(user_msg)
     if injection_pattern:
         _audit("chat_compact_injection_blocked", target="/api/chat/compact", meta={"pattern": injection_pattern})
@@ -2223,7 +2287,8 @@ def api_chat_compact():
     result = agent_answer(user_msg, role=role)
     
     actions_raw = list(result.get("actions", []))
-    write_intent = detect_write_intent(user_msg)
+    intent_risk = classify_intent_risk(user_msg)
+    write_intent = intent_risk.intent_type in {"write", "unsafe"} or detect_write_intent(user_msg)
     requires_confirm = _widget_requires_confirm(actions_raw) or write_intent
     if requires_confirm:
         actions_raw = _mark_actions_confirm_required(actions_raw)
@@ -2239,7 +2304,7 @@ def api_chat_compact():
         }
         session.modified = True
         confirm_prompt = "Bestätigung für geplante Aktionen erforderlich."
-        _audit("chat_confirm_required", target="/api/chat/compact", meta={"write_intent": write_intent, "action_count": len(actions_raw)})
+        _audit("chat_confirm_required", target="/api/chat/compact", meta={"write_intent": write_intent, "action_count": len(actions_raw), "intent_type": intent_risk.intent_type, "reason": intent_risk.reason})
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     return jsonify(_widget_compact_response(
