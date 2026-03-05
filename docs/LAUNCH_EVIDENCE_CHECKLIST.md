@@ -246,7 +246,7 @@ Freigabe:
   - `tenant_id`
   - `*.metadata.json` (Tenant, Dateiname, Größe, Checksum)
   - `*.snapshot.json` (Baseline für Restore-Compare)
-- Bei SMB/NAS-Ausfall (`smbclient` fehlt/down) muss `mode=degraded_local` gesetzt sein und Artefakte lokal unter `instance/degraded_backups/<tenant>/` liegen.
+- Bei SMB/NAS-Ausfall (`smbclient` fehlt/down) muss `mode=degraded_local` gesetzt sein and Artefakte lokal unter `instance/degraded_backups/<tenant>/` liegen.
 
 ### Restore-Datenintegrität (Pflicht)
 - Restore muss Integrität vor Entpacken prüfen:
@@ -280,7 +280,7 @@ Freigabe:
 ## Ops Evidence Drill (License + Backup/Restore)
 
 - Lizenzstatus muss in Evidence als `OK`, `WARN` oder `LOCKED` auftauchen.
-- `LOCKED` ist **fail-closed** und führt deterministisch zu `NO-GO`.
+- `LOCKED` is **fail-closed** und führt deterministisch zu `NO-GO`.
 - Backup-Evidence pro Tenant: `tenant_id`, `target_path`, `checksum_sha256`, `backup_size_bytes`, `compression_ratio`.
 - Restore-Evidence: `verify_db=ok` und `verify_files=ok` plus `restore_validation=ok` und gemessene `rto_seconds`.
 - Keine Secrets in Reports/Logs dokumentieren.
