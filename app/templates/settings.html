@@ -18,6 +18,15 @@
 
 {% set mode = settings_mode or 'admin' %}
 
+<div class="page-shell page-shell--wide">
+  <header class="page-header">
+    <div>
+      <p class="page-kicker">Settings</p>
+      <h1 class="m-0 text-3xl font-bold tracking-tight">Einstellungen</h1>
+      <p class="router-note" style="margin:6px 0 0 0;">Konsistente Konfiguration für Benutzer, System und Backups.</p>
+    </div>
+  </header>
+
 {% if mode == 'profile' %}
 <div class="router-card" style="max-width:720px;">
   <h2 style="margin:0 0 10px 0;">Profil & leichte Anpassungen</h2>
@@ -263,6 +272,7 @@
   </section>
 </div>
 {% endif %}
+</div>
 
 <script>
   function confirmRisk(form){

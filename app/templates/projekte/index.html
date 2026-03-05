@@ -2,10 +2,10 @@
 {% block title %}{{ project.name }} · Project Hub · KUKANILEA{% endblock %}
 
 {% block content %}
-<div class="page-container p-6 flex flex-column gap-6" id="project-hub" data-board-id="{{ board.id }}" data-project-id="{{ project.id }}">
+<div class="page-container page-shell page-shell--wide p-6 flex flex-column gap-6" id="project-hub" data-board-id="{{ board.id }}" data-project-id="{{ project.id }}">
 
   <!-- 1. Unified Project Header -->
-  <header class="flex justify-between items-end gap-6 flex-wrap bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm">
+  <header class="page-header">
     <div class="flex flex-column gap-1">
         <nav class="breadcrumb text-[10px] font-black uppercase tracking-widest text-muted flex gap-2 items-center mb-2">
             <a href="/projects" class="hover:text-primary-600">Projekte</a>
