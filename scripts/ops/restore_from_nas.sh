@@ -160,16 +160,17 @@ if [[ "$MODE" == "degraded_local" ]]; then
   fi
 fi
 
-if [[ -f "${TMP_DIR}/${CHECKSUM_FILE}" ]]; then
-  CHECKSUM_EXPECTED="$(awk '{print $1}' "${TMP_DIR}/${CHECKSUM_FILE}" | head -n1)"
-  CHECKSUM_ACTUAL="$(sha256_file "$LOCAL_FILE")"
-  [[ "$CHECKSUM_EXPECTED" == "$CHECKSUM_ACTUAL" ]] || die "$EXIT_RUNTIME" "checksum mismatch for ${BACKUP_FILE}"
-fi
+[[ -f "${TMP_DIR}/${CHECKSUM_FILE}" ]] || die "$EXIT_RUNTIME" "checksum file missing: ${CHECKSUM_FILE}"
+[[ -f "${TMP_DIR}/${METADATA_FILE}" ]] || die "$EXIT_RUNTIME" "metadata file missing: ${METADATA_FILE}"
+[[ -f "${TMP_DIR}/${SNAPSHOT_FILE}" ]] || die "$EXIT_RUNTIME" "snapshot file missing: ${SNAPSHOT_FILE}"
 
+CHECKSUM_EXPECTED="$(awk '{print $1}' "${TMP_DIR}/${CHECKSUM_FILE}" | head -n1)"
+CHECKSUM_ACTUAL="$(sha256_file "$LOCAL_FILE")"
+[[ "$CHECKSUM_EXPECTED" == "$CHECKSUM_ACTUAL" ]] || die "$EXIT_RUNTIME" "checksum mismatch for ${BACKUP_FILE}"
 
 INTEGRITY_STATUS="ok"
 INTEGRITY_ISSUES=""
-if [[ -f "${TMP_DIR}/${METADATA_FILE}" ]] && command -v python3 >/dev/null 2>&1; then
+if command -v python3 >/dev/null 2>&1; then
   if ! python3 - "$TENANT_ID" "$BACKUP_FILE" "$LOCAL_FILE" "${TMP_DIR}/${METADATA_FILE}" <<'PYMETA'
 import json
 import os
@@ -195,8 +196,7 @@ PYMETA
     INTEGRITY_ISSUES="metadata mismatch"
   fi
 else
-  INTEGRITY_STATUS="warn_missing_metadata"
-  INTEGRITY_ISSUES="metadata missing"
+  die "$EXIT_DEPENDENCY" "python3 required for metadata verification"
 fi
 
 if [[ "$LOCAL_FILE" == *.age ]]; then
