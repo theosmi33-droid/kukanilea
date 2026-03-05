@@ -45,12 +45,14 @@ def main() -> None:
         login_resp = client.post(
             "/login",
             data={"username": "dev", "password": "dev", "csrf_token": csrf_token},
-            follow_redirects=True,
+            follow_redirects=False,
         )
-        if login_resp.status_code != 200:
+        if login_resp.status_code not in (200, 302, 303):
             raise SystemExit("login failed")
 
         with client.session_transaction() as sess:
+            if sess.get("user") != "dev":
+                raise SystemExit("login failed")
             csrf_token = sess.get("csrf_token", csrf_token)
 
         start = time.time()
