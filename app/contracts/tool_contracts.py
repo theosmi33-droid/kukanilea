@@ -23,6 +23,9 @@ CONTRACT_STATUSES = {"ok", "degraded", "error"}
 CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
 CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
 CONTRACT_VERSION = "2026-03-05"
+CONTRACT_VERSION_HISTORY = {
+    "2026-03-05": "Unifies all 11 tools on summary/health payload core fields and endpoint matrix metadata.",
+}
 
 
 def _core_get(name: str, default=None):
@@ -46,6 +49,7 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
         contract_meta = {}
     contract_meta.setdefault("version", CONTRACT_VERSION)
     contract_meta.setdefault("read_only", False)
+    contract_meta.setdefault("version_notes", CONTRACT_VERSION_HISTORY.get(CONTRACT_VERSION, ""))
     safe_details["contract"] = contract_meta
 
     payload = {
@@ -74,7 +78,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "source": "contracts.tool_matrix",
         "tenant": tenant,
         "matrix_endpoint": "/api/dashboard/tool-matrix",
-        "aggregate_mode": "summary_only",
+        "aggregate_mode": "contract_endpoints_only",
+        "contract_endpoints": [f"/api/{tool}/summary" for tool in non_dashboard_tools],
         "degraded": degraded_tools,
         "errors": error_tools,
         "contract": {
@@ -240,7 +245,10 @@ def build_tool_summary(tool: str, tenant: str = "default") -> dict:
         )
 
     status = "degraded" if degraded_reason else "ok"
-    return _contract_payload(tool=tool, status=status, metrics=metrics, details=details, reason=degraded_reason)
+    payload = _contract_payload(tool=tool, status=status, metrics=metrics, details=details, reason=degraded_reason)
+    payload["details"]["contract"].setdefault("summary_endpoint", f"/api/{tool}/summary")
+    payload["details"]["contract"].setdefault("health_endpoint", f"/api/{tool}/health")
+    return payload
 
 
 def build_tool_health(tool: str, tenant: str = "default") -> dict:

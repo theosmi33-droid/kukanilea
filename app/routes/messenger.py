@@ -5,14 +5,18 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from app.auth import login_required
-from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
-from app.contracts.tool_contracts import build_tool_summary, extract_chat_message, normalize_chat_response
-from app.ai.intent_analyzer import detect_write_intent
-from app.security.gates import detect_injection
-from app.security import csrf_protected
-from app.rate_limit import chat_limiter
 from app.agents.orchestrator import answer as agent_answer
+from app.ai.intent_analyzer import detect_write_intent
+from app.auth import current_tenant, login_required
+from app.contracts.tool_contracts import (
+    build_tool_summary,
+    extract_chat_message,
+    normalize_chat_response,
+)
+from app.rate_limit import chat_limiter
+from app.security import csrf_protected
+from app.security.gates import detect_injection
+from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
 
 logger = logging.getLogger("kukanilea.messenger")
 bp = Blueprint("messenger", __name__)
@@ -55,7 +59,8 @@ def messenger_page():
 @bp.route("/api/messenger/summary", methods=["GET"])
 @login_required
 def api_messenger_summary():
-    return jsonify(build_tool_summary("messenger"))
+    tenant = str(current_tenant() or "default")
+    return jsonify(build_tool_summary("messenger", tenant=tenant))
 
 
 def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:

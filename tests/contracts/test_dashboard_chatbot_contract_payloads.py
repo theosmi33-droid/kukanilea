@@ -8,7 +8,8 @@ def test_dashboard_summary_declares_aggregation_contract(auth_client):
     body = response.get_json()
     assert body["tool"] == "dashboard"
     assert body["details"]["matrix_endpoint"] == "/api/dashboard/tool-matrix"
-    assert body["details"]["aggregate_mode"] == "summary_only"
+    assert body["details"]["aggregate_mode"] == "contract_endpoints_only"
+    assert len(body["details"]["contract_endpoints"]) == 10
     assert body["metrics"]["total_tools"] == 10
     assert body["details"]["contract"]["read_only"] is True
 

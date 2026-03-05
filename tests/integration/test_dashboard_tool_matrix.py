@@ -3,7 +3,6 @@ from __future__ import annotations
 from tests.time_utils import utc_now_iso
 
 
-
 def _make_app(tmp_path, monkeypatch):
     from app import create_app
     from app.config import Config
@@ -53,6 +52,11 @@ def test_dashboard_matrix_returns_all_tools(tmp_path, monkeypatch):
         assert isinstance(row.get("metrics"), dict)
         assert isinstance(row.get("details"), dict)
         assert isinstance(row["details"].get("contract"), dict)
+        assert row["details"]["contract"]["summary_endpoint"] == f"/api/{row['tool']}/summary"
+        assert row["details"]["contract"]["health_endpoint"] == f"/api/{row['tool']}/health"
+
+    dashboard = next(row for row in body["tools"] if row["tool"] == "dashboard")
+    assert dashboard["details"]["aggregate_mode"] == "contract_endpoints_only"
 
 
 def test_dashboard_matrix_marks_degraded_tool_instead_of_hard_fail(tmp_path, monkeypatch):
