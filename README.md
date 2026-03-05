@@ -32,6 +32,14 @@ bash scripts/dev_run.sh
 `scripts/dev_bootstrap.sh` umfasst venv+deps, Playwright-Browser, Doctor-Checks, Smoke, Healthcheck und Launch-Evidence (`--fast`).
 `scripts/dev_run.sh` startet reproduzierbar über denselben `.venv`-Interpreter und führt Bootstrap bei Bedarf automatisch aus.
 
+### Verifikation (Time-to-Green)
+
+```bash
+bash -n scripts/dev_bootstrap.sh scripts/dev_run.sh scripts/ops/healthcheck.sh scripts/ops/launch_evidence_gate.sh
+./scripts/ops/healthcheck.sh
+scripts/ops/launch_evidence_gate.sh
+```
+
 Weitere Details: `docs/dev/BOOTSTRAP_QUICKSTART.md`
 
 ## Quick Start (Developer)

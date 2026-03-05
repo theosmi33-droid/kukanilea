@@ -37,6 +37,11 @@ USAGE
 done
 
 choose_base_python() {
+  local required=""
+  if [[ -f "$ROOT/.python-version" ]]; then
+    required="$(tr -d '[:space:]' < "$ROOT/.python-version")"
+  fi
+
   if [[ -n "${PYTHON_BIN:-}" ]]; then
     if command -v "$PYTHON_BIN" >/dev/null 2>&1; then
       command -v "$PYTHON_BIN"
@@ -51,6 +56,16 @@ choose_base_python() {
   fi
 
   if command -v pyenv >/dev/null 2>&1; then
+    if [[ -n "$required" ]]; then
+      if pyenv versions --bare 2>/dev/null | grep -Fxq "$required"; then
+        local vpy
+        vpy="$(PYENV_VERSION="$required" pyenv which python 2>/dev/null || true)"
+        if [[ -n "$vpy" && -x "$vpy" ]]; then
+          printf '%s\n' "$vpy"
+          return 0
+        fi
+      fi
+    fi
     local pyenv_python
     pyenv_python="$(pyenv which python 2>/dev/null || true)"
     if [[ -n "$pyenv_python" && -x "$pyenv_python" ]]; then
@@ -90,9 +105,15 @@ fi
 "$PYTHON" -m pip -q install -U pip wheel
 "$PYTHON" -m pip -q install -r requirements.txt -r requirements-dev.txt
 
+if [[ -n "${CI:-}" ]]; then
+  PLAYWRIGHT_ARGS=(install chromium)
+else
+  PLAYWRIGHT_ARGS=(install --with-deps chromium)
+fi
+
 if "$PYTHON" -m playwright --version >/dev/null 2>&1; then
-  echo "[bootstrap] Installing Playwright browsers (chromium)"
-  "$PYTHON" -m playwright install --with-deps chromium
+  echo "[bootstrap] Installing Playwright browsers (chromium): ${PLAYWRIGHT_ARGS[*]}"
+  "$PYTHON" -m playwright "${PLAYWRIGHT_ARGS[@]}"
 else
   echo "[bootstrap] WARNING: python playwright module is unavailable in venv"
 fi
