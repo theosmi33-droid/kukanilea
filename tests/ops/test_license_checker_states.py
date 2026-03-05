@@ -34,14 +34,14 @@ def test_license_warn_grace(monkeypatch, tmp_path):
 
 
 def test_license_locked_when_missing(tmp_path):
-    assert check_license_file(str(tmp_path / "missing.json"), "ANY")["status"] == "LOCKED"
+    assert check_license_file(str(tmp_path / "missing.json"), "ANY")["status"] == "LOCK"
 
 
 def test_license_locked_when_pubkey_missing(tmp_path):
     valid_until = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%d")
     lic, _pub = _write_signed(tmp_path, {"tenant_id": "T1", "valid_until": valid_until})
     result = check_license_file(str(lic), "UNSET_PUB")
-    assert result["status"] == "LOCKED"
+    assert result["status"] == "LOCK"
     assert result["reason"] == "MISSING_PUBLIC_KEY"
 
 
@@ -49,5 +49,5 @@ def test_license_locked_when_invalid_json(tmp_path):
     lic = tmp_path / "license.json"
     lic.write_text("{broken", encoding="utf-8")
     result = check_license_file(str(lic), "UNSET_PUB")
-    assert result["status"] == "LOCKED"
+    assert result["status"] == "LOCK"
     assert result["reason"] == "INVALID_LICENSE_FILE"

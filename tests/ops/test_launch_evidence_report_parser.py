@@ -31,7 +31,7 @@ def test_is_valid_report_true_for_complete_payload():
     parser = _load_parser_module()
     payload = {
         "timestamp": "2026-03-05T00:00:00Z",
-        "decision": "GO",
+        "decision": "PASS",
         "exit_code": 0,
         "counts": {"pass": 3, "warn": 0, "fail": 0},
         "gates": [{"name": "Repo/CI", "status": "PASS", "note": "ok"}],

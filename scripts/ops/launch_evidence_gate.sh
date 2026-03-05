@@ -192,7 +192,7 @@ try:
 except Exception as exc:
     print(f"ERROR:{exc}")
     raise SystemExit(2)
-print(f"{payload.get('status','LOCKED')}:{payload.get('reason','unknown')}")
+print(f"{payload.get('status','LOCK')}:{payload.get('reason','unknown')}")
 raise SystemExit(0)
 PY
 )" || true
@@ -201,7 +201,7 @@ if [[ "$license_status" == OK:* ]]; then
 elif [[ "$license_status" == WARN:* ]]; then
   record_result "License" "WARN" "status=$license_status"
 else
-  record_result "License" "FAIL" "status=${license_status:-LOCKED:unknown}"
+  record_result "License" "FAIL" "status=${license_status:-LOCK:unknown}"
 fi
 
 # Backup / restore evidence drill
@@ -239,13 +239,13 @@ else
 fi
 
 if (( FAIL_COUNT > 0 )); then
-  DECISION="NO-GO"
+  DECISION="FAIL"
   EXIT_CODE="$EXIT_NO_GO"
 elif (( WARN_COUNT > 0 )); then
   DECISION="WARN"
   EXIT_CODE="$EXIT_WARN"
 else
-  DECISION="GO"
+  DECISION="PASS"
   EXIT_CODE="$EXIT_GO"
 fi
 
