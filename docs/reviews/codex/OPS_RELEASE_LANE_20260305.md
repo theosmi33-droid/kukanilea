@@ -36,3 +36,10 @@
 - Evidence:
   - `evidence/operations/20260305_ops_release_evidence/restore_validation_before.json`
   - `evidence/operations/20260305_ops_release_evidence/restore_validation_after.json`
+
+
+## Update 2026-03-05 (Production-Grade Evidence)
+- Backup-Artefakte erweitert um `backup_size_bytes`, `*.metadata.json`, `*.snapshot.json`.
+- Restore erweitert um Metadata-Integritätsprüfung und Snapshot-basierten Before/After-Compare.
+- Launch-Gate erweitert um License-Evidence-Matrix und deterministische Gesamtentscheidung (`GO`/`NO-GO`).
+- Vollständiger Report: `docs/reviews/codex/OPS_RELEASE_EVIDENCE_REPORT.md`.

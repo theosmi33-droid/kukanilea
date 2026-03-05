@@ -8,7 +8,13 @@ from typing import Tuple
 SQL_PATTERNS = re.compile(r"\b(DROP|DELETE|INSERT|UPDATE|ALTER|TRUNCATE)\b", re.IGNORECASE)
 SHELL_PATTERNS = re.compile(r"[;&|`$<>\\]", re.IGNORECASE)
 JS_PATTERNS = re.compile(r"<\s*script|javascript:", re.IGNORECASE)
-JAILBREAK = re.compile(r"ignore (all |previous )?instructions", re.IGNORECASE)
+JAILBREAK = re.compile(
+    r"ignore (all |previous )?instructions|"
+    r"you are now (dan|developer mode)|"
+    r"reveal (the )?(system prompt|hidden instructions)|"
+    r"bypass (all )?(security|guardrails?|safety)",
+    re.IGNORECASE,
+)
 
 
 def validate_prompt(prompt: str, max_len: int = 500) -> Tuple[bool, str]:
