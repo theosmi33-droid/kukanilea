@@ -17,7 +17,7 @@
     <label for="upload-file" style="font-size:12px; font-weight:600; text-transform:uppercase; color: var(--text-tertiary);">Datei(en)</label>
     <input id="upload-file" class="input" type="file" name="file" multiple required>
     <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-      <button type="submit" class="btn btn-primary">Jetzt hochladen</button>
+      <button id="btn-upload" type="submit" class="btn btn-primary">Analyse starten</button>
       <span id="upload-status" class="muted" style="font-size: 12px;">Bereit.</span>
     </div>
   </form>
@@ -47,7 +47,12 @@
     if (statusEl) statusEl.textContent = 'Upload läuft...';
 
     try {
-      const response = await fetch('/upload', { method: 'POST', body: data, credentials: 'same-origin' });
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: data,
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const reason = payload.message || payload.error || `HTTP ${response.status}`;
