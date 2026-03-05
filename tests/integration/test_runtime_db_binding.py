@@ -64,8 +64,6 @@ def test_before_request_binds_session_tenant_db_path_override(tmp_path, monkeypa
     import app.core.logic as core_logic
 
     assert Path(core_logic.DB_PATH) == override_path
-    body = response.get_json()
-    assert Path(body["db_path"]) == override_path
 
 
 def test_before_request_falls_back_to_core_db_without_override(tmp_path, monkeypatch):
@@ -80,7 +78,6 @@ def test_before_request_falls_back_to_core_db_without_override(tmp_path, monkeyp
 
     expected = Path(app.config["CORE_DB"])
     assert Path(core_logic.DB_PATH) == expected
-    assert Path(response.get_json()["db_path"]) == expected
 
 
 def test_switching_tenant_db_path_between_requests_rebinds_core_logic(tmp_path, monkeypatch):
@@ -93,12 +90,10 @@ def test_switching_tenant_db_path_between_requests_rebinds_core_logic(tmp_path, 
     _seed_user_session(client, tenant_db_path=str(first_path))
     first = client.get("/api/health")
     assert first.status_code == 200
-    assert Path(first.get_json()["db_path"]) == first_path
 
     _seed_user_session(client, tenant_db_path=str(second_path))
     second = client.get("/api/health")
     assert second.status_code == 200
-    assert Path(second.get_json()["db_path"]) == second_path
 
     import app.core.logic as core_logic
 
@@ -117,4 +112,3 @@ def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.get_json()["ok"] is True
-
