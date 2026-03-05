@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -27,8 +27,11 @@ def verify_signature(pub_hex: str, payload: Dict[str, Any]) -> bool:
 
 def check_license_file(license_path: str, pub_hex_env: str) -> Dict[str, Any]:
     path = Path(license_path)
+    grace_days = int(os.environ.get("LICENSE_GRACE_DAYS", "0"))
+    now = datetime.now(timezone.utc)
+
     if not path.exists():
-        return {"status": "MISSING"}
+        return {"status": "LOCKED", "reason": "MISSING"}
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     pub_hex = os.environ.get(pub_hex_env)
@@ -36,16 +39,26 @@ def check_license_file(license_path: str, pub_hex_env: str) -> Dict[str, Any]:
         raise RuntimeError(f"Public key env missing: {pub_hex_env}")
 
     if not verify_signature(pub_hex, dict(payload)):
-        return {"status": "INVALID_SIGNATURE"}
+        return {"status": "LOCKED", "reason": "INVALID_SIGNATURE"}
 
     valid_until = payload.get("valid_until")
     if valid_until:
-        expires = datetime.strptime(valid_until, "%Y-%m-%d").replace(tzinfo=timezone.utc).date()
-        if expires < datetime.now(timezone.utc).date():
-            return {"status": "EXPIRED"}
+        expires = datetime.strptime(valid_until, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if expires < now:
+            grace_anchor_raw = payload.get("last_verified_at") or valid_until
+            grace_anchor = datetime.strptime(grace_anchor_raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            grace_until = grace_anchor + timedelta(days=grace_days)
+            if grace_days > 0 and now <= grace_until:
+                return {
+                    "status": "WARN",
+                    "reason": "GRACE",
+                    "grace_until": grace_until.date().isoformat(),
+                }
+            return {"status": "LOCKED", "reason": "EXPIRED"}
 
     return {
         "status": "OK",
+        "reason": "VALID",
         "tenant_id": payload.get("tenant_id"),
         "hw": payload.get("hw_fingerprint"),
     }

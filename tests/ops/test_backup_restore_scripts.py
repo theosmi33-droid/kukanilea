@@ -82,7 +82,10 @@ def test_restore_operator_report_contains_mode(tmp_path: Path) -> None:
     env["LOCAL_FALLBACK_DIR"] = str(tmp_path / "instance" / "degraded_backups")
     env["REPORT_FILE"] = str(report)
     subprocess.run(["bash", str(Path.cwd() / "scripts/ops/restore_from_nas.sh")], cwd=tmp_path, env=env, check=True)
-    assert "mode=" in report.read_text(encoding="utf-8")
+    text = report.read_text(encoding="utf-8")
+    assert "mode=" in text
+    assert "verify_db=ok" in text
+    assert "verify_files=ok" in text
 
 
 def test_backup_writes_verifiable_artifacts_and_restore_compares(tmp_path: Path) -> None:
@@ -97,6 +100,8 @@ def test_backup_writes_verifiable_artifacts_and_restore_compares(tmp_path: Path)
     backup_report = (tmp_path / "instance" / "backup_report.txt").read_text(encoding="utf-8")
     assert "checksum_sha256=" in backup_report
     assert "backup_size_bytes=" in backup_report
+    assert "target_path=" in backup_report
+    assert "compression_ratio=" in backup_report
     assert "tenant_id=DEMO_TENANT" in backup_report
 
     report_map = dict(line.split("=", 1) for line in backup_report.splitlines() if "=" in line)

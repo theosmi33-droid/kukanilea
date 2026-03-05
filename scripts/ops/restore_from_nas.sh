@@ -118,6 +118,8 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "mode=dry_run"
     echo "tenant_id=$TENANT_ID"
     echo "backup_file=$BACKUP_FILE"
+    echo "verify_db=skipped_dry_run"
+    echo "verify_files=skipped_dry_run"
     echo "rto_seconds=0"
     echo "rpo_seconds=0"
   } > "$REPORT_FILE"
@@ -217,6 +219,48 @@ if [[ -f "${TMP_DIR}/db_dump.sql" ]] && command -v sqlite3 >/dev/null 2>&1; then
   sqlite3 instance/auth.sqlite3 < "${TMP_DIR}/db_dump.sql" || die "$EXIT_RUNTIME" "sqlite restore failed"
 fi
 
+
+VERIFY_DB_STATUS="pending"
+VERIFY_FILES_STATUS="pending"
+VERIFY_ISSUES=""
+EXPECTED_RESTORE_DIRS="${EXPECTED_RESTORE_DIRS:-}"
+
+if [[ -f instance/auth.sqlite3 ]] && command -v sqlite3 >/dev/null 2>&1; then
+  if sqlite3 instance/auth.sqlite3 "PRAGMA integrity_check;" | grep -q '^ok$'; then
+    VERIFY_DB_STATUS="ok"
+  else
+    VERIFY_DB_STATUS="failed"
+    VERIFY_ISSUES="db_integrity_check_failed"
+  fi
+elif [[ -f instance/auth.sqlite3 ]]; then
+  VERIFY_DB_STATUS="warn_missing_sqlite3"
+else
+  VERIFY_DB_STATUS="failed"
+  VERIFY_ISSUES="db_missing"
+fi
+
+if [[ -z "$VERIFY_ISSUES" ]]; then
+  found_files="$(find instance -mindepth 1 -type f | wc -l | tr -d ' ')"
+  if [[ "$found_files" -gt 0 ]]; then
+    VERIFY_FILES_STATUS="ok"
+  else
+    VERIFY_FILES_STATUS="failed"
+    VERIFY_ISSUES="restored_files_missing"
+  fi
+
+  if [[ "$VERIFY_FILES_STATUS" == "ok" ]] && [[ -n "$EXPECTED_RESTORE_DIRS" ]]; then
+    IFS=',' read -r -a expected_dirs <<< "$EXPECTED_RESTORE_DIRS"
+    for rel in "${expected_dirs[@]}"; do
+      rel="${rel// /}"
+      [[ -z "$rel" ]] && continue
+      if [[ ! -d "instance/$rel" ]]; then
+        VERIFY_FILES_STATUS="failed"
+        VERIFY_ISSUES="missing_expected_dir:instance/$rel"
+        break
+      fi
+    done
+  fi
+fi
 VALIDATION_STATUS="skipped"
 VALIDATION_ISSUES=""
 VALIDATION_FILE="${VALIDATION_FILE:-instance/restore_validation_after.json}"
@@ -259,6 +303,9 @@ RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
   echo "restore_validation=$VALIDATION_STATUS"
   echo "restore_validation_issues=$VALIDATION_ISSUES"
   echo "restore_validation_file=$VALIDATION_FILE"
+  echo "verify_db=$VERIFY_DB_STATUS"
+  echo "verify_files=$VERIFY_FILES_STATUS"
+  echo "verify_issues=$VERIFY_ISSUES"
   echo "restore_started_epoch=$START_EPOCH"
   echo "restore_completed_epoch=$END_EPOCH"
   echo "rto_seconds=$RTO_SECONDS"
@@ -271,5 +318,8 @@ fi
 if [[ "$VALIDATION_STATUS" == "failed" ]]; then
   die "$EXIT_RUNTIME" "restore validation after compare failed"
 fi
+if [[ "$VERIFY_DB_STATUS" == "failed" || "$VERIFY_FILES_STATUS" == "failed" ]]; then
+  die "$EXIT_RUNTIME" "restore verify failed: $VERIFY_ISSUES"
+fi
 
-log "Restore complete (mode=$MODE validation=$VALIDATION_STATUS)."
+log "Restore complete (mode=$MODE validation=$VALIDATION_STATUS verify_db=$VERIFY_DB_STATUS verify_files=$VERIFY_FILES_STATUS)."
