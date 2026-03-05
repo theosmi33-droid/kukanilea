@@ -42,6 +42,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
+from urllib.parse import urlparse
 
 from app.core.indexing_logic import IndividualIntelligence
 from app.core.auto_evolution import SystemHealer
@@ -87,7 +88,7 @@ from .config import Config
 from .db import AuthDB
 from .errors import json_error
 from .license import load_license
-from .rate_limit import chat_limiter, search_limiter, upload_limiter
+from .rate_limit import chat_limiter, login_limiter, search_limiter, upload_limiter
 from .security import csrf_protected, detect_injection
 from app.contracts.tool_contracts import (
     CONTRACT_TOOLS,
@@ -1636,6 +1637,23 @@ def _is_local_request() -> bool:
     return remote in {"127.0.0.1", "::1", "localhost"}
 
 
+def validate_next(target: str | None) -> str:
+    """Allow only local absolute paths to prevent open redirects."""
+    if not target:
+        return "/"
+    candidate = target.strip()
+    if not candidate:
+        return "/"
+    parsed = urlparse(candidate)
+    if parsed.scheme or parsed.netloc:
+        return "/"
+    if candidate.startswith("//"):
+        return "/"
+    if not candidate.startswith("/"):
+        return "/"
+    return candidate
+
+
 def _dev_local_email_codes_enabled() -> bool:
     mail_mode = (os.environ.get("MAIL_MODE") or "").strip().lower()
     flag = (os.environ.get("DEV_LOCAL_EMAIL_CODES") or "0").strip().lower()
@@ -1741,11 +1759,12 @@ onboarding = bootstrap
 
 
 @bp.route("/login", methods=["GET", "POST"])
+@login_limiter.limit_required
 @csrf_protected
 def login():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     error = ""
-    nxt = request.args.get("next", "/")
+    nxt = validate_next(request.args.get("next", "/"))
     if request.method == "POST":
         u = (request.form.get("username") or "").strip().lower()
         pw = (request.form.get("password") or "").strip()
