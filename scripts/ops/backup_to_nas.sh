@@ -149,6 +149,8 @@ if command -v smbclient >/dev/null 2>&1; then
     SNAPSHOT_UPLOAD_OK=1
   elif nas_upload_with_retry "$SNAPSHOT_FILE" "$(basename "$UPLOAD_FILE").snapshot.json"; then
     SNAPSHOT_UPLOAD_OK=1
+  else
+    log "WARN snapshot upload failed for $(basename "$UPLOAD_FILE").snapshot.json"
   fi
 
   if nas_upload_with_retry "$UPLOAD_FILE" "$(basename "$UPLOAD_FILE")" \

@@ -124,6 +124,7 @@ write_reports() {
     echo "- Decision: **$DECISION**"
     echo "- Exit-Code: $EXIT_CODE"
     echo "- Repo: ${REPO:-unknown}"
+    echo "- Rule: FAIL>0 => NO-GO, WARN>0 => WARN, else GO"
     echo
     echo "## Gate Matrix"
     echo
@@ -171,6 +172,7 @@ payload = {
     "timestamp": ts,
     "decision": decision,
     "exit_code": exit_code,
+    "rule": "FAIL>0 => NO-GO, WARN>0 => WARN, else GO",
     "counts": {"pass": pass_count, "warn": warn_count, "fail": fail_count},
     "gates": gates,
 }
@@ -298,6 +300,7 @@ fi
 write_reports
 printf '[launch-evidence] markdown: %s\n' "$OUT_FILE" >&2
 printf '[launch-evidence] json: %s\n' "$JSON_FILE" >&2
+printf '[launch-evidence] decision=%s pass=%s warn=%s fail=%s\n' "$DECISION" "$PASS_COUNT" "$WARN_COUNT" "$FAIL_COUNT" >&2
 printf '%s\n' "$OUT_FILE"
 
 exit "$EXIT_CODE"

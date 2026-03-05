@@ -113,3 +113,47 @@ def test_backup_writes_verifiable_artifacts_and_restore_compares(tmp_path: Path)
     restore_report = (tmp_path / "instance" / "restore_report.txt").read_text(encoding="utf-8")
     assert "integrity_check=ok" in restore_report
     assert "restore_validation=ok" in restore_report
+
+
+def test_restore_rejects_invalid_archive_name(tmp_path: Path) -> None:
+    _prepare_instance(tmp_path)
+    env = os.environ.copy()
+    env["TENANT_ID"] = "DEMO_TENANT"
+    env["LOCAL_FALLBACK_DIR"] = str(tmp_path / "instance" / "degraded_backups")
+    env["REPORT_FILE"] = str(tmp_path / "instance" / "report_restore.txt")
+    result = subprocess.run(
+        ["bash", str(Path.cwd() / "scripts/ops/restore_from_nas.sh"), "DEMO_TENANT", "../bad.tar.zst"],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "invalid backup file name" in result.stdout
+
+
+def test_restore_uses_latest_valid_archive_from_local_fallback(tmp_path: Path) -> None:
+    _prepare_instance(tmp_path)
+    degraded = tmp_path / "instance" / "degraded_backups" / "DEMO_TENANT"
+    degraded.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["bash", "-c", "tar -C instance -cf - . | zstd -19 -T0 -o instance/degraded_backups/DEMO_TENANT/older.tar.zst"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["bash", "-c", "tar -C instance -cf - . | zstd -19 -T0 -o instance/degraded_backups/DEMO_TENANT/newer.tar.zst"],
+        cwd=tmp_path,
+        check=True,
+    )
+    (degraded / "zzzz.tar.zst.tmp").write_text("junk", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["TENANT_ID"] = "DEMO_TENANT"
+    env["LOCAL_FALLBACK_DIR"] = str(tmp_path / "instance" / "degraded_backups")
+    env["REPORT_FILE"] = str(tmp_path / "instance" / "report_restore.txt")
+    subprocess.run(["bash", str(Path.cwd() / "scripts/ops/restore_from_nas.sh")], cwd=tmp_path, env=env, check=True)
+
+    report = (tmp_path / "instance" / "report_restore.txt").read_text(encoding="utf-8")
+    assert "backup_file=newer.tar.zst" in report

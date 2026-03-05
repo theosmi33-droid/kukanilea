@@ -69,6 +69,38 @@ nas_get_with_retry() {
   return 1
 }
 
+is_valid_archive_name() {
+  local archive_name="$1"
+  [[ "$archive_name" != */* ]] || return 1
+  [[ "$archive_name" =~ ^[A-Za-z0-9._-]+\.tar\.(zst|gz)(\.age)?$ ]]
+}
+
+resolve_latest_valid_archive_from_nas() {
+  local listing
+  listing="$(smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "cd ${TENANT_ID}; ls" 2>/dev/null || true)"
+  [[ -n "$listing" ]] || return 1
+
+  while IFS= read -r candidate; do
+    if is_valid_archive_name "$candidate"; then
+      printf '%s\n' "$candidate"
+    fi
+  done < <(printf '%s\n' "$listing" | awk '{print $1}' | sed '/^$/d') | sort | tail -n 1
+}
+
+resolve_latest_valid_archive_from_local() {
+  local tenant_dir="$LOCAL_FALLBACK_DIR/$TENANT_ID"
+  [[ -d "$tenant_dir" ]] || return 1
+
+  while IFS= read -r candidate; do
+    candidate="$(basename "$candidate")"
+    if is_valid_archive_name "$candidate"; then
+      printf '%s\n' "$candidate"
+    fi
+  done < <(find "$tenant_dir" -maxdepth 1 -type f \
+    \( -name '*.tar.zst' -o -name '*.tar.gz' -o -name '*.tar.zst.age' -o -name '*.tar.gz.age' \) \
+    -print 2>/dev/null) | sort | tail -n 1
+}
+
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -90,6 +122,10 @@ if [[ "${#POSITIONAL[@]}" -gt 2 ]]; then
   die "$EXIT_USAGE" "too many positional arguments"
 fi
 
+if [[ -n "$BACKUP_FILE" ]] && ! is_valid_archive_name "$BACKUP_FILE"; then
+  die "$EXIT_USAGE" "invalid backup file name: $BACKUP_FILE"
+fi
+
 command -v tar >/dev/null 2>&1 || die "$EXIT_DEPENDENCY" "tar is required"
 mkdir -p "$(dirname "$REPORT_FILE")"
 mkdir -p instance
@@ -99,14 +135,10 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 if [[ -z "$BACKUP_FILE" ]]; then
   if command -v smbclient >/dev/null 2>&1; then
-    BACKUP_FILE="$(smbclient "$NAS_SHARE" -U "${NAS_USER}%${NAS_PASS}" -c "cd ${TENANT_ID}; ls" 2>/dev/null | awk '/\.tar\.(zst|gz)(\.age)?/{print $1}' | tail -n 1 || true)"
+    BACKUP_FILE="$(resolve_latest_valid_archive_from_nas || true)"
   fi
   if [[ -z "$BACKUP_FILE" ]]; then
-    BACKUP_FILE="$(
-      find "$LOCAL_FALLBACK_DIR/$TENANT_ID" -maxdepth 1 -type f \
-        \( -name '*.tar.zst' -o -name '*.tar.gz' -o -name '*.tar.zst.age' -o -name '*.tar.gz.age' \) \
-        -print 2>/dev/null | awk -F/ '{print $NF}' | sort | tail -n 1 || true
-    )"
+    BACKUP_FILE="$(resolve_latest_valid_archive_from_local || true)"
     MODE="degraded_local"
   fi
 fi

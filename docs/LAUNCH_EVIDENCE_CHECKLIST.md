@@ -6,7 +6,7 @@ Ziel: Launch-Readiness ist nur gültig, wenn sie reproduzierbar messbar ist. Kei
 
 - Vor jedem RC-Release und vor jeder Kundeninstallation ausführen.
 - Ergebnis unter `docs/reviews/codex/` oder `docs/status/` ablegen.
-- `GO` nur bei 6/6 PASS.
+- `GO` nur bei `FAIL=0` und `WARN=0`.
 
 ---
 
@@ -33,10 +33,12 @@ Hinweis (wichtig für CI):
 set -o pipefail
 scripts/ops/launch_evidence_gate.sh | tee /tmp/gate.txt
 ```
-- Exit-Code-Konvention:
-  - `0` = GO/GO with Notes
-  - `3` = fehlende Abhängigkeit/Umgebung (z. B. `gh`, `rg`, `REPO`)
-  - `4` = mindestens ein Gate ist FAIL
+- Exit-Code-Konvention (`launch_evidence_gate.sh`):
+  - `0` = GO
+  - `2` = WARN
+  - `3` = NO-GO
+  - `64` = CLI-Usage-Fehler
+  - `69` = fehlende Abhängigkeit/Umgebung
 
 
 ---
@@ -202,7 +204,7 @@ Evidence:
 - Gate 6: `PASS | FAIL`
 
 Freigabe:
-- `GO` nur bei 6/6 PASS.
+- `GO` nur bei `FAIL=0` und `WARN=0`.
 - Sonst: `NO-GO` + P0/P1-Owner + ETA.
 
 ---
@@ -245,8 +247,10 @@ Freigabe:
 ### Deterministische Launch-Entscheidung
 - Gate-Matrix bleibt `PASS/WARN/FAIL` pro Gate.
 - Gesamtentscheidung ist deterministisch:
-  - `GO` wenn `FAIL=0`
   - `NO-GO` wenn `FAIL>0`
+  - `WARN` wenn `FAIL=0` und `WARN>0`
+  - `GO` wenn `FAIL=0` und `WARN=0`
+- JSON- und Markdown-Report müssen dieselbe Entscheidung und dieselben Gate-Counts enthalten.
 
 ### Degraded-Mode (SMB down) dokumentiert
 - Betriebsanweisung:
