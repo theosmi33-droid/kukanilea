@@ -31,3 +31,22 @@ def build_health(tenant: str) -> tuple[dict, int]:
     }
     code = 200 if payload["status"] in {"ok", "degraded"} else 503
     return payload, code
+
+
+
+def create_event(
+    *,
+    tenant: str,
+    title: str,
+    starts_at: str,
+    created_by: str = "system",
+) -> dict:
+    event = core.knowledge_calendar_event_create(
+        tenant,
+        created_by,
+        title=title,
+        start_at=starts_at,
+        end_at=starts_at,
+        kind="appointment",
+    )
+    return {"event_id": str(event.get("id") or ""), "title": title, "starts_at": starts_at}
