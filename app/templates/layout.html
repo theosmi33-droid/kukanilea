@@ -12,6 +12,8 @@
         // Sovereign-11: white-mode only.
         document.documentElement.classList.add('light');
         document.documentElement.classList.remove('dark');
+        document.documentElement.setAttribute('data-theme', 'light');
+        document.documentElement.style.colorScheme = 'light';
         localStorage.setItem('ks_theme', 'light');
     })();
   </script>
@@ -30,6 +32,20 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+  {% set _route_ready_map = {
+      '/': 'dashboard',
+      '/dashboard': 'dashboard',
+      '/upload': 'upload',
+      '/projects': 'projects',
+      '/tasks': 'tasks',
+      '/messenger': 'messenger',
+      '/email': 'email',
+      '/calendar': 'calendar',
+      '/time': 'time',
+      '/visualizer': 'visualizer',
+      '/settings': 'settings'
+  } %}
+  {% set _ready_tab = active_tab or _route_ready_map.get(request.path, 'generic') %}
   <!-- Task 156: Boot Splash -->
   <div id="boot-splash">
     <div class="boot-logo-animate">
@@ -60,6 +76,7 @@
             {% include 'components/system_status.html' %}
         </div>
         <div style="display:flex; align-items:center; gap:16px;">
+            <span id="page-ready-state" data-ready-state="{{ _ready_tab }}-ready" class="badge" style="font-size:10px;">Ready: {{ _ready_tab|upper }}</span>
             <span style="font-size: 11px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;">White Mode</span>
             {% if roles in ['DEV', 'ADMIN'] and all_tenants %}
             <div style="display:flex; align-items:center; gap:8px;">

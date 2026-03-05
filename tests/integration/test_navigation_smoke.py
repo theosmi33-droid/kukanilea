@@ -16,8 +16,20 @@ HTMX_PATHS = [
     "/time",
     "/visualizer",
     "/settings",
-    "/assistant",
 ]
+
+READY_STATES = {
+    "/dashboard": "dashboard-ready",
+    "/upload": "upload-ready",
+    "/projects": "projects-ready",
+    "/tasks": "tasks-ready",
+    "/messenger": "messenger-ready",
+    "/email": "email-ready",
+    "/calendar": "calendar-ready",
+    "/time": "time-ready",
+    "/visualizer": "visualizer-ready",
+    "/settings": "settings-ready",
+}
 
 
 def _make_app(tmp_path, monkeypatch):
@@ -63,7 +75,11 @@ def test_main_navigation_and_main_paths(tmp_path, monkeypatch):
     for nav_path in HTMX_PATHS:
         assert f'href="{nav_path}"' in html
 
+    external_assets = re.findall(r'(?:src|href)="(https?://[^"]+)"', html)
+    assert not external_assets, f"External CDN/assets found: {external_assets}"
+
     # Main sidebar navigation is full-page by design (no sidebar htmx partial attributes).
+    assert "data-navigation-mode=\"full-page\"" in html
     assert not re.search(r'<a[^>]+data-route="[^"]+"[^>]+hx-get=', html)
 
     for path in HTMX_PATHS:
@@ -73,6 +89,7 @@ def test_main_navigation_and_main_paths(tmp_path, monkeypatch):
         assert "traceback" not in body.lower(), f"Error page returned for {path}"
         assert "Internal Server Error" not in body
         assert "wird geladen" not in body.lower(), f"Loading placeholder returned for {path}"
+        assert f'data-ready-state="{READY_STATES[path]}"' in body
 
 
 def test_dashboard_contract_matrix_has_11_tiles(tmp_path, monkeypatch):

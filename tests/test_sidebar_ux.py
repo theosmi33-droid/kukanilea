@@ -71,4 +71,4 @@ def test_sidebar_disables_hx_boost_for_full_page_navigation(tmp_path, monkeypatc
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
-    assert '<nav class="sidebar" hx-boost="false">' in html
+    assert '<nav class="sidebar" hx-boost="false" data-navigation-mode="full-page">' in html
