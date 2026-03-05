@@ -26,10 +26,24 @@ def _table_columns(con: sqlite3.Connection, table: str) -> List[str]:
     return [str(r[1]) for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
 
 
+def _preferred_order_column(cols: List[str]) -> str:
+    for candidate in ("id", "uuid", "created_at"):
+        if candidate in cols:
+            return candidate
+    return "rowid"
+
+
+def _row_payload(row: sqlite3.Row) -> Dict[str, Any]:
+    return {k: row[k] for k in sorted(row.keys())}
+
+
 def _sample_rows(con: sqlite3.Connection, table: str, tenant_id: str, limit: int = 5) -> List[sqlite3.Row]:
     cols = _table_columns(con, table)
+    order_by = _preferred_order_column(cols)
     if "tenant_id" in cols:
-        return list(con.execute(f"SELECT * FROM {table} WHERE tenant_id=? ORDER BY rowid ASC LIMIT ?", (tenant_id, limit)))
+        return list(
+            con.execute(f"SELECT * FROM {table} WHERE tenant_id=? ORDER BY {order_by} ASC LIMIT ?", (tenant_id, limit))
+        )
     if table == "tasks":
         return list(
             con.execute(
@@ -39,7 +53,7 @@ def _sample_rows(con: sqlite3.Connection, table: str, tenant_id: str, limit: int
                 JOIN boards b ON b.id=t.board_id
                 JOIN projects p ON p.id=b.project_id
                 WHERE p.tenant_id=?
-                ORDER BY t.rowid ASC LIMIT ?
+                ORDER BY t.id ASC LIMIT ?
                 """,
                 (tenant_id, limit),
             )
@@ -48,7 +62,7 @@ def _sample_rows(con: sqlite3.Connection, table: str, tenant_id: str, limit: int
 
 
 def _business_entity_stub(table: str, row: sqlite3.Row) -> Dict[str, Any]:
-    payload = {k: row[k] for k in row.keys()}
+    payload = _row_payload(row)
     keys = ["id", "tenant_id", "name", "title", "email", "status", "project_id", "task_id"]
     return {"table": table, **{k: payload.get(k) for k in keys if k in payload}}
 
@@ -56,7 +70,7 @@ def _business_entity_stub(table: str, row: sqlite3.Row) -> Dict[str, Any]:
 def _stable_hash(rows: Iterable[sqlite3.Row]) -> str:
     digest = hashlib.sha256()
     for row in rows:
-        payload = {k: row[k] for k in row.keys()}
+        payload = _row_payload(row)
         digest.update(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     return digest.hexdigest()
 

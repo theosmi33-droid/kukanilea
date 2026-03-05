@@ -3410,25 +3410,34 @@ def calendar_export_ics():
 @upload_limiter.limit_required
 def upload():
     files = request.files.getlist("file")
+    wants_json = "application/json" in (request.headers.get("Accept") or "").lower()
+    is_hx = (request.headers.get("HX-Request") or "").lower() == "true"
+
+    def _respond_error(payload: dict, status: int):
+        if wants_json or is_hx:
+            return jsonify(payload), status
+        return redirect(url_for("web.upload_page"))
+
     if not files:
-        return jsonify(error="no_file"), 400
-        
+        return _respond_error({"error": "no_file"}, 400)
+
     tenant = _norm_tenant(current_tenant() or "default")
-    
+
     # Task 114: Disk Quota Management (100MB limit per tenant for now)
-    QUOTA_LIMIT = 100 * 1024 * 1024 
+    QUOTA_LIMIT = 100 * 1024 * 1024
     current_usage = sum(f.stat().st_size for f in (EINGANG / tenant).glob("*") if f.is_file())
     if current_usage > QUOTA_LIMIT:
-        return jsonify(error="quota_exceeded", message="Speicherlimit für Mandant erreicht."), 403
+        return _respond_error({"error": "quota_exceeded", "message": "Speicherlimit für Mandant erreicht."}, 403)
 
     results = []
-    
+
     from app.core.upload_pipeline import process_upload, save_upload_stream
 
     for f in files:
-        if not f.filename: continue
+        if not f.filename:
+            continue
         filename = _safe_filename(f.filename)
-        
+
         tenant_in = EINGANG / tenant
         tenant_in.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -3441,8 +3450,8 @@ def upload():
                     dest.unlink(missing_ok=True)
                 except Exception:
                     pass
-                return jsonify(error="file_too_large", message="Datei ist zu gross."), 413
-            return jsonify(error="invalid_upload_stream"), 400
+                return _respond_error({"error": "file_too_large", "message": "Datei ist zu gross."}, 413)
+            return _respond_error({"error": "invalid_upload_stream"}, 400)
 
         result = process_upload(dest, tenant)
         if not result.success:
@@ -3457,10 +3466,18 @@ def upload():
             write_pending(token, p)
         except Exception:
             pass
-        
+
         results.append({"token": token, "filename": filename})
-        
-    return jsonify(tokens=results, tenant=tenant)
+
+    if wants_json:
+        return jsonify(tokens=results, tenant=tenant)
+    if is_hx:
+        if results:
+            return "", 204, {"HX-Redirect": url_for("web.review_page", token=results[0]["token"], step="kdnr")}
+        return "", 204, {"HX-Redirect": url_for("web.upload_page")}
+    if results:
+        return redirect(url_for("web.review_page", token=results[0]["token"], step="kdnr"))
+    return redirect(url_for("web.upload_page"))
 
 
 @bp.route("/review/<token>/delete", methods=["POST"])

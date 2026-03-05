@@ -12,7 +12,8 @@ NAS_USER="${NAS_USER:-backupuser}"
 NAS_PASS="${NAS_PASS:-}"
 TMP_DIR=""
 LOCAL_FALLBACK_DIR="${LOCAL_FALLBACK_DIR:-instance/degraded_backups}"
-REPORT_FILE="${REPORT_FILE:-instance/operator_report_restore_$(date +%Y-%m-%d_%H-%M).txt}"
+RESTORE_TIMESTAMP="${RESTORE_TIMESTAMP:-$(date +%Y-%m-%d_%H-%M)}"
+REPORT_FILE="${REPORT_FILE:-instance/operator_report_restore_${RESTORE_TIMESTAMP}.txt}"
 DRY_RUN=0
 MODE="nas"
 START_EPOCH="$(date +%s)"
@@ -168,12 +169,19 @@ fi
 
 VALIDATION_STATUS="skipped"
 VALIDATION_ISSUES=""
-if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ops/restore_validation.py" ]] && [[ -f "$BASELINE_PATH" ]]; then
-  if VALIDATION_JSON="$(python3 scripts/ops/restore_validation.py --phase after --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" 2>/dev/null)"; then
-    VALIDATION_STATUS="ok"
+VALIDATION_FILE="${VALIDATION_FILE:-instance/restore_validation_after.json}"
+mkdir -p "$(dirname "$VALIDATION_FILE")"
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ops/restore_validation.py" ]]; then
+  if [[ -f "$BASELINE_PATH" ]]; then
+    if python3 scripts/ops/restore_validation.py --phase after --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" > "$VALIDATION_FILE" 2>&1; then
+      VALIDATION_STATUS="ok"
+    else
+      VALIDATION_STATUS="failed"
+      VALIDATION_ISSUES="$(tr '\n' ' ' < "$VALIDATION_FILE" | cut -c1-240)"
+    fi
   else
-    VALIDATION_STATUS="failed"
-    VALIDATION_ISSUES="$(printf '%s' "$VALIDATION_JSON" | tr '\n' ' ' | cut -c1-240)"
+    VALIDATION_STATUS="warn_missing_baseline"
+    VALIDATION_ISSUES="missing baseline: $BASELINE_PATH"
   fi
 fi
 
@@ -183,12 +191,18 @@ RTO_SECONDS="$((END_EPOCH - START_EPOCH))"
 RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
 
 {
+  echo "report_version=1"
   echo "mode=$MODE"
   echo "tenant_id=$TENANT_ID"
   echo "backup_file=$BACKUP_FILE"
-  echo "checksum_verified=${CHECKSUM_EXPECTED:+true}"
+  if [[ -n "$CHECKSUM_EXPECTED" ]]; then
+    echo "checksum_verified=true"
+  else
+    echo "checksum_verified=false"
+  fi
   echo "restore_validation=$VALIDATION_STATUS"
   echo "restore_validation_issues=$VALIDATION_ISSUES"
+  echo "restore_validation_file=$VALIDATION_FILE"
   echo "restore_started_epoch=$START_EPOCH"
   echo "restore_completed_epoch=$END_EPOCH"
   echo "rto_seconds=$RTO_SECONDS"
