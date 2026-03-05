@@ -5,7 +5,7 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from app.auth import login_required
+from app.auth import current_tenant, login_required
 from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
 from app.contracts.tool_contracts import build_tool_summary, extract_chat_message, normalize_chat_response
 from app.ai.intent_analyzer import detect_standard_request, detect_write_intent
@@ -23,8 +23,9 @@ WRITE_PREFIXES = ("create_", "delete_", "update_", "send_", "mail_", "messenger_
 
 
 def _summary_context() -> dict[str, Any]:
+    tenant = current_tenant() or "default"
     keys = ("dashboard", "tasks", "projects")
-    return {name: build_tool_summary(name) for name in keys}
+    return {name: build_tool_summary(name, tenant=tenant) for name in keys}
 
 
 def _read_only_fallback(message: str, *, reason: str = "fallback") -> dict[str, Any]:
@@ -99,7 +100,7 @@ def messenger_page():
 @bp.route("/api/messenger/summary", methods=["GET"])
 @login_required
 def api_messenger_summary():
-    return jsonify(build_tool_summary("messenger"))
+    return jsonify(build_tool_summary("messenger", tenant=current_tenant() or "default"))
 
 
 def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
