@@ -30,3 +30,13 @@ def build_health(tenant: str) -> tuple[dict, int]:
     }
     code = 200 if payload["status"] in {"ok", "degraded"} else 503
     return payload, code
+
+
+
+def create_project(*, tenant: str, name: str, description: str = "") -> dict:
+    from app.modules.projects.logic import ProjectManager
+    from flask import current_app
+
+    manager = ProjectManager(current_app.extensions["auth_db"])
+    project_id = manager.create_project(tenant, name, description=description)
+    return {"project_id": project_id, "name": (name or "").strip()}
