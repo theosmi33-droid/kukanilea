@@ -7,6 +7,7 @@ def test_healthcheck_supports_skip_pytest_fallback():
     assert "continuing outside CI mode" in script
     assert "skipping HTTP route probes" in script
     assert "CI mode enabled" in script
+    assert "scripts/dev/doctor.sh --strict --ci" in script
 
 
 def test_launch_evidence_handles_missing_origin_main_without_fatal_fetch():
