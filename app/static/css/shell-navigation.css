@@ -1,0 +1,222 @@
+/* 
+  KUKANILEA Shell & Navigation Styles
+  Worker 1: Shell & Navigation
+  Focus: Modern, Calm, White-Mode only, Accessible.
+*/
+
+/* --- Sidebar Refinement --- */
+.sidebar {
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border-color);
+  transition: width var(--transition-slow);
+  box-shadow: var(--shadow-sm);
+}
+
+.sidebar-header {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--spacing-4);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-section-label {
+  margin: var(--spacing-4) var(--spacing-4) var(--spacing-1);
+  color: var(--text-tertiary);
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.nav-link {
+  margin: 2px var(--spacing-2);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.nav-link:hover {
+  background: var(--color-gray-100);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.nav-link.active {
+  background: var(--color-gray-100);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.nav-link.active::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  background: var(--color-primary);
+  border-radius: 0 4px 4px 0;
+}
+
+html.sidebar-collapsed .nav-link {
+  margin: 4px auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+html.sidebar-collapsed .nav-link.active::before {
+  left: 0;
+}
+
+/* --- Topbar Refinement --- */
+.topbar {
+  height: 64px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--spacing-6);
+  position: sticky;
+  top: 0;
+  z-index: 1010;
+}
+
+.topbar-search-container {
+  flex: 1;
+  max-width: 400px;
+  position: relative;
+}
+
+.topbar-search-input {
+  width: 100%;
+  height: 36px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0 12px 0 36px;
+  font-size: 0.875rem;
+  transition: all var(--transition-base);
+}
+
+.topbar-search-input:focus {
+  background: var(--bg-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  outline: none;
+}
+
+.topbar-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+/* --- Mobile Navigation --- */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0 !important;
+    padding-bottom: 72px; /* Space for bottom nav */
+  }
+
+  .topbar {
+    padding: 0 var(--spacing-4);
+  }
+
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform var(--transition-slow);
+    width: 280px;
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Bottom Navigation for Mobile */
+  .mobile-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: var(--glass-blur);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 1030;
+    padding: 0 var(--spacing-2);
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: color var(--transition-base);
+  }
+
+  .mobile-nav-item.active {
+    color: var(--color-primary);
+  }
+
+  .mobile-nav-icon {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* --- Accessibility & Focus --- */
+.skip-link:focus {
+  outline: 4px solid var(--color-primary);
+  outline-offset: 4px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* --- Layout adjustments --- */
+.main-content {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#main-content {
+  flex: 1;
+  padding: var(--spacing-6);
+}
+
+@media (max-width: 480px) {
+  #main-content {
+    padding: var(--spacing-4);
+  }
+}
