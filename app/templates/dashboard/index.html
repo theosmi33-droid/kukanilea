@@ -270,13 +270,18 @@ async function loadToolMatrix() {
         fetch(`/api/${tool}/summary`, { credentials: 'same-origin' }),
         fetch(`/api/${tool}/health`, { credentials: 'same-origin' }),
       ]);
-      if (!summaryRes.ok || !healthRes.ok) throw new Error(`${tool}_http_error`);
-      const summaryPayload = await summaryRes.json();
-      const healthPayload = await healthRes.json();
+      const summaryPayload = summaryRes.ok
+        ? await summaryRes.json()
+        : { status: "error", warnings: [`summary_http_${summaryRes.status}`] };
+      const healthPayload = (healthRes.ok || healthRes.status === 503)
+        ? await healthRes.json()
+        : { status: "error", warnings: [`health_http_${healthRes.status}`] };
       return {
         tool,
         status: String(healthPayload.status || summaryPayload.status || 'error'),
-        warnings: Array.isArray(healthPayload.warnings) ? healthPayload.warnings : [],
+        warnings: Array.isArray(healthPayload.warnings)
+          ? healthPayload.warnings
+          : (Array.isArray(summaryPayload.warnings) ? summaryPayload.warnings : []),
       };
     }));
     const payload = { tools: toolRows };
