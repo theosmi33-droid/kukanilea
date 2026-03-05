@@ -79,7 +79,7 @@
             <kbd style="font-size:10px; padding:4px 8px; background:var(--bg-tertiary); border:1px solid var(--color-border); border-radius:6px; color:var(--text-tertiary);">⌘ K</kbd>
         </div>
     </header>
-    <div id="main-content" hx-history-elt>
+    <div id="main-content" hx-history-elt data-page-ready="1">
       {% block content %}{% endblock %}
     </div>
   </main>
@@ -134,6 +134,8 @@
           const route = a.getAttribute('data-route') || '';
           const active = route === '/dashboard' ? (current === '/' || current === '/dashboard') : current.startsWith(route);
           a.classList.toggle('active', active);
+          a.setAttribute('aria-current', active ? 'page' : 'false');
+          a.setAttribute('data-nav-active', active ? '1' : '0');
         });
       };
 

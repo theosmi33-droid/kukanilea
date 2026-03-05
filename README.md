@@ -60,3 +60,20 @@ By default, all writable data is stored under:
 `~/Kukanilea/data/` (or configured via `KUKANILEA_USER_DATA_ROOT`)
 
 See [CHANGELOG.md](CHANGELOG.md) for full details on the recent overhaul.
+
+## PR Quality Guard
+
+Für PR-Qualität ist ein Hard-Gate aktiv:
+
+```bash
+bash scripts/dev/pr_quality_guard.sh --ci
+```
+
+Regeln:
+- MIN_SCOPE: `>= 7` Dateien **oder** `>= 200` LOC
+- MIN_TESTS: `>= 6` Test-Delta
+- Evidence Report: `docs/reviews/codex/PR_QUALITY_GUARD_REPORT_20260305.md`
+- Lane Overlap: keine Überschneidung mit anderen `codex/*` Branches
+
+Details im Contributing Guide: [CONTRIBUTING.md](CONTRIBUTING.md).
+
