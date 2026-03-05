@@ -179,7 +179,18 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     list_pending = _core_get("list_pending")
-    pending = list_pending() if callable(list_pending) else []
+    pending: list[dict] | list = []
+    degraded_reason = ""
+    pending_error = ""
+    if callable(list_pending):
+        try:
+            pending = list_pending()
+        except Exception as exc:
+            pending = []
+            degraded_reason = "pending_pipeline_unavailable"
+            pending_error = str(exc)
+    else:
+        degraded_reason = "pending_pipeline_unavailable"
     metrics = {"pending_items": len(pending), "accepts_batch": 1}
     details = {
         "source": "core.list_pending",
@@ -192,8 +203,9 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
             "execute_fields": ["envelope", "requires_confirm", "confirm"],
         },
     }
-    reason = "pending_pipeline_unavailable" if not callable(list_pending) else ""
-    return metrics, details, reason
+    if pending_error:
+        details["pending_error"] = pending_error
+    return metrics, details, degraded_reason
 
 
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
