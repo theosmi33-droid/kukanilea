@@ -19,6 +19,21 @@
 </style>
 
 <section class="tasks-grid">
+  {% if request.args.get('origin') == 'upload' %}
+  <article class="tasks-card" style="border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.06);">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0; font-size:15px;">Upload erfolgreich verarbeitet</h2>
+        <div class="tasks-muted">Nächster Schritt: Aufgabe priorisieren oder direkt im Projektboard weiterarbeiten.</div>
+      </div>
+      <div class="tasks-actions">
+        <a href="/upload" class="tasks-badge" style="text-decoration:none;">Neuer Upload</a>
+        <a href="/projects?origin=tasks" class="tasks-badge" style="text-decoration:none;">Projektboard öffnen</a>
+      </div>
+    </div>
+  </article>
+  {% endif %}
+
   <div class="tasks-stats">
     <article class="tasks-card">
       <p class="tasks-title">Gesamt</p>
@@ -82,4 +97,3 @@
   </article>
 </section>
 {% endblock %}
-

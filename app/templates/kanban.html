@@ -4,6 +4,21 @@
 {% block content %}
 <div class="page-container p-6 flex flex-column gap-6" id="project-hub" data-board-id="{{ board.id }}" data-project-id="{{ project.id }}">
 
+  {% if request.args.get('origin') in ['upload', 'tasks'] %}
+  <section class="card border-light bg-subtle">
+    <div class="card-body p-4 flex justify-between items-center gap-3 flex-wrap">
+      <div>
+        <div class="text-xs font-black uppercase tracking-widest text-primary-600">Workflow-Sprung aktiv</div>
+        <div class="text-sm text-secondary">Sie sind direkt aus dem Upload/Task-Pfad im Projektboard gelandet.</div>
+      </div>
+      <div class="flex gap-2">
+        <a href="/tasks" class="btn btn-ghost btn-sm">Zu Aufgaben</a>
+        <a href="/upload" class="btn btn-secondary btn-sm">Neuer Upload</a>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   <!-- 1. Project Header -->
   <header class="flex justify-between items-end gap-6 flex-wrap bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm">
     <div class="flex flex-column gap-1">
