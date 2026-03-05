@@ -16,6 +16,9 @@ def test_health_contract_for_each_tool(auth_client, tool):
     assert isinstance(body.get("updated_at"), str), f"{tool}: updated_at is missing or not a string"
     assert isinstance(body.get("metrics"), dict), f"{tool}: metrics must be a dict"
     assert isinstance(body.get("details"), dict), f"{tool}: details must be a dict"
+    assert isinstance(body["details"].get("contract"), dict), f"{tool}: details.contract must be a dict"
+    assert isinstance(body["details"]["contract"].get("version"), str), f"{tool}: details.contract.version must be present"
+    assert isinstance(body["details"]["contract"].get("read_only"), bool), f"{tool}: details.contract.read_only must be bool"
 
     checks = body["details"].get("checks")
     assert isinstance(checks, dict), f"{tool}: details.checks must be present"

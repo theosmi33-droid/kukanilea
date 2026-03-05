@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request
 
 from app.auth import login_required
 from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
-from app.contracts.tool_contracts import extract_chat_message, normalize_chat_response
+from app.contracts.tool_contracts import build_tool_summary, extract_chat_message, normalize_chat_response
 from app.ai.intent_analyzer import detect_write_intent
 from app.security.gates import detect_injection
 from app.security import csrf_protected
@@ -55,17 +55,7 @@ def messenger_page():
 @bp.route("/api/messenger/summary", methods=["GET"])
 @login_required
 def api_messenger_summary():
-    return jsonify(
-        tool="messenger",
-        status="ok",
-        updated_at="runtime",
-        metrics={"confirm_gate": 1, "channels": 4},
-        details={
-            "chat_endpoint": "/api/chat",
-            "confirm_gate": True,
-            "message_fields": ["q", "message", "msg"],
-        },
-    )
+    return jsonify(build_tool_summary("messenger"))
 
 
 def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:

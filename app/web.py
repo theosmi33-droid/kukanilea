@@ -3948,7 +3948,13 @@ def api_tool_health(tool: str):
 def api_dashboard_tool_matrix():
     matrix = build_tool_matrix(tenant=str(current_tenant() or "default"))
     degraded = [row["tool"] for row in matrix if row.get("status") == "degraded"]
-    return jsonify(ok=True, total=len(matrix), degraded=degraded, tools=matrix)
+    return jsonify(
+        ok=True,
+        total=len(matrix),
+        degraded=degraded,
+        read_only_contract=True,
+        tools=matrix,
+    )
 
 
 @bp.get("/api/system/status")

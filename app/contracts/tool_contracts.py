@@ -22,6 +22,7 @@ CONTRACT_TOOLS = [
 CONTRACT_STATUSES = {"ok", "degraded", "error"}
 CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
 CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
+CONTRACT_VERSION = "2026-03-05"
 
 
 def _core_get(name: str, default=None):
@@ -35,12 +36,20 @@ def _now_iso() -> str:
 def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reason: str = "") -> dict:
     if status not in CONTRACT_STATUSES:
         status = "error"
+
+    safe_metrics = dict(metrics or {})
+    safe_details = dict(details or {})
+    contract_meta = dict(safe_details.get("contract") or {})
+    contract_meta.setdefault("version", CONTRACT_VERSION)
+    contract_meta.setdefault("read_only", False)
+    safe_details["contract"] = contract_meta
+
     payload = {
         "tool": tool,
         "status": status,
         "updated_at": _now_iso(),
-        "metrics": metrics,
-        "details": details,
+        "metrics": safe_metrics,
+        "details": safe_details,
     }
     if status == "degraded":
         payload["degraded_reason"] = reason or "degraded_runtime"
@@ -64,6 +73,9 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "aggregate_mode": "summary_only",
         "degraded": degraded_tools,
         "errors": error_tools,
+        "contract": {
+            "read_only": True,
+        },
     }
     return metrics, details, ""
 
@@ -144,6 +156,9 @@ def _collect_chatbot_summary(_tenant: str) -> tuple[dict, dict, str]:
             "request_fields": CHATBOT_REQUEST_FIELDS,
             "response_fields": CHATBOT_RESPONSE_FIELDS,
         },
+        "contract": {
+            "read_only": True,
+        },
     }
     return metrics, details, ""
 
@@ -167,10 +182,15 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
 
 def extract_chat_message(payload: dict | None) -> str:
     payload = payload or {}
+    if not isinstance(payload, dict):
+        return ""
+
     for field in CHATBOT_REQUEST_FIELDS:
         value = payload.get(field)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    if isinstance(payload.get("payload"), dict):
+        return extract_chat_message(payload.get("payload"))
     return ""
 
 
@@ -181,11 +201,16 @@ def normalize_chat_response(response: dict | str | None, *, fallback_ok: bool = 
         text = str(response or "")
         normalized = {"ok": fallback_ok, "text": text, "response": text}
 
-    if "text" in normalized and "response" not in normalized:
-        normalized["response"] = normalized.get("text", "")
-    if "response" in normalized and "text" not in normalized:
-        normalized["text"] = normalized.get("response", "")
-    normalized.setdefault("ok", fallback_ok)
+    text = normalized.get("text")
+    resp = normalized.get("response")
+    if isinstance(text, str) and "response" not in normalized:
+        normalized["response"] = text
+    elif isinstance(resp, str) and "text" not in normalized:
+        normalized["text"] = resp
+
+    normalized["text"] = str(normalized.get("text") or "")
+    normalized["response"] = str(normalized.get("response") or normalized["text"])
+    normalized["ok"] = bool(normalized.get("ok", fallback_ok))
     return normalized
 
 def build_tool_summary(tool: str, tenant: str = "default") -> dict:
