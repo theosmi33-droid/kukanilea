@@ -2,15 +2,15 @@
 {% block title %}Dashboard · KUKANILEA{% endblock %}
 
 {% block content %}
-<div class="page-container p-6" style="max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-8);">
+<div class="page-container p-6 stack-lg" style="max-width: 1400px; margin: 0 auto;">
 
   <!-- 1. Header & Welcome -->
-  <header class="flex justify-between items-end gap-6 flex-wrap">
+  <header class="cluster justify-between">
     <div>
-        <h1 class="m-0 text-3xl font-bold tracking-tight">Übersicht</h1>
+        <h1 class="m-0">Übersicht</h1>
         <p class="text-secondary mt-2">Willkommen zurück. Hier sind die aktuellen Status Ihrer Beleg-Zentrale.</p>
     </div>
-    <div class="flex gap-3">
+    <div class="cluster">
         <a href="/upload" class="btn btn-primary btn-lg shadow-sm">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
             Neuer Upload
