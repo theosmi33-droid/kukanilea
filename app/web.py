@@ -105,6 +105,7 @@ from app.modules.kalender.contracts import build_health as build_kalender_health
 from app.modules.kalender.contracts import build_summary as build_kalender_summary
 from app.modules.projekte.contracts import build_health as build_projekte_health
 from app.modules.projekte.contracts import build_summary as build_projekte_summary
+from app.modules.upload.ingestion import ingest_unstructured_input
 from app.modules.zeiterfassung.contracts import build_health as build_zeiterfassung_health
 from app.modules.zeiterfassung.contracts import build_summary as build_zeiterfassung_summary
 
@@ -4078,6 +4079,43 @@ def api_tool_summary(tool: str):
     if tool not in CONTRACT_TOOLS:
         return jsonify(error="unknown_tool", tool=tool), 404
     payload = build_tool_summary(tool, tenant=tenant)
+    return jsonify(payload)
+
+
+@bp.post("/api/upload/ingest")
+@login_required
+def api_upload_ingest():
+    tenant = str(current_tenant() or "default")
+    body = request.get_json(silent=True) if request.is_json else None
+    source = "text"
+    raw_text = ""
+    metadata: dict[str, Any] = {}
+    if isinstance(body, dict):
+        source = str(body.get("source") or "text")
+        raw_text = str(body.get("text") or body.get("transcript") or "")
+        metadata = dict(body.get("metadata") or {}) if isinstance(body.get("metadata"), dict) else {}
+    else:
+        source = str(request.form.get("source") or "text")
+        raw_text = str(request.form.get("text") or request.form.get("transcript") or "")
+
+    if not raw_text.strip() and request.files.get("file") is not None:
+        file_storage = request.files.get("file")
+        if file_storage is not None and file_storage.filename:
+            source = str(
+                request.form.get("source")
+                or Path(file_storage.filename).suffix.lstrip(".")
+                or "text"
+            )
+            file_bytes = file_storage.read()
+            raw_text = file_bytes.decode("utf-8", errors="replace")
+            metadata["filename"] = file_storage.filename
+            metadata["content_type"] = str(file_storage.content_type or "")
+    payload = ingest_unstructured_input(
+        source=source,
+        tenant=tenant,
+        text=raw_text,
+        metadata=metadata,
+    )
     return jsonify(payload)
 
 
