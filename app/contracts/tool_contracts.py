@@ -39,7 +39,11 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
 
     safe_metrics = dict(metrics or {})
     safe_details = dict(details or {})
-    contract_meta = dict(safe_details.get("contract") or {})
+    contract_payload = safe_details.get("contract")
+    if isinstance(contract_payload, dict):
+        contract_meta = dict(contract_payload)
+    else:
+        contract_meta = {}
     contract_meta.setdefault("version", CONTRACT_VERSION)
     contract_meta.setdefault("read_only", False)
     safe_details["contract"] = contract_meta
@@ -184,7 +188,11 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
 
 
 
-def extract_chat_message(payload: dict | None) -> str:
+def extract_chat_message(payload: dict | None, _depth: int = 0) -> str:
+    max_depth = 5
+    if _depth >= max_depth:
+        return ""
+
     payload = payload or {}
     if not isinstance(payload, dict):
         return ""
@@ -194,7 +202,7 @@ def extract_chat_message(payload: dict | None) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     if isinstance(payload.get("payload"), dict):
-        return extract_chat_message(payload.get("payload"))
+        return extract_chat_message(payload.get("payload"), _depth + 1)
     return ""
 
 
