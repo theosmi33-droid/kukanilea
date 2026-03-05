@@ -42,14 +42,14 @@ def test_tool_summary_and_matrix_are_tenant_scoped(tmp_path, monkeypatch):
     summary = client.get("/api/dashboard/summary")
     assert summary.status_code == 200
     summary_body = summary.get_json()
-    assert summary_body["details"]["tenant"] == "KUKANILEA"
+    assert summary_body["summary"]["details"]["tenant"] == "KUKANILEA"
 
     matrix = client.get("/api/dashboard/tool-matrix")
     assert matrix.status_code == 200
     matrix_body = matrix.get_json()
     assert matrix_body["tenant"] == "KUKANILEA"
     for row in matrix_body["tools"]:
-        assert row["details"]["tenant"] == "KUKANILEA"
+        assert row["summary"]["details"]["tenant"] == "KUKANILEA"
 
 
 def test_contract_normalization_rebinds_tenant_when_collector_leaks(monkeypatch):
@@ -61,9 +61,9 @@ def test_contract_normalization_rebinds_tenant_when_collector_leaks(monkeypatch)
     monkeypatch.setitem(contracts.SUMMARY_COLLECTORS, "upload", _leaky_upload)
     payload = contracts.build_tool_summary("upload", tenant="KUKANILEA")
 
-    assert payload["details"]["tenant"] == "KUKANILEA"
+    assert payload["summary"]["details"]["tenant"] == "KUKANILEA"
     assert payload["status"] == "degraded"
-    assert payload["degraded_reason"] == "tenant_scope_corrected"
+    assert "tenant_scope_corrected" in payload["warnings"]
 
 
 def test_memory_store_degraded_fallback_stays_tenant_local(tmp_path, monkeypatch):

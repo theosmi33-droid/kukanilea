@@ -51,10 +51,10 @@ def test_dashboard_matrix_returns_all_tools(tmp_path, monkeypatch):
     assert len(body["tools"]) == 11
 
     for row in body["tools"]:
-        assert isinstance(row.get("metrics"), dict)
-        assert isinstance(row.get("details"), dict)
-        assert isinstance(row["details"].get("contract"), dict)
-        assert row["details"].get("tenant") == "KUKANILEA"
+        assert isinstance(row.get("summary"), dict)
+        assert isinstance(row.get("warnings"), list)
+        assert isinstance(row.get("links"), dict)
+        assert row["summary"]["details"].get("tenant") == "KUKANILEA"
 
 
 def test_dashboard_matrix_marks_degraded_tool_instead_of_hard_fail(tmp_path, monkeypatch):
@@ -76,8 +76,8 @@ def test_dashboard_matrix_marks_degraded_tool_instead_of_hard_fail(tmp_path, mon
     assert "upload" in body["degraded"]
     upload = next(row for row in body["tools"] if row["tool"] == "upload")
     assert upload["status"] == "degraded"
-    assert upload["degraded_reason"] == "simulated_gateway_unavailable"
-    assert upload["details"]["contract"]["read_only"] is False
+    assert "simulated_gateway_unavailable" in upload["warnings"]
+    assert upload["summary"]["details"]["contract"]["read_only"] is False
 
 
 def test_dashboard_matrix_handles_contract_type_violations_without_500(tmp_path, monkeypatch):
@@ -95,7 +95,7 @@ def test_dashboard_matrix_handles_contract_type_violations_without_500(tmp_path,
     body = response.get_json()
     chatbot = next(row for row in body["tools"] if row["tool"] == "chatbot")
     assert chatbot["status"] == "degraded"
-    assert chatbot["degraded_reason"] == "collector_contract_invalid"
+    assert "collector_contract_invalid" in chatbot["warnings"]
 
 
 def test_summary_endpoint_returns_error_payload_instead_of_500_on_collector_exception(tmp_path, monkeypatch):
@@ -112,4 +112,4 @@ def test_summary_endpoint_returns_error_payload_instead_of_500_on_collector_exce
 
     body = response.get_json()
     assert body["status"] == "error"
-    assert body["metrics"]["collector_error"] == 1
+    assert body["summary"]["metrics"]["collector_error"] == 1

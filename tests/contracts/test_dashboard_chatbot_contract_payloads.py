@@ -7,11 +7,13 @@ def test_dashboard_summary_declares_aggregation_contract(auth_client):
 
     body = response.get_json()
     assert body["tool"] == "dashboard"
-    assert body["details"]["matrix_endpoint"] == "/api/dashboard/tool-matrix"
-    assert body["details"]["aggregate_mode"] == "summary_only"
-    assert body["metrics"]["total_tools"] == 10
-    assert body["details"]["contract"]["read_only"] is True
-    assert body["details"]["tenant"] == "KUKANILEA"
+    details = body["summary"]["details"]
+    metrics = body["summary"]["metrics"]
+    assert details["matrix_endpoint"] == "/api/dashboard/tool-matrix"
+    assert details["aggregate_mode"] == "summary_only"
+    assert metrics["total_tools"] == 10
+    assert details["contract"]["read_only"] is True
+    assert details["tenant"] == "KUKANILEA"
 
 
 def test_chatbot_summary_declares_payload_aliases(auth_client):
@@ -21,13 +23,15 @@ def test_chatbot_summary_declares_payload_aliases(auth_client):
     body = response.get_json()
     assert body["tool"] == "chatbot"
 
-    contract = body["details"]["payload_contract"]
+    details = body["summary"]["details"]
+    metrics = body["summary"]["metrics"]
+    contract = details["payload_contract"]
     assert contract["request_fields"] == ["message", "msg", "q"]
     assert contract["response_fields"] == ["ok", "response", "text", "actions", "requires_confirm"]
-    assert body["details"]["summary_sources"] == ["dashboard", "tasks", "projects"]
-    assert body["metrics"]["summary_sources"] == 3
-    assert body["details"]["contract"]["read_only"] is True
-    assert body["details"]["tenant"] == "KUKANILEA"
+    assert details["summary_sources"] == ["dashboard", "tasks", "projects"]
+    assert metrics["summary_sources"] == 3
+    assert details["contract"]["read_only"] is True
+    assert details["tenant"] == "KUKANILEA"
 
 
 def test_chat_endpoint_standardizes_payload_aliases(auth_client, monkeypatch):
@@ -95,10 +99,10 @@ def test_upload_summary_declares_intake_contract(auth_client):
     body = response.get_json()
     assert body["tool"] == "upload"
 
-    intake_contract = body["details"]["intake_contract"]
+    intake_contract = body["summary"]["details"]["intake_contract"]
     assert intake_contract["normalize_endpoint"] == "/api/intake/normalize"
     assert intake_contract["execute_endpoint"] == "/api/intake/execute"
     assert intake_contract["requires_explicit_confirm"] is True
     assert intake_contract["execute_fields"] == ["envelope", "requires_confirm", "confirm"]
     assert "suggested_actions" in intake_contract["envelope_fields"]
-    assert body["details"]["tenant"] == "KUKANILEA"
+    assert body["summary"]["details"]["tenant"] == "KUKANILEA"

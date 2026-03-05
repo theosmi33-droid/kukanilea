@@ -71,8 +71,8 @@ def test_flow_ab_2000x_is_deterministic_and_tenant_scoped(tmp_path, monkeypatch)
     summary = client.get("/api/upload/summary")
     assert summary.status_code == 200
     summary_body = summary.get_json()
-    assert summary_body["details"]["tenant"] == "KUKANILEA"
-    assert summary_body["details"]["intake_contract"]["requires_explicit_confirm"] is True
+    assert summary_body["summary"]["details"]["tenant"] == "KUKANILEA"
+    assert summary_body["summary"]["details"]["intake_contract"]["requires_explicit_confirm"] is True
 
     with app.app_context():
         task_count, audit_count, event_count = _db_counts(app.config["CORE_DB"])

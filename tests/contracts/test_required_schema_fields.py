@@ -11,11 +11,10 @@ def test_summary_contract_has_required_nested_contract_fields(auth_client, tool)
     assert response.status_code == 200
 
     body = response.get_json()
-    contract = body["details"]["contract"]
-    assert "version" in contract
-    assert isinstance(contract["version"], str)
-    assert "read_only" in contract
-    assert isinstance(contract["read_only"], bool)
+    assert set(body.keys()) == {"tool", "status", "ts", "summary", "warnings", "links"}
+    assert isinstance(body["summary"], dict)
+    assert isinstance(body["warnings"], list)
+    assert isinstance(body["links"], dict)
 
 
 @pytest.mark.parametrize("tool", CONTRACT_TOOLS)
@@ -24,8 +23,7 @@ def test_health_contract_has_required_nested_contract_fields(auth_client, tool):
     assert response.status_code in {200, 503}
 
     body = response.get_json()
-    contract = body["details"]["contract"]
-    assert "version" in contract
-    assert isinstance(contract["version"], str)
-    assert "read_only" in contract
-    assert isinstance(contract["read_only"], bool)
+    assert set(body.keys()) == {"tool", "status", "ts", "summary", "warnings", "links"}
+    assert isinstance(body["summary"], dict)
+    assert isinstance(body["warnings"], list)
+    assert isinstance(body["links"], dict)

@@ -30,7 +30,7 @@ def test_messenger_summary_endpoint_contract():
     body = resp.get_json()
     assert body["tool"] == "messenger"
     assert body["status"] == "ok"
-    assert body["details"]["confirm_gate"] is True
+    assert body["summary"]["details"]["confirm_gate"] is True
 
 
 def test_chat_parsing_and_confirm_gate(monkeypatch):

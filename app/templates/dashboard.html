@@ -186,7 +186,7 @@ function renderToolMatrix(payload) {
     const borderColor = isOk ? "var(--success)" : (isDegraded ? "var(--warning)" : "var(--error)");
     const bgClass = isOk ? "bg-success-bg" : (isDegraded ? "bg-warning-bg" : "bg-error-bg");
     
-    const reason = tool.degraded_reason ? `<div class="text-[10px] text-muted mt-1 leading-tight">${tool.degraded_reason}</div>` : "";
+    const reason = Array.isArray(tool.warnings) && tool.warnings.length ? `<div class="text-[10px] text-muted mt-1 leading-tight">${tool.warnings.join(", ")}</div>` : "";
     
     return `
     <article class="card card-tight border-light" style="border-left: 4px solid ${borderColor};">
@@ -261,11 +261,25 @@ function executeOptimizerActions(signals, targetActions = 2200) {
   }
 }
 
+const CONTRACT_TOOLS = ["dashboard","upload","projects","tasks","messenger","email","calendar","time","visualizer","settings","chatbot"];
+
 async function loadToolMatrix() {
   try {
-    const res = await fetch('/api/dashboard/tool-matrix', { credentials: 'same-origin' });
-    if (!res.ok) throw new Error(`matrix_http_${res.status}`);
-    const payload = await res.json();
+    const toolRows = await Promise.all(CONTRACT_TOOLS.map(async (tool) => {
+      const [summaryRes, healthRes] = await Promise.all([
+        fetch(`/api/${tool}/summary`, { credentials: 'same-origin' }),
+        fetch(`/api/${tool}/health`, { credentials: 'same-origin' }),
+      ]);
+      if (!summaryRes.ok || !healthRes.ok) throw new Error(`${tool}_http_error`);
+      const summaryPayload = await summaryRes.json();
+      const healthPayload = await healthRes.json();
+      return {
+        tool,
+        status: String(healthPayload.status || summaryPayload.status || 'error'),
+        warnings: Array.isArray(healthPayload.warnings) ? healthPayload.warnings : [],
+      };
+    }));
+    const payload = { tools: toolRows };
     renderToolMatrix(payload);
     const signals = deriveDashboardSignals(payload);
     renderKpiRail(signals);

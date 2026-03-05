@@ -128,10 +128,9 @@ def test_upload_summary_reflects_active_tenant_session(tmp_path, monkeypatch):
     assert response.status_code == 200
     body = response.get_json()
     assert body["tool"] == "upload"
-    assert body["details"]["tenant"] == "TENANT_X"
+    assert body["summary"]["details"]["tenant"] == "TENANT_X"
 
-    contract = body["details"]["intake_contract"]
+    contract = body["summary"]["details"]["intake_contract"]
     assert contract["normalize_endpoint"] == "/api/intake/normalize"
     assert contract["execute_endpoint"] == "/api/intake/execute"
     assert contract["requires_explicit_confirm"] is True
-
