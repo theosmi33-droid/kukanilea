@@ -47,10 +47,11 @@ def evaluate_gate7() -> dict[str, Any]:
     )
 
     read_result = agent.route("Bitte zeige dashboard status", {"tenant": "KUKANILEA", "user": "ops"})
+    read_action_ok = read_result.decision.action in {"dashboard_summary", "dashboard.summary.read"}
     checks.append(
         CheckResult(
             name="summary_read_api_ok",
-            passed=bool(read_result.ok and read_result.decision.action == "dashboard_summary" and read_result.decision.execution_mode == "read"),
+            passed=bool(read_result.ok and read_action_ok and read_result.decision.execution_mode == "read"),
             detail=f"status={read_result.status}; action={read_result.decision.action}; mode={read_result.decision.execution_mode}",
         )
     )
