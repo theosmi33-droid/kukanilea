@@ -12,6 +12,7 @@ logger = logging.getLogger("ai_cleanup")
 
 MEMORY_ROOT = os.environ.get("KUKANILEA_AI_MEMORY_ROOT", "instance/ai_memory")
 DEFAULT_AUTH_DB = os.environ.get("KUKANILEA_AUTH_DB", "instance/auth.sqlite3")
+KNOWLEDGE_MEMORY_RETENTION_DAYS = int(os.environ.get("KUKANILEA_MEMORY_RETENTION_DAYS", "60"))
 
 
 def cleanup_tenant_db(db_path: str, days: int = 60, min_importance: int = 8) -> int:
@@ -48,10 +49,16 @@ def cleanup_auth_memory(db_path: str = DEFAULT_AUTH_DB, days: int = 60) -> int:
     conn = sqlite3.connect(db_path)
     try:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(agent_memory)").fetchall()}
-        if "created_at" in columns:
-            conn.execute("DELETE FROM agent_memory WHERE created_at < ?", (cutoff.isoformat(),))
+        cutoff_iso = cutoff.isoformat()
+        if "timestamp" in columns and "category" in columns:
+            conn.execute(
+                "DELETE FROM agent_memory WHERE timestamp < ? AND category = 'KNOWLEDGE_MEMORY'",
+                (cutoff_iso,),
+            )
+        elif "created_at" in columns:
+            conn.execute("DELETE FROM agent_memory WHERE created_at < ?", (cutoff_iso,))
         elif "timestamp" in columns:
-            conn.execute("DELETE FROM agent_memory WHERE timestamp < ?", (cutoff.isoformat(),))
+            conn.execute("DELETE FROM agent_memory WHERE timestamp < ?", (cutoff_iso,))
         else:
             return 0
         deleted = conn.total_changes
@@ -62,12 +69,13 @@ def cleanup_auth_memory(db_path: str = DEFAULT_AUTH_DB, days: int = 60) -> int:
         conn.close()
 
 
-def run_nightly_cleanup(days: int = 60) -> None:
+def run_nightly_cleanup(days: int | None = None) -> None:
     """Entry-point for nightly retention job."""
 
     cleanup_all_tenants()
+    retention_days = int(days if days is not None else KNOWLEDGE_MEMORY_RETENTION_DAYS)
     try:
-        cleanup_auth_memory(days=days)
+        cleanup_auth_memory(days=retention_days)
     except Exception:
         logger.exception("Cleanup failed for auth memory")
 

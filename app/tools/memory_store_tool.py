@@ -18,12 +18,22 @@ class MemoryStoreTool(BaseTool):
         "type": "object",
         "properties": {
             "content": {"type": "string", "description": "Die zu speichernde Information."},
-            "metadata": {"type": "object", "description": "Optionale Zusatzmetadaten."}
+            "metadata": {"type": "object", "description": "Optionale Zusatzmetadaten."},
+            "topic": {"type": "string", "description": "Fachthema der Knowledge Memory."},
+            "memory_type": {"type": "string", "description": "Typ: note|preference|contact_reference.", "default": "note"},
+            "confirm_write": {"type": "boolean", "default": False, "description": "Explizite Bestätigung für Schreibzugriff."}
         },
-        "required": ["content"]
+        "required": ["content", "topic"]
     }
 
-    def run(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> Any:
+    def run(
+        self,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        topic: str = "general",
+        memory_type: str = "note",
+        confirm_write: bool = False,
+    ) -> Any:
         tenant_id = g.get("tenant_id")
         if not tenant_id:
             return {"error": "No tenant context found."}
@@ -33,14 +43,15 @@ class MemoryStoreTool(BaseTool):
             return {"error": "Database not initialized."}
 
         manager = MemoryManager(str(auth_db.path))
-        success = manager.store_memory(tenant_id, "agent", content, metadata)
-        if success:
-            return {"status": "stored", "tenant": tenant_id}
-        return {
-            "status": "degraded",
-            "tenant": tenant_id,
-            "error": "memory_store_unavailable",
-        }
+        return manager.store_knowledge_memory(
+            tenant_id=tenant_id,
+            content=content,
+            topic=topic,
+            memory_type=memory_type,
+            actor="agent",
+            confirm_write=bool(confirm_write),
+            metadata=metadata,
+        )
 
 # Register tool
 registry.register(MemoryStoreTool())
