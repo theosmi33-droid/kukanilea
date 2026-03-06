@@ -15,3 +15,11 @@ def test_launch_evidence_handles_missing_origin_main_without_fatal_fetch():
     assert "git show-ref --verify --quiet refs/remotes/origin/main" in script
     assert "origin/main unavailable in local clone" in script
     assert "git fetch origin --prune" not in script
+
+
+def test_healthcheck_checks_ops_release_levers():
+    script = Path("scripts/ops/healthcheck.sh").read_text(encoding="utf-8")
+    assert "ops settings defaults" in script
+    assert "backup/restore verification hooks" in script
+    assert "external_apis_enabled" in script
+    assert "memory_retention_days" in script
