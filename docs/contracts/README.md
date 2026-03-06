@@ -48,3 +48,16 @@ Bestehende Messenger/Chatbot Payload-Aliase bleiben erhalten:
 Damit bleiben bestehende Frontends/Bots kompatibel, während die Summary/Health-Contracts auf den harten Pflichtschema-Standard gebracht werden.
 
 Tool-Liste (11): dashboard, upload, projects, tasks, messenger, email, calendar, time, visualizer, settings, chatbot.
+
+
+## Tool Actions Interface (neu)
+
+Actions-Contract Erweiterung (inkl. Permissions, Confirm-Gate, Audit, Idempotency):
+
+- Spec: `docs/contracts/TOOL_ACTIONS_INTERFACE.md`
+- Schemas (Draft 2020-12):
+  - `docs/contracts/schemas/tool_actions_list.schema.json`
+  - `docs/contracts/schemas/tool_action_execute.request.schema.json`
+  - `docs/contracts/schemas/tool_action_execute.response.schema.json`
+  - `docs/contracts/schemas/tool_action_audit_event.schema.json`
+  - `docs/contracts/schemas/tool_action_idempotency_record.schema.json`

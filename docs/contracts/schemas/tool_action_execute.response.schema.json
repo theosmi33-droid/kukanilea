@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kukanilea.local/schemas/tool_action_execute.response.schema.json",
+  "title": "Tool Action Execute Response",
+  "type": "object",
+  "required": ["ok", "tool", "action", "status", "confirm", "audit"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "tool": { "type": "string", "minLength": 1 },
+    "action": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
+    "status": { "type": "string", "enum": ["executed", "proposed", "replayed", "denied"] },
+    "result": {},
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "confirm": {
+      "type": "object",
+      "required": ["required", "token", "expires_at"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "token": { "type": ["string", "null"] },
+        "expires_at": { "type": ["string", "null"], "format": "date-time" },
+        "preview": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "audit": {
+      "type": "object",
+      "required": ["event_id"],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

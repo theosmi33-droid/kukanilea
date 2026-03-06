@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kukanilea.local/schemas/tool_action_audit_event.schema.json",
+  "title": "Tool Action Audit Event",
+  "type": "object",
+  "required": [
+    "event_id",
+    "timestamp",
+    "event_type",
+    "tool",
+    "action_name",
+    "tenant_id",
+    "actor_id",
+    "request_id",
+    "idempotency_key",
+    "decision",
+    "payload_hash"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "action.proposed",
+        "action.confirmed",
+        "action.executed",
+        "action.denied",
+        "action.idempotency_replay"
+      ]
+    },
+    "tool": { "type": "string", "minLength": 1 },
+    "action_name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
+    "tenant_id": { "type": "string", "minLength": 1 },
+    "actor_id": { "type": "string", "minLength": 1 },
+    "request_id": { "type": "string", "minLength": 1 },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "decision": { "type": "string", "enum": ["allow", "deny", "replay", "error"] },
+    "payload_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "result_ref": { "type": ["string", "null"] },
+    "meta": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}
