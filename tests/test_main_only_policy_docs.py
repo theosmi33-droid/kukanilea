@@ -10,7 +10,7 @@ def _read_text(path: str) -> str:
 
 def test_gemini_doc_mentions_main_only_policy():
     content = _read_text("GEMINI.md").lower()
-    assert "main is the single source of truth" in content
+    assert "main-only policy" in content
     assert "every pr must target `main`" in content
 
 
