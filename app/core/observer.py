@@ -2,6 +2,7 @@ import os
 import sqlite3
 import logging
 from typing import Any, Dict
+from pathlib import Path
 
 logger = logging.getLogger("kukanilea.core.observer")
 
@@ -25,10 +26,7 @@ def _read_outbound_queue_stats() -> Dict[str, int]:
     """Reads the API outbound queue status from the database."""
     pending = 0
     failed = 0
-    db_path = os.environ.get("KUKANILEA_AUTH_DB")
-    if not db_path:
-        # Fallback for local dev
-        db_path = "/Users/gensuminguyen/Kukanilea/data/auth.sqlite3"
+    db_path = _resolve_auth_db_path()
         
     if not os.path.exists(db_path):
         return {"pending": 0, "failed": 0}
@@ -49,6 +47,21 @@ def _read_outbound_queue_stats() -> Dict[str, int]:
         logger.debug("Outbound queue stats unavailable: %s", exc)
         
     return {"pending": pending, "failed": failed}
+
+
+def _resolve_auth_db_path() -> str:
+    """Resolve auth DB path using env first, then local repository defaults."""
+    env_path = os.environ.get("KUKANILEA_AUTH_DB")
+    if env_path:
+        return env_path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    instance_db = repo_root / "instance" / "auth.sqlite3"
+    if instance_db.exists():
+        return str(instance_db)
+
+    # Legacy fallback path for backwards compatibility in older developer setups.
+    return "/Users/gensuminguyen/Kukanilea/data/auth.sqlite3"
 
 
 def get_system_status() -> Dict[str, Any]:
