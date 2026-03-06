@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
@@ -86,7 +87,7 @@ class CrossToolFlowEngine:
         health = tool_health or {}
         result = FlowExecutionResult(ok=True, status="completed", flow_id=flow.flow_id)
 
-        missing = [k for k in flow.required_context if not context.get(k)]
+        missing = [k for k in flow.required_context if k not in context]
         if missing:
             result.ok = False
             result.status = "propose_and_ask_confirmation"
@@ -140,6 +141,7 @@ class CrossToolFlowEngine:
             try:
                 output = self.action_registry.execute(step.action_id, run_context)
             except Exception as exc:  # deterministic failure reporting
+                trace = traceback.format_exc()
                 result.ok = False
                 result.status = "failed"
                 result.failures.append(
@@ -148,6 +150,7 @@ class CrossToolFlowEngine:
                         "step_id": step.step_id,
                         "action_id": step.action_id,
                         "error": str(exc),
+                        "traceback": trace,
                     }
                 )
                 result.audit_evidence.append(
@@ -157,6 +160,7 @@ class CrossToolFlowEngine:
                         "step_id": step.step_id,
                         "action_id": step.action_id,
                         "error": str(exc),
+                        "traceback": trace,
                     }
                 )
                 break
@@ -191,7 +195,7 @@ def create_default_registry() -> AtomicActionRegistry:
     registry.register(
         "email_extract_task",
         lambda p: {
-            "task_title": str(p.get("email_subject") or "Neue Anfrage").strip()[:120],
+            "task_title": (_extract_untrusted_text(p, "email_subject") or "Neue Anfrage").strip()[:120],
             "task_notes": _extract_untrusted_text(p, "email_body"),
         },
     )
@@ -242,11 +246,18 @@ def create_default_registry() -> AtomicActionRegistry:
     )
     registry.register(
         "system_create_audit_entry",
-        lambda p: {"audit_entry": {"event": p.get("event_type"), "severity": p.get("severity", "INFO")}},
+        lambda p: {
+            "audit_entry": {
+                "event": str(p.get("event_type") or "unknown_event")[:50],
+                "severity": str(p.get("severity") or "INFO")[:10],
+            }
+        },
     )
     registry.register(
         "system_notify_admin",
-        lambda p: {"admin_hint": f"Admin-Hinweis: {p.get('event_type', 'unknown_event')}"},
+        lambda p: {
+            "admin_hint": f"Admin-Hinweis: {str(p.get('event_type') or 'unknown_event')[:50]}"
+        },
     )
     registry.register(
         "deadline_sync_calendar_task",
