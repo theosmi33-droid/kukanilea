@@ -33,8 +33,9 @@ def api_mail_draft():
         message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
         draft = generate_reply_draft(message, read_only_default=True, external_api_enabled=False)
         return jsonify(ok=True, draft=draft)
-    except Exception as e:
-        return jsonify(error="draft_error", details=str(e)), 500
+    except Exception:
+        logger.exception("api_mail_draft_failed")
+        return jsonify(error="draft_error"), 500
 
 
 @bp.route("/api/mail/triage", methods=["POST"])
