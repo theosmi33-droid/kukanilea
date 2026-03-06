@@ -188,6 +188,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     list_pending = _core_get("list_pending")
+    from app.modules.upload.document_processing import list_processing_queue, list_recent_uploads
+
     pending: list[dict] | list = []
     degraded_reason = ""
     pending_error = ""
@@ -210,11 +212,27 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
             pending_error = str(exc)
     else:
         degraded_reason = "pending_pipeline_unavailable"
-    metrics = {"pending_items": len(pending), "accepts_batch": 1}
+    try:
+        recent_uploads = list_recent_uploads(tenant_id=tenant, limit=10)
+        processing_queue = list_processing_queue(tenant_id=tenant, limit=20)
+    except Exception as exc:
+        recent_uploads = []
+        processing_queue = []
+        degraded_reason = degraded_reason or "document_processing_unavailable"
+        pending_error = pending_error or str(exc)
+
+    metrics = {
+        "pending_items": len(pending),
+        "accepts_batch": 1,
+        "recent_uploads": len(recent_uploads),
+        "processing_queue": len(processing_queue),
+    }
     details = {
         "source": "core.list_pending",
         "tenant": tenant,
         "intake_contract": dict(UPLOAD_INTAKE_CONTRACT),
+        "recent_uploads": recent_uploads,
+        "processing_queue": processing_queue,
     }
     if pending_error:
         details["pending_error"] = pending_error
