@@ -80,3 +80,111 @@ def test_actions_read_and_write_flow_with_confirm_gate(tmp_path, monkeypatch):
     assert after_read.status_code == 200
     items = after_read.get_json()["result"]["items"]
     assert any("Neuer Task" in str(item.get("title") or "") for item in items)
+
+
+def test_actions_write_duplicate_request_returns_idempotent_replay(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    headers = {"Idempotency-Key": "dup-001"}
+    first = client.post(
+        "/api/aufgaben/actions/create",
+        json={"title": "Mail Versand", "details": "kritisch", "confirm": "CONFIRM"},
+        headers=headers,
+    )
+    second = client.post(
+        "/api/aufgaben/actions/create",
+        json={"title": "Mail Versand", "details": "kritisch", "confirm": "CONFIRM"},
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.get_json()["idempotent_replay"] is True
+
+    listed = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"}).get_json()["result"]["items"]
+    titles = [str(item.get("title") or "") for item in listed]
+    assert titles.count("Mail Versand") == 1
+
+
+def test_actions_retry_after_timeout_is_safe_and_repeatable(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    from app.web import TOOL_ACTION_TEMPLATES
+
+    calls = {"count": 0}
+    from app.modules.actions_api import ActionDefinition
+
+    template = TOOL_ACTION_TEMPLATES["aufgaben"]
+    original_action = template._actions["create"]
+
+    def flaky(payload):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise TimeoutError("simulated_timeout")
+        return original_action.handler(payload)
+
+    template._actions["create"] = ActionDefinition(
+        name=original_action.name,
+        title=original_action.title,
+        permission=original_action.permission,
+        risk=original_action.risk,
+        input_schema=original_action.input_schema,
+        output_schema=original_action.output_schema,
+        handler=flaky,
+    )
+    try:
+        headers = {"Idempotency-Key": "timeout-001"}
+        first = client.post(
+            "/api/aufgaben/actions/create",
+            json={"title": "Kalender Sync", "confirm": "CONFIRM"},
+            headers=headers,
+        )
+        second = client.post(
+            "/api/aufgaben/actions/create",
+            json={"title": "Kalender Sync", "confirm": "CONFIRM"},
+            headers=headers,
+        )
+    finally:
+        template._actions["create"] = original_action
+
+    assert first.status_code == 500
+    assert first.get_json()["error"] == "unexpected_error"
+    assert second.status_code == 200
+    assert second.get_json()["ok"] is True
+    assert calls["count"] == 2
+
+
+def test_actions_retry_after_approval_uses_same_idempotency_key(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    headers = {"Idempotency-Key": "approval-001"}
+    denied = client.post(
+        "/api/aufgaben/actions/create",
+        json={"title": "DMS Upload"},
+        headers=headers,
+    )
+    approved = client.post(
+        "/api/aufgaben/actions/create",
+        json={"title": "DMS Upload", "confirm": "CONFIRM"},
+        headers=headers,
+    )
+
+    assert denied.status_code == 409
+    assert denied.get_json()["error"] == "confirm_required"
+    assert approved.status_code == 200
+    assert approved.get_json()["ok"] is True
+
+
+def test_actions_read_action_remains_unchanged_without_idempotency_contract(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    response = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert "idempotent_replay" not in body

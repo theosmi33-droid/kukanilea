@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any, Callable, Mapping
 
 from flask import Request, jsonify, request
@@ -8,6 +9,7 @@ from flask import Request, jsonify, request
 from app.auth import current_role, current_tenant, current_user, login_required
 from app.errors import json_error
 from app.security import confirm_gate
+from kukanilea.idempotency import GLOBAL_IDEMPOTENCY_STORE, canonical_hash
 
 
 PermissionChecker = Callable[[str, str], bool]
@@ -62,9 +64,28 @@ class ActionDefinition:
 
 
 class ActionApiTemplate:
+    IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
+    WRITE_DEDUP_WINDOW_SECONDS = 15
+
     def __init__(self, *, tool: str, actions: list[ActionDefinition]):
         self.tool = tool
         self._actions = {item.name: item for item in actions}
+
+    @staticmethod
+    def _request_hash(payload: Mapping[str, Any]) -> str:
+        normalized = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"confirm", "idempotency_key", "request_id", "phase", "meta"}
+        }
+        return canonical_hash(normalized)
+
+    def _resolve_idempotency_key(self, req: Request, payload: Mapping[str, Any], request_hash: str) -> tuple[str, int, str]:
+        explicit = str(req.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip()
+        if explicit:
+            return explicit, self.IDEMPOTENCY_TTL_SECONDS, "explicit"
+        derived = sha256(f"{self.tool}:{request_hash}".encode("utf-8")).hexdigest()[:32]
+        return f"dedup:{derived}", self.WRITE_DEDUP_WINDOW_SECONDS, "derived"
 
     def list_actions_payload(self) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
@@ -97,9 +118,79 @@ class ActionApiTemplate:
             payload = {}
 
         confirm_required = action.write_operation or action.risk == "high_risk"
+        actor = str(current_user() or "system")
+        tenant = str(current_tenant() or "default")
+
+        request_hash = self._request_hash(payload)
+        idempotency_key = ""
+        idem_scope = ""
+        idem_token = ""
+        idempotency_mode = "none"
+        if action.write_operation:
+            idempotency_key, idem_ttl, idempotency_mode = self._resolve_idempotency_key(req, payload, request_hash)
+            idem_scope = f"{tenant}:{self.tool}:{action.name}"
+            decision = GLOBAL_IDEMPOTENCY_STORE.begin(
+                scope=idem_scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                ttl_seconds=idem_ttl,
+            )
+            SharedServices.log_event(
+                "tool_action_idempotency_checked",
+                {
+                    "tool": self.tool,
+                    "action": action.name,
+                    "actor": actor,
+                    "tenant": tenant,
+                    "idempotency_key": idempotency_key,
+                    "idempotency_mode": idempotency_mode,
+                    "idempotency_status": decision.status,
+                },
+            )
+
+            if decision.status == "conflict":
+                return {
+                    "ok": False,
+                    "error": "idempotency_conflict",
+                    "tool": self.tool,
+                    "name": action.name,
+                }, 409
+            if decision.status == "in_flight":
+                return {
+                    "ok": False,
+                    "error": "idempotency_in_flight",
+                    "tool": self.tool,
+                    "name": action.name,
+                }, 409
+            if decision.status == "replay":
+                replay_payload = dict(decision.response or {})
+                replay_payload.update(
+                    {
+                        "ok": True,
+                        "tool": self.tool,
+                        "name": action.name,
+                        "idempotent_replay": True,
+                    }
+                )
+                return replay_payload, int(decision.status_code or 200)
+            idem_token = str(decision.token or "")
+
         if confirm_required:
             confirm_token = payload.get("confirm") or req.headers.get("X-Confirm")
             if not confirm_gate(str(confirm_token or "")):
+                if idem_token:
+                    GLOBAL_IDEMPOTENCY_STORE.complete_failure(scope=idem_scope, key=idempotency_key, token=idem_token)
+                SharedServices.log_event(
+                    "tool_action_confirm_required",
+                    {
+                        "tool": self.tool,
+                        "action": action.name,
+                        "actor": actor,
+                        "tenant": tenant,
+                        "idempotency_key": idempotency_key or None,
+                        "idempotency_mode": idempotency_mode,
+                    },
+                )
                 return {
                     "ok": False,
                     "error": "confirm_required",
@@ -107,8 +198,6 @@ class ActionApiTemplate:
                     "name": action.name,
                 }, 409
 
-        actor = str(current_user() or "system")
-        tenant = str(current_tenant() or "default")
         SharedServices.log_event(
             "tool_action_execute_requested",
             {
@@ -124,6 +213,8 @@ class ActionApiTemplate:
         try:
             result = action.handler(payload)
         except ValueError as exc:
+            if idem_token:
+                GLOBAL_IDEMPOTENCY_STORE.complete_failure(scope=idem_scope, key=idempotency_key, token=idem_token)
             SharedServices.log_event(
                 "tool_action_execute_failed",
                 {
@@ -136,6 +227,37 @@ class ActionApiTemplate:
                 },
             )
             return {"ok": False, "error": str(exc), "tool": self.tool, "name": action.name}, 400
+        except Exception:
+            if idem_token:
+                GLOBAL_IDEMPOTENCY_STORE.complete_failure(scope=idem_scope, key=idempotency_key, token=idem_token)
+            SharedServices.log_event(
+                "tool_action_execute_failed",
+                {
+                    "tool": self.tool,
+                    "action": action.name,
+                    "actor": actor,
+                    "tenant": tenant,
+                    "ok": False,
+                    "error": "unexpected_error",
+                },
+            )
+            return {"ok": False, "error": "unexpected_error", "tool": self.tool, "name": action.name}, 500
+
+        response = {
+            "ok": True,
+            "tool": self.tool,
+            "name": action.name,
+            "result": result,
+        }
+        if action.write_operation and idem_token:
+            GLOBAL_IDEMPOTENCY_STORE.complete_success(
+                scope=idem_scope,
+                key=idempotency_key,
+                token=idem_token,
+                response=response,
+                status_code=200,
+                ttl_seconds=idem_ttl,
+            )
 
         SharedServices.log_event(
             "tool_action_execute_completed",
@@ -147,12 +269,7 @@ class ActionApiTemplate:
                 "ok": True,
             },
         )
-        return {
-            "ok": True,
-            "tool": self.tool,
-            "name": action.name,
-            "result": result,
-        }, 200
+        return response, 200
 
 
 def register_actions_endpoints(bp, templates: Mapping[str, ActionApiTemplate]) -> None:
