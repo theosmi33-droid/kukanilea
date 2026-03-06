@@ -59,9 +59,9 @@ def test_aufgaben_summary_open_overdue_today(auth_client):
     summary = auth_client.get("/api/aufgaben/summary")
     assert summary.status_code == 200
     metrics = summary.get_json()["metrics"]
-    assert set(metrics.keys()) == {"open", "overdue", "today"}
-    assert metrics["open"] >= 2
-    assert metrics["overdue"] >= 1
+    assert set(metrics.keys()) >= {"tasks_open", "tasks_overdue", "tasks_today"}
+    assert metrics["tasks_open"] >= 2
+    assert metrics["tasks_overdue"] >= 1
 
 
 def test_email_received_todo_creates_task_and_notification(auth_client):

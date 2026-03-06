@@ -532,3 +532,25 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
 
 def build_tool_matrix(tenant: str = "default") -> list[dict]:
     return [build_tool_summary(tool, tenant) for tool in CONTRACT_TOOLS]
+
+
+def build_contract_response(
+    *,
+    tool: str,
+    status: str,
+    metrics: dict,
+    details: dict,
+    tenant: str,
+    degraded_reason: str = "",
+) -> dict:
+    """Build and normalize a summary/health payload for tool contracts."""
+    payload = _contract_payload(
+        tool=tool,
+        status=status,
+        metrics=metrics,
+        details=details,
+        reason=degraded_reason,
+        tenant=tenant,
+    )
+    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
+    return normalized
