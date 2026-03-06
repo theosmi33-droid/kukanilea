@@ -100,6 +100,12 @@ from app.contracts.tool_contracts import (
 )
 from app.modules.aufgaben.contracts import build_health as build_aufgaben_health
 from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
+from app.modules.aufgaben.contracts import create_task as aufgaben_create_task
+from app.modules.actions_api import (
+    ActionApiTemplate,
+    ActionDefinition,
+    register_actions_endpoints,
+)
 from app.modules.einstellungen.contracts import build_health as build_einstellungen_health
 from app.modules.einstellungen.contracts import build_summary as build_einstellungen_summary
 from app.modules.kalender.contracts import build_health as build_kalender_health
@@ -175,6 +181,78 @@ task_list = _core_get("task_list")
 task_resolve = _core_get("task_resolve")
 task_dismiss = _core_get("task_dismiss")
 
+
+def _aufgaben_action_list(payload: dict[str, object]) -> dict[str, object]:
+    status = str(payload.get("status") or "OPEN").strip().upper()
+    if status == "DONE":
+        status = "RESOLVED"
+    if status not in {"OPEN", "RESOLVED", "DISMISSED"}:
+        status = "OPEN"
+    if callable(task_list):
+        tasks = task_list(tenant=str(current_tenant() or "default"), status=status)
+    else:
+        tasks = []
+    return {"status": status, "items": tasks}
+
+
+def _aufgaben_action_create(payload: dict[str, object]) -> dict[str, object]:
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise ValueError("title_missing")
+    details = str(payload.get("details") or "").strip()
+    created = aufgaben_create_task(
+        tenant=str(current_tenant() or "default"),
+        title=title,
+        details=details,
+        due_date=str(payload.get("due_date") or "") or None,
+        created_by=str(current_user() or "system"),
+        source_ref="actions_api",
+    )
+    return {"created": created}
+
+
+AUFGABEN_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="aufgaben",
+    actions=[
+        ActionDefinition(
+            name="list",
+            title="Aufgaben lesen",
+            permission="read",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["OPEN", "RESOLVED", "DISMISSED", "DONE"]},
+                },
+            },
+            output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+            handler=_aufgaben_action_list,
+        ),
+        ActionDefinition(
+            name="create",
+            title="Aufgabe anlegen",
+            permission="write",
+            risk="high_risk",
+            input_schema={
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "details": {"type": "string"},
+                    "due_date": {"type": "string"},
+                    "confirm": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"created": {"type": "object"}}},
+            handler=_aufgaben_action_create,
+        ),
+    ],
+)
+
+TOOL_ACTION_TEMPLATES = {
+    "aufgaben": AUFGABEN_ACTIONS_TEMPLATE,
+}
+
 # Optional calendar reminders
 calendar_reminders_due = _core_get("knowledge_calendar_reminders_due")
 
@@ -218,6 +296,8 @@ if _missing:
 
 # -------- Flask ----------
 bp = Blueprint("web", __name__)
+
+register_actions_endpoints(bp, TOOL_ACTION_TEMPLATES)
 ORCHESTRATOR = None
 
 # --- Early template defaults (avoid NameError during debug reload) ---
