@@ -26,3 +26,78 @@ This document operationalizes the security guardrails into concrete Flask implem
 6. **Audit-log contract tests**: assert security-relevant actions emit required structured audit events.
 7. **CI artifacts retention**: publish test reports + security scan outputs + SBOM for every protected branch build.
 8. **Release blocking rule**: deployment blocked if any mandatory security stage fails or is skipped.
+
+## Evidence Mapping (Security Gate -> Proof Artifact)
+
+| Gate | Required proof artifact | Produced by | Verification command | Failing signal |
+|---|---|---|---|---|
+| Raw error masking | Sanitized 4xx/5xx payload snapshots | `tests/security/*` | `PYENV_VERSION=3.12.0 pytest -q tests/security -k error` | Response contains traceback/SQL/path |
+| Redirect allowlist | Block/allow matrix log | `tests/security/*redirect*` | `PYENV_VERSION=3.12.0 pytest -q tests/security -k redirect` | External redirect passes |
+| Password-reset rate limit | 429 threshold evidence | integration tests | `PYENV_VERSION=3.12.0 pytest -q tests/security -k reset` | Unlimited requests possible |
+| Session rotation | Session-id change + reuse deny evidence | auth tests | `PYENV_VERSION=3.12.0 pytest -q tests/security -k session` | Session fixation / reused refresh accepted |
+| CORS strict mode | Origin allowlist assertions | API security tests | `PYENV_VERSION=3.12.0 pytest -q tests/security -k cors` | `*` or unauthorized origin allowed |
+| AuthZ server-side | Cross-tenant denial evidence | integration tests | `PYENV_VERSION=3.12.0 pytest -q tests/integration -k tenant` | IDOR path succeeds |
+| Webhook signature | Tampered payload rejection evidence | webhook tests | `PYENV_VERSION=3.12.0 pytest -q tests/security -k webhook` | Tampered body accepted |
+| Dependency hygiene | Scan report + policy evaluation | CI pipeline | `./scripts/ops/security_gate.sh` | High/Critical vulnerabilities unresolved |
+
+## Minimal Threat Scenarios (Agentic + Handwerk)
+
+1. **Prompt injection via upload**  
+Attack: attacker uploads manipulated PDF with instructions that try to coerce agent execution.  
+Control: upload parser is read-only, write actions require confirm-token and tenant match.  
+Test: ensure generated plan remains `requires_confirm=true` for write actions.
+
+2. **Cross-tenant task creation**  
+Attack: crafted request uses valid token but altered tenant id in body.  
+Control: server-side tenant derivation from session; payload tenant ignored.  
+Test: API must reject mismatch with deterministic 403 and audit log.
+
+3. **Webhook replay**  
+Attack: valid webhook replayed with old timestamp to trigger repeated actions.  
+Control: event-id dedup table + timestamp tolerance + HMAC verify first.  
+Test: second identical webhook denied, no state mutation.
+
+4. **Session fixation after privilege change**  
+Attack: stale session id reused after role elevation.  
+Control: session id rotation on login and privilege transitions.  
+Test: old session id invalid immediately after rotation.
+
+5. **Brute-force password reset**  
+Attack: high-volume reset attempts for one account/email.  
+Control: per-IP + per-identity throttle with generic response body.  
+Test: consistent text and 429 after threshold.
+
+6. **Unsafe redirect exfiltration**  
+Attack: `next=` parameter points to external target for credential theft.  
+Control: strict allowlist normalization; fallback to internal route.  
+Test: external target blocked even when encoded.
+
+## Review Cadence
+
+- **Per PR**: security checklist delta review for touched domains.
+- **Weekly**: failed/blocked security events trend review.
+- **Release**: evidence packet must include security gate output + selected pytest evidence.
+- **Quarterly**: rotate signing keys and refresh dependency policy waivers.
+
+## Definition of Secure Merge (for this repository)
+
+A PR is security-mergeable only if all statements below are true:
+
+1. No mandatory security gate is skipped in CI.
+2. No critical/high dependency issue is unresolved without expiry-bound waiver.
+3. State-changing endpoints prove server-side authorization.
+4. Error responses are sanitized and correlation-id capable.
+5. Session/token lifecycle tests pass for timeout + rotation + reuse detection.
+6. Evidence links are present in the PR description.
+
+## Appendix: Practical Command Bundle
+
+```bash
+# targeted baseline checks used during PR hardening
+PYENV_VERSION=3.12.0 pytest -q tests/security/test_baseline_controls.py
+PYENV_VERSION=3.12.0 pytest -q tests/security/test_chatbot_confirm_guardrails.py
+PYENV_VERSION=3.12.0 pytest -q tests/security/test_ai_skill_runtime.py
+./scripts/ops/security_gate.sh
+```
+
+Use this bundle for rapid iteration before running broader suites.
