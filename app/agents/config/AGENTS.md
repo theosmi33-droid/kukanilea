@@ -38,6 +38,6 @@ It is deterministic, offline-first, and approval-gated.
 
 ## 6. Branch Policy (Main-Only)
 - **SINGLE SOURCE**: `main` is the only source of truth.
-- **PR TARGET**: Every pull request targets `main`.
-- **SYNC BEFORE WORK**: Rebase/refresh from `origin/main` before implementation.
-- **NO SUB-BRANCH CHAINS**: Do not base new work on old feature branches.
+- **PR TARGET:** All pull requests must target `main`.
+- **SYNC FIRST:** Start work from latest `origin/main`.
+- **NO FEATURE CHAINING:** Do not stack new work on old feature branches.

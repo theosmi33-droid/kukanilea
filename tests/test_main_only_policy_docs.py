@@ -11,7 +11,7 @@ def _read_text(path: str) -> str:
 def test_gemini_doc_mentions_main_only_policy():
     content = _read_text("GEMINI.md").lower()
     assert "main-only policy" in content
-    assert "every pr must target `main`" in content
+    assert "all pull requests must target `main`" in content
 
 
 def test_contributing_mentions_main_only_base():

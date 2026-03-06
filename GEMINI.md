@@ -12,6 +12,6 @@ Rules:
 - Run healthcheck/tests and report PASS/FAIL with evidence.
 - Main-only policy:
   - `main` is the single source of truth.
-  - Every PR must target `main`.
-  - Always sync from `origin/main` before starting work.
-  - Never base new work on stale feature branches.
+  - All pull requests must target `main`.
+  - Start work from the latest `origin/main`.
+  - Do not stack new work on old feature branches.
