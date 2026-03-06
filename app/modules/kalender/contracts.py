@@ -63,6 +63,36 @@ def _queue_sync(action: str, payload: dict[str, Any]) -> None:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _mirror_manual_event_to_knowledge(
+    *,
+    tenant: str,
+    created_by: str,
+    title: str,
+    starts_at: str,
+    ends_at: str,
+    reminder_minutes: int,
+) -> None:
+    """
+    Backward-compatibility bridge for existing consumers that still read
+    appointment events from knowledge_calendar_events_list.
+    """
+    try:
+        from app.knowledge.ics_source import knowledge_calendar_event_create
+
+        knowledge_calendar_event_create(
+            tenant,
+            created_by,
+            title=title,
+            start_at=starts_at,
+            end_at=ends_at,
+            kind="appointment",
+            reminder_minutes=reminder_minutes,
+        )
+    except Exception:
+        # Keep local kalender_events as source-of-truth even if mirror write fails.
+        return
+
+
 def _db() -> sqlite3.Connection:
     path = Path(Config.CORE_DB)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -414,6 +444,14 @@ def create_event(
     finally:
         con.close()
     _queue_sync("event.create", {"tenant": tenant, **payload})
+    _mirror_manual_event_to_knowledge(
+        tenant=tenant,
+        created_by=created_by,
+        title=payload["title"],
+        starts_at=payload["starts_at"],
+        ends_at=payload["ends_at"],
+        reminder_minutes=payload["reminder_minutes"],
+    )
     return payload
 
 

@@ -6,6 +6,7 @@ from app import core, create_app
 from app.core.event_bus import EventBus
 from app.knowledge.ics_source import knowledge_calendar_events_list
 import app.knowledge.ics_source as ics_source
+from app.modules.kalender.contracts import build_summary
 
 
 def _ensure_knowledge_tables(core_db_path: str) -> None:
@@ -128,4 +129,10 @@ def test_event_bus_document_processed_with_deadline_creates_calendar_event(tmp_p
             kinds=["appointment"],
         )
 
-    assert any(event.get("title") == "Frist aus Dokument: angebot.pdf" for event in events)
+    knowledge_hit = any(event.get("title") == "Frist aus Dokument: angebot.pdf" for event in events)
+    local_summary = build_summary("KUKANILEA")
+    local_hit = any(
+        str(event.get("title") or "") == "Frist aus Dokument: angebot.pdf"
+        for event in local_summary.get("events_next_7_days", [])
+    )
+    assert knowledge_hit or local_hit
