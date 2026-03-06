@@ -1,74 +1,114 @@
 #!/usr/bin/env python3
-import os
-import sys
+from __future__ import annotations
+
 import re
+import sys
+from pathlib import Path
 
-# Guardrail 1: No external CDN URLs in app/templates and app/static/sim
-def check_cdn_urls():
-    patterns = [
-        r'(https?://|//)cdn',
-        r'(https?://|//)unpkg',
-        r'(https?://|//)cdnjs',
-        r'(https?://|//)jsdelivr'
-    ]
-    regex = re.compile('|'.join(patterns))
-    paths = ['app/templates', 'app/static/sim']
-    errors = []
-    for path in paths:
-        if not os.path.exists(path):
+CDN_PATTERNS = re.compile(
+    r"(https?://|//)(cdn|unpkg|cdnjs|jsdelivr)",
+    re.IGNORECASE,
+)
+TEXT_EXTENSIONS = {".py", ".html", ".js", ".css", ".txt", ".md", ".json", ".yaml", ".yml"}
+PROMPT_INJECTION_PATTERNS = [
+    re.compile(r"(?i)\bignore\s+(?:all\s+|previous\s+)?instructions?\b"),
+    re.compile(r"(?i)\bdisregard\s+(?:all\s+|previous\s+)?instructions?\b"),
+    re.compile(r"(?i)\boverride\s+(?:system\s+prompt|instructions?|polic(?:y|ies)|guardrails?)\b"),
+    re.compile(r"(?i)\b(?:reveal|show)\s+(?:the\s+)?(?:system\s+prompt|hidden\s+instructions?)\b"),
+    re.compile(r"(?i)\b(?:bypass|disable)\s+(?:all\s+)?(?:security|guardrails?|safety)\b"),
+]
+PROMPT_SCAN_ALLOWLIST = {
+    "app/ai/guardrails.py",
+    "app/security/gates.py",
+    "app/security/untrusted_input.py",
+    "app/agents/guards.py",
+    "app/agents/input_validator.py",
+    "kukanilea/guards.py",
+    "kukanilea/orchestrator/manager_agent.py",
+}
+
+
+def check_cdn_urls(paths: list[str] | None = None) -> list[str]:
+    roots = [Path(p) for p in (paths or ["app/templates", "app/static/sim"])]
+    errors: list[str] = []
+    for root in roots:
+        if not root.exists():
             continue
-        for root, dirs, files in os.walk(path):
-            for file in files:
-                if file.endswith(('.html', '.js', '.css')):
-                    full_path = os.path.join(root, file)
-                    with open(full_path, 'r', encoding='utf-8') as f:
-                        for line_num, line in enumerate(f, 1):
-                            if regex.search(line):
-                                # Exclude common namespaces or specific strings if necessary
-                                if 'xmlns="http://www.w3.org/2000/svg"' in line:
-                                    continue
-                                errors.append(f"CDN URL found in {full_path}:{line_num}: {line.strip()}")
+        for full_path in root.rglob("*"):
+            if not full_path.is_file() or full_path.suffix not in {".html", ".js", ".css"}:
+                continue
+            with full_path.open("r", encoding="utf-8") as fh:
+                for line_num, line in enumerate(fh, 1):
+                    if CDN_PATTERNS.search(line):
+                        if 'xmlns="http://www.w3.org/2000/svg"' in line:
+                            continue
+                        errors.append(f"CDN URL found in {full_path}:{line_num}: {line.strip()}")
     return errors
 
-# Guardrail 2: hx-post/hx-put/hx-patch/hx-delete require confirm gate in templates
-def check_htmx_confirm():
-    # Matches tags with hx-post|put|patch|delete but missing hx-confirm
-    hx_methods = ['hx-post', 'hx-put', 'hx-patch', 'hx-delete']
-    errors = []
-    path = 'app/templates'
-    if not os.path.exists(path):
+
+def check_htmx_confirm(path: str = "app/templates") -> list[str]:
+    hx_methods = ["hx-post", "hx-put", "hx-patch", "hx-delete"]
+    root = Path(path)
+    errors: list[str] = []
+    if not root.exists():
         return errors
-        
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            if file.endswith('.html'):
-                full_path = os.path.join(root, file)
-                with open(full_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    # Find all tags
-                    # A tag starts with < and ends with >. It can be multiline.
-                    # This regex is simplified but good enough for HTML tags.
-                    tags = re.finditer(r'(<[^>]+>)', content, re.DOTALL)
-                    for match in tags:
-                        tag = match.group(0)
-                        has_method = any(f'{m}=' in tag for m in hx_methods)
-                        has_confirm = 'hx-confirm=' in tag
-                        if has_method and not has_confirm:
-                            line_num = content.count('\n', 0, match.start()) + 1
-                            tag_preview = tag.splitlines()[0] if '\n' in tag else tag
-                            errors.append(f"HTMX method without hx-confirm in {full_path}:{line_num}: {tag_preview}")
+
+    for full_path in root.rglob("*.html"):
+        content = full_path.read_text(encoding="utf-8")
+        tags = re.finditer(r"(<[^>]+>)", content, re.DOTALL)
+        for match in tags:
+            tag = match.group(0)
+            has_method = any(f"{method}=" in tag for method in hx_methods)
+            has_confirm = "hx-confirm=" in tag
+            if has_method and not has_confirm:
+                line_num = content.count("\n", 0, match.start()) + 1
+                tag_preview = tag.splitlines()[0] if "\n" in tag else tag
+                errors.append(
+                    f"HTMX method without hx-confirm in {full_path}:{line_num}: {tag_preview}"
+                )
     return errors
+
+
+def _is_allowlisted(path: Path, allowlist: set[str]) -> bool:
+    normalized = path.as_posix()
+    return any(normalized == entry or normalized.endswith(f"/{entry}") for entry in allowlist)
+
+
+def check_prompt_injection_surface(paths: list[str] | None = None) -> list[str]:
+    scan_roots = [Path(p) for p in (paths or ["app", "kukanilea"])]
+    errors: list[str] = []
+    for root in scan_roots:
+        if not root.exists():
+            continue
+        for full_path in root.rglob("*"):
+            if not full_path.is_file() or full_path.suffix not in TEXT_EXTENSIONS:
+                continue
+            if _is_allowlisted(full_path, PROMPT_SCAN_ALLOWLIST):
+                continue
+            try:
+                with full_path.open("r", encoding="utf-8") as fh:
+                    for line_num, line in enumerate(fh, 1):
+                        if any(pattern.search(line) for pattern in PROMPT_INJECTION_PATTERNS):
+                            errors.append(
+                                "Prompt-injection control phrase found outside allowlist in "
+                                f"{full_path}:{line_num}: {line.strip()}"
+                            )
+            except UnicodeDecodeError:
+                continue
+    return errors
+
 
 if __name__ == "__main__":
-    print("[GUARDRAIL] Verifying CDN and HTMX confirm gates...")
+    print("[GUARDRAIL] Verifying CDN, HTMX confirm, and prompt-injection surface...")
     cdn_errors = check_cdn_urls()
     htmx_errors = check_htmx_confirm()
-    
-    all_errors = cdn_errors + htmx_errors
+    injection_errors = check_prompt_injection_surface()
+
+    all_errors = cdn_errors + htmx_errors + injection_errors
     if all_errors:
         for err in all_errors:
             print(f"FAILED: {err}")
         sys.exit(1)
-    else:
-        print("OK: All guardrail checks passed.")
-        sys.exit(0)
+
+    print("OK: All guardrail checks passed.")
+    sys.exit(0)

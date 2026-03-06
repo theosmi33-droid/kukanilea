@@ -20,6 +20,7 @@ _THW_TEST_SANDBOX/
 instance/*.db
 instance/*.db-wal
 instance/*.db-shm
+instance/shared_memory_snapshot.json
 .pytest_cache/
 .ruff_cache/
 *.sqlite
