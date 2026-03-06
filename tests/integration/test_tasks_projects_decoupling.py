@@ -106,3 +106,98 @@ def test_execute_task_command_maps_legacy_board_id_to_project_board_link(tmp_pat
 
     assert row is not None
     assert row["project_board_id"] == "legacy-board-1"
+
+
+def test_create_task_defaults_project_links_without_cross_domain_ids(tmp_path, monkeypatch):
+    app, _client = _bootstrap(tmp_path, monkeypatch)
+    tenant_id = "KUKANILEA"
+    _ensure_membership(app, tenant_id=tenant_id)
+
+    with app.test_request_context("/"):
+        from flask import session
+
+        session["user"] = "dev"
+        session["role"] = "DEV"
+        session["tenant_id"] = tenant_id
+
+        pm = ProjectManager(app.extensions["auth_db"])
+        task_id = pm.create_task(
+            board_id="legacy-board-only",
+            title="Legacy board without explicit project",
+            content="Backwards compatible write path",
+            assigned="dev",
+        )
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute(
+            """
+            SELECT board_id, project_id, project_board_id, project_card_id
+            FROM team_tasks
+            WHERE id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+    finally:
+        con.close()
+
+    assert row is not None
+    assert row["board_id"] == "legacy-board-only"
+    assert row["project_board_id"] == "legacy-board-only"
+    assert row["project_id"] is None
+    assert row["project_card_id"] is None
+
+
+def test_execute_task_command_prefers_project_board_id_over_legacy_alias(tmp_path, monkeypatch):
+    app, client = _bootstrap(tmp_path, monkeypatch)
+    tenant_id = "KUKANILEA"
+    _ensure_membership(app, tenant_id=tenant_id)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
+        sess["tenant_id"] = tenant_id
+
+    with app.test_request_context("/"):
+        from flask import session
+
+        session["user"] = "dev"
+        session["role"] = "DEV"
+        session["tenant_id"] = tenant_id
+
+        pm = ProjectManager(app.extensions["auth_db"])
+        result = pm.execute_task_command(
+            {
+                "action": "create",
+                "title": "Prefer explicit project board",
+                "assigned_to": "dev",
+                "board_id": "legacy-board-ignored",
+                "project_board_id": "project-board-explicit",
+                "project_id": "project-zeta",
+                "project_card_id": "card-zeta-1",
+            }
+        )
+
+    assert result["ok"] is True
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute(
+            """
+            SELECT board_id, project_id, project_board_id, project_card_id
+            FROM team_tasks
+            WHERE id = ?
+            """,
+            (result["task_id"],),
+        ).fetchone()
+    finally:
+        con.close()
+
+    assert row is not None
+    # Legacy alias remains synchronized with explicit board link.
+    assert row["board_id"] == "project-board-explicit"
+    assert row["project_board_id"] == "project-board-explicit"
+    assert row["project_id"] == "project-zeta"
+    assert row["project_card_id"] == "card-zeta-1"
