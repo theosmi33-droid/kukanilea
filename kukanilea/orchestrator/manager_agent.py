@@ -6,6 +6,9 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Callable, Mapping
 
+from .action_catalog import create_action_registry
+from .action_registry import ActionRegistry
+
 CONFIRM_TOKENS = {"1", "true", "yes", "confirm", "ja"}
 INJECTION_PATTERNS = (
     re.compile(r"\bignore\s+previous\s+instructions\b", re.IGNORECASE),
@@ -40,15 +43,6 @@ class RuntimeGuardResult:
     reasons: list[str] = field(default_factory=list)
     normalized_message: str = ""
     stage: str = ""
-
-
-@dataclass(frozen=True)
-class ActionSpec:
-    action: str
-    tool: str
-    parameter_schema: dict[str, str]
-    confirm_required: bool = False
-    external_call: bool = False
 
 
 @dataclass(frozen=True)
@@ -112,26 +106,8 @@ class EventBus:
 class DeterministicToolRouter:
     """Deterministic MIA intent detector and action router for local workflows."""
 
-    ACTION_REGISTRY: dict[str, ActionSpec] = {
-        "dashboard_summary": ActionSpec("dashboard_summary", "dashboard", {"tenant": "str"}),
-        "customer_lookup": ActionSpec("customer_lookup", "crm", {"customer_id": "str"}),
-        "task_create": ActionSpec("task_create", "tasks", {"title": "str", "description": "str"}, confirm_required=True),
-        "appointment_create": ActionSpec(
-            "appointment_create",
-            "calendar",
-            {"summary": "str", "date": "str"},
-            confirm_required=True,
-        ),
-        "invoice_search": ActionSpec("invoice_search", "dms", {"query": "str"}),
-        "material_status": ActionSpec("material_status", "warehouse", {"query": "str"}),
-        "messenger_reply": ActionSpec(
-            "messenger_reply",
-            "messenger",
-            {"channel": "str", "message": "str"},
-            confirm_required=True,
-            external_call=True,
-        ),
-    }
+    def __init__(self, action_registry: ActionRegistry | None = None) -> None:
+        self.action_registry = action_registry or create_action_registry()
 
     INTENT_LIBRARY: tuple[IntentSpec, ...] = (
         IntentSpec(
@@ -139,14 +115,14 @@ class DeterministicToolRouter:
             patterns=(
                 re.compile(r"\b(dashboard|status|health|übersicht)\b", re.IGNORECASE),
             ),
-            candidate_actions=("dashboard_summary",),
+            candidate_actions=("dashboard.summary.read",),
         ),
         IntentSpec(
             name="customer_lookup",
             patterns=(
                 re.compile(r"\b(kunde|kundennummer|kdnr|wer\s+ist)\b", re.IGNORECASE),
             ),
-            candidate_actions=("customer_lookup",),
+            candidate_actions=("crm.customer.search",),
             required_entities=("customer_id",),
         ),
         IntentSpec(
@@ -154,7 +130,7 @@ class DeterministicToolRouter:
             patterns=(
                 re.compile(r"\b(aufgabe|task|todo|einsatz)\b", re.IGNORECASE),
             ),
-            candidate_actions=("task_create",),
+            candidate_actions=("tasks.task.create",),
             required_entities=("title",),
         ),
         IntentSpec(
@@ -162,7 +138,7 @@ class DeterministicToolRouter:
             patterns=(
                 re.compile(r"\b(termin|kalender|baustelle\s+einplanen)\b", re.IGNORECASE),
             ),
-            candidate_actions=("appointment_create",),
+            candidate_actions=("calendar.appointment.create",),
             required_entities=("date", "summary"),
         ),
         IntentSpec(
@@ -170,21 +146,21 @@ class DeterministicToolRouter:
             patterns=(
                 re.compile(r"\b(rechnung|angebot|lieferschein|beleg)\b", re.IGNORECASE),
             ),
-            candidate_actions=("invoice_search",),
+            candidate_actions=("dms.invoice.search",),
         ),
         IntentSpec(
             name="material_check",
             patterns=(
                 re.compile(r"\b(material|lager|bestand)\b", re.IGNORECASE),
             ),
-            candidate_actions=("material_status",),
+            candidate_actions=("warehouse.material.status",),
         ),
         IntentSpec(
             name="messenger_response",
             patterns=(
                 re.compile(r"\b(nachricht|messenger|antworten|whatsapp|telegram)\b", re.IGNORECASE),
             ),
-            candidate_actions=("messenger_reply",),
+            candidate_actions=("messenger.message.reply",),
             required_entities=("message",),
         ),
     )
@@ -260,16 +236,16 @@ class DeterministicToolRouter:
         for spec in self.INTENT_LIBRARY:
             if any(pattern.search(text) for pattern in spec.patterns):
                 missing = [entity for entity in spec.required_entities if not self._entity_present(entity, text)]
-                action_specs = [self.ACTION_REGISTRY[name] for name in spec.candidate_actions if name in self.ACTION_REGISTRY]
+                action_specs = [self.action_registry.actions[name] for name in spec.candidate_actions if name in self.action_registry.actions]
                 highest_risk = "low"
-                if any(action.external_call for action in action_specs):
+                if any(action.policy.external_call for action in action_specs):
                     highest_risk = "high"
-                elif any(action.confirm_required for action in action_specs):
+                elif any(action.policy.confirm_required for action in action_specs):
                     highest_risk = "medium"
 
                 if missing:
                     mode = "propose"
-                elif any(action.confirm_required for action in action_specs):
+                elif any(action.policy.confirm_required for action in action_specs):
                     mode = "confirm"
                 else:
                     mode = "read"
@@ -295,7 +271,7 @@ class DeterministicToolRouter:
         )
 
     def select(self, plan: MIAIntentPlan) -> RouteDecision:
-        action_name = next((action for action in plan.candidate_actions if action in self.ACTION_REGISTRY), "")
+        action_name = next((action for action in plan.candidate_actions if action in self.action_registry.actions), "")
         if not action_name:
             return RouteDecision(
                 intent=plan.intent_name,
@@ -304,21 +280,21 @@ class DeterministicToolRouter:
                 execution_mode="propose",
             )
 
-        spec = self.ACTION_REGISTRY[action_name]
+        spec = self.action_registry.actions[action_name]
         mode = plan.execution_mode
         if plan.missing_context:
             mode = "propose"
         return RouteDecision(
             intent=plan.intent_name,
             tool=spec.tool,
-            action=spec.action,
-            requires_confirm=spec.confirm_required,
-            external_call=spec.external_call,
+            action=spec.action_id,
+            requires_confirm=spec.policy.confirm_required,
+            external_call=spec.policy.external_call,
             execution_mode=mode,
         )
 
     def validate_parameters(self, action: str, params: Mapping[str, Any] | None) -> bool:
-        spec = self.ACTION_REGISTRY.get(action)
+        spec = self.action_registry.actions.get(action)
         if not spec:
             return False
         provided = dict(params or {})
@@ -425,7 +401,7 @@ class ManagerAgent:
         plan = self.router.build_plan(pre_guard.normalized_message)
         decision = self.router.select(plan)
 
-        if decision.action not in self.router.ACTION_REGISTRY and decision.action not in {"safe_follow_up", "safe_fallback"}:
+        if decision.action not in self.router.action_registry.actions and decision.action not in {"safe_follow_up", "safe_fallback"}:
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="action_not_registered", plan=plan)
             self._record("manager_agent.blocked", message, ctx, result)
             return result

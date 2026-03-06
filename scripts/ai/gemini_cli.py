@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -15,6 +17,10 @@ NOISE_PREFIXES = (
     "Server '",
     "Error during discovery for MCP server",
 )
+
+SAFE_APPROVAL_MODE = "default"
+UNSAFE_APPROVAL_MODE = "yolo"
+APPROVAL_MODE_CHOICES = [SAFE_APPROVAL_MODE, UNSAFE_APPROVAL_MODE]
 
 
 def read_text(path: Path, max_chars: int = 20000) -> str:
@@ -103,6 +109,19 @@ def run_gemini(
         return 124, merged
 
 
+def resolve_approval_mode(cli_value: str | None) -> str:
+    """Require explicit approval mode via CLI flag or env var."""
+    mode = (cli_value or os.environ.get("GEMINI_APPROVAL_MODE") or "").strip().lower()
+    if mode not in APPROVAL_MODE_CHOICES:
+        choices = ", ".join(APPROVAL_MODE_CHOICES)
+        raise ValueError(
+            "missing explicit approval mode. "
+            "Provide --approval-mode or set GEMINI_APPROVAL_MODE "
+            f"to one of: {choices}"
+        )
+    return mode
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="KUKANILEA Gemini CLI wrapper")
     parser.add_argument("prompt", nargs="?", help="Prompt text")
@@ -119,9 +138,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cwd", help="Working directory for gemini command")
     parser.add_argument(
         "--approval-mode",
-        default="yolo",
-        choices=["default", "yolo"],
-        help="Gemini approval mode",
+        choices=APPROVAL_MODE_CHOICES,
+        help=(
+            "Gemini approval mode. Explicitly required via this flag or "
+            "GEMINI_APPROVAL_MODE environment variable."
+        ),
     )
     parser.add_argument(
         "--raw",
@@ -141,6 +162,18 @@ def main() -> int:
     args = parse_args()
     root = Path(__file__).resolve().parents[2]
 
+    try:
+        approval_mode = resolve_approval_mode(args.approval_mode)
+    except ValueError as exc:
+        print(f"[error] {exc}", file=sys.stderr)
+        return 2
+
+    if approval_mode == UNSAFE_APPROVAL_MODE:
+        print(
+            "[warn] Running Gemini in YOLO mode (unsafe for unattended production use).",
+            file=sys.stderr,
+        )
+
     user_prompt = args.prompt or ""
     if args.prompt_file:
         user_prompt = Path(args.prompt_file).read_text(encoding="utf-8")
@@ -155,7 +188,7 @@ def main() -> int:
     try:
         rc, raw = run_gemini(
             final_prompt,
-            approval_mode=args.approval_mode,
+            approval_mode=approval_mode,
             cwd=cwd,
             timeout_seconds=args.timeout_seconds,
         )
@@ -165,12 +198,17 @@ def main() -> int:
     out = raw if args.raw else sanitize(raw)
 
     if args.log:
+        started_at = datetime.now(UTC).isoformat()
         log_path = Path(args.log)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(
             f"returncode={rc}\n"
+            f"timestamp_utc={started_at}\n"
             f"domain={args.domain or ''}\n"
             f"cwd={cwd or ''}\n"
+            f"approval_mode={approval_mode}\n"
+            f"sanitized_output_bytes={len(out.encode('utf-8'))}\n"
+            f"raw_output_bytes={len(raw.encode('utf-8'))}\n"
             f"\n--- raw ---\n{raw}\n",
             encoding="utf-8",
         )
@@ -185,6 +223,7 @@ def main() -> int:
     if rc != 0:
         return rc
     if not out.strip():
+        print("[error] gemini produced empty output after sanitization", file=sys.stderr)
         return 1
     return 0
 
