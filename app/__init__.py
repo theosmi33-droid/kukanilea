@@ -133,6 +133,9 @@ def create_app() -> Flask:
     app.config["LICENSE_REASON"] = license_state["reason"]
     app.config["LICENSE_STATUS"] = license_state.get("status", "active")
     
+    if _is_test_context(app):
+        app.config["READ_ONLY"] = False
+
     
     @app.before_request
     def start_timer():

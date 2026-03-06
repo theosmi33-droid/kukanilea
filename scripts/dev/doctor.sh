@@ -40,7 +40,7 @@ fail() { echo "[doctor] FAIL: $*"; failures=$((failures+1)); }
 ok() { echo "[doctor] OK: $*"; }
 
 is_truthy() {
-  case "${1,,}" in
+  case "$(echo "$1" | tr "[:upper:]" "[:lower:]")" in
     1|true|yes|on) return 0 ;;
     *) return 1 ;;
   esac
