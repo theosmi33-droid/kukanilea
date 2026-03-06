@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Phase 3 Enterprise Sanierung (KUKANILEA Transformation)
-- **Architektur:** Flask-Blueprints durchgesetzt, Legacy-Files gelöscht, OpenClaw (3 Orchestrators, 15 Workers) vorbereitet.
+- **Architektur:** Flask-Blueprints durchgesetzt, Legacy-Files gelöscht, Sovereign-11 Agentenarchitektur (3 Orchestrators, 15 Workers) vorbereitet.
 - **Blueprints:** `SOUL.md`, `AGENTS.md`, `TOOLS.md` unter `app/agents/config/` erstellt für strikte KI-Verhaltensregeln.
 - **UI/UX:** Radikaler Font-Reset auf System-Stack, Windows-Boot-Login-Simulation integriert, Glassmorphism & Haptic-Feedback via Tailwind-Tokens.
 - **Performance:** SQLite WAL-Modus und `synchronous = NORMAL` verifiziert.
