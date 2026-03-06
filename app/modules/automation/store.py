@@ -11,6 +11,18 @@ from typing import Any
 from app import core as core
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
+from app.mia_audit import (
+    MIA_EVENT_AUDIT_TRAIL_LINKED,
+    MIA_EVENT_CONFIRM_EXPIRED,
+    MIA_EVENT_CONFIRM_GRANTED,
+    MIA_EVENT_CONFIRM_REQUESTED,
+    MIA_EVENT_EXECUTION_FAILED,
+    MIA_EVENT_EXECUTION_FINISHED,
+    MIA_EVENT_EXECUTION_STARTED,
+    MIA_EVENT_PROPOSAL_CREATED,
+    emit_mia_event,
+    stable_payload,
+)
 
 from .types import (
     AutomationComponent,
@@ -169,6 +181,23 @@ def _event(
         )
     except Exception:
         return
+
+
+def _mia_event_for_pending(
+    *,
+    event_type: str,
+    tenant_id: str,
+    pending_id: str,
+    rule_id: str,
+    payload: dict[str, Any],
+) -> int:
+    return emit_mia_event(
+        event_type=event_type,
+        entity_type="automation_pending_action",
+        entity_ref=pending_id,
+        tenant_id=tenant_id,
+        payload={"rule_id": rule_id, **stable_payload(payload)},
+    )
 
 
 def ensure_automation_schema(db_path: Path | str | None = None) -> None:
@@ -885,6 +914,13 @@ def append_execution_log(
                 ),
             )
             con.commit()
+            _mia_event_for_pending(
+                event_type=MIA_EVENT_EXECUTION_STARTED,
+                tenant_id=tenant,
+                pending_id=log_id,
+                rule_id=rid,
+                payload={"trigger_type": trig_type, "trigger_ref": trig_ref, "status": status_clean},
+            )
             return {"ok": True, "duplicate": False, "log_id": log_id}
         except sqlite3.IntegrityError:
             return {"ok": True, "duplicate": True, "log_id": ""}
@@ -911,7 +947,13 @@ def update_execution_log(
     path = _resolve_db_path(db_path)
     fin = str(finished_at or "").strip() or _now_rfc3339()
     con = _connect(path)
+    rule_ref = ""
     try:
+        row = con.execute(
+            f"SELECT rule_id FROM {EXECUTION_LOG_TABLE} WHERE tenant_id=? AND id=? LIMIT 1",
+            (tenant, lid),
+        ).fetchone()
+        rule_ref = str((row["rule_id"] if row else "") or lid)
         cur = con.execute(
             f"""
             UPDATE {EXECUTION_LOG_TABLE}
@@ -928,9 +970,34 @@ def update_execution_log(
             ),
         )
         con.commit()
-        return int(cur.rowcount or 0) > 0
+        ok = int(cur.rowcount or 0) > 0
     finally:
         con.close()
+    if ok:
+        if status_clean in {"ok", "skipped"}:
+            finished_event_id = _mia_event_for_pending(
+                event_type=MIA_EVENT_EXECUTION_FINISHED,
+                tenant_id=tenant,
+                pending_id=lid,
+                rule_id=rule_ref,
+                payload={"status": status_clean},
+            )
+            _mia_event_for_pending(
+                event_type=MIA_EVENT_AUDIT_TRAIL_LINKED,
+                tenant_id=tenant,
+                pending_id=lid,
+                rule_id=rule_ref,
+                payload={"execution_finished_event_id": finished_event_id, "status": status_clean},
+            )
+        elif status_clean == "failed":
+            _mia_event_for_pending(
+                event_type=MIA_EVENT_EXECUTION_FAILED,
+                tenant_id=tenant,
+                pending_id=lid,
+                rule_id=rule_ref,
+                payload={"status": status_clean, "error_redacted": str(error_redacted or "")[:256]},
+            )
+    return ok
 
 
 def list_execution_logs(
@@ -1065,6 +1132,20 @@ def create_pending_action(
         tenant_id=tenant,
         payload={"pending_id": pending_id, "action_type": atype},
     )
+    proposal_event_id = _mia_event_for_pending(
+        event_type=MIA_EVENT_PROPOSAL_CREATED,
+        tenant_id=tenant,
+        pending_id=pending_id,
+        rule_id=rid,
+        payload={"action_type": atype},
+    )
+    _mia_event_for_pending(
+        event_type=MIA_EVENT_CONFIRM_REQUESTED,
+        tenant_id=tenant,
+        pending_id=pending_id,
+        rule_id=rid,
+        payload={"proposal_event_id": proposal_event_id},
+    )
     return pending_id
 
 
@@ -1182,6 +1263,13 @@ def mark_pending_action_confirmed(
             tenant_id=tenant,
             payload={"pending_id": pid},
         )
+        _mia_event_for_pending(
+            event_type=MIA_EVENT_CONFIRM_GRANTED,
+            tenant_id=tenant,
+            pending_id=pid,
+            rule_id=rule_ref or pid,
+            payload={"confirmed_at": confirm_ts},
+        )
     return ok
 
 
@@ -1238,6 +1326,13 @@ def confirm_pending_action_once(
         tenant_id=tenant,
         payload={"pending_id": pid},
     )
+    _mia_event_for_pending(
+        event_type=MIA_EVENT_CONFIRM_GRANTED,
+        tenant_id=tenant,
+        pending_id=pid,
+        rule_id=str(item.get("rule_id") or pid),
+        payload={"confirmed_at": now_iso},
+    )
     item["status"] = "confirmed"
     item["confirm_token"] = None
     item["confirmed_at"] = now_iso
@@ -1260,6 +1355,11 @@ def update_pending_action_status(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
+        current_row = con.execute(
+            f"SELECT rule_id FROM {PENDING_ACTION_TABLE} WHERE tenant_id=? AND id=? LIMIT 1",
+            (tenant, pid),
+        ).fetchone()
+        rule_ref = str((current_row["rule_id"] if current_row else "") or pid)
         cur = con.execute(
             f"""
             UPDATE {PENDING_ACTION_TABLE}
@@ -1269,6 +1369,15 @@ def update_pending_action_status(
             (status_value, tenant, pid),
         )
         con.commit()
-        return int(cur.rowcount or 0) > 0
+        ok = int(cur.rowcount or 0) > 0
     finally:
         con.close()
+    if ok and status_value == "failed":
+        _mia_event_for_pending(
+            event_type=MIA_EVENT_CONFIRM_EXPIRED,
+            tenant_id=tenant,
+            pending_id=pid,
+            rule_id=rule_ref,
+            payload={"status": status_value},
+        )
+    return ok

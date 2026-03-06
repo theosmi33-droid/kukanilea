@@ -19,6 +19,17 @@ from app.modules.kalender.contracts import update_event
 from app.modules.projekte.contracts import create_project
 from app.research.service import generate_summary
 from app.modules.projects.logic import ProjectManager
+from app.mia_audit import (
+    MIA_EVENT_AUDIT_TRAIL_LINKED,
+    MIA_EVENT_CONFIRM_DENIED,
+    MIA_EVENT_CONFIRM_GRANTED,
+    MIA_EVENT_CONFIRM_REQUESTED,
+    MIA_EVENT_EXECUTION_FAILED,
+    MIA_EVENT_EXECUTION_FINISHED,
+    MIA_EVENT_EXECUTION_STARTED,
+    MIA_EVENT_PROPOSAL_CREATED,
+    emit_mia_event,
+)
 
 from .rate_limit import search_limiter
 
@@ -211,11 +222,44 @@ def intake_execute():
     envelope_payload = payload.get("envelope") if isinstance(payload.get("envelope"), dict) else {}
     envelope = envelope_from_payload(envelope_payload)
 
+    tenant_id = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    actor = str(session.get("user") or "system")
+    action = envelope.suggested_actions[0] if envelope.suggested_actions else {}
+    flow_ref = envelope.thread_id or f"intake-{tenant_id}"
+    proposal_event_id = emit_mia_event(
+        event_type=MIA_EVENT_PROPOSAL_CREATED,
+        entity_type="intake_thread",
+        entity_ref=flow_ref,
+        tenant_id=tenant_id,
+        payload={"actor": actor, "source": envelope.source, "action_type": str(action.get("type") or "create_task")},
+    )
+    confirm_requested_event_id = emit_mia_event(
+        event_type=MIA_EVENT_CONFIRM_REQUESTED,
+        entity_type="intake_thread",
+        entity_ref=flow_ref,
+        tenant_id=tenant_id,
+        payload={"actor": actor, "proposal_event_id": proposal_event_id},
+    )
+
     if not bool(payload.get("requires_confirm", True)):
+        emit_mia_event(
+            event_type=MIA_EVENT_CONFIRM_DENIED,
+            entity_type="intake_thread",
+            entity_ref=flow_ref,
+            tenant_id=tenant_id,
+            payload={"actor": actor, "confirm_requested_event_id": confirm_requested_event_id, "reason": "flag_missing"},
+        )
         return jsonify(ok=False, error="confirm_required_flag_missing"), 400
 
     confirm_value = str(payload.get("confirm") or "").strip().lower()
     if confirm_value not in {"yes", "y", "true", "1"}:
+        emit_mia_event(
+            event_type=MIA_EVENT_CONFIRM_DENIED,
+            entity_type="intake_thread",
+            entity_ref=flow_ref,
+            tenant_id=tenant_id,
+            payload={"actor": actor, "confirm_requested_event_id": confirm_requested_event_id, "reason": "explicit_confirm_required"},
+        )
         return jsonify(
             ok=False,
             status="blocked",
@@ -223,100 +267,121 @@ def intake_execute():
             envelope=envelope.to_dict(),
         ), 409
 
-    tenant_id = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
-    actor = str(session.get("user") or "system")
-    action = envelope.suggested_actions[0] if envelope.suggested_actions else {}
-
-    project_payload = None
-    if action.get("project_hint"):
-        try:
-            project_payload = create_project(
-                tenant=tenant_id,
-                name=str(action.get("project_hint") or "Projekt aus Intake"),
-                description=f"Auto-Vorschlag aus Intake {envelope.thread_id}",
-            )
-        except Exception as exc:
-            current_app.logger.warning("Project creation failed after confirm: %s", exc)
-            project_payload = {
-                "status": "proposal_only",
-                "reason": "project_backend_unavailable",
-                "name": str(action.get("project_hint") or "Projekt aus Intake"),
-            }
-
-    task_payload = create_task(
-        tenant=tenant_id,
-        title=str(action.get("title") or envelope.subject or "Neue Anfrage"),
-        details="\n".join(envelope.snippets),
-        due_date=action.get("due_date"),
-        project_hint=action.get("project_hint"),
-        calendar_hint=action.get("calendar_hint"),
-        created_by=actor,
-        source_ref=envelope.thread_id,
+    confirm_granted_event_id = emit_mia_event(
+        event_type=MIA_EVENT_CONFIRM_GRANTED,
+        entity_type="intake_thread",
+        entity_ref=flow_ref,
+        tenant_id=tenant_id,
+        payload={"actor": actor, "confirm_requested_event_id": confirm_requested_event_id},
+    )
+    execution_started_event_id = emit_mia_event(
+        event_type=MIA_EVENT_EXECUTION_STARTED,
+        entity_type="intake_thread",
+        entity_ref=flow_ref,
+        tenant_id=tenant_id,
+        payload={"actor": actor, "confirm_granted_event_id": confirm_granted_event_id},
     )
 
-    calendar_payload = None
-    appointment_action = next(
-        (item for item in envelope.suggested_actions if str(item.get("type") or "") == "create_appointment"),
-        {},
-    )
-    starts_at = appointment_action.get("starts_at") or action.get("due_date")
-    if starts_at:
-        try:
-            calendar_payload = create_event(
-                tenant=tenant_id,
-                title=str(
-                    appointment_action.get("title")
-                    or action.get("calendar_hint")
-                    or action.get("title")
-                    or "Intake Termin"
-                ),
-                starts_at=str(starts_at),
-                created_by=actor,
-            )
-        except Exception as exc:
-            current_app.logger.warning("Appointment creation failed after confirm: %s", exc)
-            calendar_payload = {
-                "status": "proposal_only",
-                "reason": "calendar_backend_unavailable",
-                "starts_at": str(starts_at),
-                "title": str(appointment_action.get("title") or action.get("title") or "Intake Termin"),
-            }
+    try:
+        project_payload = None
+        if action.get("project_hint"):
+            try:
+                project_payload = create_project(
+                    tenant=tenant_id,
+                    name=str(action.get("project_hint") or "Projekt aus Intake"),
+                    description=f"Auto-Vorschlag aus Intake {envelope.thread_id}",
+                )
+            except Exception as exc:
+                current_app.logger.warning("Project creation failed after confirm: %s", exc)
+                project_payload = {
+                    "status": "proposal_only",
+                    "reason": "project_backend_unavailable",
+                    "name": str(action.get("project_hint") or "Projekt aus Intake"),
+                }
 
-    diary_payload = None
-    defect_payloads: list[dict[str, object]] = []
-    diary_data = envelope_payload.get("diary_entry") if isinstance(envelope_payload.get("diary_entry"), dict) else {}
-    diary_body = str(diary_data.get("body") or "").strip()
-    if diary_body:
-        pm = ProjectManager(current_app.extensions["auth_db"])
-        diary_payload = pm.create_diary_entry(
-            tenant_id=tenant_id,
-            source=str(envelope.source or "upload"),
-            thread_id=str(envelope.thread_id or ""),
-            title=str(diary_data.get("title") or envelope.subject or ""),
-            body=diary_body,
+        task_payload = create_task(
+            tenant=tenant_id,
+            title=str(action.get("title") or envelope.subject or "Neue Anfrage"),
+            details="\n".join(envelope.snippets),
+            due_date=action.get("due_date"),
+            project_hint=action.get("project_hint"),
+            calendar_hint=action.get("calendar_hint"),
             created_by=actor,
-            payload=envelope.to_dict(),
+            source_ref=envelope.thread_id,
         )
-        defects_raw = envelope_payload.get("defects") if isinstance(envelope_payload.get("defects"), list) else []
-        for item in defects_raw:
-            if not isinstance(item, dict):
-                continue
-            title = str(item.get("title") or "").strip()
-            if not title:
-                continue
-            photos = item.get("photos") if isinstance(item.get("photos"), list) else []
-            defect_payloads.append(
-                pm.create_defect_item(
-                    tenant_id=tenant_id,
-                    diary_entry_id=str(diary_payload.get("id") or "") or None,
-                    source=str(envelope.source or "upload"),
-                    title=title,
-                    description=str(item.get("description") or ""),
-                    status=str(item.get("status") or "OPEN"),
-                    photos=[str(photo) for photo in photos],
+
+        calendar_payload = None
+        appointment_action = next(
+            (item for item in envelope.suggested_actions if str(item.get("type") or "") == "create_appointment"),
+            {},
+        )
+        starts_at = appointment_action.get("starts_at") or action.get("due_date")
+        if starts_at:
+            try:
+                calendar_payload = create_event(
+                    tenant=tenant_id,
+                    title=str(
+                        appointment_action.get("title")
+                        or action.get("calendar_hint")
+                        or action.get("title")
+                        or "Intake Termin"
+                    ),
+                    starts_at=str(starts_at),
                     created_by=actor,
                 )
+            except Exception as exc:
+                current_app.logger.warning("Appointment creation failed after confirm: %s", exc)
+                calendar_payload = {
+                    "status": "proposal_only",
+                    "reason": "calendar_backend_unavailable",
+                    "starts_at": str(starts_at),
+                    "title": str(appointment_action.get("title") or action.get("title") or "Intake Termin"),
+                }
+
+        diary_payload = None
+        defect_payloads: list[dict[str, object]] = []
+        diary_data = envelope_payload.get("diary_entry") if isinstance(envelope_payload.get("diary_entry"), dict) else {}
+        diary_body = str(diary_data.get("body") or "").strip()
+        if diary_body:
+            pm = ProjectManager(current_app.extensions["auth_db"])
+            diary_payload = pm.create_diary_entry(
+                tenant_id=tenant_id,
+                source=str(envelope.source or "upload"),
+                thread_id=str(envelope.thread_id or ""),
+                title=str(diary_data.get("title") or envelope.subject or ""),
+                body=diary_body,
+                created_by=actor,
+                payload=envelope.to_dict(),
             )
+            defects_raw = envelope_payload.get("defects") if isinstance(envelope_payload.get("defects"), list) else []
+            for item in defects_raw:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title") or "").strip()
+                if not title:
+                    continue
+                photos = item.get("photos") if isinstance(item.get("photos"), list) else []
+                defect_payloads.append(
+                    pm.create_defect_item(
+                        tenant_id=tenant_id,
+                        diary_entry_id=str(diary_payload.get("id") or "") or None,
+                        source=str(envelope.source or "upload"),
+                        title=title,
+                        description=str(item.get("description") or ""),
+                        status=str(item.get("status") or "OPEN"),
+                        photos=[str(photo) for photo in photos],
+                        created_by=actor,
+                    )
+                )
+    except Exception as exc:
+        emit_mia_event(
+            event_type=MIA_EVENT_EXECUTION_FAILED,
+            entity_type="intake_thread",
+            entity_ref=flow_ref,
+            tenant_id=tenant_id,
+            payload={"actor": actor, "execution_started_event_id": execution_started_event_id, "error": str(exc)},
+        )
+        raise
 
     from app import core
     from app.eventlog import event_append
@@ -326,7 +391,16 @@ def intake_execute():
         str(session.get("role") or "SYSTEM"),
         "intake_execute_confirmed",
         target=envelope.thread_id,
-        meta={"source": envelope.source, "task_id": task_payload["task_id"]},
+        meta={
+            "source": envelope.source,
+            "task_id": task_payload["task_id"],
+            "mia": {
+                "proposal_event_id": proposal_event_id,
+                "confirm_requested_event_id": confirm_requested_event_id,
+                "confirm_granted_event_id": confirm_granted_event_id,
+                "execution_started_event_id": execution_started_event_id,
+            },
+        },
         tenant_id=tenant_id,
     )
     event_id = event_append(
@@ -334,6 +408,26 @@ def intake_execute():
         "task",
         int(task_payload["task_id"]),
         {"thread_id": envelope.thread_id, "source": envelope.source, "actor": actor},
+    )
+    execution_finished_event_id = emit_mia_event(
+        event_type=MIA_EVENT_EXECUTION_FINISHED,
+        entity_type="intake_thread",
+        entity_ref=flow_ref,
+        tenant_id=tenant_id,
+        payload={"actor": actor, "execution_started_event_id": execution_started_event_id, "task_id": task_payload["task_id"]},
+    )
+    audit_trail_event_id = emit_mia_event(
+        event_type=MIA_EVENT_AUDIT_TRAIL_LINKED,
+        entity_type="intake_thread",
+        entity_ref=flow_ref,
+        tenant_id=tenant_id,
+        payload={
+            "actor": actor,
+            "audit_action": "intake_execute_confirmed",
+            "audit_target": envelope.thread_id,
+            "event_log_id": event_id,
+            "execution_finished_event_id": execution_finished_event_id,
+        },
     )
 
     return jsonify(
@@ -346,6 +440,14 @@ def intake_execute():
         defects=defect_payloads,
         audit_logged=True,
         event_log_id=event_id,
+        mia_event_ids={
+            "proposal_created": proposal_event_id,
+            "confirm_requested": confirm_requested_event_id,
+            "confirm_granted": confirm_granted_event_id,
+            "execution_started": execution_started_event_id,
+            "execution_finished": execution_finished_event_id,
+            "audit_trail_linked": audit_trail_event_id,
+        },
     )
 
 
