@@ -76,12 +76,16 @@ class BaseTool:
             risk_level = "HIGH" if is_critical else "MEDIUM" if is_mutate else "LOW"
             is_idempotent = suffix in {"read", "search", "list", "plan", "validate_input", "normalize_input", "preview", "dry_run", "fetch_status", "list_recent", "get_by_id", "export", "audit", "rollback", "cancel", "archive", "restore"}
 
+            permissions = list(self.default_permissions)
+            if is_mutate:
+                permissions.append("write")
+
             yield {
                 "name": action_name,
                 "tool_name": self.name,
                 "suffix": suffix,
                 "inputs_schema": base_schema,
-                "permissions": list(self.default_permissions),
+                "permissions": permissions,
                 "is_critical": is_critical,
                 "risk_level": risk_level,
                 "is_idempotent": is_idempotent,

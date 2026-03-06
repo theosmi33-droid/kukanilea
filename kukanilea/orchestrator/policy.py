@@ -23,18 +23,20 @@ class PolicyEngine:
 
         from app.tools.action_registry import action_registry
 
-        # Match against registry instead of hardcoded list
-        matches = action_registry.search(action_name)
+        # 1. Try exact match first
+        all_actions = action_registry.list_actions()
+        matches = [a for a in all_actions if a["name"] == action_name]
+        
+        # 2. If no exact match, try prefix match (for short names)
         if not matches:
-            # Fallback for short names
-            matches = [a for a in action_registry.list_actions() if a["name"].startswith(f"{action_name}.")]
+            matches = [a for a in all_actions if a["name"].startswith(f"{action_name}.")]
 
         if not matches:
             return False
 
         # If any matching action is allowed for this role, we allow it
         for act in matches:
-            required_role = "OPERATOR" if act.get("permissions", ["write"])[0] == "write" else "READONLY"
+            required_role = "OPERATOR" if "write" in act.get("permissions", []) else "READONLY"
             if act.get("risk_level") == "HIGH":
                 required_role = "ADMIN"
             

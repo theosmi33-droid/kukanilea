@@ -157,9 +157,42 @@ def kalender_create_invitation():
 
 
 @bp.get("/aufgaben/summary")
+@search_limiter.limit_required
 def aufgaben_summary_route():
-    metrics = aufgaben_summary(tenant=_tenant())
-    return jsonify(ok=True, metrics=metrics)
+    return jsonify(build_aufgaben_summary(_tenant()))
+
+
+@bp.get("/aufgaben/health")
+@search_limiter.limit_required
+def aufgaben_health():
+    payload, code = build_aufgaben_health(_tenant())
+    return jsonify(payload), code
+
+
+@bp.get("/projekte/summary")
+@search_limiter.limit_required
+def projekte_summary():
+    return jsonify(build_projekte_summary(_tenant()))
+
+
+@bp.get("/projekte/health")
+@search_limiter.limit_required
+def projekte_health():
+    payload, code = build_projekte_health(_tenant())
+    return jsonify(payload), code
+
+
+@bp.get("/zeiterfassung/summary")
+@search_limiter.limit_required
+def zeiterfassung_summary():
+    return jsonify(build_zeiterfassung_summary(_tenant()))
+
+
+@bp.get("/zeiterfassung/health")
+@search_limiter.limit_required
+def zeiterfassung_health():
+    payload, code = build_zeiterfassung_health(_tenant())
+    return jsonify(payload), code
 
 
 @bp.get("/aufgaben")
