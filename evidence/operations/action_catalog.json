@@ -1,0 +1,7761 @@
+{
+  "action_count": 220,
+  "tools": {
+    "filesystem_list": 22,
+    "generate_zugferd_xml": 22,
+    "lexoffice_upload": 22,
+    "mail_generate": 22,
+    "memory_search": 22,
+    "memory_store": 22,
+    "mesh_sync": 22,
+    "message_to_work_item": 22,
+    "messenger_connector": 22,
+    "retrieve_corrections": 22
+  },
+  "actions": [
+    {
+      "name": "filesystem_list.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "filesystem_list.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "."
+          }
+        }
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "filesystem_list"
+    },
+    {
+      "name": "generate_zugferd_xml.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "generate_zugferd_xml.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "amount_net": {
+            "type": "number"
+          },
+          "amount_vat": {
+            "type": "number"
+          },
+          "seller_name": {
+            "type": "string"
+          },
+          "buyer_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_net",
+          "amount_vat",
+          "seller_name",
+          "buyer_name"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "generate_zugferd_xml"
+    },
+    {
+      "name": "lexoffice_upload.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "lexoffice_upload.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Der Pfad zur lokalen Datei."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "voucher",
+              "evidence"
+            ],
+            "default": "voucher"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "lexoffice_upload"
+    },
+    {
+      "name": "mail_generate.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "mail_generate.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Der Grund für die E-Mail."
+          },
+          "facts": {
+            "type": "object",
+            "description": "Wichtige Fakten (z.B. Rechnungsnummer, Datum)."
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "freundlich",
+              "neutral",
+              "bestimmt",
+              "streng"
+            ],
+            "default": "neutral"
+          },
+          "goal": {
+            "type": "string",
+            "enum": [
+              "rabatt",
+              "gutschrift",
+              "ersatz",
+              "nachbesserung",
+              "ruecknahme"
+            ],
+            "default": "gutschrift"
+          }
+        },
+        "required": [
+          "context"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mail_generate"
+    },
+    {
+      "name": "memory_search.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_search.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Die Suchanfrage."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Anzahl der Treffer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_search"
+    },
+    {
+      "name": "memory_store.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "memory_store.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Die zu speichernde Information."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optionale Zusatzmetadaten."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "memory_store"
+    },
+    {
+      "name": "mesh_sync.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "mesh_sync.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "type": "string",
+            "description": "Die IP-Adresse des Ziel-Hubs."
+          },
+          "peer_port": {
+            "type": "integer",
+            "default": 5051
+          }
+        },
+        "required": [
+          "peer_ip"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "mesh_sync"
+    },
+    {
+      "name": "message_to_work_item.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "message_to_work_item.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "task",
+              "termin"
+            ],
+            "default": "task"
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "default": "MEDIUM"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "message_to_work_item"
+    },
+    {
+      "name": "messenger_connector.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "messenger_connector.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "whatsapp",
+              "instagram",
+              "meta",
+              "internal"
+            ]
+          },
+          "interface": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "business_only"
+            ]
+          },
+          "confirm_gate": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "messenger_connector"
+    },
+    {
+      "name": "retrieve_corrections.archive",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.audit",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.authorize",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.cancel",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.dry_run",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.execute",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.execute_async",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.execute_batch",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.export",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.fetch_status",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.get_by_id",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.import",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.list_recent",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.normalize_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.notify",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.plan",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.preview",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.restore",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.retry",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.rollback",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": true,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.search",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    },
+    {
+      "name": "retrieve_corrections.validate_input",
+      "inputs_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Suchbegriff oder Textauszug des aktuellen Dokuments."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permissions": [
+        "tenant:read"
+      ],
+      "is_critical": false,
+      "audit_fields": [
+        "tenant_id",
+        "user_id",
+        "trace_id"
+      ],
+      "tool": "retrieve_corrections"
+    }
+  ]
+}

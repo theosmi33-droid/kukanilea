@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, TYPE_CHECKING
 
+from .action_registry import action_registry
+
 if TYPE_CHECKING:
     from .base_tool import BaseTool
 
@@ -17,6 +19,7 @@ class ToolRegistry:
 
     def register(self, tool: BaseTool):
         self.tools[tool.name] = tool
+        action_registry.register_tool(tool)
 
     def get(self, name: str) -> Optional[BaseTool]:
         return self.tools.get(name)
