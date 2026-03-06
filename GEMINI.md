@@ -10,3 +10,8 @@ Rules:
 - Keep changes scoped to this workspace/domain.
 - No destructive git operations.
 - Run healthcheck/tests and report PASS/FAIL with evidence.
+- Main-only policy:
+  - `main` is the single source of truth.
+  - All pull requests must target `main`.
+  - Start work from the latest `origin/main`.
+  - Do not stack new work on old feature branches.

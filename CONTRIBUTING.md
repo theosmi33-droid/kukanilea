@@ -15,6 +15,7 @@ bash scripts/dev/pr_quality_guard.sh --ci
 - **Evidence Report Pflicht**: Datei muss existieren unter
   `docs/reviews/codex/PR_QUALITY_GUARD_REPORT_20260305.md`.
 - **Lane Overlap Check**: keine überlappenden Dateipfade mit anderen lokalen `codex/*`-Branches.
+- **Main-Only Base**: jeder PR muss auf `main` basieren und gegen `main` geöffnet werden.
 
 ### Lokal prüfen
 
