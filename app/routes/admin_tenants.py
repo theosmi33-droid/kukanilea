@@ -88,6 +88,8 @@ def _load_system_settings() -> dict[str, Any]:
         "restore_verify_hook_enabled": True,
         "mesh_mdns_enabled": True,
         "mesh_tailscale_enabled": False,
+        "briefing_rss_feeds": [],
+        "briefing_cron": "0 7 * * *",
     }
     settings_file = _system_settings_file()
     if settings_file.exists():
@@ -593,6 +595,8 @@ def save_system_settings():
         return confirm_error
 
     payload = _load_system_settings()
+    rss_raw = (request.form.get("briefing_rss_feeds") or "").strip()
+    rss_feeds = [line.strip() for line in rss_raw.splitlines() if line.strip()]
     retention_raw = (request.form.get("memory_retention_days") or payload.get("memory_retention_days") or 60)
     try:
         retention_days = max(1, int(retention_raw))
@@ -610,6 +614,8 @@ def save_system_settings():
             "restore_verify_hook_enabled": (request.form.get("restore_verify_hook_enabled") or "off") == "on",
             "mesh_mdns_enabled": (request.form.get("mesh_mdns_enabled") or "off") == "on",
             "mesh_tailscale_enabled": (request.form.get("mesh_tailscale_enabled") or "off") == "on",
+            "briefing_rss_feeds": rss_feeds,
+            "briefing_cron": (request.form.get("briefing_cron") or payload.get("briefing_cron") or "0 7 * * *").strip(),
         }
     )
     _save_system_settings(payload)
