@@ -8,7 +8,9 @@ from app.mail.intake import envelope_from_payload, normalize_intake_payload
 from app.modules.aufgaben.contracts import create_task
 from app.modules.kalender.contracts import build_health as build_kalender_health
 from app.modules.kalender.contracts import build_summary as build_kalender_summary
+from app.modules.kalender.contracts import create_invitation
 from app.modules.kalender.contracts import create_event
+from app.modules.kalender.contracts import update_event
 from app.modules.projekte.contracts import create_project
 from app.modules.projects.logic import ProjectManager
 
@@ -70,6 +72,62 @@ def kalender_health():
     tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
     payload, code = build_kalender_health(tenant)
     return jsonify(payload), code
+
+
+@bp.post("/kalender/events")
+@search_limiter.limit_required
+def kalender_create_event():
+    payload = request.get_json(silent=True) or {}
+    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    actor = str(session.get("user") or "system")
+    title = str(payload.get("title") or "").strip()
+    starts_at = str(payload.get("starts_at") or "").strip()
+    if not title or not starts_at:
+        return jsonify(ok=False, error="title_and_starts_at_required"), 400
+    event_payload = create_event(
+        tenant=tenant,
+        title=title,
+        starts_at=starts_at,
+        ends_at=str(payload.get("ends_at") or "").strip() or None,
+        reminder_minutes=int(payload.get("reminder_minutes") or 0),
+        created_by=actor,
+    )
+    return jsonify(ok=True, event=event_payload), 201
+
+
+@bp.patch("/kalender/events/<event_id>")
+@search_limiter.limit_required
+def kalender_update_event(event_id: str):
+    payload = request.get_json(silent=True) or {}
+    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    actor = str(session.get("user") or "system")
+    event_payload = update_event(
+        tenant=tenant,
+        event_id=str(event_id),
+        updated_by=actor,
+        title=payload.get("title"),
+        starts_at=payload.get("starts_at"),
+        ends_at=payload.get("ends_at"),
+        reminder_minutes=payload.get("reminder_minutes"),
+    )
+    return jsonify(ok=True, event=event_payload)
+
+
+@bp.post("/kalender/invitations")
+@search_limiter.limit_required
+def kalender_create_invitation():
+    payload = request.get_json(silent=True) or {}
+    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    result = create_invitation(
+        tenant=tenant,
+        title=str(payload.get("title") or "Termin").strip(),
+        starts_at=str(payload.get("starts_at") or "").strip(),
+        attendees=payload.get("attendees") if isinstance(payload.get("attendees"), list) else [],
+        confirm=bool(payload.get("confirm")),
+    )
+    if result.get("ok") is False:
+        return jsonify(result), 409
+    return jsonify(result), 202
 
 
 @bp.post("/intake/normalize")
