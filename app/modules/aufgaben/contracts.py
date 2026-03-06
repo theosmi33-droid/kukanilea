@@ -1,37 +1,38 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
+from app.contracts.tool_contracts import build_contract_response
 from app import core
 from app.eventlog import event_append
 from app.modules.aufgaben import logic
 from app.services.shared_services import shared_services
-
-
-def _timestamp() -> str:
-    return datetime.now(UTC).isoformat()
-
-
 def build_summary(tenant: str) -> dict:
     metrics = logic.summary(tenant=tenant)
-    return {
-        "status": "ok",
-        "timestamp": _timestamp(),
-        "metrics": {
+    return build_contract_response(
+        tool="aufgaben",
+        status="ok",
+        metrics={
             "tasks_open": metrics["open"],
             "tasks_overdue": metrics["overdue"],
             "tasks_today": metrics["today"],
         },
-    }
+        details={
+            "source": "aufgaben.logic.summary",
+        },
+        tenant=tenant,
+    )
 
 
 def build_health(tenant: str) -> tuple[dict, int]:
     payload = build_summary(tenant)
-    payload["metrics"] = {
-        **payload["metrics"],
-        "backend_ready": 1,
-        "offline_safe": 1,
+    payload["details"] = {
+        **(payload.get("details") or {}),
+        "checks": {
+            "summary_contract": True,
+            "backend_ready": True,
+            "offline_safe": True,
+        },
     }
     return payload, 200
 

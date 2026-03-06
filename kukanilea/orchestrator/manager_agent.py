@@ -3,12 +3,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any, Callable, Mapping
 
 from .action_catalog import create_action_registry
+from .approval_runtime import ApprovalRuntime
 from .action_registry import ActionRegistry
-
-CONFIRM_TOKENS = {"1", "true", "yes", "confirm", "ja"}
 INJECTION_PATTERNS = (
     re.compile(r"\bignore\s+previous\s+instructions\b", re.IGNORECASE),
     re.compile(r"\bignore\s+all\s+instructions\b", re.IGNORECASE),
@@ -16,6 +16,32 @@ INJECTION_PATTERNS = (
     re.compile(r"\bdeveloper\s+message\b", re.IGNORECASE),
     re.compile(r"\bbypass\s+(policy|safety|confirm)\b", re.IGNORECASE),
 )
+
+RUNTIME_REVIEW_PATTERNS = (
+    re.compile(r"\b(delete\s+files?|rm\s+-rf|drop\s+table)\b", re.IGNORECASE),
+    re.compile(r"\b(exfiltrat\w*|export\s+(all\s+)?data|leak\s+data)\b", re.IGNORECASE),
+)
+
+RUNTIME_WARNING_PATTERNS = (
+    re.compile(r"\b(ignore\s+previous\s+instructions?)\b", re.IGNORECASE),
+    re.compile(r"\b(bypass\s+(policy|safety|guardrails?))\b", re.IGNORECASE),
+    re.compile(r"\b(reveal|show)\s+(the\s+)?system\s+prompt\b", re.IGNORECASE),
+)
+
+
+class GuardDecision(str, Enum):
+    ALLOW = "allow"
+    ALLOW_WITH_WARNING = "allow_with_warning"
+    BLOCK = "block"
+    ROUTE_TO_REVIEW = "route_to_review"
+
+
+@dataclass(frozen=True)
+class RuntimeGuardResult:
+    decision: GuardDecision
+    reasons: list[str] = field(default_factory=list)
+    normalized_message: str = ""
+    stage: str = ""
 
 
 @dataclass(frozen=True)
@@ -149,6 +175,50 @@ class DeterministicToolRouter:
         matches = [pattern.pattern for pattern in INJECTION_PATTERNS if pattern.search(text)]
         return bool(matches), matches
 
+    def normalize_untrusted_input(self, message: str) -> str:
+        text = str(message or "")
+        return re.sub(r"\s+", " ", text).strip()
+
+    def assess_runtime_guard(self, message: str, *, stage: str) -> RuntimeGuardResult:
+        normalized = self.normalize_untrusted_input(message)
+        injection_matches = [pattern.pattern for pattern in INJECTION_PATTERNS if pattern.search(normalized)]
+        review_matches = [pattern.pattern for pattern in RUNTIME_REVIEW_PATTERNS if pattern.search(normalized)]
+        warning_matches = [pattern.pattern for pattern in RUNTIME_WARNING_PATTERNS if pattern.search(normalized)]
+
+        neutral_context = bool(re.search(r"\b(beispiel|analyse|analysieren|zitat|workshop|fachtext)\b", normalized, re.IGNORECASE))
+        action_context = bool(re.search(r"\b(create|erstelle|ausführen|execute|run|delete|sende|send)\b", normalized, re.IGNORECASE))
+        if injection_matches and neutral_context and not action_context:
+            warning_matches = sorted(set(warning_matches + injection_matches))
+            injection_matches = []
+
+        if injection_matches:
+            return RuntimeGuardResult(
+                decision=GuardDecision.BLOCK,
+                reasons=injection_matches,
+                normalized_message=normalized,
+                stage=stage,
+            )
+        if review_matches:
+            return RuntimeGuardResult(
+                decision=GuardDecision.ROUTE_TO_REVIEW,
+                reasons=review_matches,
+                normalized_message=normalized,
+                stage=stage,
+            )
+        if warning_matches:
+            return RuntimeGuardResult(
+                decision=GuardDecision.ALLOW_WITH_WARNING,
+                reasons=warning_matches,
+                normalized_message=normalized,
+                stage=stage,
+            )
+        return RuntimeGuardResult(
+            decision=GuardDecision.ALLOW,
+            reasons=[],
+            normalized_message=normalized,
+            stage=stage,
+        )
+
     def build_plan(self, message: str) -> MIAIntentPlan:
         text = str(message or "").strip()
         if not text:
@@ -250,17 +320,19 @@ class ManagerAgent:
         event_bus: EventBus | None = None,
         audit_logger: Callable[[dict[str, Any]], None] | None = None,
         external_calls_enabled: bool = False,
+        approval_runtime: ApprovalRuntime | None = None,
     ) -> None:
         self.router = DeterministicToolRouter()
         self.event_bus = event_bus or EventBus()
         self.audit_logger = audit_logger
         self.external_calls_enabled = bool(external_calls_enabled)
+        self.approvals = approval_runtime or ApprovalRuntime(audit_logger=self._record_approval_event)
 
     def route(self, message: str, context: Mapping[str, Any] | None = None) -> RouteResult:
         ctx = dict(context or {})
 
-        injection, patterns = self.router.contains_injection(message)
-        if injection:
+        pre_guard = self.router.assess_runtime_guard(message, stage="pre_intent")
+        if pre_guard.decision == GuardDecision.BLOCK:
             blocked_plan = MIAIntentPlan(
                 intent_name="security_blocked",
                 confidence=1.0,
@@ -278,10 +350,56 @@ class ManagerAgent:
                 reason="prompt_injection",
                 plan=blocked_plan,
             )
-            self._record("manager_agent.blocked", message, ctx, result, extra={"patterns": patterns, "suggestions": list(self.router.SAFE_SUGGESTIONS)})
+            self._record(
+                "manager_agent.blocked",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guard_decision": pre_guard.decision.value,
+                    "guard_stage": pre_guard.stage,
+                    "patterns": pre_guard.reasons,
+                    "suggestions": list(self.router.SAFE_SUGGESTIONS),
+                },
+            )
             return result
 
-        plan = self.router.build_plan(message)
+        if pre_guard.decision == GuardDecision.ROUTE_TO_REVIEW:
+            review_plan = MIAIntentPlan(
+                intent_name="security_review",
+                confidence=1.0,
+                candidate_actions=[],
+                required_entities=[],
+                missing_context=[],
+                risk_assessment="high",
+                execution_mode="propose",
+            )
+            decision = RouteDecision(intent="security_review", tool="chatbot", action="safe_fallback", execution_mode="propose")
+            result = RouteResult(
+                ok=False,
+                status="needs_review",
+                decision=decision,
+                reason="security_review_required",
+                plan=review_plan,
+            )
+            self._record(
+                "manager_agent.review_required",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guard_decision": pre_guard.decision.value,
+                    "guard_stage": pre_guard.stage,
+                    "patterns": pre_guard.reasons,
+                    "suggestions": list(self.router.SAFE_SUGGESTIONS),
+                },
+            )
+            return result
+
+        if pre_guard.decision == GuardDecision.ALLOW_WITH_WARNING:
+            ctx.setdefault("guard_warnings", []).extend(pre_guard.reasons)
+
+        plan = self.router.build_plan(pre_guard.normalized_message)
         decision = self.router.select(plan)
 
         if decision.action not in self.router.action_registry.actions and decision.action not in {"safe_follow_up", "safe_fallback"}:
@@ -294,17 +412,65 @@ class ManagerAgent:
             self._record("manager_agent.blocked", message, ctx, result)
             return result
 
-        confirm = _confirm_token(ctx.get("confirm"))
-        if (decision.requires_confirm or plan.execution_mode == "confirm") and not confirm:
+        pre_exec_guard = self.router.assess_runtime_guard(pre_guard.normalized_message, stage="pre_execution")
+        if pre_exec_guard.decision == GuardDecision.BLOCK:
+            result = RouteResult(ok=False, status="blocked", decision=decision, reason="runtime_security_blocked", plan=plan)
+            self._record(
+                "manager_agent.blocked",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guard_decision": pre_exec_guard.decision.value,
+                    "guard_stage": pre_exec_guard.stage,
+                    "patterns": pre_exec_guard.reasons,
+                },
+            )
+            return result
+
+        if pre_exec_guard.decision == GuardDecision.ROUTE_TO_REVIEW:
+            result = RouteResult(ok=False, status="needs_review", decision=decision, reason="runtime_review_required", plan=plan)
+            self._record(
+                "manager_agent.review_required",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guard_decision": pre_exec_guard.decision.value,
+                    "guard_stage": pre_exec_guard.stage,
+                    "patterns": pre_exec_guard.reasons,
+                },
+            )
+            return result
+
+        if decision.requires_confirm or plan.execution_mode == "confirm":
+            approval = self.approvals.evaluate(
+                approval_id=ctx.get("approval_id"),
+                tenant=str(ctx.get("tenant") or "default"),
+                user=str(ctx.get("user") or "system"),
+                action_id=decision.action,
+                scope=self._approval_scope(decision),
+                params=ctx.get("params"),
+            )
+        else:
+            approval = None
+
+        if approval and not approval.allowed:
             result = RouteResult(
                 ok=False,
                 status="confirm_required",
                 decision=decision,
-                reason="confirm_gate",
+                reason=approval.reason,
                 confirm_required=True,
                 plan=plan,
             )
-            self._record("manager_agent.confirm_blocked", message, ctx, result)
+            self._record(
+                "manager_agent.confirm_blocked",
+                message,
+                ctx,
+                result,
+                extra={"approval_id": approval.challenge_id},
+            )
             return result
 
         if decision.external_call and not self.external_calls_enabled:
@@ -320,11 +486,26 @@ class ManagerAgent:
 
         if decision.action == "safe_follow_up":
             result = RouteResult(ok=False, status="needs_clarification", decision=decision, reason="unknown_intent", plan=plan)
-            self._record("manager_agent.needs_clarification", message, ctx, result, extra={"suggestions": list(self.router.SAFE_SUGGESTIONS)})
+            extra = {"suggestions": list(self.router.SAFE_SUGGESTIONS)}
+            warnings = list(ctx.get("guard_warnings") or [])
+            if pre_exec_guard.decision == GuardDecision.ALLOW_WITH_WARNING:
+                warnings.extend(pre_exec_guard.reasons)
+            if warnings:
+                extra["guard_decision"] = GuardDecision.ALLOW_WITH_WARNING.value
+                extra["guard_warnings"] = sorted(set(warnings))
+            self._record("manager_agent.needs_clarification", message, ctx, result, extra=extra)
             return result
 
+        extra: dict[str, Any] = {}
+        warnings = list(ctx.get("guard_warnings") or [])
+        if pre_exec_guard.decision == GuardDecision.ALLOW_WITH_WARNING:
+            warnings.extend(pre_exec_guard.reasons)
+        if warnings:
+            extra["guard_decision"] = GuardDecision.ALLOW_WITH_WARNING.value
+            extra["guard_warnings"] = sorted(set(warnings))
+
         result = RouteResult(ok=True, status="routed", decision=decision, plan=plan)
-        self._record("manager_agent.routed", message, ctx, result)
+        self._record("manager_agent.routed", message, ctx, result, extra=extra or None)
         return result
 
     def _record(
@@ -357,7 +538,12 @@ class ManagerAgent:
         if callable(self.audit_logger):
             self.audit_logger(payload)
 
+    def _approval_scope(self, decision: RouteDecision) -> str:
+        if decision.external_call:
+            return "external"
+        return "write"
 
-def _confirm_token(value: Any) -> bool:
-    token = str(value or "").strip().lower()
-    return token in CONFIRM_TOKENS
+    def _record_approval_event(self, payload: dict[str, Any]) -> None:
+        self.event_bus.emit(payload.get("event", "approval.unknown"), payload)
+        if callable(self.audit_logger):
+            self.audit_logger(payload)

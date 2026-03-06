@@ -13,6 +13,12 @@ from .gates import (
     detect_injection,
     scan_payload_for_injection,
 )
+from .approval import (
+    ApprovalEngine,
+    ApprovalScope,
+    action_requires_approval,
+    build_params_fingerprint,
+)
 
 
 def get_csrf_token() -> str:

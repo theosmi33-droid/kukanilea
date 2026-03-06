@@ -69,6 +69,7 @@ from app.agents.customer import CustomerAgent
 from app.agents.orchestrator import Orchestrator
 from app.ai.intent_analyzer import detect_write_intent
 from app.ai.guardrails import requires_confirm_for_prompt, validate_prompt
+from app.ai.runtime_guardrails import evaluate_runtime_guardrails
 from app.ai.skills_registry import skills_registry, suggest_skills
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.manager_agent import route_via_manager_agent
@@ -107,23 +108,13 @@ from app.contracts.tool_contracts import (
     extract_chat_message,
     normalize_chat_response,
 )
-from app.modules.aufgaben.contracts import build_health as build_aufgaben_health
-from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
 from app.modules.aufgaben.contracts import create_task as aufgaben_create_task
 from app.modules.actions_api import (
     ActionApiTemplate,
     ActionDefinition,
     register_actions_endpoints,
 )
-from app.modules.einstellungen.contracts import build_health as build_einstellungen_health
-from app.modules.einstellungen.contracts import build_summary as build_einstellungen_summary
-from app.modules.kalender.contracts import build_health as build_kalender_health
-from app.modules.kalender.contracts import build_summary as build_kalender_summary
-from app.modules.projekte.contracts import build_health as build_projekte_health
-from app.modules.projekte.contracts import build_summary as build_projekte_summary
 from app.modules.upload.ingestion import ingest_unstructured_input
-from app.modules.zeiterfassung.contracts import build_health as build_zeiterfassung_health
-from app.modules.zeiterfassung.contracts import build_summary as build_zeiterfassung_summary
 
 logger = logging.getLogger("kukanilea.web")
 
@@ -2578,21 +2569,28 @@ def _store_ai_snippet(*, tenant_id: str, user_id: str, prompt: str, response: st
 def api_ai_plan():
     payload = request.get_json(silent=True) or {}
     prompt = extract_chat_message(payload if isinstance(payload, dict) else {})
+    source = str(payload.get("source") or "chat")
     if not prompt:
         return jsonify(error="empty_message"), 400
 
-    assessment = assess_untrusted_input(prompt)
-    if assessment.decision in {"block", "route_to_review"}:
+    runtime_assessment = evaluate_runtime_guardrails(
+        stage="intent_resolution",
+        text=prompt,
+        source=source,
+    )
+    if runtime_assessment.decision in {"block", "route_to_review"}:
         _audit(
             "ai_plan_guardrail_blocked",
             target="/api/ai/plan",
             meta={
-                "decision": assessment.decision,
-                "risk_score": assessment.risk_score,
-                "signals": list(assessment.matched_signals),
+                "decision": runtime_assessment.decision,
+                "risk_score": runtime_assessment.risk_score,
+                "signals": list(runtime_assessment.matched_signals),
+                "reasons": list(runtime_assessment.reasons),
+                "source": runtime_assessment.source,
             },
         )
-        return jsonify(error="injection_blocked", reason="guardrail_blocked"), 400
+        return jsonify(error="injection_blocked", reason="guardrail_blocked", decision=runtime_assessment.decision), 400
 
     valid, guard_reason = validate_prompt(prompt)
     if not valid:
@@ -2617,11 +2615,17 @@ def api_ai_plan():
         user_id=str(current_user() or "unknown"),
         prompt=prompt,
     )
+    session["ai_runtime_last_plan_skills"] = [record["name"] for record in records]
+    session.modified = True
     return jsonify(
         {
             "ok": True,
             "suggested_skills": records,
             "requires_confirm": bool(write_or_uncertain or any(item["requires_confirm"] for item in records)),
+            "guardrail": {
+                "decision": runtime_assessment.decision,
+                "warnings": list(runtime_assessment.warnings),
+            },
         }
     )
 
@@ -2635,23 +2639,34 @@ def api_ai_execute():
     skill_name = str(payload.get("skill") or "").strip().lower()
     skill_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
     confirm = bool(payload.get("confirm"))
+    source = str(payload.get("source") or "chat")
 
     definition = skills_registry.get(skill_name)
     if not definition:
         return jsonify(error="skill_not_allowed"), 403
 
-    assessment = assess_untrusted_input(json.dumps({"skill": skill_name, "payload": skill_payload}, ensure_ascii=False))
-    if assessment.decision in {"block", "route_to_review"}:
+    session_skills = session.get("ai_runtime_last_plan_skills")
+    allowed_skills = {str(item).strip().lower() for item in session_skills} if isinstance(session_skills, list) else None
+    runtime_assessment = evaluate_runtime_guardrails(
+        stage="execution",
+        text=json.dumps({"skill": skill_name, "payload": skill_payload}, ensure_ascii=False),
+        source=source,
+        skill_name=skill_name,
+        allowed_skills=allowed_skills,
+    )
+    if runtime_assessment.decision in {"block", "route_to_review"}:
         _audit(
             "ai_execute_guardrail_blocked",
             target="/api/ai/execute",
             meta={
-                "decision": assessment.decision,
-                "risk_score": assessment.risk_score,
-                "signals": list(assessment.matched_signals),
+                "decision": runtime_assessment.decision,
+                "risk_score": runtime_assessment.risk_score,
+                "signals": list(runtime_assessment.matched_signals),
+                "reasons": list(runtime_assessment.reasons),
+                "source": runtime_assessment.source,
             },
         )
-        return jsonify(error="injection_blocked", reason="guardrail_blocked"), 400
+        return jsonify(error="injection_blocked", reason="guardrail_blocked", decision=runtime_assessment.decision), 400
 
     if definition.requires_confirm and not confirm:
         _audit("ai_execute_denied", target="/api/ai/execute", meta={"skill": skill_name, "reason": "confirm_required"})
@@ -3793,41 +3808,6 @@ def email_page():
     return mail_page()
 
 
-@bp.get("/calendar")
-@login_required
-def calendar_page():
-    from app.knowledge.ics_source import knowledge_calendar_events_list
-
-    tenant_id = current_tenant() or session.get("tenant_id") or "default"
-    try:
-        events = knowledge_calendar_events_list(tenant_id)
-    except Exception:
-        current_app.logger.exception("Kalenderdaten konnten nicht geladen werden")
-        events = []
-    return _render_base(
-        "calendar.html",
-        active_tab="calendar",
-        events=events,
-    )
-
-
-@bp.get("/calendar/export.ics")
-@login_required
-def calendar_export_ics():
-    from app.knowledge.ics_source import knowledge_ics_build_local_feed
-
-    tenant_id = current_tenant() or session.get("tenant_id") or "default"
-    try:
-        ics_content = knowledge_ics_build_local_feed(tenant_id)
-    except Exception:
-        current_app.logger.exception("Calendar export failed")
-        ics_content = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//KUKANILEA//EMPTY//DE\nEND:VCALENDAR\n"
-    return current_app.response_class(
-        ics_content,
-        mimetype="text/calendar",
-        headers={"Content-Disposition": "attachment; filename=calendar.ics"},
-    )
-
 
 @bp.route("/upload", methods=["POST"])
 @csrf_protected
@@ -4333,6 +4313,24 @@ def admin_audit():
     return _render_base("audit_trail.html", active_tab="settings", trail=trail)
 
 
+@bp.route("/calendar/export.ics")
+@login_required
+def calendar_export_ics():
+    # Compatibility endpoint used by legacy templates (`web.calendar_export_ics`).
+    from app.knowledge.ics_source import knowledge_ics_build_local_feed
+
+    tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
+    ics_content = knowledge_ics_build_local_feed(tenant_id)
+    return (
+        ics_content,
+        200,
+        {
+            "Content-Type": "text/calendar; charset=utf-8",
+            "Content-Disposition": "attachment; filename=calendar.ics",
+        },
+    )
+
+
 @bp.route("/api/tools")
 @login_required
 def api_list_tools():
@@ -4340,24 +4338,49 @@ def api_list_tools():
     return jsonify(ok=True, tools=registry.list())
 
 
+def _normalize_contract_tool(tool: str) -> str | None:
+    raw = str(tool or "").strip().lower()
+    if not raw or not re.fullmatch(r"[a-z0-9_-]{2,40}", raw):
+        return None
+    aliases = {
+        "kalender": "calendar",
+        "aufgaben": "tasks",
+        "projekte": "projects",
+        "zeiterfassung": "time",
+        "einstellungen": "settings",
+    }
+    resolved = aliases.get(raw, raw)
+    if resolved not in CONTRACT_TOOLS:
+        return None
+    return resolved
+
+
+def _contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
+    raw = str(requested_tool or "").strip().lower()
+    if raw in {
+        "kalender",
+        "aufgaben",
+        "projekte",
+        "zeiterfassung",
+        "einstellungen",
+    }:
+        return raw
+    if raw in CONTRACT_TOOLS:
+        return raw
+    return normalized_tool
+
+
+
 @bp.get("/api/<tool>/summary")
 @login_required
 def api_tool_summary(tool: str):
     tenant = str(current_tenant() or "default")
-    domain_summary_builders = {
-        "kalender": build_kalender_summary,
-        "aufgaben": build_aufgaben_summary,
-        "zeiterfassung": build_zeiterfassung_summary,
-        "projekte": build_projekte_summary,
-        "einstellungen": build_einstellungen_summary,
-    }
-    builder = domain_summary_builders.get(tool)
-    if builder is not None:
-        return jsonify(builder(tenant))
-
-    if tool not in CONTRACT_TOOLS:
+    normalized_tool = _normalize_contract_tool(tool)
+    if normalized_tool is None:
         return jsonify(error="unknown_tool", tool=tool), 404
-    payload = build_tool_summary(tool, tenant=tenant)
+
+    payload = build_tool_summary(normalized_tool, tenant=tenant)
+    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
     return jsonify(payload)
 
 
@@ -4402,21 +4425,12 @@ def api_upload_ingest():
 @login_required
 def api_tool_health(tool: str):
     tenant = str(current_tenant() or "default")
-    domain_health_builders = {
-        "kalender": build_kalender_health,
-        "aufgaben": build_aufgaben_health,
-        "zeiterfassung": build_zeiterfassung_health,
-        "projekte": build_projekte_health,
-        "einstellungen": build_einstellungen_health,
-    }
-    builder = domain_health_builders.get(tool)
-    if builder is not None:
-        payload, code = builder(tenant)
-        return jsonify(payload), code
-
-    if tool not in CONTRACT_TOOLS:
+    normalized_tool = _normalize_contract_tool(tool)
+    if normalized_tool is None:
         return jsonify(error="unknown_tool", tool=tool), 404
-    payload = build_tool_health(tool, tenant=tenant)
+
+    payload = build_tool_health(normalized_tool, tenant=tenant)
+    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
     code = 200 if payload.get("status") in {"ok", "degraded"} else 503
     return jsonify(payload), code
 

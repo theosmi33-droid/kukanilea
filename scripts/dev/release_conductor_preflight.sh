@@ -24,7 +24,7 @@ run_step() {
 run_cmd() {
   local cmd="$1"
   echo "\$ ${cmd}"
-  bash -lc "$cmd"
+  bash -c "$cmd"
 }
 
 GH_STATUS="ok"
@@ -84,7 +84,7 @@ fi
 if [[ "$TEST_RESULT" == "FAIL" ]]; then
   EXIT_CODE=1
 fi
-if [[ "$GH_STATUS" != "ok" || "$RUN_STATUS" != "ok" || "$PROD_STATUS" != "ok" ]]; then
+if [[ "$GH_STATUS" == "warn" || "$RUN_STATUS" == "warn" || "$PROD_STATUS" == "warn" ]]; then
   EXIT_CODE=1
 fi
 

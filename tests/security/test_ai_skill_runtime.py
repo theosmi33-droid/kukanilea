@@ -116,3 +116,22 @@ def test_ai_plan_stores_tenant_scoped_memory(client, tmp_path: Path):
     assert row is not None
     assert row[0] == "KUKANILEA"
     assert '"user_id": "dev"' in row[1]
+
+
+def test_ai_execute_routes_unplanned_skill_to_review(client):
+    planned = client.post(
+        "/api/ai/plan",
+        json={"message": "status overview"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert planned.status_code == 200
+
+    resp = client.post(
+        "/api/ai/execute",
+        json={"skill": "create_task", "payload": {"title": "A"}, "confirm": True},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["error"] == "injection_blocked"
+    assert body["decision"] == "route_to_review"

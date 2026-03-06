@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
 from kukanilea.guards import detect_prompt_injection, neutralize_untrusted_text
+from kukanilea.idempotency import GLOBAL_IDEMPOTENCY_STORE, canonical_hash
 
 ActionHandler = Callable[[Mapping[str, Any]], dict[str, Any]]
 
@@ -54,6 +55,9 @@ class AtomicActionRegistry:
             raise KeyError(f"action_not_registered:{action_id}")
         return handler(payload)
 
+    def action_ids(self) -> set[str]:
+        return set(self._handlers)
+
 
 class CrossToolFlowEngine:
     def __init__(
@@ -64,6 +68,7 @@ class CrossToolFlowEngine:
     ) -> None:
         self.action_registry = action_registry
         self.flows = dict(flows)
+        self.idempotency_store = GLOBAL_IDEMPOTENCY_STORE
 
     def run(
         self,
@@ -86,6 +91,50 @@ class CrossToolFlowEngine:
         confirmations = confirmations or {}
         health = tool_health or {}
         result = FlowExecutionResult(ok=True, status="completed", flow_id=flow.flow_id)
+        idem_scope = f"flow:{flow.flow_id}:{str(context.get('tenant_id') or 'default')}"
+        idem_key = str(context.get("idempotency_key") or "").strip()
+        idem_token = ""
+
+        if idem_key and any(step.writes_state for step in flow.steps):
+            req_hash = canonical_hash(
+                {
+                    "context": {k: context[k] for k in sorted(context) if k != "idempotency_key"},
+                    "confirmations": dict(confirmations),
+                }
+            )
+            decision = self.idempotency_store.begin(
+                scope=idem_scope,
+                key=idem_key,
+                request_hash=req_hash,
+                ttl_seconds=24 * 60 * 60,
+            )
+            if decision.status == "replay":
+                replay = dict(decision.response or {})
+                replay_result = FlowExecutionResult(
+                    ok=bool(replay.get("ok", True)),
+                    status=str(replay.get("status") or "completed"),
+                    flow_id=str(replay.get("flow_id") or flow.flow_id),
+                    executed_steps=list(replay.get("executed_steps") or []),
+                    proposals=list(replay.get("proposals") or []),
+                    failures=list(replay.get("failures") or []),
+                    audit_evidence=list(replay.get("audit_evidence") or []),
+                    outputs=dict(replay.get("outputs") or {}),
+                )
+                replay_result.audit_evidence.append(
+                    {"event": "flow.idempotent_replay", "flow_id": flow.flow_id, "idempotency_key": idem_key}
+                )
+                return replay_result
+            if decision.status == "conflict":
+                result.ok = False
+                result.status = "failed"
+                result.failures.append({"code": "idempotency_conflict", "flow_id": flow.flow_id})
+                return result
+            if decision.status == "in_flight":
+                result.ok = False
+                result.status = "failed"
+                result.failures.append({"code": "idempotency_in_flight", "flow_id": flow.flow_id})
+                return result
+            idem_token = str(decision.token or "")
 
         missing = [k for k in flow.required_context if k not in context]
         if missing:
@@ -177,6 +226,28 @@ class CrossToolFlowEngine:
                 }
             )
 
+        if idem_token:
+            if result.ok and result.status in {"completed", "degraded"} and result.executed_steps:
+                self.idempotency_store.complete_success(
+                    scope=idem_scope,
+                    key=idem_key,
+                    token=idem_token,
+                    response={
+                        "ok": result.ok,
+                        "status": result.status,
+                        "flow_id": result.flow_id,
+                        "executed_steps": result.executed_steps,
+                        "proposals": result.proposals,
+                        "failures": result.failures,
+                        "audit_evidence": result.audit_evidence,
+                        "outputs": result.outputs,
+                    },
+                    status_code=200,
+                    ttl_seconds=24 * 60 * 60,
+                )
+            else:
+                self.idempotency_store.complete_failure(scope=idem_scope, key=idem_key, token=idem_token)
+
         return result
 
 
@@ -245,6 +316,58 @@ def create_default_registry() -> AtomicActionRegistry:
         lambda p: {"followup_summary": _extract_untrusted_text(p, "message_text")[:200]},
     )
     registry.register(
+        "task_prepare_calendar_entry",
+        lambda p: {
+            "calendar_title": (_extract_untrusted_text(p, "task_title") or "Aufgabe")[:120],
+            "calendar_start": str(p.get("task_due_at") or p.get("suggested_start") or ""),
+        },
+    )
+    registry.register(
+        "calendar_create_event",
+        lambda p: {
+            "calendar_event_ref": f"evt:{str(p.get('task_id') or p.get('task_title') or 'task')[:40]}"
+        },
+    )
+    registry.register(
+        "upload_extract_project_hint",
+        lambda p: {
+            "project_hint": (_extract_untrusted_text(p, "upload_project_hint") or _extract_untrusted_text(p, "filename")).strip(),
+            "upload_title": (_extract_untrusted_text(p, "filename") or "Datei")[:120],
+        },
+    )
+    registry.register(
+        "project_link_upload",
+        lambda p: {
+            "project_upload_ref": (
+                f"project:{str(p.get('project_id') or p.get('project_hint') or 'unknown')[:40]}"
+                f"/file:{str(p.get('upload_id') or p.get('upload_title') or 'upload')[:40]}"
+            )
+        },
+    )
+    registry.register(
+        "messenger_extract_task",
+        lambda p: {
+            "task_title": (_extract_untrusted_text(p, "message_text") or "Follow-up")[:120],
+            "task_notes": _extract_untrusted_text(p, "message_text"),
+        },
+    )
+    registry.register(
+        "invoice_extract_due",
+        lambda p: {
+            "invoice_id": str(p.get("invoice_id") or p.get("document_id") or "unbekannt")[:50],
+            "invoice_due_date": str(p.get("invoice_due_date") or p.get("default_due_date") or ""),
+        },
+    )
+    registry.register(
+        "invoice_propose_reminder",
+        lambda p: {
+            "reminder_proposal": (
+                f"Zahlungserinnerung für Rechnung {(_extract_untrusted_text(p, 'invoice_id') or 'unbekannt')[:50]} "
+                f"zum Termin {(_extract_untrusted_text(p, 'invoice_due_date') or 'offen')} erstellen"
+            )
+        },
+    )
+    registry.register(
         "system_create_audit_entry",
         lambda p: {
             "audit_entry": {
@@ -291,6 +414,58 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             confirmation_points=("create_task",),
             audit_events=("flow.step_executed", "flow.confirm_required", "flow.step_failed"),
             fallback_policy="propose_then_manual_queue",
+        ),
+        "flow_task_to_calendar": FlowDefinition(
+            flow_id="flow_task_to_calendar",
+            title="Aufgabe -> Kalender",
+            trigger="task_due_scheduled",
+            steps=(
+                FlowStep("prepare_calendar_entry", "task_prepare_calendar_entry"),
+                FlowStep("create_calendar_event", "calendar_create_event", writes_state=True, required_tool="calendar"),
+            ),
+            required_context=("task_id", "task_title"),
+            confirmation_points=("create_calendar_event",),
+            audit_events=("flow.step_executed", "flow.confirm_required", "flow.fallback_applied"),
+            fallback_policy="propose_calendar_event_without_sync",
+        ),
+        "flow_upload_to_project": FlowDefinition(
+            flow_id="flow_upload_to_project",
+            title="Upload -> Projekt",
+            trigger="file_uploaded",
+            steps=(
+                FlowStep("extract_project_hint", "upload_extract_project_hint"),
+                FlowStep("link_upload", "project_link_upload", writes_state=True, required_tool="projects"),
+            ),
+            required_context=("upload_id", "filename"),
+            confirmation_points=("link_upload",),
+            audit_events=("flow.step_executed", "flow.confirm_required", "flow.fallback_applied"),
+            fallback_policy="queue_upload_for_manual_project_mapping",
+        ),
+        "flow_messenger_to_task": FlowDefinition(
+            flow_id="flow_messenger_to_task",
+            title="Messenger -> Aufgabe",
+            trigger="message_received",
+            steps=(
+                FlowStep("extract_task", "messenger_extract_task"),
+                FlowStep("create_task", "document_suggest_deadline_task", writes_state=True, required_tool="tasks"),
+            ),
+            required_context=("message_text",),
+            confirmation_points=("create_task",),
+            audit_events=("flow.step_executed", "flow.confirm_required", "flow.step_failed"),
+            fallback_policy="propose_then_manual_queue",
+        ),
+        "flow_invoice_reminder_proposal": FlowDefinition(
+            flow_id="flow_invoice_reminder_proposal",
+            title="Rechnung -> Zahlungserinnerungs-Vorschlag",
+            trigger="invoice_received",
+            steps=(
+                FlowStep("extract_invoice_due", "invoice_extract_due"),
+                FlowStep("propose_reminder", "invoice_propose_reminder"),
+            ),
+            required_context=("invoice_id",),
+            confirmation_points=(),
+            audit_events=("flow.step_executed", "flow.fallback_applied"),
+            fallback_policy="propose_with_missing_finance_context",
         ),
         "flow_email_project_task": FlowDefinition(
             flow_id="flow_email_project_task",
