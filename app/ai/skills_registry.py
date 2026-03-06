@@ -62,9 +62,35 @@ def _read_status_handler(payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "message": f"Read-only status for {topic}", "topic": topic}
 
 
+
+
 def _create_task_handler(payload: dict[str, Any]) -> dict[str, Any]:
     title = str(payload.get("title") or "Neue Aufgabe").strip() or "Neue Aufgabe"
     return {"ok": True, "message": "Task scheduled", "title": title}
+
+
+def _email_search_handler(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.modules.mail.ai_actions import email_search_action
+
+    return email_search_action(payload)
+
+
+def _email_summarize_thread_handler(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.modules.mail.ai_actions import email_summarize_thread_action
+
+    return email_summarize_thread_action(payload)
+
+
+def _email_draft_reply_handler(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.modules.mail.ai_actions import email_draft_reply_action
+
+    return email_draft_reply_action(payload)
+
+
+def _email_send_reply_handler(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.modules.mail.ai_actions import email_send_reply_action
+
+    return email_send_reply_action(payload)
 
 
 skills_registry.register_skill(
@@ -81,6 +107,34 @@ skills_registry.register_skill(
     requires_confirm=True,
     audit_event="ai_skill_create_task",
 )
+skills_registry.register_skill(
+    "email.search",
+    _email_search_handler,
+    read_only=True,
+    requires_confirm=False,
+    audit_event="ai_skill_email_search",
+)
+skills_registry.register_skill(
+    "email.summarize_thread",
+    _email_summarize_thread_handler,
+    read_only=True,
+    requires_confirm=False,
+    audit_event="ai_skill_email_summarize_thread",
+)
+skills_registry.register_skill(
+    "email.draft_reply",
+    _email_draft_reply_handler,
+    read_only=True,
+    requires_confirm=False,
+    audit_event="ai_skill_email_draft_reply",
+)
+skills_registry.register_skill(
+    "email.send_reply",
+    _email_send_reply_handler,
+    read_only=False,
+    requires_confirm=True,
+    audit_event="ai_skill_email_send_reply",
+)
 
 
 def suggest_skills(prompt: str) -> list[SkillDefinition]:
@@ -88,8 +142,17 @@ def suggest_skills(prompt: str) -> list[SkillDefinition]:
     if not text:
         return []
     suggested: list[SkillDefinition] = []
-    if any(token in text for token in ("create", "schreibe", "ändern", "update", "delete", "send")):
+    if any(token in text for token in ("create", "schreibe", "ändern", "update", "delete")):
         skill = skills_registry.get("create_task")
+        if skill:
+            suggested.append(skill)
+    if any(token in text for token in ("email", "mail", "postfach", "thread", "inbox", "reply", "antwort")):
+        for skill_name in ("email.search", "email.summarize_thread", "email.draft_reply"):
+            skill = skills_registry.get(skill_name)
+            if skill:
+                suggested.append(skill)
+    if any(token in text for token in ("send", "sende", "abschicken", "verschicken")):
+        skill = skills_registry.get("email.send_reply")
         if skill:
             suggested.append(skill)
     if any(token in text for token in ("status", "read", "zeige", "list", "overview")):

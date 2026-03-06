@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Callable
 
+from flask import current_app, has_app_context
+
 from app import core
 
 CONTRACT_TOOLS = [
@@ -83,6 +85,17 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
 
 def _as_dict(value: object, fallback: dict) -> dict:
     return dict(value) if isinstance(value, dict) else dict(fallback)
+
+
+def _row_count(row: object) -> int:
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return int(row.get("c") or 0)
+    try:
+        return int(row["c"])  # type: ignore[index]
+    except Exception:
+        return 0
 
 
 def _contract_errors(payload: dict) -> list[str]:
@@ -224,9 +237,52 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
     list_projects = _core_get("project_list")
     projects = list_projects() if callable(list_projects) else []
-    metrics = {"total_projects": len(projects)}
+    metrics = {"total_projects": len(projects), "active_projects": len(projects), "overdue_tasks": 0, "defects_open": 0}
+    details = {"source": "core.project_list", "tenant": tenant}
     reason = "projects_backend_missing" if not callable(list_projects) else ""
-    return metrics, {"source": "core.project_list", "tenant": tenant}, reason
+
+    if has_app_context():
+        try:
+            auth_db = current_app.extensions.get("auth_db")
+            if auth_db is not None:
+                con = auth_db._db()
+                try:
+                    active_row = con.execute(
+                        "SELECT COUNT(*) AS c FROM projects WHERE tenant_id = ?",
+                        (tenant,),
+                    ).fetchone()
+                    overdue_row = con.execute(
+                        """
+                        SELECT COUNT(*) AS c
+                        FROM team_tasks
+                        WHERE tenant_id = ?
+                          AND status NOT IN ('DONE', 'REJECTED')
+                          AND due_at IS NOT NULL
+                          AND due_at <> ''
+                          AND due_at < ?
+                        """,
+                        (tenant, _now_iso()),
+                    ).fetchone()
+                    defects_row = con.execute(
+                        """
+                        SELECT COUNT(*) AS c
+                        FROM project_defects
+                        WHERE tenant_id = ?
+                          AND status NOT IN ('DONE', 'RESOLVED', 'CLOSED')
+                        """,
+                        (tenant,),
+                    ).fetchone()
+                finally:
+                    con.close()
+
+                metrics["active_projects"] = _row_count(active_row)
+                metrics["overdue_tasks"] = _row_count(overdue_row)
+                metrics["defects_open"] = _row_count(defects_row)
+                details["source"] = "auth_db.projects+team_tasks+project_defects"
+        except Exception:
+            if not reason:
+                reason = "projects_snapshot_unavailable"
+    return metrics, details, reason
 
 
 def _collect_tasks_summary(tenant: str) -> tuple[dict, dict, str]:

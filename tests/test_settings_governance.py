@@ -79,6 +79,40 @@ def test_settings_page_exposes_backup_paths_and_hooks(tmp_path: Path, monkeypatc
     assert str((tmp_path / "auth.sqlite3").resolve()) in html
 
 
+
+
+def test_settings_page_exposes_ops_release_stubs_and_defaults(tmp_path: Path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+
+    response = client.get("/admin/settings")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'data-testid="tenant-stub-status"' in html
+    assert 'data-testid="roles-stub-status"' in html
+    assert 'data-testid="policies-stub-status"' in html
+    assert 'name="memory_retention_days" value="60"' in html
+    assert 'name="external_apis_enabled"' in html
+
+
+def test_system_settings_defaults_external_api_off_and_retention_60(tmp_path: Path, monkeypatch):
+    from app.routes.admin_tenants import _load_system_settings
+    from app.config import Config
+
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+
+    settings = _load_system_settings()
+    assert settings["external_apis_enabled"] is False
+    assert settings["memory_retention_days"] == 60
+    assert settings["backup_verify_hook_enabled"] is True
+    assert settings["restore_verify_hook_enabled"] is True
+
 def test_restore_backup_rejects_path_traversal(tmp_path: Path, monkeypatch):
     from app.config import Config
     from app.routes import admin_tenants

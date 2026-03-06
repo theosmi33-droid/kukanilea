@@ -6,14 +6,27 @@ from flask import Blueprint, current_app, jsonify, render_template, request, ses
 
 from app.mail.intake import envelope_from_payload, normalize_intake_payload
 from app.modules.aufgaben.contracts import create_task
+from app.modules.aufgaben.logic import delete_task as aufgaben_delete_task
+from app.modules.aufgaben.logic import get_task as aufgaben_get_task
+from app.modules.aufgaben.logic import list_tasks as aufgaben_list_tasks
+from app.modules.aufgaben.logic import summary as aufgaben_summary
+from app.modules.aufgaben.logic import update_task as aufgaben_update_task
 from app.modules.kalender.contracts import build_health as build_kalender_health
 from app.modules.kalender.contracts import build_summary as build_kalender_summary
+from app.modules.kalender.contracts import create_invitation
 from app.modules.kalender.contracts import create_event
+from app.modules.kalender.contracts import update_event
 from app.modules.projekte.contracts import create_project
+from app.research.service import generate_summary
+from app.modules.projects.logic import ProjectManager
 
 from .rate_limit import search_limiter
 
 bp = Blueprint("api", __name__, url_prefix="/api")
+
+
+def _tenant() -> str:
+    return str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
 
 
 @bp.get("/ping")
@@ -66,9 +79,123 @@ def kalender_summary():
 @bp.get("/kalender/health")
 @search_limiter.limit_required
 def kalender_health():
-    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    tenant = _tenant()
     payload, code = build_kalender_health(tenant)
     return jsonify(payload), code
+
+
+@bp.post("/kalender/events")
+@search_limiter.limit_required
+def kalender_create_event():
+    payload = request.get_json(silent=True) or {}
+    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    actor = str(session.get("user") or "system")
+    title = str(payload.get("title") or "").strip()
+    starts_at = str(payload.get("starts_at") or "").strip()
+    if not title or not starts_at:
+        return jsonify(ok=False, error="title_and_starts_at_required"), 400
+    event_payload = create_event(
+        tenant=tenant,
+        title=title,
+        starts_at=starts_at,
+        ends_at=str(payload.get("ends_at") or "").strip() or None,
+        reminder_minutes=int(payload.get("reminder_minutes") or 0),
+        created_by=actor,
+    )
+    return jsonify(ok=True, event=event_payload), 201
+
+
+@bp.patch("/kalender/events/<event_id>")
+@search_limiter.limit_required
+def kalender_update_event(event_id: str):
+    payload = request.get_json(silent=True) or {}
+    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    actor = str(session.get("user") or "system")
+    event_payload = update_event(
+        tenant=tenant,
+        event_id=str(event_id),
+        updated_by=actor,
+        title=payload.get("title"),
+        starts_at=payload.get("starts_at"),
+        ends_at=payload.get("ends_at"),
+        reminder_minutes=payload.get("reminder_minutes"),
+    )
+    return jsonify(ok=True, event=event_payload)
+
+
+@bp.post("/kalender/invitations")
+@search_limiter.limit_required
+def kalender_create_invitation():
+    payload = request.get_json(silent=True) or {}
+    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    result = create_invitation(
+        tenant=tenant,
+        title=str(payload.get("title") or "Termin").strip(),
+        starts_at=str(payload.get("starts_at") or "").strip(),
+        attendees=payload.get("attendees") if isinstance(payload.get("attendees"), list) else [],
+        confirm=bool(payload.get("confirm")),
+    )
+    if result.get("ok") is False:
+        return jsonify(result), 409
+    return jsonify(result), 202
+
+
+@bp.get("/aufgaben/summary")
+def aufgaben_summary_route():
+    metrics = aufgaben_summary(tenant=_tenant())
+    return jsonify(ok=True, metrics=metrics)
+
+
+@bp.get("/aufgaben")
+def aufgaben_list_route():
+    status = request.args.get("status")
+    items = aufgaben_list_tasks(tenant=_tenant(), status=status)
+    return jsonify(ok=True, items=items)
+
+
+@bp.post("/aufgaben")
+def aufgaben_create_route():
+    payload = request.get_json(silent=True) or {}
+    created = create_task(
+        tenant=_tenant(),
+        title=str(payload.get("title") or "Neue Aufgabe"),
+        details=str(payload.get("details") or ""),
+        due_date=payload.get("due_date"),
+        priority=str(payload.get("priority") or "MEDIUM"),
+        assigned_to=payload.get("assigned_to"),
+        source_type=str(payload.get("source_type") or "doc"),
+        source_ref=str(payload.get("source_ref") or ""),
+        created_by=str(session.get("user") or "system"),
+    )
+    task_id = int(created["task_id"])
+    task = aufgaben_get_task(tenant=_tenant(), task_id=task_id)
+    return jsonify(ok=True, task=task), 201
+
+
+@bp.get("/aufgaben/<int:task_id>")
+def aufgaben_get_route(task_id: int):
+    task = aufgaben_get_task(tenant=_tenant(), task_id=task_id)
+    if not task:
+        return jsonify(ok=False, error="not_found"), 404
+    return jsonify(ok=True, task=task)
+
+
+@bp.put("/aufgaben/<int:task_id>")
+@bp.patch("/aufgaben/<int:task_id>")
+def aufgaben_update_route(task_id: int):
+    payload = request.get_json(silent=True) or {}
+    task = aufgaben_update_task(tenant=_tenant(), task_id=task_id, payload=payload)
+    if not task:
+        return jsonify(ok=False, error="not_found"), 404
+    return jsonify(ok=True, task=task)
+
+
+@bp.delete("/aufgaben/<int:task_id>")
+def aufgaben_delete_route(task_id: int):
+    deleted = aufgaben_delete_task(tenant=_tenant(), task_id=task_id)
+    if not deleted:
+        return jsonify(ok=False, error="not_found"), 404
+    return jsonify(ok=True)
 
 
 @bp.post("/intake/normalize")
@@ -155,6 +282,42 @@ def intake_execute():
                 "title": str(appointment_action.get("title") or action.get("title") or "Intake Termin"),
             }
 
+    diary_payload = None
+    defect_payloads: list[dict[str, object]] = []
+    diary_data = envelope_payload.get("diary_entry") if isinstance(envelope_payload.get("diary_entry"), dict) else {}
+    diary_body = str(diary_data.get("body") or "").strip()
+    if diary_body:
+        pm = ProjectManager(current_app.extensions["auth_db"])
+        diary_payload = pm.create_diary_entry(
+            tenant_id=tenant_id,
+            source=str(envelope.source or "upload"),
+            thread_id=str(envelope.thread_id or ""),
+            title=str(diary_data.get("title") or envelope.subject or ""),
+            body=diary_body,
+            created_by=actor,
+            payload=envelope.to_dict(),
+        )
+        defects_raw = envelope_payload.get("defects") if isinstance(envelope_payload.get("defects"), list) else []
+        for item in defects_raw:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            if not title:
+                continue
+            photos = item.get("photos") if isinstance(item.get("photos"), list) else []
+            defect_payloads.append(
+                pm.create_defect_item(
+                    tenant_id=tenant_id,
+                    diary_entry_id=str(diary_payload.get("id") or "") or None,
+                    source=str(envelope.source or "upload"),
+                    title=title,
+                    description=str(item.get("description") or ""),
+                    status=str(item.get("status") or "OPEN"),
+                    photos=[str(photo) for photo in photos],
+                    created_by=actor,
+                )
+            )
+
     from app import core
     from app.eventlog import event_append
 
@@ -179,6 +342,8 @@ def intake_execute():
         task=task_payload,
         project=project_payload,
         calendar=calendar_payload,
+        diary=diary_payload,
+        defects=defect_payloads,
         audit_logged=True,
         event_log_id=event_id,
     )
@@ -260,3 +425,35 @@ def outbound_status():
             return jsonify(**payload)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
+
+
+@bp.post("/research/summary")
+def research_summary():
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query") or "").strip()
+    if not query:
+        return jsonify(ok=False, error="query_required"), 400
+
+    online = bool(payload.get("online", False))
+    confirm = payload.get("confirm")
+    result = generate_summary(topic="research", query=query, online=online, confirm=confirm)
+    if result["provenance"]["outbound_blocked"]:
+        blocked = {**result, "ok": False, "error": "confirm_required"}
+        return jsonify(**blocked), 409
+    return jsonify(**result)
+
+
+@bp.post("/news/summary")
+def news_summary():
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query") or "").strip()
+    if not query:
+        return jsonify(ok=False, error="query_required"), 400
+
+    online = bool(payload.get("online", False))
+    confirm = payload.get("confirm")
+    result = generate_summary(topic="news", query=query, online=online, confirm=confirm)
+    if result["provenance"]["outbound_blocked"]:
+        blocked = {**result, "ok": False, "error": "confirm_required"}
+        return jsonify(**blocked), 409
+    return jsonify(**result)
