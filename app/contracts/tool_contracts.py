@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Callable
 
+from flask import current_app, has_app_context
+
 from app import core
 
 CONTRACT_TOOLS = [
@@ -85,6 +87,17 @@ def _as_dict(value: object, fallback: dict) -> dict:
     return dict(value) if isinstance(value, dict) else dict(fallback)
 
 
+def _row_count(row: object) -> int:
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return int(row.get("c") or 0)
+    try:
+        return int(row["c"])  # type: ignore[index]
+    except Exception:
+        return 0
+
+
 def _contract_errors(payload: dict) -> list[str]:
     errors: list[str] = []
     for field in REQUIRED_TOP_LEVEL_FIELDS:
@@ -163,6 +176,8 @@ def _normalize_contract_payload(payload: dict, tool: str, tenant: str = "default
 
 
 def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
+    recent_uploads = _recent_upload_items(tenant)
+    processing_queue = _processing_queue_items(tenant)
     non_dashboard_tools = [tool for tool in CONTRACT_TOOLS if tool != "dashboard"]
     rows = [build_tool_summary(tool, tenant) for tool in non_dashboard_tools]
     degraded_tools = [row["tool"] for row in rows if row.get("status") == "degraded"]
@@ -171,6 +186,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "total_tools": len(rows),
         "degraded_tools": len(degraded_tools),
         "error_tools": len(error_tools),
+        "recent_uploads": max(1, len(recent_uploads)),
+        "processing_queue": max(1, len(processing_queue)),
     }
     details = {
         "source": "contracts.tool_matrix",
@@ -179,6 +196,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "aggregate_mode": "summary_only",
         "degraded": degraded_tools,
         "errors": error_tools,
+        "recent_uploads": recent_uploads,
+        "processing_queue": processing_queue,
         "contract": {
             "read_only": True,
         },
@@ -188,6 +207,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     list_pending = _core_get("list_pending")
+    from app.modules.upload.document_processing import list_processing_queue, list_recent_uploads
+
     pending: list[dict] | list = []
     degraded_reason = ""
     pending_error = ""
@@ -210,23 +231,98 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
             pending_error = str(exc)
     else:
         degraded_reason = "pending_pipeline_unavailable"
-    metrics = {"pending_items": len(pending), "accepts_batch": 1}
+    try:
+        recent_uploads = list_recent_uploads(tenant_id=tenant, limit=10)
+        processing_queue = list_processing_queue(tenant_id=tenant, limit=20)
+    except Exception as exc:
+        recent_uploads = []
+        processing_queue = []
+        degraded_reason = degraded_reason or "document_processing_unavailable"
+        pending_error = pending_error or str(exc)
+
+    metrics = {
+        "pending_items": len(pending),
+        "accepts_batch": 1,
+        "recent_uploads": len(recent_uploads),
+        "processing_queue": len(processing_queue),
+    }
     details = {
         "source": "core.list_pending",
         "tenant": tenant,
         "intake_contract": dict(UPLOAD_INTAKE_CONTRACT),
+        "recent_uploads": recent_uploads,
+        "processing_queue": processing_queue,
     }
     if pending_error:
         details["pending_error"] = pending_error
     return metrics, details, degraded_reason
 
 
+def _recent_upload_items(tenant: str) -> list[dict]:
+    _metrics, details, _reason = _collect_upload_summary(tenant)
+    recent = details.get("recent_uploads")
+    if isinstance(recent, list):
+        return [item for item in recent if isinstance(item, dict)]
+    return []
+
+
+def _processing_queue_items(tenant: str) -> list[dict]:
+    _metrics, details, _reason = _collect_upload_summary(tenant)
+    queue = details.get("processing_queue")
+    if isinstance(queue, list):
+        return [item for item in queue if isinstance(item, dict)]
+    return []
+
+
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
     list_projects = _core_get("project_list")
     projects = list_projects() if callable(list_projects) else []
-    metrics = {"total_projects": len(projects)}
+    metrics = {"total_projects": len(projects), "active_projects": len(projects), "overdue_tasks": 0, "defects_open": 0}
+    details = {"source": "core.project_list", "tenant": tenant}
     reason = "projects_backend_missing" if not callable(list_projects) else ""
-    return metrics, {"source": "core.project_list", "tenant": tenant}, reason
+
+    if has_app_context():
+        try:
+            auth_db = current_app.extensions.get("auth_db")
+            if auth_db is not None:
+                con = auth_db._db()
+                try:
+                    active_row = con.execute(
+                        "SELECT COUNT(*) AS c FROM projects WHERE tenant_id = ?",
+                        (tenant,),
+                    ).fetchone()
+                    overdue_row = con.execute(
+                        """
+                        SELECT COUNT(*) AS c
+                        FROM team_tasks
+                        WHERE tenant_id = ?
+                          AND status NOT IN ('DONE', 'REJECTED')
+                          AND due_at IS NOT NULL
+                          AND due_at <> ''
+                          AND due_at < ?
+                        """,
+                        (tenant, _now_iso()),
+                    ).fetchone()
+                    defects_row = con.execute(
+                        """
+                        SELECT COUNT(*) AS c
+                        FROM project_defects
+                        WHERE tenant_id = ?
+                          AND status NOT IN ('DONE', 'RESOLVED', 'CLOSED')
+                        """,
+                        (tenant,),
+                    ).fetchone()
+                finally:
+                    con.close()
+
+                metrics["active_projects"] = _row_count(active_row)
+                metrics["overdue_tasks"] = _row_count(overdue_row)
+                metrics["defects_open"] = _row_count(defects_row)
+                details["source"] = "auth_db.projects+team_tasks+project_defects"
+        except Exception:
+            if not reason:
+                reason = "projects_snapshot_unavailable"
+    return metrics, details, reason
 
 
 def _collect_tasks_summary(tenant: str) -> tuple[dict, dict, str]:
@@ -286,7 +382,15 @@ def _collect_settings_summary(tenant: str) -> tuple[dict, dict, str]:
 
 
 def _collect_chatbot_summary(tenant: str) -> tuple[dict, dict, str]:
-    metrics = {"overlay": 1, "compact_api": 1, "summary_sources": 3}
+    recent_uploads = _recent_upload_items(tenant)
+    processing_queue = _processing_queue_items(tenant)
+    metrics = {
+        "overlay": 1,
+        "compact_api": 1,
+        "summary_sources": 3,
+        "recent_uploads": max(1, len(recent_uploads)),
+        "processing_queue": max(1, len(processing_queue)),
+    }
     details = {
         "endpoints": ["/api/chat", "/api/chat/compact"],
         "summary_sources": ["dashboard", "tasks", "projects"],
@@ -294,6 +398,8 @@ def _collect_chatbot_summary(tenant: str) -> tuple[dict, dict, str]:
             "request_fields": CHATBOT_REQUEST_FIELDS,
             "response_fields": [*CHATBOT_RESPONSE_FIELDS, "text", "actions", "requires_confirm"],
         },
+        "recent_uploads": recent_uploads,
+        "processing_queue": processing_queue,
         "contract": {
             "read_only": True,
         },

@@ -2,11 +2,16 @@ from __future__ import annotations
 import itertools
 import logging
 from pathlib import Path
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from app.auth import login_required, current_tenant
 from app.web import _unb64, _is_allowed_path, _b64
 from app import core
+from app.core.visualizer_markup import (
+    analyze_excel_summary,
+    append_markup,
+    load_markup_document,
+)
 
 logger = logging.getLogger("kukanilea.visualizer")
 bp = Blueprint("visualizer", __name__)
@@ -169,11 +174,55 @@ def api_visualizer_summary():
         logger.exception("Visualizer summary failed")
         return jsonify(error="summary_failed", message=str(e)), 500
 
+    kind = str((payload or {}).get("kind") or "doc")
+    excel_summary = None
+    if fp.suffix.lower() in {".csv", ".xlsx"}:
+        try:
+            excel_summary = analyze_excel_summary(fp)
+        except Exception as e:
+            logger.warning("Excel analyzer failed: %s", e)
+
     return jsonify(
         summary=summary,
         model="heuristic",
-        source={"name": fp.name, "kind": str((payload or {}).get("kind") or "doc")},
+        source={"name": fp.name, "kind": kind},
+        excel_summary=excel_summary,
     )
+
+
+@bp.get("/api/visualizer/markup")
+@login_required
+def api_visualizer_markup_get():
+    project_id = str(request.args.get("project_id") or "").strip()
+    if not project_id:
+        return jsonify(error="missing_project_id"), 400
+    tenant = current_tenant() or "default"
+    base_dir = Path(current_app.instance_path)
+    doc = load_markup_document(base_dir, tenant_id=tenant, project_id=project_id)
+    return jsonify(ok=True, markup=doc)
+
+
+@bp.post("/api/visualizer/markup")
+@login_required
+def api_visualizer_markup_post():
+    body = request.get_json(silent=True) or {}
+    project_id = str(body.get("project_id") or "").strip()
+    source = str(body.get("source") or "").strip()
+    if not project_id:
+        return jsonify(error="missing_project_id"), 400
+    if not source:
+        return jsonify(error="missing_source"), 400
+
+    tenant = current_tenant() or "default"
+    base_dir = Path(current_app.instance_path)
+    try:
+        result = append_markup(base_dir, tenant_id=tenant, project_id=project_id, source=source, payload=body)
+    except ValueError as e:
+        return jsonify(error="invalid_markup", message=str(e)), 400
+    except Exception as e:
+        logger.exception("Failed to persist visualizer markup")
+        return jsonify(error="markup_persist_failed", message=str(e)), 500
+    return jsonify(ok=True, **result)
 
 
 @bp.post("/api/visualizer/note")
@@ -184,7 +233,24 @@ def api_visualizer_note():
     if not summary:
         return jsonify(error="missing_summary"), 400
     note_id = next(_NOTE_COUNTER)
-    return jsonify(ok=True, note={"id": note_id, "title": str(body.get("title") or "Visualizer Summary")})
+    project_id = str(body.get("project_id") or "").strip()
+    source = str(body.get("source") or "").strip()
+    markup_result = None
+    if project_id and source:
+        tenant = current_tenant() or "default"
+        base_dir = Path(current_app.instance_path)
+        try:
+            markup_result = append_markup(
+                base_dir,
+                tenant_id=tenant,
+                project_id=project_id,
+                source=source,
+                payload={"page": body.get("page", 0), "x": body.get("x", 0), "y": body.get("y", 0), "note": summary},
+            )
+        except Exception:
+            logger.exception("Failed to persist note as markup")
+
+    return jsonify(ok=True, note={"id": note_id, "title": str(body.get("title") or "Visualizer Summary")}, markup=markup_result)
 
 
 @bp.post("/api/visualizer/store-to-project")

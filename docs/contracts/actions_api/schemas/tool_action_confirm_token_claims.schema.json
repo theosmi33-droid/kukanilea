@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kukanilea.local/schemas/tool_action_confirm_token_claims.schema.json",
+  "title": "Tool Action Confirm Token Claims",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "iss",
+    "sub",
+    "tenant_id",
+    "tool",
+    "action",
+    "phase",
+    "input_hash",
+    "nonce",
+    "iat",
+    "exp"
+  ],
+  "properties": {
+    "iss": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "sub": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "tool": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "action": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+    },
+    "phase": {
+      "type": "string",
+      "const": "propose"
+    },
+    "input_hash": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "nonce": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "iat": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "exp": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

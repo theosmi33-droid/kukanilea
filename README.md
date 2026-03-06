@@ -57,6 +57,14 @@ sed -n '1,120p' docs/dev/BOOTSTRAP_QUICKSTART.md
 
 Regel: `rg`/`grep -n` bevorzugen, keine großen `cat`-Dumps über ganze Verzeichnisbäume, und Diffs immer dateiweise eingrenzen.
 
+### Tool Interface Verification
+
+```bash
+python scripts/dev/verify_tools.py
+```
+
+Der Check lädt alle Tool-Module dynamisch, validiert den Core-Tool-Interface-Contract und liefert einen Non-Zero-Exitcode bei fehlerhaften Tools.
+
 ## Quick Start (Developer)
 
 ```bash

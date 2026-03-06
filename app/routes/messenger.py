@@ -14,6 +14,7 @@ from app.security.gates import detect_injection
 from app.security import csrf_protected
 from app.rate_limit import chat_limiter
 from app.agents.orchestrator import answer as agent_answer
+from app.modules.messenger import parse_chat_intake
 
 logger = logging.getLogger("kukanilea.messenger")
 bp = Blueprint("messenger", __name__)
@@ -116,6 +117,23 @@ def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]
     return out
 
 
+def _collect_confirm_gate_logs(actions: list[dict[str, Any]]) -> dict[str, Any]:
+    blocked_actions: list[dict[str, Any]] = []
+    confirm_required_actions: list[dict[str, Any]] = []
+    for action in actions:
+        action_type = str(action.get("type") or "")
+        if not action_type:
+            continue
+        if bool(action.get("confirm_required") or action.get("requires_confirm")):
+            confirm_required_actions.append({"type": action_type, "reason": "confirm_gate"})
+            blocked_actions.append({"type": action_type, "reason": "awaiting_explicit_confirm"})
+            _audit_chat_event("chat_confirm_required_action", meta={"action": action_type, "blocked": True})
+    return {
+        "confirm_required_actions": confirm_required_actions,
+        "blocked_actions": blocked_actions,
+    }
+
+
 @bp.route("/api/chat", methods=["POST"])
 @login_required
 @csrf_protected
@@ -148,6 +166,7 @@ def api_chat():
             return jsonify(_read_only_fallback(msg, reason="empty_or_no_hits"))
         actions = _enforce_confirm_gate(ans.get("actions", []))
         write_intent = detect_write_intent(msg)
+        intake = parse_chat_intake(msg, actions)
         if write_intent:
             actions = _enforce_confirm_gate(actions)
             _audit_chat_event("chat_confirm_required", meta={"write_intent": True, "action_count": len(actions)})
@@ -157,6 +176,8 @@ def api_chat():
         ans.setdefault("data", {})
         if isinstance(ans["data"], dict):
             ans["data"].setdefault("tool_summaries", _summary_context())
+            ans["data"]["intake"] = intake
+            ans["data"]["policy_events"] = _collect_confirm_gate_logs(actions)
         return jsonify(ans)
     except Exception:
         logger.exception("Chat logic failed")
