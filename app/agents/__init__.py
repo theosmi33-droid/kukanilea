@@ -1,3 +1,4 @@
+from .action_manager import ActionManager
 from .archive import ArchiveAgent
 from .auth_tenant import AuthTenantAgent
 from .base import AgentContext, AgentResult
@@ -35,4 +36,5 @@ __all__ = [
     "IntentResult",
     "PolicyEngine",
     "ToolRegistry",
+    "ActionManager",
 ]
