@@ -1,3 +1,4 @@
+from .manager_agent import DeterministicToolRouter, EventBus, ManagerAgent, RouteDecision, RouteResult
 from .intent import IntentParser, IntentResult
 from .orchestrator import Orchestrator, OrchestratorResult
 from .policy import PolicyEngine
@@ -10,4 +11,9 @@ __all__ = [
     "IntentResult",
     "PolicyEngine",
     "ToolRegistry",
+    "ManagerAgent",
+    "DeterministicToolRouter",
+    "EventBus",
+    "RouteDecision",
+    "RouteResult",
 ]
