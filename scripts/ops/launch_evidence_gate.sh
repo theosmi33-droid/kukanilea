@@ -240,7 +240,7 @@ run_cmd_gate "MIA_GATE7_ARTIFACTS" "\"$PYTHON\" - <<'PY'
 import json
 from pathlib import Path
 
-base = Path('evidence/operations/gate7_latest')
+base = Path('$GATE7_OUTPUT_DIR')
 data = json.loads((base / 'gate7_smoke.json').read_text(encoding='utf-8'))
 required = {
     'lokales_modell_aktiv',
