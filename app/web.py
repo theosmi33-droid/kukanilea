@@ -4288,6 +4288,24 @@ def admin_audit():
     return _render_base("audit_trail.html", active_tab="settings", trail=trail)
 
 
+@bp.route("/calendar/export.ics")
+@login_required
+def calendar_export_ics():
+    # Compatibility endpoint used by legacy templates (`web.calendar_export_ics`).
+    from app.knowledge.ics_source import knowledge_ics_build_local_feed
+
+    tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
+    ics_content = knowledge_ics_build_local_feed(tenant_id)
+    return (
+        ics_content,
+        200,
+        {
+            "Content-Type": "text/calendar; charset=utf-8",
+            "Content-Disposition": "attachment; filename=calendar.ics",
+        },
+    )
+
+
 @bp.route("/api/tools")
 @login_required
 def api_list_tools():
