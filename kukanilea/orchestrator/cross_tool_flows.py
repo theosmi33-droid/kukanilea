@@ -6,6 +6,8 @@ from typing import Any, Callable, Mapping
 
 from kukanilea.guards import detect_prompt_injection, neutralize_untrusted_text
 
+from .audit_schema import build_audit_event
+
 ActionHandler = Callable[[Mapping[str, Any]], dict[str, Any]]
 
 
@@ -74,68 +76,59 @@ class CrossToolFlowEngine:
         tool_health: Mapping[str, bool] | None = None,
     ) -> FlowExecutionResult:
         flow = self.flows.get(flow_id)
+        tenant = str(context.get("tenant") or "default")
+        user = str(context.get("user") or "system")
         if flow is None:
             return FlowExecutionResult(
                 ok=False,
                 status="failed",
                 flow_id=flow_id,
                 failures=[{"code": "flow_not_found", "flow_id": flow_id}],
-                audit_evidence=[{"event": "flow.failed", "reason": "flow_not_found", "flow_id": flow_id}],
+                audit_evidence=[
+                    build_audit_event(
+                        "execution_failed",
+                        tenant=tenant,
+                        user=user,
+                        action=flow_id,
+                        tool="flow_engine",
+                        intent="flow_execution",
+                        risk="medium",
+                        execution_mode="execute",
+                        status="failed",
+                        reason="flow_not_found",
+                        meta={"flow_id": flow_id},
+                    )
+                ],
             )
 
         confirmations = confirmations or {}
         health = tool_health or {}
         result = FlowExecutionResult(ok=True, status="completed", flow_id=flow.flow_id)
+        result.audit_evidence.append(build_audit_event("intent_detected", tenant=tenant, user=user, action=flow.flow_id, tool="flow_engine", intent=flow.trigger, risk="low", execution_mode="propose", status="detected", reason="trigger_received"))
+        result.audit_evidence.append(build_audit_event("action_selected", tenant=tenant, user=user, action=flow.flow_id, tool="flow_engine", intent=flow.trigger, risk="low", execution_mode="execute", status="selected", reason="flow_loaded"))
+        result.audit_evidence.append(build_audit_event("execution_started", tenant=tenant, user=user, action=flow.flow_id, tool="flow_engine", intent=flow.trigger, risk="medium", execution_mode="execute", status="started", reason="flow_execution_started"))
 
         missing = [k for k in flow.required_context if k not in context]
         if missing:
             result.ok = False
             result.status = "propose_and_ask_confirmation"
             result.proposals.append({"type": "missing_context", "required": missing})
-            result.audit_evidence.append(
-                {"event": "flow.context_missing", "flow_id": flow.flow_id, "missing": missing}
-            )
+            result.audit_evidence.append(build_audit_event("route_blocked", tenant=tenant, user=user, action=flow.flow_id, tool="flow_engine", intent=flow.trigger, risk="low", execution_mode="propose", status="propose_and_ask_confirmation", reason="context_missing", meta={"flow_id": flow.flow_id, "missing": missing}))
             return result
 
         run_context: dict[str, Any] = dict(context)
         for step in flow.steps:
             if step.required_tool and health.get(step.required_tool) is False:
                 result.status = "degraded"
-                result.proposals.append(
-                    {
-                        "type": "fallback",
-                        "step_id": step.step_id,
-                        "reason": "tool_unhealthy",
-                        "policy": flow.fallback_policy,
-                    }
-                )
-                result.audit_evidence.append(
-                    {
-                        "event": "flow.fallback_applied",
-                        "flow_id": flow.flow_id,
-                        "step_id": step.step_id,
-                        "reason": "tool_unhealthy",
-                    }
-                )
+                result.proposals.append({"type": "fallback", "step_id": step.step_id, "reason": "tool_unhealthy", "policy": flow.fallback_policy})
+                result.audit_evidence.append(build_audit_event("route_blocked", tenant=tenant, user=user, action=step.action_id, tool=str(step.required_tool or "flow_engine"), intent=flow.trigger, risk="medium", execution_mode="propose", status="degraded", reason="tool_unhealthy", meta={"flow_id": flow.flow_id, "step_id": step.step_id}))
                 continue
 
             if step.writes_state and not confirmations.get(step.step_id, False):
                 result.status = "propose_and_ask_confirmation"
                 result.ok = False
-                result.proposals.append(
-                    {
-                        "type": "confirm_required",
-                        "step_id": step.step_id,
-                        "action_id": step.action_id,
-                    }
-                )
-                result.audit_evidence.append(
-                    {
-                        "event": "flow.confirm_required",
-                        "flow_id": flow.flow_id,
-                        "step_id": step.step_id,
-                    }
-                )
+                result.proposals.append({"type": "confirm_required", "step_id": step.step_id, "action_id": step.action_id})
+                result.audit_evidence.append(build_audit_event("confirm_requested", tenant=tenant, user=user, action=step.action_id, tool=str(step.required_tool or "flow_engine"), intent=flow.trigger, risk="medium", execution_mode="confirm", status="confirm_required", reason="write_requires_confirm", meta={"flow_id": flow.flow_id, "step_id": step.step_id}))
                 continue
 
             try:
@@ -144,38 +137,17 @@ class CrossToolFlowEngine:
                 trace = traceback.format_exc()
                 result.ok = False
                 result.status = "failed"
-                result.failures.append(
-                    {
-                        "code": "action_failed",
-                        "step_id": step.step_id,
-                        "action_id": step.action_id,
-                        "error": str(exc),
-                        "traceback": trace,
-                    }
-                )
-                result.audit_evidence.append(
-                    {
-                        "event": "flow.step_failed",
-                        "flow_id": flow.flow_id,
-                        "step_id": step.step_id,
-                        "action_id": step.action_id,
-                        "error": str(exc),
-                        "traceback": trace,
-                    }
-                )
+                result.failures.append({"code": "action_failed", "step_id": step.step_id, "action_id": step.action_id, "error": str(exc), "traceback": trace})
+                result.audit_evidence.append(build_audit_event("execution_failed", tenant=tenant, user=user, action=step.action_id, tool=str(step.required_tool or "flow_engine"), intent=flow.trigger, risk="high", execution_mode="execute", status="failed", reason="action_failed", meta={"flow_id": flow.flow_id, "step_id": step.step_id, "error": str(exc), "traceback": trace}))
                 break
 
             run_context.update(output)
             result.outputs.update(output)
             result.executed_steps.append(step.step_id)
-            result.audit_evidence.append(
-                {
-                    "event": "flow.step_executed",
-                    "flow_id": flow.flow_id,
-                    "step_id": step.step_id,
-                    "action_id": step.action_id,
-                }
-            )
+            result.audit_evidence.append(build_audit_event("execution_succeeded", tenant=tenant, user=user, action=step.action_id, tool=str(step.required_tool or "flow_engine"), intent=flow.trigger, risk="low", execution_mode="execute", status="completed", reason="step_executed", meta={"flow_id": flow.flow_id, "step_id": step.step_id}))
+
+        if result.ok and result.status in {"completed", "degraded"}:
+            result.audit_evidence.append(build_audit_event("execution_succeeded", tenant=tenant, user=user, action=flow.flow_id, tool="flow_engine", intent=flow.trigger, risk="low", execution_mode="execute", status=result.status, reason="flow_completed", meta={"executed_steps": list(result.executed_steps)}))
 
         return result
 
@@ -289,7 +261,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             ),
             required_context=("email_subject", "email_body"),
             confirmation_points=("create_task",),
-            audit_events=("flow.step_executed", "flow.confirm_required", "flow.step_failed"),
+            audit_events=("execution_succeeded", "confirm_requested", "execution_failed"),
             fallback_policy="propose_then_manual_queue",
         ),
         "flow_email_project_task": FlowDefinition(
@@ -303,7 +275,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             ),
             required_context=("email_subject", "email_body", "projects"),
             confirmation_points=("create_task",),
-            audit_events=("flow.step_executed", "flow.confirm_required", "flow.fallback_applied"),
+            audit_events=("execution_succeeded", "confirm_requested", "route_blocked"),
             fallback_policy="propose_then_manual_assignment",
         ),
         "flow_calendar_conflict_suggest": FlowDefinition(
@@ -316,7 +288,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             ),
             required_context=("requested_start", "calendar_entries"),
             confirmation_points=(),
-            audit_events=("flow.step_executed", "flow.fallback_applied"),
+            audit_events=("execution_succeeded", "route_blocked"),
             fallback_policy="propose_alternative_slot",
         ),
         "flow_document_extract_deadline_task": FlowDefinition(
@@ -329,7 +301,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             ),
             required_context=("document_text",),
             confirmation_points=("propose_deadline_task",),
-            audit_events=("flow.step_executed", "flow.confirm_required", "flow.fallback_applied"),
+            audit_events=("execution_succeeded", "confirm_requested", "route_blocked"),
             fallback_policy="degrade_to_manual_review",
         ),
         "flow_messenger_followup_task": FlowDefinition(
@@ -342,7 +314,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             ),
             required_context=("message_text",),
             confirmation_points=("create_followup_task",),
-            audit_events=("flow.step_executed", "flow.confirm_required"),
+            audit_events=("execution_succeeded", "confirm_requested"),
             fallback_policy="propose_then_manual_queue",
         ),
         "flow_license_event_audit_admin": FlowDefinition(
@@ -355,7 +327,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             ),
             required_context=("event_type",),
             confirmation_points=("create_audit", "notify_admin"),
-            audit_events=("flow.step_executed", "flow.confirm_required", "flow.step_failed"),
+            audit_events=("execution_succeeded", "confirm_requested", "execution_failed"),
             fallback_policy="queue_for_admin_review",
         ),
         "flow_deadline_sync": FlowDefinition(
@@ -367,7 +339,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             ),
             required_context=("deadline_id",),
             confirmation_points=("sync_deadline",),
-            audit_events=("flow.step_executed", "flow.confirm_required"),
+            audit_events=("execution_succeeded", "confirm_requested"),
             fallback_policy="propose_without_sync",
         ),
         "flow_document_intake_classify_action": FlowDefinition(
@@ -380,7 +352,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             ),
             required_context=("customer_hint",),
             confirmation_points=("propose_action",),
-            audit_events=("flow.step_executed", "flow.confirm_required", "flow.fallback_applied"),
+            audit_events=("execution_succeeded", "confirm_requested", "route_blocked"),
             fallback_policy="propose_then_request_missing_context",
         ),
     }

@@ -39,7 +39,7 @@ def test_email_to_task_requires_confirm_for_write_step() -> None:
     assert result.ok is False
     assert result.status == "propose_and_ask_confirmation"
     assert any(p["type"] == "confirm_required" for p in result.proposals)
-    assert any(e["event"] == "flow.confirm_required" for e in result.audit_evidence)
+    assert any(e["event_type"] == "confirm_requested" for e in result.audit_evidence)
 
 
 def test_email_project_task_executes_when_confirmed() -> None:
@@ -61,7 +61,7 @@ def test_email_project_task_executes_when_confirmed() -> None:
     assert result.status == "completed"
     assert "match_project" in result.executed_steps
     assert result.outputs.get("project_id") == "P-100"
-    assert any(e["event"] == "flow.step_executed" for e in result.audit_evidence)
+    assert any(e["event_type"] == "execution_succeeded" for e in result.audit_evidence)
 
 
 def test_missing_context_triggers_propose_and_ask_confirmation() -> None:
@@ -90,7 +90,7 @@ def test_tool_health_degrades_without_unsafe_write() -> None:
 
     assert result.status == "degraded"
     assert any(p["type"] == "fallback" for p in result.proposals)
-    assert any(e["event"] == "flow.fallback_applied" for e in result.audit_evidence)
+    assert any(e["event_type"] == "route_blocked" for e in result.audit_evidence)
 
 
 def test_prompt_injection_in_untrusted_text_is_neutralized() -> None:
@@ -119,4 +119,48 @@ def test_unknown_flow_reports_failure_with_audit_evidence() -> None:
     assert result.ok is False
     assert result.status == "failed"
     assert result.failures[0]["code"] == "flow_not_found"
-    assert result.audit_evidence[0]["event"] == "flow.failed"
+    assert result.audit_evidence[0]["event_type"] == "execution_failed"
+
+
+def test_flow_audit_events_contain_canonical_fields() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_email_project_task",
+        context={
+            "tenant": "KUKANILEA",
+            "user": "admin",
+            "email_subject": "Projekt Alpha: Nachtrag",
+            "email_body": "Bitte offenen Punkt ergänzen",
+            "projects": [{"id": "P-100", "keyword": "alpha"}],
+            "default_deadline": "2026-01-31",
+        },
+        confirmations={"create_task": True},
+        tool_health={"projects": True, "tasks": True},
+    )
+
+    required = {"ts", "tenant", "user", "action", "tool", "intent", "risk", "execution_mode", "status", "reason"}
+    assert result.audit_evidence
+    for event in result.audit_evidence:
+        assert required.issubset(event.keys())
+
+
+def test_flow_audit_redacts_secrets_from_meta() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_email_to_task",
+        context={
+            "tenant": "KUKANILEA",
+            "user": "admin",
+            "email_subject": "Wartung",
+            "email_body": "Bitte prüfen",
+            "Authorization": "Bearer abc",
+        },
+        confirmations={},
+        tool_health={"tasks": True},
+    )
+
+    meta_values = [event.get("meta", {}) for event in result.audit_evidence]
+    flat = str(meta_values).lower()
+    assert "bearer abc" not in flat

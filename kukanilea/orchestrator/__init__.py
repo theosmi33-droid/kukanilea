@@ -6,6 +6,7 @@ from .orchestrator import Orchestrator, OrchestratorResult
 from .policy import PolicyEngine
 from .tool_registry import ToolRegistry
 from .cross_tool_flows import AtomicActionRegistry, CrossToolFlowEngine, FlowDefinition, FlowExecutionResult, FlowStep, build_core_flows, create_default_registry
+from .audit_schema import CANONICAL_AUDIT_EVENT_TYPES, REQUIRED_AUDIT_FIELDS, build_audit_event, has_required_audit_fields
 
 __all__ = [
     "Orchestrator",
@@ -34,4 +35,8 @@ __all__ = [
     "RiskPolicy",
     "create_action_registry",
     "registry_summary",
+    "CANONICAL_AUDIT_EVENT_TYPES",
+    "REQUIRED_AUDIT_FIELDS",
+    "build_audit_event",
+    "has_required_audit_fields",
 ]

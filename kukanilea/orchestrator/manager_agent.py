@@ -7,6 +7,7 @@ from typing import Any, Callable, Mapping
 
 from .action_catalog import create_action_registry
 from .action_registry import ActionRegistry
+from .audit_schema import build_audit_event
 
 CONFIRM_TOKENS = {"1", "true", "yes", "confirm", "ja"}
 INJECTION_PATTERNS = (
@@ -278,23 +279,34 @@ class ManagerAgent:
                 reason="prompt_injection",
                 plan=blocked_plan,
             )
-            self._record("manager_agent.blocked", message, ctx, result, extra={"patterns": patterns, "suggestions": list(self.router.SAFE_SUGGESTIONS)})
+            self._record(
+                "intent_detected",
+                message,
+                ctx,
+                result,
+                extra={"patterns": patterns, "suggestions": list(self.router.SAFE_SUGGESTIONS)},
+            )
+            self._record("route_blocked", message, ctx, result, extra={"patterns": patterns})
             return result
 
         plan = self.router.build_plan(message)
         decision = self.router.select(plan)
+        intent_result = RouteResult(ok=True, status="detected", decision=decision, reason="intent_classified", plan=plan)
+        self._record("intent_detected", message, ctx, intent_result)
+        self._record("action_selected", message, ctx, intent_result)
 
         if decision.action not in self.router.action_registry.actions and decision.action not in {"safe_follow_up", "safe_fallback"}:
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="action_not_registered", plan=plan)
-            self._record("manager_agent.blocked", message, ctx, result)
+            self._record("route_blocked", message, ctx, result)
             return result
 
         if plan.candidate_actions and not self.router.validate_parameters(decision.action, ctx.get("params")):
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="schema_validation_failed", plan=plan)
-            self._record("manager_agent.blocked", message, ctx, result)
+            self._record("route_blocked", message, ctx, result)
             return result
 
         confirm = _confirm_token(ctx.get("confirm"))
+        confirm_given = _confirm_denied_token(ctx.get("confirm"))
         if (decision.requires_confirm or plan.execution_mode == "confirm") and not confirm:
             result = RouteResult(
                 ok=False,
@@ -304,8 +316,17 @@ class ManagerAgent:
                 confirm_required=True,
                 plan=plan,
             )
-            self._record("manager_agent.confirm_blocked", message, ctx, result)
+            self._record("confirm_denied" if confirm_given else "confirm_requested", message, ctx, result)
             return result
+
+        if ctx.get("confirm_status") == "expired":
+            expired = RouteResult(ok=False, status="confirm_expired", decision=decision, reason="confirm_ttl_expired", plan=plan)
+            self._record("confirm_expired", message, ctx, expired)
+            return expired
+
+        if decision.requires_confirm and confirm:
+            granted = RouteResult(ok=True, status="confirm_granted", decision=decision, reason="confirm_gate", plan=plan)
+            self._record("confirm_granted", message, ctx, granted)
 
         if decision.external_call and not self.external_calls_enabled:
             result = RouteResult(
@@ -315,16 +336,16 @@ class ManagerAgent:
                 reason="external_calls_disabled",
                 plan=plan,
             )
-            self._record("manager_agent.offline_blocked", message, ctx, result)
+            self._record("route_blocked", message, ctx, result)
             return result
 
         if decision.action == "safe_follow_up":
             result = RouteResult(ok=False, status="needs_clarification", decision=decision, reason="unknown_intent", plan=plan)
-            self._record("manager_agent.needs_clarification", message, ctx, result, extra={"suggestions": list(self.router.SAFE_SUGGESTIONS)})
+            self._record("route_blocked", message, ctx, result, extra={"suggestions": list(self.router.SAFE_SUGGESTIONS)})
             return result
 
         result = RouteResult(ok=True, status="routed", decision=decision, plan=plan)
-        self._record("manager_agent.routed", message, ctx, result)
+        self._record("execution_started", message, ctx, result, extra={"phase": "router"})
         return result
 
     def _record(
@@ -336,22 +357,26 @@ class ManagerAgent:
         *,
         extra: Mapping[str, Any] | None = None,
     ) -> None:
-        payload = {
+        meta = {
             "message": str(message or "")[:500],
-            "tenant": str(context.get("tenant") or "default"),
-            "user": str(context.get("user") or "system"),
-            "tool": result.decision.tool,
-            "action": result.decision.action,
-            "intent": result.decision.intent,
-            "execution_mode": result.decision.execution_mode,
-            "status": result.status,
             "ok": result.ok,
-            "reason": result.reason,
             "confirm_required": result.confirm_required,
-            "risk_assessment": result.plan.risk_assessment if result.plan else "unknown",
         }
         if extra:
-            payload.update(dict(extra))
+            meta.update(dict(extra))
+        payload = build_audit_event(
+            event_type,
+            tenant=str(context.get("tenant") or "default"),
+            user=str(context.get("user") or "system"),
+            tool=result.decision.tool,
+            action=result.decision.action,
+            intent=result.decision.intent,
+            risk=result.plan.risk_assessment if result.plan else "unknown",
+            execution_mode=result.decision.execution_mode,
+            status=result.status,
+            reason=result.reason,
+            meta=meta,
+        )
         self.event_bus.emit(event_type, payload)
         result.audit_event = payload
         if callable(self.audit_logger):
@@ -361,3 +386,8 @@ class ManagerAgent:
 def _confirm_token(value: Any) -> bool:
     token = str(value or "").strip().lower()
     return token in CONFIRM_TOKENS
+
+
+def _confirm_denied_token(value: Any) -> bool:
+    token = str(value or "").strip().lower()
+    return token in {"0", "false", "no", "deny", "nein"}
