@@ -1,10 +1,10 @@
-# KUKANILEA Fleet Commander: Multi-Domain Setup
+# KUKANILEA Sovereign-11: Multi-Domain Setup
 
-Dieses Dokument dient als zentrale Referenz für die 11 spezialisierten Worktrees. Kopiere die jeweiligen Instruktionen in den Chat von **Gemini Code Assist** in VS Code, wenn du in einem spezifischen Modul arbeitest.
+Dieses Dokument dient als zentrale Referenz für die 11 spezialisierten Worktrees. Nutze diese Instruktionen als verbindliche MIA-Arbeitsgrundlage pro Modul.
 
 ## Globale Guardrails (Für alle Agenten)
 1. **Domain Isolation:** Arbeite NUR in deinem zugewiesenen Pfad.
-2. **Offline-First:** Keine Cloud-APIs (außer dieser Entwicklungshilfe). Nutze lokal Ollama.
+2. **Offline-First:** Keine Cloud-APIs. Nutze ausschließlich lokale Sovereign-11- und MIA-Pfade.
 3. **GoBD-Compliance:** Revisionssichere Logs via ISO-8601 UTC.
 4. **Performance:** UI < 100ms, Server < 200ms.
 

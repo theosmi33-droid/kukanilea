@@ -1,6 +1,6 @@
-# KUKANILEA Agent Flotte (OpenClaw-Framework)
+# KUKANILEA MIA-Agentenflotte
 
-This configuration defines the OpenClaw-style agent framework for KUKANILEA.
+Diese Konfiguration definiert das KUKANILEA-eigene MIA-Agentenframework.
 It is deterministic, offline-first, and approval-gated.
 
 ## 1. Orchestrators (The Core)
@@ -13,11 +13,11 @@ It is deterministic, offline-first, and approval-gated.
 2. **WRK-DB_BOT**: SQL migrations, data integrity checks.
 3. **WRK-MAIL_BOT**: Local encrypted mail queue.
 4. **WRK-LOG_BOT**: System log anomaly detection.
-5. **WRK-NET_BOT**: Local network & Zero-CDN compliance.
+5. **WRK-NET_BOT**: Local-first Netzwerkpfade, offline-first Synchronisation, auditierbar.
 6. **WRK-SEC_BOT**: Static security & vulnerability scanning.
 7. **WRK-DEPLOY_BOT**: Local-first builds and releases.
 8. **WRK-SYNC_BOT**: Peer-to-peer data synchronization.
-9. **WRK-AI_BOT**: Local LLM interactions (Ollama/LM Studio).
+9. **WRK-AI_BOT**: MIA-Inferenz im Sovereign-11 Laufzeitpfad (lokal, offline-first, auditierbar).
 10. **WRK-FILES_BOT**: File system operations & provenance.
 11. **WRK-DOCS_BOT**: Project documentation and ADR maintenance.
 
