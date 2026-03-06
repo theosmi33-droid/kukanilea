@@ -104,6 +104,7 @@ def test_event_bus_document_processed_with_deadline_creates_calendar_event(tmp_p
     monkeypatch.setenv("KUKANILEA_CORE_DB", str(tmp_path / "core.sqlite3"))
 
     app = create_app()
+    app.config["READ_ONLY"] = False
     _ensure_knowledge_tables(str(app.config["CORE_DB"]))
 
     with app.app_context():
