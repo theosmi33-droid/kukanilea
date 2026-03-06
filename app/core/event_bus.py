@@ -21,6 +21,16 @@ EVENTS: dict[str, str] = {
     "project.milestone_reached": "Meilenstein erreicht",
     "system.backup_complete": "Backup abgeschlossen",
     "system.license_expired": "Lizenz abgelaufen",
+    "mia.intent.detected": "MIA Intent erkannt",
+    "mia.action.selected": "MIA Aktion ausgewählt",
+    "mia.confirm.requested": "MIA Confirm angefragt",
+    "mia.confirm.granted": "MIA Confirm erteilt",
+    "mia.confirm.denied": "MIA Confirm abgelehnt",
+    "mia.confirm.expired": "MIA Confirm abgelaufen",
+    "mia.route.blocked": "MIA Route blockiert",
+    "mia.route.executed": "MIA Route ausgeführt",
+    "mia.external_call.blocked": "MIA externer Call blockiert",
+    "mia.parameter_validation.failed": "MIA Parameter-Validierung fehlgeschlagen",
 }
 
 
