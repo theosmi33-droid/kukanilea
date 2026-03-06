@@ -5,11 +5,8 @@ from typing import Any, Callable
 
 from app.ai.intent_analyzer import detect_write_intent
 from app.contracts.tool_contracts import normalize_chat_response
+from app.security import action_requires_approval
 from app.security.untrusted_input import assess_untrusted_input
-
-CRITICAL_PREFIXES = ("create_", "delete_", "update_", "send_", "mail_", "messenger_")
-CRITICAL_ACTIONS = {"create_task", "create_appointment", "mail_send", "messenger_send", "mail_generate"}
-
 
 @dataclass
 class ManagerAgentResult:
@@ -17,9 +14,9 @@ class ManagerAgentResult:
     conversation_entry: dict[str, Any]
 
 
-def _is_critical_action(action: dict[str, Any]) -> bool:
+def _requires_approval(action: dict[str, Any]) -> bool:
     action_type = str(action.get("type") or "")
-    return bool(action_type in CRITICAL_ACTIONS or action_type.startswith(CRITICAL_PREFIXES))
+    return action_requires_approval(action_type=action_type)
 
 
 def _extract_refs(response: dict[str, Any], actions: list[dict[str, Any]]) -> dict[str, list[str]]:
@@ -108,11 +105,12 @@ def route_via_manager_agent(
     actions = [dict(a) for a in (response.get("actions") or []) if isinstance(a, dict)]
 
     write_intent = detect_write_intent(message)
-    critical_actions = [_is_critical_action(action) for action in actions]
-    requires_confirm = bool(response.get("requires_confirm") or write_intent or any(critical_actions))
+    approval_actions = [_requires_approval(action) for action in actions]
+    requires_confirm = bool(response.get("requires_confirm") or write_intent or any(approval_actions))
 
     for idx, action in enumerate(actions):
-        action["confirm_required"] = bool(action.get("confirm_required") or critical_actions[idx] or requires_confirm)
+        action["confirm_required"] = bool(action.get("confirm_required") or approval_actions[idx] or requires_confirm)
+        action["approval_required"] = bool(action.get("approval_required") or action["confirm_required"])
         action["proposed"] = True
 
     plan = _build_plan(response, actions)
