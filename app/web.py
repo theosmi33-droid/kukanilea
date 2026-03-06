@@ -71,6 +71,7 @@ from app.ai.intent_analyzer import detect_write_intent
 from app.ai.guardrails import requires_confirm_for_prompt, validate_prompt
 from app.ai.skills_registry import skills_registry, suggest_skills
 from app.agents.orchestrator import answer as agent_answer
+from app.agents.manager_agent import route_via_manager_agent
 from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.search import SearchAgent
 
@@ -88,7 +89,14 @@ from .config import Config
 from .db import AuthDB
 from .errors import json_error
 from .license import load_license
-from .rate_limit import chat_limiter, login_limiter, search_limiter, upload_limiter
+from .rate_limit import (
+    chat_limiter,
+    login_limiter,
+    password_reset_limiter,
+    search_limiter,
+    send_limiter,
+    upload_limiter,
+)
 from .security import csrf_protected, detect_injection
 from app.contracts.tool_contracts import (
     CONTRACT_TOOLS,
@@ -100,6 +108,12 @@ from app.contracts.tool_contracts import (
 )
 from app.modules.aufgaben.contracts import build_health as build_aufgaben_health
 from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
+from app.modules.aufgaben.contracts import create_task as aufgaben_create_task
+from app.modules.actions_api import (
+    ActionApiTemplate,
+    ActionDefinition,
+    register_actions_endpoints,
+)
 from app.modules.einstellungen.contracts import build_health as build_einstellungen_health
 from app.modules.einstellungen.contracts import build_summary as build_einstellungen_summary
 from app.modules.kalender.contracts import build_health as build_kalender_health
@@ -175,6 +189,78 @@ task_list = _core_get("task_list")
 task_resolve = _core_get("task_resolve")
 task_dismiss = _core_get("task_dismiss")
 
+
+def _aufgaben_action_list(payload: dict[str, object]) -> dict[str, object]:
+    status = str(payload.get("status") or "OPEN").strip().upper()
+    if status == "DONE":
+        status = "RESOLVED"
+    if status not in {"OPEN", "RESOLVED", "DISMISSED"}:
+        status = "OPEN"
+    if callable(task_list):
+        tasks = task_list(tenant=str(current_tenant() or "default"), status=status)
+    else:
+        tasks = []
+    return {"status": status, "items": tasks}
+
+
+def _aufgaben_action_create(payload: dict[str, object]) -> dict[str, object]:
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise ValueError("title_missing")
+    details = str(payload.get("details") or "").strip()
+    created = aufgaben_create_task(
+        tenant=str(current_tenant() or "default"),
+        title=title,
+        details=details,
+        due_date=str(payload.get("due_date") or "") or None,
+        created_by=str(current_user() or "system"),
+        source_ref="actions_api",
+    )
+    return {"created": created}
+
+
+AUFGABEN_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="aufgaben",
+    actions=[
+        ActionDefinition(
+            name="list",
+            title="Aufgaben lesen",
+            permission="read",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["OPEN", "RESOLVED", "DISMISSED", "DONE"]},
+                },
+            },
+            output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+            handler=_aufgaben_action_list,
+        ),
+        ActionDefinition(
+            name="create",
+            title="Aufgabe anlegen",
+            permission="write",
+            risk="high_risk",
+            input_schema={
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "details": {"type": "string"},
+                    "due_date": {"type": "string"},
+                    "confirm": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"created": {"type": "object"}}},
+            handler=_aufgaben_action_create,
+        ),
+    ],
+)
+
+TOOL_ACTION_TEMPLATES = {
+    "aufgaben": AUFGABEN_ACTIONS_TEMPLATE,
+}
+
 # Optional calendar reminders
 calendar_reminders_due = _core_get("knowledge_calendar_reminders_due")
 
@@ -218,6 +304,8 @@ if _missing:
 
 # -------- Flask ----------
 bp = Blueprint("web", __name__)
+
+register_actions_endpoints(bp, TOOL_ACTION_TEMPLATES)
 ORCHESTRATOR = None
 
 # --- Early template defaults (avoid NameError during debug reload) ---
@@ -1844,6 +1932,7 @@ def login():
 
 @bp.route("/forgot", methods=["GET", "POST"])
 @csrf_protected
+@password_reset_limiter.limit_required
 def forgot_password():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     code = ""
@@ -1891,6 +1980,7 @@ def forgot_password():
 
 @bp.route("/reset-code", methods=["GET", "POST"])
 @csrf_protected
+@password_reset_limiter.limit_required
 def reset_with_code():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     error = ""
@@ -1947,6 +2037,7 @@ def reset_with_code():
 
 
 @bp.route("/password-reset", methods=["GET", "POST"])
+@password_reset_limiter.limit_required
 def password_reset_page():
     u = session.get('pending_reset_user')
     if not u:
@@ -1993,6 +2084,7 @@ def password_reset_page():
 @bp.route("/admin/users/<username>/reset", methods=["POST"])
 @login_required
 @require_role("ADMIN")
+@password_reset_limiter.limit_required
 def admin_user_reset(username: str):
     """One-click reset by Admin/Dev (Task v2.8)."""
     auth_db = current_app.extensions["auth_db"]
@@ -2155,7 +2247,12 @@ def api_chat():
         return json_error("injection_blocked", "Eingabe durch Sicherheitsfilter blockiert.", status=400)
 
     try:
-        response = agent_answer(msg)
+        managed = route_via_manager_agent(msg, role=str(current_role() or "USER"), answer_fn=agent_answer)
+        response = managed.response
+        history = list(session.get("manager_chat_history") or [])
+        history.append(managed.conversation_entry)
+        session["manager_chat_history"] = history[-40:]
+        session.modified = True
     except Exception as exc:
         current_app.logger.exception("api_chat_failed")
         diag = f"{exc.__class__.__name__}: {str(exc)[:180]}" if str(exc) else exc.__class__.__name__
@@ -2210,7 +2307,18 @@ def api_chat_compact():
             )), 400
 
         actions = pending.get("actions") or []
+        object_refs = pending.get("object_refs") or {}
         session.pop("widget_pending_action", None)
+        history = list(session.get("manager_chat_history") or [])
+        history.append({
+            "user_message": "[confirm]",
+            "assistant_text": "Aktion bestätigt und ausgeführt.",
+            "requires_confirm": False,
+            "proposed_actions": actions,
+            "plan": pending.get("plan") or [],
+            "object_refs": object_refs,
+        })
+        session["manager_chat_history"] = history[-40:]
         session.modified = True
         
         return jsonify(_widget_compact_response(
@@ -2219,6 +2327,7 @@ def api_chat_compact():
             context_tag=current_context,
             latency_ms=int((time.perf_counter() - started) * 1000),
             actions=actions,
+            thinking_steps=[step.get("step", "") for step in (pending.get("plan") or [])],
             status="Aktion ausgeführt"
         ))
 
@@ -2245,8 +2354,9 @@ def api_chat_compact():
         )), 400
 
     context = AgentContext(tenant_id=tenant_id, user=username, role=role)
-    # Using the global agent_answer helper which uses Orchestrator
-    result = agent_answer(user_msg, role=role)
+    # Using manager-agent routing wrapper for unified chat contracts.
+    managed = route_via_manager_agent(user_msg, role=role, answer_fn=agent_answer)
+    result = managed.response
     
     actions_raw = list(result.get("actions", []))
     write_intent = detect_write_intent(user_msg)
@@ -2258,28 +2368,38 @@ def api_chat_compact():
     confirm_prompt = ""
     if requires_confirm:
         pending_id = secrets.token_urlsafe(12)
+        manager_payload = result.get("manager_agent") or {}
         session["widget_pending_action"] = {
             "id": pending_id,
             "actions": actions_raw,
-            "current_context": current_context
+            "current_context": current_context,
+            "plan": manager_payload.get("plan") or [],
+            "object_refs": manager_payload.get("object_refs") or {},
         }
         session.modified = True
         confirm_prompt = "Bestätigung für geplante Aktionen erforderlich."
         _audit("chat_confirm_required", target="/api/chat/compact", meta={"write_intent": write_intent, "action_count": len(actions_raw)})
 
     latency_ms = int((time.perf_counter() - started) * 1000)
-    return jsonify(_widget_compact_response(
+    response_payload = _widget_compact_response(
         text=result.get("text", "OK"),
         model="local",
         context_tag=current_context,
         latency_ms=latency_ms,
         suggestions=result.get("suggestions", []),
         actions=actions_raw,
+        thinking_steps=[step.get("step", "") for step in ((result.get("manager_agent") or {}).get("plan") or [])],
         requires_confirm=requires_confirm,
         pending_id=pending_id,
         confirm_prompt=confirm_prompt,
         status="Bestätigung erforderlich" if requires_confirm else "Bereit"
-    ))
+    )
+    response_payload["manager_agent"] = result.get("manager_agent") or {}
+    history = list(session.get("manager_chat_history") or [])
+    history.append(managed.conversation_entry)
+    session["manager_chat_history"] = history[-40:]
+    session.modified = True
+    return jsonify(response_payload)
 
 
 def _store_ai_snippet(*, tenant_id: str, user_id: str, prompt: str, response: str = "") -> None:
@@ -2343,6 +2463,7 @@ def api_ai_plan():
                 "name": skill.name,
                 "read_only": skill.read_only,
                 "requires_confirm": bool(skill.requires_confirm or write_or_uncertain),
+                "high_risk": bool(skill.name == "email.send_reply"),
                 "audit_event": skill.audit_event,
             }
         )
@@ -2378,7 +2499,16 @@ def api_ai_execute():
         _audit("ai_execute_denied", target="/api/ai/execute", meta={"skill": skill_name, "reason": "confirm_required"})
         return jsonify(error="confirm_required"), 403
 
-    result = definition.handler(skill_payload)
+    if skill_name == "email.send_reply":
+        key = f"{request.remote_addr or 'unknown'}:{current_tenant() or 'default'}"
+        if not send_limiter.allow(key):
+            return jsonify(error="rate_limited"), 429
+
+    try:
+        result = definition.handler({**skill_payload, "confirm": confirm})
+    except Exception:
+        logger.exception("ai_execute_handler_failed", extra={"skill": skill_name})
+        return jsonify(error="skill_execution_failed"), 500
     _store_ai_snippet(
         tenant_id=str(current_tenant() or "default"),
         user_id=str(current_user() or "unknown"),
