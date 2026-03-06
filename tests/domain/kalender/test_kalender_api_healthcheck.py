@@ -7,9 +7,10 @@ def test_kalender_summary_endpoint_exists(auth_client):
     body = response.get_json()
     assert "status" in body
     assert "metrics" in body
-    assert "events_next_7_days" in body
-    assert "conflicts" in body
-    assert "reminders_due" in body
+    assert "details" in body
+    assert "events_next_7_days" in body["details"]
+    assert "conflicts" in body["details"]
+    assert "reminders_due" in body["details"]
 
 
 def test_kalender_health_endpoint_exists(auth_client):

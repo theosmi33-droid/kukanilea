@@ -1,32 +1,37 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
+from app.contracts.tool_contracts import build_contract_response
 from app import core
 
 
-def _timestamp() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def build_summary(_tenant: str) -> dict:
+def build_summary(tenant: str) -> dict:
     project_list = getattr(core, "project_list", None)
     projects = project_list() if callable(project_list) else []
-    return {
-        "status": "ok" if callable(project_list) else "degraded",
-        "timestamp": _timestamp(),
-        "metrics": {
+    status = "ok" if callable(project_list) else "degraded"
+    degraded_reason = "projects_backend_missing" if status == "degraded" else ""
+    return build_contract_response(
+        tool="projekte",
+        status=status,
+        degraded_reason=degraded_reason,
+        metrics={
             "total_projects": len(projects),
         },
-    }
+        details={
+            "source": "core.project_list",
+        },
+        tenant=tenant,
+    )
 
 
 def build_health(tenant: str) -> tuple[dict, int]:
     payload = build_summary(tenant)
-    payload["metrics"] = {
-        **payload["metrics"],
-        "backend_ready": int(payload["status"] == "ok"),
-        "offline_safe": 1,
+    payload["details"] = {
+        **(payload.get("details") or {}),
+        "checks": {
+            "summary_contract": True,
+            "backend_ready": payload.get("status") == "ok",
+            "offline_safe": True,
+        },
     }
     code = 200 if payload["status"] in {"ok", "degraded"} else 503
     return payload, code
