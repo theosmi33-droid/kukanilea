@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any, Callable, Mapping
 
 CONFIRM_TOKENS = {"1", "true", "yes", "confirm", "ja"}
@@ -13,6 +14,32 @@ INJECTION_PATTERNS = (
     re.compile(r"\bdeveloper\s+message\b", re.IGNORECASE),
     re.compile(r"\bbypass\s+(policy|safety|confirm)\b", re.IGNORECASE),
 )
+
+RUNTIME_REVIEW_PATTERNS = (
+    re.compile(r"\b(delete\s+files?|rm\s+-rf|drop\s+table)\b", re.IGNORECASE),
+    re.compile(r"\b(exfiltrat\w*|export\s+(all\s+)?data|leak\s+data)\b", re.IGNORECASE),
+)
+
+RUNTIME_WARNING_PATTERNS = (
+    re.compile(r"\b(ignore\s+previous\s+instructions?)\b", re.IGNORECASE),
+    re.compile(r"\b(bypass\s+(policy|safety|guardrails?))\b", re.IGNORECASE),
+    re.compile(r"\b(reveal|show)\s+(the\s+)?system\s+prompt\b", re.IGNORECASE),
+)
+
+
+class GuardDecision(str, Enum):
+    ALLOW = "allow"
+    ALLOW_WITH_WARNING = "allow_with_warning"
+    BLOCK = "block"
+    ROUTE_TO_REVIEW = "route_to_review"
+
+
+@dataclass(frozen=True)
+class RuntimeGuardResult:
+    decision: GuardDecision
+    reasons: list[str] = field(default_factory=list)
+    normalized_message: str = ""
+    stage: str = ""
 
 
 @dataclass(frozen=True)
@@ -173,6 +200,50 @@ class DeterministicToolRouter:
         matches = [pattern.pattern for pattern in INJECTION_PATTERNS if pattern.search(text)]
         return bool(matches), matches
 
+    def normalize_untrusted_input(self, message: str) -> str:
+        text = str(message or "")
+        return re.sub(r"\s+", " ", text).strip()
+
+    def assess_runtime_guard(self, message: str, *, stage: str) -> RuntimeGuardResult:
+        normalized = self.normalize_untrusted_input(message)
+        injection_matches = [pattern.pattern for pattern in INJECTION_PATTERNS if pattern.search(normalized)]
+        review_matches = [pattern.pattern for pattern in RUNTIME_REVIEW_PATTERNS if pattern.search(normalized)]
+        warning_matches = [pattern.pattern for pattern in RUNTIME_WARNING_PATTERNS if pattern.search(normalized)]
+
+        neutral_context = bool(re.search(r"\b(beispiel|analyse|analysieren|zitat|workshop|fachtext)\b", normalized, re.IGNORECASE))
+        action_context = bool(re.search(r"\b(create|erstelle|ausführen|execute|run|delete|sende|send)\b", normalized, re.IGNORECASE))
+        if injection_matches and neutral_context and not action_context:
+            warning_matches = sorted(set(warning_matches + injection_matches))
+            injection_matches = []
+
+        if injection_matches:
+            return RuntimeGuardResult(
+                decision=GuardDecision.BLOCK,
+                reasons=injection_matches,
+                normalized_message=normalized,
+                stage=stage,
+            )
+        if review_matches:
+            return RuntimeGuardResult(
+                decision=GuardDecision.ROUTE_TO_REVIEW,
+                reasons=review_matches,
+                normalized_message=normalized,
+                stage=stage,
+            )
+        if warning_matches:
+            return RuntimeGuardResult(
+                decision=GuardDecision.ALLOW_WITH_WARNING,
+                reasons=warning_matches,
+                normalized_message=normalized,
+                stage=stage,
+            )
+        return RuntimeGuardResult(
+            decision=GuardDecision.ALLOW,
+            reasons=[],
+            normalized_message=normalized,
+            stage=stage,
+        )
+
     def build_plan(self, message: str) -> MIAIntentPlan:
         text = str(message or "").strip()
         if not text:
@@ -283,8 +354,8 @@ class ManagerAgent:
     def route(self, message: str, context: Mapping[str, Any] | None = None) -> RouteResult:
         ctx = dict(context or {})
 
-        injection, patterns = self.router.contains_injection(message)
-        if injection:
+        pre_guard = self.router.assess_runtime_guard(message, stage="pre_intent")
+        if pre_guard.decision == GuardDecision.BLOCK:
             blocked_plan = MIAIntentPlan(
                 intent_name="security_blocked",
                 confidence=1.0,
@@ -302,10 +373,56 @@ class ManagerAgent:
                 reason="prompt_injection",
                 plan=blocked_plan,
             )
-            self._record("manager_agent.blocked", message, ctx, result, extra={"patterns": patterns, "suggestions": list(self.router.SAFE_SUGGESTIONS)})
+            self._record(
+                "manager_agent.blocked",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guard_decision": pre_guard.decision.value,
+                    "guard_stage": pre_guard.stage,
+                    "patterns": pre_guard.reasons,
+                    "suggestions": list(self.router.SAFE_SUGGESTIONS),
+                },
+            )
             return result
 
-        plan = self.router.build_plan(message)
+        if pre_guard.decision == GuardDecision.ROUTE_TO_REVIEW:
+            review_plan = MIAIntentPlan(
+                intent_name="security_review",
+                confidence=1.0,
+                candidate_actions=[],
+                required_entities=[],
+                missing_context=[],
+                risk_assessment="high",
+                execution_mode="propose",
+            )
+            decision = RouteDecision(intent="security_review", tool="chatbot", action="safe_fallback", execution_mode="propose")
+            result = RouteResult(
+                ok=False,
+                status="needs_review",
+                decision=decision,
+                reason="security_review_required",
+                plan=review_plan,
+            )
+            self._record(
+                "manager_agent.review_required",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guard_decision": pre_guard.decision.value,
+                    "guard_stage": pre_guard.stage,
+                    "patterns": pre_guard.reasons,
+                    "suggestions": list(self.router.SAFE_SUGGESTIONS),
+                },
+            )
+            return result
+
+        if pre_guard.decision == GuardDecision.ALLOW_WITH_WARNING:
+            ctx.setdefault("guard_warnings", []).extend(pre_guard.reasons)
+
+        plan = self.router.build_plan(pre_guard.normalized_message)
         decision = self.router.select(plan)
 
         if decision.action not in self.router.ACTION_REGISTRY and decision.action not in {"safe_follow_up", "safe_fallback"}:
@@ -316,6 +433,37 @@ class ManagerAgent:
         if plan.candidate_actions and not self.router.validate_parameters(decision.action, ctx.get("params")):
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="schema_validation_failed", plan=plan)
             self._record("manager_agent.blocked", message, ctx, result)
+            return result
+
+        pre_exec_guard = self.router.assess_runtime_guard(pre_guard.normalized_message, stage="pre_execution")
+        if pre_exec_guard.decision == GuardDecision.BLOCK:
+            result = RouteResult(ok=False, status="blocked", decision=decision, reason="runtime_security_blocked", plan=plan)
+            self._record(
+                "manager_agent.blocked",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guard_decision": pre_exec_guard.decision.value,
+                    "guard_stage": pre_exec_guard.stage,
+                    "patterns": pre_exec_guard.reasons,
+                },
+            )
+            return result
+
+        if pre_exec_guard.decision == GuardDecision.ROUTE_TO_REVIEW:
+            result = RouteResult(ok=False, status="needs_review", decision=decision, reason="runtime_review_required", plan=plan)
+            self._record(
+                "manager_agent.review_required",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guard_decision": pre_exec_guard.decision.value,
+                    "guard_stage": pre_exec_guard.stage,
+                    "patterns": pre_exec_guard.reasons,
+                },
+            )
             return result
 
         confirm = _confirm_token(ctx.get("confirm"))
@@ -344,11 +492,26 @@ class ManagerAgent:
 
         if decision.action == "safe_follow_up":
             result = RouteResult(ok=False, status="needs_clarification", decision=decision, reason="unknown_intent", plan=plan)
-            self._record("manager_agent.needs_clarification", message, ctx, result, extra={"suggestions": list(self.router.SAFE_SUGGESTIONS)})
+            extra = {"suggestions": list(self.router.SAFE_SUGGESTIONS)}
+            warnings = list(ctx.get("guard_warnings") or [])
+            if pre_exec_guard.decision == GuardDecision.ALLOW_WITH_WARNING:
+                warnings.extend(pre_exec_guard.reasons)
+            if warnings:
+                extra["guard_decision"] = GuardDecision.ALLOW_WITH_WARNING.value
+                extra["guard_warnings"] = sorted(set(warnings))
+            self._record("manager_agent.needs_clarification", message, ctx, result, extra=extra)
             return result
 
+        extra: dict[str, Any] = {}
+        warnings = list(ctx.get("guard_warnings") or [])
+        if pre_exec_guard.decision == GuardDecision.ALLOW_WITH_WARNING:
+            warnings.extend(pre_exec_guard.reasons)
+        if warnings:
+            extra["guard_decision"] = GuardDecision.ALLOW_WITH_WARNING.value
+            extra["guard_warnings"] = sorted(set(warnings))
+
         result = RouteResult(ok=True, status="routed", decision=decision, plan=plan)
-        self._record("manager_agent.routed", message, ctx, result)
+        self._record("manager_agent.routed", message, ctx, result, extra=extra or None)
         return result
 
     def _record(
