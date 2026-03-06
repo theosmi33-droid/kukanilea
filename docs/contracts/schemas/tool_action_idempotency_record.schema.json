@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kukanilea.local/schemas/tool_action_idempotency_record.schema.json",
+  "title": "Tool Action Idempotency Record",
+  "type": "object",
+  "required": [
+    "tenant_id",
+    "tool",
+    "action_name",
+    "actor_id",
+    "idempotency_key",
+    "payload_hash",
+    "status",
+    "response_snapshot",
+    "created_at",
+    "expires_at"
+  ],
+  "properties": {
+    "tenant_id": { "type": "string", "minLength": 1 },
+    "tool": { "type": "string", "minLength": 1 },
+    "action_name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
+    "actor_id": { "type": "string", "minLength": 1 },
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "payload_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "status": { "type": "string", "enum": ["proposed", "executed", "replayed", "denied", "error"] },
+    "response_snapshot": { "type": "object" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

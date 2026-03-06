@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kukanilea.local/schemas/tool_action_execute.request.schema.json",
+  "title": "Tool Action Execute Request",
+  "type": "object",
+  "required": ["payload", "confirm"],
+  "properties": {
+    "payload": { "type": "object" },
+    "confirm": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["propose", "confirm"] },
+        "token": { "type": "string", "minLength": 16 }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "confirm" } } },
+          "then": { "required": ["token"] }
+        }
+      ]
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "request_id": { "type": "string", "minLength": 1 },
+        "tenant_id": { "type": "string", "minLength": 1 },
+        "actor_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
