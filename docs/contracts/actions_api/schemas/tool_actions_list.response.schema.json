@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kukanilea.local/schemas/tool_actions_list.response.schema.json",
+  "title": "Tool Actions List Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tool", "version", "actions"],
+  "properties": {
+    "tool": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "description",
+          "input_schema",
+          "output_schema",
+          "required_role",
+          "confirm_gate",
+          "idempotent",
+          "idempotency_ttl_seconds"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "input_schema": {
+            "type": "object"
+          },
+          "output_schema": {
+            "type": "object"
+          },
+          "required_role": {
+            "type": "string",
+            "enum": ["viewer", "operator", "admin", "owner"]
+          },
+          "confirm_gate": {
+            "type": "boolean"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "idempotency_ttl_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 604800
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "maxItems": 32
+          }
+        }
+      }
+    }
+  }
+}
