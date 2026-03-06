@@ -107,23 +107,13 @@ from app.contracts.tool_contracts import (
     extract_chat_message,
     normalize_chat_response,
 )
-from app.modules.aufgaben.contracts import build_health as build_aufgaben_health
-from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
 from app.modules.aufgaben.contracts import create_task as aufgaben_create_task
 from app.modules.actions_api import (
     ActionApiTemplate,
     ActionDefinition,
     register_actions_endpoints,
 )
-from app.modules.einstellungen.contracts import build_health as build_einstellungen_health
-from app.modules.einstellungen.contracts import build_summary as build_einstellungen_summary
-from app.modules.kalender.contracts import build_health as build_kalender_health
-from app.modules.kalender.contracts import build_summary as build_kalender_summary
-from app.modules.projekte.contracts import build_health as build_projekte_health
-from app.modules.projekte.contracts import build_summary as build_projekte_summary
 from app.modules.upload.ingestion import ingest_unstructured_input
-from app.modules.zeiterfassung.contracts import build_health as build_zeiterfassung_health
-from app.modules.zeiterfassung.contracts import build_summary as build_zeiterfassung_summary
 
 logger = logging.getLogger("kukanilea.web")
 
@@ -3793,41 +3783,6 @@ def email_page():
     return mail_page()
 
 
-@bp.get("/calendar")
-@login_required
-def calendar_page():
-    from app.knowledge.ics_source import knowledge_calendar_events_list
-
-    tenant_id = current_tenant() or session.get("tenant_id") or "default"
-    try:
-        events = knowledge_calendar_events_list(tenant_id)
-    except Exception:
-        current_app.logger.exception("Kalenderdaten konnten nicht geladen werden")
-        events = []
-    return _render_base(
-        "calendar.html",
-        active_tab="calendar",
-        events=events,
-    )
-
-
-@bp.get("/calendar/export.ics")
-@login_required
-def calendar_export_ics():
-    from app.knowledge.ics_source import knowledge_ics_build_local_feed
-
-    tenant_id = current_tenant() or session.get("tenant_id") or "default"
-    try:
-        ics_content = knowledge_ics_build_local_feed(tenant_id)
-    except Exception:
-        current_app.logger.exception("Calendar export failed")
-        ics_content = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//KUKANILEA//EMPTY//DE\nEND:VCALENDAR\n"
-    return current_app.response_class(
-        ics_content,
-        mimetype="text/calendar",
-        headers={"Content-Disposition": "attachment; filename=calendar.ics"},
-    )
-
 
 @bp.route("/upload", methods=["POST"])
 @csrf_protected
@@ -4333,6 +4288,24 @@ def admin_audit():
     return _render_base("audit_trail.html", active_tab="settings", trail=trail)
 
 
+@bp.route("/calendar/export.ics")
+@login_required
+def calendar_export_ics():
+    # Compatibility endpoint used by legacy templates (`web.calendar_export_ics`).
+    from app.knowledge.ics_source import knowledge_ics_build_local_feed
+
+    tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
+    ics_content = knowledge_ics_build_local_feed(tenant_id)
+    return (
+        ics_content,
+        200,
+        {
+            "Content-Type": "text/calendar; charset=utf-8",
+            "Content-Disposition": "attachment; filename=calendar.ics",
+        },
+    )
+
+
 @bp.route("/api/tools")
 @login_required
 def api_list_tools():
@@ -4340,24 +4313,49 @@ def api_list_tools():
     return jsonify(ok=True, tools=registry.list())
 
 
+def _normalize_contract_tool(tool: str) -> str | None:
+    raw = str(tool or "").strip().lower()
+    if not raw or not re.fullmatch(r"[a-z0-9_-]{2,40}", raw):
+        return None
+    aliases = {
+        "kalender": "calendar",
+        "aufgaben": "tasks",
+        "projekte": "projects",
+        "zeiterfassung": "time",
+        "einstellungen": "settings",
+    }
+    resolved = aliases.get(raw, raw)
+    if resolved not in CONTRACT_TOOLS:
+        return None
+    return resolved
+
+
+def _contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
+    raw = str(requested_tool or "").strip().lower()
+    if raw in {
+        "kalender",
+        "aufgaben",
+        "projekte",
+        "zeiterfassung",
+        "einstellungen",
+    }:
+        return raw
+    if raw in CONTRACT_TOOLS:
+        return raw
+    return normalized_tool
+
+
+
 @bp.get("/api/<tool>/summary")
 @login_required
 def api_tool_summary(tool: str):
     tenant = str(current_tenant() or "default")
-    domain_summary_builders = {
-        "kalender": build_kalender_summary,
-        "aufgaben": build_aufgaben_summary,
-        "zeiterfassung": build_zeiterfassung_summary,
-        "projekte": build_projekte_summary,
-        "einstellungen": build_einstellungen_summary,
-    }
-    builder = domain_summary_builders.get(tool)
-    if builder is not None:
-        return jsonify(builder(tenant))
-
-    if tool not in CONTRACT_TOOLS:
+    normalized_tool = _normalize_contract_tool(tool)
+    if normalized_tool is None:
         return jsonify(error="unknown_tool", tool=tool), 404
-    payload = build_tool_summary(tool, tenant=tenant)
+
+    payload = build_tool_summary(normalized_tool, tenant=tenant)
+    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
     return jsonify(payload)
 
 
@@ -4402,21 +4400,12 @@ def api_upload_ingest():
 @login_required
 def api_tool_health(tool: str):
     tenant = str(current_tenant() or "default")
-    domain_health_builders = {
-        "kalender": build_kalender_health,
-        "aufgaben": build_aufgaben_health,
-        "zeiterfassung": build_zeiterfassung_health,
-        "projekte": build_projekte_health,
-        "einstellungen": build_einstellungen_health,
-    }
-    builder = domain_health_builders.get(tool)
-    if builder is not None:
-        payload, code = builder(tenant)
-        return jsonify(payload), code
-
-    if tool not in CONTRACT_TOOLS:
+    normalized_tool = _normalize_contract_tool(tool)
+    if normalized_tool is None:
         return jsonify(error="unknown_tool", tool=tool), 404
-    payload = build_tool_health(tool, tenant=tenant)
+
+    payload = build_tool_health(normalized_tool, tenant=tenant)
+    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
     code = 200 if payload.get("status") in {"ok", "degraded"} else 503
     return jsonify(payload), code
 
