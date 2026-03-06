@@ -7,7 +7,7 @@ from flask import Request, jsonify, request
 
 from app.auth import current_role, current_tenant, current_user, login_required
 from app.errors import json_error
-from app.security import confirm_gate
+from app.security.approval_runtime import RuntimeApprovalPolicy, create_approval_challenge, validate_approval_token
 
 
 PermissionChecker = Callable[[str, str], bool]
@@ -96,19 +96,48 @@ class ActionApiTemplate:
         if not isinstance(payload, dict):
             payload = {}
 
-        confirm_required = action.write_operation or action.risk == "high_risk"
-        if confirm_required:
-            confirm_token = payload.get("confirm") or req.headers.get("X-Confirm")
-            if not confirm_gate(str(confirm_token or "")):
-                return {
-                    "ok": False,
-                    "error": "confirm_required",
-                    "tool": self.tool,
-                    "name": action.name,
-                }, 409
-
         actor = str(current_user() or "system")
         tenant = str(current_tenant() or "default")
+        policy = RuntimeApprovalPolicy(
+            requires_confirm=bool(action.write_operation or action.risk == "high_risk"),
+            risk_level=str(action.risk or "low_risk"),
+            approval_scope=f"tool:{self.tool}:{action.name}",
+            approval_ttl_seconds=120,
+            approval_subject=f"{tenant}:{actor}",
+        )
+
+        approved, reason = validate_approval_token(
+            approval_token=payload.get("approval_token") or payload.get("confirm") or req.headers.get("X-Approval-Token"),
+            policy=policy,
+        )
+        if not approved and policy.requires_confirm:
+            challenge = create_approval_challenge(policy)
+            SharedServices.log_event(
+                "tool_action_approval_denied",
+                {
+                    "tool": self.tool,
+                    "action": action.name,
+                    "actor": actor,
+                    "tenant": tenant,
+                    "approval_reason": reason,
+                    "approval_scope": policy.approval_scope,
+                },
+            )
+            return {
+                "ok": False,
+                "error": "confirm_required",
+                "tool": self.tool,
+                "name": action.name,
+                "approval": {
+                    "reason": reason,
+                    "scope": policy.approval_scope,
+                    "risk_level": policy.risk_level,
+                    "approval_ttl_seconds": policy.approval_ttl_seconds,
+                    "approval_subject": policy.approval_subject,
+                    "challenge": challenge,
+                },
+            }, 409
+
         SharedServices.log_event(
             "tool_action_execute_requested",
             {
@@ -118,6 +147,8 @@ class ActionApiTemplate:
                 "risk": action.risk,
                 "actor": actor,
                 "tenant": tenant,
+                "requires_confirm": policy.requires_confirm,
+                "approval_scope": policy.approval_scope,
             },
         )
 

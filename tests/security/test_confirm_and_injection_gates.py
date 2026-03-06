@@ -56,18 +56,23 @@ def admin_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return app, client
 
 
-@pytest.mark.parametrize("confirm_value", ["YES", "yes", "true", "1", "CONFIRM"])
-def test_write_routes_require_confirm_gate_accepts_expected_tokens(admin_client, confirm_value: str):
+def test_write_routes_require_runtime_approval_token(admin_client):
     _, client = admin_client
+    denied = client.post("/admin/settings/users/delete", data={"username": "other-admin"})
+    assert denied.status_code == 400
+    denied_body = denied.get_json()
+    assert denied_body["error"] == "confirm_required"
+    challenge = denied_body["approval"]["challenge"]
+
     response = client.post(
         "/admin/settings/users/delete",
-        data={"username": "other-admin", "confirm": confirm_value},
+        data={"username": "other-admin", "approval_token": challenge},
     )
     assert response.status_code in {302, 303}
     assert response.headers["Location"].endswith("/admin/settings?section=users")
 
 
-@pytest.mark.parametrize("confirm_value", ["", "no", "0", "false", " y "])
+@pytest.mark.parametrize("confirm_value", ["", "no", "0", "false", " y ", "YES", "CONFIRM"])
 def test_delete_user_rejects_invalid_confirm_tokens(admin_client, confirm_value: str):
     _, client = admin_client
     response = client.post(
@@ -95,17 +100,17 @@ def test_delete_user_blocks_sql_pattern_in_confirm(admin_client):
     [
         (
             "/admin/settings/users/create",
-            {"username": "alice'; DROP TABLE users; --", "password": "pw", "tenant_id": "KUKANILEA", "confirm": "CONFIRM"},
+            {"username": "alice'; DROP TABLE users; --", "password": "pw", "tenant_id": "KUKANILEA", "confirm": "token"},
             "username",
         ),
         (
             "/admin/settings/tenants/add",
-            {"name": "KUKANILEA<script>alert(1)</script>", "db_path": "/tmp/core.sqlite3", "confirm": "CONFIRM"},
+            {"name": "KUKANILEA<script>alert(1)</script>", "db_path": "/tmp/core.sqlite3", "confirm": "token"},
             "name",
         ),
         (
             "/admin/settings/mesh/connect",
-            {"peer_ip": "javascript:alert(1)", "peer_port": "5051", "confirm": "CONFIRM"},
+            {"peer_ip": "javascript:alert(1)", "peer_port": "5051", "confirm": "token"},
             "peer_ip",
         ),
     ],
@@ -153,6 +158,16 @@ def test_additional_critical_write_routes_require_confirm_gate(admin_client, rou
         import app.routes.admin_tenants as admin_routes
 
         monkeypatch.setattr(admin_routes.MeshNetworkManager, "initiate_handshake", lambda *_args, **_kwargs: True)
+    first_payload = dict(payload)
+    first_payload.pop("confirm", None)
+    denied = client.post(route, data=first_payload)
+    assert denied.status_code == 400
+    denied_body = denied.get_json()
+    assert denied_body["error"] == "confirm_required"
+
+    payload = dict(payload)
+    payload["approval_token"] = denied_body["approval"]["challenge"]
+    payload.pop("confirm", None)
     response = client.post(route, data=payload)
     if route == "/admin/settings/backup/restore":
         assert response.status_code == 500

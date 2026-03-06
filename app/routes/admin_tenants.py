@@ -35,9 +35,9 @@ from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
 from app.license import load_license
+from app.security.approval_runtime import RuntimeApprovalPolicy, create_approval_challenge, validate_approval_token
 from app.security.gates import (
     CRITICAL_CONFIRM_GATE_BY_ROUTE,
-    confirm_gate,
     scan_payload_for_injection,
 )
 
@@ -108,20 +108,10 @@ def _save_system_settings(payload: dict[str, Any]) -> None:
     settings_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _confirm_gate(value: str) -> bool:
-    return confirm_gate(value)
-
-
 def _reject_injection(fields: tuple[str, ...]):
     finding = scan_payload_for_injection(request.form, fields)
     if finding:
         return jsonify(ok=False, error="injection_blocked", field=finding.field), 400
-    return None
-
-
-def _require_confirm():
-    if not _confirm_gate(request.form.get("confirm")):
-        return jsonify(ok=False, error="confirm_required"), 400
     return None
 
 
@@ -133,7 +123,47 @@ def _enforce_critical_gate(route: str):
     if blocked:
         return blocked
     if policy.required:
-        return _require_confirm()
+        actor = str(current_user() or "system")
+        tenant = str(current_tenant() or "SYSTEM")
+        runtime_policy = RuntimeApprovalPolicy(
+            requires_confirm=True,
+            risk_level="critical",
+            approval_scope=f"admin:{route}",
+            approval_ttl_seconds=180,
+            approval_subject=f"{tenant}:{actor}",
+        )
+        approved, reason = validate_approval_token(
+            approval_token=request.form.get("approval_token") or request.form.get("confirm") or request.headers.get("X-Approval-Token"),
+            policy=runtime_policy,
+        )
+        if not approved:
+            challenge = create_approval_challenge(runtime_policy)
+            audit_log(
+                user=actor,
+                role=current_role() or "ADMIN",
+                action="ADMIN_APPROVAL_DENIED",
+                meta={
+                    "route": route,
+                    "reason": reason,
+                    "approval_scope": runtime_policy.approval_scope,
+                },
+                tenant_id=tenant,
+            )
+            return (
+                jsonify(
+                    ok=False,
+                    error="confirm_required",
+                    approval={
+                        "reason": reason,
+                        "scope": runtime_policy.approval_scope,
+                        "risk_level": runtime_policy.risk_level,
+                        "approval_ttl_seconds": runtime_policy.approval_ttl_seconds,
+                        "approval_subject": runtime_policy.approval_subject,
+                        "challenge": challenge,
+                    },
+                ),
+                400,
+            )
     return None
 
 
