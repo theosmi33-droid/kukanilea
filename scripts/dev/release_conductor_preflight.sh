@@ -84,6 +84,9 @@ fi
 if [[ "$TEST_RESULT" == "FAIL" ]]; then
   EXIT_CODE=1
 fi
+if [[ "$GH_STATUS" == "warn" || "$RUN_STATUS" == "warn" || "$PROD_STATUS" == "warn" ]]; then
+  EXIT_CODE=1
+fi
 
 echo ""
 echo "=== Release Conductor Summary ==="
