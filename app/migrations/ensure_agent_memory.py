@@ -1,4 +1,4 @@
-"""Idempotent ensure script for agent_memory and api_outbound_queue tables."""
+"""Idempotent ensure script for agent_memory, memory_audit_log and api_outbound_queue tables."""
 
 from __future__ import annotations
 
@@ -33,6 +33,23 @@ def ensure_agent_memory_tables(db_path: str = DEFAULT_DB) -> None:
 
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS memory_audit_log (
+                id TEXT PRIMARY KEY,
+                memory_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                payload TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_audit_tenant_ts ON memory_audit_log(tenant_id, created_at);"
+        )
+
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS api_outbound_queue (
                 id TEXT PRIMARY KEY,
                 tenant_id TEXT,
@@ -55,4 +72,4 @@ def ensure_agent_memory_tables(db_path: str = DEFAULT_DB) -> None:
 
 if __name__ == "__main__":
     ensure_agent_memory_tables()
-    print(f"Ensured agent_memory and api_outbound_queue in {DEFAULT_DB}")
+    print(f"Ensured agent_memory, memory_audit_log and api_outbound_queue in {DEFAULT_DB}")

@@ -73,6 +73,9 @@ class Config:
     )
     TRIAL_PATH = Path(_env("KUKANILEA_TRIAL_PATH", str(USER_DATA_ROOT / "trial.json")))
     TRIAL_DAYS = int(_env("KUKANILEA_TRIAL_DAYS", "14"))
+    RESEARCH_CACHE_PATH = Path(
+        _env("KUKANILEA_RESEARCH_CACHE_PATH", str(USER_DATA_ROOT / "research_cache.json"))
+    )
 
     IMPORT_ROOT = Path(_env("IMPORT_ROOT", str(USER_DATA_ROOT / "imports")))
     IMPORT_ROOT.mkdir(parents=True, exist_ok=True)
