@@ -1,0 +1,38 @@
+{
+  "generated_for": "gate7_mia_audit_example",
+  "events": [
+    {
+      "event_type": "mia.intent.detected",
+      "payload": {
+        "tenant_id": "KUKANILEA",
+        "user_id": "dev",
+        "action": "classify_intent",
+        "status": "detected",
+        "risk": "low",
+        "meta": {"token_count": 3}
+      }
+    },
+    {
+      "event_type": "mia.action.selected",
+      "payload": {
+        "tenant_id": "KUKANILEA",
+        "user_id": "dev",
+        "action": "core.read_action",
+        "status": "selected",
+        "risk": "low",
+        "meta": {"confidence": 0.88}
+      }
+    },
+    {
+      "event_type": "mia.route.executed",
+      "payload": {
+        "tenant_id": "KUKANILEA",
+        "user_id": "dev",
+        "action": "tool.echo",
+        "status": "executed",
+        "risk": "medium",
+        "meta": {}
+      }
+    }
+  ]
+}
