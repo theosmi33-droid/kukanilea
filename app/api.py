@@ -10,6 +10,7 @@ from app.modules.kalender.contracts import build_health as build_kalender_health
 from app.modules.kalender.contracts import build_summary as build_kalender_summary
 from app.modules.kalender.contracts import create_event
 from app.modules.projekte.contracts import create_project
+from app.research.service import generate_summary
 
 from .rate_limit import search_limiter
 
@@ -260,3 +261,35 @@ def outbound_status():
             return jsonify(**payload)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
+
+
+@bp.post("/research/summary")
+def research_summary():
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query") or "").strip()
+    if not query:
+        return jsonify(ok=False, error="query_required"), 400
+
+    online = bool(payload.get("online", False))
+    confirm = payload.get("confirm")
+    result = generate_summary(topic="research", query=query, online=online, confirm=confirm)
+    if result["provenance"]["outbound_blocked"]:
+        blocked = {**result, "ok": False, "error": "confirm_required"}
+        return jsonify(**blocked), 409
+    return jsonify(**result)
+
+
+@bp.post("/news/summary")
+def news_summary():
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query") or "").strip()
+    if not query:
+        return jsonify(ok=False, error="query_required"), 400
+
+    online = bool(payload.get("online", False))
+    confirm = payload.get("confirm")
+    result = generate_summary(topic="news", query=query, online=online, confirm=confirm)
+    if result["provenance"]["outbound_blocked"]:
+        blocked = {**result, "ok": False, "error": "confirm_required"}
+        return jsonify(**blocked), 409
+    return jsonify(**result)
