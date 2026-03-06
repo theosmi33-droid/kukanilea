@@ -29,6 +29,13 @@ def test_launch_evidence_json_contains_gate_matrix():
     assert '"status": statuses[i]' in script
 
 
+def test_launch_evidence_uses_deterministic_decision_states():
+    script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
+    assert 'DECISION="PASS"' in script
+    assert 'DECISION="WARN"' in script
+    assert 'DECISION="FAIL"' in script
+
+
 def test_launch_evidence_requires_backup_restore_hook_evidence():
     script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
     assert "backup_verify_hook=ok" in script

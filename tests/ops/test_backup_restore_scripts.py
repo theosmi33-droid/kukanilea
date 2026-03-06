@@ -149,3 +149,19 @@ def test_restore_fails_when_snapshot_missing(tmp_path: Path) -> None:
     )
     assert result.returncode == 4
     assert "snapshot file missing" in result.stdout
+
+
+def test_backup_artifacts_are_tenant_scoped(tmp_path: Path) -> None:
+    _prepare_instance(tmp_path)
+    env = os.environ.copy()
+    env["TENANT_ID"] = "TENANT_A"
+    env["NAS_SHARE"] = "//127.0.0.1/does-not-exist"
+    env["LOCAL_FALLBACK_DIR"] = str(tmp_path / "instance" / "degraded_backups")
+    env["REPORT_FILE"] = str(tmp_path / "instance" / "backup_report.txt")
+    subprocess.run(["bash", str(Path.cwd() / "scripts/ops/backup_to_nas.sh")], cwd=tmp_path, env=env, check=True)
+
+    tenant_dir = tmp_path / "instance" / "degraded_backups" / "TENANT_A"
+    backup_files = list(tenant_dir.glob("TENANT_A_*.tar.zst*"))
+    checksum_files = list(tenant_dir.glob("TENANT_A_*.sha256"))
+    assert backup_files
+    assert checksum_files
