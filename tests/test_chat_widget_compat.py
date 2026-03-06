@@ -124,6 +124,8 @@ def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_p
     body = resp.get_json()
     assert body["requires_confirm"] is True
     assert body["pending_id"]
+    assert len(body["pending_approvals"]) == 1
+    assert body["pending_approvals"][0]["pending_id"] == body["pending_id"]
 
     yes = client.post(
         "/api/chat/compact",
@@ -135,4 +137,53 @@ def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_p
     assert confirmed["ok"] is True
     assert confirmed["requires_confirm"] is False
     assert confirmed["pending_id"] == ""
+    assert confirmed["pending_approvals"] == []
     assert "ausgeführt" in confirmed["status"].lower()
+
+
+def test_compact_chat_maintains_pending_approvals_queue(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        now = utc_now_iso()
+        from app.auth import hash_password
+
+        auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
+        auth_db.upsert_user("dev", hash_password("dev"), now)
+        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
+
+    import app.web as web
+
+    monkeypatch.setattr(web, "agent_answer", lambda *_args, **_kwargs: {"ok": True, "text": "bereit", "actions": []})
+
+    with client.session_transaction() as sess:
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
+        sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "csrf-test"
+
+    first = client.post(
+        "/api/chat/compact",
+        json={"message": "Bitte sende den Report", "current_context": "/dashboard"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    ).get_json()
+    second = client.post(
+        "/api/chat/compact",
+        json={"message": "Bitte erstelle Aufgabe für Follow-up", "current_context": "/dashboard"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    ).get_json()
+
+    assert first["pending_id"]
+    assert second["pending_id"]
+    assert len(second["pending_approvals"]) == 2
+
+    listing = client.get(
+        "/api/chat/compact?pending=1",
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert listing.status_code == 200
+    listed = listing.get_json()
+    assert listed["ok"] is True
+    assert len(listed["pending_approvals"]) == 2
