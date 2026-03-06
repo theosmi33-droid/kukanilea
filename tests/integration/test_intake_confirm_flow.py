@@ -48,9 +48,11 @@ def test_intake_execute_requires_explicit_confirm(tmp_path, monkeypatch):
         con = sqlite3.connect(app.config["CORE_DB"])
         try:
             count = con.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            mia_confirm_denied = con.execute("SELECT COUNT(*) FROM events WHERE event_type='mia.confirm.denied'").fetchone()[0]
         finally:
             con.close()
     assert count == 0
+    assert mia_confirm_denied == 1
 
 
 def test_intake_execute_confirm_creates_task_and_logs(tmp_path, monkeypatch):
@@ -70,6 +72,12 @@ def test_intake_execute_confirm_creates_task_and_logs(tmp_path, monkeypatch):
     assert body["status"] == "executed"
     assert body["task"]["task_id"] > 0
     assert body["event_log_id"] > 0
+    assert body["mia_event_ids"]["proposal_created"] > 0
+    assert body["mia_event_ids"]["confirm_requested"] > 0
+    assert body["mia_event_ids"]["confirm_granted"] > 0
+    assert body["mia_event_ids"]["execution_started"] > 0
+    assert body["mia_event_ids"]["execution_finished"] > 0
+    assert body["mia_event_ids"]["audit_trail_linked"] > 0
 
     with app.app_context():
         con = sqlite3.connect(app.config["CORE_DB"])
@@ -77,9 +85,11 @@ def test_intake_execute_confirm_creates_task_and_logs(tmp_path, monkeypatch):
             task_count = con.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
             audit_count = con.execute("SELECT COUNT(*) FROM audit WHERE action='intake_execute_confirmed'").fetchone()[0]
             event_count = con.execute("SELECT COUNT(*) FROM events WHERE event_type='intake_execute_confirmed'").fetchone()[0]
+            mia_count = con.execute("SELECT COUNT(*) FROM events WHERE event_type LIKE 'mia.%'").fetchone()[0]
         finally:
             con.close()
 
     assert task_count == 1
     assert audit_count == 1
     assert event_count == 1
+    assert mia_count >= 6
