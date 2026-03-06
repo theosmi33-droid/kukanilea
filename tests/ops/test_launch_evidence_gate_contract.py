@@ -27,3 +27,9 @@ def test_launch_evidence_json_contains_gate_matrix():
     assert '"gates": gates' in script
     assert '"name": names[i]' in script
     assert '"status": statuses[i]' in script
+
+
+def test_launch_evidence_requires_backup_restore_hook_evidence():
+    script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
+    assert "backup_verify_hook=ok" in script
+    assert "restore_verify_hook=ok" in script
