@@ -1,0 +1,33 @@
+{
+  "name": "Case acknowledgement",
+  "description": "Drafts a case email when a support case is opened.",
+  "enabled": true,
+  "triggers": [
+    {
+      "type": "eventlog",
+      "config": {
+        "allowed_event_types": [
+          "case.opened"
+        ]
+      }
+    }
+  ],
+  "conditions": [
+    {
+      "type": "match_context",
+      "config": {
+        "field": "case_id",
+        "present": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "type": "create_task",
+      "config": {
+        "title": "Case acknowledgement {{case_id}}",
+        "requires_confirm": false
+      }
+    }
+  ]
+}
