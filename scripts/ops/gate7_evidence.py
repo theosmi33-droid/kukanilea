@@ -54,13 +54,13 @@ def _build_test_matrix() -> list[Scenario]:
             message="Bitte erstelle eine Aufgabe für morgen",
             context={"tenant": "KUKANILEA", "user": "ops"},
             expected_status="confirm_required",
-            expected_reason="confirm_gate",
+            expected_reason="approval_required",
             expected_action="tasks.task.create",
         ),
         Scenario(
             name="write_mit_confirm_moeglich",
             message="Bitte erstelle eine Aufgabe für 07.10",
-            context={"tenant": "KUKANILEA", "user": "ops", "confirm": "yes"},
+            context={"tenant": "KUKANILEA", "user": "ops"},
             expected_status="routed",
             expected_action="tasks.task.create",
         ),
@@ -96,6 +96,17 @@ def evaluate_gate7() -> dict[str, Any]:
     scenario_results: dict[str, dict[str, str]] = {}
     for scenario in _build_test_matrix():
         route_result = agent.route(scenario.message, scenario.context)
+        if scenario.name == "write_mit_confirm_moeglich":
+            approval_id = str((route_result.audit_event or {}).get("approval_id") or "")
+            if approval_id:
+                agent.approvals.approve(approval_id, tenant=str(scenario.context.get("tenant") or "default"), approver_user="security-admin")
+                route_result = agent.route(
+                    scenario.message,
+                    {
+                        **scenario.context,
+                        "approval_id": approval_id,
+                    },
+                )
         action_ok = scenario.expected_action is None or route_result.decision.action == scenario.expected_action
         reason_ok = scenario.expected_reason is None or route_result.reason == scenario.expected_reason
 
@@ -137,7 +148,8 @@ def evaluate_gate7() -> dict[str, Any]:
                 and "manager_agent.blocked" in audit_event_types
                 and len(audit_payloads) == len(bus.events)
                 and all(
-                    event.get("payload", {}).get("action") in {"dashboard.summary.read", "tasks.task.create", "safe_fallback"}
+                    str(event.get("event_type") or "").startswith("approval.")
+                    or event.get("payload", {}).get("action") in {"dashboard.summary.read", "tasks.task.create", "safe_fallback"}
                     for event in bus.events
                 )
             ),

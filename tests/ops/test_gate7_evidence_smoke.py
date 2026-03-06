@@ -34,7 +34,7 @@ def test_gate7_smoke_matrix_contains_router_approval_audit_guardrail_paths() -> 
     assert matrix["summary_read_api_ok"]["action"] == "dashboard.summary.read"
     assert matrix["summary_read_api_ok"]["execution_mode"] == "read"
     assert matrix["write_confirm_gate_erzwungen"]["status"] == "confirm_required"
-    assert matrix["write_confirm_gate_erzwungen"]["reason"] == "confirm_gate"
+    assert matrix["write_confirm_gate_erzwungen"]["reason"] == "approval_required"
     assert matrix["write_mit_confirm_moeglich"]["status"] == "routed"
     assert matrix["injection_blockiert"]["status"] == "blocked"
     assert matrix["injection_blockiert"]["reason"] == "prompt_injection"
