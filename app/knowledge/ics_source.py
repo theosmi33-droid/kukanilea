@@ -655,16 +655,22 @@ def _read_ocr_deadline_events(tenant_id: str) -> list[dict[str, str]]:
     with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
         con = _db()
         try:
-            rows = con.execute(
-                """
-                SELECT chunk_id, body, source_ref
-                FROM knowledge_chunks
-                WHERE tenant_id=? AND source_type='calendar' AND source_ref LIKE 'calendar_ocr:%'
-                ORDER BY updated_at DESC, created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (tenant_id, limit),
-            ).fetchall()
+            try:
+                rows = con.execute(
+                    """
+                    SELECT chunk_id, body, source_ref
+                    FROM knowledge_chunks
+                    WHERE tenant_id=? AND source_type='calendar' AND source_ref LIKE 'calendar_ocr:%'
+                    ORDER BY updated_at DESC, created_at DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (tenant_id, limit),
+                ).fetchall()
+            except sqlite3.OperationalError as exc:
+                if "no such table" in str(exc).lower():
+                    rows = []
+                else:
+                    raise
         finally:
             con.close()
 
@@ -1392,15 +1398,22 @@ def _read_manual_events(tenant_id: str, owner_user_id: str | None = None) -> lis
     with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
         con = _db()
         try:
-            rows = con.execute(
-                f"""
-                SELECT chunk_id, owner_user_id, source_ref, title, body, tags, created_at, updated_at
-                FROM knowledge_chunks
-                {where}
-                ORDER BY updated_at DESC, created_at DESC, id DESC
-                """,
-                tuple(params),
-            ).fetchall()
+            try:
+                rows = con.execute(
+                    f"""
+                    SELECT chunk_id, owner_user_id, source_ref, title, body, tags, created_at, updated_at
+                    FROM knowledge_chunks
+                    {where}
+                    ORDER BY updated_at DESC, created_at DESC, id DESC
+                    """,
+                    tuple(params),
+                ).fetchall()
+            except sqlite3.OperationalError as exc:
+                # Test/bootstrap databases may not have the optional knowledge_chunks table yet.
+                if "no such table" in str(exc).lower():
+                    rows = []
+                else:
+                    raise
         finally:
             con.close()
 
