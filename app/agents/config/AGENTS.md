@@ -1,6 +1,6 @@
-# KUKANILEA Agent Flotte (Sovereign-11)
+# KUKANILEA Agent Flotte (Sovereign-11 / OpenClaw)
 
-This configuration defines the verbindliche Sovereign-11 agent architecture for KUKANILEA.
+This configuration defines the verbindliche Sovereign-11, OpenClaw-inspired agent architecture for KUKANILEA.
 It is deterministic, local-first, offline-first, approval-gated, and auditierbar.
 
 ## 1. Orchestrators (The Core)

@@ -239,7 +239,7 @@ def build_summary(tenant: str) -> dict:
     events = _events_list(tenant, now, now + timedelta(days=7))
     conflicts = _find_conflicts(events)
     reminders = _reminders_due(tenant, now)
-    return build_contract_response(
+    payload = build_contract_response(
         tool="kalender",
         status="ok",
         metrics={
@@ -258,6 +258,12 @@ def build_summary(tenant: str) -> dict:
         },
         tenant=tenant,
     )
+    # Backward compatibility: legacy consumers read these fields at top-level.
+    payload["window_days"] = 7
+    payload["events_next_7_days"] = events
+    payload["conflicts"] = conflicts
+    payload["reminders_due"] = reminders
+    return payload
 
 
 def build_health(tenant: str) -> tuple[dict, int]:

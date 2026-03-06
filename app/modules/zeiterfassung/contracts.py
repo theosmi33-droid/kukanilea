@@ -48,6 +48,11 @@ def _offline_persistence_ready() -> int:
 
 def build_health(tenant: str) -> tuple[dict, int]:
     payload = build_summary(tenant)
+    offline_persistence = bool(_offline_persistence_ready())
+    payload["metrics"] = {
+        **(payload.get("metrics") or {}),
+        "offline_persistence": int(offline_persistence),
+    }
     payload["details"] = {
         **(payload.get("details") or {}),
         "checks": {
@@ -55,7 +60,7 @@ def build_health(tenant: str) -> tuple[dict, int]:
             "backend_ready": payload.get("status") == "ok",
             "offline_safe": True,
         },
-        "offline_persistence": bool(_offline_persistence_ready()),
+        "offline_persistence": offline_persistence,
     }
     code = 200 if payload["status"] in {"ok", "degraded"} else 503
     return payload, code
