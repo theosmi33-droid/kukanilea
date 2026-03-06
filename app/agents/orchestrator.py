@@ -42,6 +42,7 @@ class OrchestratorResult:
     suggestions: List[str]
     ok: bool = True
     error: str | None = None
+    audit: Dict[str, Any] = field(default_factory=dict)
 
 
 class MessengerAgent(BaseAgent):
@@ -49,13 +50,13 @@ class MessengerAgent(BaseAgent):
     required_role = "USER"
     scope = "messenger"
     tools = [
-        "messenger_send",
-        "messenger_sync",
-        "messenger_status",
-        "create_task",
-        "create_appointment",
-        "search_docs",
-        "mail_generate",
+        "messenger.message.send",
+        "messenger.sync.poll",
+        "messenger.status.check",
+        "tasks.item.create",
+        "calendar.event.create",
+        "docs.search.query",
+        "mail.draft.generate",
     ]
 
     def __init__(self, core_module=None) -> None:
@@ -99,7 +100,7 @@ class MessengerAgent(BaseAgent):
 
         actions: List[Dict[str, Any]] = []
         if self._asks_for_search(text):
-            actions.append({"type": "search_docs", "query": text})
+            actions.append({"type": "docs.search.query", "query": text})
         proposals = self._build_proposals(text, provider, crm_match)
         hint_lines = [
             "Messenger-Hub (Agent-Mode) aktiv.",
@@ -140,6 +141,8 @@ class MessengerAgent(BaseAgent):
             plan = self.planner.plan(intent, message, tenant_id=context.tenant_id, history=history)
             if not plan: break
             tool_name = plan.get("tool")
+            # Map legacy tool names if they appear in plan
+            tool_name = self._map_legacy_tool(tool_name)
             params = plan.get("params", {})
             thought = plan.get("thought", "")
             if tool_name == "final_answer":
@@ -148,7 +151,7 @@ class MessengerAgent(BaseAgent):
             try:
                 observation = self.executor.execute(tool_name, params)
                 history.append({"thought": thought, "action": tool_name, "params": params, "observation": observation})
-                if tool_name in ["create_task", "create_appointment", "mail_generate", "messenger_send"]:
+                if tool_name in ["tasks.item.create", "calendar.event.create", "mail.draft.generate", "messenger.message.send"]:
                     actions.append({"type": tool_name, **params})
             except Exception as e:
                 history.append({"thought": thought, "action": tool_name, "params": params, "observation": {"error": str(e)}})
@@ -159,6 +162,18 @@ class MessengerAgent(BaseAgent):
             data={"hub": {"provider": provider, "crm_match": crm_match, "react_trace": history, "storage_ok": stored, "mode": "agentic_loop"}},
             suggestions=["was hast du getan?", "zeige details", "ok"]
         )
+
+    def _map_legacy_tool(self, tool: str | None) -> str:
+        mapping = {
+            "messenger_send": "messenger.message.send",
+            "messenger_sync": "messenger.sync.poll",
+            "messenger_status": "messenger.status.check",
+            "create_task": "tasks.item.create",
+            "create_appointment": "calendar.event.create",
+            "search_docs": "docs.search.query",
+            "mail_generate": "mail.draft.generate",
+        }
+        return mapping.get(str(tool), str(tool))
 
     def _extract_provider(self, message: str) -> str:
         text = message.lower()
@@ -185,13 +200,13 @@ class MessengerAgent(BaseAgent):
         proposals = []
         text_lower = text.lower()
         if any(k in text_lower for k in ["sende", "schick", "antworten", "reply"]):
-            proposals.append({"type": "messenger_send", "provider": provider, "confirm_required": True, "policy": "business_only" if provider in ["whatsapp", "meta", "instagram"] else "standard"})
+            proposals.append({"type": "messenger.message.send", "provider": provider, "confirm_required": True, "policy": "business_only" if provider in ["whatsapp", "meta", "instagram"] else "standard"})
         if any(k in text_lower for k in ["task", "aufgabe", "todo"]):
-            proposals.append({"type": "create_task", "confirm_required": True, "title": text[:50] + "..."})
+            proposals.append({"type": "tasks.item.create", "confirm_required": True, "title": text[:50] + "..."})
         if any(k in text_lower for k in ["termin", "kalender", "meeting"]):
-            proposals.append({"type": "create_appointment", "confirm_required": True, "summary": text[:50] + "..."})
+            proposals.append({"type": "calendar.event.create", "confirm_required": True, "summary": text[:50] + "..."})
         if any(k in text_lower for k in ["entwurf", "draft", "mail"]):
-            proposals.append({"type": "mail_generate", "confirm_required": True, "reason": "assistant_draft"})
+            proposals.append({"type": "mail.draft.generate", "confirm_required": True, "reason": "assistant_draft"})
         return proposals
 
     def _asks_for_search(self, text: str) -> bool:
@@ -210,18 +225,23 @@ class Orchestrator:
         self.audit_log = getattr(core_module, "audit_log", None)
         self.task_create = getattr(core_module, "task_create", None)
         self.allowed_tools = {
-            "search_docs",
-            "open_token",
-            "show_customer",
-            "summarize_doc",
-            "list_tasks",
-            "rebuild_index",
-            "lexoffice_upload",
-            "memory_store",
-            "memory_search",
-            "generate_zugferd_xml",
-            "mesh_sync",
-            "mail_generate",
+            "docs.search.query",
+            "docs.file.open",
+            "crm.customer.show",
+            "docs.file.summarize",
+            "tasks.list.query",
+            "sys.index.rebuild",
+            "fin.lexoffice.upload",
+            "sys.memory.store",
+            "sys.memory.search",
+            "fin.zugferd.generate",
+            "sys.mesh.sync",
+            "mail.draft.generate",
+            "time.entry.start",
+            "time.entry.stop",
+            "time.project.create",
+            "projects.job.create",
+            "projects.task.assign",
         }
         self.agents = [
             OpenFileAgent(),
@@ -272,6 +292,10 @@ class Orchestrator:
                 suggestions=suggestions,
                 ok=False,
                 error="prompt_injection_blocked",
+                audit={
+                    "event_type": "action.sys.security.blocked",
+                    "risk_level": "L2"
+                }
             )
 
         for agent in self.agents:
@@ -291,9 +315,22 @@ class Orchestrator:
                         suggestions=build_safe_suggestions(["hilfe", "suche rechnung"]),
                         ok=False,
                         error="policy_denied",
+                        audit={
+                            "event_type": "action.sys.auth.denied",
+                            "risk_level": "L0"
+                        }
                     )
                 result: AgentResult = agent.handle(message, intent, context)
                 actions = self._apply_policy(context, agent, result.actions)
+                
+                # Standardize Audit Envelope
+                audit_meta = {
+                    "event_type": f"action.{agent.scope}.handle.ok",
+                    "risk_level": "L0" if not actions else "L1"
+                }
+                if any(a.get("confirm_required") for a in actions):
+                    audit_meta["risk_level"] = "L2"
+
                 return OrchestratorResult(
                     text=result.text,
                     actions=actions,
@@ -302,6 +339,7 @@ class Orchestrator:
                     suggestions=build_safe_suggestions(result.suggestions),
                     ok=result.error is None,
                     error=result.error,
+                    audit=audit_meta
                 )
 
         self._record_failure(
@@ -318,6 +356,10 @@ class Orchestrator:
             suggestions=build_safe_suggestions(["suche rechnung", "wer ist 12393"]),
             ok=False,
             error="intent_unhandled",
+            audit={
+                "event_type": "action.sys.intent.unhandled",
+                "risk_level": "L0"
+            }
         )
 
     def _apply_policy(
