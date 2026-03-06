@@ -6,6 +6,11 @@ from flask import Blueprint, current_app, jsonify, render_template, request, ses
 
 from app.mail.intake import envelope_from_payload, normalize_intake_payload
 from app.modules.aufgaben.contracts import create_task
+from app.modules.aufgaben.logic import delete_task as aufgaben_delete_task
+from app.modules.aufgaben.logic import get_task as aufgaben_get_task
+from app.modules.aufgaben.logic import list_tasks as aufgaben_list_tasks
+from app.modules.aufgaben.logic import summary as aufgaben_summary
+from app.modules.aufgaben.logic import update_task as aufgaben_update_task
 from app.modules.kalender.contracts import build_health as build_kalender_health
 from app.modules.kalender.contracts import build_summary as build_kalender_summary
 from app.modules.kalender.contracts import create_invitation
@@ -18,6 +23,10 @@ from app.modules.projects.logic import ProjectManager
 from .rate_limit import search_limiter
 
 bp = Blueprint("api", __name__, url_prefix="/api")
+
+
+def _tenant() -> str:
+    return str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
 
 
 @bp.get("/ping")
@@ -70,7 +79,7 @@ def kalender_summary():
 @bp.get("/kalender/health")
 @search_limiter.limit_required
 def kalender_health():
-    tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+    tenant = _tenant()
     payload, code = build_kalender_health(tenant)
     return jsonify(payload), code
 
@@ -129,6 +138,64 @@ def kalender_create_invitation():
     if result.get("ok") is False:
         return jsonify(result), 409
     return jsonify(result), 202
+
+
+@bp.get("/aufgaben/summary")
+def aufgaben_summary_route():
+    metrics = aufgaben_summary(tenant=_tenant())
+    return jsonify(ok=True, metrics=metrics)
+
+
+@bp.get("/aufgaben")
+def aufgaben_list_route():
+    status = request.args.get("status")
+    items = aufgaben_list_tasks(tenant=_tenant(), status=status)
+    return jsonify(ok=True, items=items)
+
+
+@bp.post("/aufgaben")
+def aufgaben_create_route():
+    payload = request.get_json(silent=True) or {}
+    created = create_task(
+        tenant=_tenant(),
+        title=str(payload.get("title") or "Neue Aufgabe"),
+        details=str(payload.get("details") or ""),
+        due_date=payload.get("due_date"),
+        priority=str(payload.get("priority") or "MEDIUM"),
+        assigned_to=payload.get("assigned_to"),
+        source_type=str(payload.get("source_type") or "doc"),
+        source_ref=str(payload.get("source_ref") or ""),
+        created_by=str(session.get("user") or "system"),
+    )
+    task_id = int(created["task_id"])
+    task = aufgaben_get_task(tenant=_tenant(), task_id=task_id)
+    return jsonify(ok=True, task=task), 201
+
+
+@bp.get("/aufgaben/<int:task_id>")
+def aufgaben_get_route(task_id: int):
+    task = aufgaben_get_task(tenant=_tenant(), task_id=task_id)
+    if not task:
+        return jsonify(ok=False, error="not_found"), 404
+    return jsonify(ok=True, task=task)
+
+
+@bp.put("/aufgaben/<int:task_id>")
+@bp.patch("/aufgaben/<int:task_id>")
+def aufgaben_update_route(task_id: int):
+    payload = request.get_json(silent=True) or {}
+    task = aufgaben_update_task(tenant=_tenant(), task_id=task_id, payload=payload)
+    if not task:
+        return jsonify(ok=False, error="not_found"), 404
+    return jsonify(ok=True, task=task)
+
+
+@bp.delete("/aufgaben/<int:task_id>")
+def aufgaben_delete_route(task_id: int):
+    deleted = aufgaben_delete_task(tenant=_tenant(), task_id=task_id)
+    if not deleted:
+        return jsonify(ok=False, error="not_found"), 404
+    return jsonify(ok=True)
 
 
 @bp.post("/intake/normalize")
