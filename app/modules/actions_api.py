@@ -91,6 +91,8 @@ class ActionDefinition:
 class ActionApiTemplate:
     IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
     WRITE_DEDUP_WINDOW_SECONDS = 15
+    APPROVAL_TTL_SECONDS = 300
+    APPROVAL_TTL_MAX_SECONDS = 600
 
     def __init__(self, *, tool: str, actions: list[ActionDefinition]):
         self.tool = tool
@@ -111,6 +113,14 @@ class ActionApiTemplate:
             return explicit, self.IDEMPOTENCY_TTL_SECONDS, "explicit"
         derived = sha256(f"{self.tool}:{request_hash}".encode("utf-8")).hexdigest()[:32]
         return f"dedup:{derived}", self.WRITE_DEDUP_WINDOW_SECONDS, "derived"
+
+    def _resolve_approval_ttl(self, payload: Mapping[str, Any]) -> int:
+        raw = payload.get("approval_ttl")
+        try:
+            ttl = int(raw) if raw is not None else self.APPROVAL_TTL_SECONDS
+        except (TypeError, ValueError):
+            ttl = self.APPROVAL_TTL_SECONDS
+        return max(1, min(ttl, self.APPROVAL_TTL_MAX_SECONDS))
 
     def list_actions_payload(self) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
@@ -246,7 +256,7 @@ class ActionApiTemplate:
             elif not confirm_gate(str(payload.get("confirm") or req.headers.get("X-Confirm") or "")):
                 if idem_token:
                     GLOBAL_IDEMPOTENCY_STORE.complete_failure(scope=idem_scope, key=idempotency_key, token=idem_token)
-                ttl_seconds = int(payload.get("approval_ttl") or 300)
+                ttl_seconds = self._resolve_approval_ttl(payload)
                 challenge = _approval_engine().request_challenge(scope=scope, ttl_seconds=ttl_seconds)
                 return {
                     "ok": False,
