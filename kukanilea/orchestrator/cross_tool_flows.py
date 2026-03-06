@@ -318,7 +318,7 @@ def create_default_registry() -> AtomicActionRegistry:
     registry.register(
         "task_prepare_calendar_entry",
         lambda p: {
-            "calendar_title": str(p.get("task_title") or "Aufgabe")[:120],
+            "calendar_title": (_extract_untrusted_text(p, "task_title") or "Aufgabe")[:120],
             "calendar_start": str(p.get("task_due_at") or p.get("suggested_start") or ""),
         },
     )
@@ -331,8 +331,8 @@ def create_default_registry() -> AtomicActionRegistry:
     registry.register(
         "upload_extract_project_hint",
         lambda p: {
-            "project_hint": str(p.get("upload_project_hint") or p.get("filename") or "").strip(),
-            "upload_title": str(p.get("filename") or "Datei")[:120],
+            "project_hint": (_extract_untrusted_text(p, "upload_project_hint") or _extract_untrusted_text(p, "filename")).strip(),
+            "upload_title": (_extract_untrusted_text(p, "filename") or "Datei")[:120],
         },
     )
     registry.register(
@@ -362,8 +362,8 @@ def create_default_registry() -> AtomicActionRegistry:
         "invoice_propose_reminder",
         lambda p: {
             "reminder_proposal": (
-                f"Zahlungserinnerung für Rechnung {str(p.get('invoice_id') or 'unbekannt')[:50]} "
-                f"zum Termin {str(p.get('invoice_due_date') or 'offen')} erstellen"
+                f"Zahlungserinnerung für Rechnung {(_extract_untrusted_text(p, 'invoice_id') or 'unbekannt')[:50]} "
+                f"zum Termin {(_extract_untrusted_text(p, 'invoice_due_date') or 'offen')} erstellen"
             )
         },
     )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from kukanilea.orchestrator.cross_tool_flows import (
     CrossToolFlowEngine,
     build_core_flows,
@@ -192,28 +194,71 @@ def test_invoice_reminder_proposal_runs_without_write_confirmation() -> None:
     assert "Zahlungserinnerung" in str(result.outputs.get("reminder_proposal") or "")
 
 
-def test_missing_context_returns_proposal_for_new_flows() -> None:
+@pytest.mark.parametrize(
+    "flow_id",
+    [
+        "flow_task_to_calendar",
+        "flow_upload_to_project",
+        "flow_messenger_to_task",
+        "flow_invoice_reminder_proposal",
+    ],
+)
+def test_missing_context_returns_proposal_for_new_flows(flow_id: str) -> None:
     engine = _engine()
 
-    result = engine.run(flow_id="flow_upload_to_project", context={}, confirmations={})
+    result = engine.run(flow_id=flow_id, context={}, confirmations={})
 
     assert result.ok is False
     assert result.status == "propose_and_ask_confirmation"
     assert result.proposals[0]["type"] == "missing_context"
 
 
-def test_new_flows_emit_audit_evidence_per_step() -> None:
+@pytest.mark.parametrize(
+    ("flow_id", "context", "confirmations", "tool_health", "expected_steps"),
+    [
+        (
+            "flow_messenger_to_task",
+            {"message_text": "Bitte Freigabe einholen", "default_deadline": "2026-03-01"},
+            {"create_task": True},
+            {"tasks": True},
+            {"extract_task", "create_task"},
+        ),
+        (
+            "flow_task_to_calendar",
+            {"task_id": "T-1", "task_title": "Wartung", "task_due_at": "2026-02-01T10:00:00"},
+            {"create_calendar_event": True},
+            {"calendar": True},
+            {"prepare_calendar_entry", "create_calendar_event"},
+        ),
+        (
+            "flow_upload_to_project",
+            {"upload_id": "U-1", "filename": "angebot.pdf"},
+            {"link_upload": True},
+            {"projects": True},
+            {"extract_project_hint", "link_upload"},
+        ),
+        (
+            "flow_invoice_reminder_proposal",
+            {"invoice_id": "R-99", "invoice_due_date": "2026-03-15"},
+            {},
+            {},
+            {"extract_invoice_due", "propose_reminder"},
+        ),
+    ],
+)
+def test_new_flows_emit_audit_evidence_per_step(
+    flow_id: str,
+    context: dict,
+    confirmations: dict,
+    tool_health: dict,
+    expected_steps: set[str],
+) -> None:
     engine = _engine()
 
-    result = engine.run(
-        flow_id="flow_messenger_to_task",
-        context={"message_text": "Bitte Freigabe einholen", "default_deadline": "2026-03-01"},
-        confirmations={"create_task": True},
-        tool_health={"tasks": True},
-    )
+    result = engine.run(flow_id=flow_id, context=context, confirmations=confirmations, tool_health=tool_health)
 
     events_by_step = {e.get("step_id") for e in result.audit_evidence if e.get("event") == "flow.step_executed"}
-    assert events_by_step == {"extract_task", "create_task"}
+    assert events_by_step == expected_steps
 
 
 def test_flow_write_retry_with_same_idempotency_key_replays() -> None:
