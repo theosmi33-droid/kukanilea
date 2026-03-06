@@ -9,6 +9,7 @@ from app.auth import login_required, current_tenant, current_role, current_user
 from app.config import Config
 from app import core
 from app.core.gewerke_profiles import get_active_profile
+from app.modules.dashboard.briefing import latest_briefing
 
 logger = logging.getLogger("kukanilea.dashboard")
 bp = Blueprint("dashboard", __name__)
@@ -66,6 +67,7 @@ def dashboard_page():
         recent = get_recent(tenant, limit=6)
 
     profile = get_active_profile(tenant_id=tenant)
+    briefing = latest_briefing()
 
     return _render_base(
         "dashboard.html",
@@ -76,6 +78,7 @@ def dashboard_page():
         suggestions={"doctypes": profile.get("document_types", [])},
         keywords=profile.get("task_templates", []),
         profile_config=profile,
+        briefing=briefing,
     )
 
 @bp.get("/api/system/status")

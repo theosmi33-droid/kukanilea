@@ -112,8 +112,10 @@ def create_app() -> Flask:
     # Start background dispatcher only for real runtime, not test contexts.
     if not _is_test_context(app):
         from .services.api_dispatcher import start_dispatcher_daemon
+        from .modules.dashboard.briefing import start_briefing_scheduler
 
         start_dispatcher_daemon(str(auth_db.path), interval=60)
+        start_briefing_scheduler()
 
     manager.set_state(SystemState.INIT, "Loading license state...")
     license_state = load_runtime_license_state(

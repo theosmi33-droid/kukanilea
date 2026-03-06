@@ -82,6 +82,8 @@ def _load_system_settings() -> dict[str, Any]:
         "log_level": "INFO",
         "mesh_mdns_enabled": True,
         "mesh_tailscale_enabled": False,
+        "rss_feeds": [],
+        "briefing_cron": "0 6 * * *",
     }
     if SYSTEM_SETTINGS_FILE.exists():
         try:
@@ -585,6 +587,8 @@ def save_system_settings():
         return confirm_error
 
     payload = _load_system_settings()
+    rss_feeds_raw = request.form.get("rss_feeds") or ""
+    rss_feeds = [line.strip() for line in rss_feeds_raw.replace(",", "\n").splitlines() if line.strip()]
     payload.update(
         {
             "language": (request.form.get("language") or payload.get("language") or "de").strip().lower(),
@@ -593,6 +597,8 @@ def save_system_settings():
             "log_level": (request.form.get("log_level") or payload.get("log_level") or "INFO").strip().upper(),
             "mesh_mdns_enabled": (request.form.get("mesh_mdns_enabled") or "off") == "on",
             "mesh_tailscale_enabled": (request.form.get("mesh_tailscale_enabled") or "off") == "on",
+            "rss_feeds": rss_feeds,
+            "briefing_cron": (request.form.get("briefing_cron") or payload.get("briefing_cron") or "0 6 * * *").strip(),
         }
     )
     _save_system_settings(payload)

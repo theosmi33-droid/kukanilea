@@ -54,6 +54,26 @@
     </article>
   </section>
 
+  <section class="card border-light" aria-label="Daily Briefing">
+    <div class="card-header border-light">
+      <h2 class="card-title text-base">Daily Briefing</h2>
+      <span class="text-[10px] font-bold text-muted uppercase tracking-wider">{{ briefing.generated_at or 'noch nicht erstellt' }}</span>
+    </div>
+    <div class="card-body">
+      <p class="text-sm text-main">{{ briefing.summary or 'Noch keine Zusammenfassung verfügbar.' }}</p>
+      {% if briefing.links %}
+      <ul class="mt-3 text-sm" style="padding-left:1rem;">
+        {% for item in briefing.links[:8] %}
+        <li style="margin-bottom:0.35rem;"><a href="{{ item.url }}" target="_blank" rel="noopener" class="text-primary-600">{{ item.title }}</a></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-xs text-muted">Keine Link-Liste vorhanden.</p>
+      {% endif %}
+    </div>
+  </section>
+
+
   <!-- 2. Priority Stats Grid -->
   <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
     <!-- Archivierte Belege -->

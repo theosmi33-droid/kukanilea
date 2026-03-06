@@ -214,6 +214,8 @@
         </select>
         <label class="router-note"><input type="checkbox" name="mesh_mdns_enabled" {{ 'checked' if (system_settings.mesh_mdns_enabled if system_settings is mapping else true) }}> mDNS aktiv</label>
         <label class="router-note"><input type="checkbox" name="mesh_tailscale_enabled" {{ 'checked' if (system_settings.mesh_tailscale_enabled if system_settings is mapping else false) }}> Tailscale aktiv</label>
+        <input class="router-input" name="briefing_cron" value="{{ system_settings.briefing_cron if system_settings is mapping else '0 6 * * *' }}" placeholder="Briefing-Cron (z.B. 0 6 * * *)">
+        <textarea class="router-input" name="rss_feeds" rows="4" placeholder="Eine Feed-URL pro Zeile">{{ (system_settings.rss_feeds if system_settings is mapping and system_settings.rss_feeds is iterable else []) | join("\n") }}</textarea>
         <input class="router-input" name="confirm" placeholder="CONFIRM" required>
         <div><button class="router-btn" type="submit">System speichern</button></div>
       </form>

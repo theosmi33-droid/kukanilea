@@ -109,6 +109,7 @@ from app.modules.projekte.contracts import build_summary as build_projekte_summa
 from app.modules.upload.ingestion import ingest_unstructured_input
 from app.modules.zeiterfassung.contracts import build_health as build_zeiterfassung_health
 from app.modules.zeiterfassung.contracts import build_summary as build_zeiterfassung_summary
+from app.modules.dashboard.briefing import latest_briefing
 
 logger = logging.getLogger("kukanilea.web")
 
@@ -3439,6 +3440,7 @@ def _dashboard_payload(tenant: str) -> dict:
         "meta": meta,
         "recent": recent,
         "reminders": reminders,
+        "briefing": latest_briefing(),
         "suggestions": {"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
         "keywords": ["Maler", "Sanitär", "Elektro"],
     }
