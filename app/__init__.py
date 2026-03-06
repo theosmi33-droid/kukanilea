@@ -58,6 +58,7 @@ def _apply_env_runtime_overrides(app: Flask) -> None:
         "KUKANILEA_CORE_DB": "CORE_DB",
         "KUKANILEA_LICENSE_PATH": "LICENSE_PATH",
         "KUKANILEA_TRIAL_PATH": "TRIAL_PATH",
+        "KUKANILEA_RESEARCH_CACHE_PATH": "RESEARCH_CACHE_PATH",
     }
     for env_key, cfg_key in env_to_cfg.items():
         if env_key in os.environ and os.environ.get(env_key):
@@ -181,6 +182,8 @@ def create_app() -> Flask:
             "/api/auth/",
             "/api/chat",
             "/api/chat/compact",
+            "/api/research/",
+            "/api/news/",
         )
         if any(path.startswith(prefix) for prefix in allow_prefixes):
             return None
