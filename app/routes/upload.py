@@ -10,7 +10,17 @@ from flask import Blueprint, current_app, jsonify, request, render_template, red
 from app.auth import login_required, current_tenant, current_role, current_user
 from app.security import csrf_protected
 from app.config import Config
-from app import core
+from app.core import (
+    EINGANG, 
+    PENDING_DIR, 
+    DONE_DIR, 
+    analyze_to_pending, 
+    read_pending, 
+    write_pending, 
+    delete_pending, 
+    read_done,
+    process_with_answers
+)
 from app.core.upload_pipeline import process_upload, save_upload_stream
 from app.core.gewerke_profiles import get_active_profile
 from app.contracts.tool_contracts import build_tool_health, build_tool_summary
@@ -20,21 +30,6 @@ from app.rate_limit import upload_limiter
 
 logger = logging.getLogger("kukanilea.upload")
 bp = Blueprint("upload", __name__)
-
-def _core_get(name: str, default=None):
-    return getattr(core, name, default)
-
-EINGANG = _core_get("EINGANG")
-PENDING_DIR = _core_get("PENDING_DIR")
-BASE_PATH = _core_get("BASE_PATH")
-DONE_DIR = _core_get("DONE_DIR")
-analyze_to_pending = _core_get("analyze_to_pending")
-read_pending = _core_get("read_pending")
-write_pending = _core_get("write_pending")
-delete_pending = _core_get("delete_pending")
-write_done = _core_get("write_done")
-read_done = _core_get("read_done")
-process_with_answers = _core_get("process_with_answers")
 
 def _norm_tenant(t: str) -> str:
     return str(t or "default").strip().lower()

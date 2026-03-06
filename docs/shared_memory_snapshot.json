@@ -8,33 +8,681 @@
       "updated_at": "2026-03-01 19:01:17"
     },
     {
+      "key": "domain_priority_order",
+      "value": "dashboard>upload>emailpostfach>messenger>kalender>aufgaben>zeiterfassung>projekte>excel-docs-visualizer>einstellungen>floating-widget-chatbot",
+      "updated_by": "fleet_commander",
+      "updated_at": "2026-03-02T08:16:23Z"
+    },
+    {
+      "key": "fleet_run_20260303_094635",
+      "value": "gemini_cli_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T08:46:35Z"
+    },
+    {
+      "key": "fleet_run_20260303_094719",
+      "value": "gemini_cli_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T08:47:19Z"
+    },
+    {
+      "key": "fleet_run_20260303_094849",
+      "value": "gemini_cli_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T08:48:49Z"
+    },
+    {
+      "key": "fleet_run_20260303_095000",
+      "value": "gemini_cli_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T08:49:27Z"
+    },
+    {
+      "key": "fleet_run_20260303_100101",
+      "value": "gemini_cli_serial_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T08:56:21Z"
+    },
+    {
+      "key": "fleet_run_20260303_101500",
+      "value": "gemini_cli_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T09:12:30Z"
+    },
+    {
+      "key": "fleet_run_20260303_101700",
+      "value": "gemini_cli_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T09:16:00Z"
+    },
+    {
+      "key": "fleet_run_20260303_102600",
+      "value": "gemini_cli_serial_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T09:18:53Z"
+    },
+    {
+      "key": "fleet_run_20260303_104832",
+      "value": "gemini_cli_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T09:48:32Z"
+    },
+    {
+      "key": "fleet_run_20260303_105200",
+      "value": "gemini_cli_serial_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T09:51:42Z"
+    },
+    {
+      "key": "fleet_run_20260303_105214_debug",
+      "value": "gemini_cli_serial_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T09:52:30Z"
+    },
+    {
+      "key": "fleet_run_20260303_105530_seriallive",
+      "value": "gemini_cli_serial_kickoff_started",
+      "updated_by": "codex",
+      "updated_at": "2026-03-03T09:54:58Z"
+    },
+    {
+      "key": "product_manifest",
+      "value": "ACTIVE: /docs/PRODUCT_DOMAINS_OVERVIEW.md",
+      "updated_by": "gemini_cli",
+      "updated_at": "2026-03-01T20:52:10Z"
+    },
+    {
+      "key": "sovereign_11_mode",
+      "value": "ACTIVE",
+      "updated_by": "fleet_commander",
+      "updated_at": "2026-03-02T08:15:57Z"
+    },
+    {
+      "key": "ssot_doc",
+      "value": "/Users/gensuminguyen/Kukanilea/kukanilea_production/docs/ANWEISUNG_KI_SYNC_FLEET11.md",
+      "updated_by": "fleet_commander",
+      "updated_at": "2026-03-02T08:16:24Z"
+    },
+    {
+      "key": "sync_protocol",
+      "value": "sessions+locks+domain_sync",
+      "updated_by": "fleet_commander",
+      "updated_at": "2026-03-02T08:15:57Z"
+    },
+    {
       "key": "system_state",
       "value": "FLEET_COMMANDER_ACTIVE",
       "updated_by": "unknown",
       "updated_at": "2026-03-01 19:01:17"
+    },
+    {
+      "key": "upload_hardening_summary",
+      "value": "Harden ingestion/OCR/review flow (descriptive error codes, ClamAV scan improvements, duplicate check in RAG sync, and UX improvements)",
+      "updated_by": "gemini_upload",
+      "updated_at": "2026-03-03T20:49:21Z"
     }
   ],
   "domain_sync": [
     {
-      "domain": "dashboard",
-      "last_action": "core endpoints added: /api/system/status + /api/outbound/status proxy",
+      "domain": "core",
+      "last_action": "gemini-cli operator initialized",
       "last_commit": "local_only",
       "status": "COMPLETED",
-      "updated_by": "codex_core",
-      "source": "codex",
-      "updated_at": "2026-03-01T19:03:52Z"
+      "updated_by": "gemini_cli",
+      "source": "gemini",
+      "updated_at": "2026-03-06T09:37:25Z"
+    },
+    {
+      "domain": "emailpostfach",
+      "last_action": "hardening_complete",
+      "last_commit": "a2393bd",
+      "status": "DONE",
+      "updated_by": "worker_b",
+      "source": "gemini",
+      "updated_at": "2026-03-03T21:56:06Z"
+    },
+    {
+      "domain": "messenger",
+      "last_action": "hardening_complete",
+      "last_commit": "dc3b93f",
+      "status": "DONE",
+      "updated_by": "worker_b",
+      "source": "gemini",
+      "updated_at": "2026-03-03T21:56:06Z"
+    },
+    {
+      "domain": "floating-widget-chatbot",
+      "last_action": "hardening_complete",
+      "last_commit": "20f6727",
+      "status": "DONE",
+      "updated_by": "worker_b",
+      "source": "gemini",
+      "updated_at": "2026-03-03T21:56:06Z"
+    },
+    {
+      "domain": "excel-docs-visualizer",
+      "last_action": "next-wave feature + tests",
+      "last_commit": "6941796",
+      "status": "COMPLETED",
+      "updated_by": "gemini_worker_a",
+      "source": "gemini",
+      "updated_at": "2026-03-03T21:54:51Z"
+    },
+    {
+      "domain": "upload",
+      "last_action": "next-wave feature + tests",
+      "last_commit": "760a304",
+      "status": "COMPLETED",
+      "updated_by": "gemini_worker_a",
+      "source": "gemini",
+      "updated_at": "2026-03-03T21:53:59Z"
+    },
+    {
+      "domain": "dashboard",
+      "last_action": "next-wave feature + tests",
+      "last_commit": "fecf6bc",
+      "status": "COMPLETED",
+      "updated_by": "gemini_worker_a",
+      "source": "gemini",
+      "updated_at": "2026-03-03T21:53:24Z"
+    },
+    {
+      "domain": "einstellungen",
+      "last_action": "hardening_finished",
+      "last_commit": "",
+      "status": "DONE",
+      "updated_by": "gemini_einstellungen",
+      "source": "gemini",
+      "updated_at": "2026-03-03T20:50:31Z"
+    },
+    {
+      "domain": "projekte",
+      "last_action": "kickoff_finished",
+      "last_commit": "",
+      "status": "DONE",
+      "updated_by": "codex",
+      "source": "gemini_fleet_serial",
+      "updated_at": "2026-03-03T10:04:39Z"
+    },
+    {
+      "domain": "zeiterfassung",
+      "last_action": "kickoff_finished",
+      "last_commit": "",
+      "status": "DONE",
+      "updated_by": "codex",
+      "source": "gemini_fleet_serial",
+      "updated_at": "2026-03-03T10:02:43Z"
+    },
+    {
+      "domain": "aufgaben",
+      "last_action": "kickoff_finished",
+      "last_commit": "",
+      "status": "DONE",
+      "updated_by": "codex",
+      "source": "gemini_fleet_serial",
+      "updated_at": "2026-03-03T10:00:48Z"
+    },
+    {
+      "domain": "kalender",
+      "last_action": "kickoff_finished",
+      "last_commit": "",
+      "status": "DONE",
+      "updated_by": "codex",
+      "source": "gemini_fleet_serial",
+      "updated_at": "2026-03-03T09:59:44Z"
     }
   ],
   "active_directives": [],
   "recent_events": [
     {
-      "id": 1,
-      "ts_utc": "2026-03-01T19:03:52Z",
-      "actor": "codex_core",
-      "source": "codex",
+      "id": 200,
+      "ts_utc": "2026-03-06T09:37:25Z",
+      "actor": "gemini_cli",
+      "source": "gemini",
+      "domain": "core",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"gemini-cli operator initialized\", \"last_commit\": \"local_only\", \"status\": \"COMPLETED\"}"
+    },
+    {
+      "id": 199,
+      "ts_utc": "2026-03-03T21:56:06Z",
+      "actor": "worker_b",
+      "source": "gemini",
+      "domain": "floating-widget-chatbot",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"hardening_complete\", \"last_commit\": \"20f6727\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 198,
+      "ts_utc": "2026-03-03T21:56:06Z",
+      "actor": "worker_b",
+      "source": "gemini",
+      "domain": "emailpostfach",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"hardening_complete\", \"last_commit\": \"a2393bd\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 197,
+      "ts_utc": "2026-03-03T21:56:06Z",
+      "actor": "worker_b",
+      "source": "gemini",
+      "domain": "messenger",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"hardening_complete\", \"last_commit\": \"dc3b93f\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 196,
+      "ts_utc": "2026-03-03T21:54:51Z",
+      "actor": "gemini_worker_a",
+      "source": "gemini",
+      "domain": "excel-docs-visualizer",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"next-wave feature + tests\", \"last_commit\": \"6941796\", \"status\": \"COMPLETED\"}"
+    },
+    {
+      "id": 195,
+      "ts_utc": "2026-03-03T21:53:59Z",
+      "actor": "gemini_worker_a",
+      "source": "gemini",
+      "domain": "upload",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"next-wave feature + tests\", \"last_commit\": \"760a304\", \"status\": \"COMPLETED\"}"
+    },
+    {
+      "id": 194,
+      "ts_utc": "2026-03-03T21:53:24Z",
+      "actor": "gemini_worker_a",
+      "source": "gemini",
       "domain": "dashboard",
       "event_type": "domain_sync",
-      "payload_json": "{\"last_action\": \"core endpoints added: /api/system/status + /api/outbound/status proxy\", \"last_commit\": \"local_only\", \"status\": \"COMPLETED\"}"
+      "payload_json": "{\"last_action\": \"next-wave feature + tests\", \"last_commit\": \"fecf6bc\", \"status\": \"COMPLETED\"}"
+    },
+    {
+      "id": 193,
+      "ts_utc": "2026-03-03T21:52:06Z",
+      "actor": "gemini_core_stabilizer",
+      "source": "gemini",
+      "domain": "core",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"post-merge baseline synced + guardrails/healthcheck done\", \"last_commit\": \"local_only\", \"status\": \"COMPLETED\"}"
+    },
+    {
+      "id": 192,
+      "ts_utc": "2026-03-03T20:54:06Z",
+      "actor": "gemini_dashboard",
+      "source": "gemini",
+      "domain": "dashboard",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"Improved stability and status UX in scoped files\", \"last_commit\": \"local_only\", \"status\": \"COMPLETED\"}"
+    },
+    {
+      "id": 191,
+      "ts_utc": "2026-03-03T20:52:17Z",
+      "actor": "gemini_messenger",
+      "source": "gemini",
+      "domain": "messenger",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"research_finished\", \"last_commit\": \"orchestrator+planner+messenger_loop\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 190,
+      "ts_utc": "2026-03-03T20:50:31Z",
+      "actor": "gemini_einstellungen",
+      "source": "gemini",
+      "domain": "einstellungen",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"hardening_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 189,
+      "ts_utc": "2026-03-03T20:49:21Z",
+      "actor": "gemini_upload",
+      "source": "gemini",
+      "domain": "upload",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"hardening_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 188,
+      "ts_utc": "2026-03-03T20:49:21Z",
+      "actor": "gemini_upload",
+      "source": "gemini",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"upload_hardening_summary\", \"value\": \"Harden ingestion/OCR/review flow (descriptive error codes, ClamAV scan improvements, duplicate check in RAG sync, and UX improvements)\"}"
+    },
+    {
+      "id": 187,
+      "ts_utc": "2026-03-03T20:45:54Z",
+      "actor": "gemini_upload",
+      "source": "gemini",
+      "domain": "upload",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"research_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 186,
+      "ts_utc": "2026-03-03T20:45:49Z",
+      "actor": "gemini_messenger",
+      "source": "gemini",
+      "domain": "messenger",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"research_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 185,
+      "ts_utc": "2026-03-03T10:07:33Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "floating-widget-chatbot",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 184,
+      "ts_utc": "2026-03-03T10:06:27Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "floating-widget-chatbot",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 183,
+      "ts_utc": "2026-03-03T10:06:27Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "einstellungen",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 182,
+      "ts_utc": "2026-03-03T10:05:39Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "einstellungen",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 181,
+      "ts_utc": "2026-03-03T10:05:39Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "excel-docs-visualizer",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 180,
+      "ts_utc": "2026-03-03T10:04:39Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "excel-docs-visualizer",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 179,
+      "ts_utc": "2026-03-03T10:04:39Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "projekte",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 178,
+      "ts_utc": "2026-03-03T10:02:43Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "projekte",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 177,
+      "ts_utc": "2026-03-03T10:02:43Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "zeiterfassung",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 176,
+      "ts_utc": "2026-03-03T10:00:48Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "zeiterfassung",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 175,
+      "ts_utc": "2026-03-03T10:00:48Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "aufgaben",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 174,
+      "ts_utc": "2026-03-03T09:59:44Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "aufgaben",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 173,
+      "ts_utc": "2026-03-03T09:59:44Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "kalender",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 172,
+      "ts_utc": "2026-03-03T09:58:25Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "kalender",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 171,
+      "ts_utc": "2026-03-03T09:58:25Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "messenger",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 170,
+      "ts_utc": "2026-03-03T09:57:39Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "messenger",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 169,
+      "ts_utc": "2026-03-03T09:57:39Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "emailpostfach",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 168,
+      "ts_utc": "2026-03-03T09:56:55Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "emailpostfach",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 167,
+      "ts_utc": "2026-03-03T09:56:55Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "upload",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 166,
+      "ts_utc": "2026-03-03T09:56:17Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "upload",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 165,
+      "ts_utc": "2026-03-03T09:56:17Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "dashboard",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 164,
+      "ts_utc": "2026-03-03T09:54:58Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "dashboard",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 163,
+      "ts_utc": "2026-03-03T09:54:58Z",
+      "actor": "codex",
+      "source": "scripts/orchestration/run_gemini_kickoff_serial.sh",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"fleet_run_20260303_105530_seriallive\", \"value\": \"gemini_cli_serial_kickoff_started\"}"
+    },
+    {
+      "id": 162,
+      "ts_utc": "2026-03-03T09:52:30Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "dashboard",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 161,
+      "ts_utc": "2026-03-03T09:52:30Z",
+      "actor": "codex",
+      "source": "scripts/orchestration/run_gemini_kickoff_serial.sh",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"fleet_run_20260303_105214_debug\", \"value\": \"gemini_cli_serial_kickoff_started\"}"
+    },
+    {
+      "id": 160,
+      "ts_utc": "2026-03-03T09:51:42Z",
+      "actor": "codex",
+      "source": "gemini_fleet_serial",
+      "domain": "dashboard",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 159,
+      "ts_utc": "2026-03-03T09:51:42Z",
+      "actor": "codex",
+      "source": "scripts/orchestration/run_gemini_kickoff_serial.sh",
+      "domain": "global",
+      "event_type": "context_set",
+      "payload_json": "{\"key\": \"fleet_run_20260303_105200\", \"value\": \"gemini_cli_serial_kickoff_started\"}"
+    },
+    {
+      "id": 158,
+      "ts_utc": "2026-03-03T09:50:24Z",
+      "actor": "codex",
+      "source": "gemini_fleet",
+      "domain": "dashboard",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_finished\", \"last_commit\": \"\", \"status\": \"DONE\"}"
+    },
+    {
+      "id": 157,
+      "ts_utc": "2026-03-03T09:48:33Z",
+      "actor": "codex",
+      "source": "gemini_fleet",
+      "domain": "floating-widget-chatbot",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 156,
+      "ts_utc": "2026-03-03T09:48:33Z",
+      "actor": "codex",
+      "source": "gemini_fleet",
+      "domain": "einstellungen",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 155,
+      "ts_utc": "2026-03-03T09:48:33Z",
+      "actor": "codex",
+      "source": "gemini_fleet",
+      "domain": "excel-docs-visualizer",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 154,
+      "ts_utc": "2026-03-03T09:48:33Z",
+      "actor": "codex",
+      "source": "gemini_fleet",
+      "domain": "projekte",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 153,
+      "ts_utc": "2026-03-03T09:48:33Z",
+      "actor": "codex",
+      "source": "gemini_fleet",
+      "domain": "zeiterfassung",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 152,
+      "ts_utc": "2026-03-03T09:48:33Z",
+      "actor": "codex",
+      "source": "gemini_fleet",
+      "domain": "aufgaben",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
+    },
+    {
+      "id": 151,
+      "ts_utc": "2026-03-03T09:48:33Z",
+      "actor": "codex",
+      "source": "gemini_fleet",
+      "domain": "kalender",
+      "event_type": "domain_sync",
+      "payload_json": "{\"last_action\": \"kickoff_started\", \"last_commit\": \"\", \"status\": \"IN_PROGRESS\"}"
     }
   ]
 }
