@@ -17,6 +17,21 @@ INJECTION_PATTERNS = (
     re.compile(r"\bbypass\s+(policy|safety|confirm)\b", re.IGNORECASE),
 )
 
+HIGH_RISK_RUNTIME_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("destructive_request", re.compile(r"\b(delete|wipe|drop|destroy|purge)\b.{0,40}\b(files?|backups?|database|all)\b", re.IGNORECASE)),
+    ("exfiltration", re.compile(r"\b(exfiltrat\w*|send|upload|post)\b.{0,40}\b(https?|webhook|extern|remote|ftp)\b", re.IGNORECASE)),
+)
+
+MEDIUM_RISK_RUNTIME_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("policy_override", re.compile(r"\bbypass\s+(policy|safety|confirm)\b", re.IGNORECASE)),
+    ("prompt_leak", re.compile(r"\b(reveal|show|dump|print)\b.{0,40}\b(system\s+prompt|developer\s+message)\b", re.IGNORECASE)),
+)
+
+LOW_RISK_WARN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("quoted_attack_example", re.compile(r"\bexample\b.*\b(ignore|bypass)\b", re.IGNORECASE)),
+    ("quoted_attack_example", re.compile(r"\bprompt\s*injection\b", re.IGNORECASE)),
+)
+
 
 @dataclass(frozen=True)
 class IntentSpec:
@@ -56,6 +71,14 @@ class RouteResult:
     confirm_required: bool = False
     plan: MIAIntentPlan | None = None
     audit_event: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class GuardrailEvaluation:
+    decision: str
+    reasons: tuple[str, ...]
+    matched_signals: tuple[str, ...]
+    normalized_message: str
 
 
 @dataclass
@@ -256,11 +279,114 @@ class ManagerAgent:
         self.audit_logger = audit_logger
         self.external_calls_enabled = bool(external_calls_enabled)
 
+    def _normalize_untrusted(self, message: str) -> str:
+        compact = re.sub(r"\s+", " ", str(message or "")).strip()
+        return compact[:4000]
+
+    def _evaluate_untrusted(self, message: str, *, stage: str, action: str | None = None) -> GuardrailEvaluation:
+        normalized = self._normalize_untrusted(message)
+        matched: set[str] = set()
+        reasons: list[str] = []
+
+        for signal, pattern in HIGH_RISK_RUNTIME_PATTERNS:
+            if pattern.search(normalized):
+                matched.add(signal)
+
+        for signal, pattern in MEDIUM_RISK_RUNTIME_PATTERNS:
+            if pattern.search(normalized):
+                matched.add(signal)
+
+        for signal, pattern in LOW_RISK_WARN_PATTERNS:
+            if pattern.search(normalized):
+                matched.add(signal)
+
+        if any(s in matched for s in {"destructive_request", "exfiltration"}):
+            return GuardrailEvaluation(
+                decision="block",
+                reasons=(f"{stage}_high_risk_signal",),
+                matched_signals=tuple(sorted(matched)),
+                normalized_message=normalized,
+            )
+
+        if any(s in matched for s in {"policy_override", "prompt_leak"}):
+            return GuardrailEvaluation(
+                decision="route_to_review",
+                reasons=(f"{stage}_possible_policy_manipulation",),
+                matched_signals=tuple(sorted(matched)),
+                normalized_message=normalized,
+            )
+
+        if "quoted_attack_example" in matched:
+            return GuardrailEvaluation(
+                decision="allow_with_warning",
+                reasons=(f"{stage}_suspicious_but_contextual",),
+                matched_signals=tuple(sorted(matched)),
+                normalized_message=normalized,
+            )
+
+        if stage == "pre_execution" and action and action not in self.router.action_registry.actions and action not in {"safe_follow_up", "safe_fallback"}:
+            return GuardrailEvaluation(
+                decision="block",
+                reasons=("pre_execution_action_not_registered",),
+                matched_signals=("action_hallucination",),
+                normalized_message=normalized,
+            )
+
+        return GuardrailEvaluation(
+            decision="allow",
+            reasons=(f"{stage}_no_risk_signal",),
+            matched_signals=(),
+            normalized_message=normalized,
+        )
+
     def route(self, message: str, context: Mapping[str, Any] | None = None) -> RouteResult:
         ctx = dict(context or {})
 
+        pre_intent = self._evaluate_untrusted(message, stage="pre_intent")
+        if pre_intent.decision in {"block", "route_to_review"}:
+            blocked_plan = MIAIntentPlan(
+                intent_name="security_blocked",
+                confidence=1.0,
+                candidate_actions=[],
+                required_entities=[],
+                missing_context=[],
+                risk_assessment="high",
+                execution_mode="propose",
+            )
+            decision = RouteDecision(intent="security_blocked", tool="chatbot", action="safe_fallback", execution_mode="propose")
+            result = RouteResult(
+                ok=False,
+                status="blocked" if pre_intent.decision == "block" else "route_to_review",
+                decision=decision,
+                reason="runtime_guardrail_pre_intent",
+                plan=blocked_plan,
+            )
+            self._record(
+                "manager_agent.security_block",
+                message,
+                ctx,
+                result,
+                extra={
+                    "guardrail_decision": pre_intent.decision,
+                    "guardrail_reasons": list(pre_intent.reasons),
+                    "guardrail_signals": list(pre_intent.matched_signals),
+                },
+            )
+            return result
+
+        if pre_intent.decision == "allow_with_warning":
+            self.event_bus.emit(
+                "manager_agent.guardrail_warning",
+                {
+                    "decision": pre_intent.decision,
+                    "reasons": list(pre_intent.reasons),
+                    "signals": list(pre_intent.matched_signals),
+                    "message": pre_intent.normalized_message,
+                },
+            )
+
         injection, patterns = self.router.contains_injection(message)
-        if injection:
+        if injection and pre_intent.decision != "allow_with_warning":
             blocked_plan = MIAIntentPlan(
                 intent_name="security_blocked",
                 confidence=1.0,
@@ -283,6 +409,28 @@ class ManagerAgent:
 
         plan = self.router.build_plan(message)
         decision = self.router.select(plan)
+
+        pre_execution = self._evaluate_untrusted(message, stage="pre_execution", action=decision.action)
+        if pre_execution.decision in {"block", "route_to_review"}:
+            blocked = RouteResult(
+                ok=False,
+                status="blocked" if pre_execution.decision == "block" else "route_to_review",
+                decision=RouteDecision(intent="security_blocked", tool="chatbot", action="safe_fallback", execution_mode="propose"),
+                reason="runtime_guardrail_pre_execution",
+                plan=plan,
+            )
+            self._record(
+                "manager_agent.security_block",
+                message,
+                ctx,
+                blocked,
+                extra={
+                    "guardrail_decision": pre_execution.decision,
+                    "guardrail_reasons": list(pre_execution.reasons),
+                    "guardrail_signals": list(pre_execution.matched_signals),
+                },
+            )
+            return blocked
 
         if decision.action not in self.router.action_registry.actions and decision.action not in {"safe_follow_up", "safe_fallback"}:
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="action_not_registered", plan=plan)
