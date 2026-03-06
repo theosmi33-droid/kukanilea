@@ -102,7 +102,7 @@
     {
       "label": "KUKANILEA: Shared Memory Snapshot",
       "type": "shell",
-      "command": "${config:python.defaultInterpreterPath} scripts/shared_memory.py snapshot --output docs/shared_memory_snapshot.json",
+      "command": "${config:python.defaultInterpreterPath} scripts/shared_memory.py snapshot --output instance/shared_memory_snapshot.json",
       "options": {
         "cwd": "${workspaceFolder}"
       },

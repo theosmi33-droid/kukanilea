@@ -240,8 +240,8 @@ def _build_parser() -> argparse.ArgumentParser:
     dd.add_argument('--actor', required=True)
     dd.add_argument('--source', required=True)
 
-    s = sub.add_parser('snapshot', help='Write JSON snapshot for git/docs')
-    s.add_argument('--output', type=Path, default=Path('docs/shared_memory_snapshot.json'))
+    s = sub.add_parser('snapshot', help='Write JSON snapshot for local diagnostics')
+    s.add_argument('--output', type=Path, default=Path('instance/shared_memory_snapshot.json'))
 
     return p
 

@@ -26,6 +26,7 @@ GLOBAL_IGNORES = (
     "docs/scope_requests/",
     "docs/scopes/",
     "docs/shared_memory_snapshot.json",
+    "instance/shared_memory_snapshot.json",
     "docs/AGENT_",
     "docs/FLEET_COMMANDER_",
     "docs/HANDOFF_GEMINI_",
