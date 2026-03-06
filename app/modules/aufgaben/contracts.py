@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from app import core
 from app.eventlog import event_append
 from app.modules.aufgaben import logic
 from app.services.shared_services import shared_services
@@ -60,10 +61,36 @@ def create_task(
         source_ref=source_ref,
         created_by=created_by,
     )
+    legacy_task_id = 0
+    try:
+        legacy_task_id = int(
+            core.task_create(
+                tenant=tenant,
+                severity="INFO",
+                task_type="INTAKE",
+                title=title,
+                details=details,
+                token=source_ref,
+                meta={
+                    "due_date": due_date,
+                    "project_hint": project_hint,
+                    "calendar_hint": calendar_hint,
+                    "priority": priority,
+                    "assigned_to": assigned_to,
+                    "source_type": source_type,
+                    "aufgaben_task_id": int(task.get("id") or 0),
+                },
+                created_by=created_by,
+            )
+        )
+    except Exception:
+        legacy_task_id = 0
+
+    event_task_id = int(task.get("id") or 0)
     event_append(
         "intake_task_created",
         "task",
-        int(task.get("id") or 0),
+        int(legacy_task_id or event_task_id),
         {
             "tenant": tenant,
             "title": title,
@@ -71,10 +98,13 @@ def create_task(
             "created_by": created_by,
             "project_hint": project_hint,
             "calendar_hint": calendar_hint,
+            "legacy_task_id": int(legacy_task_id),
+            "aufgaben_task_id": event_task_id,
         },
     )
     return {
-        "task_id": int(task.get("id") or 0),
+        "task_id": event_task_id,
+        "legacy_task_id": int(legacy_task_id),
         "title": str(task.get("title") or title),
     }
 
@@ -87,7 +117,7 @@ def _handle_email_received(payload: dict[str, Any]) -> None:
     tenant = str(payload.get("tenant") or "KUKANILEA")
     creator = str(payload.get("created_by") or "email-bot")
     task_title = subject.split(":", 1)[1].strip() or "E-Mail TODO"
-    task = logic.create_task(
+    task = create_task(
         tenant=tenant,
         title=task_title,
         details=str(payload.get("body") or "").strip(),
@@ -101,7 +131,7 @@ def _handle_email_received(payload: dict[str, Any]) -> None:
     shared_services.notify(
         "Aufgabe aus E-Mail erstellt",
         level="info",
-        data={"tenant": tenant, "task_id": task.get("id"), "source": "email.received"},
+        data={"tenant": tenant, "task_id": task.get("task_id"), "source": "email.received"},
     )
 
 
