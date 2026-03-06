@@ -1,4 +1,4 @@
-# Gemini Prompt 2 — Cross-Tool "MIA Flows" (End-to-End)
+# MIA Prompt 2 — Cross-Tool Flows (End-to-End)
 
 Kontext: Handwerksbetriebe (z. B. SHK, Elektro, Dach, Maler, Trockenbau, GaLaBau) mit durchgängigen Abläufen über CRM, ERP, Kalender, E-Mail, DMS, Zeiterfassung und Einkauf.
 

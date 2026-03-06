@@ -1,6 +1,6 @@
 # KUKANILEA Fleet Commander: Multi-Domain Setup
 
-Dieses Dokument dient als zentrale Referenz für die 11 spezialisierten Worktrees. Kopiere die jeweiligen Instruktionen in den Chat von **Gemini Code Assist** in VS Code, wenn du in einem spezifischen Modul arbeitest.
+Dieses Dokument dient als zentrale Referenz für die 11 spezialisierten Worktrees. Kopiere die jeweiligen Instruktionen in den Chat von **MIA Workspace Assistenz** in VS Code, wenn du in einem spezifischen Modul arbeitest.
 
 ## Globale Guardrails (Für alle Agenten)
 1. **Domain Isolation:** Arbeite NUR in deinem zugewiesenen Pfad.
@@ -22,7 +22,7 @@ Dieses Dokument dient als zentrale Referenz für die 11 spezialisierten Worktree
 
 ## 3. Emailpostfach (Sovereign Mail)
 - **Pfad:** `/Users/gensuminguyen/Kukanilea/worktrees/emailpostfach`
-- **Ziel:** Lokales Mail-Archiv mit KI-Entwürfen.
+- **Ziel:** Lokales Mail-Archiv mit MIA-Entwürfen.
 
 ## 4. Messenger (Fleet Orchestrator)
 - **Pfad:** `/Users/gensuminguyen/Kukanilea/worktrees/messenger`
