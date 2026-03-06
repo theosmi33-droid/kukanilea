@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Callable, Mapping
 
-CONFIRM_TOKENS = {"1", "true", "yes", "confirm", "ja"}
+from .approval_runtime import ApprovalRuntime
+
 INJECTION_PATTERNS = (
     re.compile(r"\bignore\s+previous\s+instructions\b", re.IGNORECASE),
     re.compile(r"\bignore\s+all\s+instructions\b", re.IGNORECASE),
@@ -274,11 +275,13 @@ class ManagerAgent:
         event_bus: EventBus | None = None,
         audit_logger: Callable[[dict[str, Any]], None] | None = None,
         external_calls_enabled: bool = False,
+        approval_runtime: ApprovalRuntime | None = None,
     ) -> None:
         self.router = DeterministicToolRouter()
         self.event_bus = event_bus or EventBus()
         self.audit_logger = audit_logger
         self.external_calls_enabled = bool(external_calls_enabled)
+        self.approvals = approval_runtime or ApprovalRuntime(audit_logger=self._record_approval_event)
 
     def route(self, message: str, context: Mapping[str, Any] | None = None) -> RouteResult:
         ctx = dict(context or {})
@@ -318,17 +321,34 @@ class ManagerAgent:
             self._record("manager_agent.blocked", message, ctx, result)
             return result
 
-        confirm = _confirm_token(ctx.get("confirm"))
-        if (decision.requires_confirm or plan.execution_mode == "confirm") and not confirm:
+        if decision.requires_confirm or plan.execution_mode == "confirm":
+            approval = self.approvals.evaluate(
+                approval_id=ctx.get("approval_id"),
+                tenant=str(ctx.get("tenant") or "default"),
+                user=str(ctx.get("user") or "system"),
+                action_id=decision.action,
+                scope=self._approval_scope(decision),
+                params=ctx.get("params"),
+            )
+        else:
+            approval = None
+
+        if approval and not approval.allowed:
             result = RouteResult(
                 ok=False,
                 status="confirm_required",
                 decision=decision,
-                reason="confirm_gate",
+                reason=approval.reason,
                 confirm_required=True,
                 plan=plan,
             )
-            self._record("manager_agent.confirm_blocked", message, ctx, result)
+            self._record(
+                "manager_agent.confirm_blocked",
+                message,
+                ctx,
+                result,
+                extra={"approval_id": approval.challenge_id},
+            )
             return result
 
         if decision.external_call and not self.external_calls_enabled:
@@ -381,7 +401,12 @@ class ManagerAgent:
         if callable(self.audit_logger):
             self.audit_logger(payload)
 
+    def _approval_scope(self, decision: RouteDecision) -> str:
+        if decision.external_call:
+            return "external"
+        return "write"
 
-def _confirm_token(value: Any) -> bool:
-    token = str(value or "").strip().lower()
-    return token in CONFIRM_TOKENS
+    def _record_approval_event(self, payload: dict[str, Any]) -> None:
+        self.event_bus.emit(payload.get("event", "approval.unknown"), payload)
+        if callable(self.audit_logger):
+            self.audit_logger(payload)
