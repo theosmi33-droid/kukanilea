@@ -48,6 +48,9 @@ class AtomicActionRegistry:
     def register(self, action_id: str, handler: ActionHandler) -> None:
         self._handlers[action_id] = handler
 
+    def is_registered(self, action_id: str) -> bool:
+        return action_id in self._handlers
+
     def execute(self, action_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         handler = self._handlers.get(action_id)
         if handler is None:
@@ -64,6 +67,29 @@ class CrossToolFlowEngine:
     ) -> None:
         self.action_registry = action_registry
         self.flows = dict(flows)
+        self._validate_flow_definitions()
+
+    def _validate_flow_definitions(self) -> None:
+        for flow in self.flows.values():
+            step_ids = {step.step_id for step in flow.steps}
+            write_steps = {step.step_id for step in flow.steps if step.writes_state}
+            confirmation_points = set(flow.confirmation_points)
+
+            unknown_confirmation_points = confirmation_points - step_ids
+            if unknown_confirmation_points:
+                unknown = ", ".join(sorted(unknown_confirmation_points))
+                raise ValueError(f"flow:{flow.flow_id}:unknown_confirmation_points:{unknown}")
+
+            unguarded_write_steps = write_steps - confirmation_points
+            if unguarded_write_steps:
+                missing = ", ".join(sorted(unguarded_write_steps))
+                raise ValueError(f"flow:{flow.flow_id}:write_steps_require_confirmation:{missing}")
+
+            for step in flow.steps:
+                if not self.action_registry.is_registered(step.action_id):
+                    raise ValueError(
+                        f"flow:{flow.flow_id}:step:{step.step_id}:action_not_registered:{step.action_id}"
+                    )
 
     def run(
         self,
@@ -119,7 +145,8 @@ class CrossToolFlowEngine:
                 )
                 continue
 
-            if step.writes_state and not confirmations.get(step.step_id, False):
+            requires_approval = step.step_id in flow.confirmation_points
+            if requires_approval and not confirmations.get(step.step_id, False):
                 result.status = "propose_and_ask_confirmation"
                 result.ok = False
                 result.proposals.append(
