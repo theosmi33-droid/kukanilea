@@ -1,0 +1,20 @@
+{
+  "name": "Intent follow-up",
+  "description": "Creates a task when user intent implies follow-up.",
+  "enabled": true,
+  "triggers": [
+    {"type": "eventlog", "config": {"allowed_event_types": ["intent.detected"]}}
+  ],
+  "conditions": [
+    {"type": "match_context", "config": {"field": "intent", "contains": "followup"}}
+  ],
+  "actions": [
+    {
+      "type": "create_task",
+      "config": {
+        "title_template": "Intent follow-up for {{entity_id}}",
+        "requires_confirm": false
+      }
+    }
+  ]
+}

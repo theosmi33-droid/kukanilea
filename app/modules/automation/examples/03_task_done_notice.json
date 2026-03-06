@@ -1,0 +1,33 @@
+{
+  "name": "Task completion notice",
+  "description": "Queues a webhook when a task closes.",
+  "enabled": true,
+  "triggers": [
+    {
+      "type": "eventlog",
+      "config": {
+        "allowed_event_types": [
+          "task.completed"
+        ]
+      }
+    }
+  ],
+  "conditions": [
+    {
+      "type": "match_context",
+      "config": {
+        "field": "task_status",
+        "equals": "done"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "type": "create_task",
+      "config": {
+        "title": "Task done {{entity_id}}",
+        "requires_confirm": false
+      }
+    }
+  ]
+}

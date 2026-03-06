@@ -136,3 +136,35 @@ def test_messenger_chat_blocks_prompt_injection():
     )
     assert response.status_code == 400
     assert response.get_json()["error"] == "injection_blocked"
+
+
+def test_messenger_chat_logs_blocked_confirm_required_actions(monkeypatch):
+    app = _messenger_app()
+    client = app.test_client()
+
+    import app.routes.messenger as messenger_route
+
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, target: str = "/api/chat", meta: dict | None = None):
+        events.append((event, meta or {}))
+
+    monkeypatch.setattr(
+        messenger_route,
+        "agent_answer",
+        lambda _msg: {"ok": True, "text": "done", "actions": [{"type": "messenger_send"}]},
+    )
+    monkeypatch.setattr(messenger_route, "_audit_chat_event", _capture)
+
+    response = client.post(
+        "/api/chat",
+        json={"msg": "please send this now"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+
+    policy_events = body["data"]["policy_events"]
+    assert policy_events["confirm_required_actions"] == [{"type": "messenger_send", "reason": "confirm_gate"}]
+    assert policy_events["blocked_actions"] == [{"type": "messenger_send", "reason": "awaiting_explicit_confirm"}]
+    assert any(event == "chat_confirm_required_action" for event, _meta in events)

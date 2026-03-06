@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kukanilea.local/schemas/tool_action_audit_event.schema.json",
+  "title": "Tool Action Audit Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "timestamp",
+    "tool",
+    "action",
+    "tenant_id",
+    "actor",
+    "phase",
+    "decision",
+    "required_role",
+    "effective_role",
+    "idempotency_key",
+    "idempotency_status",
+    "confirm_gate",
+    "request_hash",
+    "http_status"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "action.proposed",
+        "action.confirmed",
+        "action.executed",
+        "action.denied",
+        "action.replayed",
+        "action.failed"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tool": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "action": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["user", "service"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ip": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "user_agent": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      }
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["propose", "confirm", "execute"]
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["allow", "deny"]
+    },
+    "required_role": {
+      "type": "string",
+      "enum": ["viewer", "operator", "admin", "owner"]
+    },
+    "effective_role": {
+      "type": "string",
+      "enum": ["viewer", "operator", "admin", "owner"]
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "idempotency_status": {
+      "type": "string",
+      "enum": ["new", "replay", "conflict", "missing"]
+    },
+    "confirm_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "confirmed"],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "token_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "confirmed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "request_hash": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "result_hash": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "http_status": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599
+    },
+    "error_code": {
+      "type": "string",
+      "maxLength": 64
+    }
+  }
+}
