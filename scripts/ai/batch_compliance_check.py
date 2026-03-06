@@ -71,7 +71,7 @@ def main() -> int:
             "--output",
             str(report),
             "--approval-mode",
-            "yolo",
+            "default",
             prompt,
         ]
         rc, out = run_cmd(cmd, cwd=root)

@@ -11,7 +11,7 @@ def test_router_maps_read_intent_to_registered_action_deterministically() -> Non
     assert result.ok is True
     assert result.status == "routed"
     assert result.decision.tool == "dashboard"
-    assert result.decision.action == "dashboard_summary"
+    assert result.decision.action == "dashboard.summary.read"
     assert result.plan is not None
     assert result.plan.execution_mode == "read"
 
@@ -44,6 +44,7 @@ def test_confirm_gate_accepts_explicit_confirm_token() -> None:
     assert result.ok is True
     assert result.status == "routed"
     assert result.decision.execution_mode == "confirm"
+    assert result.decision.action == "tasks.task.create"
     assert bus.events[-1]["event_type"] == "manager_agent.routed"
     assert audit_payloads[-1]["status"] == "routed"
 
