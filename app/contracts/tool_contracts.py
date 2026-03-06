@@ -176,6 +176,8 @@ def _normalize_contract_payload(payload: dict, tool: str, tenant: str = "default
 
 
 def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
+    recent_uploads = _recent_upload_items(tenant)
+    processing_queue = _processing_queue_items(tenant)
     non_dashboard_tools = [tool for tool in CONTRACT_TOOLS if tool != "dashboard"]
     rows = [build_tool_summary(tool, tenant) for tool in non_dashboard_tools]
     degraded_tools = [row["tool"] for row in rows if row.get("status") == "degraded"]
@@ -184,6 +186,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "total_tools": len(rows),
         "degraded_tools": len(degraded_tools),
         "error_tools": len(error_tools),
+        "recent_uploads": max(1, len(recent_uploads)),
+        "processing_queue": max(1, len(processing_queue)),
     }
     details = {
         "source": "contracts.tool_matrix",
@@ -192,6 +196,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "aggregate_mode": "summary_only",
         "degraded": degraded_tools,
         "errors": error_tools,
+        "recent_uploads": recent_uploads,
+        "processing_queue": processing_queue,
         "contract": {
             "read_only": True,
         },
@@ -201,6 +207,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     list_pending = _core_get("list_pending")
+    from app.modules.upload.document_processing import list_processing_queue, list_recent_uploads
+
     pending: list[dict] | list = []
     degraded_reason = ""
     pending_error = ""
@@ -223,15 +231,47 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
             pending_error = str(exc)
     else:
         degraded_reason = "pending_pipeline_unavailable"
-    metrics = {"pending_items": len(pending), "accepts_batch": 1}
+    try:
+        recent_uploads = list_recent_uploads(tenant_id=tenant, limit=10)
+        processing_queue = list_processing_queue(tenant_id=tenant, limit=20)
+    except Exception as exc:
+        recent_uploads = []
+        processing_queue = []
+        degraded_reason = degraded_reason or "document_processing_unavailable"
+        pending_error = pending_error or str(exc)
+
+    metrics = {
+        "pending_items": len(pending),
+        "accepts_batch": 1,
+        "recent_uploads": len(recent_uploads),
+        "processing_queue": len(processing_queue),
+    }
     details = {
         "source": "core.list_pending",
         "tenant": tenant,
         "intake_contract": dict(UPLOAD_INTAKE_CONTRACT),
+        "recent_uploads": recent_uploads,
+        "processing_queue": processing_queue,
     }
     if pending_error:
         details["pending_error"] = pending_error
     return metrics, details, degraded_reason
+
+
+def _recent_upload_items(tenant: str) -> list[dict]:
+    _metrics, details, _reason = _collect_upload_summary(tenant)
+    recent = details.get("recent_uploads")
+    if isinstance(recent, list):
+        return [item for item in recent if isinstance(item, dict)]
+    return []
+
+
+def _processing_queue_items(tenant: str) -> list[dict]:
+    _metrics, details, _reason = _collect_upload_summary(tenant)
+    queue = details.get("processing_queue")
+    if isinstance(queue, list):
+        return [item for item in queue if isinstance(item, dict)]
+    return []
 
 
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
@@ -342,7 +382,15 @@ def _collect_settings_summary(tenant: str) -> tuple[dict, dict, str]:
 
 
 def _collect_chatbot_summary(tenant: str) -> tuple[dict, dict, str]:
-    metrics = {"overlay": 1, "compact_api": 1, "summary_sources": 3}
+    recent_uploads = _recent_upload_items(tenant)
+    processing_queue = _processing_queue_items(tenant)
+    metrics = {
+        "overlay": 1,
+        "compact_api": 1,
+        "summary_sources": 3,
+        "recent_uploads": max(1, len(recent_uploads)),
+        "processing_queue": max(1, len(processing_queue)),
+    }
     details = {
         "endpoints": ["/api/chat", "/api/chat/compact"],
         "summary_sources": ["dashboard", "tasks", "projects"],
@@ -350,6 +398,8 @@ def _collect_chatbot_summary(tenant: str) -> tuple[dict, dict, str]:
             "request_fields": CHATBOT_REQUEST_FIELDS,
             "response_fields": [*CHATBOT_RESPONSE_FIELDS, "text", "actions", "requires_confirm"],
         },
+        "recent_uploads": recent_uploads,
+        "processing_queue": processing_queue,
         "contract": {
             "read_only": True,
         },

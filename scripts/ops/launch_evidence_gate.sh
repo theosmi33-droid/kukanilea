@@ -208,8 +208,8 @@ fi
 BACKUP_REPORT="${BACKUP_REPORT:-$ROOT/instance/evidence_backup_report.txt}"
 RESTORE_REPORT="${RESTORE_REPORT:-$ROOT/instance/evidence_restore_report.txt}"
 if (cd "$ROOT" && TENANT_ID="${TENANT_ID:-DEMO_TENANT}" REPORT_FILE="$BACKUP_REPORT" bash scripts/ops/backup_to_nas.sh && TENANT_ID="${TENANT_ID:-DEMO_TENANT}" REPORT_FILE="$RESTORE_REPORT" EXPECTED_RESTORE_DIRS="${EXPECTED_RESTORE_DIRS:-}" bash scripts/ops/restore_from_nas.sh); then
-  if (cd "$ROOT" && rg -q '^checksum_sha256=' "$BACKUP_REPORT" && rg -q '^backup_size_bytes=' "$BACKUP_REPORT" && rg -q '^target_path=' "$BACKUP_REPORT" && rg -q '^verify_db=ok' "$RESTORE_REPORT" && rg -q '^verify_files=ok' "$RESTORE_REPORT" && rg -q '^restore_validation=ok' "$RESTORE_REPORT"); then
-    record_result "Backup" "PASS" "backup/restore evidence verified"
+  if (cd "$ROOT" && rg -q '^checksum_sha256=' "$BACKUP_REPORT" && rg -q '^backup_size_bytes=' "$BACKUP_REPORT" && rg -q '^target_path=' "$BACKUP_REPORT" && rg -q '^backup_verify_hook=ok' "$BACKUP_REPORT" && rg -q '^verify_db=ok' "$RESTORE_REPORT" && rg -q '^verify_files=ok' "$RESTORE_REPORT" && rg -q '^restore_validation=ok' "$RESTORE_REPORT" && rg -q '^restore_verify_hook=ok' "$RESTORE_REPORT"); then
+    record_result "Backup" "PASS" "backup/restore evidence + verification hooks verified"
   else
     record_result "Backup" "FAIL" "backup/restore reports missing required evidence"
   fi
