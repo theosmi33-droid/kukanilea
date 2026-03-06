@@ -1,0 +1,82 @@
+{
+  "timestamp": "2026-03-06T22:00:24+00:00",
+  "decision": "FAIL",
+  "exit_code": 3,
+  "counts": {
+    "pass": 10,
+    "warn": 1,
+    "fail": 3
+  },
+  "gates": [
+    {
+      "name": "Repo/CI",
+      "status": "PASS",
+      "note": "git HEAD resolvable"
+    },
+    {
+      "name": "MIN_SCOPE",
+      "status": "PASS",
+      "note": "files=7 loc=245"
+    },
+    {
+      "name": "Health",
+      "status": "WARN",
+      "note": "skipped by flag"
+    },
+    {
+      "name": "Zero-CDN",
+      "status": "PASS",
+      "note": "guardrails passed"
+    },
+    {
+      "name": "White-mode",
+      "status": "PASS",
+      "note": "no dark mode signatures"
+    },
+    {
+      "name": "License",
+      "status": "FAIL",
+      "note": "status=LOCK:MISSING"
+    },
+    {
+      "name": "Backup",
+      "status": "FAIL",
+      "note": "backup/restore drill execution failed"
+    },
+    {
+      "name": "AI",
+      "status": "PASS",
+      "note": "AI operating contract present"
+    },
+    {
+      "name": "MIN_TESTS",
+      "status": "PASS",
+      "note": "tests/ops test-count=49"
+    },
+    {
+      "name": "CI_GATE",
+      "status": "PASS",
+      "note": "pytest tests/ops passed"
+    },
+    {
+      "name": "MIA_GATE7_SMOKE",
+      "status": "PASS",
+      "note": "gate7 smoke evidence generated in /workspace/kukanilea/evidence/operations/gate7_latest"
+    },
+    {
+      "name": "MIA_GATE7_ARTIFACTS",
+      "status": "PASS",
+      "note": "gate7 artifacts contain required evidence matrix"
+    },
+    {
+      "name": "MIA_UNCONTROLLED_WRITES",
+      "status": "PASS",
+      "note": "writes limited to controlled code/test paths"
+    },
+    {
+      "name": "Evidence",
+      "status": "FAIL",
+      "note": "evidence path mismatch (required docs/reviews/codex/LAUNCH_GATE_AUTOMATION_REPORT_20260305.md)"
+    }
+  ]
+}
