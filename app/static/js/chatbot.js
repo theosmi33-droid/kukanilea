@@ -240,6 +240,22 @@
     }
   }
 
+  async function loadPendingQueue() {
+    try {
+      const response = await fetch("/api/chat/compact?pending=1", {
+        method: "GET",
+        headers: {
+          "X-CSRF-Token": csrfToken,
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      renderPendingQueue(data.pending_approvals || []);
+    } catch (_err) {
+      renderPendingQueue([]);
+    }
+  }
+
   function setPanelState(open, minimized) {
     state.open = !!open;
     state.minimized = !!minimized;
@@ -503,7 +519,7 @@
     loadState();
     setContextTag();
     renderQuickActions();
-    renderPendingQueue([]);
+    loadPendingQueue();
     setUnread(state.unread);
 
     applySize();

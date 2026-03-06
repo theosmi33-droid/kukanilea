@@ -2241,8 +2241,28 @@ def _get_widget_pending_queue() -> List[Dict[str, Any]]:
     return []
 
 
+WIDGET_PENDING_QUEUE_LIMIT = 5
+WIDGET_PENDING_ACTION_PREVIEW_LIMIT = 3
+
+
+def _compact_pending_actions(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    compact: List[Dict[str, Any]] = []
+    for action in actions[:WIDGET_PENDING_ACTION_PREVIEW_LIMIT]:
+        if not isinstance(action, dict):
+            continue
+        compact.append(
+            {
+                "type": str(action.get("type") or action.get("name") or "action"),
+                "label": str(action.get("label") or action.get("type") or action.get("name") or "Aktion"),
+                "confirm_required": bool(action.get("confirm_required")),
+            }
+        )
+    return compact
+
+
 def _set_widget_pending_queue(queue: List[Dict[str, Any]]) -> None:
-    session["widget_pending_actions"] = queue
+    normalized = [item for item in queue if isinstance(item, dict)]
+    session["widget_pending_actions"] = normalized[-WIDGET_PENDING_QUEUE_LIMIT:]
     session.pop("widget_pending_action", None)
     session.modified = True
 
@@ -2420,9 +2440,10 @@ def api_chat_compact():
     confirm_prompt = ""
     if requires_confirm:
         pending_id = secrets.token_urlsafe(12)
+        compact_actions = _compact_pending_actions(actions_raw)
         pending_item = {
             "id": pending_id,
-            "actions": actions_raw,
+            "actions": compact_actions,
             "current_context": current_context,
             "confirm_prompt": "Bestätigung für geplante Aktionen erforderlich.",
             "plan": (result.get("manager_agent") or {}).get("plan") or [],
