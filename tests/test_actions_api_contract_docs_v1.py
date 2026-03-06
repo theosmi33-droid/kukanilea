@@ -29,7 +29,7 @@ def test_actions_interface_docs_exist() -> None:
 
 def test_readme_mentions_actions_interface_section() -> None:
     text = _read(README)
-    assert "Tool Actions Interface (neu)" in text
+    assert "Tool Actions Interface (Legacy Draft)" in text
     assert "docs/contracts/TOOL_ACTIONS_INTERFACE.md" in text
 
 

@@ -50,9 +50,16 @@ Damit bleiben bestehende Frontends/Bots kompatibel, während die Summary/Health-
 Tool-Liste (11): dashboard, upload, projects, tasks, messenger, email, calendar, time, visualizer, settings, chatbot.
 
 
-## Tool Actions Interface (neu)
+## Actions API Erweiterung
 
-Actions-Contract Erweiterung (inkl. Permissions, Confirm-Gate, Audit, Idempotency):
+Für write-fähige Tool-Contracts ist ein Draft für ein standardisiertes Actions-Interface dokumentiert:
+
+- Spec: `docs/contracts/actions_api/TOOL_ACTIONS_API_SPEC.md`
+- JSON-Schema-Drafts: `docs/contracts/actions_api/schemas/*.json`
+
+## Tool Actions Interface (Legacy Draft)
+
+Zusätzlich liegt ein älterer Interface-Entwurf für Teams vor, die mit der vorherigen Struktur arbeiten:
 
 - Spec: `docs/contracts/TOOL_ACTIONS_INTERFACE.md`
 - Schemas (Draft 2020-12):

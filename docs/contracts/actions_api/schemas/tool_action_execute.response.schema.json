@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kukanilea.local/schemas/tool_action_execute.response.schema.json",
+  "title": "Tool Action Execute Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tool", "action", "state", "idempotency", "audit_ref"],
+  "properties": {
+    "tool": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "action": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["confirm_required", "executed", "idempotent_replay", "denied", "failed"]
+    },
+    "confirm_token": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 4096
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "preview": {
+      "type": "object"
+    },
+    "result": {
+      "type": "object"
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "status"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["new", "replay", "conflict", "missing"]
+        },
+        "ttl_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "audit_ref": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "confirm_required"
+          }
+        }
+      },
+      "then": {
+        "required": ["confirm_token", "expires_at", "preview"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": ["executed", "idempotent_replay"]
+          }
+        }
+      },
+      "then": {
+        "required": ["result"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": ["denied", "failed"]
+          }
+        }
+      },
+      "then": {
+        "required": ["error"]
+      }
+    }
+  ]
+}
