@@ -212,6 +212,9 @@ class ProjectManager:
                   id TEXT PRIMARY KEY,
                   tenant_id TEXT NOT NULL,
                   board_id TEXT,
+                  project_id TEXT,
+                  project_board_id TEXT,
+                  project_card_id TEXT,
                   title TEXT NOT NULL,
                   description TEXT,
                   priority TEXT NOT NULL DEFAULT 'MEDIUM',
@@ -230,6 +233,9 @@ class ProjectManager:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_team_tasks_tenant ON team_tasks(tenant_id, status, due_at);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_team_tasks_project_links ON team_tasks(tenant_id, project_id, project_board_id, project_card_id);"
             )
             con.execute(
                 """
@@ -282,6 +288,17 @@ class ProjectManager:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_team_task_notifications_user ON team_task_notifications(tenant_id, username, is_read, id DESC);"
+            )
+            # Migration path: older rows stored board linkage in `board_id`.
+            # We keep the legacy column for compatibility but copy it into the new
+            # explicit project-link column once.
+            con.execute(
+                """
+                UPDATE team_tasks
+                SET project_board_id = board_id
+                WHERE (project_board_id IS NULL OR project_board_id = '')
+                  AND board_id IS NOT NULL AND board_id != ''
+                """
             )
             con.commit()
         finally:
@@ -440,7 +457,9 @@ class ProjectManager:
         priority: str = "MEDIUM",
         due_at: str = "",
         assigned_to: str = "",
-        board_id: str | None = None,
+        project_id: str | None = None,
+        project_board_id: str | None = None,
+        project_card_id: str | None = None,
         source_type: str = "",
         source_ref: str = "",
         attachment_link: str = "",
@@ -463,15 +482,19 @@ class ProjectManager:
             con.execute(
                 """
                 INSERT INTO team_tasks(
-                  id, tenant_id, board_id, title, description, priority, due_at, status,
+                  id, tenant_id, board_id, project_id, project_board_id, project_card_id,
+                  title, description, priority, due_at, status,
                   created_by, assigned_to, source_type, source_ref, created_at, updated_at
                 )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     task_id,
                     tenant_id,
-                    board_id,
+                    project_board_id,
+                    str(project_id or "").strip() or None,
+                    str(project_board_id or "").strip() or None,
+                    str(project_card_id or "").strip() or None,
                     title[:220],
                     str(description or "")[:5000],
                     self._normalize_priority(priority),
@@ -1627,7 +1650,9 @@ class ProjectManager:
             priority=str(kwargs.get("priority") or "MEDIUM"),
             due_at=str(kwargs.get("due") or ""),
             assigned_to=str(kwargs.get("assigned") or actor),
-            board_id=board_id,
+            project_board_id=board_id,
+            project_id=str(kwargs.get("project_id") or "") or None,
+            project_card_id=str(kwargs.get("project_card_id") or "") or None,
             source_type=str(kwargs.get("source_type") or ""),
             source_ref=str(kwargs.get("source_ref") or ""),
         )
@@ -1722,7 +1747,9 @@ class ProjectManager:
                     priority=str(command.get("priority") or "MEDIUM"),
                     due_at=str(command.get("due_at") or ""),
                     assigned_to=str(command.get("assigned_to") or actor),
-                    board_id=str(command.get("board_id") or "") or None,
+                    project_id=str(command.get("project_id") or "") or None,
+                    project_board_id=str(command.get("project_board_id") or command.get("board_id") or "") or None,
+                    project_card_id=str(command.get("project_card_id") or "") or None,
                     source_type=str(command.get("source_type") or ""),
                     source_ref=str(command.get("source_ref") or ""),
                 )
@@ -1894,7 +1921,7 @@ class ProjectManager:
             )
         return out
 
-    def list_tasks(self, board_id: str) -> dict[str, Any]:
+    def list_tasks(self, board_id: str | None = None) -> dict[str, Any]:
         actor, role, tenant_id = self._context_identity()
         con = self.db._db()
         try:
@@ -1953,7 +1980,7 @@ class ProjectManager:
                 task["can_complete"] = assignee == actor and str(task.get("status") or "") in {"OPEN", "IN_PROGRESS"}
                 tasks.append(task)
 
-            if not tasks:
+            if not tasks and board_id:
                 legacy_rows = con.execute(
                     "SELECT * FROM tasks WHERE board_id = ? ORDER BY created_at DESC",
                     (board_id,),
