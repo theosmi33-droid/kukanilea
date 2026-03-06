@@ -11,7 +11,7 @@ from pathlib import Path
 logger = logging.getLogger("kukanilea.migrations")
 
 # Current target schema version
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:

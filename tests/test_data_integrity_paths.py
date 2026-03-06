@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.core.migrations import run_migrations
+from app.core.migrations import CURRENT_SCHEMA_VERSION, run_migrations
 from scripts.seed_demo_data import seed_demo_data
 
 
@@ -19,7 +19,7 @@ def test_run_migrations_is_idempotent(tmp_path):
     conn = sqlite3.connect(db_path)
     try:
         user_version = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert user_version == 6
+        assert user_version == CURRENT_SCHEMA_VERSION
         columns = _column_names(conn, "agent_memory")
         assert "importance_score" in columns
         assert "category" in columns
