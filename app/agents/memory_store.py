@@ -6,7 +6,7 @@ import sqlite3
 import struct
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.ai.embeddings import generate_embedding
@@ -27,6 +27,51 @@ class MemoryManager:
         con = sqlite3.connect(self.db_path)
         con.row_factory = sqlite3.Row
         return con
+
+    def _utcnow(self) -> str:
+        return datetime.now(timezone.utc).isoformat() + "Z"
+
+    def _audit_memory_event(
+        self,
+        *,
+        con: sqlite3.Connection,
+        tenant_id: str,
+        action: str,
+        memory_id: str | int,
+        actor: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_audit_log(
+              id TEXT PRIMARY KEY,
+              memory_id TEXT NOT NULL,
+              tenant_id TEXT NOT NULL,
+              action TEXT NOT NULL,
+              actor TEXT NOT NULL,
+              payload TEXT,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_audit_tenant_ts ON memory_audit_log(tenant_id, created_at)"
+        )
+        con.execute(
+            """
+            INSERT INTO memory_audit_log(id, memory_id, tenant_id, action, actor, payload, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                str(memory_id),
+                tenant_id,
+                action,
+                actor,
+                json.dumps(payload or {}),
+                self._utcnow(),
+            ),
+        )
 
     def _generate_embedding_safe(self, text: str) -> list[float]:
         try:
@@ -61,7 +106,7 @@ class MemoryManager:
 
         # Convert float list to binary BLOB (float32)
         blob = struct.pack(f"{len(embedding)}f", *embedding)
-        ts = datetime.now(timezone.utc).isoformat() + "Z"
+        ts = self._utcnow()
         safe_metadata = dict(metadata or {})
         if degraded_embedding:
             safe_metadata["embedding_status"] = "degraded"
@@ -70,12 +115,20 @@ class MemoryManager:
 
         con = self._get_con()
         try:
-            con.execute(
+            cur = con.execute(
                 """
                 INSERT INTO agent_memory (tenant_id, timestamp, agent_role, content, embedding, metadata, importance_score, category)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (tenant_id, ts, agent_role, content, blob, meta_json, importance_score, category)
+            )
+            self._audit_memory_event(
+                con=con,
+                tenant_id=tenant_id,
+                action="write",
+                memory_id=cur.lastrowid,
+                actor=agent_role,
+                payload={"category": category},
             )
             con.commit()
             return True
@@ -245,3 +298,123 @@ class MemoryManager:
             if len(messages) >= limit:
                 break
         return messages
+
+    def store_knowledge_memory(
+        self,
+        *,
+        tenant_id: str,
+        content: str,
+        topic: str,
+        memory_type: str,
+        actor: str,
+        confirm_write: bool,
+        metadata: Optional[Dict[str, Any]] = None,
+        importance_score: int = 6,
+    ) -> Dict[str, Any]:
+        if not confirm_write:
+            return {
+                "status": "pending_confirmation",
+                "confirm_required": True,
+                "reason": "memory_write_requires_confirmation",
+            }
+
+        safe_meta = dict(metadata or {})
+        safe_meta.update({"topic": topic, "memory_type": memory_type})
+        ok = self.store_memory(
+            tenant_id=tenant_id,
+            agent_role=actor,
+            content=content,
+            metadata=safe_meta,
+            importance_score=importance_score,
+            category="KNOWLEDGE_MEMORY",
+        )
+        return {
+            "status": "stored" if ok else "degraded",
+            "tenant": tenant_id,
+            "topic": topic,
+            "memory_type": memory_type,
+        }
+
+    def retrieve_by_topic(
+        self,
+        *,
+        tenant_id: str,
+        topic: str,
+        limit: int = 5,
+        recency_days: int = 60,
+    ) -> List[Dict[str, Any]]:
+        con = self._get_con()
+        try:
+            rows = con.execute(
+                """
+                SELECT id, content, agent_role, metadata, timestamp, importance_score, category
+                FROM agent_memory
+                WHERE tenant_id = ?
+                  AND category = 'KNOWLEDGE_MEMORY'
+                  AND lower(json_extract(metadata, '$.topic')) = lower(?)
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (tenant_id, topic, max(int(limit or 1) * 5, 5)),
+            ).fetchall()
+            now = datetime.now(timezone.utc)
+            ranked: List[Tuple[float, Dict[str, Any]]] = []
+            for row in rows:
+                ts_raw = row["timestamp"] or ""
+                try:
+                    ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                except ValueError:
+                    ts = now
+                age_days = max((now - ts).total_seconds() / 86400.0, 0.0)
+                recency = max(0.0, 1.0 - (age_days / max(recency_days, 1)))
+                score = (0.75 * recency) + 0.25
+                ranked.append(
+                    (
+                        score,
+                        {
+                            "id": row["id"],
+                            "content": row["content"],
+                            "role": row["agent_role"],
+                            "metadata": json.loads(row["metadata"] or "{}"),
+                            "timestamp": ts_raw,
+                            "importance_score": row["importance_score"],
+                            "category": row["category"],
+                            "score": score,
+                        },
+                    )
+                )
+            ranked.sort(key=lambda item: item[0], reverse=True)
+            return [entry for _, entry in ranked[: max(int(limit or 1), 1)]]
+        finally:
+            con.close()
+
+    def cleanup_knowledge_memory(self, *, days: int = 60, actor: str = "system_cleanup") -> int:
+        con = self._get_con()
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_iso = cutoff.isoformat()
+            stale_rows = con.execute(
+                """
+                SELECT id, tenant_id
+                FROM agent_memory
+                WHERE category = 'KNOWLEDGE_MEMORY' AND timestamp < ?
+                """,
+                (cutoff_iso,),
+            ).fetchall()
+            for row in stale_rows:
+                self._audit_memory_event(
+                    con=con,
+                    tenant_id=row["tenant_id"],
+                    action="delete",
+                    memory_id=row["id"],
+                    actor=actor,
+                    payload={"reason": "retention", "days": days},
+                )
+            con.execute(
+                "DELETE FROM agent_memory WHERE category = 'KNOWLEDGE_MEMORY' AND timestamp < ?",
+                (cutoff_iso,),
+            )
+            con.commit()
+            return len(stale_rows)
+        finally:
+            con.close()

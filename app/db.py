@@ -247,6 +247,23 @@ class AuthDB:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS memory_audit_log(
+                  id TEXT PRIMARY KEY,
+                  memory_id TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  actor TEXT NOT NULL,
+                  payload TEXT,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_audit_tenant_ts ON memory_audit_log(tenant_id, created_at);"
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS api_outbound_queue(
                   id TEXT PRIMARY KEY,
                   tenant_id TEXT NOT NULL,
@@ -315,6 +332,61 @@ class AuthDB:
                   FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
                 );
                 """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS emailpostfach_messages(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  provider TEXT NOT NULL,
+                  provider_message_id TEXT NOT NULL,
+                  sender TEXT,
+                  subject TEXT,
+                  body TEXT,
+                  received_at TEXT NOT NULL,
+                  unread INTEGER NOT NULL DEFAULT 1,
+                  follow_up_due_at TEXT,
+                  updated_at TEXT NOT NULL,
+                  UNIQUE(tenant_id, provider, provider_message_id)
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS emailpostfach_drafts(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  to_address TEXT NOT NULL,
+                  subject TEXT NOT NULL,
+                  body TEXT NOT NULL,
+                  triage_category TEXT,
+                  status TEXT NOT NULL DEFAULT 'draft',
+                  confirm_required INTEGER NOT NULL DEFAULT 1,
+                  created_by TEXT NOT NULL,
+                  updated_by TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS emailpostfach_audit(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ts TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  username TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  target TEXT NOT NULL,
+                  details TEXT
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emailpostfach_messages_tenant_unread ON emailpostfach_messages(tenant_id, unread);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emailpostfach_audit_tenant_action_ts ON emailpostfach_audit(tenant_id, action, ts);"
             )
             con.execute(
                 """

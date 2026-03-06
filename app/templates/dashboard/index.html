@@ -30,6 +30,30 @@
     </div>
   </section>
 
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Speed-to-Lead und Systemgesundheit">
+    <article class="card border-light" id="speed-to-lead-widget">
+      <div class="card-header border-light">
+        <h2 class="card-title text-base">Speed-to-Lead</h2>
+        <span id="speed-to-lead-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
+      </div>
+      <div class="card-body">
+        <div id="speed-to-lead-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+        <p class="text-xs text-muted mt-3 mb-0">Quelle: Nur Contract-Endpoints <code>/api/&lt;tool&gt;/summary</code>.</p>
+      </div>
+    </article>
+    <article class="card border-light" id="system-health-strip">
+      <div class="card-header border-light">
+        <h2 class="card-title text-base">System Health Strip</h2>
+        <span id="health-strip-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
+      </div>
+      <div class="card-body">
+        <div id="health-strip-summary" class="text-sm text-main mb-3">Status initialisiert…</div>
+        <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
+        <p class="text-xs text-muted mt-3 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
+      </div>
+    </article>
+  </section>
+
   <!-- 2. Priority Stats Grid -->
   <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
     <!-- Archivierte Belege -->
@@ -261,6 +285,96 @@ function executeOptimizerActions(signals, targetActions = 2200) {
   }
 }
 
+const DASHBOARD_TOOLS = [
+  "dashboard", "upload", "projects", "tasks", "messenger", "email", "calendar", "time", "visualizer", "settings", "chatbot",
+];
+
+function _statusTone(status) {
+  if (status === "ok") return "bg-success-bg text-success border-success/20";
+  if (status === "degraded") return "bg-warning-bg text-warning border-warning/20";
+  return "bg-error-bg text-error border-error/20";
+}
+
+function renderSpeedToLead(summaryMap) {
+  const container = document.getElementById("speed-to-lead-cards");
+  const updated = document.getElementById("speed-to-lead-updated");
+  if (!container || !updated) return;
+
+  const emailPending = Number(summaryMap.email?.metrics?.pending_threads || summaryMap.email?.metrics?.inbox_unread || 0);
+  const messengerPending = Number(summaryMap.messenger?.metrics?.pending_conversations || summaryMap.messenger?.metrics?.unread_threads || 0);
+  const callsPending = Number(summaryMap.dashboard?.metrics?.missed_calls_placeholder || 0);
+  const updatedAt = [summaryMap.email?.updated_at, summaryMap.messenger?.updated_at]
+    .filter(Boolean)
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value));
+  const lastResponseAgo = updatedAt.length ? Math.max(0, Math.round((Date.now() - Math.max(...updatedAt)) / 60000)) : null;
+
+  const tiles = [
+    { label: "E-Mail offen", value: emailPending },
+    { label: "Messenger offen", value: messengerPending },
+    { label: "Anrufe offen", value: callsPending, hint: "Platzhalter" },
+    { label: "Letzte Reaktion", value: lastResponseAgo === null ? "—" : `${lastResponseAgo} min` },
+  ];
+
+  container.innerHTML = tiles.map((tile) => `
+    <article class="rounded-xl border border-light p-3 bg-subtle">
+      <div class="text-[10px] uppercase tracking-wider font-black text-muted">${tile.label}</div>
+      <div class="text-2xl font-bold text-main mt-1">${tile.value}</div>
+      ${tile.hint ? `<div class="text-[10px] text-muted mt-1">${tile.hint}</div>` : ""}
+    </article>
+  `).join("");
+  updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function renderHealthStrip(summaryMap, appHealthOk) {
+  const summary = document.getElementById("health-strip-summary");
+  const tools = document.getElementById("health-strip-tools");
+  const updated = document.getElementById("health-strip-updated");
+  if (!summary || !tools || !updated) return;
+
+  const rows = DASHBOARD_TOOLS.map((tool) => {
+    const status = String(summaryMap[tool]?.status || "down").replace("error", "down");
+    return { tool, status: ["ok", "degraded"].includes(status) ? status : "down" };
+  });
+  const okCount = rows.filter((row) => row.status === "ok").length;
+  const degradedCount = rows.filter((row) => row.status === "degraded").length;
+  const downCount = rows.filter((row) => row.status === "down").length;
+
+  summary.className = `text-sm mb-3 ${appHealthOk ? "text-main" : "text-error"}`;
+  summary.textContent = appHealthOk
+    ? `${okCount} ok · ${degradedCount} degraded · ${downCount} down`
+    : `App /health nicht erreichbar · ${okCount} ok · ${degradedCount} degraded · ${downCount} down`;
+
+  tools.innerHTML = rows.map((row) => `
+    <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${row.status}</span>
+  `).join("");
+  updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+async function loadSpeedToLeadAndHealth() {
+  const summaryPairs = await Promise.all(DASHBOARD_TOOLS.map(async (tool) => {
+    try {
+      const res = await fetch(`/api/${tool}/summary`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error(`summary_${tool}_${res.status}`);
+      return [tool, await res.json()];
+    } catch (_err) {
+      return [tool, { tool, status: "error", metrics: {}, updated_at: null }];
+    }
+  }));
+  const summaryMap = Object.fromEntries(summaryPairs);
+
+  let appHealthOk = false;
+  try {
+    const healthRes = await fetch('/health', { credentials: 'same-origin' });
+    appHealthOk = healthRes.ok && Boolean((await healthRes.json())?.ok);
+  } catch (_err) {
+    appHealthOk = false;
+  }
+
+  renderSpeedToLead(summaryMap);
+  renderHealthStrip(summaryMap, appHealthOk);
+}
+
 async function loadToolMatrix() {
   try {
     const res = await fetch('/api/dashboard/tool-matrix', { credentials: 'same-origin' });
@@ -285,8 +399,10 @@ async function loadToolMatrix() {
 // Initial Load
 document.addEventListener("DOMContentLoaded", () => {
     loadToolMatrix();
+    loadSpeedToLeadAndHealth();
     // Refresh matrix every 60s
     setInterval(loadToolMatrix, 60000);
+    setInterval(loadSpeedToLeadAndHealth, 60000);
 });
 </script>
 {% endblock %}
