@@ -19,6 +19,7 @@ from .runner import (
     stop_cron_checker,
 )
 from .rules_engine import RulesEngine, RulesEngineState
+from .rules_loader import load_rule_file, load_rules_from_dir
 from .store import (
     append_execution_log as builder_execution_log_append,
 )
@@ -104,6 +105,8 @@ __all__ = [
     "process_cron_for_tenant",
     "process_events_for_tenant",
     "simulate_rule_for_tenant",
+    "load_rule_file",
+    "load_rules_from_dir",
     "start_cron_checker",
     "stop_cron_checker",
     "RulesEngine",
