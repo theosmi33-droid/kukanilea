@@ -100,6 +100,15 @@ Regeln:
 
 Details im Contributing Guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Main-Only Branch Policy
+
+- `main` is the single source of truth.
+- Every PR must target `main`.
+- Start each new task from latest `origin/main`.
+- Do not chain new work on stale feature branches.
+
+Policy detail: `docs/policies/MAIN_ONLY_SOURCE_OF_TRUTH.md`.
+
 Für Lane-Resubmit/Open-PR-Check (mit `gh`-Fallback auf GitHub-API):
 
 ```bash
