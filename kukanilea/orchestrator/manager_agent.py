@@ -313,7 +313,7 @@ class ManagerAgent:
             self._record("manager_agent.blocked", message, ctx, result)
             return result
 
-        if plan.candidate_actions and not self.router.validate_parameters(plan.candidate_actions[0], ctx.get("params")):
+        if plan.candidate_actions and not self.router.validate_parameters(decision.action, ctx.get("params")):
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="schema_validation_failed", plan=plan)
             self._record("manager_agent.blocked", message, ctx, result)
             return result
