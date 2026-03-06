@@ -70,4 +70,94 @@
 - DO NOT bypass the domain ownership (e.g., `upload` tab must not write directly to `invoices` table).
 
 ---
+## 5. Gewerke Scenarios (All Trades Coverage)
+
+### Scenario Matrix by Trade
+
+| Gewerk | Typical Trigger | Must-Automate Outcome | KPI |
+|--------|------------------|-----------------------|-----|
+| Elektro | Störungsmeldung + Foto im Chat | Task + Termin + Materialhinweis | TFR, TTC |
+| SHK | Wartung fällig + Seriennummer | Wartungsauftrag + Prüfliste + Terminfenster | QCT, TTC |
+| Dach | Schadensfoto nach Wetterereignis | Mängelbericht + Nachtragsvorschlag | QCT, DSO |
+| Maler | Angebotsanfrage mit Flächenangabe | Positionsliste + Angebotsentwurf | QCT |
+| Fensterbau | Reklamation nach Montage | Ticket + Gewährleistungsakte + SLA-Reminder | TFR |
+| Schreiner | Maßauftrag mit Skizze/PDF | Projektmappe + Materialliste + Terminplan | TTC |
+| Metallbau | Änderungswunsch während Ausführung | Change-Task + neue Kalkulationsposition | QCT, DSO |
+| Gartenbau | Saisonauftrag mit wiederkehrenden Terminen | Serienplanung + Ressourcenblöcke | TTC |
+| Tiefbau | Baustellenprotokoll + Behinderungsanzeige | Bautagebuch + Claim-Nachweis | DSO |
+| Glasfaser/Bau | Mehrere Standorte pro Auftrag | Multi-Route + Teamzuweisung + Tagesreport | TTC |
+
+### Trade-Neutral Workflow Rules
+- Every inbound request must be normalized to: `contact`, `location`, `scope`, `urgency`, `attachments`.
+- Every write action must require explicit confirm (`confirm_required = true`).
+- Every work completion must produce an auditable artifact (report, signature, invoice draft).
+- Every reminder workflow must be idempotent and tenant-scoped.
+
+---
+## 6. KPI Instrumentation Blueprint
+
+### Event Model (Minimal)
+
+| Event | Producer | Required Fields |
+|------|----------|-----------------|
+| `lead.received` | Mail/Messenger/Phone intake | `tenant_id`, `channel`, `received_at` |
+| `lead.responded` | Messaging/Email send flow | `tenant_id`, `response_at`, `lead_id` |
+| `quote.created` | Visualizer/Upload flow | `tenant_id`, `quote_id`, `created_at` |
+| `quote.sent` | Messenger/Email | `tenant_id`, `quote_id`, `sent_at` |
+| `task.started` | Aufgaben/Zeiterfassung | `tenant_id`, `task_id`, `user_id`, `ts` |
+| `task.completed` | Aufgaben/Projekte | `tenant_id`, `task_id`, `ts` |
+| `invoice.sent` | Billing flow | `tenant_id`, `invoice_id`, `sent_at` |
+| `payment.received` | Finance sync/manual | `tenant_id`, `invoice_id`, `paid_at` |
+
+### Derived KPI Queries (MVP)
+- `TFR`: `avg(lead.responded.response_at - lead.received.received_at)`
+- `QCT`: `avg(quote.sent.sent_at - lead.received.received_at)`
+- `DSO`: `avg(payment.received.paid_at - invoice.sent.sent_at)`
+- `TTC`: `(tracked_work_seconds / planned_work_seconds) * 100`
+
+### Dashboard KPI Contracts
+- `/api/dashboard/summary` must expose KPI card placeholders for `TFR`, `QCT`, `DSO`, `TTC`.
+- KPI payload must include `value`, `period`, `trend`, `source_quality`.
+- Missing data must degrade gracefully (`status=degraded`) instead of hard failing.
+
+---
+## 7. Rollout Plan by Maturity
+
+### Phase 1 (Weeks 1-2): Core Intake + Task Integrity
+- Enable mail/messenger intake normalization for all tenants.
+- Enforce confirm gate on every write-like action.
+- Track baseline TFR and daily task throughput.
+
+### Phase 2 (Weeks 3-4): Quote + Field Documentation
+- Add quote draft generation from uploads and structured notes.
+- Activate field diary + defect capture in project timeline.
+- Begin measuring QCT per trade.
+
+### Phase 3 (Weeks 5-6): Billing + Follow-up Automation
+- Add invoice draft trigger from `task.completed`.
+- Enable stale quote reminders with explicit user confirm.
+- Start DSO and reminder conversion tracking.
+
+### Exit Criteria for Productive Rollout
+- At least 90% of inbound requests are normalized without manual retyping.
+- At least 80% of finished tasks produce a report artifact.
+- At least 70% of overdue invoices trigger reminder workflow.
+- At least one KPI trend per tenant is visible in Dashboard.
+
+---
+## 8. UX Acceptance Checklist (White-Mode / Local-First)
+
+- White-mode remains default and visually consistent across dashboard, messenger, upload, projects.
+- No CDN dependency for charts, fonts, icons, or JS runtime.
+- Mobile viewport supports one-thumb operation for: start timer, add note, capture photo, confirm action.
+- Error states are actionable: every failed action gives retry path + audit reference ID.
+
+### UX Smoke Tests
+1. Create lead from messenger text with attachment metadata.
+2. Convert lead into task and calendar proposal with confirm gate.
+3. Complete task and verify report artifact appears in project context.
+4. Trigger quote follow-up reminder and verify explicit confirm step.
+5. Open dashboard and verify KPI cards render without network calls.
+
+---
 *Created by Business + Product Lead (Handwerk/SMB) - 2026-03-05*
