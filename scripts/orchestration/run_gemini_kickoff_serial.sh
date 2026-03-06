@@ -10,6 +10,14 @@ PY="$CORE/.build_venv/bin/python"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 STAMP="${1:-$(date +%Y%m%d_%H%M%S)}"
 RUN_DIR="$ROOT/data/gemini_fleet_runs/$STAMP"
+FLEET_APPROVAL_MODE="${GEMINI_FLEET_APPROVAL_MODE:-default}"
+if [[ "$FLEET_APPROVAL_MODE" != "default" && "$FLEET_APPROVAL_MODE" != "yolo" ]]; then
+  echo "invalid GEMINI_FLEET_APPROVAL_MODE=$FLEET_APPROVAL_MODE (expected: default|yolo)" >&2
+  exit 2
+fi
+if [[ "$FLEET_APPROVAL_MODE" == "yolo" ]]; then
+  echo "[warn] GEMINI_FLEET_APPROVAL_MODE=yolo enables unsafe autonomous actions" >&2
+fi
 
 DOMAINS=(
   dashboard
@@ -97,7 +105,7 @@ EOF
     --output "$report_abs" \
     --log "$log" \
     --timeout-seconds 900 \
-    --approval-mode yolo || true
+    --approval-mode "$FLEET_APPROVAL_MODE" || true
 
   status="DONE"
   if [[ ! -s "$report_abs" ]]; then
@@ -116,5 +124,6 @@ EOF
 done
 
 echo "run_dir=$RUN_DIR"
+echo "approval_mode=$FLEET_APPROVAL_MODE"
 echo "db=$DB"
 echo "status_cmd=$CORE/scripts/orchestration/gemini_fleet_status.sh $STAMP"

@@ -233,41 +233,28 @@ fi
 run_cmd_gate "CI_GATE" "'$PYTHON' -m pytest -q tests/ops" "pytest tests/ops passed" "pytest tests/ops failed"
 
 
-run_cmd_gate "MIA_LOCAL_MODEL" "\"$PYTHON\" - <<'PY'
-from app.agents.llm import get_default_provider
-p = get_default_provider()
-name = str(getattr(p, 'name', ''))
-if name in {'mock', 'ollama'}:
-    raise SystemExit(0)
-raise SystemExit(1)
-PY" "local model provider verified (mock/ollama)" "remote/non-local provider selected"
+GATE7_OUTPUT_DIR="${GATE7_OUTPUT_DIR:-$ROOT/evidence/operations/gate7_latest}"
+run_cmd_gate "MIA_GATE7_SMOKE" "\"$PYTHON\" scripts/ops/gate7_evidence.py --output-dir \"$GATE7_OUTPUT_DIR\"" "gate7 smoke evidence generated in $GATE7_OUTPUT_DIR" "gate7 smoke evidence failed"
 
-run_cmd_gate "MIA_CONFIRM_GATES" "\"$PYTHON\" - <<'PY'
+run_cmd_gate "MIA_GATE7_ARTIFACTS" "\"$PYTHON\" - <<'PY'
+import json
 from pathlib import Path
-api = Path('app/api.py').read_text(encoding='utf-8')
-store = Path('app/modules/automation/store.py').read_text(encoding='utf-8')
-need = [
-    'MIA_EVENT_CONFIRM_REQUESTED',
-    'MIA_EVENT_CONFIRM_GRANTED',
-    'MIA_EVENT_CONFIRM_DENIED',
-    'explicit_confirm_required',
-]
-if all(token in api for token in need) and 'MIA_EVENT_CONFIRM_EXPIRED' in store:
+
+base = Path('evidence/operations/gate7_latest')
+data = json.loads((base / 'gate7_smoke.json').read_text(encoding='utf-8'))
+required = {
+    'lokales_modell_aktiv',
+    'summary_read_api_ok',
+    'write_confirm_gate_erzwungen',
+    'write_mit_confirm_moeglich',
+    'audit_logs_vorhanden',
+    'injection_blockiert',
+}
+names = {entry.get('name') for entry in data.get('checks', [])}
+if data.get('overall_status') == 'PASS' and required.issubset(names):
     raise SystemExit(0)
 raise SystemExit(1)
-PY" "confirm-gate evidence hooks present" "confirm-gate evidence hooks missing"
-
-run_cmd_gate "MIA_AUDIT_LOG" "\"$PYTHON\" - <<'PY'
-import sqlite3
-from app.config import Config
-con = sqlite3.connect(str(Config.CORE_DB))
-try:
-    row = con.execute('SELECT COUNT(1) FROM events WHERE event_type LIKE \'mia.%\'').fetchone()
-    count = int((row[0] if row else 0) or 0)
-finally:
-    con.close()
-raise SystemExit(0 if count >= 0 else 1)
-PY" "audit-log check executable for mia.* events" "audit-log check failed for mia.* events"
+PY" "gate7 artifacts contain required evidence matrix" "gate7 artifacts missing required checks"
 
 run_cmd_gate "MIA_UNCONTROLLED_WRITES" "[[ -z \"$(git diff --name-only -- ':(exclude)docs/reviews/codex/*' | rg -v '^(app/|scripts/|tests/)' | rg -v '^$')\" ]]" "writes limited to controlled code/test paths" "uncontrolled writes detected outside controlled paths"
 if [[ "$OUT_FILE" == "$ROOT/docs/reviews/codex/LAUNCH_GATE_AUTOMATION_REPORT_20260305.md" ]]; then
