@@ -89,7 +89,14 @@ from .config import Config
 from .db import AuthDB
 from .errors import json_error
 from .license import load_license
-from .rate_limit import chat_limiter, login_limiter, search_limiter, upload_limiter
+from .rate_limit import (
+    chat_limiter,
+    login_limiter,
+    password_reset_limiter,
+    search_limiter,
+    send_limiter,
+    upload_limiter,
+)
 from .security import csrf_protected, detect_injection
 from app.contracts.tool_contracts import (
     CONTRACT_TOOLS,
@@ -1925,6 +1932,7 @@ def login():
 
 @bp.route("/forgot", methods=["GET", "POST"])
 @csrf_protected
+@password_reset_limiter.limit_required
 def forgot_password():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     code = ""
@@ -1972,6 +1980,7 @@ def forgot_password():
 
 @bp.route("/reset-code", methods=["GET", "POST"])
 @csrf_protected
+@password_reset_limiter.limit_required
 def reset_with_code():
     auth_db: AuthDB = current_app.extensions["auth_db"]
     error = ""
@@ -2028,6 +2037,7 @@ def reset_with_code():
 
 
 @bp.route("/password-reset", methods=["GET", "POST"])
+@password_reset_limiter.limit_required
 def password_reset_page():
     u = session.get('pending_reset_user')
     if not u:
@@ -2074,6 +2084,7 @@ def password_reset_page():
 @bp.route("/admin/users/<username>/reset", methods=["POST"])
 @login_required
 @require_role("ADMIN")
+@password_reset_limiter.limit_required
 def admin_user_reset(username: str):
     """One-click reset by Admin/Dev (Task v2.8)."""
     auth_db = current_app.extensions["auth_db"]
@@ -2452,6 +2463,7 @@ def api_ai_plan():
                 "name": skill.name,
                 "read_only": skill.read_only,
                 "requires_confirm": bool(skill.requires_confirm or write_or_uncertain),
+                "high_risk": bool(skill.name == "email.send_reply"),
                 "audit_event": skill.audit_event,
             }
         )
@@ -2487,7 +2499,16 @@ def api_ai_execute():
         _audit("ai_execute_denied", target="/api/ai/execute", meta={"skill": skill_name, "reason": "confirm_required"})
         return jsonify(error="confirm_required"), 403
 
-    result = definition.handler(skill_payload)
+    if skill_name == "email.send_reply":
+        key = f"{request.remote_addr or 'unknown'}:{current_tenant() or 'default'}"
+        if not send_limiter.allow(key):
+            return jsonify(error="rate_limited"), 429
+
+    try:
+        result = definition.handler({**skill_payload, "confirm": confirm})
+    except Exception:
+        logger.exception("ai_execute_handler_failed", extra={"skill": skill_name})
+        return jsonify(error="skill_execution_failed"), 500
     _store_ai_snippet(
         tenant_id=str(current_tenant() or "default"),
         user_id=str(current_user() or "unknown"),
