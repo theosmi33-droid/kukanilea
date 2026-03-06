@@ -5,10 +5,8 @@ def test_aufgaben_summary_contract(auth_client):
     response = auth_client.get("/api/aufgaben/summary")
     assert response.status_code == 200
     body = response.get_json()
-    assert set(body.keys()) == {"status", "timestamp", "metrics"}
-    assert body["status"] in {"ok", "degraded", "error"}
-    assert isinstance(body["timestamp"], str)
-    assert isinstance(body["metrics"], dict)
+    assert body.get("ok") is True
+    assert set(body.get("metrics", {}).keys()) == {"open", "overdue", "today"}
 
 
 def test_aufgaben_health_contract(auth_client):
