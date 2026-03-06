@@ -34,35 +34,35 @@ def check_license_file(license_path: str, pub_hex_env: str) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
 
     if not path.exists():
-        return {"status": "LOCKED", "reason": "MISSING"}
+        return {"status": "LOCK", "reason": "MISSING"}
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return {"status": "LOCKED", "reason": "INVALID_LICENSE_FILE"}
+        return {"status": "LOCK", "reason": "INVALID_LICENSE_FILE"}
 
     if not isinstance(payload, dict):
-        return {"status": "LOCKED", "reason": "INVALID_LICENSE_PAYLOAD"}
+        return {"status": "LOCK", "reason": "INVALID_LICENSE_PAYLOAD"}
 
     pub_hex = os.environ.get(pub_hex_env)
     if not pub_hex:
-        return {"status": "LOCKED", "reason": "MISSING_PUBLIC_KEY"}
+        return {"status": "LOCK", "reason": "MISSING_PUBLIC_KEY"}
 
     if not verify_signature(pub_hex, dict(payload)):
-        return {"status": "LOCKED", "reason": "INVALID_SIGNATURE"}
+        return {"status": "LOCK", "reason": "INVALID_SIGNATURE"}
 
     valid_until = payload.get("valid_until")
     if valid_until:
         try:
             expires = datetime.strptime(valid_until, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         except ValueError:
-            return {"status": "LOCKED", "reason": "INVALID_VALID_UNTIL"}
+            return {"status": "LOCK", "reason": "INVALID_VALID_UNTIL"}
         if expires < now:
             grace_anchor_raw = payload.get("last_verified_at") or valid_until
             try:
                 grace_anchor = datetime.strptime(grace_anchor_raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             except ValueError:
-                return {"status": "LOCKED", "reason": "INVALID_GRACE_ANCHOR"}
+                return {"status": "LOCK", "reason": "INVALID_GRACE_ANCHOR"}
             grace_until = grace_anchor + timedelta(days=grace_days)
             if grace_days > 0 and now <= grace_until:
                 return {
@@ -70,7 +70,7 @@ def check_license_file(license_path: str, pub_hex_env: str) -> Dict[str, Any]:
                     "reason": "GRACE",
                     "grace_until": grace_until.date().isoformat(),
                 }
-            return {"status": "LOCKED", "reason": "EXPIRED"}
+            return {"status": "LOCK", "reason": "EXPIRED"}
 
     return {
         "status": "OK",
