@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-03-06T22:00:20+00:00",
+  "overall_status": "PASS",
+  "checks": [
+    {
+      "name": "lokales_modell_aktiv",
+      "passed": true,
+      "detail": "provider=mock"
+    },
+    {
+      "name": "summary_read_api_ok",
+      "passed": true,
+      "detail": "status=routed; action=dashboard_summary; mode=read"
+    },
+    {
+      "name": "write_confirm_gate_erzwungen",
+      "passed": true,
+      "detail": "status=confirm_required; reason=confirm_gate"
+    },
+    {
+      "name": "write_mit_confirm_moeglich",
+      "passed": true,
+      "detail": "status=routed; action=task_create"
+    },
+    {
+      "name": "injection_blockiert",
+      "passed": true,
+      "detail": "status=blocked; reason=prompt_injection"
+    },
+    {
+      "name": "audit_logs_vorhanden",
+      "passed": true,
+      "detail": "events=4; types=['manager_agent.blocked', 'manager_agent.confirm_blocked', 'manager_agent.routed']"
+    }
+  ],
+  "audit_events_count": 4,
+  "audit_event_types": [
+    "manager_agent.routed",
+    "manager_agent.confirm_blocked",
+    "manager_agent.routed",
+    "manager_agent.blocked"
+  ]
+}

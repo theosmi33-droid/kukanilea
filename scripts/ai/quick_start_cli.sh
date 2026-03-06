@@ -33,6 +33,7 @@ echo "[3/4] gemini wrapper smoke test"
 "$PY" "$CORE/scripts/ai/gemini_cli.py" \
   --domain dashboard \
   --cwd "$CORE" \
+  --approval-mode default \
   "Antworte nur mit: KUKANILEA_GEMINI_READY" \
   > /tmp/kukanilea_gemini_ready.txt || true
 cat /tmp/kukanilea_gemini_ready.txt | sed -n '1,20p'
