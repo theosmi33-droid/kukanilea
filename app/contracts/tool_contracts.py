@@ -526,6 +526,8 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
         **(summary.get("details") or {}),
         "checks": checks,
     }
+    if tool in {"time", "zeiterfassung"}:
+        summary["details"]["offline_persistence"] = bool(summary["details"].get("offline_persistence", False))
     normalized, _ = _normalize_contract_payload(summary, tool, tenant=tenant)
     return normalized
 

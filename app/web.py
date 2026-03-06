@@ -4312,6 +4312,21 @@ def _normalize_contract_tool(tool: str) -> str | None:
     return resolved
 
 
+def _contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
+    raw = str(requested_tool or "").strip().lower()
+    if raw in {
+        "kalender",
+        "aufgaben",
+        "projekte",
+        "zeiterfassung",
+        "einstellungen",
+    }:
+        return raw
+    if raw in CONTRACT_TOOLS:
+        return raw
+    return normalized_tool
+
+
 
 @bp.get("/api/<tool>/summary")
 @login_required
@@ -4322,6 +4337,7 @@ def api_tool_summary(tool: str):
         return jsonify(error="unknown_tool", tool=tool), 404
 
     payload = build_tool_summary(normalized_tool, tenant=tenant)
+    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
     return jsonify(payload)
 
 
@@ -4371,6 +4387,7 @@ def api_tool_health(tool: str):
         return jsonify(error="unknown_tool", tool=tool), 404
 
     payload = build_tool_health(normalized_tool, tenant=tenant)
+    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
     code = 200 if payload.get("status") in {"ok", "degraded"} else 503
     return jsonify(payload), code
 
