@@ -51,7 +51,9 @@ ROLE_LABEL_TO_DB = {
 ROLE_DB_TO_LABEL = {v: k for k, v in ROLE_LABEL_TO_DB.items()}
 HOSTNAME_PATTERN = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$")
 IP_PATTERN = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
-SYSTEM_SETTINGS_FILE = Config.USER_DATA_ROOT / "system_settings.json"
+def _system_settings_file() -> Path:
+    # Resolve from Config on each call so tests/runtime overrides are respected.
+    return Config.USER_DATA_ROOT / "system_settings.json"
 
 
 def _now_iso() -> str:
@@ -87,9 +89,10 @@ def _load_system_settings() -> dict[str, Any]:
         "mesh_mdns_enabled": True,
         "mesh_tailscale_enabled": False,
     }
-    if SYSTEM_SETTINGS_FILE.exists():
+    settings_file = _system_settings_file()
+    if settings_file.exists():
         try:
-            data = json.loads(SYSTEM_SETTINGS_FILE.read_text(encoding="utf-8"))
+            data = json.loads(settings_file.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 defaults.update(data)
         except Exception:
@@ -98,8 +101,9 @@ def _load_system_settings() -> dict[str, Any]:
 
 
 def _save_system_settings(payload: dict[str, Any]) -> None:
-    SYSTEM_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SYSTEM_SETTINGS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    settings_file = _system_settings_file()
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _confirm_gate(value: str) -> bool:
