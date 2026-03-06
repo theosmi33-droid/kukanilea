@@ -72,6 +72,7 @@ from app.ai.guardrails import requires_confirm_for_prompt, validate_prompt
 from app.ai.skills_registry import skills_registry, suggest_skills
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.manager_agent import route_via_manager_agent
+from app.security.untrusted_input import assess_untrusted_input
 from app.agents.retrieval_fts import enqueue as rag_enqueue
 from app.agents.search import SearchAgent
 
@@ -2297,6 +2298,30 @@ def api_chat():
     if not msg:
         return json_error("empty_query", "Leer.", status=400)
 
+    assessment = assess_untrusted_input(msg)
+    if assessment.decision in {"block", "route_to_review"}:
+        _audit(
+            "chat_guardrail_blocked",
+            target="/api/chat",
+            meta={
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+                "reasons": list(assessment.reasons),
+            },
+        )
+        return json_error("injection_blocked", "Eingabe durch Guardrails blockiert.", status=400)
+    if assessment.decision == "allow_with_warning":
+        _audit(
+            "chat_guardrail_warning",
+            target="/api/chat",
+            meta={
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+            },
+        )
+
     injection_pattern = detect_injection(msg)
     if injection_pattern:
         _audit("chat_injection_blocked", target="/api/chat", meta={"pattern": injection_pattern})
@@ -2413,6 +2438,37 @@ def api_chat_compact():
             ok=False
         )), 400
 
+    assessment = assess_untrusted_input(user_msg)
+    if assessment.decision in {"block", "route_to_review"}:
+        _audit(
+            "chat_compact_guardrail_blocked",
+            target="/api/chat/compact",
+            meta={
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+                "reasons": list(assessment.reasons),
+            },
+        )
+        return jsonify(_widget_compact_response(
+            text="Eingabe durch Guardrails blockiert.",
+            model="local",
+            context_tag=current_context,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            status="Blockiert",
+            ok=False,
+        )), 400
+    if assessment.decision == "allow_with_warning":
+        _audit(
+            "chat_compact_guardrail_warning",
+            target="/api/chat/compact",
+            meta={
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+            },
+        )
+
     injection_pattern = detect_injection(user_msg)
     if injection_pattern:
         _audit("chat_compact_injection_blocked", target="/api/chat/compact", meta={"pattern": injection_pattern})
@@ -2525,6 +2581,19 @@ def api_ai_plan():
     if not prompt:
         return jsonify(error="empty_message"), 400
 
+    assessment = assess_untrusted_input(prompt)
+    if assessment.decision in {"block", "route_to_review"}:
+        _audit(
+            "ai_plan_guardrail_blocked",
+            target="/api/ai/plan",
+            meta={
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+            },
+        )
+        return jsonify(error="injection_blocked", reason="guardrail_blocked"), 400
+
     valid, guard_reason = validate_prompt(prompt)
     if not valid:
         _audit("ai_plan_blocked", target="/api/ai/plan", meta={"reason": guard_reason})
@@ -2570,6 +2639,19 @@ def api_ai_execute():
     definition = skills_registry.get(skill_name)
     if not definition:
         return jsonify(error="skill_not_allowed"), 403
+
+    assessment = assess_untrusted_input(json.dumps({"skill": skill_name, "payload": skill_payload}, ensure_ascii=False))
+    if assessment.decision in {"block", "route_to_review"}:
+        _audit(
+            "ai_execute_guardrail_blocked",
+            target="/api/ai/execute",
+            meta={
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+            },
+        )
+        return jsonify(error="injection_blocked", reason="guardrail_blocked"), 400
 
     if definition.requires_confirm and not confirm:
         _audit("ai_execute_denied", target="/api/ai/execute", meta={"skill": skill_name, "reason": "confirm_required"})

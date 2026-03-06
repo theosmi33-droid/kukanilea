@@ -15,6 +15,7 @@ from app.security import csrf_protected
 from app.rate_limit import chat_limiter
 from app.agents.orchestrator import answer as agent_answer
 from app.modules.messenger import parse_chat_intake
+from app.security.untrusted_input import assess_untrusted_input
 
 logger = logging.getLogger("kukanilea.messenger")
 bp = Blueprint("messenger", __name__)
@@ -143,6 +144,28 @@ def api_chat():
     msg = extract_chat_message(payload if isinstance(payload, dict) else {})
     if not msg:
         return jsonify(error="empty_message"), 400
+
+    assessment = assess_untrusted_input(msg)
+    if assessment.decision in {"block", "route_to_review"}:
+        _audit_chat_event(
+            "chat_guardrail_blocked",
+            meta={
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+                "reasons": list(assessment.reasons),
+            },
+        )
+        return jsonify(error="injection_blocked", reason="guardrail_blocked"), 400
+    if assessment.decision == "allow_with_warning":
+        _audit_chat_event(
+            "chat_guardrail_warning",
+            meta={
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+            },
+        )
 
     injection_pattern = detect_injection(msg)
     if injection_pattern:

@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from app.ai.intent_analyzer import detect_write_intent
 from app.contracts.tool_contracts import normalize_chat_response
+from app.security.untrusted_input import assess_untrusted_input
 
 CRITICAL_PREFIXES = ("create_", "delete_", "update_", "send_", "mail_", "messenger_")
 CRITICAL_ACTIONS = {"create_task", "create_appointment", "mail_send", "messenger_send", "mail_generate"}
@@ -64,6 +65,41 @@ def route_via_manager_agent(
     role: str,
     answer_fn: Callable[..., dict[str, Any]],
 ) -> ManagerAgentResult:
+    assessment = assess_untrusted_input(message)
+    if assessment.decision in {"block", "route_to_review"}:
+        blocked_response = {
+            "ok": False,
+            "text": "Sicherheitsprüfung aktiv: Anfrage wurde gestoppt und zur Prüfung markiert.",
+            "response": "Sicherheitsprüfung aktiv: Anfrage wurde gestoppt und zur Prüfung markiert.",
+            "actions": [],
+            "requires_confirm": False,
+            "manager_agent": {
+                "route": "manager_agent",
+                "proposed_actions": [],
+                "plan": [{"step": "1. Sicherheitsprüfung", "status": "completed"}],
+                "progress": {"total_steps": 1, "completed_steps": 1, "in_progress_step": ""},
+                "object_refs": {},
+            },
+            "guardrail": {
+                "decision": assessment.decision,
+                "risk_score": assessment.risk_score,
+                "signals": list(assessment.matched_signals),
+                "reasons": list(assessment.reasons),
+            },
+        }
+        return ManagerAgentResult(
+            response=blocked_response,
+            conversation_entry={
+                "user_message": message,
+                "assistant_text": blocked_response["text"],
+                "requires_confirm": False,
+                "proposed_actions": [],
+                "plan": blocked_response["manager_agent"]["plan"],
+                "object_refs": {},
+                "guardrail": blocked_response["guardrail"],
+            },
+        )
+
     try:
         raw = answer_fn(message, role=role)
     except TypeError:
