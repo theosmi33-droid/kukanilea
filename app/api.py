@@ -9,7 +9,7 @@ from app.modules.aufgaben.contracts import create_task
 from app.modules.aufgaben.logic import delete_task as aufgaben_delete_task
 from app.modules.aufgaben.logic import get_task as aufgaben_get_task
 from app.modules.aufgaben.logic import list_tasks as aufgaben_list_tasks
-from app.modules.aufgaben.logic import summary as aufgaben_summary
+from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
 from app.modules.aufgaben.logic import update_task as aufgaben_update_task
 from app.modules.kalender.contracts import build_health as build_kalender_health
 from app.modules.kalender.contracts import build_summary as build_kalender_summary
@@ -153,8 +153,7 @@ def kalender_create_invitation():
 
 @bp.get("/aufgaben/summary")
 def aufgaben_summary_route():
-    metrics = aufgaben_summary(tenant=_tenant())
-    return jsonify(ok=True, metrics=metrics)
+    return jsonify(build_aufgaben_summary(tenant=_tenant()))
 
 
 @bp.get("/aufgaben")
