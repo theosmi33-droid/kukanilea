@@ -165,7 +165,12 @@ class DeterministicToolRouter:
         for spec in self.INTENT_LIBRARY:
             if any(pattern.search(text) for pattern in spec.patterns):
                 missing = [entity for entity in spec.required_entities if not self._entity_present(entity, text)]
-                action_specs = [self.action_registry.actions[name] for name in spec.candidate_actions if name in self.action_registry.actions]
+                action_specs = []
+                for candidate in spec.candidate_actions:
+                    resolved = self.action_registry.resolve_action_id(candidate)
+                    if not resolved:
+                        continue
+                    action_specs.append(self.action_registry.actions[resolved])
                 highest_risk = "low"
                 if any(action.policy.external_call for action in action_specs):
                     highest_risk = "high"
@@ -200,7 +205,12 @@ class DeterministicToolRouter:
         )
 
     def select(self, plan: MIAIntentPlan) -> RouteDecision:
-        action_name = next((action for action in plan.candidate_actions if action in self.action_registry.actions), "")
+        action_name = ""
+        for action in plan.candidate_actions:
+            resolved_action = self.action_registry.resolve_action_id(action)
+            if resolved_action:
+                action_name = resolved_action
+                break
         if not action_name:
             return RouteDecision(
                 intent=plan.intent_name,
@@ -284,12 +294,15 @@ class ManagerAgent:
         plan = self.router.build_plan(message)
         decision = self.router.select(plan)
 
-        if decision.action not in self.router.action_registry.actions and decision.action not in {"safe_follow_up", "safe_fallback"}:
+        resolved_action = self.router.action_registry.resolve_action_id(decision.action)
+        if not resolved_action and decision.action not in {"safe_follow_up", "safe_fallback"}:
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="action_not_registered", plan=plan)
             self._record("manager_agent.blocked", message, ctx, result)
             return result
 
-        if plan.candidate_actions and not self.router.validate_parameters(decision.action, ctx.get("params")):
+        canonical_action = resolved_action or decision.action
+
+        if plan.candidate_actions and not self.router.validate_parameters(canonical_action, ctx.get("params")):
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="schema_validation_failed", plan=plan)
             self._record("manager_agent.blocked", message, ctx, result)
             return result
@@ -322,6 +335,16 @@ class ManagerAgent:
             result = RouteResult(ok=False, status="needs_clarification", decision=decision, reason="unknown_intent", plan=plan)
             self._record("manager_agent.needs_clarification", message, ctx, result, extra={"suggestions": list(self.router.SAFE_SUGGESTIONS)})
             return result
+
+        if resolved_action:
+            decision = RouteDecision(
+                intent=decision.intent,
+                tool=decision.tool,
+                action=resolved_action,
+                requires_confirm=decision.requires_confirm,
+                external_call=decision.external_call,
+                execution_mode=decision.execution_mode,
+            )
 
         result = RouteResult(ok=True, status="routed", decision=decision, plan=plan)
         self._record("manager_agent.routed", message, ctx, result)

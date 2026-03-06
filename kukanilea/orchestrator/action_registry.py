@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from itertools import product
 from typing import Iterable, Mapping
+import warnings
 
 WRITE_VERBS = {
     "create",
@@ -81,6 +82,7 @@ class ActionRegistryStats:
 class ActionRegistry:
     actions: dict[str, ActionSpec] = field(default_factory=dict)
     domains: dict[str, DomainSpec] = field(default_factory=dict)
+    legacy_aliases: dict[str, str] = field(default_factory=dict)
 
     def register(self, action_spec: ActionSpec) -> None:
         if action_spec.action_id in self.actions:
@@ -91,8 +93,32 @@ class ActionRegistry:
         for spec in action_specs:
             self.register(spec)
 
+    def register_legacy_alias(self, legacy_action_id: str, canonical_action_id: str) -> None:
+        legacy = str(legacy_action_id or "").strip()
+        canonical = str(canonical_action_id or "").strip()
+        if not legacy or not canonical:
+            raise ValueError("Alias mapping requires legacy and canonical action ids")
+        self.legacy_aliases[legacy] = canonical
+
+    def resolve_action_id(self, action_id: str) -> str | None:
+        action = str(action_id or "").strip()
+        if action in self.actions:
+            return action
+        canonical = self.legacy_aliases.get(action)
+        if canonical and canonical in self.actions:
+            warnings.warn(
+                f"Action '{action}' is deprecated and will be removed; use '{canonical}'.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return canonical
+        return None
+
     def get(self, action_id: str) -> ActionSpec | None:
-        return self.actions.get(action_id)
+        resolved = self.resolve_action_id(action_id)
+        if not resolved:
+            return None
+        return self.actions.get(resolved)
 
     def as_dict(self) -> dict[str, ActionSpec]:
         return dict(self.actions)

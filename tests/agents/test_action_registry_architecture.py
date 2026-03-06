@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 from kukanilea.orchestrator.action_catalog import create_action_registry, registry_summary
-from kukanilea.orchestrator.action_registry import ActionRegistry, ActionSpec, ActionPolicyMetadata, canonical_action_id
+from kukanilea.orchestrator.action_registry import ActionPolicyMetadata, ActionRegistry, ActionSpec, canonical_action_id
 
 
 def test_registry_generates_canonical_action_ids() -> None:
@@ -46,3 +48,19 @@ def test_registry_validation_rejects_write_actions_without_confirm_and_audit() -
         assert "Write action without confirm+audit policy" in str(exc)
     else:
         raise AssertionError("validation should fail for write actions without policy gates")
+
+
+def test_registry_resolves_legacy_alias_to_canonical_action_with_warning() -> None:
+    registry = create_action_registry()
+
+    with pytest.warns(DeprecationWarning):
+        spec = registry.get("messenger.reply")
+
+    assert spec is not None
+    assert spec.action_id == "messenger.message.reply"
+
+
+def test_registry_rejects_unknown_action_name_resolution() -> None:
+    registry = create_action_registry()
+
+    assert registry.resolve_action_id("legacy.unknown.action") is None

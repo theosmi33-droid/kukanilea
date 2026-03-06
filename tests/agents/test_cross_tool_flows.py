@@ -120,3 +120,52 @@ def test_unknown_flow_reports_failure_with_audit_evidence() -> None:
     assert result.status == "failed"
     assert result.failures[0]["code"] == "flow_not_found"
     assert result.audit_evidence[0]["event"] == "flow.failed"
+
+
+def test_legacy_flow_action_alias_executes_canonical_handler_with_warning() -> None:
+    import pytest
+
+    registry = create_default_registry()
+    with pytest.warns(DeprecationWarning):
+        out = registry.execute("email_extract_task", {"email_subject": "Betreff", "email_body": "Inhalt"})
+
+    assert out["task_title"] == "Betreff"
+
+
+def test_unknown_flow_action_name_is_blocked_with_failure_and_audit() -> None:
+    engine = _engine()
+    engine.flows["flow_unknown_action"] = type(engine.flows["flow_email_to_task"])(
+        flow_id="flow_unknown_action",
+        title="Unknown action",
+        trigger="manual",
+        steps=(
+            type(engine.flows["flow_email_to_task"].steps[0])("bad", "legacy.unknown.action"),
+        ),
+        required_context=(),
+        confirmation_points=(),
+        audit_events=("flow.step_failed",),
+        fallback_policy="block",
+    )
+
+    result = engine.run(flow_id="flow_unknown_action", context={})
+
+    assert result.ok is False
+    assert result.status == "failed"
+    assert result.failures[0]["code"] == "action_failed"
+    assert result.audit_evidence[-1]["event"] == "flow.step_failed"
+
+
+def test_flow_audit_uses_canonical_action_name() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_email_to_task",
+        context={"email_subject": "Leckage bei Kunde", "email_body": "Bitte heute prüfen.", "default_deadline": "2026-01-31"},
+        confirmations={"create_task": True},
+        tool_health={"tasks": True},
+    )
+
+    assert result.ok is True
+    executed = [item for item in result.audit_evidence if item["event"] == "flow.step_executed"]
+    assert any(item["action_id"] == "mail.message.extract" for item in executed)
+    assert any(item["action_id"] == "tasks.task.suggest_deadline" for item in executed)
