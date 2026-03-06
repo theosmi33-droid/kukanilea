@@ -90,3 +90,33 @@ def test_offline_first_blocks_external_action_without_feature_flag() -> None:
     assert result.status == "offline_blocked"
     assert result.reason == "external_calls_disabled"
     assert bus.events[-1]["event_type"] == "manager_agent.offline_blocked"
+
+
+def test_unknown_parameters_are_blocked_by_schema_validation() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route(
+        "Bitte zeige dashboard status",
+        {"params": {"tenant": "KUKANILEA", "query": "status", "payload": {}, "oops": True}},
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert result.reason == "unknown_parameters"
+    assert bus.events[-1]["event_type"] == "manager_agent.blocked"
+
+
+def test_missing_required_parameters_trigger_safe_propose_mode() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route(
+        "Bitte zeige dashboard status",
+        {"params": {"tenant": "KUKANILEA"}},
+    )
+
+    assert result.ok is False
+    assert result.status == "propose"
+    assert result.reason == "missing_required_parameters"
+    assert bus.events[-1]["event_type"] == "manager_agent.blocked"

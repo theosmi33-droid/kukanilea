@@ -222,15 +222,8 @@ class DeterministicToolRouter:
             execution_mode=mode,
         )
 
-    def validate_parameters(self, action: str, params: Mapping[str, Any] | None) -> bool:
-        spec = self.action_registry.actions.get(action)
-        if not spec:
-            return False
-        provided = dict(params or {})
-        if not provided:
-            return True
-        allowed = set(spec.parameter_schema.keys())
-        return set(provided.keys()).issubset(allowed)
+    def validate_parameters(self, action: str, params: Mapping[str, Any] | None):
+        return self.action_registry.validate_action_params(action, params)
 
     def _entity_present(self, entity: str, text: str) -> bool:
         checks = {
@@ -289,8 +282,24 @@ class ManagerAgent:
             self._record("manager_agent.blocked", message, ctx, result)
             return result
 
-        if plan.candidate_actions and not self.router.validate_parameters(decision.action, ctx.get("params")):
+        raw_params = ctx.get("params")
+        if raw_params is not None and not isinstance(raw_params, Mapping):
+            raw_params = {}
+        validation = self.router.validate_parameters(decision.action, raw_params) if raw_params is not None else None
+        if plan.candidate_actions and validation is not None and not validation.ok:
+            reason = "schema_validation_failed"
+            if validation.missing_required:
+                reason = "missing_required_parameters"
+            elif validation.unknown_parameters:
+                reason = "unknown_parameters"
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="schema_validation_failed", plan=plan)
+            if validation.missing_required:
+                result.status = "propose"
+                result.reason = reason
+                ctx = dict(ctx)
+                ctx["missing_required"] = list(validation.missing_required)
+            else:
+                result.reason = reason
             self._record("manager_agent.blocked", message, ctx, result)
             return result
 

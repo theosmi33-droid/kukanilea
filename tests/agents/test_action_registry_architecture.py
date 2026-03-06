@@ -46,3 +46,30 @@ def test_registry_validation_rejects_write_actions_without_confirm_and_audit() -
         assert "Write action without confirm+audit policy" in str(exc)
     else:
         raise AssertionError("validation should fail for write actions without policy gates")
+
+
+def test_registry_exposes_normalized_parameter_schema_and_blocks_unknown_params() -> None:
+    registry = create_action_registry()
+
+    spec = registry.get("tasks.task.create")
+    assert spec is not None
+    assert spec.parameter_schema["type"] == "object"
+    assert spec.parameter_schema["additionalProperties"] is False
+    assert set(spec.parameter_schema["required"]) == {"tenant", "query", "payload"}
+
+    valid = registry.validate_action_params(
+        "tasks.task.create",
+        {"tenant": "KUKANILEA", "query": "Neue Aufgabe", "payload": {}},
+    )
+    assert valid.ok is True
+
+    unknown = registry.validate_action_params(
+        "tasks.task.create",
+        {"tenant": "KUKANILEA", "query": "Neue Aufgabe", "payload": {}, "x": 1},
+    )
+    assert unknown.ok is False
+    assert unknown.unknown_parameters == ("x",)
+
+    missing = registry.validate_action_params("tasks.task.create", {"tenant": "KUKANILEA"})
+    assert missing.ok is False
+    assert set(missing.missing_required) == {"payload", "query"}

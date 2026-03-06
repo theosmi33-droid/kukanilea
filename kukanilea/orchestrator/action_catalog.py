@@ -18,9 +18,20 @@ COMMON_VERBS = ("read", "list", "search", "create", "update", "delete", "status"
 SCHEDULING_VERBS = ("read", "list", "search", "create", "update", "delete", "schedule")
 COMMUNICATION_VERBS = ("read", "list", "search", "reply", "send", "status")
 
+BASE_PARAMETER_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "tenant": {"type": "string"},
+        "query": {"type": "string"},
+        "payload": {"type": "object"},
+    },
+    "required": ["tenant", "query", "payload"],
+    "additionalProperties": False,
+}
 
-def _make_entities(*names: str, verbs: tuple[str, ...] = COMMON_VERBS, schema: dict[str, str] | None = None) -> tuple[EntitySpec, ...]:
-    payload = schema or {"tenant": "str", "query": "str", "payload": "dict"}
+
+def _make_entities(*names: str, verbs: tuple[str, ...] = COMMON_VERBS, schema: dict[str, object] | None = None) -> tuple[EntitySpec, ...]:
+    payload = schema or BASE_PARAMETER_SCHEMA
     return tuple(EntitySpec(name=name, verbs=verbs, parameter_schema=payload) for name in names)
 
 

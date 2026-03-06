@@ -120,3 +120,42 @@ def test_unknown_flow_reports_failure_with_audit_evidence() -> None:
     assert result.status == "failed"
     assert result.failures[0]["code"] == "flow_not_found"
     assert result.audit_evidence[0]["event"] == "flow.failed"
+
+
+def test_flow_step_missing_parameters_yields_safe_proposal() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_email_to_task",
+        context={
+            "email_subject": "Betreff vorhanden",
+            "email_body": "Body vorhanden",
+            "step_params": {"extract_email": {"email_subject": "Fehlt Body"}},
+        },
+        confirmations={"create_task": True},
+        tool_health={"tasks": True},
+    )
+
+    assert result.ok is False
+    assert result.status == "propose_and_ask_confirmation"
+    assert any(p["type"] == "missing_step_parameters" for p in result.proposals)
+    assert any(e["event"] == "flow.step_params_missing" for e in result.audit_evidence)
+
+
+def test_flow_step_unknown_parameters_fail_fast() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_email_to_task",
+        context={
+            "email_subject": "x",
+            "email_body": "y",
+            "step_params": {"extract_email": {"email_subject": "x", "email_body": "y", "unexpected": "z"}},
+        },
+        confirmations={"create_task": True},
+        tool_health={"tasks": True},
+    )
+
+    assert result.ok is False
+    assert result.status == "failed"
+    assert result.failures[0]["code"] == "unknown_step_parameters"

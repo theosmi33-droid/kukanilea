@@ -10,6 +10,13 @@ ActionHandler = Callable[[Mapping[str, Any]], dict[str, Any]]
 
 
 @dataclass(frozen=True)
+class FlowActionSpec:
+    handler: ActionHandler
+    required: tuple[str, ...] = ()
+    allowed: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class FlowStep:
     step_id: str
     action_id: str
@@ -43,16 +50,42 @@ class FlowExecutionResult:
 
 class AtomicActionRegistry:
     def __init__(self) -> None:
-        self._handlers: dict[str, ActionHandler] = {}
+        self._actions: dict[str, FlowActionSpec] = {}
 
-    def register(self, action_id: str, handler: ActionHandler) -> None:
-        self._handlers[action_id] = handler
+    def register(
+        self,
+        action_id: str,
+        handler: ActionHandler,
+        *,
+        required: tuple[str, ...] = (),
+        allowed: tuple[str, ...] = (),
+    ) -> None:
+        self._actions[action_id] = FlowActionSpec(handler=handler, required=required, allowed=allowed)
+
+    def validate_params(self, action_id: str, payload: Mapping[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        action = self._actions.get(action_id)
+        if action is None:
+            return (), ()
+        keys = set(str(key) for key in payload.keys())
+        required = set(action.required)
+        allowed = set(action.allowed) if action.allowed else keys
+        missing = tuple(sorted(key for key in required if key not in keys))
+        unknown = tuple(sorted(key for key in keys if key not in allowed))
+        return missing, unknown
+
+    def select_payload(self, action_id: str, context: Mapping[str, Any]) -> dict[str, Any]:
+        action = self._actions.get(action_id)
+        if action is None:
+            return dict(context)
+        if not action.allowed:
+            return dict(context)
+        return {key: context[key] for key in action.allowed if key in context}
 
     def execute(self, action_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-        handler = self._handlers.get(action_id)
-        if handler is None:
+        action = self._actions.get(action_id)
+        if action is None:
             raise KeyError(f"action_not_registered:{action_id}")
-        return handler(payload)
+        return action.handler(payload)
 
 
 class CrossToolFlowEngine:
@@ -138,8 +171,62 @@ class CrossToolFlowEngine:
                 )
                 continue
 
+            step_params_map = run_context.get("step_params")
+            explicit_step_params = None
+            if isinstance(step_params_map, Mapping):
+                payload = step_params_map.get(step.step_id)
+                if isinstance(payload, Mapping):
+                    explicit_step_params = dict(payload)
+
+            action_payload = explicit_step_params or self.action_registry.select_payload(step.action_id, run_context)
+            missing_params, unknown_params = self.action_registry.validate_params(step.action_id, action_payload)
+            if missing_params:
+                result.ok = False
+                result.status = "propose_and_ask_confirmation"
+                result.proposals.append(
+                    {
+                        "type": "missing_step_parameters",
+                        "step_id": step.step_id,
+                        "action_id": step.action_id,
+                        "required": list(missing_params),
+                    }
+                )
+                result.audit_evidence.append(
+                    {
+                        "event": "flow.step_params_missing",
+                        "flow_id": flow.flow_id,
+                        "step_id": step.step_id,
+                        "action_id": step.action_id,
+                        "required": list(missing_params),
+                    }
+                )
+                continue
+
+            if explicit_step_params is not None and unknown_params:
+                result.ok = False
+                result.status = "failed"
+                result.failures.append(
+                    {
+                        "code": "unknown_step_parameters",
+                        "step_id": step.step_id,
+                        "action_id": step.action_id,
+                        "unknown": list(unknown_params),
+                    }
+                )
+                result.audit_evidence.append(
+                    {
+                        "event": "flow.step_failed",
+                        "flow_id": flow.flow_id,
+                        "step_id": step.step_id,
+                        "action_id": step.action_id,
+                        "error": "unknown_parameters",
+                        "unknown": list(unknown_params),
+                    }
+                )
+                break
+
             try:
-                output = self.action_registry.execute(step.action_id, run_context)
+                output = self.action_registry.execute(step.action_id, action_payload)
             except Exception as exc:  # deterministic failure reporting
                 trace = traceback.format_exc()
                 result.ok = False
@@ -198,6 +285,8 @@ def create_default_registry() -> AtomicActionRegistry:
             "task_title": (_extract_untrusted_text(p, "email_subject") or "Neue Anfrage").strip()[:120],
             "task_notes": _extract_untrusted_text(p, "email_body"),
         },
+        required=("email_subject", "email_body"),
+        allowed=("email_subject", "email_body"),
     )
     registry.register(
         "email_match_project",
@@ -212,6 +301,8 @@ def create_default_registry() -> AtomicActionRegistry:
                 "",
             )
         },
+        required=("email_subject", "projects"),
+        allowed=("email_subject", "projects"),
     )
     registry.register(
         "calendar_check_conflict",
@@ -221,6 +312,8 @@ def create_default_registry() -> AtomicActionRegistry:
                 for slot in (p.get("calendar_entries") or [])
             )
         },
+        required=("requested_start", "calendar_entries"),
+        allowed=("requested_start", "calendar_entries"),
     )
     registry.register(
         "calendar_propose_slot",
@@ -228,10 +321,14 @@ def create_default_registry() -> AtomicActionRegistry:
             "proposed_start": str(p.get("fallback_start") or p.get("requested_start") or ""),
             "proposal_reason": "conflict" if p.get("calendar_conflict") else "no_conflict",
         },
+        required=("requested_start",),
+        allowed=("requested_start", "fallback_start", "calendar_conflict"),
     )
     registry.register(
         "document_extract",
         lambda p: {"document_text": _extract_untrusted_text(p, "document_text")},
+        required=("document_text",),
+        allowed=("document_text",),
     )
     registry.register(
         "document_suggest_deadline_task",
@@ -239,10 +336,13 @@ def create_default_registry() -> AtomicActionRegistry:
             "suggested_deadline": str(p.get("default_deadline") or ""),
             "task_title": str(p.get("task_title") or "Dokument prüfen"),
         },
+        allowed=("default_deadline", "task_title"),
     )
     registry.register(
         "messenger_extract_followup",
         lambda p: {"followup_summary": _extract_untrusted_text(p, "message_text")[:200]},
+        required=("message_text",),
+        allowed=("message_text",),
     )
     registry.register(
         "system_create_audit_entry",
@@ -252,16 +352,22 @@ def create_default_registry() -> AtomicActionRegistry:
                 "severity": str(p.get("severity") or "INFO")[:10],
             }
         },
+        required=("event_type",),
+        allowed=("event_type", "severity"),
     )
     registry.register(
         "system_notify_admin",
         lambda p: {
             "admin_hint": f"Admin-Hinweis: {str(p.get('event_type') or 'unknown_event')[:50]}"
         },
+        required=("event_type",),
+        allowed=("event_type",),
     )
     registry.register(
         "deadline_sync_calendar_task",
         lambda p: {"sync_ref": f"sync:{p.get('deadline_id', 'n/a')}"},
+        required=("deadline_id",),
+        allowed=("deadline_id",),
     )
     registry.register(
         "document_detect_customer_project",
@@ -269,10 +375,13 @@ def create_default_registry() -> AtomicActionRegistry:
             "detected_customer": str(p.get("customer_hint") or ""),
             "project_id": str(p.get("project_hint") or p.get("project_id") or ""),
         },
+        required=("customer_hint",),
+        allowed=("customer_hint", "project_hint", "project_id"),
     )
     registry.register(
         "document_propose_action",
         lambda p: {"suggested_action": str(p.get("suggested_action") or "Aufgabe anlegen")},
+        allowed=("suggested_action",),
     )
     return registry
 
