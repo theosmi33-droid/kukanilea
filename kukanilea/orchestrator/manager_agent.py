@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from collections.abc import Sequence
 from typing import Any, Callable, Mapping
 
 from .action_catalog import create_action_registry
@@ -230,7 +231,35 @@ class DeterministicToolRouter:
         if not provided:
             return True
         allowed = set(spec.parameter_schema.keys())
-        return set(provided.keys()).issubset(allowed)
+        if not set(provided.keys()).issubset(allowed):
+            return False
+
+        expected_types = {
+            "str": str,
+            "dict": dict,
+            "list": list,
+            "bool": bool,
+            "int": int,
+            "float": (int, float),
+        }
+        for key, value in provided.items():
+            expected = str(spec.parameter_schema.get(key) or "").strip().lower()
+            if not expected:
+                return False
+            py_type = expected_types.get(expected)
+            if py_type is None:
+                return False
+            if not isinstance(value, py_type):
+                return False
+        return True
+
+    def contains_injection_in_params(self, params: Mapping[str, Any] | None) -> tuple[bool, list[str]]:
+        findings: list[str] = []
+        for text in _iter_text_payload(params):
+            blocked, patterns = self.contains_injection(text)
+            if blocked:
+                findings.extend(patterns)
+        return bool(findings), sorted(set(findings))
 
     def _entity_present(self, entity: str, text: str) -> bool:
         checks = {
@@ -292,6 +321,12 @@ class ManagerAgent:
         if plan.candidate_actions and not self.router.validate_parameters(decision.action, ctx.get("params")):
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="schema_validation_failed", plan=plan)
             self._record("manager_agent.blocked", message, ctx, result)
+            return result
+
+        params_injection, param_patterns = self.router.contains_injection_in_params(ctx.get("params"))
+        if params_injection:
+            result = RouteResult(ok=False, status="blocked", decision=decision, reason="param_guardrail_blocked", plan=plan)
+            self._record("manager_agent.blocked", message, ctx, result, extra={"patterns": param_patterns})
             return result
 
         confirm = _confirm_token(ctx.get("confirm"))
@@ -361,3 +396,21 @@ class ManagerAgent:
 def _confirm_token(value: Any) -> bool:
     token = str(value or "").strip().lower()
     return token in CONFIRM_TOKENS
+
+
+def _iter_text_payload(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Mapping):
+        texts: list[str] = []
+        for nested in value.values():
+            texts.extend(_iter_text_payload(nested))
+        return texts
+    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        texts: list[str] = []
+        for nested in value:
+            texts.extend(_iter_text_payload(nested))
+        return texts
+    return []
