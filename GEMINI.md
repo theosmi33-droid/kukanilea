@@ -1,9 +1,9 @@
-# KUKANILEA Gemini Workspace Instructions
+# KUKANILEA MIA Workspace Instructions
 
 Read and follow these files before any implementation:
 
 1. /Users/gensuminguyen/Kukanilea/kukanilea_production/docs/ai/AI_AGENT_OPERATING_CONTRACT.md
-2. /Users/gensuminguyen/Kukanilea/kukanilea_production/docs/ai/GEMINI_REFERENCE_STACK.md
+2. /Users/gensuminguyen/Kukanilea/kukanilea_production/docs/ai/MIA_REFERENCE_STACK.md
 3. /Users/gensuminguyen/Kukanilea/kukanilea_production/app/agents/config/AGENTS.md
 
 Rules:

@@ -4288,6 +4288,24 @@ def admin_audit():
     return _render_base("audit_trail.html", active_tab="settings", trail=trail)
 
 
+@bp.route("/calendar/export.ics")
+@login_required
+def calendar_export_ics():
+    # Compatibility endpoint used by legacy templates (`web.calendar_export_ics`).
+    from app.knowledge.ics_source import knowledge_ics_build_local_feed
+
+    tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
+    ics_content = knowledge_ics_build_local_feed(tenant_id)
+    return (
+        ics_content,
+        200,
+        {
+            "Content-Type": "text/calendar; charset=utf-8",
+            "Content-Disposition": "attachment; filename=calendar.ics",
+        },
+    )
+
+
 @bp.route("/api/tools")
 @login_required
 def api_list_tools():
@@ -4312,6 +4330,21 @@ def _normalize_contract_tool(tool: str) -> str | None:
     return resolved
 
 
+def _contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
+    raw = str(requested_tool or "").strip().lower()
+    if raw in {
+        "kalender",
+        "aufgaben",
+        "projekte",
+        "zeiterfassung",
+        "einstellungen",
+    }:
+        return raw
+    if raw in CONTRACT_TOOLS:
+        return raw
+    return normalized_tool
+
+
 
 @bp.get("/api/<tool>/summary")
 @login_required
@@ -4322,6 +4355,7 @@ def api_tool_summary(tool: str):
         return jsonify(error="unknown_tool", tool=tool), 404
 
     payload = build_tool_summary(normalized_tool, tenant=tenant)
+    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
     return jsonify(payload)
 
 
@@ -4371,6 +4405,7 @@ def api_tool_health(tool: str):
         return jsonify(error="unknown_tool", tool=tool), 404
 
     payload = build_tool_health(normalized_tool, tenant=tenant)
+    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
     code = 200 if payload.get("status") in {"ok", "degraded"} else 503
     return jsonify(payload), code
 
