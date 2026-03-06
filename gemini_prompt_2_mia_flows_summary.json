@@ -1,0 +1,375 @@
+{
+  "prompt": "Gemini Prompt 2 — Cross-Tool MIA Flows",
+  "domain": "Handwerksbetriebe",
+  "total_flows": 25,
+  "tools_involved": [
+    "Email",
+    "CRM",
+    "ERP",
+    "Tasks",
+    "Calendar",
+    "Dispatch",
+    "DMS",
+    "Accounting",
+    "Inventory",
+    "Procurement",
+    "Messaging",
+    "ServiceDesk",
+    "Compliance",
+    "HR",
+    "BI",
+    "Analytics"
+  ],
+  "flows": [
+    {
+      "id": "flow_01",
+      "name": "Neue Angebotsanfrage per E-Mail",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_02",
+      "name": "Rohrbruch-Notfall per Telefonnotiz",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_03",
+      "name": "Baustellenprotokoll per Spracheingabe",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_04",
+      "name": "Mindestbestand unterschritten",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_05",
+      "name": "Auftragszusage erhalten",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_06",
+      "name": "Eingangsrechnung per PDF",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_07",
+      "name": "Wetterwarnung für Außeneinsatz",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_08",
+      "name": "Statusanfrage via WhatsApp",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": false,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_09",
+      "name": "Überfällige Angebote nachfassen",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_10",
+      "name": "Monteur stempelt aus",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_11",
+      "name": "Mangelmeldung aus Kundenportal",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_12",
+      "name": "Neue Baustelle mit Unterweisungspflicht",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_13",
+      "name": "Mahnlauf für überfällige Posten",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_14",
+      "name": "Subunternehmer braucht Unterlagen",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_15",
+      "name": "Kunde verschiebt Termin",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_16",
+      "name": "Negative Online-Bewertung",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_17",
+      "name": "Wochenreport an Bauherrn",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_18",
+      "name": "Onboarding neue Mitarbeiterin",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_19",
+      "name": "Materialkostenalarm im Projekt",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": false,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_20",
+      "name": "Wartungsverträge in 30 Tagen fällig",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_21",
+      "name": "Arbeitsunfall gemeldet",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_22",
+      "name": "Planänderung -> Nachtrag",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_23",
+      "name": "Krankmeldung Techniker",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_24",
+      "name": "Behördenprüfung angekündigt",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": false,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    },
+    {
+      "id": "flow_25",
+      "name": "Monatsende-Cockpit aktualisieren",
+      "actions_range": "3-8",
+      "cross_tool": true,
+      "confirm_gate_required": true,
+      "audit_event_categories": [
+        "ingest",
+        "decision",
+        "execution",
+        "notification"
+      ],
+      "recovery_strategy": "fallback_or_escalation"
+    }
+  ]
+}

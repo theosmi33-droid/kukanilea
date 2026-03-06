@@ -33,7 +33,7 @@ import threading
 import time
 import unicodedata
 import zipfile
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from email import policy
 from email.parser import BytesParser
@@ -724,6 +724,8 @@ def db_init() -> None:
                 );
                 """
             )
+            _ensure_column(con, "time_entries", "task_id", "INTEGER")
+            _ensure_column(con, "time_entries", "entry_type", "TEXT DEFAULT 'WORK'")
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_time_entries_tenant ON time_entries(tenant_id, start_at);"
             )
@@ -736,6 +738,26 @@ def db_init() -> None:
                 ON time_entries(tenant_id, user)
                 WHERE end_at IS NULL;
                 """
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS time_absences(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  user TEXT NOT NULL,
+                  absence_type TEXT NOT NULL,
+                  start_at TEXT NOT NULL,
+                  end_at TEXT NOT NULL,
+                  note TEXT,
+                  export_status TEXT NOT NULL DEFAULT 'PENDING',
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_time_absences_tenant ON time_absences(tenant_id, user, start_at);"
             )
 
             con.execute(
@@ -1290,6 +1312,29 @@ def _duration_seconds(start_at: str, end_at: str) -> int:
     return max(0, int((_parse_iso(end_at) - _parse_iso(start_at)).total_seconds()))
 
 
+def _iso_from_seconds(value: Optional[Any]) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    return (
+        datetime.fromtimestamp(int(value), tz=timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _time_task_lookup(
+    con: sqlite3.Connection, tenant_id: str, task_id: Optional[int]
+) -> Optional[dict]:
+    if task_id is None:
+        return None
+    row = con.execute(
+        "SELECT id, tenant FROM tasks WHERE id=? AND lower(tenant)=lower(?)",
+        (int(task_id), tenant_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def time_project_create(
     *,
     tenant_id: str,
@@ -1378,8 +1423,11 @@ def time_entry_start(
     tenant_id: str,
     user: str,
     project_id: Optional[int] = None,
+    task_id: Optional[int] = None,
     note: str = "",
     started_at: Optional[str] = None,
+    started_at_seconds: Optional[int] = None,
+    entry_type: str = "WORK",
 ) -> Dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     user = normalize_component(user).lower()
@@ -1387,7 +1435,10 @@ def time_entry_start(
     if not user:
         raise ValueError("user_required")
 
-    now = started_at or _now_iso()
+    now = started_at or _iso_from_seconds(started_at_seconds) or _now_iso()
+    entry_type = normalize_component(entry_type).upper() or "WORK"
+    if entry_type not in {"WORK", "VACATION", "SICK"}:
+        raise ValueError("entry_type_invalid")
     entry_id = 0
     with _DB_LOCK:
         con = _db()
@@ -1396,6 +1447,8 @@ def time_entry_start(
                 con, tenant_id, project_id
             ):
                 raise ValueError("project_not_found")
+            if task_id is not None and not _time_task_lookup(con, tenant_id, task_id):
+                raise ValueError("task_not_found")
             row = con.execute(
                 "SELECT id FROM time_entries WHERE tenant_id=? AND user=? AND end_at IS NULL",
                 (tenant_id, user),
@@ -1405,15 +1458,17 @@ def time_entry_start(
             cur = con.execute(
                 """
                 INSERT INTO time_entries(
-                    tenant_id, project_id, user, start_at, end_at, duration_seconds, note,
+                    tenant_id, project_id, task_id, user, entry_type, start_at, end_at, duration_seconds, note,
                     approval_status, created_at, updated_at
                 )
-                VALUES (?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     tenant_id,
                     project_id,
+                    task_id,
                     user,
+                    entry_type,
                     now,
                     None,
                     None,
@@ -1432,7 +1487,7 @@ def time_entry_start(
         role="OPERATOR",
         action="TIME_ENTRY_START",
         target=str(entry_id),
-        meta={"project_id": project_id or ""},
+        meta={"project_id": project_id or "", "task_id": task_id or "", "entry_type": entry_type},
         tenant_id=tenant_id,
     )
     return time_entry_get(tenant_id=tenant_id, entry_id=entry_id) or {}
@@ -1445,9 +1500,10 @@ def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]
         try:
             row = con.execute(
                 """
-                SELECT te.*, tp.name AS project_name
+                SELECT te.*, tp.name AS project_name, t.title AS task_title
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
+                LEFT JOIN tasks t ON t.id = te.task_id AND t.tenant = te.tenant_id
                 WHERE te.tenant_id=? AND te.id=?
                 """,
                 (tenant_id, int(entry_id)),
@@ -1463,6 +1519,8 @@ def time_entry_get(*, tenant_id: str, entry_id: int) -> Optional[Dict[str, Any]]
                 entry["duration_seconds"] = _duration_seconds(
                     entry["start_at"], _now_iso()
                 )
+            entry["start_at_seconds"] = int(_parse_iso(entry["start_at"]).timestamp())
+            entry["end_at_seconds"] = int(_parse_iso(entry["end_at"]).timestamp()) if entry.get("end_at") else None
             return entry
         finally:
             con.close()
@@ -1474,12 +1532,13 @@ def time_entry_stop(
     user: str,
     entry_id: Optional[int] = None,
     ended_at: Optional[str] = None,
+    ended_at_seconds: Optional[int] = None,
 ) -> Dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
     user = normalize_component(user).lower()
     if not user:
         raise ValueError("user_required")
-    end_ts = ended_at or _now_iso()
+    end_ts = ended_at or _iso_from_seconds(ended_at_seconds) or _now_iso()
 
     with _DB_LOCK:
         con = _db()
@@ -1534,9 +1593,13 @@ def time_entry_update(
     tenant_id: str,
     entry_id: int,
     project_id: Optional[int] = None,
+    task_id: Optional[int] = None,
     start_at: Optional[str] = None,
+    start_at_seconds: Optional[int] = None,
     end_at: Optional[str] = None,
+    end_at_seconds: Optional[int] = None,
     note: Optional[str] = None,
+    entry_type: Optional[str] = None,
     user: str = "",
 ) -> Dict[str, Any]:
     tenant_id = _time_tenant(tenant_id)
@@ -1555,8 +1618,14 @@ def time_entry_update(
                 con, tenant_id, project_id
             ):
                 raise ValueError("project_not_found")
-            start_val = start_at or row["start_at"]
-            end_val = end_at if end_at is not None else row["end_at"]
+            if task_id is not None and not _time_task_lookup(con, tenant_id, task_id):
+                raise ValueError("task_not_found")
+            start_val = start_at or _iso_from_seconds(start_at_seconds) or row["start_at"]
+            resolved_end = end_at if end_at is not None else _iso_from_seconds(end_at_seconds)
+            end_val = resolved_end if resolved_end is not None else row["end_at"]
+            entry_type_val = normalize_component(entry_type or row["entry_type"] or "WORK").upper()
+            if entry_type_val not in {"WORK", "VACATION", "SICK"}:
+                raise ValueError("entry_type_invalid")
             duration_val = None
             if end_val:
                 if _parse_iso(end_val) < _parse_iso(start_val):
@@ -1565,11 +1634,13 @@ def time_entry_update(
             con.execute(
                 """
                 UPDATE time_entries
-                SET project_id=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
+                SET project_id=?, task_id=?, entry_type=?, start_at=?, end_at=?, duration_seconds=?, note=?, updated_at=?
                 WHERE id=? AND tenant_id=?
                 """,
                 (
                     project_id if project_id is not None else row["project_id"],
+                    task_id if task_id is not None else row["task_id"],
+                    entry_type_val,
                     start_val,
                     end_val,
                     duration_val,
@@ -1587,7 +1658,7 @@ def time_entry_update(
         role="OPERATOR",
         action="TIME_ENTRY_EDIT",
         target=str(entry_id),
-        meta={"project_id": project_id or "", "note_changed": note is not None},
+        meta={"project_id": project_id or "", "task_id": task_id or "", "entry_type": entry_type or "", "note_changed": note is not None},
         tenant_id=tenant_id,
     )
     return time_entry_get(tenant_id=tenant_id, entry_id=int(entry_id)) or {}
@@ -1662,9 +1733,10 @@ def time_entries_list(
         try:
             rows = con.execute(
                 f"""
-                SELECT te.*, tp.name AS project_name
+                SELECT te.*, tp.name AS project_name, t.title AS task_title
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
+                LEFT JOIN tasks t ON t.id = te.task_id AND t.tenant = te.tenant_id
                 WHERE {where_sql}
                 ORDER BY te.start_at DESC, te.id DESC
                 LIMIT ?
@@ -1682,6 +1754,8 @@ def time_entries_list(
                     entry["duration_seconds"] = _duration_seconds(
                         entry["start_at"], now
                     )
+                entry["start_at_seconds"] = int(_parse_iso(entry["start_at"]).timestamp())
+                entry["end_at_seconds"] = int(_parse_iso(entry["end_at"]).timestamp()) if entry.get("end_at") else None
             return entries
         finally:
             con.close()
@@ -1709,6 +1783,9 @@ def time_entries_export_csv(
             "entry_id",
             "project_id",
             "project_name",
+            "task_id",
+            "task_title",
+            "entry_type",
             "user",
             "start_at",
             "end_at",
@@ -1727,6 +1804,9 @@ def time_entries_export_csv(
                 entry.get("id"),
                 entry.get("project_id"),
                 entry.get("project_name") or "",
+                entry.get("task_id") or "",
+                entry.get("task_title") or "",
+                entry.get("entry_type") or "WORK",
                 entry.get("user"),
                 entry.get("start_at"),
                 entry.get("end_at") or "",
@@ -1739,6 +1819,75 @@ def time_entries_export_csv(
             ]
         )
     return output.getvalue()
+
+
+def time_absence_create(
+    *,
+    tenant_id: str,
+    user: str,
+    absence_type: str,
+    start_at: str,
+    end_at: str,
+    note: str = "",
+) -> Dict[str, Any]:
+    tenant_id = _time_tenant(tenant_id)
+    user = normalize_component(user).lower()
+    absence_type = normalize_component(absence_type).upper()
+    if absence_type not in {"VACATION", "SICK"}:
+        raise ValueError("absence_type_invalid")
+    if _parse_iso(end_at) < _parse_iso(start_at):
+        raise ValueError("invalid_time_range")
+    now = _now_iso()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            cur = con.execute(
+                """
+                INSERT INTO time_absences(tenant_id, user, absence_type, start_at, end_at, note, export_status, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                """,
+                (tenant_id, user, absence_type, start_at, end_at, note.strip(), "PENDING", now, now),
+            )
+            con.commit()
+            absence_id = int(cur.lastrowid or 0)
+        finally:
+            con.close()
+    return {
+        "id": absence_id,
+        "tenant_id": tenant_id,
+        "user": user,
+        "absence_type": absence_type,
+        "start_at": start_at,
+        "end_at": end_at,
+        "note": note.strip(),
+        "export_status": "PENDING",
+    }
+
+
+def time_absences_export_csv(*, tenant_id: str, user: Optional[str] = None) -> str:
+    tenant_id = _time_tenant(tenant_id)
+    user = normalize_component(user or "").lower()
+    with _DB_LOCK:
+        con = _db()
+        try:
+            if user:
+                rows = con.execute(
+                    "SELECT * FROM time_absences WHERE tenant_id=? AND user=? ORDER BY start_at DESC, id DESC",
+                    (tenant_id, user),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT * FROM time_absences WHERE tenant_id=? ORDER BY start_at DESC, id DESC",
+                    (tenant_id,),
+                ).fetchall()
+        finally:
+            con.close()
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["absence_id", "user", "absence_type", "start_at", "end_at", "note", "export_status"])
+    for row in rows:
+        writer.writerow([row["id"], row["user"], row["absence_type"], row["start_at"], row["end_at"], row["note"] or "", row["export_status"]])
+    return out.getvalue()
 
 
 # ============================================================

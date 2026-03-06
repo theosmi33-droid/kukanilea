@@ -128,10 +128,14 @@ COMPRESSION_RATIO="$(awk -v s="$SOURCE_SIZE_BYTES" -v b="$BACKUP_SIZE_BYTES" 'BE
 printf '%s  %s\n' "$BACKUP_HASH" "$(basename "$UPLOAD_FILE")" > "${TMP_DIR}/$(basename "$UPLOAD_FILE").sha256"
 SNAPSHOT_FILE="${TMP_DIR}/$(basename "$UPLOAD_FILE").snapshot.json"
 METADATA_FILE="${TMP_DIR}/$(basename "$UPLOAD_FILE").metadata.json"
+BACKUP_VERIFY_HOOK_STATUS="skipped"
 
 if command -v python3 >/dev/null 2>&1 && [[ -f "$VALIDATION_SCRIPT" ]] && [[ -f "$DB_PATH" ]]; then
   python3 "$VALIDATION_SCRIPT" --phase before --db "$DB_PATH" --tenant "$TENANT_ID" --baseline "$SNAPSHOT_FILE" >/dev/null \
     || die "$EXIT_RUNTIME" "snapshot generation failed"
+  BACKUP_VERIFY_HOOK_STATUS="ok"
+else
+  BACKUP_VERIFY_HOOK_STATUS="warn_skipped"
 fi
 
 cat > "$METADATA_FILE" <<META
@@ -202,6 +206,7 @@ RPO_SECONDS="$((END_EPOCH - DB_MTIME))"
   echo "checksum_file=$CHECKSUM_PATH"
   echo "metadata_file=${TARGET_PATH}.metadata.json"
   echo "snapshot_file=${TARGET_PATH}.snapshot.json"
+  echo "backup_verify_hook=$BACKUP_VERIFY_HOOK_STATUS"
   echo "backup_started_epoch=$START_EPOCH"
   echo "backup_completed_epoch=$END_EPOCH"
   echo "rto_seconds=$RTO_SECONDS"

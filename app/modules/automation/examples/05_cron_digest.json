@@ -1,0 +1,20 @@
+{
+  "name": "Hourly digest ping",
+  "description": "Runs every hour and notifies via AI agent action.",
+  "enabled": true,
+  "triggers": [
+    {"type": "cron", "config": {"cron": "0 * * * *"}}
+  ],
+  "conditions": [
+    {"type": "match_context", "config": {"field": "tenant_id", "equals": "KUKANILEA"}}
+  ],
+  "actions": [
+    {
+      "type": "create_task",
+      "config": {
+        "title": "Hourly digest task",
+        "requires_confirm": false
+      }
+    }
+  ]
+}

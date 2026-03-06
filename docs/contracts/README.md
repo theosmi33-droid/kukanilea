@@ -48,3 +48,11 @@ Bestehende Messenger/Chatbot Payload-Aliase bleiben erhalten:
 Damit bleiben bestehende Frontends/Bots kompatibel, während die Summary/Health-Contracts auf den harten Pflichtschema-Standard gebracht werden.
 
 Tool-Liste (11): dashboard, upload, projects, tasks, messenger, email, calendar, time, visualizer, settings, chatbot.
+
+
+## Actions API Erweiterung
+
+Für write-fähige Tool-Contracts ist ein Draft für ein standardisiertes Actions-Interface dokumentiert:
+
+- Spec: `docs/contracts/actions_api/TOOL_ACTIONS_API_SPEC.md`
+- JSON-Schema-Drafts: `docs/contracts/actions_api/schemas/*.json`
