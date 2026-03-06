@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
 from kukanilea.guards import detect_prompt_injection, neutralize_untrusted_text
+from kukanilea.idempotency import GLOBAL_IDEMPOTENCY_STORE, canonical_hash
 
 ActionHandler = Callable[[Mapping[str, Any]], dict[str, Any]]
 
@@ -64,6 +65,7 @@ class CrossToolFlowEngine:
     ) -> None:
         self.action_registry = action_registry
         self.flows = dict(flows)
+        self.idempotency_store = GLOBAL_IDEMPOTENCY_STORE
 
     def run(
         self,
@@ -86,6 +88,50 @@ class CrossToolFlowEngine:
         confirmations = confirmations or {}
         health = tool_health or {}
         result = FlowExecutionResult(ok=True, status="completed", flow_id=flow.flow_id)
+        idem_scope = f"flow:{flow.flow_id}:{str(context.get('tenant_id') or 'default')}"
+        idem_key = str(context.get("idempotency_key") or "").strip()
+        idem_token = ""
+
+        if idem_key and any(step.writes_state for step in flow.steps):
+            req_hash = canonical_hash(
+                {
+                    "context": {k: context[k] for k in sorted(context) if k != "idempotency_key"},
+                    "confirmations": dict(confirmations),
+                }
+            )
+            decision = self.idempotency_store.begin(
+                scope=idem_scope,
+                key=idem_key,
+                request_hash=req_hash,
+                ttl_seconds=24 * 60 * 60,
+            )
+            if decision.status == "replay":
+                replay = dict(decision.response or {})
+                replay_result = FlowExecutionResult(
+                    ok=bool(replay.get("ok", True)),
+                    status=str(replay.get("status") or "completed"),
+                    flow_id=str(replay.get("flow_id") or flow.flow_id),
+                    executed_steps=list(replay.get("executed_steps") or []),
+                    proposals=list(replay.get("proposals") or []),
+                    failures=list(replay.get("failures") or []),
+                    audit_evidence=list(replay.get("audit_evidence") or []),
+                    outputs=dict(replay.get("outputs") or {}),
+                )
+                replay_result.audit_evidence.append(
+                    {"event": "flow.idempotent_replay", "flow_id": flow.flow_id, "idempotency_key": idem_key}
+                )
+                return replay_result
+            if decision.status == "conflict":
+                result.ok = False
+                result.status = "failed"
+                result.failures.append({"code": "idempotency_conflict", "flow_id": flow.flow_id})
+                return result
+            if decision.status == "in_flight":
+                result.ok = False
+                result.status = "failed"
+                result.failures.append({"code": "idempotency_in_flight", "flow_id": flow.flow_id})
+                return result
+            idem_token = str(decision.token or "")
 
         missing = [k for k in flow.required_context if k not in context]
         if missing:
@@ -176,6 +222,28 @@ class CrossToolFlowEngine:
                     "action_id": step.action_id,
                 }
             )
+
+        if idem_token:
+            if result.ok and result.status in {"completed", "degraded"} and result.executed_steps:
+                self.idempotency_store.complete_success(
+                    scope=idem_scope,
+                    key=idem_key,
+                    token=idem_token,
+                    response={
+                        "ok": result.ok,
+                        "status": result.status,
+                        "flow_id": result.flow_id,
+                        "executed_steps": result.executed_steps,
+                        "proposals": result.proposals,
+                        "failures": result.failures,
+                        "audit_evidence": result.audit_evidence,
+                        "outputs": result.outputs,
+                    },
+                    status_code=200,
+                    ttl_seconds=24 * 60 * 60,
+                )
+            else:
+                self.idempotency_store.complete_failure(scope=idem_scope, key=idem_key, token=idem_token)
 
         return result
 

@@ -120,3 +120,32 @@ def test_unknown_flow_reports_failure_with_audit_evidence() -> None:
     assert result.status == "failed"
     assert result.failures[0]["code"] == "flow_not_found"
     assert result.audit_evidence[0]["event"] == "flow.failed"
+
+
+def test_flow_write_retry_with_same_idempotency_key_replays() -> None:
+    engine = _engine()
+    context = {
+        "email_subject": "Projekt Alpha: Nachtrag",
+        "email_body": "Bitte offenen Punkt ergänzen",
+        "projects": [{"id": "P-100", "keyword": "alpha"}],
+        "default_deadline": "2026-01-31",
+        "idempotency_key": "flow-dup-001",
+    }
+
+    first = engine.run(
+        flow_id="flow_email_project_task",
+        context=context,
+        confirmations={"create_task": True},
+        tool_health={"projects": True, "tasks": True},
+    )
+    second = engine.run(
+        flow_id="flow_email_project_task",
+        context=context,
+        confirmations={"create_task": True},
+        tool_health={"projects": True, "tasks": True},
+    )
+
+    assert first.ok is True
+    assert second.ok is True
+    assert first.executed_steps == second.executed_steps
+    assert any(event["event"] == "flow.idempotent_replay" for event in second.audit_evidence)
