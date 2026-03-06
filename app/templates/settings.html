@@ -62,6 +62,7 @@
     <a class="router-link" href="#license">Lizenz</a>
     <a class="router-link" href="#mesh">Mesh-Netzwerk</a>
     <a class="router-link" href="#system">System</a>
+    <a class="router-link" href="#governance">Tenant / Rollen / Policies</a>
     <a class="router-link" href="#branding">Branding</a>
     <a class="router-link" href="#backup">Backup & Restore</a>
   </aside>
@@ -212,6 +213,13 @@
           <option value="{{ lvl }}" {{ 'selected' if (system_settings.log_level if system_settings is mapping else 'INFO') == lvl }}>{{ lvl }}</option>
           {% endfor %}
         </select>
+        <label class="router-note"><input type="checkbox" name="external_apis_enabled" {{ 'checked' if (system_settings.external_apis_enabled if system_settings is mapping else false) }}> Externe APIs aktiv (Default: aus)</label>
+        <div>
+          <label class="router-note">Memory Retention (Tage)</label>
+          <input class="router-input" type="number" min="1" name="memory_retention_days" value="{{ system_settings.memory_retention_days if system_settings is mapping else 60 }}">
+        </div>
+        <label class="router-note"><input type="checkbox" name="backup_verify_hook_enabled" {{ 'checked' if (system_settings.backup_verify_hook_enabled if system_settings is mapping else true) }}> Backup Verification Hook aktiv</label>
+        <label class="router-note"><input type="checkbox" name="restore_verify_hook_enabled" {{ 'checked' if (system_settings.restore_verify_hook_enabled if system_settings is mapping else true) }}> Restore Verification Hook aktiv</label>
         <label class="router-note"><input type="checkbox" name="mesh_mdns_enabled" {{ 'checked' if (system_settings.mesh_mdns_enabled if system_settings is mapping else true) }}> mDNS aktiv</label>
         <label class="router-note"><input type="checkbox" name="mesh_tailscale_enabled" {{ 'checked' if (system_settings.mesh_tailscale_enabled if system_settings is mapping else false) }}> Tailscale aktiv</label>
         <input class="router-input" name="confirm" placeholder="CONFIRM" required>
@@ -219,6 +227,25 @@
       </form>
     </div>
 
+
+    <div id="governance" class="router-card">
+      <h2 style="margin:0 0 8px 0;">Tenant / Rollen / Policies (Stub)</h2>
+      <div class="router-note" style="margin-bottom:10px;">Ops-Release Stub für spätere RBAC- und Policy-Orchestrierung.</div>
+      <div class="router-grid">
+        <div>
+          <div class="router-note">Tenant Registry</div>
+          <div data-testid="tenant-stub-status">Stub aktiv – CRUD folgt im nächsten Increment.</div>
+        </div>
+        <div>
+          <div class="router-note">Role Matrix</div>
+          <div data-testid="roles-stub-status">Stub aktiv – Rollenhierarchie bleibt: Admin/Manager/Mitarbeiter.</div>
+        </div>
+        <div>
+          <div class="router-note">Policy Engine</div>
+          <div data-testid="policies-stub-status">Stub aktiv – Durchsetzung bleibt serverseitig über Confirm- und Injection-Gates.</div>
+        </div>
+      </div>
+    </div>
     <div id="branding" class="router-card">
       <h2 style="margin:0 0 8px 0;">Branding</h2>
       <form method="post" action="/admin/settings/branding" class="router-grid" onsubmit="return confirmRisk(this)">

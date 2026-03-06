@@ -12,6 +12,14 @@ class BaseTool:
     name = "base"
     description = ""
     input_schema: Dict[str, Any] = {}
+    endpoint: str = ""
+
+    @property
+    def endpoints(self) -> list[str]:
+        """Return all HTTP-facing endpoints exposed by the tool."""
+        if self.endpoint:
+            return [self.endpoint]
+        return [f"/api/tools/{self.name}"]
 
     def run(self, **kwargs) -> Any:
         raise NotImplementedError("Tools must implement the run method.")

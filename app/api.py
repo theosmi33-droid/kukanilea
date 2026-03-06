@@ -12,6 +12,7 @@ from app.modules.kalender.contracts import create_invitation
 from app.modules.kalender.contracts import create_event
 from app.modules.kalender.contracts import update_event
 from app.modules.projekte.contracts import create_project
+from app.modules.projects.logic import ProjectManager
 
 from .rate_limit import search_limiter
 
@@ -213,6 +214,42 @@ def intake_execute():
                 "title": str(appointment_action.get("title") or action.get("title") or "Intake Termin"),
             }
 
+    diary_payload = None
+    defect_payloads: list[dict[str, object]] = []
+    diary_data = envelope_payload.get("diary_entry") if isinstance(envelope_payload.get("diary_entry"), dict) else {}
+    diary_body = str(diary_data.get("body") or "").strip()
+    if diary_body:
+        pm = ProjectManager(current_app.extensions["auth_db"])
+        diary_payload = pm.create_diary_entry(
+            tenant_id=tenant_id,
+            source=str(envelope.source or "upload"),
+            thread_id=str(envelope.thread_id or ""),
+            title=str(diary_data.get("title") or envelope.subject or ""),
+            body=diary_body,
+            created_by=actor,
+            payload=envelope.to_dict(),
+        )
+        defects_raw = envelope_payload.get("defects") if isinstance(envelope_payload.get("defects"), list) else []
+        for item in defects_raw:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            if not title:
+                continue
+            photos = item.get("photos") if isinstance(item.get("photos"), list) else []
+            defect_payloads.append(
+                pm.create_defect_item(
+                    tenant_id=tenant_id,
+                    diary_entry_id=str(diary_payload.get("id") or "") or None,
+                    source=str(envelope.source or "upload"),
+                    title=title,
+                    description=str(item.get("description") or ""),
+                    status=str(item.get("status") or "OPEN"),
+                    photos=[str(photo) for photo in photos],
+                    created_by=actor,
+                )
+            )
+
     from app import core
     from app.eventlog import event_append
 
@@ -237,6 +274,8 @@ def intake_execute():
         task=task_payload,
         project=project_payload,
         calendar=calendar_payload,
+        diary=diary_payload,
+        defects=defect_payloads,
         audit_logged=True,
         event_log_id=event_id,
     )
