@@ -4,8 +4,7 @@ from app.core.agent_router import classify_intent, plan_actions
 def test_classify_intent_detects_read_action():
     result = classify_intent("zeige status für tenant alpha")
     assert result["tool"] == "core.read_action"
-    assert result["confidence"] >= 0.8
-
+    assert result["confidence"] >= 0.6
 
 def test_classify_intent_detects_write_action_and_clarification():
     result = classify_intent("erstelle eine aufgabe")

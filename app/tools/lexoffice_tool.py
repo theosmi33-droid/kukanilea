@@ -18,6 +18,8 @@ class LexofficeUploadTool(BaseTool):
     """
 
     name = "lexoffice_upload"
+    domain = "EINSTELLUNGEN"
+    entity = "LEXOFFICE"
     description = "Legt ein Dokument in den Postausgang zur Übertragung an Lexoffice."
     input_schema = {
         "type": "object",

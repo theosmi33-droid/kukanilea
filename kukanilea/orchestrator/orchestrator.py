@@ -59,14 +59,7 @@ class Orchestrator:
         self.tools = ToolRegistry()
         self.audit_log = getattr(core_module, "audit_log", None)
         self.task_create = getattr(core_module, "task_create", None)
-        self.allowed_tools = {
-            "search_docs",
-            "open_token",
-            "show_customer",
-            "summarize_doc",
-            "list_tasks",
-            "rebuild_index",
-        }
+        self.allowed_tools: set[str] = set()
         self.agents = [
             OpenFileAgent(),
             SearchAgent(core_module),
@@ -94,6 +87,20 @@ class Orchestrator:
         for agent in self.agents:
             for tool in agent.tools:
                 self.tools.register(tool, agent.name)
+        self._refresh_allowed_tools()
+
+    def _refresh_allowed_tools(self) -> None:
+        """Sync allowed_tools from the global action_registry."""
+        from app.tools.action_registry import action_registry
+
+        for a in action_registry.list_actions():
+            self.allowed_tools.add(a["name"])
+            if "." in a["name"]:
+                # Also allow prefix names (everything before the last dot)
+                parts = a["name"].split(".")
+                self.allowed_tools.add(".".join(parts[:-1]))
+                # And the very first part
+                self.allowed_tools.add(parts[0])
 
     def handle(self, message: str, context: AgentContext) -> OrchestratorResult:
         safe_mode = bool(context.meta.get("safe_mode"))

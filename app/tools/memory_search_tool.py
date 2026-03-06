@@ -13,6 +13,8 @@ class MemorySearchTool(BaseTool):
     """
 
     name = "memory_search"
+    domain = "KNOWLEDGE"
+    entity = "SEARCH"
     description = "Sucht semantisch nach relevantem Kontext in alten Gesprächen oder Dokumenten."
     input_schema = {
         "type": "object",

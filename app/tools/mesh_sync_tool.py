@@ -13,6 +13,8 @@ class MeshSyncTool(BaseTool):
     """
 
     name = "mesh_sync"
+    domain = "EINSTELLUNGEN"
+    entity = "MESH"
     description = "Initiiert eine Synchronisation mit einem anderen KUKANILEA Hub."
     input_schema = {
         "type": "object",

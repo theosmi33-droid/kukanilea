@@ -41,8 +41,16 @@ class ActionExecutor:
         return True
 
     def _needs_confirmation(self, plan: dict[str, Any]) -> bool:
+        from app.tools.action_registry import action_registry
         steps = plan.get("steps", [])
-        return any(step.get("action_type") in {"write", "high_risk"} for step in steps)
+        for step in steps:
+            tool_name = step.get("tool")
+            action_def = action_registry._actions_by_name.get(tool_name)
+            if action_def and action_def.is_critical:
+                return True
+            if step.get("action_type") in {"write", "high_risk"}:
+                return True
+        return False
 
     def _propose(self, plan: dict[str, Any]) -> str:
         proposal_id = f"proposal-{uuid.uuid4().hex[:12]}"
@@ -68,6 +76,22 @@ class ActionExecutor:
         self.audit_log.append(entry)
         logger.info("audit_entry=%s", entry)
 
+    def _validate_step(self, step: dict[str, Any]) -> bool:
+        """Validates tool parameters against the action registry schema."""
+        from app.tools.action_registry import action_registry
+        tool_name = step.get("tool")
+        params = step.get("params", {})
+        action_def = action_registry._actions_by_name.get(tool_name)
+        if not action_def:
+            return True
+        
+        required_fields = action_def.inputs_schema.get("required", [])
+        for field in required_fields:
+            if field not in params:
+                logger.error("missing_required_field=%s tool=%s", field, tool_name)
+                return False
+        return True
+
     def execute_plan(self, plan: dict[str, Any], dry_run: bool = True, proposal_id: str | None = None) -> dict[str, Any]:
         if self._needs_confirmation(plan) and not dry_run:
             if not proposal_id:
@@ -91,6 +115,11 @@ class ActionExecutor:
             if dry_run:
                 self._audit(step, "dry_run", proposal_id)
                 results.append({"tool": tool_name, "status": "dry_run", "params": step.get("params", {})})
+                continue
+
+            if not self._validate_step(step):
+                self._audit(step, "validation_failed", proposal_id)
+                results.append({"tool": tool_name, "status": "validation_failed"})
                 continue
 
             handler = self.tools.get(tool_name)

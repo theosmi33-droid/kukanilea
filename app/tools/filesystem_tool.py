@@ -13,6 +13,8 @@ class FileSystemTool(BaseTool):
     """
 
     name = "filesystem_list"
+    domain = "UPLOAD"
+    entity = "FILESYSTEM"
     description = "Listet Dateien in einem Verzeichnis auf."
     input_schema = {
         "type": "object",

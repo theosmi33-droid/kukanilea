@@ -14,6 +14,8 @@ class RetrieveCorrectionsTool(BaseTool):
     """
 
     name = "retrieve_corrections"
+    domain = "UPLOAD"
+    entity = "CORRECTIONS"
     description = "Sucht im Gedächtnis nach früheren manuellen Korrekturen zu ähnlichen Dokumenten."
     input_schema = {
         "type": "object",
