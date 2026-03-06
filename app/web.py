@@ -69,6 +69,7 @@ from app.agents.customer import CustomerAgent
 from app.agents.orchestrator import Orchestrator
 from app.ai.intent_analyzer import detect_write_intent
 from app.ai.guardrails import requires_confirm_for_prompt, validate_prompt
+from app.ai.runtime_guardrails import evaluate_runtime_guardrails
 from app.ai.skills_registry import skills_registry, suggest_skills
 from app.agents.orchestrator import answer as agent_answer
 from app.agents.manager_agent import route_via_manager_agent
@@ -2568,21 +2569,28 @@ def _store_ai_snippet(*, tenant_id: str, user_id: str, prompt: str, response: st
 def api_ai_plan():
     payload = request.get_json(silent=True) or {}
     prompt = extract_chat_message(payload if isinstance(payload, dict) else {})
+    source = str(payload.get("source") or "chat")
     if not prompt:
         return jsonify(error="empty_message"), 400
 
-    assessment = assess_untrusted_input(prompt)
-    if assessment.decision in {"block", "route_to_review"}:
+    runtime_assessment = evaluate_runtime_guardrails(
+        stage="intent_resolution",
+        text=prompt,
+        source=source,
+    )
+    if runtime_assessment.decision in {"block", "route_to_review"}:
         _audit(
             "ai_plan_guardrail_blocked",
             target="/api/ai/plan",
             meta={
-                "decision": assessment.decision,
-                "risk_score": assessment.risk_score,
-                "signals": list(assessment.matched_signals),
+                "decision": runtime_assessment.decision,
+                "risk_score": runtime_assessment.risk_score,
+                "signals": list(runtime_assessment.matched_signals),
+                "reasons": list(runtime_assessment.reasons),
+                "source": runtime_assessment.source,
             },
         )
-        return jsonify(error="injection_blocked", reason="guardrail_blocked"), 400
+        return jsonify(error="injection_blocked", reason="guardrail_blocked", decision=runtime_assessment.decision), 400
 
     valid, guard_reason = validate_prompt(prompt)
     if not valid:
@@ -2607,11 +2615,17 @@ def api_ai_plan():
         user_id=str(current_user() or "unknown"),
         prompt=prompt,
     )
+    session["ai_runtime_last_plan_skills"] = [record["name"] for record in records]
+    session.modified = True
     return jsonify(
         {
             "ok": True,
             "suggested_skills": records,
             "requires_confirm": bool(write_or_uncertain or any(item["requires_confirm"] for item in records)),
+            "guardrail": {
+                "decision": runtime_assessment.decision,
+                "warnings": list(runtime_assessment.warnings),
+            },
         }
     )
 
@@ -2625,23 +2639,34 @@ def api_ai_execute():
     skill_name = str(payload.get("skill") or "").strip().lower()
     skill_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
     confirm = bool(payload.get("confirm"))
+    source = str(payload.get("source") or "chat")
 
     definition = skills_registry.get(skill_name)
     if not definition:
         return jsonify(error="skill_not_allowed"), 403
 
-    assessment = assess_untrusted_input(json.dumps({"skill": skill_name, "payload": skill_payload}, ensure_ascii=False))
-    if assessment.decision in {"block", "route_to_review"}:
+    session_skills = session.get("ai_runtime_last_plan_skills")
+    allowed_skills = {str(item).strip().lower() for item in session_skills} if isinstance(session_skills, list) else None
+    runtime_assessment = evaluate_runtime_guardrails(
+        stage="execution",
+        text=json.dumps({"skill": skill_name, "payload": skill_payload}, ensure_ascii=False),
+        source=source,
+        skill_name=skill_name,
+        allowed_skills=allowed_skills,
+    )
+    if runtime_assessment.decision in {"block", "route_to_review"}:
         _audit(
             "ai_execute_guardrail_blocked",
             target="/api/ai/execute",
             meta={
-                "decision": assessment.decision,
-                "risk_score": assessment.risk_score,
-                "signals": list(assessment.matched_signals),
+                "decision": runtime_assessment.decision,
+                "risk_score": runtime_assessment.risk_score,
+                "signals": list(runtime_assessment.matched_signals),
+                "reasons": list(runtime_assessment.reasons),
+                "source": runtime_assessment.source,
             },
         )
-        return jsonify(error="injection_blocked", reason="guardrail_blocked"), 400
+        return jsonify(error="injection_blocked", reason="guardrail_blocked", decision=runtime_assessment.decision), 400
 
     if definition.requires_confirm and not confirm:
         _audit("ai_execute_denied", target="/api/ai/execute", meta={"skill": skill_name, "reason": "confirm_required"})
