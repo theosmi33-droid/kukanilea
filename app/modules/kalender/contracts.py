@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from app.contracts.tool_contracts import build_contract_response
 from app.config import Config
 
 SYNC_FLAG_ENV = "KUKANILEA_KALENDER_SYNC_ENABLED"
@@ -238,30 +239,43 @@ def build_summary(tenant: str) -> dict:
     events = _events_list(tenant, now, now + timedelta(days=7))
     conflicts = _find_conflicts(events)
     reminders = _reminders_due(tenant, now)
-    return {
-        "status": "ok",
-        "timestamp": _timestamp(),
-        "window_days": 7,
-        "events_next_7_days": events,
-        "conflicts": conflicts,
-        "reminders_due": reminders,
-        "metrics": {
+    payload = build_contract_response(
+        tool="kalender",
+        status="ok",
+        metrics={
             "events_next_7_days": len(events),
             "conflicts": len(conflicts),
             "due_reminders": len(reminders),
             "ics_export": 1,
             "sync_enabled": int(_sync_enabled()),
         },
-    }
+        details={
+            "source": "kalender.events",
+            "window_days": 7,
+            "events_next_7_days": events,
+            "conflicts": conflicts,
+            "reminders_due": reminders,
+        },
+        tenant=tenant,
+    )
+    # Backward compatibility: legacy consumers read these fields at top-level.
+    payload["window_days"] = 7
+    payload["events_next_7_days"] = events
+    payload["conflicts"] = conflicts
+    payload["reminders_due"] = reminders
+    return payload
 
 
 def build_health(tenant: str) -> tuple[dict, int]:
     payload = build_summary(tenant)
-    payload["metrics"] = {
-        **payload["metrics"],
-        "backend_ready": 1,
-        "offline_safe": 1,
-        "offline_persistence": _db_pragmas_offline_safe(),
+    payload["details"] = {
+        **(payload.get("details") or {}),
+        "checks": {
+            "summary_contract": True,
+            "backend_ready": True,
+            "offline_safe": True,
+        },
+        "offline_persistence": bool(_db_pragmas_offline_safe()),
     }
     return payload, 200
 
