@@ -20,6 +20,8 @@ class IntakeEnvelope:
     snippets: list[str] = field(default_factory=list)
     attachments: list[dict[str, Any]] = field(default_factory=list)
     suggested_actions: list[dict[str, Any]] = field(default_factory=list)
+    diary_entry: dict[str, Any] = field(default_factory=dict)
+    defects: list[dict[str, Any]] = field(default_factory=list)
     requires_confirm: bool = True
     created_at: str = field(default_factory=_utc_now)
 
@@ -55,6 +57,26 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
                     }
                 )
 
+    defects: list[dict[str, Any]] = []
+    defects_raw = payload.get("defects")
+    if isinstance(defects_raw, list):
+        for item in defects_raw:
+            if not isinstance(item, dict):
+                continue
+            defect_title = str(item.get("title") or item.get("name") or "").strip()
+            if not defect_title:
+                continue
+            photos_raw = item.get("photos")
+            photos = [str(photo).strip() for photo in photos_raw] if isinstance(photos_raw, list) else []
+            defects.append(
+                {
+                    "title": defect_title[:180],
+                    "description": str(item.get("description") or item.get("details") or "").strip(),
+                    "status": str(item.get("status") or "OPEN").strip().upper() or "OPEN",
+                    "photos": [photo for photo in photos if photo],
+                }
+            )
+
     title = subject or (snippets[0] if snippets else "Neue Anfrage")
     suggested_actions = [
         {
@@ -75,6 +97,14 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
     if proposal.get("starts_at"):
         suggested_actions.append(proposal)
 
+    diary_text = str(payload.get("diary_text") or payload.get("message") or "").strip()
+    if not diary_text and snippets:
+        diary_text = "\n".join(snippets)
+    diary_entry = {
+        "title": title[:180],
+        "body": diary_text,
+    }
+
     return IntakeEnvelope(
         source=source,
         thread_id=thread_id,
@@ -83,6 +113,8 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
         snippets=snippets,
         attachments=attachments,
         suggested_actions=suggested_actions,
+        diary_entry=diary_entry,
+        defects=defects,
     )
 
 
