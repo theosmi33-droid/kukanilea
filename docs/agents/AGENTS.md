@@ -34,3 +34,9 @@ This framework defines a deterministic, offline-first, and approval-gated agent 
 - **TENANT SCOPED:** Memory never leaks between tenants.
 - **60-DAY RETENTION:** Default history retention is 60 days.
 - **CLEANUP:** Weekly scheduled jobs prune expired state.
+
+## Branch Policy (Main-Only)
+- **SINGLE SOURCE:** `main` is the only source of truth.
+- **PR TARGET:** All pull requests must target `main`.
+- **SYNC FIRST:** Start work from latest `origin/main`.
+- **NO FEATURE CHAINING:** Do not stack new work on old feature branches.

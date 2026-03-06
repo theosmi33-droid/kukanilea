@@ -35,3 +35,9 @@ It is deterministic, offline-first, and approval-gated.
 - **TENANT SCOPED**: Strict isolation.
 - **60-DAY RETENTION**: Automatic pruning of task history.
 - **CLEANUP JOB**: `scripts/ops/memory_cleanup.py`.
+
+## 6. Branch Policy (Main-Only)
+- **SINGLE SOURCE**: `main` is the only source of truth.
+- **PR TARGET**: Every pull request targets `main`.
+- **SYNC BEFORE WORK**: Rebase/refresh from `origin/main` before implementation.
+- **NO SUB-BRANCH CHAINS**: Do not base new work on old feature branches.
