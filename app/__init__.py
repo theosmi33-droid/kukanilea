@@ -89,7 +89,7 @@ def create_app() -> Flask:
     from .routes import system_logs, admin_tenants, automation, visualizer, email
     from .core.tool_loader import load_all_tools
 
-    load_all_tools()
+    load_all_tools(app)
 
     auth_db = AuthDB(app.config["AUTH_DB"])
     try:
