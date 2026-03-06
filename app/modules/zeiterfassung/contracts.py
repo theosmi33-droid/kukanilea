@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
+from app.contracts.tool_contracts import build_contract_response
 from app import core
 from app.core import logic as core_logic
-
-
-def _timestamp() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def build_summary(tenant: str) -> dict:
@@ -18,14 +13,21 @@ def build_summary(tenant: str) -> dict:
         else []
     )
     running = sum(1 for entry in entries if not entry.get("end_at")) if entries else 0
-    return {
-        "status": "ok" if callable(time_entry_list) else "degraded",
-        "timestamp": _timestamp(),
-        "metrics": {
+    status = "ok" if callable(time_entry_list) else "degraded"
+    degraded_reason = "time_tracking_unavailable" if status == "degraded" else ""
+    return build_contract_response(
+        tool="zeiterfassung",
+        status=status,
+        degraded_reason=degraded_reason,
+        metrics={
             "entries": len(entries),
             "running": running,
         },
-    }
+        details={
+            "source": "core.time_entry_list",
+        },
+        tenant=tenant,
+    )
 
 
 def _offline_persistence_ready() -> int:
@@ -46,11 +48,19 @@ def _offline_persistence_ready() -> int:
 
 def build_health(tenant: str) -> tuple[dict, int]:
     payload = build_summary(tenant)
+    offline_persistence = bool(_offline_persistence_ready())
     payload["metrics"] = {
-        **payload["metrics"],
-        "backend_ready": int(payload["status"] == "ok"),
-        "offline_safe": 1,
-        "offline_persistence": _offline_persistence_ready(),
+        **(payload.get("metrics") or {}),
+        "offline_persistence": int(offline_persistence),
+    }
+    payload["details"] = {
+        **(payload.get("details") or {}),
+        "checks": {
+            "summary_contract": True,
+            "backend_ready": payload.get("status") == "ok",
+            "offline_safe": True,
+        },
+        "offline_persistence": offline_persistence,
     }
     code = 200 if payload["status"] in {"ok", "degraded"} else 503
     return payload, code
