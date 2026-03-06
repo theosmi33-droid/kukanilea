@@ -1,6 +1,6 @@
 # Developer Bootstrap Flow (<10 Minuten)
 
-Ziel: `clone -> bootstrap -> healthcheck -> smoke tests` reproduzierbar unter 10 Minuten.
+Ziel: `clone -> bootstrap -> smoke tests -> healthcheck` reproduzierbar unter 10 Minuten.
 
 ## One-Command Setup
 
@@ -16,8 +16,8 @@ Der One-Command-Run erledigt automatisch:
 3. Pip/Dev-Abhängigkeiten installieren (`requirements.txt` + `requirements-dev.txt`)
 4. Playwright Browser installieren (`chromium`, lokal via `python -m playwright install`)
 5. Doctor-Checks (`pytest`, `flask`, `ruff`, `playwright`)
-6. `scripts/ops/healthcheck.sh`
-7. Seed + Smoke (`scripts/seed_dev_users.py`, `scripts/seed_demo_data.py`, `python -m app.smoke`)
+6. Seed + Smoke (`scripts/seed_dev_users.py`, `scripts/seed_demo_data.py`, `python -m app.smoke`)
+7. `scripts/ops/healthcheck.sh`
 8. `scripts/ops/launch_evidence_gate.sh --fast`
 
 ## Repro-Runbook (exakte Kommandos)
