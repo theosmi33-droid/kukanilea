@@ -30,7 +30,7 @@
     </div>
   </section>
 
-  <section class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Speed-to-Lead und Systemgesundheit">
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-6" aria-label="Speed-to-Lead und Systemgesundheit">
     <article class="card border-light" id="speed-to-lead-widget">
       <div class="card-header border-light">
         <h2 class="card-title text-base">Speed-to-Lead</h2>
@@ -50,6 +50,23 @@
         <div id="health-strip-summary" class="text-sm text-main mb-3">Status initialisiert…</div>
         <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
         <p class="text-xs text-muted mt-3 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
+      </div>
+    </article>
+
+    <article class="card border-light" id="daily-briefing-widget">
+      <div class="card-header border-light">
+        <h2 class="card-title text-base">Daily Briefing</h2>
+        <span class="text-[10px] font-bold text-muted uppercase tracking-wider">{{ briefing.generated_at or 'lokal' }}</span>
+      </div>
+      <div class="card-body">
+        <p class="text-sm text-main">{{ briefing.summary if briefing else 'Noch kein Briefing verfügbar.' }}</p>
+        <ul class="text-xs text-muted" style="padding-left: 16px; margin: 10px 0 0 0; display: grid; gap: 6px;">
+          {% for link in (briefing.links if briefing else [])[:6] %}
+          <li>
+            {% if link.url %}<a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.title }}</a>{% else %}{{ link.title }}{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
       </div>
     </article>
   </section>

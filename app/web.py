@@ -3413,6 +3413,8 @@ def index():
 
 
 def _dashboard_payload(tenant: str) -> dict:
+    from app.modules.dashboard.briefing import get_latest_briefing
+
     items: list[str] = []
     if (PENDING_DIR / tenant).exists():
         items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
@@ -3439,6 +3441,7 @@ def _dashboard_payload(tenant: str) -> dict:
         "meta": meta,
         "recent": recent,
         "reminders": reminders,
+        "briefing": get_latest_briefing(),
         "suggestions": {"doctypes": ["Rechnung", "Angebot", "Lieferschein"]},
         "keywords": ["Maler", "Sanitär", "Elektro"],
     }
