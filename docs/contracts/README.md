@@ -56,3 +56,15 @@ Für write-fähige Tool-Contracts ist ein Draft für ein standardisiertes Action
 
 - Spec: `docs/contracts/actions_api/TOOL_ACTIONS_API_SPEC.md`
 - JSON-Schema-Drafts: `docs/contracts/actions_api/schemas/*.json`
+
+## Tool Actions Interface (Legacy Draft)
+
+Zusätzlich liegt ein älterer Interface-Entwurf für Teams vor, die mit der vorherigen Struktur arbeiten:
+
+- Spec: `docs/contracts/TOOL_ACTIONS_INTERFACE.md`
+- Schemas (Draft 2020-12):
+  - `docs/contracts/schemas/tool_actions_list.schema.json`
+  - `docs/contracts/schemas/tool_action_execute.request.schema.json`
+  - `docs/contracts/schemas/tool_action_execute.response.schema.json`
+  - `docs/contracts/schemas/tool_action_audit_event.schema.json`
+  - `docs/contracts/schemas/tool_action_idempotency_record.schema.json`
