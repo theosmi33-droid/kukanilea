@@ -109,7 +109,7 @@ def test_chat_structured_intake_extracts_phone_and_company(monkeypatch):
     intake = body["data"]["intake"]
 
     assert intake["lead_fields"]["contact_name"] == "Anna Meyer"
-    assert "Bau AG" in str(intake["lead_fields"]["company"] or "")
+    assert intake["lead_fields"]["company"] == "Bau AG"
     assert intake["lead_fields"]["contact_phone"] == "+49 171 1234567"
     # No write intent in agent actions, but extracted lead info must still be present.
     assert isinstance(intake["suggested_next_actions"], list)

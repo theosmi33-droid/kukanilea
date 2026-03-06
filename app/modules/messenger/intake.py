@@ -6,7 +6,7 @@ from typing import Any
 
 EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b")
 PHONE_RE = re.compile(r"(?:\+?\d[\d\s\-/]{6,}\d)")
-COMPANY_RE = re.compile(r"\b(?:firma|company|kunde|kundin)\s*[:\-]?\s*([A-Za-z0-9äöüÄÖÜß\s&.-]{2,80})", re.IGNORECASE)
+COMPANY_RE = re.compile(r"\b(?:firma|company|kunde|kundin)\s*[:\-]?\s*([^\n,.;!?@]{2,80})", re.IGNORECASE)
 NAME_RE = re.compile(r"\b(?:ich\s+bin|mein\s+name\s+ist|name\s*[:\-])\s*([A-Za-zäöüÄÖÜß\-\s]{2,80})", re.IGNORECASE)
 
 
