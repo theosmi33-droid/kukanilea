@@ -7,7 +7,12 @@ from flask import Request, jsonify, request
 
 from app.auth import current_role, current_tenant, current_user, login_required
 from app.errors import json_error
-from app.security import confirm_gate
+from app.security import (
+    ApprovalEngine,
+    ApprovalScope,
+    action_requires_approval,
+    build_params_fingerprint,
+)
 
 
 PermissionChecker = Callable[[str, str], bool]
@@ -35,6 +40,26 @@ class SharedServices:
 
 class PermissionDeniedError(RuntimeError):
     pass
+
+
+
+_APPROVAL_ENGINE: ApprovalEngine | None = None
+
+
+def _approval_engine() -> ApprovalEngine:
+    global _APPROVAL_ENGINE
+    if _APPROVAL_ENGINE is None:
+        _APPROVAL_ENGINE = ApprovalEngine(audit_hook=SharedServices.log_event)
+    return _APPROVAL_ENGINE
+
+
+def _build_scope(*, tool: str, action_name: str, tenant: str, user: str, payload: dict[str, Any]) -> ApprovalScope:
+    return ApprovalScope(
+        tenant_id=tenant,
+        user_id=user,
+        action_id=f"{tool}.{action_name}",
+        params_fingerprint=build_params_fingerprint(payload),
+    )
 
 
 def require_permission(permission: str, *, role: str | None = None) -> None:
@@ -75,7 +100,7 @@ class ActionApiTemplate:
                     "title": action.title,
                     "permission": action.permission,
                     "risk": action.risk,
-                    "confirm_required": action.write_operation or action.risk == "high_risk",
+                    "approval_required": action_requires_approval(action_type=action.name, permission=action.permission, risk=action.risk),
                     "input_schema": action.input_schema,
                     "output_schema": action.output_schema,
                 }
@@ -96,19 +121,47 @@ class ActionApiTemplate:
         if not isinstance(payload, dict):
             payload = {}
 
-        confirm_required = action.write_operation or action.risk == "high_risk"
-        if confirm_required:
-            confirm_token = payload.get("confirm") or req.headers.get("X-Confirm")
-            if not confirm_gate(str(confirm_token or "")):
+        actor = str(current_user() or "system")
+        tenant = str(current_tenant() or "default")
+
+        approval_required = action_requires_approval(
+            action_type=action.name,
+            permission=action.permission,
+            risk=action.risk,
+        )
+        if approval_required:
+            scope = _build_scope(tool=self.tool, action_name=action.name, tenant=tenant, user=actor, payload=payload)
+            approval_token = payload.get("approval_token") or req.headers.get("X-Approval-Token")
+            if not approval_token:
+                ttl_seconds = int(payload.get("approval_ttl") or 300)
+                challenge = _approval_engine().request_challenge(scope=scope, ttl_seconds=ttl_seconds)
                 return {
                     "ok": False,
-                    "error": "confirm_required",
+                    "error": "approval_required",
+                    "tool": self.tool,
+                    "name": action.name,
+                    "approval": {
+                        "challenge_id": challenge.challenge_id,
+                        "approval_token": challenge.token,
+                        "scope": {
+                            "tenant_id": scope.tenant_id,
+                            "user_id": scope.user_id,
+                            "action_id": scope.action_id,
+                            "params_fingerprint": scope.params_fingerprint,
+                        },
+                        "expires_at": challenge.expires_at.isoformat(),
+                    },
+                }, 409
+            approved, reason = _approval_engine().validate(token=str(approval_token), scope=scope)
+            if not approved:
+                return {
+                    "ok": False,
+                    "error": "approval_required",
+                    "approval_reason": reason,
                     "tool": self.tool,
                     "name": action.name,
                 }, 409
 
-        actor = str(current_user() or "system")
-        tenant = str(current_tenant() or "default")
         SharedServices.log_event(
             "tool_action_execute_requested",
             {

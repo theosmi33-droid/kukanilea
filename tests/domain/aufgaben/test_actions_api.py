@@ -50,7 +50,7 @@ def test_actions_list_exposes_schema(tmp_path, monkeypatch):
     assert {"list", "create"}.issubset(names)
 
 
-def test_actions_read_and_write_flow_with_confirm_gate(tmp_path, monkeypatch):
+def test_actions_read_and_write_flow_with_approval_engine(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
@@ -62,14 +62,51 @@ def test_actions_read_and_write_flow_with_confirm_gate(tmp_path, monkeypatch):
 
     denied = client.post(
         "/api/aufgaben/actions/create",
-        json={"title": "Neuer Task ohne Confirm"},
+        json={"title": "Neuer Task ohne Approval"},
     )
     assert denied.status_code == 409
-    assert denied.get_json()["error"] == "confirm_required"
+    denied_json = denied.get_json()
+    assert denied_json["error"] == "approval_required"
+    approval_token = denied_json["approval"]["approval_token"]
+
+    wrong_scope = client.post(
+        "/api/aufgaben/actions/create",
+        json={
+            "title": "Anderer Task",
+            "details": "scope mismatch",
+            "approval_token": approval_token,
+        },
+    )
+    assert wrong_scope.status_code == 409
+    assert wrong_scope.get_json()["approval_reason"] == "scope_mismatch"
+
+    expired_request = client.post(
+        "/api/aufgaben/actions/create",
+        json={"title": "Abgelaufener Task", "approval_ttl": 1},
+    )
+    assert expired_request.status_code == 409
+    expired_token = expired_request.get_json()["approval"]["approval_token"]
+
+    import time
+
+    time.sleep(1.1)
+    expired_use = client.post(
+        "/api/aufgaben/actions/create",
+        json={"title": "Abgelaufener Task", "approval_token": expired_token},
+    )
+    assert expired_use.status_code == 409
+    assert expired_use.get_json()["approval_reason"] == "expired"
+
+    challenge = client.post(
+        "/api/aufgaben/actions/create",
+        json={"title": "Neuer Task", "details": "via actions api"},
+    )
+    assert challenge.status_code == 409
+    valid_token = challenge.get_json()["approval"]["approval_token"]
 
     created = client.post(
         "/api/aufgaben/actions/create",
-        json={"title": "Neuer Task", "details": "via actions api", "confirm": "CONFIRM"},
+        json={"title": "Neuer Task", "details": "via actions api", "approval_token": valid_token},
     )
     assert created.status_code == 200
     created_json = created.get_json()
