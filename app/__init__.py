@@ -180,6 +180,8 @@ def create_app() -> Flask:
             "/api/auth/",
             "/api/chat",
             "/api/chat/compact",
+            "/api/research/",
+            "/api/news/",
         )
         if any(path.startswith(prefix) for prefix in allow_prefixes):
             return None
