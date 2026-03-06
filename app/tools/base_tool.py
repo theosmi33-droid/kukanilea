@@ -38,8 +38,16 @@ class BaseTool:
     name = "base"
     description = ""
     input_schema: Dict[str, Any] = {}
+    endpoint: str = ""
     default_permissions: List[str] = ["tenant:read"]
     default_audit_fields: List[str] = ["tenant_id", "user_id", "trace_id"]
+
+    @property
+    def endpoints(self) -> list[str]:
+        """Return all HTTP-facing endpoints exposed by the tool."""
+        if self.endpoint:
+            return [self.endpoint]
+        return [f"/api/tools/{self.name}"]
 
     def actions(self) -> Iterable[Dict[str, Any]]:
         """
