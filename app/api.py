@@ -11,7 +11,8 @@ from app.modules.kalender.contracts import build_summary as build_kalender_summa
 from app.modules.kalender.contracts import create_event
 from app.modules.projekte.contracts import create_project
 
-from .rate_limit import search_limiter
+from .auth import login_required
+from .rate_limit import auth_limiter, search_limiter
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -72,6 +73,7 @@ def kalender_health():
 
 
 @bp.post("/intake/normalize")
+@login_required
 def intake_normalize():
     payload = request.get_json(silent=True) or {}
     envelope = normalize_intake_payload(payload)
@@ -79,6 +81,8 @@ def intake_normalize():
 
 
 @bp.post("/intake/execute")
+@login_required
+@auth_limiter.limit_required
 def intake_execute():
     payload = request.get_json(silent=True) or {}
     envelope_payload = payload.get("envelope") if isinstance(payload.get("envelope"), dict) else {}
@@ -186,6 +190,7 @@ def intake_execute():
 
 
 @bp.post("/mesh/handshake")
+@login_required
 def mesh_handshake():
     """Handles incoming handshake requests from peer Hubs."""
     from flask import request
@@ -229,6 +234,7 @@ def mesh_handshake():
 
 
 @bp.get("/outbound/status")
+@login_required
 def outbound_status():
     """Returns the current status of the API outbound queue."""
     auth_db = current_app.extensions["auth_db"]
@@ -258,5 +264,6 @@ def outbound_status():
             if wants_html:
                 return render_template("components/outbound_status_panel.html", **payload)
             return jsonify(**payload)
-    except Exception as e:
-        return jsonify(ok=False, error=str(e)), 500
+    except Exception as exc:
+        current_app.logger.exception("Failed to fetch outbound status")
+        return jsonify(ok=False, error="internal_error"), 500

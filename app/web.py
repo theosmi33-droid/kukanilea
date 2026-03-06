@@ -88,7 +88,7 @@ from .config import Config
 from .db import AuthDB
 from .errors import json_error
 from .license import load_license
-from .rate_limit import chat_limiter, login_limiter, search_limiter, upload_limiter
+from .rate_limit import auth_limiter, chat_limiter, login_limiter, password_reset_limiter, search_limiter, upload_limiter
 from .security import csrf_protected, detect_injection
 from app.contracts.tool_contracts import (
     CONTRACT_TOOLS,
@@ -1843,6 +1843,7 @@ def login():
 
 
 @bp.route("/forgot", methods=["GET", "POST"])
+@password_reset_limiter.limit_required
 @csrf_protected
 def forgot_password():
     auth_db: AuthDB = current_app.extensions["auth_db"]
@@ -1890,6 +1891,7 @@ def forgot_password():
 
 
 @bp.route("/reset-code", methods=["GET", "POST"])
+@password_reset_limiter.limit_required
 @csrf_protected
 def reset_with_code():
     auth_db: AuthDB = current_app.extensions["auth_db"]
@@ -1947,6 +1949,7 @@ def reset_with_code():
 
 
 @bp.route("/password-reset", methods=["GET", "POST"])
+@auth_limiter.limit_required
 def password_reset_page():
     u = session.get('pending_reset_user')
     if not u:
@@ -2641,7 +2644,8 @@ def api_time_projects_create():
             created_by=current_user() or "",
         )
     except ValueError as exc:
-        return json_error(str(exc), "Projekt konnte nicht angelegt werden.", status=400)
+        current_app.logger.warning("Project creation failed", exc_info=exc)
+        return json_error("project_create_failed", "Projekt konnte nicht angelegt werden.", status=400)
     _rag_enqueue("time_project", int(project.get("id") or 0), "upsert")
     return jsonify(ok=True, project=project)
 
@@ -2666,7 +2670,8 @@ def api_time_start():
             note=note,
         )
     except ValueError as exc:
-        return json_error(str(exc), "Timer konnte nicht gestartet werden.", status=400)
+        current_app.logger.warning("Timer start failed", exc_info=exc)
+        return json_error("timer_start_failed", "Timer konnte nicht gestartet werden.", status=400)
     _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
 
@@ -2689,7 +2694,8 @@ def api_time_stop():
             entry_id=int(entry_id) if entry_id else None,
         )
     except ValueError as exc:
-        return json_error(str(exc), "Timer konnte nicht gestoppt werden.", status=400)
+        current_app.logger.warning("Timer stop failed", exc_info=exc)
+        return json_error("timer_stop_failed", "Timer konnte nicht gestoppt werden.", status=400)
     _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
 
@@ -2752,7 +2758,7 @@ def api_time_entry_edit():
         )
     except ValueError as exc:
         return json_error(
-            str(exc), "Eintrag konnte nicht aktualisiert werden.", status=400
+            "entry_update_failed", "Eintrag konnte nicht aktualisiert werden.", status=400
         )
     _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)
@@ -2779,7 +2785,7 @@ def api_time_entry_approve():
         )
     except ValueError as exc:
         return json_error(
-            str(exc), "Eintrag konnte nicht freigegeben werden.", status=400
+            "entry_approve_failed", "Eintrag konnte nicht freigegeben werden.", status=400
         )
     _rag_enqueue("time_entry", int(entry.get("id") or 0), "upsert")
     return jsonify(ok=True, entry=entry)

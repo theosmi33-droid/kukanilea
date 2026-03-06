@@ -87,6 +87,14 @@ class Config:
     KUK_OTEL_ENABLED = _env("KUK_OTEL_ENABLED", "0") == "1"
     KUK_DIAG_ENABLED = _env("KUK_DIAG_ENABLED", "0") == "1"
 
+    SESSION_IDLE_TIMEOUT_SECONDS = int(_env("KUKANILEA_SESSION_IDLE_TIMEOUT_SECONDS", "3600"))
+    SESSION_ABSOLUTE_TIMEOUT_SECONDS = int(_env("KUKANILEA_SESSION_ABSOLUTE_TIMEOUT_SECONDS", str(8 * 3600)))
+    CORS_ALLOWED_ORIGINS = [
+        origin.strip()
+        for origin in _env("KUKANILEA_CORS_ALLOWED_ORIGINS", "http://localhost:5051").split(",")
+        if origin.strip()
+    ]
+
     # Lexoffice Integration
     LEXOFFICE_API_KEY = _env("LEXOFFICE_API_KEY", "")
 

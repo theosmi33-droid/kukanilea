@@ -79,7 +79,7 @@ def create_app() -> Flask:
         configured_secure=app.config.get("SESSION_COOKIE_SECURE"),
     )
     app.config.update(session_cookie_policy)
-    app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(hours=8))
+    app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(seconds=int(app.config.get("SESSION_ABSOLUTE_TIMEOUT_SECONDS", 8 * 3600))))
 
     _wire_runtime_env(app)
 
@@ -232,9 +232,29 @@ def create_app() -> Flask:
     def _set_csp_nonce():
         g.csp_nonce = secrets.token_urlsafe(16)
 
+    @app.before_request
+    def _enforce_cors_allowlist():
+        origin = (request.headers.get("Origin") or "").strip()
+        if not origin:
+            return None
+        allowed_origins = app.config.get("CORS_ALLOWED_ORIGINS") or []
+        if origin in allowed_origins:
+            return None
+        app.logger.warning("Blocked CORS origin: %s", origin)
+        return json_error("cors_blocked", "Origin nicht erlaubt.", status=403)
+
     @app.after_request
     def add_security_headers(response):
         from .security.csp import build_csp_header
+
+        origin = (request.headers.get("Origin") or "").strip()
+        allowed_origins = app.config.get("CORS_ALLOWED_ORIGINS") or []
+        if origin and origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token"
 
         response.headers["Content-Security-Policy"] = build_csp_header(getattr(g, "csp_nonce", ""))
         response.headers["X-Content-Type-Options"] = "nosniff"
