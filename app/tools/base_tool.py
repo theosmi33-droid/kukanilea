@@ -30,10 +30,7 @@ DEFAULT_ACTION_SUFFIXES: List[str] = [
 
 
 class BaseTool:
-    """
-    Base class for all KUKANILEA tools.
-    Inspired by llm-engineer-toolkit patterns.
-    """
+    """Base class for all KUKANILEA tools."""
 
     name = "base"
     description = ""
