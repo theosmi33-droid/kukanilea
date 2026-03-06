@@ -12,6 +12,10 @@ def test_dashboard_summary_declares_aggregation_contract(auth_client):
     assert body["metrics"]["total_tools"] == 10
     assert body["details"]["contract"]["read_only"] is True
     assert body["details"]["tenant"] == "KUKANILEA"
+    assert isinstance(body["details"]["recent_uploads"], list)
+    assert isinstance(body["details"]["processing_queue"], list)
+    assert body["metrics"]["recent_uploads"] >= 1
+    assert body["metrics"]["processing_queue"] >= 1
 
 
 def test_chatbot_summary_declares_payload_aliases(auth_client):
@@ -28,6 +32,10 @@ def test_chatbot_summary_declares_payload_aliases(auth_client):
     assert body["metrics"]["summary_sources"] == 3
     assert body["details"]["contract"]["read_only"] is True
     assert body["details"]["tenant"] == "KUKANILEA"
+    assert isinstance(body["details"]["recent_uploads"], list)
+    assert isinstance(body["details"]["processing_queue"], list)
+    assert body["metrics"]["recent_uploads"] >= 1
+    assert body["metrics"]["processing_queue"] >= 1
 
 
 def test_chat_endpoint_standardizes_payload_aliases(auth_client, monkeypatch):
@@ -89,6 +97,17 @@ def test_chat_accepts_nested_payload_alias(auth_client, monkeypatch):
 
 
 def test_upload_summary_declares_intake_contract(auth_client):
+    from app.config import Config
+    from app.modules.upload.document_processing import register_document_upload
+
+    upload_file = Config.USER_DATA_ROOT / "sample.txt"
+    upload_file.write_text("upload summary seed", encoding="utf-8")
+    register_document_upload(
+        file_path=upload_file,
+        tenant_id="KUKANILEA",
+        file_hash="seed-hash-1",
+        db_path=Config.AUTH_DB,
+    )
     response = auth_client.get("/api/upload/summary")
     assert response.status_code == 200
 
@@ -102,3 +121,7 @@ def test_upload_summary_declares_intake_contract(auth_client):
     assert intake_contract["execute_fields"] == ["envelope", "requires_confirm", "confirm"]
     assert "suggested_actions" in intake_contract["envelope_fields"]
     assert body["details"]["tenant"] == "KUKANILEA"
+    assert isinstance(body["details"]["recent_uploads"], list)
+    assert isinstance(body["details"]["processing_queue"], list)
+    assert body["metrics"]["recent_uploads"] >= 1
+    assert body["metrics"]["processing_queue"] >= 1

@@ -120,6 +120,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "backup_file=$BACKUP_FILE"
     echo "verify_db=skipped_dry_run"
     echo "verify_files=skipped_dry_run"
+    echo "restore_verify_hook=skipped_dry_run"
     echo "rto_seconds=0"
     echo "rpo_seconds=0"
   } > "$REPORT_FILE"
@@ -288,6 +289,7 @@ if [[ -z "$VERIFY_ISSUES" ]]; then
 fi
 VALIDATION_STATUS="skipped"
 VALIDATION_ISSUES=""
+RESTORE_VERIFY_HOOK_STATUS="warn_skipped"
 VALIDATION_FILE="${VALIDATION_FILE:-instance/restore_validation_after.json}"
 mkdir -p "$(dirname "$VALIDATION_FILE")"
 if command -v python3 >/dev/null 2>&1 && [[ -f "$VALIDATION_SCRIPT" ]]; then
@@ -297,12 +299,15 @@ if command -v python3 >/dev/null 2>&1 && [[ -f "$VALIDATION_SCRIPT" ]]; then
   if [[ -f "$BASELINE_PATH" ]]; then
     if python3 "$VALIDATION_SCRIPT" --phase after --tenant "$TENANT_ID" --baseline "$BASELINE_PATH" > "$VALIDATION_FILE" 2>&1; then
       VALIDATION_STATUS="ok"
+      RESTORE_VERIFY_HOOK_STATUS="ok"
     else
       VALIDATION_STATUS="failed"
+      RESTORE_VERIFY_HOOK_STATUS="failed"
       VALIDATION_ISSUES="$(tr '\n' ' ' < "$VALIDATION_FILE" | cut -c1-240)"
     fi
   else
     VALIDATION_STATUS="warn_missing_baseline"
+    RESTORE_VERIFY_HOOK_STATUS="warn_missing_baseline"
     VALIDATION_ISSUES="missing baseline: $BASELINE_PATH"
   fi
 fi
@@ -326,6 +331,7 @@ RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
   echo "integrity_issues=$INTEGRITY_ISSUES"
   echo "metadata_file=$METADATA_FILE"
   echo "restore_validation=$VALIDATION_STATUS"
+  echo "restore_verify_hook=$RESTORE_VERIFY_HOOK_STATUS"
   echo "restore_validation_issues=$VALIDATION_ISSUES"
   echo "restore_validation_file=$VALIDATION_FILE"
   echo "verify_db=$VERIFY_DB_STATUS"

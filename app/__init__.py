@@ -58,6 +58,7 @@ def _apply_env_runtime_overrides(app: Flask) -> None:
         "KUKANILEA_CORE_DB": "CORE_DB",
         "KUKANILEA_LICENSE_PATH": "LICENSE_PATH",
         "KUKANILEA_TRIAL_PATH": "TRIAL_PATH",
+        "KUKANILEA_RESEARCH_CACHE_PATH": "RESEARCH_CACHE_PATH",
     }
     for env_key, cfg_key in env_to_cfg.items():
         if env_key in os.environ and os.environ.get(env_key):
@@ -88,8 +89,10 @@ def create_app() -> Flask:
     from . import api, web
     from .routes import system_logs, admin_tenants, automation, visualizer, email
     from .core.tool_loader import load_all_tools
+    from .core.event_flows import init_event_flows
 
-    load_all_tools()
+    load_all_tools(app)
+    init_event_flows()
 
     auth_db = AuthDB(app.config["AUTH_DB"])
     try:
@@ -112,8 +115,10 @@ def create_app() -> Flask:
     # Start background dispatcher only for real runtime, not test contexts.
     if not _is_test_context(app):
         from .services.api_dispatcher import start_dispatcher_daemon
+        from .modules.dashboard.briefing import start_briefing_scheduler
 
         start_dispatcher_daemon(str(auth_db.path), interval=60)
+        start_briefing_scheduler()
 
     manager.set_state(SystemState.INIT, "Loading license state...")
     license_state = load_runtime_license_state(
@@ -177,6 +182,8 @@ def create_app() -> Flask:
             "/api/auth/",
             "/api/chat",
             "/api/chat/compact",
+            "/api/research/",
+            "/api/news/",
         )
         if any(path.startswith(prefix) for prefix in allow_prefixes):
             return None

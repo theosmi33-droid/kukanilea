@@ -150,13 +150,13 @@ if [[ "$CI_MODE" -eq 1 ]]; then
   log "[healthcheck] CI mode enabled"
 fi
 
-log "[1/7] Python compile check..."
+log "[1/8] Python compile check..."
 run_gate "Python compile check" bash -lc "cd '$ROOT' && find app -name '*.py' -print0 | xargs -0 '$PYTHON' -m py_compile"
 
-log "[2/7] Ensuring DB tables..."
+log "[2/8] Ensuring DB tables..."
 run_gate "DB migration check" bash -lc "cd '$ROOT' && '$PYTHON' app/db/migrations/ensure_agent_memory.py"
 
-log "[3/7] Running unit tests..."
+log "[3/8] Running unit tests..."
 if [[ "$SKIP_PYTEST" -eq 1 ]]; then
   log "[healthcheck] Skipping pytest (--skip-pytest enabled)"
 elif ! "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then
@@ -195,7 +195,7 @@ if [[ "$HAS_FLASK" -eq 1 ]]; then
     fi
   fi
 
-  log "[4/7] Checking routes (200/302)..."
+  log "[4/8] Checking routes (200/302)..."
   check_routes() {
     local code
     local urls=("/" "/dashboard" "/upload" "/projects" "/tasks" "/messenger" "/email" "/calendar" "/time" "/visualizer" "/settings")
@@ -209,7 +209,7 @@ if [[ "$HAS_FLASK" -eq 1 ]]; then
   }
   run_gate "Route health" check_routes
 
-  log "[5/7] Checking homepage for external URLs..."
+  log "[5/8] Checking homepage for external URLs..."
   check_external_urls() {
     local external
     external="$(curl -s http://127.0.0.1:5051/ | grep -oE 'https?://[^"'"'"' ]+' | grep -v '127.0.0.1' || true)"
@@ -221,13 +221,13 @@ if [[ "$HAS_FLASK" -eq 1 ]]; then
   }
   run_gate "Zero external URLs on homepage" check_external_urls
 else
-  log "[4/7] Checking routes (200/302)..."
+  log "[4/8] Checking routes (200/302)..."
   log "[healthcheck] Skipped (flask missing)"
-  log "[5/7] Checking homepage for external URLs..."
+  log "[5/8] Checking homepage for external URLs..."
   log "[healthcheck] Skipped (flask missing)"
 fi
 
-log "[6/7] DB sanity check..."
+log "[6/8] DB sanity check..."
 check_db() {
   if [[ ! -f "$ROOT/$AUTH_DB" ]]; then
     log "[healthcheck] Auth DB not found: $ROOT/$AUTH_DB"
@@ -237,7 +237,20 @@ check_db() {
 }
 run_gate "agent_memory table" check_db
 
-log "[7/7] Verifying guardrails (CDN & HTMX confirm)..."
+log "[7/8] Verifying guardrails (CDN & HTMX confirm)..."
 run_gate "guardrails verify" bash -lc "cd '$ROOT' && '$PYTHON' scripts/ops/verify_guardrails.py"
+
+
+
+log "[8/8] Verifying ops-release governance levers..."
+run_gate "ops settings defaults" bash -lc "cd '$ROOT' && '$PYTHON' - <<'PY'
+from app.routes.admin_tenants import _load_system_settings
+settings = _load_system_settings()
+assert settings.get('external_apis_enabled') is False
+assert int(settings.get('memory_retention_days', 0)) == 60
+assert settings.get('backup_verify_hook_enabled') is True
+assert settings.get('restore_verify_hook_enabled') is True
+PY"
+run_gate "backup/restore verification hooks" bash -lc "cd '$ROOT' && rg -q 'backup_verify_hook=' scripts/ops/backup_to_nas.sh && rg -q 'restore_verify_hook=' scripts/ops/restore_from_nas.sh"
 
 log "[healthcheck] All checks passed"

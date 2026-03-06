@@ -14,6 +14,7 @@ from app import core
 from app.core.upload_pipeline import process_upload, save_upload_stream
 from app.core.gewerke_profiles import get_active_profile
 from app.contracts.tool_contracts import build_tool_health, build_tool_summary
+from app.modules.upload.document_processing import register_document_upload, run_virus_scan_hook
 from app.modules.upload.ingestion import ingest_unstructured_input
 from app.rate_limit import upload_limiter
 
@@ -127,6 +128,15 @@ def upload():
         if not result.success:
             current_app.logger.warning("Upload rejected: %s - %s", filename, result.error_message)
             continue
+
+        hook_clean, hook_reason = run_virus_scan_hook(dest, tenant)
+        if not hook_clean:
+            current_app.logger.warning("Upload rejected by virus scan hook: %s (%s)", filename, hook_reason)
+            try:
+                dest.unlink(missing_ok=True)
+            except Exception:
+                pass
+            continue
             
         token = analyze_to_pending(dest)
         try:
@@ -135,6 +145,11 @@ def upload():
             p["file_hash"] = result.file_hash
             write_pending(token, p)
         except Exception: pass
+
+        try:
+            register_document_upload(file_path=dest, tenant_id=tenant, file_hash=str(result.file_hash or ""))
+        except Exception as exc:
+            current_app.logger.warning("Document processing registration failed for %s: %s", filename, exc)
         
         results.append({"token": token, "filename": filename})
         
