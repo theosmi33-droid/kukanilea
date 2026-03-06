@@ -103,6 +103,8 @@
                 Guten Tag! Wie kann ich Ihnen heute bei Ihren Aufgaben oder Dokumenten behilflich sein?
             </div>
         </div>
+        <div id="chat-plan" style="display:none; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--bg-secondary); font-size: 12px;"></div>
+        <div id="chat-actions" style="display:none; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--bg-secondary); font-size: 12px;"></div>
         <div style="padding: 12px; border-top: 1px solid var(--color-border); display: flex; gap: 8px; background: var(--bg-primary);">
             <input type="text" id="chat-input" aria-label="Nachricht an KI-Assistent" placeholder="Nachricht schreiben..." style="flex: 1; background: var(--bg-tertiary); border: 1px solid var(--color-border); border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-size: 13px; outline: none;">
             <button id="chat-send-btn" onclick="sendChatMessage()" aria-label="Nachricht senden" style="background: var(--color-primary); color: white; border: none; border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
@@ -116,6 +118,8 @@
   </div>
 
   <script>
+    let chatPendingId = '';
+
     // Boot splash logic
     window.addEventListener('DOMContentLoaded', () => {
         const bar = document.getElementById('boot-bar');
@@ -256,6 +260,39 @@
       container.scrollTop = container.scrollHeight;
     }
 
+    function renderManagerState(data) {
+      const planEl = document.getElementById('chat-plan');
+      const actionsEl = document.getElementById('chat-actions');
+      if (!planEl || !actionsEl) return;
+
+      const manager = data.manager_agent || {};
+      const plan = manager.plan || [];
+      const progress = manager.progress || {};
+      const refs = manager.object_refs || {};
+      const actions = data.actions || [];
+
+      if (plan.length) {
+        planEl.style.display = 'block';
+        const lines = plan.map((p) => `${p.status === 'completed' ? '✅' : p.status === 'in_progress' ? '⏳' : '•'} ${p.step}`).join('<br>');
+        planEl.innerHTML = `<strong>Plan</strong> (${progress.completed_steps || 0}/${progress.total_steps || plan.length})<br>${lines}`;
+      } else {
+        planEl.style.display = 'none';
+      }
+
+      if (actions.length || Object.keys(refs).length) {
+        actionsEl.style.display = 'block';
+        const actionText = actions.length
+          ? actions.map((a) => `• ${a.type || 'Aktion'}${a.confirm_required ? ' (Bestätigung nötig)' : ''}`).join('<br>')
+          : '• Keine vorgeschlagenen Aktionen';
+        const refsText = Object.keys(refs).length
+          ? `<br><strong>Referenzen:</strong> ${Object.entries(refs).map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · ')}`
+          : '';
+        actionsEl.innerHTML = `<strong>Vorgeschlagene Aktionen</strong><br>${actionText}${refsText}`;
+      } else {
+        actionsEl.style.display = 'none';
+      }
+    }
+
     async function sendChatMessage() {
       const input = document.getElementById('chat-input');
       const sendBtn = document.getElementById('chat-send-btn');
@@ -271,14 +308,17 @@
 
       const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
       try {
-        const res = await fetch('/api/chat', {
+        const body = chatPendingId
+          ? { confirm: true, pending_id: chatPendingId, current_context: window.location.pathname }
+          : { msg: text, current_context: window.location.pathname };
+        const res = await fetch('/api/chat/compact', {
           method: 'POST',
           credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
             ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
           },
-          body: JSON.stringify({ msg: text }),
+          body: JSON.stringify(body),
         });
 
         let data = {};
@@ -289,6 +329,11 @@
         } else {
           appendChatBubble(`Der Assistent konnte keine Antwort erzeugen.`, false);
         }
+        chatPendingId = data.pending_id || '';
+        if (data.requires_confirm && chatPendingId) {
+          appendChatBubble(data.confirm_prompt || 'Bitte bestätige die geplante Aktion mit erneutem Senden.', false);
+        }
+        renderManagerState(data);
       } catch (err) {
         appendChatBubble(`Der Assistent ist aktuell nicht erreichbar.`, false);
       } finally {

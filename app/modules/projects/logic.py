@@ -157,6 +157,48 @@ class ProjectManager:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_card_activities_board ON card_activities(board_id, tenant_id, created_at);"
             )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_diary_entries(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  project_id TEXT,
+                  source TEXT NOT NULL,
+                  thread_id TEXT,
+                  title TEXT,
+                  body TEXT NOT NULL,
+                  payload_json TEXT,
+                  created_by TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_project_diary_tenant ON project_diary_entries(tenant_id, created_at DESC);"
+            )
+
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_defects(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  project_id TEXT,
+                  diary_entry_id TEXT,
+                  title TEXT NOT NULL,
+                  description TEXT,
+                  status TEXT NOT NULL DEFAULT 'OPEN',
+                  photos_json TEXT,
+                  source TEXT NOT NULL,
+                  created_by TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_project_defects_tenant ON project_defects(tenant_id, status, updated_at DESC);"
+            )
             con.commit()
         finally:
             con.close()
@@ -778,6 +820,94 @@ class ProjectManager:
                 (tenant_id,),
             ).fetchall()
             return [dict(r) for r in rows]
+        finally:
+            con.close()
+
+    def create_diary_entry(
+        self,
+        *,
+        tenant_id: str,
+        source: str,
+        body: str,
+        created_by: str,
+        title: str = "",
+        thread_id: str = "",
+        project_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        entry_id = str(uuid.uuid4())
+        now = self._now()
+        con = self.db._db()
+        try:
+            con.execute(
+                """
+                INSERT INTO project_diary_entries(
+                  id, tenant_id, project_id, source, thread_id, title,
+                  body, payload_json, created_by, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry_id,
+                    tenant_id,
+                    project_id,
+                    (source or "upload").strip() or "upload",
+                    (thread_id or "").strip(),
+                    (title or "").strip(),
+                    (body or "").strip(),
+                    json.dumps(payload or {}, ensure_ascii=False),
+                    (created_by or "system").strip() or "system",
+                    now,
+                ),
+            )
+            con.commit()
+            return {"id": entry_id, "created_at": now}
+        finally:
+            con.close()
+
+    def create_defect_item(
+        self,
+        *,
+        tenant_id: str,
+        title: str,
+        created_by: str,
+        status: str = "OPEN",
+        description: str = "",
+        photos: list[str] | None = None,
+        source: str = "upload",
+        project_id: str | None = None,
+        diary_entry_id: str | None = None,
+    ) -> dict[str, Any]:
+        defect_id = str(uuid.uuid4())
+        now = self._now()
+        normalized_status = str(status or "OPEN").strip().upper() or "OPEN"
+        con = self.db._db()
+        try:
+            con.execute(
+                """
+                INSERT INTO project_defects(
+                  id, tenant_id, project_id, diary_entry_id, title, description,
+                  status, photos_json, source, created_by, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    defect_id,
+                    tenant_id,
+                    project_id,
+                    diary_entry_id,
+                    (title or "Defect").strip(),
+                    (description or "").strip(),
+                    normalized_status,
+                    json.dumps([str(item).strip() for item in (photos or []) if str(item).strip()], ensure_ascii=False),
+                    (source or "upload").strip() or "upload",
+                    (created_by or "system").strip() or "system",
+                    now,
+                    now,
+                ),
+            )
+            con.commit()
+            return {"id": defect_id, "status": normalized_status, "created_at": now}
         finally:
             con.close()
 

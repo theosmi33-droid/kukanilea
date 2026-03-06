@@ -1,0 +1,243 @@
+# Action Registry Catalog
+
+Total actions: **220**
+
+## Actions per tool
+
+| Tool | Actions |
+|---|---:|
+| `filesystem_list` | 22 |
+| `generate_zugferd_xml` | 22 |
+| `lexoffice_upload` | 22 |
+| `mail_generate` | 22 |
+| `memory_search` | 22 |
+| `memory_store` | 22 |
+| `mesh_sync` | 22 |
+| `message_to_work_item` | 22 |
+| `messenger_connector` | 22 |
+| `retrieve_corrections` | 22 |
+
+## Action list
+
+| Action | Critical | Permissions | Audit fields |
+|---|---|---|---|
+| `filesystem_list.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `filesystem_list.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `generate_zugferd_xml.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `lexoffice_upload.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mail_generate.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_search.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `memory_store.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `mesh_sync.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `message_to_work_item.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `messenger_connector.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.archive` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.audit` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.authorize` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.cancel` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.dry_run` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.execute` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.execute_async` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.execute_batch` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.export` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.fetch_status` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.get_by_id` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.import` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.list_recent` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.normalize_input` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.notify` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.plan` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.preview` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.restore` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.retry` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.rollback` | yes | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.search` | no | tenant:read | tenant_id, user_id, trace_id |
+| `retrieve_corrections.validate_input` | no | tenant:read | tenant_id, user_id, trace_id |
