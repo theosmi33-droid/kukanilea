@@ -90,3 +90,19 @@ def test_offline_first_blocks_external_action_without_feature_flag() -> None:
     assert result.status == "offline_blocked"
     assert result.reason == "external_calls_disabled"
     assert bus.events[-1]["event_type"] == "manager_agent.offline_blocked"
+
+
+def test_external_action_is_routed_when_confirmed_and_external_calls_enabled() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route(
+        "Bitte sende eine Messenger Nachricht an den Kunden: Danke für das Update",
+        {"tenant": "KUKANILEA", "user": "admin", "confirm": "YES"},
+    )
+
+    assert result.ok is True
+    assert result.status == "routed"
+    assert result.decision.action == "messenger.message.reply"
+    assert result.decision.external_call is True
+    assert bus.events[-1]["event_type"] == "manager_agent.routed"

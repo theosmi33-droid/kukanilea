@@ -17,6 +17,14 @@ WRITE_VERBS = {
     "restore",
 }
 
+# Verbs that may trigger effects outside the local system and therefore
+# must always be guarded with high-risk policy controls.
+EXTERNAL_EFFECT_VERBS = {
+    "reply",
+    "send",
+    "sync",
+}
+
 
 @dataclass(frozen=True)
 class RiskPolicy:
@@ -107,6 +115,13 @@ class ActionRegistry:
                 raise ValueError(f"Incomplete policy metadata: {action_id}")
             if spec.is_write and (not policy.confirm_required or not policy.audit_required):
                 raise ValueError(f"Write action without confirm+audit policy: {action_id}")
+            if policy.external_call:
+                if policy.risk != "high":
+                    raise ValueError(f"External action without high risk policy: {action_id}")
+                if not policy.confirm_required:
+                    raise ValueError(f"External action without confirm policy: {action_id}")
+                if not policy.audit_required:
+                    raise ValueError(f"External action without audit policy: {action_id}")
 
     def stats(self) -> ActionRegistryStats:
         derivable = sum(_count_derivable_actions(spec) for spec in self.domains.values())
@@ -152,12 +167,13 @@ def generate_domain_actions(
             for modifiers in modifier_sets:
                 action_id = canonical_action_id(domain_spec.name, entity.name, verb, modifiers)
                 is_write = verb in WRITE_VERBS
-                risk_key = "high" if verb in domain_spec.external_verbs else ("medium" if is_write else "low")
+                is_external_call = verb in domain_spec.external_verbs or verb in EXTERNAL_EFFECT_VERBS
+                risk_key = "high" if is_external_call else ("medium" if is_write else "low")
                 policy = ActionPolicyMetadata(
-                    confirm_required=is_write,
+                    confirm_required=is_write or is_external_call,
                     audit_required=True,
                     risk=risk_policies[risk_key].name,
-                    external_call=verb in domain_spec.external_verbs,
+                    external_call=is_external_call,
                     idempotency="idempotent" if verb in {"read", "list", "status", "lookup", "search"} else "non_idempotent",
                 )
                 actions.append(
