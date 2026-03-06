@@ -247,6 +247,23 @@ class AuthDB:
 
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS memory_audit_log(
+                  id TEXT PRIMARY KEY,
+                  memory_id TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  actor TEXT NOT NULL,
+                  payload TEXT,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_audit_tenant_ts ON memory_audit_log(tenant_id, created_at);"
+            )
+
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS api_outbound_queue(
                   id TEXT PRIMARY KEY,
                   tenant_id TEXT NOT NULL,

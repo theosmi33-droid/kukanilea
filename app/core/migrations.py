@@ -204,11 +204,35 @@ def run_migrations(db_path: Path):
             conn.commit()
             logger.info("Migrated to version 6 (Memory Intelligence)")
 
+
+        if current_version < 7:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memory_audit_log(
+                  id TEXT PRIMARY KEY,
+                  memory_id TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  actor TEXT NOT NULL,
+                  payload TEXT,
+                  created_at TEXT NOT NULL
+                );
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_audit_tenant_ts ON memory_audit_log(tenant_id, created_at);"
+            )
+            _set_user_version(conn, 7)
+            conn.commit()
+            logger.info("Migrated to version 7 (Knowledge Memory audit trail)")
+
         # Always-on drift guard (idempotent)
         if _table_exists(conn, "agent_memory"):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_tenant_ts ON agent_memory(tenant_id, timestamp);")
         if _table_exists(conn, "api_outbound_queue"):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_api_queue_status ON api_outbound_queue(status);")
+        if _table_exists(conn, "memory_audit_log"):
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_audit_tenant_ts ON memory_audit_log(tenant_id, created_at);")
         if _table_exists(conn, "customers") and _column_exists(conn, "customers", "id"):
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_id_unique ON customers(id);")
         conn.commit()
