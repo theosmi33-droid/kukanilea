@@ -269,7 +269,7 @@ finally:
 raise SystemExit(0 if count >= 0 else 1)
 PY" "audit-log check executable for mia.* events" "audit-log check failed for mia.* events"
 
-run_cmd_gate "MIA_UNCONTROLLED_WRITES" "git diff --name-only -- ':(exclude)docs/reviews/codex/*' | rg -q '^app/|^scripts/|^tests/'" "writes limited to controlled code/test paths" "uncontrolled writes detected outside controlled paths"
+run_cmd_gate "MIA_UNCONTROLLED_WRITES" "[[ -z \"$(git diff --name-only -- ':(exclude)docs/reviews/codex/*' | rg -v '^(app/|scripts/|tests/)' | rg -v '^$')\" ]]" "writes limited to controlled code/test paths" "uncontrolled writes detected outside controlled paths"
 if [[ "$OUT_FILE" == "$ROOT/docs/reviews/codex/LAUNCH_GATE_AUTOMATION_REPORT_20260305.md" ]]; then
   record_result "Evidence" "PASS" "evidence path matches required target"
 else

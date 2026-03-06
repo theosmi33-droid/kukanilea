@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from app.config import Config
+from app.mia_audit import sanitize_meta
 from app.modules.automation.store import (
     append_execution_log,
     confirm_pending_action_once,
@@ -12,6 +13,25 @@ from app.modules.automation.store import (
     update_execution_log,
     update_pending_action_status,
 )
+
+
+def test_sanitize_meta_redacts_secret_key_variants_and_tuple_entries():
+    payload = {
+        "apiKey": "abc123",
+        "session_id": "sess-1",
+        "nested": {
+            "Authorization": "Bearer token",
+            "public": "ok",
+        },
+        "tuple_values": ("safe", {"access_token": "x"}),
+    }
+    redacted = sanitize_meta(payload)
+    assert redacted["apiKey"] == "[REDACTED]"
+    assert redacted["session_id"] == "[REDACTED]"
+    assert redacted["nested"]["Authorization"] == "[REDACTED]"
+    assert redacted["nested"]["public"] == "ok"
+    assert redacted["tuple_values"][0] == "safe"
+    assert redacted["tuple_values"][1]["access_token"] == "[REDACTED]"
 
 
 def _count_event(db_path, event_type: str) -> int:

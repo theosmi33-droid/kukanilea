@@ -28,7 +28,26 @@ MIA_EVENTS_STABLE = {
     MIA_EVENT_AUDIT_TRAIL_LINKED,
 }
 
-_SECRET_KEYS = {"password", "secret", "token", "api_key", "authorization", "cookie"}
+_SECRET_KEY_PATTERNS = (
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "authorization",
+    "auth",
+    "cookie",
+    "session",
+    "private_key",
+    "access_key",
+)
+
+
+def _is_secret_key(key_text: str) -> bool:
+    key = str(key_text or "").strip().lower()
+    if not key:
+        return False
+    return any(pattern in key for pattern in _SECRET_KEY_PATTERNS)
 
 
 def sanitize_meta(value: Any) -> Any:
@@ -36,12 +55,12 @@ def sanitize_meta(value: Any) -> Any:
         out: dict[str, Any] = {}
         for key, item in value.items():
             key_text = str(key)
-            if key_text.lower() in _SECRET_KEYS:
+            if _is_secret_key(key_text):
                 out[key_text] = "[REDACTED]"
             else:
                 out[key_text] = sanitize_meta(item)
         return out
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [sanitize_meta(item) for item in value]
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
