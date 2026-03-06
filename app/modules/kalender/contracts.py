@@ -176,7 +176,9 @@ def create_event(
     starts_at: str,
     created_by: str = "system",
 ) -> dict:
-    event = core.knowledge_calendar_event_create(
+    from app.knowledge.ics_source import knowledge_calendar_event_create
+
+    event = knowledge_calendar_event_create(
         tenant,
         created_by,
         title=title,
