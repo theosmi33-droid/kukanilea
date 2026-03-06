@@ -46,6 +46,8 @@ def test_confirm_gate_accepts_explicit_confirm_token() -> None:
     assert result.decision.execution_mode == "confirm"
     assert bus.events[-1]["event_type"] == "manager_agent.routed"
     assert audit_payloads[-1]["status"] == "routed"
+    assert audit_payloads[-1]["envelope"]["audit"]["schema_version"] == "kukanilea.manager_agent.audit.v1"
+    assert audit_payloads[-1]["envelope"]["result"]["status"] == "routed"
 
 
 def test_unknown_intent_returns_safe_clarification_instead_of_execution() -> None:
@@ -89,3 +91,42 @@ def test_offline_first_blocks_external_action_without_feature_flag() -> None:
     assert result.status == "offline_blocked"
     assert result.reason == "external_calls_disabled"
     assert bus.events[-1]["event_type"] == "manager_agent.offline_blocked"
+
+
+def test_legacy_action_name_is_mapped_to_canonical_action() -> None:
+    agent = ManagerAgent()
+
+    result = agent.route(
+        "Bitte erstelle Aufgabe für morgen",
+        {"tenant": "KUKANILEA", "user": "admin", "action": "create_task", "confirm": "yes"},
+    )
+
+    assert result.ok is True
+    assert result.status == "routed"
+    assert result.decision.action == "task_create"
+
+
+def test_unknown_explicit_action_stays_blocked() -> None:
+    agent = ManagerAgent()
+
+    result = agent.route(
+        "Bitte ausführen",
+        {"tenant": "KUKANILEA", "user": "admin", "action": "legacy_unknown_action", "confirm": "yes"},
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert result.reason == "action_not_registered"
+
+
+def test_legacy_write_action_still_respects_confirm_gate() -> None:
+    agent = ManagerAgent()
+
+    result = agent.route(
+        "Bitte erstelle Aufgabe für morgen",
+        {"tenant": "KUKANILEA", "user": "admin", "action": "create_task"},
+    )
+
+    assert result.ok is False
+    assert result.status == "confirm_required"
+    assert result.confirm_required is True

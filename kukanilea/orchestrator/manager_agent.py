@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, Callable, Mapping
 
 CONFIRM_TOKENS = {"1", "true", "yes", "confirm", "ja"}
+AUDIT_SCHEMA_VERSION = "kukanilea.manager_agent.audit.v1"
 INJECTION_PATTERNS = (
     re.compile(r"\bignore\s+previous\s+instructions\b", re.IGNORECASE),
     re.compile(r"\bignore\s+all\s+instructions\b", re.IGNORECASE),
@@ -104,6 +105,17 @@ class DeterministicToolRouter:
             confirm_required=True,
             external_call=True,
         ),
+    }
+
+    LEGACY_ACTION_ALIASES: dict[str, str] = {
+        "get_dashboard_summary": "dashboard_summary",
+        "dashboard.status": "dashboard_summary",
+        "lookup_customer": "customer_lookup",
+        "create_task": "task_create",
+        "calendar.create_appointment": "appointment_create",
+        "search_invoice": "invoice_search",
+        "material_check": "material_status",
+        "reply_messenger": "messenger_reply",
     }
 
     INTENT_LIBRARY: tuple[IntentSpec, ...] = (
@@ -224,7 +236,12 @@ class DeterministicToolRouter:
         )
 
     def select(self, plan: MIAIntentPlan) -> RouteDecision:
-        action_name = next((action for action in plan.candidate_actions if action in self.ACTION_REGISTRY), "")
+        action_name = ""
+        for action in plan.candidate_actions:
+            canonical = self.canonical_action_name(action)
+            if canonical:
+                action_name = canonical
+                break
         if not action_name:
             return RouteDecision(
                 intent=plan.intent_name,
@@ -247,7 +264,8 @@ class DeterministicToolRouter:
         )
 
     def validate_parameters(self, action: str, params: Mapping[str, Any] | None) -> bool:
-        spec = self.ACTION_REGISTRY.get(action)
+        canonical = self.canonical_action_name(action)
+        spec = self.ACTION_REGISTRY.get(canonical or "")
         if not spec:
             return False
         provided = dict(params or {})
@@ -255,6 +273,14 @@ class DeterministicToolRouter:
             return True
         allowed = set(spec.parameter_schema.keys())
         return set(provided.keys()).issubset(allowed)
+
+    def canonical_action_name(self, action: str) -> str | None:
+        name = str(action or "").strip()
+        if not name:
+            return None
+        if name in self.ACTION_REGISTRY:
+            return name
+        return self.LEGACY_ACTION_ALIASES.get(name)
 
     def _entity_present(self, entity: str, text: str) -> bool:
         checks = {
@@ -306,6 +332,22 @@ class ManagerAgent:
             return result
 
         plan = self.router.build_plan(message)
+        requested_action = self.router.canonical_action_name(str(ctx.get("action") or ""))
+        if ctx.get("action"):
+            if not requested_action:
+                decision = RouteDecision(intent="explicit_action", tool="chatbot", action=str(ctx.get("action")), execution_mode="propose")
+                result = RouteResult(ok=False, status="blocked", decision=decision, reason="action_not_registered", plan=plan)
+                self._record("manager_agent.blocked", message, ctx, result)
+                return result
+            plan = MIAIntentPlan(
+                intent_name="explicit_action",
+                confidence=1.0,
+                candidate_actions=[requested_action],
+                required_entities=[],
+                missing_context=[],
+                risk_assessment=plan.risk_assessment,
+                execution_mode="confirm" if self.router.ACTION_REGISTRY[requested_action].confirm_required else "read",
+            )
         decision = self.router.select(plan)
 
         if decision.action not in self.router.ACTION_REGISTRY and decision.action not in {"safe_follow_up", "safe_fallback"}:
@@ -361,6 +403,29 @@ class ManagerAgent:
         extra: Mapping[str, Any] | None = None,
     ) -> None:
         payload = {
+            "envelope": {
+                "audit": {
+                    "schema_version": AUDIT_SCHEMA_VERSION,
+                    "event_type": event_type,
+                    "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "tenant": str(context.get("tenant") or "default"),
+                    "user": str(context.get("user") or "system"),
+                },
+                "decision": {
+                    "intent": result.decision.intent,
+                    "tool": result.decision.tool,
+                    "action": result.decision.action,
+                    "execution_mode": result.decision.execution_mode,
+                    "requires_confirm": result.decision.requires_confirm,
+                    "external_call": result.decision.external_call,
+                },
+                "result": {
+                    "ok": result.ok,
+                    "status": result.status,
+                    "reason": result.reason,
+                    "confirm_required": result.confirm_required,
+                },
+            },
             "message": str(message or "")[:500],
             "tenant": str(context.get("tenant") or "default"),
             "user": str(context.get("user") or "system"),
