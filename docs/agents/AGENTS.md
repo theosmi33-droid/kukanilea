@@ -1,6 +1,6 @@
-# KUKANILEA Agent Framework (OpenClaw-style)
+# KUKANILEA Agent Framework (Sovereign-11)
 
-This framework defines a deterministic, offline-first, and approval-gated agent architecture for KUKANILEA.
+This framework defines the deterministic Sovereign-11 architecture for KUKANILEA: local-first, offline-first, approval-gated, and auditierbar.
 
 ## Agent Roles
 
@@ -14,7 +14,7 @@ This framework defines a deterministic, offline-first, and approval-gated agent 
 2.  **DB_BOT:** Handles SQL migrations and data integrity checks.
 3.  **MAIL_BOT:** Manages encrypted local mail queues.
 4.  **LOG_BOT:** Analyzes system logs for anomalies.
-5.  **NET_BOT:** Manages local network and zero-CDN compliance.
+5.  **NET_BOT:** Manages local network policy and sovereign connectivity compliance.
 6.  **SEC_BOT:** Performs static security analysis and vulnerability scanning.
 7.  **DEPLOY_BOT:** Manages local-first builds and releases.
 8.  **SYNC_BOT:** Orchestrates peer-to-peer data synchronization.

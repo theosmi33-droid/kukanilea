@@ -190,6 +190,7 @@ Pflichttests:
 2. Summary/Read-APIs funktionieren.
 3. Jede schreibende Aktion erfordert Confirm-Gate.
 4. Audit-Logs werden geschrieben.
+5. MIA-Events folgen der kanonischen Event-Matrix (`docs/ai/MIA_AUDIT_LAYER.md`).
 
 Beispiel-Checks:
 
@@ -207,7 +208,8 @@ Evidence:
 - Modellstatus:
 - Summary-Checks:
 - Confirm-Gate-Checks:
-- Audit-Log-Checks:
+- Audit-Log-Checks (inkl. `tenant_id/user_id/action/status/risk`):
+- MIA-Event-Matrix-Check (intent/action/confirm/blocked/executed/external/validation):
 - Ergebnis: `PASS | FAIL`
 
 ---

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from kukanilea.orchestrator.cross_tool_flows import (
     CrossToolFlowEngine,
     build_core_flows,
@@ -24,6 +26,16 @@ def test_core_flows_have_required_model_fields_and_minimum_count() -> None:
         assert flow.confirmation_points is not None
         assert flow.audit_events
         assert flow.fallback_policy
+
+
+def test_all_flow_steps_use_registered_actions() -> None:
+    registry = create_default_registry()
+    flows = build_core_flows()
+
+    registered = registry.action_ids()
+    for flow in flows.values():
+        for step in flow.steps:
+            assert step.action_id in registered
 
 
 def test_email_to_task_requires_confirm_for_write_step() -> None:
@@ -120,3 +132,159 @@ def test_unknown_flow_reports_failure_with_audit_evidence() -> None:
     assert result.status == "failed"
     assert result.failures[0]["code"] == "flow_not_found"
     assert result.audit_evidence[0]["event"] == "flow.failed"
+
+
+def test_task_to_calendar_requires_confirm_for_write_step() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_task_to_calendar",
+        context={"task_id": "T-1", "task_title": "Wartung", "task_due_at": "2026-02-01T10:00:00"},
+        confirmations={},
+        tool_health={"calendar": True},
+    )
+
+    assert result.ok is False
+    assert result.status == "propose_and_ask_confirmation"
+    assert any(p["type"] == "confirm_required" and p["step_id"] == "create_calendar_event" for p in result.proposals)
+
+
+def test_upload_to_project_degrades_when_project_tool_unhealthy() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_upload_to_project",
+        context={"upload_id": "U-1", "filename": "angebot.pdf"},
+        confirmations={"link_upload": True},
+        tool_health={"projects": False},
+    )
+
+    assert result.status == "degraded"
+    assert any(p["type"] == "fallback" and p["step_id"] == "link_upload" for p in result.proposals)
+
+
+def test_messenger_to_task_executes_when_confirmed() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_messenger_to_task",
+        context={"message_text": "Bitte Rückruf morgen", "default_deadline": "2026-03-01"},
+        confirmations={"create_task": True},
+        tool_health={"tasks": True},
+    )
+
+    assert result.ok is True
+    assert result.status == "completed"
+    assert "extract_task" in result.executed_steps
+    assert "create_task" in result.executed_steps
+
+
+def test_invoice_reminder_proposal_runs_without_write_confirmation() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_invoice_reminder_proposal",
+        context={"invoice_id": "R-99", "invoice_due_date": "2026-03-15"},
+        confirmations={},
+        tool_health={},
+    )
+
+    assert result.ok is True
+    assert result.status == "completed"
+    assert "Zahlungserinnerung" in str(result.outputs.get("reminder_proposal") or "")
+
+
+@pytest.mark.parametrize(
+    "flow_id",
+    [
+        "flow_task_to_calendar",
+        "flow_upload_to_project",
+        "flow_messenger_to_task",
+        "flow_invoice_reminder_proposal",
+    ],
+)
+def test_missing_context_returns_proposal_for_new_flows(flow_id: str) -> None:
+    engine = _engine()
+
+    result = engine.run(flow_id=flow_id, context={}, confirmations={})
+
+    assert result.ok is False
+    assert result.status == "propose_and_ask_confirmation"
+    assert result.proposals[0]["type"] == "missing_context"
+
+
+@pytest.mark.parametrize(
+    ("flow_id", "context", "confirmations", "tool_health", "expected_steps"),
+    [
+        (
+            "flow_messenger_to_task",
+            {"message_text": "Bitte Freigabe einholen", "default_deadline": "2026-03-01"},
+            {"create_task": True},
+            {"tasks": True},
+            {"extract_task", "create_task"},
+        ),
+        (
+            "flow_task_to_calendar",
+            {"task_id": "T-1", "task_title": "Wartung", "task_due_at": "2026-02-01T10:00:00"},
+            {"create_calendar_event": True},
+            {"calendar": True},
+            {"prepare_calendar_entry", "create_calendar_event"},
+        ),
+        (
+            "flow_upload_to_project",
+            {"upload_id": "U-1", "filename": "angebot.pdf"},
+            {"link_upload": True},
+            {"projects": True},
+            {"extract_project_hint", "link_upload"},
+        ),
+        (
+            "flow_invoice_reminder_proposal",
+            {"invoice_id": "R-99", "invoice_due_date": "2026-03-15"},
+            {},
+            {},
+            {"extract_invoice_due", "propose_reminder"},
+        ),
+    ],
+)
+def test_new_flows_emit_audit_evidence_per_step(
+    flow_id: str,
+    context: dict,
+    confirmations: dict,
+    tool_health: dict,
+    expected_steps: set[str],
+) -> None:
+    engine = _engine()
+
+    result = engine.run(flow_id=flow_id, context=context, confirmations=confirmations, tool_health=tool_health)
+
+    events_by_step = {e.get("step_id") for e in result.audit_evidence if e.get("event") == "flow.step_executed"}
+    assert events_by_step == expected_steps
+
+
+def test_flow_write_retry_with_same_idempotency_key_replays() -> None:
+    engine = _engine()
+    context = {
+        "email_subject": "Projekt Alpha: Nachtrag",
+        "email_body": "Bitte offenen Punkt ergänzen",
+        "projects": [{"id": "P-100", "keyword": "alpha"}],
+        "default_deadline": "2026-01-31",
+        "idempotency_key": "flow-dup-001",
+    }
+
+    first = engine.run(
+        flow_id="flow_email_project_task",
+        context=context,
+        confirmations={"create_task": True},
+        tool_health={"projects": True, "tasks": True},
+    )
+    second = engine.run(
+        flow_id="flow_email_project_task",
+        context=context,
+        confirmations={"create_task": True},
+        tool_health={"projects": True, "tasks": True},
+    )
+
+    assert first.ok is True
+    assert second.ok is True
+    assert first.executed_steps == second.executed_steps
+    assert any(event["event"] == "flow.idempotent_replay" for event in second.audit_evidence)

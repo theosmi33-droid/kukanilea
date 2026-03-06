@@ -1,7 +1,7 @@
-# KUKANILEA Agent Flotte (OpenClaw-Framework)
+# KUKANILEA Agent Flotte (Sovereign-11 / OpenClaw)
 
-This configuration defines the OpenClaw-style agent framework for KUKANILEA.
-It is deterministic, offline-first, and approval-gated.
+This configuration defines the verbindliche Sovereign-11, OpenClaw-inspired agent architecture for KUKANILEA.
+It is deterministic, local-first, offline-first, approval-gated, and auditierbar.
 
 ## 1. Orchestrators (The Core)
 1. **ORCH-ROUTER**: Routes tasks based on domain metadata.
@@ -13,7 +13,7 @@ It is deterministic, offline-first, and approval-gated.
 2. **WRK-DB_BOT**: SQL migrations, data integrity checks.
 3. **WRK-MAIL_BOT**: Local encrypted mail queue.
 4. **WRK-LOG_BOT**: System log anomaly detection.
-5. **WRK-NET_BOT**: Local network & Zero-CDN compliance.
+5. **WRK-NET_BOT**: Local network policy and sovereign connectivity compliance.
 6. **WRK-SEC_BOT**: Static security & vulnerability scanning.
 7. **WRK-DEPLOY_BOT**: Local-first builds and releases.
 8. **WRK-SYNC_BOT**: Peer-to-peer data synchronization.
