@@ -160,4 +160,23 @@
 5. Open dashboard and verify KPI cards render without network calls.
 
 ---
+## 9. Evidence Artifacts (Definition)
+
+To avoid feature-theater, each shipped workflow must leave verifiable artifacts:
+
+- `artifact.intake.normalized.json`: normalized lead payload with source channel and tenant id.
+- `artifact.task.transition.json`: before/after status transition including actor and timestamp.
+- `artifact.project.diary.md`: field report snapshot with references to uploaded images.
+- `artifact.quote.render.pdf`: generated quote preview used for send confirmation.
+- `artifact.invoice.draft.pdf`: draft generated from completed task/work report.
+- `artifact.audit.event.jsonl`: append-only audit stream entries for critical actions.
+
+Minimum review bundle per release:
+
+1. One successful end-to-end run per killer flow (A/B/C).
+2. One blocked write action proving confirm gate enforcement.
+3. One recovery drill showing fallback behavior under unavailable AI component.
+4. One KPI snapshot comparing previous and current period.
+
+---
 *Created by Business + Product Lead (Handwerk/SMB) - 2026-03-05*
