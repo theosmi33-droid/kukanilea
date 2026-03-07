@@ -138,7 +138,7 @@ def test_dashboard_matrix_degrades_single_tool_when_summary_builder_raises(tmp_p
     email = next(row for row in body["tools"] if row["tool"] == "email")
     assert email["status"] == "degraded"
     assert email["degraded_reason"] == "summary_aggregation_failed"
-    assert "simulated_email_timeout" in email["details"]["aggregation_error"]
+    assert email["details"]["aggregation_error"] == "internal_error"
 
 
 def test_dashboard_mia_parity_endpoint_reports_aligned_baseline(tmp_path, monkeypatch):

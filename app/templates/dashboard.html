@@ -399,11 +399,7 @@ async function loadSpeedToLeadAndHealth() {
   healthRefreshInFlight = true;
   try {
     const settled = await Promise.allSettled(DASHBOARD_TOOLS.map((tool) => _fetchToolSummary(tool)));
-    const summaryPairs = settled.map((item, index) => {
-      if (item.status === "fulfilled" && Array.isArray(item.value)) return item.value;
-      const tool = DASHBOARD_TOOLS[index];
-      return [tool, { tool, status: "degraded", degraded_reason: "summary_unreachable", metrics: {}, updated_at: null }];
-    });
+    const summaryPairs = settled.map((item) => item.value);
     const summaryMap = Object.fromEntries(summaryPairs);
 
     let appHealthOk = false;
