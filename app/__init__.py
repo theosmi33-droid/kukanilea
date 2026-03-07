@@ -17,6 +17,7 @@ from .errors import json_error
 from .license import load_runtime_license_state
 from .log_utils import init_request_logging
 from .migrations.ensure_agent_memory import ensure_agent_memory_tables
+from .core.migrations import run_migrations
 from .observability import init_observability
 from .logging.structured_logger import log_event
 from .security.session_policy import resolve_session_cookie_policy
@@ -291,12 +292,13 @@ def create_app() -> Flask:
     manager.set_state(SystemState.INIT, "Warming up database and indexes...")
     if web.db_init is not None:
         try:
+            run_migrations(Path(app.config["CORE_DB"]))
             web.db_init()
             if callable(getattr(web.core, "index_warmup", None)):
                 web.core.index_warmup(tenant_id=app.config.get("TENANT_DEFAULT", ""))
         except Exception as e:
             manager.report_error(f"Database Warmup Failed: {e}")
-            # Non-critical but logged
+            raise
     
     boot_time = time.time() - boot_start
     manager.set_state(SystemState.READY, f"System is active. (Boot time: {boot_time:.2f}s)")
