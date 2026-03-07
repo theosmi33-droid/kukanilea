@@ -71,7 +71,6 @@ jobs:
     needs: [lint-and-scan]
     env:
       OLLAMA_ENABLED: "0"
-      PYTHON: python
     steps:
       - name: Checkout
         uses: actions/checkout@v4
