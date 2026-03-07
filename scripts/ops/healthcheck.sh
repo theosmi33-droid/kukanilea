@@ -251,6 +251,6 @@ assert int(settings.get('memory_retention_days', 0)) == 60
 assert settings.get('backup_verify_hook_enabled') is True
 assert settings.get('restore_verify_hook_enabled') is True
 PY"
-run_gate "backup/restore verification hooks" bash -lc "cd '$ROOT' && rg -q 'backup_verify_hook=' scripts/ops/backup_to_nas.sh && rg -q 'restore_verify_hook=' scripts/ops/restore_from_nas.sh"
+run_gate "backup/restore verification hooks" bash -lc "cd '$ROOT' && if command -v rg >/dev/null 2>&1; then rg -q 'backup_verify_hook=' scripts/ops/backup_to_nas.sh && rg -q 'restore_verify_hook=' scripts/ops/restore_from_nas.sh; else grep -q 'backup_verify_hook=' scripts/ops/backup_to_nas.sh && grep -q 'restore_verify_hook=' scripts/ops/restore_from_nas.sh; fi"
 
 log "[healthcheck] All checks passed"
