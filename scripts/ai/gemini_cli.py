@@ -44,12 +44,14 @@ def build_prompt(
     user_prompt: str,
     domain: str | None,
     context_files: list[Path],
+    skip_alignment: bool,
 ) -> str:
     parts: list[str] = []
 
-    alignment = root / "docs" / "ai" / "GEMINI_ALIGNMENT_PROMPT.md"
-    if alignment.exists():
-        parts.append("## SYSTEM ALIGNMENT\n" + read_text(alignment))
+    if not skip_alignment:
+        alignment = root / "docs" / "ai" / "GEMINI_ALIGNMENT_PROMPT.md"
+        if alignment.exists():
+            parts.append("## SYSTEM ALIGNMENT\n" + read_text(alignment))
 
     if domain:
         parts.append(f"## DOMAIN\n{domain}")
@@ -68,6 +70,8 @@ def build_prompt(
 def run_gemini(
     prompt: str,
     approval_mode: str,
+    model: str | None,
+    extensions: list[str],
     cwd: Path | None,
     timeout_seconds: int,
 ) -> tuple[int, str]:
@@ -88,6 +92,12 @@ def run_gemini(
         "--approval-mode",
         approval_mode,
     ]
+    if model:
+        cmd.extend(["-m", model])
+    for ext in extensions:
+        clean = ext.strip()
+        if clean:
+            cmd.extend(["--extensions", clean])
     try:
         cp = subprocess.run(
             cmd,
@@ -155,7 +165,48 @@ def parse_args() -> argparse.Namespace:
         default=600,
         help="Timeout for gemini subprocess",
     )
+    parser.add_argument("--model", help="Gemini model override")
+    parser.add_argument(
+        "--extension",
+        action="append",
+        default=[],
+        help="Enable only the given extension name (repeatable)",
+    )
+    parser.add_argument(
+        "--require-main",
+        action="store_true",
+        help="Fail if current git branch is not main",
+    )
+    parser.add_argument(
+        "--skip-alignment",
+        action="store_true",
+        help="Skip injection of GEMINI_ALIGNMENT_PROMPT.md for faster focused runs",
+    )
     return parser.parse_args()
+
+
+def enforce_main_branch(cwd: Path | None, root: Path) -> tuple[bool, str]:
+    repo_dir = cwd or root
+    try:
+        cp = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(repo_dir),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=8,
+        )
+    except Exception as exc:
+        return False, f"[error] could not verify current branch: {exc}"
+    if cp.returncode != 0:
+        msg = (cp.stderr or cp.stdout or "").strip()
+        return False, f"[error] git branch check failed: {msg or 'unknown git error'}"
+    branch = (cp.stdout or "").strip()
+    if branch != "main":
+        return False, (
+            f"[error] main-only policy active: current branch is '{branch}', required 'main'."
+        )
+    return True, ""
 
 
 def main() -> int:
@@ -182,13 +233,28 @@ def main() -> int:
         return 2
 
     context_files = [Path(p) for p in args.context_file]
-    final_prompt = build_prompt(root, user_prompt, args.domain, context_files)
+    final_prompt = build_prompt(
+        root=root,
+        user_prompt=user_prompt,
+        domain=args.domain,
+        context_files=context_files,
+        skip_alignment=args.skip_alignment,
+    )
     cwd = Path(args.cwd) if args.cwd else None
+    extensions = args.extension or []
+
+    if args.require_main:
+        ok, message = enforce_main_branch(cwd, root)
+        if not ok:
+            print(message, file=sys.stderr)
+            return 2
 
     try:
         rc, raw = run_gemini(
             final_prompt,
             approval_mode=approval_mode,
+            model=args.model,
+            extensions=extensions,
             cwd=cwd,
             timeout_seconds=args.timeout_seconds,
         )
