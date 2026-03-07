@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import datetime
+import json
 import os
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Dict, List, Literal
 
 import requests
+
+from app.config import Config
 
 Tone = Literal["freundlich", "neutral", "bestimmt", "streng"]
 Length = Literal["kurz", "normal", "ausfuehrlich"]
@@ -30,6 +34,7 @@ class MailOptions:
     deadline_days: int = 7
     include_signature_block: bool = True
     rewrite_mode: RewriteMode = "local"  # local rules by default
+    external_translation_opt_in: bool = False
 
 
 @dataclass
@@ -53,12 +58,31 @@ class MailAgent:
     def __init__(self):
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
         self.ollama_model = os.getenv("KUKANILEA_OLLAMA_MODEL", "llama3.1")
+        self._audit_events: list[dict[str, object]] = []
 
         # Optional: DeepL API (only if you have a key)
         self.deepl_api_key = os.getenv("DEEPL_API_KEY", "")
         self.deepl_api_url = os.getenv(
             "DEEPL_API_URL", "https://api-free.deepl.com/v2/translate"
         )
+
+    def _audit(self, *, action: str, status: str, meta: dict[str, object] | None = None) -> None:
+        self._audit_events.append({"action": action, "status": status, "meta": meta or {}})
+
+    def _system_settings_path(self) -> Path:
+        return Config.USER_DATA_ROOT / "system_settings.json"
+
+    def _external_translation_enabled(self) -> bool:
+        settings_file = self._system_settings_path()
+        if not settings_file.exists():
+            return False
+        try:
+            payload = json.loads(settings_file.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        return bool(payload.get("external_apis_enabled")) and bool(payload.get("external_translation_enabled"))
 
     def _deadline_text(self, opt: MailOptions) -> str:
         if not opt.set_deadline:
@@ -200,6 +224,11 @@ class MailAgent:
         # NOTE: DeepL API is primarily translation. Some accounts/products provide formal/informal & tone controls,
         # but “Write” is not guaranteed via this endpoint. We keep it optional and safe.
         if not self.deepl_api_key:
+            self._audit(
+                action="mail.translation.external",
+                status="blocked",
+                meta={"reason": "missing_api_key", "provider": "deepl"},
+            )
             return text
         payload = {
             "auth_key": self.deepl_api_key,
@@ -211,10 +240,16 @@ class MailAgent:
         data = r.json()
         translations = data.get("translations", [])
         if translations:
+            self._audit(
+                action="mail.translation.external",
+                status="allowed",
+                meta={"provider": "deepl", "endpoint": self.deepl_api_url},
+            )
             return translations[0].get("text", text)
         return text
 
     def generate(self, inp: MailInput, opt: MailOptions) -> Dict[str, object]:
+        self._audit_events = []
         subject = self._subject(inp, opt)
         base_body = self._body(inp, opt)
 
@@ -224,7 +259,29 @@ class MailAgent:
         elif opt.rewrite_mode == "ollama":
             body = self._ollama_rewrite(base_body, opt)
         elif opt.rewrite_mode == "deepl_api":
-            body = self._deepl_api_rewrite(base_body)
+            if not opt.external_translation_opt_in:
+                self._audit(
+                    action="mail.translation.external",
+                    status="blocked",
+                    meta={"reason": "opt_in_required", "provider": "deepl"},
+                )
+                body = base_body
+            elif not self._external_translation_enabled():
+                self._audit(
+                    action="mail.translation.external",
+                    status="blocked",
+                    meta={
+                        "reason": "feature_flag_disabled",
+                        "provider": "deepl",
+                        "required_flags": [
+                            "external_apis_enabled",
+                            "external_translation_enabled",
+                        ],
+                    },
+                )
+                body = base_body
+            else:
+                body = self._deepl_api_rewrite(base_body)
         else:
             body = base_body
 
@@ -245,6 +302,7 @@ class MailAgent:
             "body": body,
             "checklist": checklist,
             "options": asdict(opt),
+            "audit_events": list(self._audit_events),
         }
 
 

@@ -159,6 +159,7 @@ def test_settings_page_exposes_ops_release_stubs_and_defaults(tmp_path: Path, mo
     assert 'data-testid="policies-stub-status"' in html
     assert 'name="memory_retention_days" value="60"' in html
     assert 'name="external_apis_enabled"' in html
+    assert 'name="external_translation_enabled"' in html
 
 
 def test_system_settings_defaults_external_api_off_and_retention_60(tmp_path: Path, monkeypatch):
@@ -169,6 +170,7 @@ def test_system_settings_defaults_external_api_off_and_retention_60(tmp_path: Pa
 
     settings = _load_system_settings()
     assert settings["external_apis_enabled"] is False
+    assert settings["external_translation_enabled"] is False
     assert settings["memory_retention_days"] == 60
     assert settings["backup_verify_hook_enabled"] is True
     assert settings["restore_verify_hook_enabled"] is True
