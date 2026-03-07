@@ -105,7 +105,7 @@ def server(tmp_path_factory):
         process.join(timeout=5)
 
 
-def test_full_workflow(page: Page, server: str):
+def test_full_workflow(page: Page, server: str, tmp_path: Path):
     """
     Tests the full UI workflow:
     Login -> Upload -> OCR Transition -> Review
@@ -124,8 +124,8 @@ def test_full_workflow(page: Page, server: str):
     page.goto(f"{server}/upload")
     expect(page).to_have_url(f"{server}/upload")
 
-    # Create a dummy file
-    test_file = Path("test_e2e_document.txt")
+    # Use a per-test temp file to avoid parallel cleanup races.
+    test_file = tmp_path / "test_e2e_document.txt"
     test_file.write_text("KDNR: 12345\nRechnung vom 01.01.2026\nBetrag: 100 EUR")
 
     page.set_input_files('input[name="file"]', str(test_file))
@@ -151,7 +151,7 @@ def test_full_workflow(page: Page, server: str):
         expect(page.get_by_text("Metadaten", exact=True)).to_be_visible()
 
     # Cleanup
-    test_file.unlink()
+    test_file.unlink(missing_ok=True)
 
 
 def test_unauthorized_access(page: Page, server: str):
