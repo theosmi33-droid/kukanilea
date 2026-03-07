@@ -602,6 +602,7 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
         "legacy_summary": _route_available("/api/mail/summary", "GET"),
         "legacy_health": _route_available("/api/mail/health", "GET"),
         "postfach_summary": _route_available("/api/emailpostfach/summary", "GET"),
+        "postfach_health": _route_available("/api/emailpostfach/health", "GET"),
         "postfach_ingest": _route_available("/api/emailpostfach/ingest", "POST"),
         "postfach_send": _route_available("/api/emailpostfach/draft/<draft_id>/send", "POST"),
     }
@@ -622,6 +623,8 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
 
             auth_db = current_app.extensions.get("auth_db")
             if auth_db is not None:
+                service = EmailpostfachService(db_path=str(auth_db.path))
+                service.ensure_tables()
                 con = auth_db._db()
                 try:
                     for table_name in table_checks:
@@ -647,7 +650,6 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
                 finally:
                     con.close()
 
-                service = EmailpostfachService(db_path=str(auth_db.path))
                 probe = service.send_draft(
                     tenant_id=tenant,
                     actor="summary_probe",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import sqlite3
 from flask import Blueprint, jsonify, request, current_app, Response
 
 from app.auth import login_required, current_tenant
@@ -105,7 +106,40 @@ def api_mail_health():
 @login_required
 def api_emailpostfach_summary():
     tenant = str(current_tenant() or "default")
-    return jsonify(_postfach_service().summary(tenant_id=tenant))
+    try:
+        return jsonify(_postfach_service().summary(tenant_id=tenant))
+    except (sqlite3.Error, RuntimeError):
+        logger.exception("api_emailpostfach_summary_runtime_unavailable")
+        return (
+            jsonify(
+                tool="emailpostfach",
+                status="degraded",
+                degraded_reason="email_runtime_unavailable",
+                metrics={"unread_count": 0, "follow_ups_due": 0},
+                last_sync="",
+            ),
+            503,
+        )
+
+
+@bp.route("/api/emailpostfach/health", methods=["GET"])
+@login_required
+def api_emailpostfach_health():
+    tenant = str(current_tenant() or "default")
+    try:
+        summary = _postfach_service().summary(tenant_id=tenant)
+        return jsonify(tool="emailpostfach", status="ok", checks={"summary_runtime": True}, summary=summary), 200
+    except (sqlite3.Error, RuntimeError):
+        logger.exception("api_emailpostfach_health_runtime_unavailable")
+        return (
+            jsonify(
+                tool="emailpostfach",
+                status="degraded",
+                degraded_reason="email_runtime_unavailable",
+                checks={"summary_runtime": False},
+            ),
+            503,
+        )
 
 
 @bp.route("/api/emailpostfach/ingest", methods=["POST"])

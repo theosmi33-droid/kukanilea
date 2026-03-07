@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from app.db import AuthDB
 from app.modules.mail.postfach import EmailpostfachService, ProviderAuthError, ProviderNetworkError, StubInboxProvider
 from tests.time_utils import utc_now_iso
@@ -95,9 +97,25 @@ def test_unit_ingest_summary_and_send_audit(tmp_path):
     )
     blocked = service.send_draft(tenant_id="KUKANILEA", actor="admin", draft_id=draft["id"], confirm=False)
     assert blocked["status"] == "blocked"
+    assert blocked["confirm_required"] is True
 
     sent = service.send_draft(tenant_id="KUKANILEA", actor="admin", draft_id=draft["id"], confirm=True)
     assert sent["status"] == "sent"
+
+
+def test_unit_service_bootstraps_postfach_tables_without_auth_init(tmp_path):
+    db_path = tmp_path / "mail_only.sqlite3"
+    service = EmailpostfachService(db_path=str(db_path))
+
+    with sqlite3.connect(db_path) as con:
+        names = {
+            row[0]
+            for row in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'emailpostfach_%'"
+            ).fetchall()
+        }
+
+    assert {"emailpostfach_messages", "emailpostfach_drafts", "emailpostfach_audit"}.issubset(names)
 
 
 def test_unit_ingest_failure_auth_and_network(tmp_path):
@@ -137,6 +155,12 @@ def test_integration_emailpostfach_api_flow(tmp_path, monkeypatch):
     assert summary_payload["metrics"]["unread_count"] >= 1
     assert "follow_ups_due" in summary_payload["metrics"]
     assert "last_sync" in summary_payload
+
+    health = client.get("/api/emailpostfach/health")
+    assert health.status_code == 200
+    health_payload = health.get_json()
+    assert health_payload["tool"] == "emailpostfach"
+    assert health_payload["status"] == "ok"
 
     draft_resp = client.post(
         "/api/emailpostfach/draft/generate",
@@ -179,3 +203,20 @@ def test_integration_ingest_failure_responses(tmp_path, monkeypatch):
     assert auth_fail.get_json()["error"] == "provider_auth_failed"
     assert network_fail.status_code == 503
     assert network_fail.get_json()["error"] == "provider_network_unavailable"
+
+
+def test_integration_emailpostfach_summary_degrades_when_runtime_missing(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    from app.routes import email as email_routes
+
+    def _boom():
+        raise sqlite3.OperationalError("db unavailable")
+
+    monkeypatch.setattr(email_routes, "_postfach_service", _boom)
+
+    summary = client.get("/api/emailpostfach/summary")
+    assert summary.status_code == 503
+    body = summary.get_json()
+    assert body["tool"] == "emailpostfach"
+    assert body["status"] == "degraded"
+    assert body["degraded_reason"] == "email_runtime_unavailable"
