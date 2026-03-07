@@ -817,6 +817,35 @@ def _settings_action_read(payload: dict[str, object]) -> dict[str, object]:
     return {"pages": ["/settings", "/admin/logs", "/admin/audit"], "security_headers": "active"}
 
 
+def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
+    from app.routes.admin_tenants import _load_system_settings, _save_system_settings
+
+    allowed_keys = {
+        "language",
+        "timezone",
+        "backup_interval",
+        "log_level",
+        "external_apis_enabled",
+        "external_translation_enabled",
+        "memory_retention_days",
+        "backup_verify_hook_enabled",
+        "restore_verify_hook_enabled",
+        "mesh_mdns_enabled",
+        "mesh_tailscale_enabled",
+        "briefing_rss_feeds",
+        "briefing_cron",
+    }
+
+    key = str(payload.get("key") or "").strip()
+    if key not in allowed_keys:
+        raise ValueError("setting_key_invalid")
+
+    settings = _load_system_settings()
+    settings[key] = payload.get("value")
+    _save_system_settings(settings)
+    return {"updated": key, "value": settings.get(key), "settings": settings}
+
+
 SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
     tool="settings",
     actions=[
@@ -828,6 +857,31 @@ SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
             input_schema={"type": "object", "properties": {}},
             output_schema={"type": "object", "properties": {"pages": {"type": "array"}}},
             handler=_settings_action_read,
+        ),
+        ActionDefinition(
+            name="setting.update",
+            title="Einstellung aktualisieren",
+            permission="write",
+            risk="medium",
+            input_schema={
+                "type": "object",
+                "required": ["key"],
+                "properties": {
+                    "key": {"type": "string"},
+                    "value": {},
+                    "confirm": {"type": "string"},
+                    "approval_token": {"type": "string"},
+                },
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "updated": {"type": "string"},
+                    "value": {},
+                    "settings": {"type": "object"},
+                },
+            },
+            handler=_settings_action_update,
         ),
     ],
 )
