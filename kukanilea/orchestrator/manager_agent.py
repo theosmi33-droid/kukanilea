@@ -149,11 +149,40 @@ class DeterministicToolRouter:
             candidate_actions=("dms.invoice.search",),
         ),
         IntentSpec(
+            name="document_search",
+            patterns=(
+                re.compile(r"\b(dokument|vertrag|akte|archiv|dms)\b", re.IGNORECASE),
+            ),
+            candidate_actions=("dms.document.search",),
+        ),
+        IntentSpec(
             name="material_check",
             patterns=(
                 re.compile(r"\b(material|lager|bestand)\b", re.IGNORECASE),
             ),
             candidate_actions=("warehouse.material.status",),
+        ),
+        IntentSpec(
+            name="supplier_lookup",
+            patterns=(
+                re.compile(r"\b(lieferant\w*|supplier|bezugsquelle)\b", re.IGNORECASE),
+            ),
+            candidate_actions=("warehouse.supplier.search",),
+        ),
+        IntentSpec(
+            name="mail_response",
+            patterns=(
+                re.compile(r"\b(mail|email|e-mail)\b.*\b(antworte|antworten|reply|senden)\b|\b(antworte|antworten|reply|senden)\b.*\b(mail|email|e-mail)\b", re.IGNORECASE),
+            ),
+            candidate_actions=("mail.mail.reply",),
+            required_entities=("message",),
+        ),
+        IntentSpec(
+            name="mail_search",
+            patterns=(
+                re.compile(r"\b(mail|email|e-mail|postfach|inbox)\b", re.IGNORECASE),
+            ),
+            candidate_actions=("mail.inbox.search",),
         ),
         IntentSpec(
             name="messenger_response",

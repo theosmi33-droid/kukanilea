@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from kukanilea.orchestrator import ApprovalRuntime, EventBus, ManagerAgent
 
 
@@ -17,6 +19,94 @@ def test_router_maps_read_intent_to_registered_action_deterministically() -> Non
     assert result.plan is not None
     assert result.plan.execution_mode == "read"
 
+
+
+
+@pytest.mark.parametrize(
+    ("message", "intent_name", "action", "execution_mode", "risk_assessment", "missing_context"),
+    [
+        (
+            "Zeig bitte alle Dokumente im DMS",
+            "document_search",
+            "dms.document.search",
+            "read",
+            "low",
+            [],
+        ),
+        (
+            "Suche den Lieferanten Müller",
+            "supplier_lookup",
+            "warehouse.supplier.search",
+            "read",
+            "low",
+            [],
+        ),
+        (
+            "Zeig mir das Mail Postfach",
+            "mail_search",
+            "mail.inbox.search",
+            "read",
+            "low",
+            [],
+        ),
+        (
+            "Mail antworten",
+            "mail_response",
+            "mail.mail.reply",
+            "propose",
+            "high",
+            ["message"],
+        ),
+    ],
+)
+def test_router_recognizes_new_production_like_intents_with_consistent_plan(
+    message: str,
+    intent_name: str,
+    action: str,
+    execution_mode: str,
+    risk_assessment: str,
+    missing_context: list[str],
+) -> None:
+    agent = ManagerAgent(external_calls_enabled=True)
+
+    result = agent.route(message, {"tenant": "KUKANILEA", "user": "admin"})
+
+    assert result.plan is not None
+    assert result.plan.intent_name == intent_name
+    assert result.plan.confidence > 0
+    assert result.plan.candidate_actions == [action]
+    assert result.plan.missing_context == missing_context
+    assert result.plan.risk_assessment == risk_assessment
+    assert result.plan.execution_mode == execution_mode
+
+
+def test_mail_response_with_message_requires_approval_and_routes_after_approval() -> None:
+    agent = ManagerAgent(external_calls_enabled=True)
+
+    first = agent.route(
+        "Bitte antworte per Mail an den Kunden mit kurzer Rückmeldung",
+        {"tenant": "KUKANILEA", "user": "admin"},
+    )
+
+    assert first.plan is not None
+    assert first.plan.intent_name == "mail_response"
+    assert first.plan.missing_context == []
+    assert first.plan.execution_mode == "confirm"
+    assert first.plan.risk_assessment == "high"
+    assert first.status == "confirm_required"
+
+    approval_id = first.audit_event["approval_id"]
+    approved = agent.approvals.approve(approval_id, tenant="KUKANILEA", approver_user="security-admin")
+    assert approved is not None
+
+    second = agent.route(
+        "Bitte antworte per Mail an den Kunden mit kurzer Rückmeldung",
+        {"tenant": "KUKANILEA", "user": "admin", "approval_id": approval_id},
+    )
+
+    assert second.ok is True
+    assert second.status == "routed"
+    assert second.decision.action == "mail.mail.reply"
 
 def test_write_without_approval_is_blocked_and_creates_challenge() -> None:
     bus = EventBus()
