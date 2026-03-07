@@ -7,8 +7,9 @@ from enum import Enum
 from typing import Any, Callable, Mapping
 
 from .action_catalog import create_action_registry
-from .approval_runtime import ApprovalRuntime
 from .action_registry import ActionRegistry
+from .approval_runtime import ApprovalRuntime
+
 INJECTION_PATTERNS = (
     re.compile(r"\bignore\s+previous\s+instructions\b", re.IGNORECASE),
     re.compile(r"\bignore\s+all\s+instructions\b", re.IGNORECASE),
@@ -456,6 +457,7 @@ class ManagerAgent:
             approval = None
 
         if approval and not approval.allowed:
+            approval_state = "confirm_required" if approval.reason == "approval_required" else "denied"
             result = RouteResult(
                 ok=False,
                 status="confirm_required",
@@ -469,7 +471,10 @@ class ManagerAgent:
                 message,
                 ctx,
                 result,
-                extra={"approval_id": approval.challenge_id},
+                extra={
+                    "approval_id": approval.challenge_id,
+                    "approval_state": approval_state,
+                },
             )
             return result
 
@@ -503,6 +508,9 @@ class ManagerAgent:
         if warnings:
             extra["guard_decision"] = GuardDecision.ALLOW_WITH_WARNING.value
             extra["guard_warnings"] = sorted(set(warnings))
+        if approval and approval.allowed:
+            extra["approval_state"] = "approved"
+            extra["approval_id"] = approval.challenge_id
 
         result = RouteResult(ok=True, status="routed", decision=decision, plan=plan)
         self._record("manager_agent.routed", message, ctx, result, extra=extra or None)
@@ -533,6 +541,7 @@ class ManagerAgent:
         }
         if extra:
             payload.update(dict(extra))
+        payload["audit_states"] = self._derive_audit_states(result=result, payload=payload)
         self.event_bus.emit(event_type, payload)
         result.audit_event = payload
         if callable(self.audit_logger):
@@ -547,3 +556,28 @@ class ManagerAgent:
         self.event_bus.emit(payload.get("event", "approval.unknown"), payload)
         if callable(self.audit_logger):
             self.audit_logger(payload)
+
+    @staticmethod
+    def _derive_audit_states(*, result: RouteResult, payload: Mapping[str, Any]) -> list[str]:
+        states: list[str] = []
+
+        if result.status == "confirm_required":
+            states.append("confirm_required")
+        if payload.get("approval_state") == "denied":
+            states.append("denied")
+        if payload.get("approval_state") == "approved":
+            states.append("approved")
+        if result.status in {"blocked", "offline_blocked", "needs_review"}:
+            states.append("blocked")
+        if result.ok and result.status == "routed":
+            states.append("routed")
+        if result.status in {"needs_clarification", "failed"}:
+            states.append("failed")
+        if not result.ok and not states:
+            states.append("failed")
+
+        deduplicated: list[str] = []
+        for state in states:
+            if state not in deduplicated:
+                deduplicated.append(state)
+        return deduplicated
