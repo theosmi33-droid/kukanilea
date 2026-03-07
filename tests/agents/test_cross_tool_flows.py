@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 
 from kukanilea.orchestrator.cross_tool_flows import (
+    AtomicActionRegistry,
     CrossToolFlowEngine,
+    FlowDefinition,
+    FlowStep,
     build_core_flows,
     create_default_registry,
 )
@@ -288,3 +291,40 @@ def test_flow_write_retry_with_same_idempotency_key_replays() -> None:
     assert second.ok is True
     assert first.executed_steps == second.executed_steps
     assert any(event["event"] == "flow.idempotent_replay" for event in second.audit_evidence)
+def test_engine_rejects_unregistered_actions_during_flow_build() -> None:
+    registry = AtomicActionRegistry()
+    flows = {
+        "flow_invalid": FlowDefinition(
+            flow_id="flow_invalid",
+            title="Invalid",
+            trigger="manual",
+            steps=(FlowStep("step_1", "missing_action"),),
+            required_context=(),
+            confirmation_points=(),
+            audit_events=("flow.step_failed",),
+            fallback_policy="manual",
+        )
+    }
+
+    with pytest.raises(ValueError, match="action_not_registered"):
+        CrossToolFlowEngine(action_registry=registry, flows=flows)
+
+
+def test_engine_rejects_write_steps_without_confirmation_points() -> None:
+    registry = AtomicActionRegistry()
+    registry.register("write_action", lambda payload: {"ok": bool(payload is not None)})
+    flows = {
+        "flow_invalid": FlowDefinition(
+            flow_id="flow_invalid",
+            title="Invalid Write Gate",
+            trigger="manual",
+            steps=(FlowStep("write_step", "write_action", writes_state=True),),
+            required_context=(),
+            confirmation_points=(),
+            audit_events=("flow.confirm_required",),
+            fallback_policy="manual",
+        )
+    }
+
+    with pytest.raises(ValueError, match="write_steps_require_confirmation"):
+        CrossToolFlowEngine(action_registry=registry, flows=flows)
