@@ -15,7 +15,7 @@ from app.core.upload_pipeline import process_upload, save_upload_stream
 from app.core.gewerke_profiles import get_active_profile
 from app.contracts.tool_contracts import build_tool_health, build_tool_summary
 from app.modules.upload.document_processing import register_document_upload, run_virus_scan_hook
-from app.modules.upload.ingestion import ingest_unstructured_input
+from app.modules.upload.ingestion import ingest_unstructured_bytes
 from app.rate_limit import upload_limiter
 
 logger = logging.getLogger("kukanilea.upload")
@@ -287,21 +287,29 @@ def api_upload_ingest():
         raw_text = str(request.form.get("text") or request.form.get("transcript") or "")
         metadata = {}
 
-    if not raw_text.strip() and request.files.get("file") is not None:
-        file_storage = request.files.get("file")
-        if file_storage is not None and file_storage.filename:
-            source = str(request.form.get("source") or Path(file_storage.filename).suffix.lstrip(".") or "text")
-            file_bytes = file_storage.read()
-            raw_text = file_bytes.decode("utf-8", errors="replace")
-            metadata["filename"] = file_storage.filename
-            metadata["content_type"] = str(file_storage.content_type or "")
-
-    payload = ingest_unstructured_input(
-        source=source,
-        tenant=tenant,
-        text=raw_text,
-        metadata=metadata,
-    )
+    file_storage = request.files.get("file") if request.files else None
+    if file_storage is not None and file_storage.filename:
+        source = str(request.form.get("source") or Path(file_storage.filename).suffix.lstrip(".") or source)
+        file_bytes = file_storage.read()
+        metadata["filename"] = file_storage.filename
+        metadata["content_type"] = str(file_storage.content_type or "")
+        payload = ingest_unstructured_bytes(
+            source=source,
+            tenant=tenant,
+            payload_bytes=file_bytes,
+            metadata=metadata,
+            filename=str(file_storage.filename or ""),
+            content_type=str(file_storage.content_type or ""),
+        )
+    else:
+        payload = ingest_unstructured_bytes(
+            source=source,
+            tenant=tenant,
+            payload_bytes=raw_text.encode("utf-8"),
+            metadata=metadata,
+            filename=str(metadata.get("filename") or ""),
+            content_type=str(metadata.get("content_type") or ""),
+        )
     return jsonify(payload), 200
 
 
