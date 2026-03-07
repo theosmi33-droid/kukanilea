@@ -2543,23 +2543,8 @@ def forgot_password():
                     code = reset_code
         message = _blind_success_message()
 
-    return render_template_string(
-        """
-        <!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Passwort vergessen</title></head>
-        <body style="font-family:system-ui;max-width:560px;margin:40px auto;line-height:1.5;">
-          <h1>Passwort vergessen</h1>
-          <form method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <label>Benutzername</label>
-            <input name="username" style="display:block;width:100%;padding:8px;margin:8px 0 12px;" required>
-            <button type="submit">Code anfordern</button>
-          </form>
-          {% if message %}<p>{{ message }}</p>{% endif %}
-          {% if code %}<p><strong>DEV Local Code:</strong> {{ code }}</p>{% endif %}
-          <p><a href="{{ url_for('web.reset_with_code') }}">Code einlösen</a></p>
-          <p><a href="{{ url_for('web.login') }}">Zurück zum Login</a></p>
-        </body></html>
-        """,
+    return render_template(
+        "auth/forgot_password.html",
         message=message,
         code=code,
     )
