@@ -90,6 +90,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Install Playwright Chromium (strict doctor prerequisite)
+        run: |
+          python -m playwright install chromium
+
       - name: Healthcheck core gates (without duplicate pytest run)
         run: |
           bash scripts/ops/healthcheck.sh --skip-pytest --strict-doctor
