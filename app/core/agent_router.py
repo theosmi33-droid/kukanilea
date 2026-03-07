@@ -11,6 +11,7 @@ from app.mia_audit import (
     canonical_mia_payload,
     emit_mia_event_safe,
 )
+from app.tools.action_registry import action_registry
 
 
 READ_KEYWORDS = {
@@ -51,14 +52,13 @@ HIGH_RISK_KEYWORDS = {
 @dataclass(frozen=True)
 class IntentResult:
     tool: str
+    action_name: str | None
     confidence: float
     needed_clarifications: list[str]
 
 
-
 def _tokenize(message: str) -> set[str]:
     return {token.strip(".,!?;:\"'()[]{}") for token in str(message or "").lower().split() if token.strip()}
-
 
 
 def classify_intent(message: str, audit_context: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -66,6 +66,7 @@ def classify_intent(message: str, audit_context: dict[str, Any] | None = None) -
     tenant_id = str(audit_context.get("tenant_id") or audit_context.get("tenant") or "KUKANILEA")
     user_id = str(audit_context.get("user_id") or "system")
     route_ref = str(audit_context.get("route_ref") or f"{tenant_id}:{user_id}:intent")
+
     tokens = _tokenize(message)
     if not tokens:
         emit_mia_event_safe(
@@ -84,6 +85,7 @@ def classify_intent(message: str, audit_context: dict[str, Any] | None = None) -
         )
         return IntentResult(
             tool="clarify.intent",
+            action_name=None,
             confidence=0.0,
             needed_clarifications=["Bitte beschreibe, welche Aktion ausgeführt werden soll."],
         ).__dict__
@@ -102,6 +104,68 @@ def classify_intent(message: str, audit_context: dict[str, Any] | None = None) -
             meta={"token_count": len(tokens)},
         ),
     )
+
+    best_action = None
+    max_matches = 0
+    synonyms = {
+        "mail": {"emailpostfach", "mail"},
+        "email": {"emailpostfach", "mail"},
+        "postfach": {"emailpostfach"},
+        "nachricht": {"messenger", "chat"},
+        "chat": {"messenger", "chat"},
+        "datei": {"upload", "filesystem"},
+        "file": {"upload", "filesystem"},
+        "aufgabe": {"aufgaben", "workitem"},
+        "task": {"aufgaben", "workitem"},
+        "termin": {"kalender", "appointment"},
+        "rechnung": {"upload", "zugferd", "lexoffice"},
+        "invoice": {"upload", "zugferd", "lexoffice"},
+        "sende": {"send"},
+        "schicke": {"send"},
+        "erstelle": {"create"},
+        "neu": {"create"},
+        "lösche": {"delete"},
+        "entferne": {"delete"},
+        "ändere": {"update"},
+        "suche": {"search", "read"},
+    }
+
+    expanded_tokens = set(tokens)
+    for token in tokens:
+        expanded_tokens.update(synonyms.get(token, set()))
+
+    for name in action_registry._actions_by_name.keys():
+        name_parts = name.lower().split(".")
+        score = 0
+        for index, part in enumerate(name_parts):
+            if part in expanded_tokens:
+                score += 2 if index == len(name_parts) - 1 else 1
+        if score > max_matches:
+            max_matches = score
+            best_action = name
+
+    if best_action and max_matches >= 3:
+        action_def = action_registry._actions_by_name[best_action]
+        emit_mia_event_safe(
+            event_type=MIA_EVENT_ACTION_SELECTED,
+            entity_type="agent_router",
+            entity_ref=route_ref,
+            tenant_id=tenant_id,
+            payload=canonical_mia_payload(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                action=best_action,
+                status="selected",
+                risk=str(action_def.risk_level or "LOW").lower(),
+                meta={"confidence": 0.9, "tool": action_def.tool_name},
+            ),
+        )
+        return IntentResult(
+            tool=action_def.tool_name,
+            action_name=best_action,
+            confidence=0.9,
+            needed_clarifications=[],
+        ).__dict__
 
     has_high_risk = bool(tokens & HIGH_RISK_KEYWORDS)
     has_write = bool(tokens & WRITE_KEYWORDS)
@@ -146,6 +210,7 @@ def classify_intent(message: str, audit_context: dict[str, Any] | None = None) -
                 meta={"clarifications": clarifications},
             ),
         )
+
     emit_mia_event_safe(
         event_type=MIA_EVENT_ACTION_SELECTED,
         entity_type="agent_router",
@@ -161,11 +226,10 @@ def classify_intent(message: str, audit_context: dict[str, Any] | None = None) -
         ),
     )
 
-    return IntentResult(tool=tool, confidence=confidence, needed_clarifications=clarifications).__dict__
+    return IntentResult(tool=tool, action_name=None, confidence=confidence, needed_clarifications=clarifications).__dict__
 
 
-
-def plan_actions(message: str, context: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
+def plan_actions(message: str, context: dict[str, Any] | None) -> dict[str, Any]:
     context = context or {}
     intent = classify_intent(message, context)
     steps: list[dict[str, Any]] = []
@@ -182,16 +246,26 @@ def plan_actions(message: str, context: dict[str, Any] | None) -> dict[str, list
         )
         return {"steps": steps}
 
+    action_name = intent.get("action_name")
     action_type = "read"
-    if intent["tool"] == "core.write_action":
-        action_type = "write"
-    elif intent["tool"] == "core.high_risk_action":
-        action_type = "high_risk"
+
+    if action_name:
+        action_def = action_registry._actions_by_name.get(action_name)
+        if action_def:
+            if action_def.is_critical:
+                action_type = "high_risk"
+            elif str(action_def.risk_level).upper() == "MEDIUM":
+                action_type = "write"
+    else:
+        if intent["tool"] == "core.write_action":
+            action_type = "write"
+        elif intent["tool"] == "core.high_risk_action":
+            action_type = "high_risk"
 
     steps.append(
         {
             "id": "step-1",
-            "tool": intent["tool"],
+            "tool": action_name or intent["tool"],
             "action_type": action_type,
             "params": {
                 "message": message,

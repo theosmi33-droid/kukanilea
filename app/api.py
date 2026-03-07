@@ -5,18 +5,23 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, render_template, request, session
 
 from app.mail.intake import envelope_from_payload, normalize_intake_payload
+from app.modules.aufgaben.contracts import build_health as build_aufgaben_health
+from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
 from app.modules.aufgaben.contracts import create_task
 from app.modules.aufgaben.logic import delete_task as aufgaben_delete_task
 from app.modules.aufgaben.logic import get_task as aufgaben_get_task
 from app.modules.aufgaben.logic import list_tasks as aufgaben_list_tasks
-from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
 from app.modules.aufgaben.logic import update_task as aufgaben_update_task
 from app.modules.kalender.contracts import build_health as build_kalender_health
 from app.modules.kalender.contracts import build_summary as build_kalender_summary
 from app.modules.kalender.contracts import create_invitation
 from app.modules.kalender.contracts import create_event
 from app.modules.kalender.contracts import update_event
+from app.modules.projekte.contracts import build_health as build_projekte_health
+from app.modules.projekte.contracts import build_summary as build_projekte_summary
 from app.modules.projekte.contracts import create_project
+from app.modules.zeiterfassung.contracts import build_health as build_zeiterfassung_health
+from app.modules.zeiterfassung.contracts import build_summary as build_zeiterfassung_summary
 from app.research.service import generate_summary
 from app.modules.projects.logic import ProjectManager
 from app.mia_audit import (
@@ -152,8 +157,42 @@ def kalender_create_invitation():
 
 
 @bp.get("/aufgaben/summary")
+@search_limiter.limit_required
 def aufgaben_summary_route():
     return jsonify(build_aufgaben_summary(tenant=_tenant()))
+
+
+@bp.get("/aufgaben/health")
+@search_limiter.limit_required
+def aufgaben_health():
+    payload, code = build_aufgaben_health(_tenant())
+    return jsonify(payload), code
+
+
+@bp.get("/projekte/summary")
+@search_limiter.limit_required
+def projekte_summary():
+    return jsonify(build_projekte_summary(_tenant()))
+
+
+@bp.get("/projekte/health")
+@search_limiter.limit_required
+def projekte_health():
+    payload, code = build_projekte_health(_tenant())
+    return jsonify(payload), code
+
+
+@bp.get("/zeiterfassung/summary")
+@search_limiter.limit_required
+def zeiterfassung_summary():
+    return jsonify(build_zeiterfassung_summary(_tenant()))
+
+
+@bp.get("/zeiterfassung/health")
+@search_limiter.limit_required
+def zeiterfassung_health():
+    payload, code = build_zeiterfassung_health(_tenant())
+    return jsonify(payload), code
 
 
 @bp.get("/aufgaben")

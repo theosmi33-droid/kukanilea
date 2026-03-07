@@ -14,6 +14,8 @@ class ZugferdTool(BaseTool):
     """
 
     name = "generate_zugferd_xml"
+    domain = "UPLOAD"
+    entity = "ZUGFERD"
     description = "Erstellt eine ZUGFeRD-kompatible XML-Datei basierend auf Rechnungsdaten."
     input_schema = {
         "type": "object",

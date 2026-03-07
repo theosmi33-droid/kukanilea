@@ -13,6 +13,8 @@ class MailGenerateTool(BaseTool):
     """
 
     name = "mail_generate"
+    domain = "EMAILPOSTFACH"
+    entity = "MAIL"
     description = "Erstellt einen professionellen E-Mail-Entwurf basierend auf Kontext und Fakten."
     input_schema = {
         "type": "object",

@@ -13,6 +13,8 @@ class MemoryStoreTool(BaseTool):
     """
 
     name = "memory_store"
+    domain = "KNOWLEDGE"
+    entity = "STORE"
     description = "Speichert eine Information dauerhaft im Gedächtnis des Systems."
     input_schema = {
         "type": "object",

@@ -163,6 +163,60 @@ def create_app() -> Flask:
 
 
     @app.before_request
+    def _enforce_confirm_gates():
+        # PKG-GRD-02: Global Confirm-Gate & Injection Enforcement
+        path = request.path or "/"
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        
+        from .security.gates import CRITICAL_CONFIRM_GATE_BY_ROUTE, scan_payload_for_injection, confirm_gate
+        from .mia_audit import emit_mia_event, MIA_EVENT_CONFIRM_REQUESTED, MIA_EVENT_CONFIRM_DENIED, MIA_EVENT_CONFIRM_GRANTED
+
+        policy = CRITICAL_CONFIRM_GATE_BY_ROUTE.get(path)
+        if not policy:
+            # Generic injection scan for all mutating requests if needed? 
+            # For now, stick to policy-driven to avoid false positives.
+            return None
+
+        # 1. Get Payload (JSON or Form)
+        payload = request.get_json(silent=True) or request.form.to_dict()
+        
+        # 2. Injection Scan
+        finding = scan_payload_for_injection(payload, policy.fields)
+        if finding:
+            log_event("security_injection_blocked", {"path": path, "field": finding.field})
+            return json_error("injection_blocked", f"Potential injection detected in field: {finding.field}", status=400)
+            
+        # 3. Confirm Check
+        if not policy.required:
+            return None
+            
+        tenant_id = session.get("tenant_id") or app.config.get("TENANT_DEFAULT") or "KUKANILEA"
+        actor = session.get("user") or "system"
+        flow_ref = f"gate-{path.replace('/', '-')}"
+        
+        confirm_val = payload.get("confirm")
+        if not confirm_gate(confirm_val):
+            emit_mia_event(
+                event_type=MIA_EVENT_CONFIRM_DENIED,
+                entity_type="confirm_gate",
+                entity_ref=flow_ref,
+                tenant_id=tenant_id,
+                payload={"actor": actor, "reason": "token_missing_or_invalid", "path": path}
+            )
+            return json_error("confirm_required", "Explicit confirmation required for this action.", status=409)
+
+        # Log Grant (Success)
+        emit_mia_event(
+            event_type=MIA_EVENT_CONFIRM_GRANTED,
+            entity_type="confirm_gate",
+            entity_ref=flow_ref,
+            tenant_id=tenant_id,
+            payload={"actor": actor, "path": path}
+        )
+        return None
+
+    @app.before_request
     def _enforce_license_read_only():
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return None

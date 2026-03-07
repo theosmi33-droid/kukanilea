@@ -59,6 +59,12 @@ CRITICAL_CONFIRM_GATE_MATRIX: tuple[ConfirmGatePolicy, ...] = (
     ConfirmGatePolicy(route="/admin/settings/mesh/connect", fields=("peer_ip", "peer_port", "confirm")),
     ConfirmGatePolicy(route="/admin/settings/mesh/rotate-key", fields=("confirm",)),
     ConfirmGatePolicy(route="/admin/context/switch", fields=("tenant_id",), required=False),
+    # PKG-GRD-02: API Hardening
+    ConfirmGatePolicy(route="/api/kalender/events", fields=("title", "starts_at", "confirm")),
+    ConfirmGatePolicy(route="/api/kalender/invitations", fields=("title", "starts_at", "confirm")),
+    ConfirmGatePolicy(route="/api/aufgaben", fields=("title", "confirm")),
+    ConfirmGatePolicy(route="/api/projekte", fields=("name", "confirm")),
+    ConfirmGatePolicy(route="/api/intake/execute", fields=("confirm",)),
 )
 
 CRITICAL_CONFIRM_GATE_BY_ROUTE = {row.route: row for row in CRITICAL_CONFIRM_GATE_MATRIX}

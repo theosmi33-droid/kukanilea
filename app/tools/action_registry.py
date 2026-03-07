@@ -12,6 +12,8 @@ class ActionDefinition:
     inputs_schema: Dict[str, Any]
     permissions: List[str]
     is_critical: bool
+    risk_level: str  # LOW, MEDIUM, HIGH
+    is_idempotent: bool
     audit_fields: List[str]
     tool_name: str
 
@@ -21,6 +23,8 @@ class ActionDefinition:
             "inputs_schema": self.inputs_schema,
             "permissions": list(self.permissions),
             "is_critical": self.is_critical,
+            "risk_level": self.risk_level,
+            "is_idempotent": self.is_idempotent,
             "audit_fields": list(self.audit_fields),
             "tool": self.tool_name,
         }
@@ -39,6 +43,8 @@ class ActionRegistry:
                 inputs_schema=dict(action.get("inputs_schema") or {"type": "object", "properties": {}}),
                 permissions=list(action.get("permissions") or []),
                 is_critical=bool(action.get("is_critical", False)),
+                risk_level=str(action.get("risk_level", "LOW")),
+                is_idempotent=bool(action.get("is_idempotent", False)),
                 audit_fields=list(action.get("audit_fields") or []),
                 tool_name=tool.name,
             )

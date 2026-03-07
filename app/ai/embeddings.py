@@ -13,6 +13,9 @@ def generate_embedding(text: str) -> Optional[List[float]]:
     Generates a semantic embedding for the given text using local Ollama.
     Uses 'nomic-embed-text' as a high-performance local default.
     """
+    if os.environ.get("OLLAMA_ENABLED", "1") == "0":
+        return None
+
     host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     model = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
