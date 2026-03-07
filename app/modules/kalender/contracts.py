@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.contracts.tool_contracts import build_contract_response
+from app.contracts.tool_contracts import build_contract_response, build_health_response
 from app.config import Config
 
 SYNC_FLAG_ENV = "KUKANILEA_KALENDER_SYNC_ENABLED"
