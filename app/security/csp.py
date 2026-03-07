@@ -15,6 +15,7 @@ def build_csp_header(script_nonce: str | None = None) -> str:
         "form-action 'self'",
         "frame-ancestors 'self'",
         script_src,
+        script_src.replace("script-src", "script-src-elem", 1),
         "script-src-attr 'none'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
