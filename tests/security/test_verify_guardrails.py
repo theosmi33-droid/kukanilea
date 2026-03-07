@@ -58,3 +58,36 @@ def test_cdn_check_ignores_svg_xmlns_line(tmp_path: Path) -> None:
     errors = guardrails.check_cdn_urls(paths=[str(tmp_path / "app" / "templates")])
 
     assert errors == []
+
+
+def test_external_asset_check_flags_remote_src_href(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    html_path = tmp_path / "app" / "templates" / "unsafe_assets.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(
+        '<script src="https://cdn.example.com/lib.js"></script>\n'
+        '<link rel="stylesheet" href="//cdn.example.com/style.css">\n',
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_external_asset_urls(paths=[str(tmp_path / "app" / "templates")])
+
+    assert len(errors) == 2
+    assert "unsafe_assets.html" in errors[0]
+
+
+def test_shell_template_inline_handler_check_flags_onclick_and_preload_onload(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    layout_path = tmp_path / "app" / "templates" / "layout.html"
+    layout_path.parent.mkdir(parents=True, exist_ok=True)
+    layout_path.write_text(
+        '<link rel="preload" href="/static/css/a.css" as="style" onload="this.rel=\'stylesheet\'">\n'
+        '<button onclick="doThing()">X</button>\n',
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_shell_template_inline_handlers(path=str(layout_path))
+
+    assert len(errors) >= 2
+    assert any("Inline event handler" in item for item in errors)
+    assert any("preload onload" in item for item in errors)
