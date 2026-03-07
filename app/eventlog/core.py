@@ -152,11 +152,11 @@ def event_verify_chain(
     prev = GENESIS_HASH
     for row in rows:
         rid = int(row["id"])
-        if not str(row["ts"] or ""):
+        if not row["ts"]:
             return False, rid, "missing_ts"
-        if not str(row["event_type"] or "") or not str(row["entity_type"] or ""):
+        if not row["event_type"] or not row["entity_type"]:
             return False, rid, "missing_event_fields"
-        if int(row["entity_id"] or 0) <= 0:
+        if row["entity_id"] <= 0:
             return False, rid, "invalid_entity_id"
         prev_hash = str(row["prev_hash"] or "")
         if prev_hash != prev:

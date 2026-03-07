@@ -67,7 +67,7 @@ def test_verify_detects_tampering(monkeypatch, tmp_path):
 
     con = sqlite3.connect(str(db_path))
     try:
-        con.execute("UPDATE events SET payload_json='{""status"":""tampered""}' WHERE id=1")
+        con.execute("UPDATE events SET payload_json=? WHERE id=1", ('{"status":"tampered"}',))
         con.commit()
     finally:
         con.close()
