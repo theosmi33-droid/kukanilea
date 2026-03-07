@@ -102,6 +102,7 @@ from .rate_limit import (
 from .security import csrf_protected, detect_injection
 from app.contracts.tool_contracts import (
     CONTRACT_TOOLS,
+    build_mia_parity_matrix,
     build_tool_health,
     build_tool_matrix,
     build_tool_summary,
@@ -4449,6 +4450,13 @@ def api_dashboard_tool_matrix():
         read_only_contract=True,
         tools=matrix,
     )
+
+
+@bp.get("/api/dashboard/mia-parity")
+@login_required
+def api_dashboard_mia_parity():
+    tenant = str(current_tenant() or "default")
+    return jsonify(build_mia_parity_matrix(tenant=tenant))
 
 
 @bp.get("/api/system/status")
