@@ -385,8 +385,14 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
                 )
             )
     degraded_tools = [row["tool"] for row in rows if row.get("status") == "degraded"]
+    degraded_non_blocking = [
+        row["tool"]
+        for row in rows
+        if row.get("status") == "degraded" and str(row.get("degraded_reason") or "") in NON_BLOCKING_DEGRADED_REASONS
+    ]
+    degraded_blocking = sorted(set(degraded_tools) - set(degraded_non_blocking))
     error_tools = [row["tool"] for row in rows if row.get("status") == "error"]
-    unavailable_tools = sorted({*degraded_tools, *error_tools})
+    unavailable_tools = sorted({*degraded_blocking, *error_tools})
     metrics = {
         "total_tools": len(rows),
         "degraded_tools": len(degraded_tools),
@@ -400,6 +406,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "matrix_endpoint": "/api/dashboard/tool-matrix",
         "aggregate_mode": "summary_only",
         "degraded": degraded_tools,
+        "degraded_blocking": degraded_blocking,
+        "degraded_non_blocking": degraded_non_blocking,
         "errors": error_tools,
         "unavailable_tools": unavailable_tools,
         "aggregation_errors": {tool: "error" for tool in aggregation_errors},
@@ -814,6 +822,11 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "settings": _collect_settings_summary,
     "chatbot": _collect_chatbot_summary,
 }
+
+NON_BLOCKING_DEGRADED_REASONS: set[str] = {
+    "mia_parity_below_baseline",
+}
+
 
 
 
