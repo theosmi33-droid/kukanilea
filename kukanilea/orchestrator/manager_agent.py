@@ -457,10 +457,11 @@ class ManagerAgent:
             approval = None
 
         if approval and not approval.allowed:
-            approval_state = "confirm_required" if approval.reason == "approval_required" else "denied"
+            approval_state = self._approval_state_from_reason(approval.reason)
+            status = "confirm_required" if approval_state in {"confirm_required", "pending"} else "blocked"
             result = RouteResult(
                 ok=False,
-                status="confirm_required",
+                status=status,
                 decision=decision,
                 reason=approval.reason,
                 confirm_required=True,
@@ -558,6 +559,16 @@ class ManagerAgent:
             self.audit_logger(payload)
 
     @staticmethod
+    def _approval_state_from_reason(reason: str) -> str:
+        reason_map = {
+            "approval_required": "confirm_required",
+            "approval_pending": "pending",
+            "approval_denied": "denied",
+            "approval_expired": "expired",
+        }
+        return reason_map.get(str(reason), "denied")
+
+    @staticmethod
     def _derive_audit_states(*, result: RouteResult, payload: Mapping[str, Any]) -> list[str]:
         states: list[str] = []
 
@@ -565,6 +576,10 @@ class ManagerAgent:
             states.append("confirm_required")
         if payload.get("approval_state") == "denied":
             states.append("denied")
+        if payload.get("approval_state") == "expired":
+            states.append("expired")
+        if payload.get("approval_state") == "pending":
+            states.append("pending")
         if payload.get("approval_state") == "approved":
             states.append("approved")
         if result.status in {"blocked", "offline_blocked", "needs_review"}:
