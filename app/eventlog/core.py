@@ -12,6 +12,16 @@ from flask import current_app, has_app_context
 from app.config import Config
 
 GENESIS_HASH = "0" * 64
+EVENT_FIELDS = (
+    "id",
+    "ts",
+    "event_type",
+    "entity_type",
+    "entity_id",
+    "payload_json",
+    "prev_hash",
+    "hash",
+)
 
 
 def _core_db_path() -> Path:
@@ -30,7 +40,8 @@ def _connect() -> sqlite3.Connection:
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    # Stable ISO8601/RFC3339 UTC representation for deterministic audits.
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _stable_payload_json(payload: dict[str, Any]) -> str:
@@ -93,8 +104,7 @@ def event_append(
     *,
     con: sqlite3.Connection | None = None,
 ) -> int:
-    if con is None:
-        ensure_eventlog_schema()
+    ensure_eventlog_schema()
     ev_type = (event_type or "").strip()
     ent_type = (entity_type or "").strip()
     ent_id = int(entity_id)
@@ -130,8 +140,7 @@ def event_append(
 def event_verify_chain(
     *, con: sqlite3.Connection | None = None
 ) -> tuple[bool, int | None, str | None]:
-    if con is None:
-        ensure_eventlog_schema()
+    ensure_eventlog_schema()
     owns_connection = con is None
     db = con or _connect()
     try:
@@ -143,6 +152,12 @@ def event_verify_chain(
     prev = GENESIS_HASH
     for row in rows:
         rid = int(row["id"])
+        if not str(row["ts"] or ""):
+            return False, rid, "missing_ts"
+        if not str(row["event_type"] or "") or not str(row["entity_type"] or ""):
+            return False, rid, "missing_event_fields"
+        if int(row["entity_id"] or 0) <= 0:
+            return False, rid, "invalid_entity_id"
         prev_hash = str(row["prev_hash"] or "")
         if prev_hash != prev:
             return False, rid, "prev_hash_mismatch"
@@ -176,7 +191,7 @@ def event_get_history(entity_type: str, entity_id: int, limit: int = 50) -> list
         ).fetchall()
         out: list[dict] = []
         for row in rows:
-            item = dict(row)
+            item = {field: row[field] for field in EVENT_FIELDS}
             try:
                 item["payload"] = json.loads(item.get("payload_json") or "{}")
             except Exception:
