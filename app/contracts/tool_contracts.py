@@ -64,7 +64,7 @@ MIA_DOMAIN_PROFILES: dict[str, dict[str, object]] = {
         "verbs": ["read", "list", "open"],
     },
     "upload": {
-        "canonical_actions": ["upload.intake.normalize", "upload.intake.execute", "upload.queue.list"],
+        "canonical_actions": ["upload.intake.execute", "upload.queue.list", "upload.intake.normalize"],
         "entities": ["intake_envelope", "upload", "queue_item", "document"],
         "verbs": ["normalize", "execute", "list", "ingest"],
     },
@@ -84,9 +84,9 @@ MIA_DOMAIN_PROFILES: dict[str, dict[str, object]] = {
         "verbs": ["send", "list", "create", "reply"],
     },
     "email": {
-        "canonical_actions": ["email.mail.create", "email.mail.send", "email.mail.export"],
+        "canonical_actions": ["email.mail.search", "email.mail.summarize", "email.mail.draft", "email.mail.send"],
         "entities": ["mail", "draft", "recipient", "attachment"],
-        "verbs": ["create", "send", "export", "queue"],
+        "verbs": ["search", "summarize", "draft", "send"],
     },
     "calendar": {
         "canonical_actions": ["calendar.event.list", "calendar.event.create", "calendar.event.export"],
@@ -109,7 +109,7 @@ MIA_DOMAIN_PROFILES: dict[str, dict[str, object]] = {
         "verbs": ["read", "update", "rotate", "restore"],
     },
     "chatbot": {
-        "canonical_actions": ["chatbot.response.answer", "chatbot.action.propose", "chatbot.action.confirm"],
+        "canonical_actions": ["chatbot.message.send", "chatbot.action.propose", "chatbot.action.confirm"],
         "entities": ["prompt", "response", "action", "confirm_token"],
         "verbs": ["answer", "propose", "confirm", "route"],
     },
@@ -802,8 +802,10 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "upload": _collect_upload_summary,
     "projects": _collect_projects_summary,
     "tasks": _collect_tasks_summary,
+    "aufgaben": _collect_tasks_summary,  # Legacy alias
     "messenger": _collect_messenger_summary,
     "email": _collect_email_summary,
+    "mail": _collect_email_summary,      # Legacy alias
     "calendar": _collect_calendar_summary,
     "time": _collect_time_summary,
     "visualizer": _collect_visualizer_summary,
