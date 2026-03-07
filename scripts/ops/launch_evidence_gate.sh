@@ -145,9 +145,14 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-for dep in bash git rg python3; do
+for dep in bash git python3; do
   command -v "$dep" >/dev/null 2>&1 || die "$EXIT_DEPENDENCY" "required dependency missing: $dep"
 done
+if command -v rg >/dev/null 2>&1; then
+  SEARCH_TOOL="rg"
+else
+  SEARCH_TOOL="grep"
+fi
 [[ -n "$PYTHON" ]] || PYTHON="$($ROOT/scripts/dev/resolve_python.sh)"
 [[ -n "$REPO" ]] || REPO="$(detect_repo || true)"
 
@@ -174,7 +179,12 @@ fi
 run_cmd_gate "Zero-CDN" "'$PYTHON' scripts/ops/verify_guardrails.py" "guardrails passed" "guardrails failed"
 
 DARK_PATTERN="dark:|themeToggle|classList\\.(add|toggle)\\((\"dark\"|'dark')\\)"
-if (cd "$ROOT" && rg -n "$DARK_PATTERN" app/templates app/static --glob '!app/static/vendor/**' --glob '!app/static/js/tailwindcss.min.js') >/dev/null 2>&1; then
+if [[ "$SEARCH_TOOL" == "rg" ]]; then
+  DARK_CMD="rg -n '$DARK_PATTERN' app/templates app/static --glob '!app/static/vendor/**' --glob '!app/static/js/tailwindcss.min.js'"
+else
+  DARK_CMD="grep -R -n -E --exclude-dir=vendor --exclude=tailwindcss.min.js '$DARK_PATTERN' app/templates app/static"
+fi
+if (cd "$ROOT" && bash -lc "$DARK_CMD") >/dev/null 2>&1; then
   record_result "White-mode" "FAIL" "dark mode signatures found"
 else
   record_result "White-mode" "PASS" "no dark mode signatures"
@@ -208,7 +218,12 @@ fi
 BACKUP_REPORT="${BACKUP_REPORT:-$ROOT/instance/evidence_backup_report.txt}"
 RESTORE_REPORT="${RESTORE_REPORT:-$ROOT/instance/evidence_restore_report.txt}"
 if (cd "$ROOT" && TENANT_ID="${TENANT_ID:-DEMO_TENANT}" REPORT_FILE="$BACKUP_REPORT" bash scripts/ops/backup_to_nas.sh && TENANT_ID="${TENANT_ID:-DEMO_TENANT}" REPORT_FILE="$RESTORE_REPORT" EXPECTED_RESTORE_DIRS="${EXPECTED_RESTORE_DIRS:-}" bash scripts/ops/restore_from_nas.sh); then
-  if (cd "$ROOT" && rg -q '^checksum_sha256=' "$BACKUP_REPORT" && rg -q '^backup_size_bytes=' "$BACKUP_REPORT" && rg -q '^target_path=' "$BACKUP_REPORT" && rg -q '^backup_verify_hook=ok' "$BACKUP_REPORT" && rg -q '^verify_db=ok' "$RESTORE_REPORT" && rg -q '^verify_files=ok' "$RESTORE_REPORT" && rg -q '^restore_validation=ok' "$RESTORE_REPORT" && rg -q '^restore_verify_hook=ok' "$RESTORE_REPORT"); then
+  if [[ "$SEARCH_TOOL" == "rg" ]]; then
+    VERIFY_REPORT_CMD="rg -q '^checksum_sha256=' '$BACKUP_REPORT' && rg -q '^backup_size_bytes=' '$BACKUP_REPORT' && rg -q '^target_path=' '$BACKUP_REPORT' && rg -q '^backup_verify_hook=ok' '$BACKUP_REPORT' && rg -q '^verify_db=ok' '$RESTORE_REPORT' && rg -q '^verify_files=ok' '$RESTORE_REPORT' && rg -q '^restore_validation=ok' '$RESTORE_REPORT' && rg -q '^restore_verify_hook=ok' '$RESTORE_REPORT'"
+  else
+    VERIFY_REPORT_CMD="grep -q '^checksum_sha256=' '$BACKUP_REPORT' && grep -q '^backup_size_bytes=' '$BACKUP_REPORT' && grep -q '^target_path=' '$BACKUP_REPORT' && grep -q '^backup_verify_hook=ok' '$BACKUP_REPORT' && grep -q '^verify_db=ok' '$RESTORE_REPORT' && grep -q '^verify_files=ok' '$RESTORE_REPORT' && grep -q '^restore_validation=ok' '$RESTORE_REPORT' && grep -q '^restore_verify_hook=ok' '$RESTORE_REPORT'"
+  fi
+  if (cd "$ROOT" && bash -lc "$VERIFY_REPORT_CMD"); then
     record_result "Backup" "PASS" "backup/restore evidence + verification hooks verified"
   else
     record_result "Backup" "FAIL" "backup/restore reports missing required evidence"
@@ -223,7 +238,11 @@ else
   record_result "AI" "FAIL" "AI operating contract missing"
 fi
 
-ops_test_count="$(cd "$ROOT" && rg -n '^def test_' tests/ops/*.py | wc -l | tr -d ' ')"
+if [[ "$SEARCH_TOOL" == "rg" ]]; then
+  ops_test_count="$(cd "$ROOT" && rg -n '^def test_' tests/ops/*.py | wc -l | tr -d ' ')"
+else
+  ops_test_count="$(cd "$ROOT" && grep -n -E '^def test_' tests/ops/*.py | wc -l | tr -d ' ')"
+fi
 if (( ops_test_count >= 7 )); then
   record_result "MIN_TESTS" "PASS" "tests/ops test-count=$ops_test_count"
 else
@@ -259,7 +278,12 @@ if data.get('overall_status') == 'PASS' and required.issubset(names):
 raise SystemExit(1)
 PY" "gate7 artifacts contain required evidence matrix" "gate7 artifacts missing required checks"
 
-run_cmd_gate "MIA_UNCONTROLLED_WRITES" "[[ -z \"$(git diff --name-only | rg -v '^(app/|scripts/|tests/|docs/reviews/codex/|evidence/operations/)' | rg -v '^$')\" ]]" "writes limited to controlled code/test/evidence paths" "uncontrolled writes detected outside controlled paths"
+if [[ "$SEARCH_TOOL" == "rg" ]]; then
+  MIA_WRITES_CMD="[[ -z \"$(git diff --name-only | rg -v '^(app/|scripts/|tests/|docs/reviews/codex/|evidence/operations/)' | rg -v '^$')\" ]]"
+else
+  MIA_WRITES_CMD="[[ -z \"$(git diff --name-only | grep -E -v '^(app/|scripts/|tests/|docs/reviews/codex/|evidence/operations/)' | grep -E -v '^$')\" ]]"
+fi
+run_cmd_gate "MIA_UNCONTROLLED_WRITES" "$MIA_WRITES_CMD" "writes limited to controlled code/test/evidence paths" "uncontrolled writes detected outside controlled paths"
 if [[ "$OUT_FILE" == "$ROOT/docs/reviews/codex/LAUNCH_GATE_AUTOMATION_REPORT_20260305.md" ]]; then
   record_result "Evidence" "PASS" "evidence path matches required target"
 else
