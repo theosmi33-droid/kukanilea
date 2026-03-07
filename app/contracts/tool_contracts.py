@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Callable
 
@@ -52,60 +53,62 @@ MIA_PARITY_CHECKS = (
     "flow_capable",
     "schema_validation",
 )
+CANONICAL_ACTION_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$")
+CONTRACT_RISK_LEVELS = ("low", "medium", "high")
 
 MIA_DOMAIN_PROFILES: dict[str, dict[str, object]] = {
     "dashboard": {
-        "canonical_actions": ["read_summary", "list_alerts", "open_tool"],
+        "canonical_actions": ["dashboard.summary.read", "dashboard.alerts.list", "dashboard.tool.open"],
         "entities": ["dashboard", "widget", "alert", "tool"],
         "verbs": ["read", "list", "open"],
     },
     "upload": {
-        "canonical_actions": ["normalize_intake", "execute_intake", "list_queue"],
+        "canonical_actions": ["upload.intake.normalize", "upload.intake.execute", "upload.queue.list"],
         "entities": ["intake_envelope", "upload", "queue_item", "document"],
         "verbs": ["normalize", "execute", "list", "ingest"],
     },
     "projects": {
-        "canonical_actions": ["list_projects", "create_project", "update_project"],
+        "canonical_actions": ["projects.project.list", "projects.project.create", "projects.project.update"],
         "entities": ["project", "task", "defect", "milestone"],
         "verbs": ["list", "create", "update", "archive"],
     },
     "tasks": {
-        "canonical_actions": ["list_tasks", "create_task", "resolve_task"],
+        "canonical_actions": ["tasks.task.list", "tasks.task.create", "tasks.task.resolve"],
         "entities": ["task", "assignment", "status"],
         "verbs": ["list", "create", "resolve", "dismiss"],
     },
     "messenger": {
-        "canonical_actions": ["send_message", "list_threads", "create_draft"],
+        "canonical_actions": ["messenger.message.send", "messenger.thread.list", "messenger.draft.create"],
         "entities": ["thread", "message", "participant", "draft"],
         "verbs": ["send", "list", "create", "reply"],
     },
     "email": {
-        "canonical_actions": ["create_draft", "send_email", "export_eml"],
+        "canonical_actions": ["email.mail.create", "email.mail.send", "email.mail.export"],
         "entities": ["mail", "draft", "recipient", "attachment"],
         "verbs": ["create", "send", "export", "queue"],
     },
     "calendar": {
-        "canonical_actions": ["list_events", "create_event", "export_ics"],
+        "canonical_actions": ["calendar.event.list", "calendar.event.create", "calendar.event.export"],
         "entities": ["event", "reminder", "calendar", "invite"],
         "verbs": ["list", "create", "update", "export"],
     },
     "time": {
-        "canonical_actions": ["start_timer", "stop_timer", "list_entries"],
+        "canonical_actions": ["time.entry.start", "time.entry.stop", "time.entry.list"],
         "entities": ["time_entry", "timer", "project", "report"],
         "verbs": ["start", "stop", "list", "adjust"],
     },
     "visualizer": {
-        "canonical_actions": ["list_sources", "build_summary", "render_chart"],
+        "canonical_actions": ["visualizer.source.list", "visualizer.summary.build", "visualizer.chart.render"],
         "entities": ["source", "dataset", "chart", "summary"],
         "verbs": ["list", "build", "render"],
     },
     "settings": {
-        "canonical_actions": ["read_settings", "update_settings", "rotate_key"],
+        "canonical_actions": ["settings.setting.read", "settings.setting.update", "settings.key.rotate"],
         "entities": ["setting", "tenant", "user", "backup"],
         "verbs": ["read", "update", "rotate", "restore"],
     },
     "chatbot": {
-        "canonical_actions": ["answer", "propose_action", "confirm_action"],
+        "canonical_actions": ["chatbot.response.answer", "chatbot.action.propose", "chatbot.action.confirm"],
         "entities": ["prompt", "response", "action", "confirm_token"],
         "verbs": ["answer", "propose", "confirm", "route"],
     },
@@ -250,12 +253,23 @@ def _build_mia_parity(tool: str) -> dict[str, object]:
     entities = [str(item) for item in profile.get("entities", []) if str(item).strip()]
     verbs = [str(item) for item in profile.get("verbs", []) if str(item).strip()]
 
+    confirm_risk_policy = {
+        "confirm_required_for": ["write", "high"],
+        "risk_levels": list(CONTRACT_RISK_LEVELS),
+        "external_requires_confirm": True,
+        "external_requires_audit": True,
+    }
     check_results = {
-        "canonical_actions": len(canonical_actions) >= 3,
+        "canonical_actions": len(canonical_actions) >= 3 and all(CANONICAL_ACTION_PATTERN.fullmatch(item) for item in canonical_actions),
         "entities_verbs": bool(entities) and bool(verbs),
         "summary_health_compatible": True,
         "audit_metadata": True,
-        "confirm_risk_policies": True,
+        "confirm_risk_policies": (
+            set(confirm_risk_policy["risk_levels"]) == set(CONTRACT_RISK_LEVELS)
+            and {"write", "high"}.issubset(set(confirm_risk_policy["confirm_required_for"]))
+            and bool(confirm_risk_policy["external_requires_confirm"])
+            and bool(confirm_risk_policy["external_requires_audit"])
+        ),
         "flow_capable": True,
         "schema_validation": True,
     }
@@ -274,10 +288,7 @@ def _build_mia_parity(tool: str) -> dict[str, object]:
             "required": ["tenant", "actor", "tool", "action", "trace_id"],
             "event_family": "tool_action_execute_*",
         },
-        "confirm_risk_policy": {
-            "confirm_required_for": ["write", "high_risk"],
-            "risk_levels": ["low", "high_risk"],
-        },
+        "confirm_risk_policy": confirm_risk_policy,
         "flow": {
             "supports_propose_confirm_execute": True,
             "supports_multi_step": True,
