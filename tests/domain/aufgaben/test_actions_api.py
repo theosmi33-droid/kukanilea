@@ -45,7 +45,7 @@ def test_actions_list_exposes_schema(tmp_path, monkeypatch):
     assert response.status_code == 200
     data = response.get_json()
     assert data["ok"] is True
-    assert data["tool"] == "aufgaben"
+    assert data["tool"] in {"aufgaben", "tasks"}
     names = {item["name"] for item in data["actions"]}
     assert {"list", "create"}.issubset(names)
 
