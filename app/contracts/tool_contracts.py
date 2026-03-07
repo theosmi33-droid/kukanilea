@@ -342,9 +342,29 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
     recent_uploads = _recent_upload_items(tenant)
     processing_queue = _processing_queue_items(tenant)
     non_dashboard_tools = [tool for tool in CONTRACT_TOOLS if tool != "dashboard"]
-    rows = [build_tool_summary(tool, tenant) for tool in non_dashboard_tools]
+    rows: list[dict] = []
+    aggregation_errors: dict[str, str] = {}
+    for tool in non_dashboard_tools:
+        try:
+            rows.append(build_tool_summary(tool, tenant))
+        except Exception:
+            aggregation_errors[tool] = "summary_aggregation_failed"
+            rows.append(
+                _contract_payload(
+                    tool=tool,
+                    status="degraded",
+                    metrics={"collector_error": 1},
+                    details={
+                        "tenant": tenant,
+                        "aggregation_error": "internal_error",
+                    },
+                    reason="summary_aggregation_failed",
+                    tenant=tenant,
+                )
+            )
     degraded_tools = [row["tool"] for row in rows if row.get("status") == "degraded"]
     error_tools = [row["tool"] for row in rows if row.get("status") == "error"]
+    unavailable_tools = sorted({*degraded_tools, *error_tools})
     metrics = {
         "total_tools": len(rows),
         "degraded_tools": len(degraded_tools),
@@ -359,13 +379,16 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "aggregate_mode": "summary_only",
         "degraded": degraded_tools,
         "errors": error_tools,
+        "unavailable_tools": unavailable_tools,
+        "aggregation_errors": {tool: "error" for tool in aggregation_errors},
         "recent_uploads": recent_uploads,
         "processing_queue": processing_queue,
         "contract": {
             "read_only": True,
         },
     }
-    return metrics, details, ""
+    degraded_reason = "tool_summary_partial_outage" if unavailable_tools else ""
+    return metrics, details, degraded_reason
 
 
 def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
@@ -388,7 +411,7 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
                 pending = []
                 degraded_reason = degraded_reason or "pending_pipeline_unavailable"
                 pending_error = pending_error or f"list_pending returned {type(raw_pending).__name__}"
-        except Exception as exc:
+        except Exception:
             pending = []
             degraded_reason = "pending_pipeline_unavailable"
             pending_error = str(exc)
@@ -879,7 +902,22 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
 
 
 def build_tool_matrix(tenant: str = "default") -> list[dict]:
-    return [build_tool_summary(tool, tenant) for tool in CONTRACT_TOOLS]
+    rows: list[dict] = []
+    for tool in CONTRACT_TOOLS:
+        try:
+            rows.append(build_tool_summary(tool, tenant))
+        except Exception as exc:
+            payload = _contract_payload(
+                tool=tool,
+                status="degraded",
+                metrics={"collector_error": 1},
+                details={"tenant": tenant, "aggregation_error": "internal_error"},
+                reason="summary_aggregation_failed",
+                tenant=tenant,
+            )
+            normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
+            rows.append(_apply_mia_parity(normalized, tool))
+    return rows
 
 
 def build_mia_parity_matrix(tenant: str = "default") -> dict[str, object]:

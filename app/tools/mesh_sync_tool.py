@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
+from app.core.mesh_network import MeshNetworkManager
 from app.tools.base_tool import BaseTool
 from app.tools.registry import registry
-from app.core.mesh_network import MeshNetworkManager
-from flask import current_app
+from app.tools.shared_services import get_auth_db
+
 
 class MeshSyncTool(BaseTool):
     """
@@ -24,7 +25,7 @@ class MeshSyncTool(BaseTool):
     }
 
     def run(self, peer_ip: str, peer_port: int = 5051) -> Any:
-        auth_db = current_app.extensions.get("auth_db")
+        auth_db = get_auth_db()
         if not auth_db:
             return {"error": "Database not initialized."}
 
@@ -36,8 +37,8 @@ class MeshSyncTool(BaseTool):
                 "status": "success",
                 "message": f"Verbindung zu Hub unter {peer_ip} erfolgreich hergestellt und synchronisiert."
             }
-        else:
-            return {"error": f"Verbindung zu Hub unter {peer_ip} fehlgeschlagen."}
+        return {"error": f"Verbindung zu Hub unter {peer_ip} fehlgeschlagen."}
+
 
 # Register tool
 registry.register(MeshSyncTool())
