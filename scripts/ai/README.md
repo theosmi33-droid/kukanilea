@@ -51,3 +51,9 @@ bash scripts/orchestration/start_gemini_fleet.sh
 - Der Wrapper verlangt **explizit** einen Approval-Mode: `--approval-mode default|yolo` oder `GEMINI_APPROVAL_MODE`.
 - Sichere Empfehlung fuer produktive/automatisierte Laeufe: `default`.
 - `yolo` nur bewusst und sichtbar einsetzen (z.B. `GEMINI_FLEET_APPROVAL_MODE=yolo ...`).
+
+## Runtime-Haertung (main-only + sicherer Terminal-Start)
+- `runtime/start_4terminals_precise.sh` uebergibt Shell-Kommandos an AppleScript via **argv** (kein Inline-String mit ungefilterten Variablen).
+- `runtime/start_4terminals_staggered.sh` und `runtime/start_gemini_main_only_interactive.sh` brechen ausserhalb von `main` frueh ab.
+- Interaktive Starts blocken bei dirty working tree, um gemischte Kontexte und unbeabsichtigte Side-Effects zu vermeiden.
+- `runtime/run_gemini_precise.sh` validiert Timeout/Approval-Mode und laesst nur sichere Extension-Tokens zu (`[A-Za-z0-9_-]`).
