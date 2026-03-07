@@ -31,24 +31,28 @@ def test_main_rejects_empty_sanitized_output(monkeypatch: pytest.MonkeyPatch, ca
         lambda: type(
             "Args",
             (),
-            {
-                "prompt": "x",
-                "prompt_file": None,
-                "domain": None,
-                "context_file": [],
+                {
+                    "prompt": "x",
+                    "prompt_file": None,
+                    "domain": None,
+                    "context_file": [],
                 "output": None,
                 "log": None,
                 "cwd": None,
-                "approval_mode": "default",
-                "raw": False,
-                "timeout_seconds": 1,
-            },
-        )(),
-    )
+                    "approval_mode": "default",
+                    "raw": False,
+                    "timeout_seconds": 1,
+                    "model": None,
+                    "extension": [],
+                    "require_main": False,
+                    "skip_alignment": False,
+                },
+            )(),
+        )
     monkeypatch.setattr(
         GEMINI_CLI,
         "run_gemini",
-        lambda prompt, approval_mode, cwd, timeout_seconds: (0, "YOLO mode is enabled.\n"),
+        lambda prompt, approval_mode, model, extensions, cwd, timeout_seconds: (0, "YOLO mode is enabled.\n"),
     )
 
     rc = GEMINI_CLI.main()
