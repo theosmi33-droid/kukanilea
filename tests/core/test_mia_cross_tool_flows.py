@@ -35,6 +35,26 @@ def test_email_to_task_requires_confirm_and_audit_points() -> None:
     assert "mia.confirm.requested" in proposal["audit_points"]
 
 
+def test_email_to_task_missing_title_stays_proposal_and_requests_clarification() -> None:
+    engine = MiaFlowEngine()
+    proposal = engine.plan(
+        "email.received",
+        {
+            "tenant": "KUKANILEA",
+            "subject": "TODO:",
+            "body": "Bitte übernehmen",
+            "email_id": "mail-2",
+        },
+    )
+
+    assert proposal["flow_id"] == "email_to_task"
+    assert proposal["degradation"] == "proposal_only_without_task_title"
+    assert proposal["clarifications"] == ["Welchen konkreten Titel soll die Aufgabe haben?"]
+    task_step = proposal["steps"][0]
+    assert task_step["mode"] == "propose"
+    assert task_step["reason"] == "missing_task_title"
+
+
 def test_missing_context_stays_in_propose_mode() -> None:
     engine = MiaFlowEngine()
     proposal = engine.plan(
@@ -94,3 +114,22 @@ def test_confirm_gate_blocks_execution_without_explicit_confirmation() -> None:
     blocked = engine.execute(proposal["proposal_id"], confirmed=False)
     assert blocked["status"] == "confirmation_required"
     assert engine.audit_log[-1]["event_type"] == "mia.confirm.denied"
+
+
+def test_step_level_audit_is_emitted_for_email_to_task_execution() -> None:
+    engine = MiaFlowEngine()
+    proposal = engine.plan(
+        "email.received",
+        {
+            "tenant": "KUKANILEA",
+            "subject": "TODO: Angebot senden",
+            "body": "Bitte heute noch.",
+            "email_id": "mail-3",
+        },
+    )
+
+    result = engine.execute(proposal["proposal_id"], confirmed=True)
+    assert result["status"] == "executed"
+    event_types = [entry["event_type"] for entry in engine.audit_log]
+    assert "mia.step.started" in event_types
+    assert "mia.step.simulated" in event_types

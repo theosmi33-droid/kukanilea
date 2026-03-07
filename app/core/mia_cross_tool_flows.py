@@ -120,6 +120,7 @@ class MiaFlowEngine:
             "confirm_points": confirm_points,
             "audit_points": audit_points,
             "degradation": flow_plan["degradation"],
+            "clarifications": flow_plan.get("clarifications", []),
         }
         self._proposals[proposal_id] = proposal
         self._audit("mia.proposal.created", proposal_id, {"flow_id": flow_plan["flow_id"]})
@@ -138,20 +139,33 @@ class MiaFlowEngine:
 
         self._audit("mia.execution.started", proposal_id, {"flow_id": proposal.get("flow_id")})
         results: list[dict[str, Any]] = []
-        for step in proposal.get("steps", []):
+        for index, step in enumerate(proposal.get("steps", []), start=1):
             action = str(step.get("action") or "")
             payload = dict(step.get("payload") or {})
+            self._audit("mia.step.started", proposal_id, {"step_index": index, "action": action})
             if action not in self.registered_actions:
                 results.append({"action": action, "status": "blocked", "reason": "action_not_registered"})
+                self._audit(
+                    "mia.step.blocked",
+                    proposal_id,
+                    {"step_index": index, "action": action, "reason": "action_not_registered"},
+                )
                 continue
             if step.get("mode") == "propose":
                 results.append({"action": action, "status": "proposed_only", "reason": step.get("reason", "missing_context")})
+                self._audit(
+                    "mia.step.proposed",
+                    proposal_id,
+                    {"step_index": index, "action": action, "reason": step.get("reason", "missing_context")},
+                )
                 continue
             handler = self.handlers.get(action)
             if handler is None:
                 results.append({"action": action, "status": "simulated", "payload": payload})
+                self._audit("mia.step.simulated", proposal_id, {"step_index": index, "action": action})
                 continue
             results.append({"action": action, "status": "executed", "result": handler(payload)})
+            self._audit("mia.step.executed", proposal_id, {"step_index": index, "action": action})
 
         self._audit("mia.execution.finished", proposal_id, {"results": len(results)})
         return {"status": "executed", "proposal_id": proposal_id, "results": results}
@@ -168,24 +182,30 @@ class MiaFlowEngine:
 
     def _build_flow_plan(self, trigger: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         subject = str(payload.get("subject") or "").lower()
+        subject_raw = str(payload.get("subject") or "")
         text = " ".join(
             str(payload.get(key) or "") for key in ("subject", "body", "message", "ocr_text", "filename")
         ).lower()
 
-        if trigger == "email.received" and (subject.startswith("todo:") or "aufgabe" in text):
-            title = str(payload.get("subject") or "TODO aus E-Mail").split(":", 1)[-1].strip() or "TODO aus E-Mail"
+        if trigger == "email.received" and any(word in text for word in ("todo", "aufgabe", "task")):
+            title = subject_raw.split(":", 1)[-1].strip() if subject.startswith("todo:") else subject_raw.strip()
+            if not title:
+                title = str(payload.get("task_title") or "").strip()
+            has_title = bool(title)
             return {
                 "flow_id": "email_to_task",
                 "flow_title": "E-Mail -> Aufgabe",
-                "degradation": "offline_local_task_store",
+                "degradation": "proposal_only_without_task_title" if not has_title else "offline_local_task_store",
+                "clarifications": ["Welchen konkreten Titel soll die Aufgabe haben?"] if not has_title else [],
                 "steps": [
                     {
                         "action": "create_task",
                         "confirm_required": True,
-                        "mode": "confirm",
+                        "mode": "confirm" if has_title else "propose",
+                        "reason": "missing_task_title" if not has_title else "",
                         "payload": {
                             "tenant": str(payload.get("tenant") or "KUKANILEA"),
-                            "title": title,
+                            "title": title or "TODO aus E-Mail",
                             "details": str(payload.get("body") or ""),
                             "source_ref": str(payload.get("email_id") or payload.get("id") or ""),
                         },
