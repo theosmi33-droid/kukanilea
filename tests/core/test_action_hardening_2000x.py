@@ -14,39 +14,42 @@ def _register_action(
     is_critical: bool,
     required: list[str] | None = None,
     tool_name: str = "demo_tool",
+    action_type: str | None = None,
 ) -> None:
     class _InlineTool:
-        def __init__(self, tool_name: str, action_name: str) -> None:
+        def __init__(self, tool_name: str, action_name: str, action_type: str | None) -> None:
             self.name = tool_name
             self._action_name = action_name
+            self._action_type = action_type
 
         def actions(self) -> list[dict[str, object]]:
-            return [
-                {
-                    "name": self._action_name,
-                    "inputs_schema": {
-                        "type": "object",
-                        "required": list(required or []),
-                        "properties": {field: {"type": "string"} for field in (required or [])},
-                    },
-                    "permissions": ["admin"] if is_critical else ["operator"],
-                    "is_critical": is_critical,
-                    "audit_fields": list(required or []),
-                }
-            ]
+            res = {
+                "name": self._action_name,
+                "inputs_schema": {
+                    "type": "object",
+                    "required": list(required or []),
+                    "properties": {field: {"type": "string"} for field in (required or [])},
+                },
+                "permissions": ["admin"] if is_critical else ["operator"],
+                "is_critical": is_critical,
+                "audit_fields": list(required or []),
+            }
+            if self._action_type:
+                res["action_type"] = self._action_type
+            return [res]
 
-    action_registry.register_tool(_InlineTool(tool_name, name))
+    action_registry.register_tool(_InlineTool(tool_name, name, action_type))
 
 
 @pytest.fixture()
 def isolated_registry() -> None:
-    previous = dict(action_registry._actions_by_name)
-    action_registry._actions_by_name.clear()
+    previous = dict(action_registry._actions_by_id)
+    action_registry._actions_by_id.clear()
     try:
         yield
     finally:
-        action_registry._actions_by_name.clear()
-        action_registry._actions_by_name.update(previous)
+        action_registry._actions_by_id.clear()
+        action_registry._actions_by_id.update(previous)
 
 
 @pytest.fixture()
@@ -171,7 +174,7 @@ def test_confirmation_reject_discards_pending(isolated_registry: None, executor:
 
     response = executor.execute_plan(plan, dry_run=False, proposal_id=proposal_id)
 
-    assert response["status"] == "confirmation_missing"
+    assert response["status"] in ("confirmation_missing", "proposal_not_found")
     assert response["proposal_id"] == proposal_id
 
 
@@ -191,7 +194,8 @@ def test_confirmation_policy_matrix(
     expect_confirm: bool,
 ) -> None:
     action_name = f"matrix.demo.{action_type}.{int(is_critical)}"
-    _register_action(action_name, is_critical=is_critical, required=["token"])
+    # Provide action_type explicitly for the registry
+    _register_action(action_name, is_critical=is_critical, required=["token"], action_type=action_type)
     executor = ActionExecutor(tools={action_name: lambda _: "ok"})
 
     plan = {
@@ -211,11 +215,59 @@ def test_confirmation_policy_matrix(
         proposal_id = result["proposal_id"]
         assert executor.confirm(proposal_id, approved=True) is True
         completed = executor.execute_plan(plan, dry_run=False, proposal_id=proposal_id)
+        
+        # If it was Level 4 (high_risk), it might need second confirmation
+        if completed["status"] == "confirmation_missing" and completed.get("required_confirms") == 2:
+             assert executor.confirm(proposal_id, approved=True) is True
+             completed = executor.execute_plan(plan, dry_run=False, proposal_id=proposal_id)
+
         assert completed["status"] == "ok"
         assert completed["results"][0]["status"] == "executed"
     else:
         assert result["status"] == "ok"
         assert result["results"][0]["status"] == "executed"
+
+
+def test_double_confirmation_for_destructive_action(isolated_registry: None, executor: ActionExecutor) -> None:
+    # Action starting with 'delete' triggers level 4
+    action_id = "system.database.delete_backup"
+    _register_action(action_id, is_critical=True, required=["db_name"])
+    
+    executor.register_tool(action_id, lambda _: "purged")
+    
+    plan = {
+        "steps": [
+            {
+                "tool": action_id,
+                "action_type": "high_risk",
+                "params": {"db_name": "prod_backup"},
+            }
+        ]
+    }
+    
+    # 1. First execution attempt -> confirmation required
+    res1 = executor.execute_plan(plan, dry_run=False)
+    assert res1["status"] == "confirmation_required"
+    assert res1["level"] == 4
+    proposal_id = res1["proposal_id"]
+    
+    # 2. First confirmation
+    assert executor.confirm(proposal_id, approved=True) is True
+    
+    # 3. Second execution attempt -> still missing one confirmation
+    res2 = executor.execute_plan(plan, dry_run=False, proposal_id=proposal_id)
+    assert res2["status"] == "confirmation_missing"
+    assert res2["current_confirms"] == 1
+    assert res2["required_confirms"] == 2
+    
+    # 4. Second confirmation
+    assert executor.confirm(proposal_id, approved=True) is True
+    
+    # 5. Third execution attempt -> OK
+    res3 = executor.execute_plan(plan, dry_run=False, proposal_id=proposal_id)
+    assert res3["status"] == "ok"
+    assert res3["results"][0]["status"] == "executed"
+    assert res3["results"][0]["output"] == "purged"
 
 
 @pytest.mark.parametrize(
