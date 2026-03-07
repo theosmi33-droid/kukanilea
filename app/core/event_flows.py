@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-from app.core.event_bus import EventBus
+from app.core.event_bus import EventBus, EventType
 from app.modules.aufgaben.contracts import create_task
 from app.modules.kalender.contracts import create_event
 from app.knowledge.ics_source import knowledge_calendar_suggest_from_text
@@ -85,6 +85,6 @@ def init_event_flows() -> None:
     global _FLOWS_REGISTERED
     if _FLOWS_REGISTERED:
         return
-    EventBus.subscribe("email.received", _create_task_from_email)
-    EventBus.subscribe("document.processed", _create_calendar_event_from_document)
+    EventBus.subscribe(EventType.EMAIL_RECEIVED, _create_task_from_email)
+    EventBus.subscribe(EventType.DOCUMENT_PROCESSED, _create_calendar_event_from_document)
     _FLOWS_REGISTERED = True
