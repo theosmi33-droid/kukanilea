@@ -565,19 +565,10 @@ _DB_INIT_LOCK = threading.RLock()
 _INDEX_WARMUP_THREAD_LOCK = threading.RLock()
 _INDEX_WARMUP_THREAD: Optional[threading.Thread] = None
 
-def _db() -> sqlite3.Connection:
-    global _DB_INITIALIZED
-    
-    if not _DB_INITIALIZED:
-        with _DB_INIT_LOCK:
-            if not _DB_INITIALIZED:
-                _DB_INITIALIZED = True
-                # db_init will use this _db() function, which is now safe from recursion
-                # because _DB_INITIALIZED is already True.
-                db_init()
-
+def _open_db_connection() -> sqlite3.Connection:
     con = sqlite3.connect(str(DB_PATH))
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA busy_timeout=5000;")
     con.execute("PRAGMA journal_mode=WAL;")
     con.execute("PRAGMA synchronous=NORMAL;")
     con.execute("PRAGMA foreign_keys=ON;")
@@ -585,6 +576,18 @@ def _db() -> sqlite3.Connection:
     con.execute("PRAGMA cache_size=-64000;")
     con.execute("PRAGMA mmap_size=268435456;")
     return con
+
+
+def _db() -> sqlite3.Connection:
+    global _DB_INITIALIZED
+    
+    if not _DB_INITIALIZED:
+        with _DB_INIT_LOCK:
+            if not _DB_INITIALIZED:
+                db_init()
+                _DB_INITIALIZED = True
+
+    return _open_db_connection()
 
 
 def _table_exists(con: sqlite3.Connection, name: str) -> bool:
@@ -623,7 +626,7 @@ def _has_fts5(con: sqlite3.Connection) -> bool:
 def db_init() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _DB_LOCK:
-        con = _db()
+        con = _open_db_connection()
         try:
             con.execute(
                 """
