@@ -43,11 +43,18 @@
       <ol id="floating-chat-steps" class="floating-chat-steps"></ol>
     </div>
 
-    <div id="floating-chat-confirm" class="floating-chat-confirm" hidden>
-      <p id="floating-chat-confirm-text"></p>
+    <div id="floating-chat-confirm" class="floating-chat-confirm" hidden aria-live="polite" aria-atomic="true">
+      <p class="floating-chat-confirm-eyebrow">Sicherheitsfreigabe</p>
+      <p id="floating-chat-confirm-title" class="floating-chat-confirm-title">Bitte kurz prüfen</p>
+      <p id="floating-chat-confirm-text" class="floating-chat-confirm-text"></p>
+      <p id="floating-chat-confirm-risk" class="floating-chat-confirm-risk" hidden></p>
+      <div id="floating-chat-confirm-preview" class="floating-chat-confirm-preview" hidden>
+        <p class="floating-chat-confirm-preview-title">Vorschau der Schritte</p>
+        <ul id="floating-chat-confirm-actions"></ul>
+      </div>
       <div class="floating-chat-confirm-actions">
-        <button id="floating-chat-confirm-yes" type="button" class="btn btn-primary btn-sm">Ja, ausführen</button>
-        <button id="floating-chat-confirm-no" type="button" class="btn btn-secondary btn-sm">Abbrechen</button>
+        <button id="floating-chat-confirm-yes" type="button" class="btn btn-primary btn-sm">Freigeben &amp; ausführen</button>
+        <button id="floating-chat-confirm-no" type="button" class="btn btn-secondary btn-sm">Nicht freigeben</button>
       </div>
     </div>
 
