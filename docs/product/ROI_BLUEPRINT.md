@@ -56,7 +56,7 @@
 ### Acceptance Criteria (AC)
 - All workflows must work **offline** (cached data, local AI if available).
 - Risk-heavy actions (Send, Delete, Invoice) must have a **Confirm Gate**.
-- UI must adhere to **White-Mode Only** and **Zero-CDN** (local assets).
+- UI must adhere to **White-Mode Only** and **offline-first / local-first** asset delivery (auditierbar).
 - Every domain action must trigger an **Audit Log** (Who, When, What).
 
 ### Test Ideas

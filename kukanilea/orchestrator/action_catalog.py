@@ -18,6 +18,16 @@ COMMON_VERBS = ("read", "list", "search", "create", "update", "delete", "status"
 SCHEDULING_VERBS = ("read", "list", "search", "create", "update", "delete", "schedule")
 COMMUNICATION_VERBS = ("read", "list", "search", "reply", "send", "status")
 
+LEGACY_ACTION_ALIASES: dict[str, str] = {
+    "dashboard.read": "dashboard.summary.read",
+    "crm.search_customer": "crm.customer.search",
+    "task.create": "tasks.task.create",
+    "calendar.create_appointment": "calendar.appointment.create",
+    "dms.search_invoice": "dms.invoice.search",
+    "warehouse.material_check": "warehouse.material.status",
+    "messenger.reply": "messenger.message.reply",
+}
+
 
 def _make_entities(*names: str, verbs: tuple[str, ...] = COMMON_VERBS, schema: dict[str, str] | None = None) -> tuple[EntitySpec, ...]:
     payload = schema or {"tenant": "str", "query": "str", "payload": "dict"}
@@ -60,6 +70,9 @@ def create_action_registry() -> ActionRegistry:
     for alias in alias_ids:
         if alias not in registry.actions:
             raise ValueError(f"Expected canonical action missing from generated registry: {alias}")
+
+    for legacy_action, canonical_action in LEGACY_ACTION_ALIASES.items():
+        registry.register_legacy_alias(legacy_action, canonical_action)
 
     registry.validate()
     return registry

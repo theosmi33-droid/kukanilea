@@ -1,8 +1,8 @@
-# KUKANILEA Business OS
+# KUKANILEA
 
 🚀 **Local-First Enterprise Intelligence**
 
-KUKANILEA is a modern, high-performance Business Operating System designed for the craft and trade industries. It combines local AI capabilities with enterprise-grade stability and security.
+KUKANILEA ist eine local-first und offline-first Arbeitsplattform für Handwerk und Mittelstand. Die MIA-gestützte Ausführung bleibt auditierbar, deterministisch und Sovereign-11-kompatibel.
 
 ## Recent Updates (v1.0.0-beta.3)
 
@@ -63,7 +63,7 @@ Regel: `rg`/`grep -n` bevorzugen, keine großen `cat`-Dumps über ganze Verzeich
 python scripts/dev/verify_tools.py
 ```
 
-Der Check lädt alle Tool-Module dynamisch, validiert den Core-Tool-Interface-Contract und liefert einen Non-Zero-Exitcode bei fehlerhaften Tools.
+Der Check lädt alle Tool-Module dynamisch, validiert den Core-Tool-Interface-Contract und liefert einen klaren Exitcode ungleich 0 bei fehlerhaften Tools.
 
 ## Quick Start (Developer)
 
