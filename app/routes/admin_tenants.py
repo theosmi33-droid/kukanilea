@@ -34,7 +34,7 @@ from app.core.logic import audit_log
 from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
-from app.license import load_license
+from app.license import load_license, load_runtime_license_state
 from app.security.gates import (
     CRITICAL_CONFIRM_GATE_BY_ROUTE,
     confirm_gate,
@@ -554,6 +554,10 @@ def upload_license():
 
     temp_license = Config.LICENSE_PATH.with_suffix(".new")
     try:
+        previous_status = str(current_app.config.get("LICENSE_STATUS", "active"))
+        previous_reason = str(current_app.config.get("LICENSE_REASON", "ok"))
+        previous_read_only = bool(current_app.config.get("READ_ONLY", False))
+
         temp_license.parent.mkdir(parents=True, exist_ok=True)
         temp_license.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -578,7 +582,37 @@ def upload_license():
             meta={"plan": payload.get("plan"), "customer_id": payload.get("customer_id")},
             tenant_id=current_tenant() or "SYSTEM",
         )
+
+        refreshed = load_runtime_license_state(
+            license_path=current_app.config["LICENSE_PATH"],
+            trial_path=current_app.config["TRIAL_PATH"],
+            trial_days=int(current_app.config.get("TRIAL_DAYS", 14)),
+        )
+        current_app.config["PLAN"] = refreshed["plan"]
+        current_app.config["TRIAL"] = refreshed["trial"]
+        current_app.config["TRIAL_DAYS_LEFT"] = refreshed["trial_days_left"]
+        current_app.config["READ_ONLY"] = refreshed["read_only"]
+        current_app.config["LICENSE_REASON"] = refreshed["reason"]
+        current_app.config["LICENSE_STATUS"] = refreshed.get("status", "active")
+
+        audit_log(
+            user=current_user() or "system",
+            role=current_role() or "ADMIN",
+            action="LICENSE_STATE_APPLIED",
+            meta={
+                "from_status": previous_status,
+                "from_reason": previous_reason,
+                "from_read_only": previous_read_only,
+                "to_status": refreshed.get("status", "active"),
+                "to_reason": refreshed["reason"],
+                "to_read_only": bool(refreshed["read_only"]),
+            },
+            tenant_id=current_tenant() or "SYSTEM",
+        )
     except Exception as e:
+        current_app.config["READ_ONLY"] = True
+        current_app.config["LICENSE_REASON"] = "license_runtime_refresh_failed"
+        current_app.config["LICENSE_STATUS"] = "blocked"
         if temp_license.exists():
             temp_license.unlink()
         return jsonify(ok=False, error="system_error", detail=str(e)), 500

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from tests.time_utils import utc_now_iso
 
 from pathlib import Path
@@ -41,7 +43,7 @@ def test_license_status_flow_active_grace_blocked(monkeypatch, tmp_path: Path):
     }
     statuses = [
         ("active", False, "ok"),
-        ("grace", False, "grace"),
+        ("grace", True, "grace_read_only"),
         ("gesperrt", True, "license_blocked_smb_unreachable"),
     ]
     for status, expected_read_only, expected_reason in statuses:
@@ -57,6 +59,64 @@ def test_license_status_flow_active_grace_blocked(monkeypatch, tmp_path: Path):
         assert state["status"] in {"active", "grace", "blocked"}
         assert state["read_only"] is expected_read_only
         assert state["reason"] == expected_reason
+
+
+def test_license_upload_refreshes_runtime_state_and_writes_audit(monkeypatch, tmp_path: Path):
+    import app.routes.admin_tenants as admin_routes
+
+    app = _make_app(tmp_path, monkeypatch)
+    app.config["READ_ONLY"] = True
+    app.config["LICENSE_REASON"] = "license_blocked_smb_unreachable"
+    app.config["LICENSE_STATUS"] = "blocked"
+
+    monkeypatch.setattr(admin_routes, "load_license", lambda _p: {"valid": True, "plan": "ENTERPRISE"})
+    monkeypatch.setattr(
+        admin_routes,
+        "load_runtime_license_state",
+        lambda **_kwargs: {
+            "plan": "ENTERPRISE",
+            "trial": False,
+            "trial_days_left": 0,
+            "expired": False,
+            "device_mismatch": False,
+            "read_only": False,
+            "reason": "ok",
+            "status": "active",
+        },
+    )
+
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+
+    response = client.post(
+        "/admin/settings/license/upload",
+        data={"license_json": '{"plan":"ENTERPRISE"}', "confirm": "YES"},
+    )
+    assert response.status_code in {302, 303}
+    assert app.config["READ_ONLY"] is False
+    assert app.config["LICENSE_STATUS"] == "active"
+    assert app.config["LICENSE_REASON"] == "ok"
+
+    con = sqlite3.connect(app.config["CORE_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            "SELECT action, meta_json FROM audit WHERE action IN ('LICENSE_UPLOAD','LICENSE_STATE_APPLIED') ORDER BY id"
+        ).fetchall()
+    finally:
+        con.close()
+    actions = [str(row["action"]) for row in rows]
+    assert "LICENSE_UPLOAD" in actions
+    assert "LICENSE_STATE_APPLIED" in actions
+    applied_row = next(row for row in rows if str(row["action"]) == "LICENSE_STATE_APPLIED")
+    applied_meta = json.loads(str(applied_row["meta_json"]))
+    assert applied_meta["from_status"] == "blocked"
+    assert applied_meta["from_read_only"] is True
+    assert applied_meta["to_status"] == "active"
+    assert applied_meta["to_read_only"] is False
 
 
 def test_settings_page_exposes_backup_paths_and_hooks(tmp_path: Path, monkeypatch):

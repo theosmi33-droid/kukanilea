@@ -18,10 +18,16 @@ RESTORE_TIMESTAMP="${RESTORE_TIMESTAMP:-$(date +%Y-%m-%d_%H-%M)}"
 REPORT_FILE="${REPORT_FILE:-instance/operator_report_restore_${RESTORE_TIMESTAMP}.txt}"
 DRY_RUN=0
 MODE="nas"
+DEGRADED_REASON="none"
 START_EPOCH="$(date +%s)"
 NAS_RETRIES="${NAS_RETRIES:-3}"
 BASELINE_PATH="${BASELINE_PATH:-instance/restore_baseline.json}"
 VALIDATION_SCRIPT="${VALIDATION_SCRIPT:-$SCRIPT_DIR/restore_validation.py}"
+ALLOW_UNVERIFIED_RESTORE="${ALLOW_UNVERIFIED_RESTORE:-0}"
+INTEGRITY_POLICY="strict"
+if [[ "$ALLOW_UNVERIFIED_RESTORE" == "1" ]]; then
+  INTEGRITY_POLICY="allow_unverified"
+fi
 
 usage() {
   cat <<'USAGE'
@@ -108,6 +114,7 @@ if [[ -z "$BACKUP_FILE" ]]; then
         -print 2>/dev/null | awk -F/ '{print $NF}' | sort | tail -n 1 || true
     )"
     MODE="degraded_local"
+    DEGRADED_REASON="backup_resolved_from_local_fallback"
   fi
 fi
 
@@ -116,6 +123,8 @@ fi
 if [[ "$DRY_RUN" -eq 1 ]]; then
   {
     echo "mode=dry_run"
+    echo "degraded_reason=none"
+    echo "integrity_policy=$INTEGRITY_POLICY"
     echo "tenant_id=$TENANT_ID"
     echo "backup_file=$BACKUP_FILE"
     echo "verify_db=skipped_dry_run"
@@ -136,6 +145,7 @@ SNAPSHOT_FILE="${BACKUP_FILE}.snapshot.json"
 if [[ "$MODE" == "nas" ]] && command -v smbclient >/dev/null 2>&1; then
   if ! nas_get_with_retry "$BACKUP_FILE" "$LOCAL_FILE"; then
     MODE="degraded_local"
+    DEGRADED_REASON="nas_download_failed"
     log "WARN NAS download failed, switching to degraded local mode"
   else
     nas_get_with_retry "$CHECKSUM_FILE" "${TMP_DIR}/${CHECKSUM_FILE}" || true
@@ -144,6 +154,7 @@ if [[ "$MODE" == "nas" ]] && command -v smbclient >/dev/null 2>&1; then
   fi
 elif [[ "$MODE" == "nas" ]]; then
   MODE="degraded_local"
+  DEGRADED_REASON="smbclient_missing"
   log "WARN smbclient missing, switching to degraded local mode"
 fi
 
@@ -168,12 +179,12 @@ HAS_SNAPSHOT=0
 [[ -f "${TMP_DIR}/${METADATA_FILE}" ]] && HAS_METADATA=1
 [[ -f "${TMP_DIR}/${SNAPSHOT_FILE}" ]] && HAS_SNAPSHOT=1
 
-if [[ "$MODE" == "nas" ]]; then
+if [[ "$INTEGRITY_POLICY" == "strict" ]]; then
   [[ "$HAS_CHECKSUM" -eq 1 ]] || die "$EXIT_RUNTIME" "checksum file missing: ${CHECKSUM_FILE}"
   [[ "$HAS_METADATA" -eq 1 ]] || die "$EXIT_RUNTIME" "metadata file missing: ${METADATA_FILE}"
   [[ "$HAS_SNAPSHOT" -eq 1 ]] || die "$EXIT_RUNTIME" "snapshot file missing: ${SNAPSHOT_FILE}"
 else
-  # In degraded local mode manual emergency archives can exist without evidence artifacts.
+  # In emergency mode, manual archives can exist without full evidence artifacts.
   # If evidence exists, metadata+snapshot must remain paired for deterministic validation.
   if [[ "$HAS_METADATA" -eq 1 && "$HAS_SNAPSHOT" -eq 0 ]]; then
     die "$EXIT_RUNTIME" "snapshot file missing: ${SNAPSHOT_FILE}"
@@ -183,27 +194,35 @@ else
   fi
 fi
 
-if [[ "$HAS_CHECKSUM" -eq 1 ]]; then
-  CHECKSUM_EXPECTED="$(awk '{print $1}' "${TMP_DIR}/${CHECKSUM_FILE}" | head -n1)"
-  CHECKSUM_ACTUAL="$(sha256_file "$LOCAL_FILE")"
-  [[ "$CHECKSUM_EXPECTED" == "$CHECKSUM_ACTUAL" ]] || die "$EXIT_RUNTIME" "checksum mismatch for ${BACKUP_FILE}"
-else
-  log "WARN checksum missing for ${BACKUP_FILE}; continuing in degraded mode"
-fi
-
 INTEGRITY_STATUS="ok"
 INTEGRITY_ISSUES=""
+CHECKSUM_ACTUAL="$(sha256_file "$LOCAL_FILE")"
+if [[ "$HAS_CHECKSUM" -eq 1 ]]; then
+  CHECKSUM_EXPECTED="$(awk '{print $1}' "${TMP_DIR}/${CHECKSUM_FILE}" | head -n1)"
+  [[ "$CHECKSUM_EXPECTED" == "$CHECKSUM_ACTUAL" ]] || die "$EXIT_RUNTIME" "checksum mismatch for ${BACKUP_FILE}"
+else
+  if [[ "$INTEGRITY_POLICY" == "strict" ]]; then
+    die "$EXIT_RUNTIME" "checksum file missing: ${CHECKSUM_FILE}"
+  fi
+  INTEGRITY_STATUS="warn_missing_checksum"
+  INTEGRITY_ISSUES="checksum missing"
+  log "WARN checksum missing for ${BACKUP_FILE}; continuing because allow_unverified_restore=1"
+fi
+
 if [[ "$HAS_METADATA" -eq 0 ]]; then
+  if [[ "$INTEGRITY_POLICY" == "strict" ]]; then
+    die "$EXIT_RUNTIME" "metadata file missing: ${METADATA_FILE}"
+  fi
   INTEGRITY_STATUS="warn_missing_metadata"
   INTEGRITY_ISSUES="metadata missing"
 elif command -v python3 >/dev/null 2>&1; then
-  if ! python3 - "$TENANT_ID" "$BACKUP_FILE" "$LOCAL_FILE" "${TMP_DIR}/${METADATA_FILE}" <<'PYMETA'
+  if ! python3 - "$TENANT_ID" "$BACKUP_FILE" "$LOCAL_FILE" "${TMP_DIR}/${METADATA_FILE}" "$CHECKSUM_ACTUAL" <<'PYMETA'
 import json
 import os
 import sys
 from pathlib import Path
 
-tenant, backup_file, local_file, metadata_file = sys.argv[1:5]
+tenant, backup_file, local_file, metadata_file, checksum_actual = sys.argv[1:6]
 meta = json.loads(Path(metadata_file).read_text(encoding="utf-8"))
 issues = []
 if meta.get("tenant_id") != tenant:
@@ -213,6 +232,17 @@ if meta.get("backup_file") != backup_file:
 size = os.path.getsize(local_file)
 if int(meta.get("backup_size_bytes", -1)) != int(size):
     issues.append("size mismatch")
+meta_checksum = str(meta.get("checksum_sha256", "")).strip()
+if not meta_checksum:
+    issues.append("checksum missing")
+elif meta_checksum != checksum_actual:
+    issues.append("checksum mismatch")
+expected_snapshot = f"{backup_file}.snapshot.json"
+snapshot_file = str(meta.get("snapshot_file", "")).strip()
+if not snapshot_file:
+    issues.append("snapshot file missing")
+elif snapshot_file != expected_snapshot:
+    issues.append("snapshot file mismatch")
 if issues:
     print("; ".join(issues))
     raise SystemExit(1)
@@ -223,6 +253,10 @@ PYMETA
   fi
 else
   die "$EXIT_DEPENDENCY" "python3 required for metadata verification"
+fi
+
+if [[ "$INTEGRITY_STATUS" == "failed" ]]; then
+  die "$EXIT_RUNTIME" "metadata integrity check failed"
 fi
 
 if [[ "$LOCAL_FILE" == *.age ]]; then
@@ -320,6 +354,8 @@ RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
 {
   echo "report_version=1"
   echo "mode=$MODE"
+  echo "degraded_reason=$DEGRADED_REASON"
+  echo "integrity_policy=$INTEGRITY_POLICY"
   echo "tenant_id=$TENANT_ID"
   echo "backup_file=$BACKUP_FILE"
   if [[ -n "$CHECKSUM_EXPECTED" ]]; then
@@ -343,9 +379,6 @@ RPO_SECONDS="$((END_EPOCH - BACKUP_TS_EPOCH))"
   echo "rpo_seconds=$RPO_SECONDS"
 } > "$REPORT_FILE"
 
-if [[ "$INTEGRITY_STATUS" == "failed" ]]; then
-  die "$EXIT_RUNTIME" "metadata integrity check failed"
-fi
 if [[ "$VALIDATION_STATUS" == "failed" ]]; then
   die "$EXIT_RUNTIME" "restore validation after compare failed"
 fi

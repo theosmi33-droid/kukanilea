@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-03-05T18:14:38+00:00",
-  "decision": "NO-GO",
+  "timestamp": "2026-03-07T04:55:14+01:00",
+  "decision": "FAIL",
   "exit_code": 3,
   "counts": {
-    "pass": 8,
+    "pass": 13,
     "warn": 0,
-    "fail": 3
+    "fail": 1
   },
   "gates": [
     {
@@ -15,13 +15,13 @@
     },
     {
       "name": "MIN_SCOPE",
-      "status": "FAIL",
-      "note": "files=5 loc=202 (need files>=8 or loc>=230; origin/main unavailable in local clone possible)"
+      "status": "PASS",
+      "note": "files=17 loc=878"
     },
     {
       "name": "Health",
-      "status": "FAIL",
-      "note": "healthcheck failed"
+      "status": "PASS",
+      "note": "healthcheck passed"
     },
     {
       "name": "Zero-CDN",
@@ -36,12 +36,12 @@
     {
       "name": "License",
       "status": "FAIL",
-      "note": "status=LOCKED:MISSING"
+      "note": "status=LOCK:MISSING"
     },
     {
       "name": "Backup",
       "status": "PASS",
-      "note": "backup/restore evidence verified"
+      "note": "backup/restore evidence + verification hooks verified"
     },
     {
       "name": "AI",
@@ -51,12 +51,27 @@
     {
       "name": "MIN_TESTS",
       "status": "PASS",
-      "note": "tests/ops test-count=33"
+      "note": "tests/ops test-count=53"
     },
     {
       "name": "CI_GATE",
       "status": "PASS",
       "note": "pytest tests/ops passed"
+    },
+    {
+      "name": "MIA_GATE7_SMOKE",
+      "status": "PASS",
+      "note": "gate7 smoke evidence generated in /Users/gensuminguyen/Kukanilea/evidence/operations/gate7_latest"
+    },
+    {
+      "name": "MIA_GATE7_ARTIFACTS",
+      "status": "PASS",
+      "note": "gate7 artifacts contain required evidence matrix"
+    },
+    {
+      "name": "MIA_UNCONTROLLED_WRITES",
+      "status": "PASS",
+      "note": "writes limited to controlled code/test/evidence paths"
     },
     {
       "name": "Evidence",
