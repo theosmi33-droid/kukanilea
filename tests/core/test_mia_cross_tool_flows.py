@@ -13,9 +13,9 @@ def test_flow_catalog_contains_five_roi_flows() -> None:
         "messenger_to_followup_task",
         "messenger_to_task",
         "document_to_deadline_task",
-        "upload_to_project_proposal",
+        "upload_to_project",
         "invoice_receipt_triage",
-        "task_to_calendar_proposal",
+        "task_to_calendar",
     }
 
 
@@ -117,6 +117,13 @@ def test_confirm_gate_blocks_execution_without_explicit_confirmation() -> None:
     blocked = engine.execute(proposal["proposal_id"], confirmed=False)
     assert blocked["status"] == "confirmation_required"
     assert engine.audit_log[-1]["event_type"] == "mia.confirm.denied"
+
+
+    result = engine.execute(proposal.get("proposal_id"), confirmed=True)
+    assert result["status"] == "executed"
+    event_types = [entry["event_type"] for entry in engine.audit_log]
+    assert "mia.confirm.granted" in event_types
+    assert "mia.execution.started" in event_types
 
 
 def test_step_level_audit_is_emitted_for_email_to_task_execution() -> None:

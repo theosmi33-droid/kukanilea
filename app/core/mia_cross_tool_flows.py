@@ -76,7 +76,7 @@ FLOW_CATALOG: tuple[FlowDefinition, ...] = (
         value="Erkannte Fristen werden in umsetzbare Aufgaben überführt.",
     ),
     FlowDefinition(
-        flow_id="upload_to_project_proposal",
+        flow_id="upload_to_project",
         trigger="document.processed",
         title="Upload -> Projekt-Vorschlag",
         value="Eingehende Dokumente (Entwürfe/Angebote) werden als Projekt-Vorschlag aufbereitet.",
@@ -88,7 +88,7 @@ FLOW_CATALOG: tuple[FlowDefinition, ...] = (
         value="Belege werden lokal auffindbar und in Folgeaktionen überführt.",
     ),
     FlowDefinition(
-        flow_id="task_to_calendar_proposal",
+        flow_id="task_to_calendar",
         trigger="task.created",
         title="Aufgabe -> Kalender-Vorschlag",
         value="Aufgaben mit Zeitbezug werden direkt als Kalender-Vorschlag vorbereitet.",
@@ -169,9 +169,13 @@ class MiaFlowEngine:
             return {"status": "not_found", "proposal_id": proposal_id}
 
         tenant_id = str(proposal.get("steps", [{}])[0].get("payload", {}).get("tenant") or "KUKANILEA")
-        if proposal.get("confirm_points") and not confirmed:
-            self._audit(MIA_EVENT_CONFIRM_DENIED, proposal_id, {"reason": "explicit_confirm_required", "tenant_id": tenant_id})
-            return {"status": "confirmation_required", "proposal_id": proposal_id}
+        if proposal.get("confirm_points"):
+            if not confirmed:
+                self._audit(MIA_EVENT_CONFIRM_DENIED, proposal_id, {"reason": "explicit_confirm_required", "tenant_id": tenant_id})
+                return {"status": "confirmation_required", "proposal_id": proposal_id}
+            else:
+                from app.mia_audit import MIA_EVENT_CONFIRM_GRANTED
+                self._audit(MIA_EVENT_CONFIRM_GRANTED, proposal_id, {"tenant_id": tenant_id})
 
         self._audit(MIA_EVENT_EXECUTION_STARTED, proposal_id, {"flow_id": proposal.get("flow_id"), "tenant_id": tenant_id})
         results: list[dict[str, Any]] = []
@@ -377,7 +381,7 @@ class MiaFlowEngine:
 
             has_project_name = bool(project_name)
             return {
-                "flow_id": "upload_to_project_proposal",
+                "flow_id": "upload_to_project",
                 "flow_title": "Upload -> Projekt-Vorschlag",
                 "degradation": "summarize_only_without_name",
                 "clarifications": ["Wie soll das neue Projekt heißen?"] if not has_project_name else [],
@@ -455,7 +459,7 @@ class MiaFlowEngine:
             mode = "confirm" if start_at else "propose"
             reason = "missing_start_time" if not start_at else ""
             return {
-                "flow_id": "task_to_calendar_proposal",
+                "flow_id": "task_to_calendar",
                 "flow_title": "Aufgabe -> Kalender-Vorschlag",
                 "degradation": "manual_calendar_entry",
                 "steps": [

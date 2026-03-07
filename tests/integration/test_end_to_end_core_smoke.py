@@ -163,6 +163,76 @@ def test_smoke_summary_health_and_confirmed_write_flow(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 @pytest.mark.smoke
+def test_smoke_mia_cross_tool_flow_harmonic_execution(tmp_path, monkeypatch):
+    from app.core.mia_cross_tool_flows import MiaFlowEngine
+
+    # Mock handlers to simulate tool execution
+    executed_actions = []
+
+    def generic_handler(p):
+        executed_actions.append(p)
+        return {"ok": True, "id": "123"}
+
+    engine = MiaFlowEngine(
+        handlers={
+            "create_task": generic_handler,
+            "search_documents": generic_handler,
+            "summarize_document": generic_handler,
+            "create_followup_task": generic_handler,
+        }
+    )
+
+    # 1. Write-Flow mit Confirm (E-Mail -> Aufgabe)
+    proposal_w = engine.plan(
+        "email.received",
+        {
+            "tenant": "KUKANILEA",
+            "subject": "TODO: Heizung prüfen",
+            "body": "Termin für Wartung vereinbaren.",
+            "email_id": "mail-smoke-w1",
+        },
+    )
+    assert proposal_w["flow_id"] == "email_to_task"
+    assert proposal_w["status"] == "proposal_required"
+    assert "create_task" in proposal_w["confirm_points"]
+
+    # Blocked without confirm
+    res_blocked = engine.execute(proposal_w["proposal_id"], confirmed=False)
+    assert res_blocked["status"] == "confirmation_required"
+
+    # Success with confirm
+    res_ok = engine.execute(proposal_w["proposal_id"], confirmed=True)
+    assert res_ok["status"] == "executed"
+    assert any("Heizung prüfen" in str(p) for p in executed_actions)
+
+    # 2. Read-Flow (Rechnung -> Suche/Zusammenfassung - erste Steps sind Read)
+    # Note: invoice_receipt_triage has 2 read steps + 1 write step (confirm)
+    proposal_r = engine.plan(
+        "document.processed",
+        {
+            "tenant": "KUKANILEA",
+            "filename": "rechnung_test.pdf",
+            "ocr_text": "Rechnung Nr 456",
+            "search_index_available": True,
+        },
+    )
+    assert proposal_r["flow_id"] == "invoice_receipt_triage"
+    # Execute (this will trigger read steps and then block on the write step if not confirmed)
+    res_r = engine.execute(proposal_r["proposal_id"], confirmed=True)
+    assert res_r["status"] == "executed"
+
+    # Validation: Audit events must be harmonic
+    event_types = [e["event_type"] for e in engine.audit_log]
+    assert "mia.proposal.created" in event_types
+    assert "mia.confirm.requested" in event_types
+    assert "mia.confirm.granted" in event_types
+    assert "mia.execution.started" in event_types
+    assert "mia.execution.finished" in event_types
+    assert "mia.confirm.denied" in event_types  # from the blocked attempt
+
+
+@pytest.mark.integration
+@pytest.mark.smoke
 def test_smoke_mia_router_read_safety_and_offline_fallback():
     bus = EventBus()
     agent = ManagerAgent(event_bus=bus, external_calls_enabled=False)
