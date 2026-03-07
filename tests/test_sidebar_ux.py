@@ -166,3 +166,17 @@ def test_skip_link_and_aria_labels_are_present(tmp_path, monkeypatch):
     assert 'data-nav-mode="full-page"' in html
     assert 'aria-label="Sovereign-11 Hauptseiten"' in html
     assert 'aria-label="Assistant öffnen"' in html
+
+
+def test_sidebar_icon_sprite_references_exist() -> None:
+    import re
+
+    sidebar = Path("app/templates/partials/sidebar.html").read_text(encoding="utf-8")
+    layout = Path("app/templates/layout.html").read_text(encoding="utf-8")
+    sprite = Path("app/static/icons/sprite.svg").read_text(encoding="utf-8")
+
+    refs = set(re.findall(r"/static/icons/sprite\.svg#([a-z0-9-]+)", sidebar + layout))
+    symbols = set(re.findall(r'<symbol\s+id="([a-z0-9-]+)"', sprite))
+
+    assert refs
+    assert refs <= symbols

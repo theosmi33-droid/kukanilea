@@ -77,6 +77,22 @@ html.sidebar-collapsed .nav-link.active::before {
   left: 0;
 }
 
+
+.nav-icon,
+.mobile-nav-icon,
+.nav-icon-ui {
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nav-link.active .nav-icon,
+.mobile-nav-item.active .mobile-nav-icon {
+  stroke-width: 2.1;
+}
+
 /* --- Topbar Refinement --- */
 .topbar {
   height: 64px;
