@@ -294,7 +294,7 @@ def create_app() -> Flask:
         try:
             run_migrations(Path(app.config["CORE_DB"]))
             web.db_init()
-            if callable(getattr(web.core, "index_warmup", None)):
+            if not _is_test_context(app) and callable(getattr(web.core, "index_warmup", None)):
                 web.core.index_warmup(tenant_id=app.config.get("TENANT_DEFAULT", ""))
         except Exception as e:
             manager.report_error(f"Database Warmup Failed: {e}")
