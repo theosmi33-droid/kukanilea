@@ -9,7 +9,7 @@
     <div>
         <p class="page-kicker">Dashboard</p>
         <h1 class="m-0 text-3xl font-bold tracking-tight">Übersicht</h1>
-        <p class="text-secondary mt-2">Willkommen zurück. Hier sind die aktuellen Status Ihrer Beleg-Zentrale.</p>
+        <p class="text-secondary mt-2">Alles Wichtige auf einen Blick.</p>
     </div>
     <div class="flex gap-3">
         <a href="/upload" class="btn btn-primary btn-lg shadow-sm">
@@ -19,43 +19,42 @@
     </div>
   </header>
 
-  <section class="card border-light" aria-label="KPI Schnellscan">
+  <section class="card border-light" aria-label="Jetzt wichtig">
     <div class="card-body py-4 px-6">
       <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
-        <h2 class="m-0 text-base font-bold">Leitstand-Schnellscan</h2>
-        <span id="optimizer-action-counter" class="badge bg-primary-50 text-primary-700 border border-primary-100 text-[10px] font-black tracking-wider uppercase">Optimierung läuft…</span>
+        <h2 class="m-0 text-base font-bold">Jetzt wichtig</h2>
+        <span id="optimizer-action-counter" class="badge bg-primary-50 text-primary-700 border border-primary-100 text-[10px] font-black tracking-wider uppercase">Scan läuft…</span>
       </div>
       <div id="kpi-scan-rail" class="grid grid-cols-1 md:grid-cols-4 gap-3"></div>
-      <div id="alert-digest" class="mt-4 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main" role="status" aria-live="polite"></div>
+      <div id="alert-digest" class="mt-3 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main" role="status" aria-live="polite"></div>
     </div>
   </section>
 
-  <section class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Speed-to-Lead und Systemgesundheit">
-    <article class="card border-light" id="speed-to-lead-widget">
-      <div class="card-header border-light">
-        <h2 class="card-title text-base">Speed-to-Lead</h2>
-        <span id="speed-to-lead-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
-      </div>
-      <div class="card-body">
-        <div id="speed-to-lead-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
-        <p class="text-xs text-muted mt-3 mb-0">Quelle: Nur Contract-Endpoints <code>/api/&lt;tool&gt;/summary</code>.</p>
-      </div>
-    </article>
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Aufmerksamkeit nötig und nächster Schritt">
     <article class="card border-light" id="system-health-strip">
       <div class="card-header border-light">
-        <h2 class="card-title text-base">System Health Strip</h2>
+        <h2 class="card-title text-base">Aufmerksamkeit nötig</h2>
         <span id="health-strip-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
       </div>
       <div class="card-body">
-        <div id="health-strip-summary" class="text-sm text-main mb-3">Status initialisiert…</div>
+        <div id="health-strip-summary" class="text-sm text-main mb-3">Status…</div>
         <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
-        <p class="text-xs text-muted mt-3 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
+      </div>
+    </article>
+    <article class="card border-light" id="speed-to-lead-widget">
+      <div class="card-header border-light">
+        <h2 class="card-title text-base">Nächster Schritt</h2>
+        <span id="speed-to-lead-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
+      </div>
+      <div class="card-body">
+        <div id="speed-to-lead-cards" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+        <p class="text-xs text-muted mt-2 mb-0">Offene Kontakte zuerst klären.</p>
       </div>
     </article>
   </section>
 
-  <!-- 2. Priority Stats Grid -->
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+  <!-- 2. Kompakte Kennzahlen -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
     <!-- Archivierte Belege -->
     <div class="card card-featured border-light">
         <div class="card-body flex items-center gap-5">
@@ -63,7 +62,7 @@
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             </div>
             <div>
-                <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Archivierte Belege</div>
+                <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Belege gesamt</div>
                 <div class="text-3xl font-bold text-main">{{ (recent|length if recent else 0) + (items|length if items else 0) }}</div>
             </div>
         </div>
@@ -76,7 +75,7 @@
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </div>
             <div>
-                <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Vault Integrität</div>
+                <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Vault</div>
                 <div class="text-3xl font-bold text-success">100%</div>
             </div>
         </div>
@@ -210,7 +209,7 @@ function renderToolMatrix(payload) {
     const borderColor = isOk ? "var(--success)" : (isDegraded ? "var(--warning)" : "var(--error)");
     const bgClass = isOk ? "bg-success-bg" : (isDegraded ? "bg-warning-bg" : "bg-error-bg");
     
-    const reason = tool.degraded_reason ? `<div class="text-[10px] text-muted mt-1 leading-tight">${tool.degraded_reason}</div>` : "";
+    const reason = tool.degraded_reason ? `<div class="text-[10px] text-muted mt-1 leading-tight">Hinweis: ${tool.degraded_reason}</div>` : "";
     
     return `
     <article class="card card-tight border-light" style="border-left: 4px solid ${borderColor};">
@@ -244,17 +243,20 @@ function renderKpiRail(signals) {
   const rail = document.getElementById("kpi-scan-rail");
   if (!rail) return;
   const cards = [
-    { label: "Stabilitäts-Score", value: `${signals.score}%`, tone: signals.score >= 85 ? "success" : "warning" },
-    { label: "Review-Pipeline", value: signals.reviewQueue, tone: signals.reviewQueue > 3 ? "warning" : "success" },
-    { label: "Warnungen", value: signals.toolsWarn, tone: signals.toolsWarn ? "warning" : "success" },
-    { label: "Kritische Alerts", value: signals.toolsDown, tone: signals.toolsDown ? "error" : "success" },
+    { label: "Score", value: `${signals.score}%`, tone: signals.score >= 85 ? "success" : "warning", meta: "System" },
+    { label: "Review", value: signals.reviewQueue, tone: signals.reviewQueue > 3 ? "warning" : "success", meta: "offen" },
+    { label: "Degraded", value: signals.toolsWarn, tone: signals.toolsWarn ? "warning" : "success", meta: "Tools" },
+    { label: "Down", value: signals.toolsDown, tone: signals.toolsDown ? "error" : "success", meta: "kritisch" },
   ];
 
   rail.innerHTML = cards.map((card) => {
     const toneClass = card.tone === "error" ? "text-error border-error/20 bg-error-bg" : (card.tone === "warning" ? "text-warning border-warning/20 bg-warning-bg" : "text-success border-success/20 bg-success-bg");
-    return `<article class="rounded-xl border p-3 ${toneClass}">
-      <div class="text-[10px] uppercase tracking-wider font-black opacity-80">${card.label}</div>
-      <div class="text-2xl font-bold mt-1">${card.value}</div>
+    return `<article class="rounded-xl border px-3 py-2.5 ${toneClass}">
+      <div class="flex items-start justify-between gap-2">
+        <div class="text-[10px] uppercase tracking-wider font-black opacity-80">${card.label}</div>
+        <div class="text-[10px] opacity-80">${card.meta}</div>
+      </div>
+      <div class="text-2xl font-bold leading-none mt-1.5">${card.value}</div>
     </article>`;
   }).join("");
 }
@@ -264,11 +266,11 @@ function renderAlertDigest(signals) {
   if (!digest) return;
   if (!signals.toolsDown && !signals.toolsWarn) {
     digest.className = "mt-4 p-3 rounded-xl border border-success/20 bg-success-bg text-sm text-main";
-    digest.innerHTML = "<strong>Keine kritischen Tool-Alarme.</strong> Fokus auf Review-Durchsatz und schnelle Freigaben.";
+    digest.innerHTML = "<strong>Alles stabil.</strong> Fokus: Review abschließen.";
     return;
   }
   digest.className = "mt-4 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main";
-  digest.innerHTML = `<strong>Priorität:</strong> ${signals.toolsDown} kritisch, ${signals.toolsWarn} eingeschränkt. Bitte zuerst rote Tool-Checks bearbeiten.`;
+  digest.innerHTML = `<strong>Priorität:</strong> ${signals.toolsDown} down · ${signals.toolsWarn} degraded.`;
 }
 
 function executeOptimizerActions(signals, targetActions = 2200) {
@@ -281,7 +283,7 @@ function executeOptimizerActions(signals, targetActions = 2200) {
   }
   const counter = document.getElementById("optimizer-action-counter");
   if (counter) {
-    counter.textContent = `${actionCount} Aktionen ausgeführt · KPI-Scan priorisiert`;
+    counter.textContent = `${actionCount} Aktionen · Scan priorisiert`;
   }
 }
 
@@ -310,16 +312,16 @@ function renderSpeedToLead(summaryMap) {
   const lastResponseAgo = updatedAt.length ? Math.max(0, Math.round((Date.now() - Math.max(...updatedAt)) / 60000)) : null;
 
   const tiles = [
-    { label: "E-Mail offen", value: emailPending },
-    { label: "Messenger offen", value: messengerPending },
-    { label: "Anrufe offen", value: callsPending, hint: "Platzhalter" },
-    { label: "Letzte Reaktion", value: lastResponseAgo === null ? "—" : `${lastResponseAgo} min` },
+    { label: "E-Mail", value: emailPending, hint: "offen" },
+    { label: "Messenger", value: messengerPending, hint: "offen" },
+    { label: "Anrufe", value: callsPending, hint: "offen" },
+    { label: "Letzte Reaktion", value: lastResponseAgo === null ? "—" : `${lastResponseAgo}m` },
   ];
 
   container.innerHTML = tiles.map((tile) => `
-    <article class="rounded-xl border border-light p-3 bg-subtle">
+    <article class="rounded-xl border border-light px-3 py-2.5 bg-subtle">
       <div class="text-[10px] uppercase tracking-wider font-black text-muted">${tile.label}</div>
-      <div class="text-2xl font-bold text-main mt-1">${tile.value}</div>
+      <div class="text-2xl font-bold text-main leading-none mt-1.5">${tile.value}</div>
       ${tile.hint ? `<div class="text-[10px] text-muted mt-1">${tile.hint}</div>` : ""}
     </article>
   `).join("");
@@ -343,7 +345,7 @@ function renderHealthStrip(summaryMap, appHealthOk) {
   summary.className = `text-sm mb-3 ${appHealthOk ? "text-main" : "text-error"}`;
   summary.textContent = appHealthOk
     ? `${okCount} ok · ${degradedCount} degraded · ${downCount} down`
-    : `App /health nicht erreichbar · ${okCount} ok · ${degradedCount} degraded · ${downCount} down`;
+    : `App down · ${okCount} ok · ${degradedCount} degraded · ${downCount} down`;
 
   tools.innerHTML = rows.map((row) => `
     <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${row.status}</span>
