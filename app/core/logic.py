@@ -565,11 +565,16 @@ _DB_INIT_LOCK = threading.RLock()
 _INDEX_WARMUP_THREAD_LOCK = threading.RLock()
 _INDEX_WARMUP_THREAD: Optional[threading.Thread] = None
 
-def _open_db_connection() -> sqlite3.Connection:
-    con = sqlite3.connect(str(DB_PATH))
+def _open_db_connection(*, configure_wal: bool = False) -> sqlite3.Connection:
+    con = sqlite3.connect(str(DB_PATH), timeout=5.0)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA busy_timeout=5000;")
-    con.execute("PRAGMA journal_mode=WAL;")
+    if configure_wal:
+        try:
+            con.execute("PRAGMA journal_mode=WAL;")
+        except sqlite3.OperationalError:
+            # Keep boot resilient under concurrent test/process startups.
+            pass
     con.execute("PRAGMA synchronous=NORMAL;")
     con.execute("PRAGMA foreign_keys=ON;")
     con.execute("PRAGMA temp_store=MEMORY;")
@@ -626,7 +631,7 @@ def _has_fts5(con: sqlite3.Connection) -> bool:
 def db_init() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _DB_LOCK:
-        con = _open_db_connection()
+        con = _open_db_connection(configure_wal=True)
         try:
             con.execute(
                 """
