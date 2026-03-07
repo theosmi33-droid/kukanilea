@@ -38,8 +38,7 @@ def test_preflight_handles_missing_gh_and_prod_path(tmp_path: Path) -> None:
     assert "Lane:" in result.stdout
     assert "PR-Link: https://github.com/theosmi33-droid/kukanilea/pull/123" in result.stdout
     assert "Checks: gh=warn, runs=warn, prod=warn" in result.stdout
-    # warning-only preflight still exits 0 unless a hard gate fails
-    assert result.returncode == 0
+    assert result.returncode == 1
 
 
 def test_preflight_prints_scope_summary() -> None:
