@@ -16,6 +16,7 @@ class PendingProposal:
     proposal_id: str
     plan: dict[str, Any]
     created_at: str
+    max_level: int = 1
 
 
 class ActionExecutor:
@@ -24,7 +25,8 @@ class ActionExecutor:
     def __init__(self, tools: dict[str, ActionFn] | None = None):
         self.tools = tools or {}
         self._pending: dict[str, PendingProposal] = {}
-        self._confirmed: set[str] = set()
+        # Track number of confirmations per proposal
+        self._confirmations: dict[str, int] = {}
         self.audit_log: list[dict[str, Any]] = []
 
     def register_tool(self, name: str, handler: ActionFn) -> None:
@@ -33,42 +35,69 @@ class ActionExecutor:
     def confirm(self, proposal_id: str, approved: bool) -> bool:
         if not approved:
             self._pending.pop(proposal_id, None)
-            self._confirmed.discard(proposal_id)
+            self._confirmations.pop(proposal_id, None)
             return False
-        if proposal_id not in self._pending:
+        
+        proposal = self._pending.get(proposal_id)
+        if not proposal:
             return False
-        self._confirmed.add(proposal_id)
+            
+        count = self._confirmations.get(proposal_id, 0) + 1
+        self._confirmations[proposal_id] = count
+        
+        logger.info("proposal_confirm proposal_id=%s count=%s max_level=%s", 
+                    proposal_id, count, proposal.max_level)
         return True
 
-    def _needs_confirmation(self, plan: dict[str, Any]) -> bool:
+    def _get_max_level(self, plan: dict[str, Any]) -> int:
         from app.tools.action_registry import action_registry
         steps = plan.get("steps", [])
+        max_level = 1
         for step in steps:
             tool_name = step.get("tool")
             # Lookup action definition in registry
             action_def = action_registry._actions_by_name.get(tool_name)
-            if action_def and action_def.is_critical:
-                return True
-        return any(step.get("action_type") in {"write", "high_risk"} for step in steps)
+            if action_def:
+                max_level = max(max_level, action_def.level)
+            else:
+                # Fallback for dynamic/unknown tools
+                action_type = step.get("action_type")
+                if action_type == "high_risk":
+                    max_level = max(max_level, 4)
+                elif action_type == "write":
+                    max_level = max(max_level, 3)
+        return max_level
 
-    def _propose(self, plan: dict[str, Any]) -> str:
+    def _needs_confirmation(self, plan: dict[str, Any]) -> bool:
+        return self._get_max_level(plan) >= 3
+
+    def _propose(self, plan: dict[str, Any], max_level: int) -> str:
         proposal_id = f"proposal-{uuid.uuid4().hex[:12]}"
         self._pending[proposal_id] = PendingProposal(
             proposal_id=proposal_id,
             plan=plan,
             created_at=datetime.now(UTC).isoformat(),
+            max_level=max_level,
         )
+        self._confirmations[proposal_id] = 0
         return proposal_id
 
     def _audit(self, step: dict[str, Any], status: str, proposal_id: str | None) -> None:
         action_type = step.get("action_type")
-        if action_type not in {"write", "high_risk"}:
+        # Only audit Level 3+ (write/destructive)
+        from app.tools.action_registry import action_registry
+        tool_name = step.get("tool")
+        action_def = action_registry._actions_by_name.get(tool_name)
+        
+        should_audit = (action_type in {"write", "high_risk"}) or (action_def and action_def.level >= 3)
+        if not should_audit:
             return
+            
         entry = {
             "timestamp": datetime.now(UTC).isoformat(),
             "proposal_id": proposal_id,
-            "tool": step.get("tool"),
-            "action_type": action_type,
+            "tool": tool_name,
+            "action_type": action_type or (f"level_{action_def.level}" if action_def else "unknown"),
             "status": status,
             "params": step.get("params", {}),
         }
@@ -84,8 +113,7 @@ class ActionExecutor:
         if not action_def:
             # Fallback for dynamic tools not in registry
             return True
-        # Future: Use pydantic or jsonschema for full validation
-        # For now, ensure required fields are present if defined
+            
         required_fields = action_def.inputs_schema.get("required", [])
         for field in required_fields:
             if field not in params:
@@ -94,20 +122,37 @@ class ActionExecutor:
         return True
 
     def execute_plan(self, plan: dict[str, Any], dry_run: bool = True, proposal_id: str | None = None) -> dict[str, Any]:
-        if self._needs_confirmation(plan) and not dry_run:
+        max_level = self._get_max_level(plan)
+        
+        if max_level >= 3 and not dry_run:
             if not proposal_id:
-                new_proposal_id = self._propose(plan)
+                new_proposal_id = self._propose(plan, max_level)
                 for step in plan.get("steps", []):
                     self._audit(step, "awaiting_confirmation", new_proposal_id)
                 return {
                     "status": "confirmation_required",
                     "proposal_id": new_proposal_id,
+                    "level": max_level,
                     "steps": plan.get("steps", []),
                 }
-            if proposal_id not in self._confirmed:
+            
+            proposal = self._pending.get(proposal_id)
+            if not proposal:
+                return {
+                    "status": "proposal_not_found",
+                    "proposal_id": proposal_id,
+                }
+                
+            confirms = self._confirmations.get(proposal_id, 0)
+            required = 2 if proposal.max_level >= 4 else 1
+            
+            if confirms < required:
                 return {
                     "status": "confirmation_missing",
                     "proposal_id": proposal_id,
+                    "level": proposal.max_level,
+                    "current_confirms": confirms,
+                    "required_confirms": required,
                 }
 
         results: list[dict[str, Any]] = []
@@ -135,6 +180,6 @@ class ActionExecutor:
 
         if proposal_id:
             self._pending.pop(proposal_id, None)
-            self._confirmed.discard(proposal_id)
+            self._confirmations.pop(proposal_id, None)
 
         return {"status": "ok", "results": results}
