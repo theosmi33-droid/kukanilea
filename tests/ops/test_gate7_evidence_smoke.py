@@ -21,6 +21,9 @@ def test_gate7_smoke_evaluate_reports_all_required_checks() -> None:
         "summary_read_api_ok",
         "write_confirm_gate_erzwungen",
         "write_mit_confirm_moeglich",
+        "unknown_intent_fallback",
+        "schema_validation_blockiert",
+        "external_call_offline_blockiert",
         "audit_logs_vorhanden",
         "injection_blockiert",
     }
@@ -36,6 +39,12 @@ def test_gate7_smoke_matrix_contains_router_approval_audit_guardrail_paths() -> 
     assert matrix["write_confirm_gate_erzwungen"]["status"] == "confirm_required"
     assert matrix["write_confirm_gate_erzwungen"]["reason"] == "approval_required"
     assert matrix["write_mit_confirm_moeglich"]["status"] == "routed"
+    assert matrix["unknown_intent_fallback"]["status"] == "needs_clarification"
+    assert matrix["unknown_intent_fallback"]["reason"] == "unknown_intent"
+    assert matrix["schema_validation_blockiert"]["status"] == "blocked"
+    assert matrix["schema_validation_blockiert"]["reason"] == "schema_validation_failed"
+    assert matrix["external_call_offline_blockiert"]["status"] == "offline_blocked"
+    assert matrix["external_call_offline_blockiert"]["reason"] == "external_calls_disabled"
     assert matrix["injection_blockiert"]["status"] == "blocked"
     assert matrix["injection_blockiert"]["reason"] == "prompt_injection"
 

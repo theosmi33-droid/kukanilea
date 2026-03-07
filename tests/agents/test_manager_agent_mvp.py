@@ -120,6 +120,24 @@ def test_unknown_intent_returns_safe_clarification_instead_of_execution() -> Non
     assert result.status == "needs_clarification"
     assert result.decision.action == "safe_follow_up"
     assert bus.events[-1]["event_type"] == "manager_agent.needs_clarification"
+    assert "suggestions" in bus.events[-1]["payload"]
+
+
+def test_schema_validation_failed_blocks_untrusted_params() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus)
+
+    result = agent.route(
+        "Bitte zeige dashboard status",
+        {"tenant": "KUKANILEA", "user": "admin", "params": {"unexpected_key": "x"}},
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert result.reason == "schema_validation_failed"
+    assert result.decision.action == "dashboard.summary.read"
+    assert bus.events[-1]["event_type"] == "manager_agent.blocked"
+    assert bus.events[-1]["payload"]["reason"] == "schema_validation_failed"
 
 
 def test_injection_input_is_blocked_and_never_interpreted_as_execution() -> None:

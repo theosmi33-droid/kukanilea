@@ -19,6 +19,9 @@ def test_launch_evidence_requires_gate7_artifact_matrix() -> None:
         "summary_read_api_ok",
         "write_confirm_gate_erzwungen",
         "write_mit_confirm_moeglich",
+        "unknown_intent_fallback",
+        "schema_validation_blockiert",
+        "external_call_offline_blockiert",
         "audit_logs_vorhanden",
         "injection_blockiert",
     ]:

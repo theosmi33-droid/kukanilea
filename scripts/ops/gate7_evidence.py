@@ -34,10 +34,11 @@ class CheckResult:
 class Scenario:
     name: str
     message: str
-    context: dict[str, str]
+    context: dict[str, Any]
     expected_status: str
     expected_reason: str | None = None
     expected_action: str | None = None
+    pre_approve: bool = False
 
 
 def _build_test_matrix() -> list[Scenario]:
@@ -63,6 +64,7 @@ def _build_test_matrix() -> list[Scenario]:
             context={"tenant": "KUKANILEA", "user": "ops"},
             expected_status="routed",
             expected_action="tasks.task.create",
+            pre_approve=True,
         ),
         Scenario(
             name="injection_blockiert",
@@ -71,6 +73,31 @@ def _build_test_matrix() -> list[Scenario]:
             expected_status="blocked",
             expected_reason="prompt_injection",
             expected_action="safe_fallback",
+        ),
+        Scenario(
+            name="unknown_intent_fallback",
+            message="Mach irgendwas Magisches",
+            context={"tenant": "KUKANILEA", "user": "ops"},
+            expected_status="needs_clarification",
+            expected_reason="unknown_intent",
+            expected_action="safe_follow_up",
+        ),
+        Scenario(
+            name="schema_validation_blockiert",
+            message="Bitte zeige dashboard status",
+            context={"tenant": "KUKANILEA", "user": "ops", "params": {"unexpected_key": "x"}},
+            expected_status="blocked",
+            expected_reason="schema_validation_failed",
+            expected_action="dashboard.summary.read",
+        ),
+        Scenario(
+            name="external_call_offline_blockiert",
+            message="Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+            context={"tenant": "KUKANILEA", "user": "ops"},
+            expected_status="offline_blocked",
+            expected_reason="external_calls_disabled",
+            expected_action="messenger.message.reply",
+            pre_approve=True,
         ),
     ]
 
@@ -96,7 +123,7 @@ def evaluate_gate7() -> dict[str, Any]:
     scenario_results: dict[str, dict[str, str]] = {}
     for scenario in _build_test_matrix():
         route_result = agent.route(scenario.message, scenario.context)
-        if scenario.name == "write_mit_confirm_moeglich":
+        if scenario.pre_approve:
             approval_id = str((route_result.audit_event or {}).get("approval_id") or "")
             if approval_id:
                 agent.approvals.approve(approval_id, tenant=str(scenario.context.get("tenant") or "default"), approver_user="security-admin")
@@ -117,6 +144,12 @@ def evaluate_gate7() -> dict[str, Any]:
             passed = passed and route_result.confirm_required and not route_result.ok
         if scenario.name == "write_mit_confirm_moeglich":
             passed = passed and route_result.ok and route_result.decision.requires_confirm
+        if scenario.name == "external_call_offline_blockiert":
+            passed = passed and not route_result.ok and route_result.decision.external_call
+        if scenario.name == "unknown_intent_fallback":
+            passed = passed and not route_result.ok and route_result.decision.action == "safe_follow_up"
+        if scenario.name == "schema_validation_blockiert":
+            passed = passed and not route_result.ok
         if scenario.name == "injection_blockiert":
             passed = passed and not route_result.ok
 
@@ -138,18 +171,24 @@ def evaluate_gate7() -> dict[str, Any]:
         )
 
     audit_event_types = [event.get("event_type") for event in bus.events]
+    required_event_types = {
+        "manager_agent.confirm_blocked",
+        "manager_agent.routed",
+        "manager_agent.blocked",
+        "manager_agent.needs_clarification",
+        "manager_agent.offline_blocked",
+    }
     checks.append(
         CheckResult(
             name="audit_logs_vorhanden",
             passed=bool(
                 len(bus.events) >= len(_build_test_matrix())
-                and "manager_agent.confirm_blocked" in audit_event_types
-                and "manager_agent.routed" in audit_event_types
-                and "manager_agent.blocked" in audit_event_types
+                and required_event_types.issubset(set(str(v) for v in audit_event_types))
                 and len(audit_payloads) == len(bus.events)
                 and all(
                     str(event.get("event_type") or "").startswith("approval.")
-                    or event.get("payload", {}).get("action") in {"dashboard.summary.read", "tasks.task.create", "safe_fallback"}
+                    or event.get("payload", {}).get("action")
+                    in {"dashboard.summary.read", "tasks.task.create", "safe_fallback", "safe_follow_up", "messenger.message.reply"}
                     for event in bus.events
                 )
             ),
