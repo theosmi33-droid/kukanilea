@@ -352,7 +352,7 @@ def _apply_mia_parity(payload: dict[str, object], tool: str) -> dict[str, object
         **details,
         "mia": parity,
     }
-    if parity.get("tier") == "low":
+    if parity.get("tier") == "low" and payload.get("status") == "ok":
         payload["status"] = "degraded"
         payload["degraded_reason"] = "mia_parity_below_baseline"
     return payload
