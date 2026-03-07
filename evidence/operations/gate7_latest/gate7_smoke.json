@@ -1,31 +1,31 @@
 {
-  "timestamp": "2026-03-06T22:00:20+00:00",
+  "timestamp": "2026-03-06T22:34:15+00:00",
   "overall_status": "PASS",
   "checks": [
     {
       "name": "lokales_modell_aktiv",
       "passed": true,
-      "detail": "provider=mock"
+      "detail": "provider=mock; fallback=mock"
     },
     {
       "name": "summary_read_api_ok",
       "passed": true,
-      "detail": "status=routed; action=dashboard_summary; mode=read"
+      "detail": "status=routed; reason=; action=dashboard.summary.read; mode=read"
     },
     {
       "name": "write_confirm_gate_erzwungen",
       "passed": true,
-      "detail": "status=confirm_required; reason=confirm_gate"
+      "detail": "status=confirm_required; reason=confirm_gate; action=tasks.task.create; mode=confirm"
     },
     {
       "name": "write_mit_confirm_moeglich",
       "passed": true,
-      "detail": "status=routed; action=task_create"
+      "detail": "status=routed; reason=; action=tasks.task.create; mode=confirm"
     },
     {
       "name": "injection_blockiert",
       "passed": true,
-      "detail": "status=blocked; reason=prompt_injection"
+      "detail": "status=blocked; reason=prompt_injection; action=safe_fallback; mode=propose"
     },
     {
       "name": "audit_logs_vorhanden",
@@ -33,6 +33,32 @@
       "detail": "events=4; types=['manager_agent.blocked', 'manager_agent.confirm_blocked', 'manager_agent.routed']"
     }
   ],
+  "matrix": {
+    "summary_read_api_ok": {
+      "status": "routed",
+      "reason": "",
+      "action": "dashboard.summary.read",
+      "execution_mode": "read"
+    },
+    "write_confirm_gate_erzwungen": {
+      "status": "confirm_required",
+      "reason": "confirm_gate",
+      "action": "tasks.task.create",
+      "execution_mode": "confirm"
+    },
+    "write_mit_confirm_moeglich": {
+      "status": "routed",
+      "reason": "",
+      "action": "tasks.task.create",
+      "execution_mode": "confirm"
+    },
+    "injection_blockiert": {
+      "status": "blocked",
+      "reason": "prompt_injection",
+      "action": "safe_fallback",
+      "execution_mode": "propose"
+    }
+  },
   "audit_events_count": 4,
   "audit_event_types": [
     "manager_agent.routed",

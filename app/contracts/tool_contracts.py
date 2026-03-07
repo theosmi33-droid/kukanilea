@@ -654,6 +654,8 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
         **(summary.get("details") or {}),
         "checks": checks,
     }
+    if tool in {"time", "zeiterfassung"}:
+        summary["details"]["offline_persistence"] = bool(summary["details"].get("offline_persistence", False))
     normalized, _ = _normalize_contract_payload(summary, tool, tenant=tenant)
     return normalized
 
@@ -688,3 +690,25 @@ def build_mia_parity_matrix(tenant: str = "default") -> dict[str, object]:
         "historical_low_parity": list(MIA_LOW_PARITY_TOOLS),
         "baseline_status": "parity_aligned",
     }
+
+
+def build_contract_response(
+    *,
+    tool: str,
+    status: str,
+    metrics: dict,
+    details: dict,
+    tenant: str,
+    degraded_reason: str = "",
+) -> dict:
+    """Build and normalize a summary/health payload for tool contracts."""
+    payload = _contract_payload(
+        tool=tool,
+        status=status,
+        metrics=metrics,
+        details=details,
+        reason=degraded_reason,
+        tenant=tenant,
+    )
+    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
+    return normalized

@@ -27,6 +27,19 @@ def test_gate7_smoke_evaluate_reports_all_required_checks() -> None:
     assert all(entry["passed"] for entry in payload["checks"])
 
 
+def test_gate7_smoke_matrix_contains_router_approval_audit_guardrail_paths() -> None:
+    payload = evaluate_gate7()
+    matrix = payload["matrix"]
+
+    assert matrix["summary_read_api_ok"]["action"] == "dashboard.summary.read"
+    assert matrix["summary_read_api_ok"]["execution_mode"] == "read"
+    assert matrix["write_confirm_gate_erzwungen"]["status"] == "confirm_required"
+    assert matrix["write_confirm_gate_erzwungen"]["reason"] == "approval_required"
+    assert matrix["write_mit_confirm_moeglich"]["status"] == "routed"
+    assert matrix["injection_blockiert"]["status"] == "blocked"
+    assert matrix["injection_blockiert"]["reason"] == "prompt_injection"
+
+
 def test_gate7_smoke_cli_writes_repo_evidence_artifacts(tmp_path: Path) -> None:
     out_dir = tmp_path / "evidence"
 
