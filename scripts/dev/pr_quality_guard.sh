@@ -68,7 +68,10 @@ fi
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 MERGE_BASE="$(git merge-base HEAD "$BASE_BRANCH")"
 
-mapfile -t CHANGED_FILES < <(git diff --name-only "$MERGE_BASE"..HEAD)
+CHANGED_FILES=()
+while IFS= read -r line; do
+  CHANGED_FILES+=("$line")
+done < <(git diff --name-only "$MERGE_BASE"..HEAD)
 CHANGED_FILE_COUNT="${#CHANGED_FILES[@]}"
 
 LOC_TOTAL="$(git diff --numstat "$MERGE_BASE"..HEAD | awk '{a+=$1; d+=$2} END {print (a+0)+(d+0)}')"
@@ -84,19 +87,28 @@ fi
 
 OVERLAP_COUNT=0
 OVERLAP_LINES=()
-mapfile -t CODEX_BRANCHES < <(git for-each-ref --format='%(refname:short)' refs/heads/codex/)
+CODEX_BRANCHES=()
+while IFS= read -r line; do
+  CODEX_BRANCHES+=("$line")
+done < <(git for-each-ref --format='%(refname:short)' refs/heads/codex/)
 for BR in "${CODEX_BRANCHES[@]}"; do
   [[ -z "$BR" || "$BR" == "$CURRENT_BRANCH" ]] && continue
   BR_MERGE_BASE="$(git merge-base "$BR" "$BASE_BRANCH" 2>/dev/null || true)"
   [[ -z "$BR_MERGE_BASE" ]] && continue
-  mapfile -t BR_FILES < <(git diff --name-only "$BR_MERGE_BASE".."$BR")
+  BR_FILES=()
+  while IFS= read -r line; do
+    BR_FILES+=("$line")
+  done < <(git diff --name-only "$BR_MERGE_BASE".."$BR")
   [[ "${#BR_FILES[@]}" -eq 0 ]] && continue
 
   BR_TMP="$(mktemp)"
   CUR_TMP="$(mktemp)"
   printf '%s\n' "${BR_FILES[@]}" | sort -u > "$BR_TMP"
   printf '%s\n' "${CHANGED_FILES[@]}" | sort -u > "$CUR_TMP"
-  mapfile -t INTERSECTION < <(comm -12 "$CUR_TMP" "$BR_TMP")
+  INTERSECTION=()
+  while IFS= read -r line; do
+    INTERSECTION+=("$line")
+  done < <(comm -12 "$CUR_TMP" "$BR_TMP")
   rm -f "$BR_TMP" "$CUR_TMP"
 
   if [[ "${#INTERSECTION[@]}" -gt 0 ]]; then

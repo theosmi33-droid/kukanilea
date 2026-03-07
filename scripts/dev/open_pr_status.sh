@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO="${REPO:-theosmi33-droid/kukanilea}"
 STATE="${STATE:-open}"
+PYTHON_BIN="${PYTHON:-}"
 
 usage() {
   cat <<USAGE
@@ -39,6 +40,17 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -z "$PYTHON_BIN" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+  else
+    echo "Unable to run PR formatter (missing python3/python in PATH)." >&2
+    exit 3
+  fi
+fi
 
 query_with_gh() {
   gh pr list --repo "$REPO" --state "$STATE" --json number,title,headRefName,baseRefName,isDraft,mergeStateStatus 2>/dev/null
@@ -77,7 +89,7 @@ if [[ -z "$SOURCE" ]]; then
   exit 2
 fi
 
-PR_STATUS_JSON="$JSON" python - "$REPO" "$STATE" "$SOURCE" <<'PY'
+PR_STATUS_JSON="$JSON" "$PYTHON_BIN" - "$REPO" "$STATE" "$SOURCE" <<'PY'
 import json
 import os
 import sys
