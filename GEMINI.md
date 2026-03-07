@@ -17,3 +17,5 @@ Rules:
   - All pull requests must target `main`.
   - Start work from the latest `origin/main`.
   - Do not stack new work on old feature branches.
+  - Do not auto-switch branches in helper scripts; fail fast with a clear error instead.
+  - For interactive terminal launchers, require a clean working tree before execution.

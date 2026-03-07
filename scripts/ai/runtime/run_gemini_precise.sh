@@ -15,6 +15,19 @@ if [[ ! -f "$PROMPT_FILE" ]]; then
   exit 2
 fi
 
+if [[ ! "$TIMEOUT_SECONDS" =~ ^[0-9]+$ ]]; then
+  echo "[error] GEMINI_TIMEOUT_SECONDS must be numeric." >&2
+  exit 2
+fi
+
+case "$APPROVAL_MODE" in
+  default|yolo) ;;
+  *)
+    echo "[error] GEMINI_APPROVAL_MODE must be 'default' or 'yolo'." >&2
+    exit 2
+    ;;
+esac
+
 cd "$ROOT"
 
 TS="$(date +%Y%m%d_%H%M%S)"
@@ -39,6 +52,10 @@ IFS=',' read -r -a ext_arr <<< "$EXTENSIONS"
 for ext in "${ext_arr[@]}"; do
   clean="$(echo "$ext" | xargs)"
   [[ -z "$clean" ]] && continue
+  if [[ ! "$clean" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    echo "[error] invalid extension token '$clean' (allowed: [A-Za-z0-9_-])." >&2
+    exit 2
+  fi
   extension_flags+=(--extension "$clean")
 done
 
