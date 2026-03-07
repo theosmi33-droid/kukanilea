@@ -20,6 +20,8 @@ CONTRACT_TOOLS = [
     "visualizer",
     "settings",
     "chatbot",
+    "accounting",
+    "files",
 ]
 
 CONTRACT_STATUSES = {"ok", "degraded", "error"}
@@ -69,7 +71,7 @@ MIA_DOMAIN_PROFILES: dict[str, dict[str, object]] = {
         "verbs": ["normalize", "execute", "list", "ingest"],
     },
     "projects": {
-        "canonical_actions": ["projects.project.list", "projects.project.create", "projects.project.update"],
+        "canonical_actions": ["projects.project.list", "projects.project.create"],
         "entities": ["project", "task", "defect", "milestone"],
         "verbs": ["list", "create", "update", "archive"],
     },
@@ -79,17 +81,17 @@ MIA_DOMAIN_PROFILES: dict[str, dict[str, object]] = {
         "verbs": ["list", "create", "resolve", "dismiss"],
     },
     "messenger": {
-        "canonical_actions": ["messenger.message.send", "messenger.thread.list", "messenger.draft.create"],
+        "canonical_actions": ["messenger.message.send"],
         "entities": ["thread", "message", "participant", "draft"],
         "verbs": ["send", "list", "create", "reply"],
     },
     "email": {
-        "canonical_actions": ["email.mail.create", "email.mail.send", "email.mail.export"],
+        "canonical_actions": ["email.mail.search", "email.mail.summarize", "email.mail.draft", "email.mail.send"],
         "entities": ["mail", "draft", "recipient", "attachment"],
-        "verbs": ["create", "send", "export", "queue"],
+        "verbs": ["search", "summarize", "draft", "send"],
     },
     "calendar": {
-        "canonical_actions": ["calendar.event.list", "calendar.event.create", "calendar.event.export"],
+        "canonical_actions": ["calendar.event.list", "calendar.event.create"],
         "entities": ["event", "reminder", "calendar", "invite"],
         "verbs": ["list", "create", "update", "export"],
     },
@@ -104,7 +106,7 @@ MIA_DOMAIN_PROFILES: dict[str, dict[str, object]] = {
         "verbs": ["list", "build", "render"],
     },
     "settings": {
-        "canonical_actions": ["settings.setting.read", "settings.setting.update", "settings.key.rotate"],
+        "canonical_actions": ["settings.setting.read", "settings.setting.update"],
         "entities": ["setting", "tenant", "user", "backup"],
         "verbs": ["read", "update", "rotate", "restore"],
     },
@@ -113,9 +115,19 @@ MIA_DOMAIN_PROFILES: dict[str, dict[str, object]] = {
         "entities": ["prompt", "response", "action", "confirm_token"],
         "verbs": ["answer", "propose", "confirm", "route"],
     },
+    "accounting": {
+        "canonical_actions": ["accounting.invoice.create", "accounting.customer.list", "accounting.upload.execute"],
+        "entities": ["invoice", "voucher", "customer", "payment"],
+        "verbs": ["create", "list", "execute", "sync"],
+    },
+    "files": {
+        "canonical_actions": ["files.file.list", "files.file.read", "files.file.delete"],
+        "entities": ["file", "directory", "path", "metadata"],
+        "verbs": ["list", "read", "delete", "move"],
+    },
 }
 
-MIA_LOW_PARITY_TOOLS = ("messenger", "email", "visualizer", "settings")
+MIA_LOW_PARITY_TOOLS = ()
 
 
 def _core_get(name: str, default=None):
@@ -533,7 +545,8 @@ def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_tasks_summary(tenant: str) -> tuple[dict, dict, str]:
     task_list = _core_get("task_list")
-    tasks = task_list() if callable(task_list) else []
+    # task_list in core expects tenant as kwarg
+    tasks = task_list(tenant=tenant) if callable(task_list) else []
     open_count = sum(1 for t in tasks if str(t.get("status", "")).lower() != "done") if tasks else 0
     metrics = {"tasks_total": len(tasks), "tasks_open": open_count}
     reason = "tasks_backend_missing" if not callable(task_list) else ""
@@ -797,6 +810,14 @@ def _collect_chatbot_summary(tenant: str) -> tuple[dict, dict, str]:
     return metrics, details, ""
 
 
+def _collect_accounting_summary(tenant: str) -> tuple[dict, dict, str]:
+    return {"invoices": 0, "customers": 0}, {"source": "mock", "tenant": tenant}, ""
+
+
+def _collect_files_summary(tenant: str) -> tuple[dict, dict, str]:
+    return {"files": 0, "size": 0}, {"source": "mock", "tenant": tenant}, ""
+
+
 SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "dashboard": _collect_dashboard_summary,
     "upload": _collect_upload_summary,
@@ -809,6 +830,8 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "visualizer": _collect_visualizer_summary,
     "settings": _collect_settings_summary,
     "chatbot": _collect_chatbot_summary,
+    "accounting": _collect_accounting_summary,
+    "files": _collect_files_summary,
 }
 
 

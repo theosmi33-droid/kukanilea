@@ -5,7 +5,7 @@ from app.contracts.tool_contracts import build_contract_response
 
 def build_summary(tenant: str) -> dict:
     return build_contract_response(
-        tool="einstellungen",
+        tool="settings",
         status="ok",
         metrics={
             "security_headers": 1,

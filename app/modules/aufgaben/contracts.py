@@ -10,7 +10,7 @@ from app.services.shared_services import shared_services
 def build_summary(tenant: str) -> dict:
     metrics = logic.summary(tenant=tenant)
     return build_contract_response(
-        tool="aufgaben",
+        tool="tasks",
         status="ok",
         metrics={
             "tasks_open": metrics["open"],

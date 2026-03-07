@@ -7,12 +7,14 @@ from app.tools.base_tool import BaseTool
 from app.tools.registry import registry
 from app.plugins.mail import MailAgent, MailInput, MailOptions
 
-class MailGenerateTool(BaseTool):
+class MailTool(BaseTool):
     """
-    Generates professional email drafts for craftsmen.
+    Generates professional email drafts and manages local mail state.
     """
 
-    name = "mail_generate"
+    name = "mail"
+    domain = "email"
+    entities = ["mail", "draft", "inbox", "outbox", "attachment", "folder", "filter", "rule", "account", "signature", "thread"]
     description = "Erstellt einen professionellen E-Mail-Entwurf basierend auf Kontext und Fakten."
     input_schema = {
         "type": "object",
@@ -39,4 +41,4 @@ class MailGenerateTool(BaseTool):
         }
 
 # Register tool
-registry.register(MailGenerateTool())
+registry.register(MailTool())

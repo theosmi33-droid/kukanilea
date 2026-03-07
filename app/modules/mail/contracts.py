@@ -13,7 +13,7 @@ def build_summary(tenant: str, *, messages: list[dict] | None = None, sla_hours:
     rows = list(messages or [])
     sla_metric = sla_unanswered_alert(rows, threshold_hours=sla_hours)
     return {
-        "tool": "mail",
+        "tool": "email",
         "status": "degraded" if sla_metric["alerts"] else "ok",
         "updated_at": _now_iso(),
         "metrics": {
