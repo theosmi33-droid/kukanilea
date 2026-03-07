@@ -5,7 +5,7 @@ from collections.abc import Callable
 import pytest
 
 from app.core.action_executor import ActionExecutor
-from app.tools.action_registry import ActionDefinition, action_registry
+from app.tools.action_registry import action_registry
 
 
 def _register_action(
@@ -13,23 +13,29 @@ def _register_action(
     *,
     is_critical: bool,
     required: list[str] | None = None,
-    risk_level: str = "LOW",
     tool_name: str = "demo_tool",
 ) -> None:
-    action_registry._actions_by_name[name] = ActionDefinition(
-        name=name,
-        inputs_schema={
-            "type": "object",
-            "required": list(required or []),
-            "properties": {field: {"type": "string"} for field in (required or [])},
-        },
-        permissions=["admin"] if is_critical else ["operator"],
-        is_critical=is_critical,
-        risk_level=risk_level,
-        is_idempotent=True,
-        audit_fields=list(required or []),
-        tool_name=tool_name,
-    )
+    class _InlineTool:
+        def __init__(self, tool_name: str, action_name: str) -> None:
+            self.name = tool_name
+            self._action_name = action_name
+
+        def actions(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "name": self._action_name,
+                    "inputs_schema": {
+                        "type": "object",
+                        "required": list(required or []),
+                        "properties": {field: {"type": "string"} for field in (required or [])},
+                    },
+                    "permissions": ["admin"] if is_critical else ["operator"],
+                    "is_critical": is_critical,
+                    "audit_fields": list(required or []),
+                }
+            ]
+
+    action_registry.register_tool(_InlineTool(tool_name, name))
 
 
 @pytest.fixture()
