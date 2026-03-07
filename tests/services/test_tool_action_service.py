@@ -66,25 +66,22 @@ def test_execute_rejects_guardrail_violation() -> None:
     assert payload["error"] == "guardrails_blocked"
 
 
-def test_list_actions_uses_registry_fallback_when_template_empty() -> None:
+def test_list_actions_uses_registry_fallback_when_template_empty(monkeypatch) -> None:
     from app.tools.action_registry import action_registry
     from app.tools.base_tool import BaseTool
 
-    previous = dict(action_registry._actions_by_name)
-    action_registry._actions_by_name.clear()
+    # Isolate registry state via monkeypatching the dict
+    mock_registry = {}
+    monkeypatch.setattr(action_registry, "_actions_by_name", mock_registry)
 
     class DemoTool(BaseTool):
         name = "demo"
 
-    try:
-        action_registry.register_tool(DemoTool())
-        template = ToolActionTemplate(tool="demo", actions=[])
+    action_registry.register_tool(DemoTool())
+    template = ToolActionTemplate(tool="demo", actions=[])
 
-        payload = template.list_actions_payload()
+    payload = template.list_actions_payload()
 
-        assert payload["ok"] is True
-        assert payload["tool"] == "demo"
-        assert any(item["name"] == "demo.execute" for item in payload["actions"])
-    finally:
-        action_registry._actions_by_name.clear()
-        action_registry._actions_by_name.update(previous)
+    assert payload["ok"] is True
+    assert payload["tool"] == "demo"
+    assert any(item["name"] == "demo.execute" for item in payload["actions"])
