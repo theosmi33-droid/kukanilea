@@ -85,11 +85,17 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
     html = resp.get_data(as_text=True)
 
     assert "classList.add('light')" in html
-    assert "fetch('/api/chat/compact'" in html
-    assert "pending_id: chatPendingId" in html
-    assert "data.text || data.response" in html
+    # CSP hardening moved compact chat logic into static/js/layout-shell.js.
+    assert 'src="/static/js/layout-shell.js"' in html
+    assert "fetch('/api/chat/compact'" not in html
     assert "id=\"chat-plan\"" in html
     assert "id=\"chat-actions\"" in html
+
+    shell_js = Path(__file__).resolve().parents[1] / "static" / "js" / "layout-shell.js"
+    source = shell_js.read_text(encoding="utf-8")
+    assert "fetch('/api/chat/compact'" in source
+    assert "pending_id: chatPendingId" in source
+    assert "data.text || data.response" in source
 
 
 def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_path, monkeypatch):
