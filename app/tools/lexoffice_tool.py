@@ -19,6 +19,8 @@ class LexofficeUploadTool(BaseTool):
     """
 
     name = "lexoffice_upload"
+    domain = "accounting"
+    entities = ["invoice", "customer", "voucher", "payment", "credit_note", "quotation", "order", "delivery_note", "contract", "reminder"]
     description = "Legt ein Dokument in den Postausgang zur Übertragung an Lexoffice."
     input_schema = {
         "type": "object",

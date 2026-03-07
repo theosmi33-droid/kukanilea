@@ -9,6 +9,8 @@ from app.tools.registry import registry
 
 class CalendarFindFreeSlotTool(BaseTool):
     name = "calendar.find_free_slot"
+    domain = "calendar"
+    entities = ["free_slot", "availability", "exception"]
     description = "Findet den nächsten freien Kalender-Slot (lokale Events + optionale ICS-Imports)."
     input_schema = {
         "type": "object",
@@ -45,6 +47,8 @@ class CalendarFindFreeSlotTool(BaseTool):
 
 class CalendarCreateEventTool(BaseTool):
     name = "calendar.create_event"
+    domain = "calendar"
+    entities = ["new_event", "reminder", "attendee"]
     description = "Erstellt einen lokalen Kalendereintrag. Schreibzugriff nur mit expliziter Bestätigung."
     input_schema = {
         "type": "object",
@@ -101,6 +105,8 @@ class CalendarCreateEventTool(BaseTool):
 
 class CalendarUpdateEventTool(BaseTool):
     name = "calendar.update_event"
+    domain = "calendar"
+    entities = ["existing_event", "meeting", "task", "subscription"]
     description = "Aktualisiert einen lokalen Kalendereintrag. Schreibzugriff nur mit expliziter Bestätigung."
     input_schema = {
         "type": "object",
