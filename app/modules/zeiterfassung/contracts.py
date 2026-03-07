@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.contracts.tool_contracts import build_contract_response
+from app.contracts.tool_contracts import build_contract_response, build_health_response
 from app import core
 from app.core import logic as core_logic
 
@@ -47,20 +47,24 @@ def _offline_persistence_ready() -> int:
 
 
 def build_health(tenant: str) -> tuple[dict, int]:
-    payload = build_summary(tenant)
+    summary = build_summary(tenant)
     offline_persistence = bool(_offline_persistence_ready())
-    payload["metrics"] = {
-        **(payload.get("metrics") or {}),
-        "offline_persistence": int(offline_persistence),
-    }
-    payload["details"] = {
-        **(payload.get("details") or {}),
-        "checks": {
+    summary_metrics = summary.get("metrics") or {}
+    summary_metrics["offline_persistence"] = int(offline_persistence)
+    
+    return build_health_response(
+        tool="zeiterfassung",
+        status=summary["status"],
+        metrics=summary_metrics,
+        details={
+            **(summary.get("details") or {}),
+            "offline_persistence": offline_persistence,
+        },
+        tenant=tenant,
+        degraded_reason=summary.get("degraded_reason", ""),
+        checks={
             "summary_contract": True,
-            "backend_ready": payload.get("status") == "ok",
+            "backend_ready": summary.get("status") == "ok",
             "offline_safe": True,
         },
-        "offline_persistence": offline_persistence,
-    }
-    code = 200 if payload["status"] in {"ok", "degraded"} else 503
-    return payload, code
+    )

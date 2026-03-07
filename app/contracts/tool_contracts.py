@@ -273,7 +273,9 @@ def _normalize_contract_payload(
                 "issues": errors,
             },
         }
-    if normalized.get("details", {}).get("tenant") != str(tenant or "default"):
+
+    original_tenant = str(_as_dict(payload.get("details"), {}).get("tenant") or tenant or "default")
+    if original_tenant != str(tenant or "default"):
         normalized["status"] = "degraded"
         normalized["degraded_reason"] = "tenant_scope_corrected"
         normalized["details"] = {
@@ -1020,6 +1022,7 @@ def build_contract_response(
     details: dict,
     tenant: str,
     degraded_reason: str = "",
+    contract_kind: str = "summary",
 ) -> dict:
     """Build and normalize a summary/health payload for tool contracts."""
     payload = _contract_payload(
@@ -1029,7 +1032,39 @@ def build_contract_response(
         details=details,
         reason=degraded_reason,
         tenant=tenant,
-        contract_kind="summary",
+        contract_kind=contract_kind,
     )
-    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant, contract_kind="summary")
+    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant, contract_kind=contract_kind)
     return normalized
+
+
+def build_health_response(
+    *,
+    tool: str,
+    status: str,
+    metrics: dict,
+    details: dict,
+    tenant: str,
+    degraded_reason: str = "",
+    checks: dict | None = None,
+) -> tuple[dict, int]:
+    """Helper for build_health in modules."""
+    safe_details = dict(details or {})
+    safe_checks = dict(checks or {})
+    # Ensure standard checks are present if not provided
+    safe_checks.setdefault("summary_contract", True)
+    safe_checks.setdefault("backend_ready", status == "ok")
+    safe_checks.setdefault("offline_safe", True)
+
+    safe_details["checks"] = safe_checks
+    payload = build_contract_response(
+        tool=tool,
+        status=status,
+        metrics=metrics,
+        details=safe_details,
+        tenant=tenant,
+        degraded_reason=degraded_reason,
+        contract_kind="health",
+    )
+    code = 200 if payload["status"] in {"ok", "degraded"} else 503
+    return payload, code
