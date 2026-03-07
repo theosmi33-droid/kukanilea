@@ -244,8 +244,9 @@ def _normalize_contract_payload(
     *,
     contract_kind: str = "summary",
 ) -> tuple[dict, list[str]]:
+    expected_tenant = str(tenant or "default")
     payload_details = _as_dict(payload.get("details"), {})
-    payload_details["tenant"] = str(payload_details.get("tenant") or tenant or "default")
+    payload_details["tenant"] = str(payload_details.get("tenant") or expected_tenant)
     safe_payload = {
         "tool": str(payload.get("tool") or tool),
         "status": payload.get("status") if payload.get("status") in CONTRACT_STATUSES else "error",
@@ -259,7 +260,7 @@ def _normalize_contract_payload(
         metrics=safe_payload["metrics"],
         details=safe_payload["details"],
         reason=str(payload.get("degraded_reason") or ""),
-        tenant=str(tenant or "default"),
+        tenant=expected_tenant,
         contract_kind=contract_kind,
     )
     errors = _contract_errors(payload)
@@ -274,13 +275,13 @@ def _normalize_contract_payload(
             },
         }
 
-    original_tenant = str(_as_dict(payload.get("details"), {}).get("tenant") or tenant or "default")
-    if original_tenant != str(tenant or "default"):
+    original_tenant = str(_as_dict(payload.get("details"), {}).get("tenant") or expected_tenant)
+    if original_tenant != expected_tenant:
         normalized["status"] = "degraded"
-        normalized["degraded_reason"] = "tenant_scope_corrected"
+        normalized.setdefault("degraded_reason", "tenant_scope_corrected")
         normalized["details"] = {
             **(normalized.get("details") or {}),
-            "tenant": str(tenant or "default"),
+            "tenant": expected_tenant,
             "normalization": {
                 **_as_dict((normalized.get("details") or {}).get("normalization"), {}),
                 "applied": True,

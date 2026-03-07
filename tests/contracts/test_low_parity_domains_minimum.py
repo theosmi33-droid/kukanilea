@@ -55,3 +55,17 @@ def test_visualizer_summary_reports_runtime_readiness_state(auth_client):
     if body["metrics"]["render_backend_ready"] == 0:
         assert body["status"] == "degraded"
         assert body.get("degraded_reason") == "visualizer_logic_missing"
+
+
+def test_low_parity_tools_include_clean_mia_details(auth_client):
+    for tool in ("messenger", "email", "visualizer", "settings"):
+        response = auth_client.get(f"/api/{tool}/summary")
+        assert response.status_code == 200
+        body = response.get_json()
+
+        mia = body["details"]["mia"]
+        assert mia["tier"] == "high"
+        assert mia["score"] == mia["max_score"]
+        assert set(mia["checks"].keys())
+        assert all(mia["checks"].values())
+        assert len(mia["canonical_actions"]) >= 3
