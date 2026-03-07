@@ -774,9 +774,14 @@ def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
         raise ValueError("source_required")
     raw_path = _unb64(src_b64)
     fp = Path(raw_path)
+    if not fp.exists():
+        raise ValueError("file_not_found")
+    if not callable(build_visualizer_payload):
+        raise ValueError("visualizer_logic_missing")
     page = int(payload.get("page") or 0)
     sheet = str(payload.get("sheet") or "")
-    data = build_visualizer_payload(fp, page=page, sheet=sheet)
+    force_ocr = bool(payload.get("force_ocr"))
+    data = build_visualizer_payload(fp, page=page, sheet=sheet, force_ocr=force_ocr)
     summary = _summarize_payload(data)
     return {"summary": summary}
 

@@ -2565,6 +2565,107 @@ def _generate_thumbnail_b64(fp: Path) -> str:
     return ""
 
 
+def _read_csv_grid(fp: Path, max_rows: int = MAX_CSV_ROWS, max_cols: int = MAX_CSV_COLS) -> List[List[str]]:
+    raw = None
+    for enc in ("utf-8-sig", "utf-8", "latin1"):
+        try:
+            raw = fp.read_text(encoding=enc, errors="strict")
+            break
+        except Exception:
+            continue
+    if raw is None:
+        raw = fp.read_text(encoding="utf-8", errors="ignore")
+
+    sample = raw[:4096]
+    sio = io.StringIO(raw)
+    try:
+        dialect = csv.Sniffer().sniff(sample)
+    except Exception:
+        dialect = csv.excel
+
+    grid: List[List[str]] = []
+    for r_i, row in enumerate(csv.reader(sio, dialect)):
+        if r_i >= max_rows:
+            break
+        grid.append([normalize_component(c) for c in row[:max_cols]])
+    return grid
+
+
+def _read_xlsx_grid(fp: Path, max_rows: int = MAX_XLSX_ROWS, max_cols: int = MAX_XLSX_COLS) -> tuple[list[list[str]], list[str], str]:
+    if openpyxl is None:
+        raise RuntimeError("xlsx_backend_missing")
+    wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
+    names = [ws.title for ws in wb.worksheets]
+    sheet_name = names[0] if names else ""
+    ws = wb[sheet_name] if sheet_name else wb.active
+    grid: list[list[str]] = []
+    for r_i, row in enumerate(ws.iter_rows(values_only=True)):
+        if r_i >= max_rows:
+            break
+        vals: list[str] = []
+        for v in row[:max_cols]:
+            vals.append(normalize_component(v) if v is not None else "")
+        grid.append(vals)
+    return grid, names, sheet_name
+
+
+def build_visualizer_payload(fp: Path, page: int = 0, sheet: str = "", force_ocr: bool = False) -> dict:
+    start = time.perf_counter()
+    ext = fp.suffix.lower()
+    payload: dict[str, Any] = {
+        "kind": "doc",
+        "file": {"name": fp.name, "path": str(fp), "ext": ext},
+        "perf": {"server_ms": 0.0, "cache_hit": False},
+    }
+
+    if ext == ".pdf" and fitz is not None:
+        doc = fitz.open(str(fp))
+        total = max(1, len(doc))
+        idx = max(0, min(int(page or 0), total - 1))
+        pg = doc.load_page(idx)
+        pix = pg.get_pixmap(dpi=120)
+        payload.update({
+            "kind": "pdf",
+            "page": {
+                "index": idx,
+                "count": total,
+                "image_b64": base64.b64encode(pix.tobytes("png")).decode("utf-8"),
+            },
+            "layers": {"ocr": [], "meta": []},
+        })
+    elif ext == ".csv":
+        grid = _read_csv_grid(fp)
+        payload.update({
+            "kind": "sheet",
+            "sheet": {"name": fp.name, "available": [fp.name], "rows": len(grid), "cols": max([len(r) for r in grid], default=0)},
+            "grid": grid,
+        })
+    elif ext == ".xlsx":
+        grid, available, selected = _read_xlsx_grid(fp)
+        if sheet and sheet in available and openpyxl is not None:
+            wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
+            ws = wb[sheet]
+            grid = []
+            for r_i, row in enumerate(ws.iter_rows(values_only=True)):
+                if r_i >= MAX_XLSX_ROWS:
+                    break
+                grid.append([normalize_component(v) if v is not None else "" for v in row[:MAX_XLSX_COLS]])
+            selected = sheet
+        payload.update({
+            "kind": "sheet",
+            "sheet": {"name": selected, "available": available, "rows": len(grid), "cols": max([len(r) for r in grid], default=0)},
+            "grid": grid,
+        })
+    elif ext in (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"):
+        payload.update({"kind": "image", "image_b64": _generate_thumbnail_b64(fp), "layers": {"ocr": [], "meta": []}})
+    else:
+        txt, used_ocr = _extract_text(fp, force_ocr=force_ocr)
+        payload.update({"kind": "doc", "text": {"content": txt}, "used_ocr": bool(used_ocr)})
+
+    payload["perf"] = {"server_ms": (time.perf_counter() - start) * 1000.0, "cache_hit": False}
+    return payload
+
+
 def _extract_text(fp: Path, force_ocr: bool = False) -> Tuple[str, bool]:
     """
     Returns (text, used_ocr)
