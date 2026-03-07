@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 from app import core, create_app
 from app.core.event_bus import EventBus
@@ -107,19 +108,20 @@ def test_event_bus_document_processed_with_deadline_creates_calendar_event(tmp_p
     app = create_app()
     app.config["READ_ONLY"] = False
     _ensure_knowledge_tables(str(app.config["CORE_DB"]))
+    detected_deadline = (datetime.now(UTC) + timedelta(days=1)).date().isoformat()
 
     with app.app_context():
         monkeypatch.setattr(ics_source, "_policy_allows_calendar", lambda *_args, **_kwargs: True)
 
         EventBus.publish(
             "document.processed",
-            {
-                "tenant": "KUKANILEA",
-                "filename": "angebot.pdf",
-                "detected_deadline": "2026-04-15",
-                "ocr_text": "Frist: 15.04.2026",
-            },
-        )
+                {
+                    "tenant": "KUKANILEA",
+                    "filename": "angebot.pdf",
+                    "detected_deadline": detected_deadline,
+                    "ocr_text": "Frist: 15.04.2026",
+                },
+            )
 
         events = knowledge_calendar_events_list(
             "KUKANILEA",

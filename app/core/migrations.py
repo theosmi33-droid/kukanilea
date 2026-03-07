@@ -106,6 +106,15 @@ def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) 
     columns = [r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
     return column_name in columns
 
+
+def _docs_text_column(conn: sqlite3.Connection) -> str | None:
+    if not _table_exists(conn, "docs"):
+        return None
+    for candidate in ("extracted_text", "content", "text"):
+        if _column_exists(conn, "docs", candidate):
+            return candidate
+    return None
+
 def _customer_stable_id(tenant_id: str, kdnr: str) -> str:
     raw = f"{tenant_id.strip()}|{kdnr.strip()}".encode("utf-8")
     return "cust_" + hashlib.sha256(raw).hexdigest()[:24]
@@ -175,17 +184,25 @@ def _set_user_version(conn: sqlite3.Connection, version: int):
 def _build_fts_indices(db_path: str):
     """Worker to build FTS indices in background to avoid blocking boot."""
     logger.info("Starting background FTS index build...")
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=5.0)
     try:
+        conn.execute("PRAGMA busy_timeout=5000;")
         # 1. Create FTS5 virtual table if missing
         conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(doc_id, content)")
 
+        text_column = _docs_text_column(conn)
+        if not text_column:
+            logger.info("Skipping FTS sync: docs text column not available yet.")
+            return
+
         # 2. Sync from main docs table
-        conn.execute("""
+        conn.execute(
+            f"""
             INSERT INTO docs_fts(doc_id, content)
-            SELECT doc_id, extracted_text FROM docs
+            SELECT doc_id, {text_column} FROM docs
             WHERE doc_id NOT IN (SELECT doc_id FROM docs_fts)
-        """)
+            """
+        )
         conn.commit()
         logger.info("✅ Background FTS index build complete.")
     except Exception as e:
@@ -206,8 +223,11 @@ def run_migrations(db_path: Path):
             conn.commit()
 
         if current_version < 2:
-            t = threading.Thread(target=_build_fts_indices, args=(str(db_path),), daemon=True)
-            t.start()
+            if _docs_text_column(conn):
+                t = threading.Thread(target=_build_fts_indices, args=(str(db_path),), daemon=True)
+                t.start()
+            else:
+                logger.info("Skipping FTS thread: docs table/text column not ready.")
             _set_user_version(conn, 2)
             conn.commit()
 

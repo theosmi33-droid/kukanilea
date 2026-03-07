@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 import uuid
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -16,20 +17,32 @@ try:
         def _rw(fn):
             import sqlite3, os
             db_p = os.environ.get('DB_FILENAME', '/tmp/stress_worker_c.sqlite3')
-            con = sqlite3.connect(db_p)
-            con.row_factory = sqlite3.Row
-            try:
-                res = fn(con)
-                con.commit()
-                return res
-            finally: con.close()
+            last_exc = None
+            for _attempt in range(2):
+                con = sqlite3.connect(db_p, timeout=1.0)
+                con.row_factory = sqlite3.Row
+                con.execute("PRAGMA busy_timeout=1000;")
+                try:
+                    res = fn(con)
+                    con.commit()
+                    return res
+                except sqlite3.OperationalError as exc:
+                    last_exc = exc
+                    if "locked" not in str(exc).lower():
+                        raise
+                    time.sleep(0.1)
+                finally:
+                    con.close()
+            if last_exc:
+                raise last_exc
         legacy_core._run_write_txn = _rw
     if not hasattr(legacy_core, '_run_read_txn'):
         def _rr(fn):
             import sqlite3, os
             db_p = os.environ.get('DB_FILENAME', '/tmp/stress_worker_c.sqlite3')
-            con = sqlite3.connect(db_p)
+            con = sqlite3.connect(db_p, timeout=10.0)
             con.row_factory = sqlite3.Row
+            con.execute("PRAGMA busy_timeout=10000;")
             try:
                 return fn(con)
             finally: con.close()
