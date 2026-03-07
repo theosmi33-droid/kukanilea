@@ -144,6 +144,11 @@ function appendChatBubble(text, isUser = false) {
   container.scrollTop = container.scrollHeight;
 }
 
+function appendLine(container, text) {
+  container.appendChild(document.createTextNode(text));
+  container.appendChild(document.createElement('br'));
+}
+
 function renderManagerState(data) {
   const planEl = document.getElementById('chat-plan');
   const actionsEl = document.getElementById('chat-actions');
@@ -157,23 +162,66 @@ function renderManagerState(data) {
 
   if (plan.length) {
     planEl.style.display = 'block';
-    const lines = plan.map((p) => `${p.status === 'completed' ? '✅' : p.status === 'in_progress' ? '⏳' : '•'} ${p.step}`).join('<br>');
-    planEl.innerHTML = `<strong>Plan</strong> (${progress.completed_steps || 0}/${progress.total_steps || plan.length})<br>${lines}`;
+    planEl.replaceChildren();
+
+    const planTitle = document.createElement('strong');
+    planTitle.textContent = 'Plan';
+    planEl.appendChild(planTitle);
+
+    const completedSteps = Number.isFinite(Number(progress.completed_steps)) ? Number(progress.completed_steps) : 0;
+    const totalSteps = Number.isFinite(Number(progress.total_steps)) ? Number(progress.total_steps) : plan.length;
+    planEl.appendChild(document.createTextNode(` (${completedSteps}/${totalSteps})`));
+    planEl.appendChild(document.createElement('br'));
+
+    plan.forEach((step) => {
+      const status = step?.status === 'completed'
+        ? '✅'
+        : step?.status === 'in_progress'
+          ? '⏳'
+          : '•';
+      const label = step?.step ? String(step.step) : 'Unbenannter Schritt';
+      appendLine(planEl, `${status} ${label}`);
+    });
   } else {
     planEl.style.display = 'none';
+    planEl.replaceChildren();
   }
 
   if (actions.length || Object.keys(refs).length) {
     actionsEl.style.display = 'block';
-    const actionText = actions.length
-      ? actions.map((a) => `• ${a.type || 'Aktion'}${a.confirm_required ? ' (Bestätigung nötig)' : ''}`).join('<br>')
-      : '• Keine vorgeschlagenen Aktionen';
-    const refsText = Object.keys(refs).length
-      ? `<br><strong>Referenzen:</strong> ${Object.entries(refs).map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · ')}`
-      : '';
-    actionsEl.innerHTML = `<strong>Vorgeschlagene Aktionen</strong><br>${actionText}${refsText}`;
+    actionsEl.replaceChildren();
+
+    const actionsTitle = document.createElement('strong');
+    actionsTitle.textContent = 'Vorgeschlagene Aktionen';
+    actionsEl.appendChild(actionsTitle);
+    actionsEl.appendChild(document.createElement('br'));
+
+    if (actions.length) {
+      actions.forEach((action) => {
+        const actionType = action?.type ? String(action.type) : 'Aktion';
+        const requiresConfirm = action?.confirm_required ? ' (Bestätigung nötig)' : '';
+        appendLine(actionsEl, `• ${actionType}${requiresConfirm}`);
+      });
+    } else {
+      appendLine(actionsEl, '• Keine vorgeschlagenen Aktionen');
+    }
+
+    if (Object.keys(refs).length) {
+      const normalizedRefs = Object.entries(refs).map(([key, rawValue]) => {
+        const values = Array.isArray(rawValue)
+          ? rawValue.map((entry) => String(entry))
+          : [String(rawValue)];
+        return `${String(key)}: ${values.join(', ')}`;
+      });
+      actionsEl.appendChild(document.createElement('br'));
+      const refsTitle = document.createElement('strong');
+      refsTitle.textContent = 'Referenzen:';
+      actionsEl.appendChild(refsTitle);
+      actionsEl.appendChild(document.createTextNode(` ${normalizedRefs.join(' · ')}`));
+    }
   } else {
     actionsEl.style.display = 'none';
+    actionsEl.replaceChildren();
   }
 }
 

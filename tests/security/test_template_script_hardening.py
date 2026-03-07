@@ -15,3 +15,4 @@ def test_layout_shell_asset_contains_chat_controller_logic() -> None:
     assert 'let chatPendingId = \'' in script
     assert 'async function sendChatMessage()' in script
     assert "fetch('/api/chat/compact'" in script
+    assert '.innerHTML' not in script
