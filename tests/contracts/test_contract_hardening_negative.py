@@ -13,6 +13,7 @@ def test_normalize_marks_missing_fields_as_degraded():
     assert normalized["degraded_reason"] == "contract_normalized"
     assert "missing:tool" in errors
     assert "missing:details.contract.version" in errors
+    assert "missing:details.contract.kind" in errors
 
 
 @pytest.mark.parametrize(

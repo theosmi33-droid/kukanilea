@@ -43,7 +43,8 @@ UPLOAD_INTAKE_CONTRACT = {
 }
 CONTRACT_VERSION = "2026-03-05"
 REQUIRED_TOP_LEVEL_FIELDS = ("tool", "status", "updated_at", "metrics", "details")
-REQUIRED_CONTRACT_FIELDS = ("version", "read_only")
+REQUIRED_CONTRACT_FIELDS = ("version", "read_only", "kind")
+CONTRACT_KINDS = {"summary", "health"}
 MIA_PARITY_CHECKS = (
     "canonical_actions",
     "entities_verbs",
@@ -125,7 +126,16 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reason: str = "", *, tenant: str = "default") -> dict:
+def _contract_payload(
+    tool: str,
+    status: str,
+    metrics: dict,
+    details: dict,
+    reason: str = "",
+    *,
+    tenant: str = "default",
+    contract_kind: str = "summary",
+) -> dict:
     if status not in CONTRACT_STATUSES:
         status = "error"
 
@@ -141,6 +151,7 @@ def _contract_payload(tool: str, status: str, metrics: dict, details: dict, reas
         contract_meta = {}
     contract_meta.setdefault("version", CONTRACT_VERSION)
     contract_meta.setdefault("read_only", False)
+    contract_meta["kind"] = contract_kind if contract_kind in CONTRACT_KINDS else "summary"
     safe_details["contract"] = contract_meta
 
     payload = {
@@ -221,10 +232,18 @@ def _contract_errors(payload: dict) -> list[str]:
         errors.append("type:details.contract.version")
     if not isinstance(contract.get("read_only"), bool):
         errors.append("type:details.contract.read_only")
+    if contract.get("kind") not in CONTRACT_KINDS:
+        errors.append("type:details.contract.kind")
     return errors
 
 
-def _normalize_contract_payload(payload: dict, tool: str, tenant: str = "default") -> tuple[dict, list[str]]:
+def _normalize_contract_payload(
+    payload: dict,
+    tool: str,
+    tenant: str = "default",
+    *,
+    contract_kind: str = "summary",
+) -> tuple[dict, list[str]]:
     payload_details = _as_dict(payload.get("details"), {})
     payload_details["tenant"] = str(payload_details.get("tenant") or tenant or "default")
     safe_payload = {
@@ -241,6 +260,7 @@ def _normalize_contract_payload(payload: dict, tool: str, tenant: str = "default
         details=safe_payload["details"],
         reason=str(payload.get("degraded_reason") or ""),
         tenant=str(tenant or "default"),
+        contract_kind=contract_kind,
     )
     errors = _contract_errors(payload)
     if errors:
@@ -844,8 +864,9 @@ def build_tool_summary(tool: str, tenant: str = "default") -> dict:
             metrics={"collector_error": 1},
             details={"error": str(exc)},
             tenant=tenant,
+            contract_kind="summary",
         )
-        normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
+        normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant, contract_kind="summary")
         return _apply_mia_parity(normalized, tool)
 
     if not isinstance(metrics, dict) or not isinstance(details, dict) or not isinstance(degraded_reason, str):
@@ -862,8 +883,9 @@ def build_tool_summary(tool: str, tenant: str = "default") -> dict:
             },
             reason="collector_contract_invalid",
             tenant=tenant,
+            contract_kind="summary",
         )
-        normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
+        normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant, contract_kind="summary")
         return _apply_mia_parity(normalized, tool)
 
     details_tenant = str(details.get("tenant") or tenant) if isinstance(details, dict) else str(tenant)
@@ -878,8 +900,9 @@ def build_tool_summary(tool: str, tenant: str = "default") -> dict:
         details=details,
         reason=degraded_reason,
         tenant=tenant,
+        contract_kind="summary",
     )
-    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
+    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant, contract_kind="summary")
     return _apply_mia_parity(normalized, tool)
 
 
@@ -897,8 +920,47 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
     }
     if tool in {"time", "zeiterfassung"}:
         summary["details"]["offline_persistence"] = bool(summary["details"].get("offline_persistence", False))
-    normalized, _ = _normalize_contract_payload(summary, tool, tenant=tenant)
+    normalized, _ = _normalize_contract_payload(summary, tool, tenant=tenant, contract_kind="health")
     return normalized
+
+
+def validate_tool_contract_payload(payload: dict, *, expected_tool: str | None = None, expected_kind: str | None = None) -> list[str]:
+    errors = _contract_errors(payload if isinstance(payload, dict) else {})
+    if expected_tool and str((payload or {}).get("tool") or "") != expected_tool:
+        errors.append("mismatch:tool")
+    if expected_kind:
+        actual_kind = ((payload or {}).get("details") or {}).get("contract", {}).get("kind")
+        if actual_kind != expected_kind:
+            errors.append("mismatch:details.contract.kind")
+    return errors
+
+
+def validate_summary_health_pair(summary_payload: dict, health_payload: dict) -> list[str]:
+    errors: list[str] = []
+    errors.extend(f"summary:{err}" for err in validate_tool_contract_payload(summary_payload, expected_kind="summary"))
+    errors.extend(f"health:{err}" for err in validate_tool_contract_payload(health_payload, expected_kind="health"))
+
+    summary_tool = str((summary_payload or {}).get("tool") or "")
+    health_tool = str((health_payload or {}).get("tool") or "")
+    if summary_tool and health_tool and summary_tool != health_tool:
+        errors.append("mismatch:tool_pair")
+
+    summary_details = (summary_payload or {}).get("details") if isinstance((summary_payload or {}).get("details"), dict) else {}
+    health_details = (health_payload or {}).get("details") if isinstance((health_payload or {}).get("details"), dict) else {}
+    if str(summary_details.get("tenant") or "") != str(health_details.get("tenant") or ""):
+        errors.append("mismatch:tenant")
+
+    summary_contract = summary_details.get("contract") if isinstance(summary_details.get("contract"), dict) else {}
+    health_contract = health_details.get("contract") if isinstance(health_details.get("contract"), dict) else {}
+    if summary_contract.get("version") != health_contract.get("version"):
+        errors.append("mismatch:contract.version")
+    if bool(summary_contract.get("read_only")) != bool(health_contract.get("read_only")):
+        errors.append("mismatch:contract.read_only")
+
+    checks = health_details.get("checks") if isinstance(health_details.get("checks"), dict) else {}
+    if set(checks.keys()) != {"summary_contract", "backend_ready", "offline_safe"}:
+        errors.append("type:health.details.checks")
+    return errors
 
 
 def build_tool_matrix(tenant: str = "default") -> list[dict]:
@@ -965,6 +1027,7 @@ def build_contract_response(
         details=details,
         reason=degraded_reason,
         tenant=tenant,
+        contract_kind="summary",
     )
-    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant)
+    normalized, _ = _normalize_contract_payload(payload, tool, tenant=tenant, contract_kind="summary")
     return normalized
