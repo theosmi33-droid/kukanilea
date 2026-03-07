@@ -233,17 +233,20 @@ def main() -> int:
         return 2
 
     context_files = [Path(p) for p in args.context_file]
+    skip_alignment = getattr(args, "skip_alignment", False)
     final_prompt = build_prompt(
         root=root,
         user_prompt=user_prompt,
         domain=args.domain,
         context_files=context_files,
-        skip_alignment=args.skip_alignment,
+        skip_alignment=skip_alignment,
     )
     cwd = Path(args.cwd) if args.cwd else None
-    extensions = args.extension or []
+    extensions = getattr(args, "extension", []) or []
+    require_main = getattr(args, "require_main", False)
+    model = getattr(args, "model", None)
 
-    if args.require_main:
+    if require_main:
         ok, message = enforce_main_branch(cwd, root)
         if not ok:
             print(message, file=sys.stderr)
@@ -253,7 +256,7 @@ def main() -> int:
         rc, raw = run_gemini(
             final_prompt,
             approval_mode=approval_mode,
-            model=args.model,
+            model=model,
             extensions=extensions,
             cwd=cwd,
             timeout_seconds=args.timeout_seconds,
