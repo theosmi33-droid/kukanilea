@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from app.tools.base_tool import BaseTool
 from app.tools.registry import registry
-from app.agents.memory_store import MemoryManager
-from flask import current_app, g
+from app.tools.shared_services import build_memory_manager, get_tenant_id
+
 
 class MemorySearchTool(BaseTool):
     """
@@ -26,15 +26,14 @@ class MemorySearchTool(BaseTool):
     }
 
     def run(self, query: str, limit: int = 5, topic: Optional[str] = None, recency_days: int = 60) -> Any:
-        tenant_id = g.get("tenant_id")
+        tenant_id = get_tenant_id()
         if not tenant_id:
             return {"error": "No tenant context found."}
 
-        auth_db = current_app.extensions.get("auth_db")
-        if not auth_db:
+        manager = build_memory_manager()
+        if not manager:
             return {"error": "Database not initialized."}
 
-        manager = MemoryManager(str(auth_db.path))
         if topic:
             results = manager.retrieve_by_topic(
                 tenant_id=tenant_id,
@@ -46,6 +45,7 @@ class MemorySearchTool(BaseTool):
 
         results = manager.retrieve_context(tenant_id, query, limit)
         return {"results": results, "retrieval": "semantic"}
+
 
 # Register tool
 registry.register(MemorySearchTool())

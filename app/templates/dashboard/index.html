@@ -351,41 +351,70 @@ function renderHealthStrip(summaryMap, appHealthOk) {
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-async function loadSpeedToLeadAndHealth() {
-  const summaryPairs = await Promise.all(DASHBOARD_TOOLS.map(async (tool) => {
-    try {
-      const res = await fetch(`/api/${tool}/summary`, { credentials: 'same-origin' });
-      if (!res.ok) throw new Error(`summary_${tool}_${res.status}`);
-      return [tool, await res.json()];
-    } catch (_err) {
-      return [tool, { tool, status: "error", metrics: {}, updated_at: null }];
-    }
-  }));
-  const summaryMap = Object.fromEntries(summaryPairs);
+const SUMMARY_TIMEOUT_MS = 4500;
+const REFRESH_INTERVAL_MS = 60000;
+let healthRefreshInFlight = false;
+let matrixRefreshInFlight = false;
 
-  let appHealthOk = false;
+async function _fetchJsonWithTimeout(url, timeoutMs = SUMMARY_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const healthRes = await fetch('/health', { credentials: 'same-origin' });
-    appHealthOk = healthRes.ok && Boolean((await healthRes.json())?.ok);
-  } catch (_err) {
-    appHealthOk = false;
+    const res = await fetch(url, { credentials: 'same-origin', signal: controller.signal });
+    if (!res.ok) throw new Error(`${url}_${res.status}`);
+    return await res.json();
+  } finally {
+    window.clearTimeout(timer);
   }
+}
 
-  renderSpeedToLead(summaryMap);
-  renderHealthStrip(summaryMap, appHealthOk);
+async function _fetchToolSummary(tool) {
+  try {
+    const payload = await _fetchJsonWithTimeout(`/api/${tool}/summary`);
+    return [tool, payload];
+  } catch (_err) {
+    return [tool, { tool, status: "degraded", degraded_reason: "summary_unreachable", metrics: {}, updated_at: null }];
+  }
+}
+
+async function loadSpeedToLeadAndHealth() {
+  if (healthRefreshInFlight) return;
+  healthRefreshInFlight = true;
+  try {
+    const settled = await Promise.allSettled(DASHBOARD_TOOLS.map((tool) => _fetchToolSummary(tool)));
+    const summaryPairs = settled.map((item, index) => {
+      if (item.status === "fulfilled" && Array.isArray(item.value)) return item.value;
+      const tool = DASHBOARD_TOOLS[index];
+      return [tool, { tool, status: "degraded", degraded_reason: "summary_unreachable", metrics: {}, updated_at: null }];
+    });
+    const summaryMap = Object.fromEntries(summaryPairs);
+
+    let appHealthOk = false;
+    try {
+      const health = await _fetchJsonWithTimeout('/health', 3000);
+      appHealthOk = Boolean(health?.ok);
+    } catch (_err) {
+      appHealthOk = false;
+    }
+
+    renderSpeedToLead(summaryMap);
+    renderHealthStrip(summaryMap, appHealthOk);
+  } finally {
+    healthRefreshInFlight = false;
+  }
 }
 
 async function loadToolMatrix() {
+  if (matrixRefreshInFlight) return;
+  matrixRefreshInFlight = true;
   try {
-    const res = await fetch('/api/dashboard/tool-matrix', { credentials: 'same-origin' });
-    if (!res.ok) throw new Error(`matrix_http_${res.status}`);
-    const payload = await res.json();
+    const payload = await _fetchJsonWithTimeout('/api/dashboard/tool-matrix');
     renderToolMatrix(payload);
     const signals = deriveDashboardSignals(payload);
     renderKpiRail(signals);
     renderAlertDigest(signals);
     executeOptimizerActions(signals, 2200);
-  } catch (err) {
+  } catch (_err) {
     renderToolMatrix({ tools: [] });
     const signals = deriveDashboardSignals({ tools: [] });
     renderKpiRail(signals);
@@ -393,6 +422,8 @@ async function loadToolMatrix() {
     executeOptimizerActions(signals, 2200);
     const updated = document.getElementById("tool-contract-updated");
     if (updated) updated.textContent = 'Verbindung unterbrochen';
+  } finally {
+    matrixRefreshInFlight = false;
   }
 }
 
@@ -400,9 +431,8 @@ async function loadToolMatrix() {
 document.addEventListener("DOMContentLoaded", () => {
     loadToolMatrix();
     loadSpeedToLeadAndHealth();
-    // Refresh matrix every 60s
-    setInterval(loadToolMatrix, 60000);
-    setInterval(loadSpeedToLeadAndHealth, 60000);
+    setInterval(loadToolMatrix, REFRESH_INTERVAL_MS);
+    setInterval(loadSpeedToLeadAndHealth, REFRESH_INTERVAL_MS);
 });
 </script>
 {% endblock %}

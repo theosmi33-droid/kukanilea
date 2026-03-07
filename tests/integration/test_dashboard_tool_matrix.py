@@ -67,7 +67,7 @@ def test_dashboard_matrix_marks_degraded_tool_instead_of_hard_fail(tmp_path, mon
         return {"pending_items": 0}, {"source": "broken"}, "simulated_gateway_unavailable"
 
     monkeypatch.setattr(contracts, "_collect_upload_summary", _broken_upload)
-    contracts.SUMMARY_COLLECTORS["upload"] = _broken_upload
+    monkeypatch.setitem(contracts.SUMMARY_COLLECTORS, "upload", _broken_upload)
 
     response = client.get("/api/dashboard/tool-matrix")
     assert response.status_code == 200
@@ -87,7 +87,7 @@ def test_dashboard_matrix_handles_contract_type_violations_without_500(tmp_path,
     import app.contracts.tool_contracts as contracts
 
     monkeypatch.setattr(contracts, "_collect_chatbot_summary", lambda _tenant: ([], {}, ""))
-    contracts.SUMMARY_COLLECTORS["chatbot"] = contracts._collect_chatbot_summary
+    monkeypatch.setitem(contracts.SUMMARY_COLLECTORS, "chatbot", contracts._collect_chatbot_summary)
 
     response = client.get("/api/dashboard/tool-matrix")
     assert response.status_code == 200
@@ -105,7 +105,7 @@ def test_summary_endpoint_returns_error_payload_instead_of_500_on_collector_exce
     import app.contracts.tool_contracts as contracts
 
     monkeypatch.setattr(contracts, "_collect_upload_summary", lambda _tenant: (_ for _ in ()).throw(RuntimeError("boom")))
-    contracts.SUMMARY_COLLECTORS["upload"] = contracts._collect_upload_summary
+    monkeypatch.setitem(contracts.SUMMARY_COLLECTORS, "upload", contracts._collect_upload_summary)
 
     response = client.get("/api/upload/summary")
     assert response.status_code == 200
@@ -113,6 +113,32 @@ def test_summary_endpoint_returns_error_payload_instead_of_500_on_collector_exce
     body = response.get_json()
     assert body["status"] == "error"
     assert body["metrics"]["collector_error"] == 1
+
+
+def test_dashboard_matrix_degrades_single_tool_when_summary_builder_raises(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    import app.contracts.tool_contracts as contracts
+
+    original = contracts.build_tool_summary
+
+    def _partially_broken(tool: str, tenant: str = "default"):
+        if tool == "email":
+            raise RuntimeError("simulated_email_timeout")
+        return original(tool, tenant)
+
+    monkeypatch.setattr(contracts, "build_tool_summary", _partially_broken)
+
+    response = client.get("/api/dashboard/tool-matrix")
+    assert response.status_code == 200
+
+    body = response.get_json()
+    assert "email" in body["degraded"]
+    email = next(row for row in body["tools"] if row["tool"] == "email")
+    assert email["status"] == "degraded"
+    assert email["degraded_reason"] == "summary_aggregation_failed"
+    assert email["details"]["aggregation_error"] == "internal_error"
 
 
 def test_dashboard_mia_parity_endpoint_reports_aligned_baseline(tmp_path, monkeypatch):
