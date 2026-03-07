@@ -14,6 +14,84 @@ logger = logging.getLogger("kukanilea.migrations")
 CURRENT_SCHEMA_VERSION = 7
 
 
+def _ensure_migration_targets(conn: sqlite3.Connection) -> None:
+    """Ensure migration-owned tables/columns/indexes exist independent of user_version."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS agent_memory(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tenant_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          agent_role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          embedding BLOB NOT NULL,
+          metadata TEXT,
+          FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+        );
+        """
+    )
+    if not _column_exists(conn, "agent_memory", "importance_score"):
+        conn.execute("ALTER TABLE agent_memory ADD COLUMN importance_score INTEGER DEFAULT 5;")
+    if not _column_exists(conn, "agent_memory", "category"):
+        conn.execute("ALTER TABLE agent_memory ADD COLUMN category TEXT DEFAULT 'FAKT';")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_tenant_ts ON agent_memory(tenant_id, timestamp);")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memory_importance ON agent_memory(tenant_id, importance_score);"
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mesh_nodes(
+          node_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          public_key TEXT NOT NULL,
+          last_ip TEXT,
+          last_seen TEXT,
+          status TEXT DEFAULT 'OFFLINE',
+          trust_level INTEGER DEFAULT 0
+        );
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS api_outbound_queue(
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          target_system TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          file_path TEXT,
+          status TEXT DEFAULT 'pending',
+          retry_count INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL,
+          last_attempt TEXT,
+          error_message TEXT
+        );
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_api_queue_status ON api_outbound_queue(status);")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_audit_log(
+          id TEXT PRIMARY KEY,
+          memory_id TEXT NOT NULL,
+          tenant_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          actor TEXT NOT NULL,
+          payload TEXT,
+          created_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memory_audit_tenant_ts ON memory_audit_log(tenant_id, created_at);"
+    )
+
+    if _table_exists(conn, "customers") and _column_exists(conn, "customers", "id"):
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_id_unique ON customers(id);")
+
+
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -227,14 +305,9 @@ def run_migrations(db_path: Path):
             logger.info("Migrated to version 7 (Knowledge Memory audit trail)")
 
         # Always-on drift guard (idempotent)
-        if _table_exists(conn, "agent_memory"):
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_tenant_ts ON agent_memory(tenant_id, timestamp);")
-        if _table_exists(conn, "api_outbound_queue"):
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_api_queue_status ON api_outbound_queue(status);")
-        if _table_exists(conn, "memory_audit_log"):
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_audit_tenant_ts ON memory_audit_log(tenant_id, created_at);")
-        if _table_exists(conn, "customers") and _column_exists(conn, "customers", "id"):
-            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_id_unique ON customers(id);")
+        _ensure_migration_targets(conn)
+        if _get_user_version(conn) < CURRENT_SCHEMA_VERSION:
+            _set_user_version(conn, CURRENT_SCHEMA_VERSION)
         conn.commit()
 
     except Exception as e:
