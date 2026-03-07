@@ -84,7 +84,8 @@ def test_list_actions_uses_registry_fallback_when_template_empty() -> None:
 
         assert payload["ok"] is True
         assert payload["tool"] == "demo"
-        assert any(item["name"] == "demo.execute" for item in payload["actions"])
+        # BaseTool multiplies by entity 'default' and uses domain derived from name
+        assert any(item["name"] == "demo.default.execute" for item in payload["actions"])
     finally:
         action_registry._actions_by_name.clear()
         action_registry._actions_by_name.update(previous)

@@ -19,29 +19,10 @@ class ActionDefinition:
     confirm_required: bool
     audit_required: bool
     risk: str
+    level: int  # 1 (READ), 2 (VOLATILE), 3 (MODIFICATION), 4 (DESTRUCTIVE)
     external_call: bool
     idempotency: str
     audit_fields: List[str]
-
-    @property
-    def name(self) -> str:
-        """Legacy alias for action_id."""
-        return self.action_id
-
-    @property
-    def inputs_schema(self) -> Dict[str, Any]:
-        """Legacy alias for parameter_schema."""
-        return self.parameter_schema
-
-    @property
-    def is_critical(self) -> bool:
-        """Legacy alias for confirm_required."""
-        return self.confirm_required
-
-    @property
-    def tool_name(self) -> str:
-        """Legacy alias for tool."""
-        return self.tool
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -52,18 +33,26 @@ class ActionDefinition:
             "verb": self.verb,
             "modifiers": list(self.modifiers),
             "tool": self.tool,
-            "tool_name": self.tool,  # Legacy alias
             "parameter_schema": self.parameter_schema,
             "inputs_schema": self.parameter_schema,  # Legacy alias
             "permissions": list(self.permissions),
             "confirm_required": self.confirm_required,
-            "is_critical": self.confirm_required,  # Legacy alias
+            "is_critical": self.confirm_required or self.level >= 3,  # Compatibility
             "audit_required": self.audit_required,
             "risk": self.risk,
+            "level": self.level,
             "external_call": self.external_call,
             "idempotency": self.idempotency,
             "audit_fields": list(self.audit_fields),
         }
+
+    @property
+    def is_critical(self) -> bool:
+        return self.confirm_required or self.level >= 3
+
+    @property
+    def inputs_schema(self) -> Dict[str, Any]:
+        return self.parameter_schema
 
 
 class ActionRegistry:
@@ -74,7 +63,6 @@ class ActionRegistry:
 
     @property
     def _actions_by_name(self) -> Dict[str, ActionDefinition]:
-        """Legacy alias for _actions_by_id."""
         return self._actions_by_id
 
     def register_tool(self, tool: BaseTool) -> None:
@@ -86,34 +74,51 @@ class ActionRegistry:
                 raise ValueError(f"Duplicate action_id detected: {action_id} (Tool: {tool.name})")
 
             # Validation: Write-actions MUST have confirm+audit
-            verb = str(action.get("verb", action_id.split(".")[-1])).lower()
-            is_write = verb in {
-                "create", "update", "delete", "upsert", "patch", "purge", 
-                "execute", "execute_async", "rollback", "cancel", "import", 
-                "archive", "restore", "sync", "reconcile", "lock", "unlock"
-            } or action.get("is_critical", False)
+            raw_verb = str(action.get("verb") or action_id.split(".")[-1]).lower()
             
-            confirm_required = bool(action.get("confirm_required", is_write))
-            audit_required = bool(action.get("audit_required", is_write))
+            # Check for explicit write indicators in metadata
+            meta_is_critical = bool(action.get("is_critical", False))
+            meta_is_write = action.get("action_type") == "write" or action.get("action_type") == "high_risk"
+            
+            # Refined verb detection: check for destructive keywords anywhere in the verb string
+            is_destructive = any(k in raw_verb for k in {"delete", "purge", "rollback", "cancel", "destroy", "drop"})
+            is_write = any(k in raw_verb for k in {
+                "create", "update", "upsert", "patch", 
+                "execute", "import", "archive", "restore", 
+                "sync", "reconcile", "lock", "unlock"
+            }) or is_destructive or meta_is_critical or meta_is_write
+            
+            # Determine LEVEL (1-4) according to AGENTS.md
+            level = 1
+            if is_destructive or (action.get("action_type") == "high_risk"):
+                level = 4
+            elif is_write:
+                level = 3
+            elif any(k in raw_verb for k in {"list", "search", "get", "aggregate", "read"}) or action.get("action_type") == "read":
+                level = 1
+            
+            confirm_required = bool(action.get("confirm_required", level >= 3))
+            audit_required = bool(action.get("audit_required", level >= 3))
             
             # Policy completeness check
-            if is_write and not (confirm_required and audit_required):
-                raise ValueError(f"Write action {action_id} must have confirm_required and audit_required set to True")
+            if level >= 3 and not (confirm_required and audit_required):
+                raise ValueError(f"Write action {action_id} (Level {level}) must have confirm_required and audit_required set to True")
 
             definition = ActionDefinition(
                 action_id=action_id,
                 domain=str(action.get("domain", tool.name.split("_")[0])),
                 entity=str(action.get("entity", "default")),
-                verb=verb,
+                verb=raw_verb,
                 modifiers=list(action.get("modifiers") or []),
                 tool=tool.name,
                 parameter_schema=dict(action.get("parameter_schema") or action.get("inputs_schema") or {"type": "object", "properties": {}}),
                 permissions=list(action.get("permissions") or []),
                 confirm_required=confirm_required,
                 audit_required=audit_required,
-                risk=str(action.get("risk", "high" if is_write else "low")),
+                risk=str(action.get("risk", "high" if level >= 3 else "low")),
+                level=level,
                 external_call=bool(action.get("external_call", False)),
-                idempotency=str(action.get("idempotency", "idempotent" if not is_write else "non-idempotent")),
+                idempotency=str(action.get("idempotency", "idempotent" if level < 3 else "non-idempotent")),
                 audit_fields=list(action.get("audit_fields") or []),
             )
             
