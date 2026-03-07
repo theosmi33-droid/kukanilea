@@ -6,15 +6,17 @@ from app.tools.registry import registry
 
 class WorkItemTool(BaseTool):
     """
-    Converts messages or context into structured work items (Tasks or Appointments).
+    Converts messages or context into structured work items (Tasks or Projects).
     """
 
-    name = "message_to_work_item"
-    description = "Erstellt aus einer Nachricht oder einem Kontext einen Task oder Termin."
+    name = "work_item"
+    domain = "tasks"
+    entities = ["task", "project", "milestone", "assignment", "status", "deadline", "comment", "attachment", "priority", "label"]
+    description = "Erstellt aus einer Nachricht oder einem Kontext einen Task oder ein Projekt."
     input_schema = {
         "type": "object",
         "properties": {
-            "target": {"type": "string", "enum": ["task", "termin"], "default": "task"},
+            "target": {"type": "string", "enum": ["task", "project"], "default": "task"},
             "confirm_gate": {"type": "boolean", "default": True},
             "priority": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"], "default": "MEDIUM"}
         },

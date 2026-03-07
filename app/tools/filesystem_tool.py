@@ -12,7 +12,9 @@ class FileSystemTool(BaseTool):
     Tool for safe local filesystem operations.
     """
 
-    name = "filesystem_list"
+    name = "filesystem"
+    domain = "files"
+    entities = ["file", "directory", "path", "metadata", "permission", "symlink", "hardlink", "mount", "quota", "disk"]
     description = "Listet Dateien in einem Verzeichnis auf."
     input_schema = {
         "type": "object",

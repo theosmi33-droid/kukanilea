@@ -14,6 +14,7 @@ def build_summary(tenant: str) -> dict:
         active = False
         
     return {
+        "tool": "messenger",
         "status": "ok" if active else "error",
         "timestamp": _timestamp(),
         "metrics": {

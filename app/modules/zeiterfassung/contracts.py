@@ -16,7 +16,7 @@ def build_summary(tenant: str) -> dict:
     status = "ok" if callable(time_entry_list) else "degraded"
     degraded_reason = "time_tracking_unavailable" if status == "degraded" else ""
     return build_contract_response(
-        tool="zeiterfassung",
+        tool="time",
         status=status,
         degraded_reason=degraded_reason,
         metrics={

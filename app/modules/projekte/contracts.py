@@ -10,7 +10,7 @@ def build_summary(tenant: str) -> dict:
     status = "ok" if callable(project_list) else "degraded"
     degraded_reason = "projects_backend_missing" if status == "degraded" else ""
     return build_contract_response(
-        tool="projekte",
+        tool="projects",
         status=status,
         degraded_reason=degraded_reason,
         metrics={
