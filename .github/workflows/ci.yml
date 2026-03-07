@@ -19,6 +19,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   pr-quality-guard:
     runs-on: ubuntu-latest
@@ -54,10 +57,49 @@ jobs:
         run: |
           python scripts/dev/ui_conflict_preventer.py --base-branch origin/main
 
-  test:
+  quality-gates:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [pr-quality-guard, ui-conflict-guard]
+    env:
+      OLLAMA_ENABLED: "0"
+      PYTHONUNBUFFERED: "1"
+      PYTHON: ./.venv/bin/python
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Guardrails scan (offline/CSP/no-injection surface)
+        run: |
+          python scripts/ops/verify_guardrails.py
+
+      - name: Healthcheck core gates (without duplicate pytest run)
+        run: |
+          bash scripts/ops/healthcheck.sh --skip-pytest --strict-doctor
+
+      - name: Contract + smoke regression bundle
+        run: |
+          python -m pytest -q \
+            tests/contracts \
+            tests/security/test_verify_guardrails.py \
+            tests/security/test_layout_shell_hardening.py \
+            tests/integration/test_end_to_end_core_smoke.py
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [quality-gates]
     env:
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
@@ -80,7 +122,7 @@ jobs:
         run: |
           python scripts/dev/enforce_vscode_configs.py --check
 
-      - name: Run tests (without e2e)
+      - name: Run full regression tests (without e2e)
         run: |
           pytest -q tests --ignore=tests/e2e
 
