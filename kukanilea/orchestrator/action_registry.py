@@ -102,11 +102,25 @@ class ActionRegistry:
             policy = spec.policy
             if policy is None:
                 raise ValueError(f"Missing policy metadata: {action_id}")
+            expected_action_id = canonical_action_id(spec.domain, spec.entity, spec.verb, spec.modifiers)
+            if action_id != expected_action_id:
+                raise ValueError(f"Non-canonical action id: {action_id} != {expected_action_id}")
             required_values = [policy.risk, policy.idempotency]
             if any(not str(v).strip() for v in required_values):
                 raise ValueError(f"Incomplete policy metadata: {action_id}")
+            if not isinstance(spec.parameter_schema, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in spec.parameter_schema.items()
+            ):
+                raise ValueError(f"Invalid parameter schema metadata: {action_id}")
             if spec.is_write and (not policy.confirm_required or not policy.audit_required):
                 raise ValueError(f"Write action without confirm+audit policy: {action_id}")
+            if spec.is_write and policy.idempotency == "idempotent":
+                raise ValueError(f"Write action marked idempotent: {action_id}")
+            if policy.external_call:
+                if policy.risk != "high":
+                    raise ValueError(f"External action without high risk policy: {action_id}")
+                if not policy.confirm_required or not policy.audit_required:
+                    raise ValueError(f"External action without confirm+audit policy: {action_id}")
 
     def stats(self) -> ActionRegistryStats:
         derivable = sum(_count_derivable_actions(spec) for spec in self.domains.values())

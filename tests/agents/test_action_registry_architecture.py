@@ -46,3 +46,19 @@ def test_registry_validation_rejects_write_actions_without_confirm_and_audit() -
         assert "Write action without confirm+audit policy" in str(exc)
     else:
         raise AssertionError("validation should fail for write actions without policy gates")
+
+
+def test_registry_external_actions_are_high_risk_and_confirmed() -> None:
+    registry = create_action_registry()
+    external_actions = [spec for spec in registry.actions.values() if spec.policy.external_call]
+
+    assert external_actions, "expected at least one external action in generated registry"
+    assert all(spec.policy.risk == "high" for spec in external_actions)
+    assert all(spec.policy.confirm_required is True for spec in external_actions)
+    assert all(spec.policy.audit_required is True for spec in external_actions)
+
+
+def test_registry_action_ids_match_canonical_components() -> None:
+    registry = create_action_registry()
+    for action_id, spec in registry.actions.items():
+        assert action_id == canonical_action_id(spec.domain, spec.entity, spec.verb, spec.modifiers)

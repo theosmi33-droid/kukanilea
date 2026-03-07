@@ -4349,6 +4349,7 @@ def _normalize_contract_tool(tool: str) -> str | None:
         "projekte": "projects",
         "zeiterfassung": "time",
         "einstellungen": "settings",
+        "emailpostfach": "email",
     }
     resolved = aliases.get(raw, raw)
     if resolved not in CONTRACT_TOOLS:
@@ -4364,6 +4365,7 @@ def _contract_tool_response_label(requested_tool: str, normalized_tool: str) -> 
         "projekte",
         "zeiterfassung",
         "einstellungen",
+        "emailpostfach",
     }:
         return raw
     if raw in CONTRACT_TOOLS:
