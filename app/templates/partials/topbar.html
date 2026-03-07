@@ -1,6 +1,6 @@
 <header class="topbar" aria-label="Seitenkopf">
-  <div style="display: flex; align-items: center; gap: var(--spacing-4);">
-    <button id="mobile-sidebar-toggle" class="btn btn-ghost btn-sm" type="button" aria-label="Menü öffnen" aria-controls="app-sidebar" aria-expanded="false" style="display: none;">
+  <div class="topbar-leading">
+    <button id="mobile-sidebar-toggle" class="btn btn-ghost btn-sm mobile-sidebar-toggle" type="button" aria-label="Menü öffnen" aria-controls="app-sidebar" aria-expanded="false">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <h1 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--text-primary);">
@@ -40,10 +40,4 @@
   </div>
 </header>
 
-<style>
-  @media (max-width: 768px) {
-    #mobile-sidebar-toggle { display: block !important; }
-    .topbar-search-container { display: none; }
-    .mode-chip { display: none; }
-  }
-</style>
+
