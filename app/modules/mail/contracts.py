@@ -23,7 +23,7 @@ def build_summary(tenant: str, *, messages: list[dict] | None = None, sla_hours:
         },
         "details": {
             "tenant": str(tenant or "default"),
-            "triage_categories": ["urgent", "offer", "appointment", "invoice"],
+            "triage_categories": ["request", "invoice", "spam", "follow_up"],
             "confirm_gate": True,
             "read_only_default": True,
             "contract": {"version": "2026-03-05", "read_only": True},
