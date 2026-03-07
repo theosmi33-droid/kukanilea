@@ -244,7 +244,16 @@ def load_runtime_license_state(
         status = str(machine["status"])
         read_only = bool(machine["read_only"])
         reason = str(machine["reason"])
-        log_event("license_transition", {"transition": machine.get("transition"), "status": status, "reason": reason})
+        log_event(
+            "license_transition",
+            {
+                "transition": machine.get("transition"),
+                "status": status,
+                "reason": reason,
+                "read_only": read_only,
+                "plan": str(info.get("plan") or "PRO"),
+            },
+        )
         state = LicenseState(
             plan=str(info.get("plan") or "PRO"),
             trial=False,
@@ -271,5 +280,15 @@ def load_runtime_license_state(
         read_only=expired,
         reason="trial_expired" if expired else "trial",
         status="grace" if not expired else "blocked",
+    )
+    log_event(
+        "license_transition",
+        {
+            "transition": "trial->blocked" if expired else "trial->grace",
+            "status": state.status,
+            "reason": state.reason,
+            "read_only": state.read_only,
+            "plan": state.plan,
+        },
     )
     return state.as_dict()

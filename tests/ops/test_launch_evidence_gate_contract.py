@@ -40,3 +40,9 @@ def test_launch_evidence_requires_backup_restore_hook_evidence():
     script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
     assert "backup_verify_hook=ok" in script
     assert "restore_verify_hook=ok" in script
+
+
+def test_launch_evidence_allows_gate7_evidence_paths_for_controlled_writes():
+    script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
+    assert "MIA_UNCONTROLLED_WRITES" in script
+    assert "evidence/operations/" in script

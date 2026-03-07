@@ -1,28 +1,31 @@
 # Launch Evidence Gate Automation Report
 
-- Timestamp: 2026-03-05T18:14:38+00:00
-- Decision: **NO-GO**
+- Timestamp: 2026-03-07T04:55:14+01:00
+- Decision: **FAIL**
 - Exit-Code: 3
-- Repo: unknown
+- Repo: theosmi33-droid/kukanilea
 
 ## Gate Matrix
 
 | Gate | Status | Note |
 |---|---|---|
 | Repo/CI | PASS | git HEAD resolvable |
-| MIN_SCOPE | FAIL | files=5 loc=202 (need files>=8 or loc>=230; origin/main unavailable in local clone possible) |
-| Health | FAIL | healthcheck failed |
+| MIN_SCOPE | PASS | files=17 loc=878 |
+| Health | PASS | healthcheck passed |
 | Zero-CDN | PASS | guardrails passed |
 | White-mode | PASS | no dark mode signatures |
-| License | FAIL | status=LOCKED:MISSING |
-| Backup | PASS | backup/restore evidence verified |
+| License | FAIL | status=LOCK:MISSING |
+| Backup | PASS | backup/restore evidence + verification hooks verified |
 | AI | PASS | AI operating contract present |
-| MIN_TESTS | PASS | tests/ops test-count=33 |
+| MIN_TESTS | PASS | tests/ops test-count=53 |
 | CI_GATE | PASS | pytest tests/ops passed |
+| MIA_GATE7_SMOKE | PASS | gate7 smoke evidence generated in /Users/gensuminguyen/Kukanilea/evidence/operations/gate7_latest |
+| MIA_GATE7_ARTIFACTS | PASS | gate7 artifacts contain required evidence matrix |
+| MIA_UNCONTROLLED_WRITES | PASS | writes limited to controlled code/test/evidence paths |
 | Evidence | PASS | evidence path matches required target |
 
 ## Totals
 
-- PASS: 8
+- PASS: 13
 - WARN: 0
-- FAIL: 3
+- FAIL: 1

@@ -30,10 +30,18 @@ def test_active_state_is_writable() -> None:
     assert out["read_only"] is False
 
 
-def test_grace_state_remains_writable() -> None:
+def test_grace_state_is_read_only_fallback() -> None:
     out = evaluate_license_state(LicenseInputs(valid=True, expired=False, device_mismatch=False, status_hint="grace"))
     assert out["status"] == "grace"
-    assert out["read_only"] is False
+    assert out["read_only"] is True
+    assert out["reason"] == "grace_read_only"
+
+
+def test_invalid_license_fails_closed() -> None:
+    out = evaluate_license_state(LicenseInputs(valid=False, expired=False, device_mismatch=False, status_hint="active"))
+    assert out["status"] == "blocked"
+    assert out["read_only"] is True
+    assert out["reason"] == "license_invalid"
 
 
 def test_blocked_with_smb_unreachable_stays_blocked() -> None:

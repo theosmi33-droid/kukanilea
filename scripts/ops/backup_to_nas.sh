@@ -9,7 +9,7 @@ EXIT_RUNTIME=4
 
 TENANT_ID="${TENANT_ID:-$(cat instance/tenant_id.txt 2>/dev/null || echo DEMO_TENANT)}"
 TIMESTAMP="${BACKUP_TIMESTAMP:-$(date +%Y-%m-%d_%H-%M)}"
-TMP_DIR="/tmp/kukanilea_backup_${TENANT_ID}"
+TMP_DIR="/tmp/kukanilea_backup_${TENANT_ID}_$$"
 NAS_SHARE="${NAS_SHARE:-//192.168.0.2/KUKANILEA-BACKUPS}"
 NAS_USER="${NAS_USER:-backupuser}"
 NAS_PASS="${NAS_PASS:-}"
@@ -102,6 +102,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 fi
 
 mkdir -p "$TMP_DIR"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 if [[ -f "$DB_PATH" ]] && command -v sqlite3 >/dev/null 2>&1; then
   sqlite3 "$DB_PATH" .dump > "$TMP_DIR/db_dump.sql" || die "$EXIT_RUNTIME" "sqlite dump failed for $DB_PATH"
@@ -150,6 +151,7 @@ cat > "$METADATA_FILE" <<META
 META
 
 TARGET_MODE="nas"
+DEGRADED_REASON="none"
 TARGET_PATH=""
 CHECKSUM_PATH=""
 if command -v smbclient >/dev/null 2>&1; then
@@ -168,10 +170,12 @@ if command -v smbclient >/dev/null 2>&1; then
     CHECKSUM_PATH="${TARGET_PATH}.sha256"
   else
     TARGET_MODE="degraded_local"
+    DEGRADED_REASON="nas_upload_failed"
     log "WARN NAS upload failed after retries, switching to degraded local mode"
   fi
 else
   TARGET_MODE="degraded_local"
+  DEGRADED_REASON="smbclient_missing"
   log "WARN smbclient missing, switching to degraded local mode"
 fi
 
@@ -196,6 +200,7 @@ RPO_SECONDS="$((END_EPOCH - DB_MTIME))"
 {
   echo "report_version=1"
   echo "mode=$TARGET_MODE"
+  echo "degraded_reason=$DEGRADED_REASON"
   echo "tenant_id=$TENANT_ID"
   echo "backup_file=$(basename "$UPLOAD_FILE")"
   echo "target_path=$TARGET_PATH"
@@ -213,5 +218,4 @@ RPO_SECONDS="$((END_EPOCH - DB_MTIME))"
   echo "rpo_seconds=$RPO_SECONDS"
 } > "$REPORT_FILE"
 
-rm -rf "$TMP_DIR"
 log "Backup complete: $(basename "$UPLOAD_FILE") (mode=$TARGET_MODE)"

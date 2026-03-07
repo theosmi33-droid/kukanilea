@@ -9,6 +9,14 @@ CDN_PATTERNS = re.compile(
     r"(https?://|//)(cdn|unpkg|cdnjs|jsdelivr)",
     re.IGNORECASE,
 )
+EXTERNAL_ASSET_PATTERNS = re.compile(
+    r"\b(?:src|href|poster)\s*=\s*[\"'](?:https?:)?//",
+    re.IGNORECASE,
+)
+INLINE_HANDLER_PATTERN = re.compile(
+    r"\son[a-z]+\s*=",
+    re.IGNORECASE,
+)
 TEXT_EXTENSIONS = {".py", ".html", ".js", ".css", ".txt", ".md", ".json", ".yaml", ".yml"}
 PROMPT_INJECTION_PATTERNS = [
     re.compile(r"(?i)\bignore\s+(?:all\s+|previous\s+)?instructions?\b"),
@@ -43,6 +51,39 @@ def check_cdn_urls(paths: list[str] | None = None) -> list[str]:
                         if 'xmlns="http://www.w3.org/2000/svg"' in line:
                             continue
                         errors.append(f"CDN URL found in {full_path}:{line_num}: {line.strip()}")
+    return errors
+
+
+def check_external_asset_urls(paths: list[str] | None = None) -> list[str]:
+    roots = [Path(p) for p in (paths or ["app/templates"])]
+    errors: list[str] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for full_path in root.rglob("*.html"):
+            with full_path.open("r", encoding="utf-8") as fh:
+                for line_num, line in enumerate(fh, 1):
+                    if 'xmlns="http://www.w3.org/2000/svg"' in line:
+                        continue
+                    if EXTERNAL_ASSET_PATTERNS.search(line):
+                        errors.append(f"External asset URL found in {full_path}:{line_num}: {line.strip()}")
+    return errors
+
+
+def check_shell_template_inline_handlers(path: str = "app/templates/layout.html") -> list[str]:
+    template = Path(path)
+    errors: list[str] = []
+    if not template.exists():
+        return errors
+
+    content = template.read_text(encoding="utf-8")
+    for line_num, line in enumerate(content.splitlines(), 1):
+        if INLINE_HANDLER_PATTERN.search(line):
+            errors.append(f"Inline event handler found in shell template {template}:{line_num}: {line.strip()}")
+        if "javascript:" in line.lower():
+            errors.append(f"javascript: URL found in shell template {template}:{line_num}: {line.strip()}")
+        if "rel=\"preload\"" in line and "onload=" in line:
+            errors.append(f"CSP-unsafe preload onload hack in {template}:{line_num}: {line.strip()}")
     return errors
 
 
@@ -99,12 +140,14 @@ def check_prompt_injection_surface(paths: list[str] | None = None) -> list[str]:
 
 
 if __name__ == "__main__":
-    print("[GUARDRAIL] Verifying CDN, HTMX confirm, and prompt-injection surface...")
+    print("[GUARDRAIL] Verifying CDN, external assets, shell inline handlers, HTMX confirm, and prompt-injection surface...")
     cdn_errors = check_cdn_urls()
+    external_asset_errors = check_external_asset_urls()
+    shell_inline_errors = check_shell_template_inline_handlers()
     htmx_errors = check_htmx_confirm()
     injection_errors = check_prompt_injection_surface()
 
-    all_errors = cdn_errors + htmx_errors + injection_errors
+    all_errors = cdn_errors + external_asset_errors + shell_inline_errors + htmx_errors + injection_errors
     if all_errors:
         for err in all_errors:
             print(f"FAILED: {err}")

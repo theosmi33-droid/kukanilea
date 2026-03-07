@@ -30,10 +30,10 @@ def evaluate_license_state(inputs: LicenseInputs) -> Dict[str, Any]:
     """License state machine: active -> grace -> blocked -> recover."""
     if not inputs.valid:
         return {
-            "status": "grace",
-            "read_only": False,
-            "reason": "license_invalid_grace",
-            "transition": "boot->grace",
+            "status": "blocked",
+            "read_only": True,
+            "reason": "license_invalid",
+            "transition": "boot->blocked",
         }
 
     normalized = normalize_status_hint(inputs.status_hint)
@@ -87,8 +87,8 @@ def evaluate_license_state(inputs: LicenseInputs) -> Dict[str, Any]:
     if normalized == "grace":
         return {
             "status": "grace",
-            "read_only": False,
-            "reason": "grace",
+            "read_only": True,
+            "reason": "grace_read_only",
             "transition": "active->grace",
         }
 

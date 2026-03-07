@@ -172,27 +172,30 @@ def create_app() -> Flask:
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return None
         path = request.path or "/"
-        # Auth/session flows must remain writable even in read-only mode,
-        # otherwise users cannot log in to inspect or recover license state.
-        allow_prefixes = (
-            "/health",
-            "/api/health",
-            "/static/",
-            "/login",
-            "/logout",
-            "/switch-tenant",
-            "/admin/context/switch",
-            "/admin/license",
-            "/admin/settings",
-            "/api/auth/",
-            "/api/chat",
-            "/api/chat/compact",
-            "/api/research/",
-            "/api/news/",
-        )
-        if any(path.startswith(prefix) for prefix in allow_prefixes):
-            return None
         if bool(app.config.get("READ_ONLY", False)):
+            # Auth/session and explicit license-recovery paths stay writable
+            # so operators can restore the license state.
+            allow_exact = {
+                "/login",
+                "/logout",
+                "/switch-tenant",
+                "/admin/context/switch",
+                "/admin/license",
+                "/admin/settings/license/upload",
+            }
+            allow_prefixes = (
+                "/api/auth/",
+            )
+            if path in allow_exact or any(path.startswith(prefix) for prefix in allow_prefixes):
+                log_event(
+                    "license_write_exception_allowed",
+                    {
+                        "path": path,
+                        "method": request.method,
+                        "reason": str(app.config.get("LICENSE_REASON", "license_read_only")),
+                    },
+                )
+                return None
             reason = str(app.config.get("LICENSE_REASON", "license_read_only"))
             log_event("license_write_blocked", {"path": path, "method": request.method, "reason": reason})
             return json_error("read_only", f"License state blocks write operations: {reason}", status=403)

@@ -90,7 +90,9 @@ if "$PYTHON" -c "import playwright" >/dev/null 2>&1; then
   fi
 
   if [[ "$playwright_python_cli" -eq 1 ]]; then
-    if "$PYTHON" -m playwright install --list 2>/dev/null | grep -Eq '^\s*chromium\s'; then
+    # Playwright 1.58+ prints browser install paths (e.g. ".../chromium-1208")
+    # instead of a simple "chromium" token line. Accept both formats.
+    if "$PYTHON" -m playwright install --list 2>/dev/null | grep -Eqi '(^[[:space:]]*chromium([[:space:]]|$)|/chromium[-_])'; then
       ok "Playwright chromium browser binary present"
       playwright_browser_ready=1
     else

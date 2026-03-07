@@ -11,6 +11,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-scan:
     runs-on: ubuntu-latest
@@ -29,11 +32,32 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
-          pip install bandit
+
+      - name: Install Playwright Chromium (strict doctor prerequisite)
+        run: |
+          python -m playwright install chromium
+          pip install bandit pyyaml
+
+      - name: Validate workflow YAML syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          workflows = sorted(Path(".github/workflows").glob("*.yml"))
+          assert workflows, "no workflow files found"
+          for wf in workflows:
+              with wf.open("r", encoding="utf-8") as fh:
+                  yaml.safe_load(fh)
+          print(f"validated {len(workflows)} workflow files")
+          PY
 
       - name: Compile sanity
         run: |
-          python -m compileall app run.py kukanilea_app.py
+          python -m compileall app kukanilea run.py kukanilea_app.py
+
+      - name: Guardrails scan (offline/CSP/no-injection surface)
+        run: |
+          python scripts/ops/verify_guardrails.py
 
       - name: Security scan report (non-blocking)
         run: |
@@ -65,6 +89,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Install Playwright Chromium (strict doctor prerequisite)
+        run: |
+          python -m playwright install chromium
+
+      - name: Healthcheck core gates (without duplicate pytest run)
+        run: |
+          bash scripts/ops/healthcheck.sh --skip-pytest --strict-doctor
+
+      - name: Run contract and smoke bundles
+        run: |
+          pytest -q tests/contracts tests/integration/test_end_to_end_core_smoke.py
 
       - name: Run selected core tests
         run: |
