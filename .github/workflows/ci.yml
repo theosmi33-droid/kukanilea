@@ -79,6 +79,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Install Playwright Chromium (strict doctor prerequisite)
+        run: |
+          python -m playwright install chromium
+
       - name: Guardrails scan (offline/CSP/no-injection surface)
         run: |
           python scripts/ops/verify_guardrails.py
