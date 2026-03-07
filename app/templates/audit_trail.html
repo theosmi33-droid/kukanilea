@@ -31,12 +31,17 @@
           <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Dokument-ID</th>
           <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Chain-Hash (Node)</th>
           <th style="padding: 12px; color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; font-weight: 700;">Integrität</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for entry in trail %}
-        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.01)'" onmouseout="this.style.background='transparent'">
-          <td style="padding: 12px; font-family: var(--font-mono); color: var(--color-text-muted);">#{{ entry.id }}</td>
+        <style>
+          .audit-row { border-bottom: 1px solid rgba(255,255,255,0.03); transition: background 0.2s; }
+          .audit-row:hover { background: rgba(255,255,255,0.01); }
+        </style>
+        <div class="panel">
+        ...
+              <tbody>
+                {% for entry in trail %}
+                <tr class="audit-row">
+                  <td style="padding: 12px; font-family: var(--font-mono); color: var(--color-text-muted);">#{{ entry.id }}</td>
+
           <td style="padding: 12px; font-family: var(--font-mono);">{{ entry.created_at }}</td>
           <td style="padding: 12px;"><span class="badge">{{ entry.tenant_id }}</span></td>
           <td style="padding: 12px; font-weight: 600; color: var(--color-text-main);">{{ entry.doc_id[:16] }}...</td>

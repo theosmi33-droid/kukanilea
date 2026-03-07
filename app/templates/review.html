@@ -12,7 +12,7 @@
     {% endif %}
 
     {% if is_pdf %}
-      <iframe src="/file/{{token}}" style="width: 100%; height: 100%; border: none; position: relative; z-index: 20; background: transparent;" title="PDF Vorschau" onload="document.getElementById('preview-placeholder')?.remove()"></iframe>
+      <iframe id="pdf-preview" src="/file/{{token}}" style="width: 100%; height: 100%; border: none; position: relative; z-index: 20; background: transparent;" title="PDF Vorschau"></iframe>
     {% elif preview %}
       <img src="data:image/png;base64,{{preview}}" style="max-width: 100%; max-height: 100%; position: relative; z-index: 20;" alt="Beleg Vorschau">
     {% else %}
@@ -49,7 +49,7 @@
       </div>
       {% endif %}
 
-      <form method="post" style="display: flex; flex-direction: column; gap: var(--spacing-3);" onsubmit="const btn=this.querySelector('button[type=submit]'); setTimeout(() => { btn.disabled=true; btn.textContent='WIRD GESPEICHERT...'; }, 10);">
+      <form id="review-form" method="post" style="display: flex; flex-direction: column; gap: var(--spacing-3);">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="confirm" value="1">
 
@@ -77,7 +77,7 @@
           {% if kdnr_ranked %}
           <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;">
             {% for k in kdnr_ranked[:5] %}
-            <span class="badge" style="cursor: pointer; font-size: 10px;" onclick="document.getElementById('kdnr_input').value='{{k}}'">{{k}}</span>
+            <span class="badge kdnr-badge" style="cursor: pointer; font-size: 10px;" data-value="{{k}}">{{k}}</span>
             {% endfor %}
           </div>
           {% endif %}
@@ -92,7 +92,7 @@
           {% if name_suggestions %}
           <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;">
             {% for n in name_suggestions[:5] %}
-            <span class="badge" style="cursor: pointer; font-size: 10px;" onclick="document.getElementById('name_input').value='{{n}}'">{{n}}</span>
+            <span class="badge name-badge" style="cursor: pointer; font-size: 10px;" data-value="{{n}}">{{n}}</span>
             {% endfor %}
           </div>
           {% endif %}
@@ -104,8 +104,8 @@
             {% if keywords %}
               <div style="display: flex; flex-wrap: wrap; gap: 6px;">
                 {% for kw in keywords[:10] %}
-                  <span class="badge ripple" style="cursor: pointer; background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.2); color: var(--color-accent);"
-                        onclick="const input = document.querySelector('input[name=name]'); input.value += (input.value ? ', ' : '') + '{{kw}}';">{{ kw }}</span>
+                  <span class="badge ripple keyword-badge" style="cursor: pointer; background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.2); color: var(--color-accent);"
+                        data-value="{{kw}}">{{ kw }}</span>
                 {% endfor %}
               </div>
             {% else %}
@@ -127,4 +127,58 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    // PDF Preview
+    const pdfFrame = document.getElementById('pdf-preview');
+    if (pdfFrame) {
+        pdfFrame.addEventListener('load', () => {
+            const placeholder = document.getElementById('preview-placeholder');
+            if (placeholder) placeholder.remove();
+        });
+    }
+
+    // Form Submit
+    const reviewForm = document.getElementById('review-form');
+    if (reviewForm) {
+        reviewForm.addEventListener('submit', () => {
+            const btn = reviewForm.querySelector('button[type=submit]');
+            if (btn) {
+                setTimeout(() => {
+                    btn.disabled = true;
+                    btn.textContent = 'WIRD GESPEICHERT...';
+                }, 10);
+            }
+        });
+    }
+
+    // Badge Clicks
+    document.querySelectorAll('.kdnr-badge').forEach(badge => {
+        badge.addEventListener('click', () => {
+            const input = document.getElementById('kdnr_input');
+            if (input) input.value = badge.dataset.value;
+        });
+    });
+
+    document.querySelectorAll('.name-badge').forEach(badge => {
+        badge.addEventListener('click', () => {
+            const input = document.getElementById('name_input');
+            if (input) input.value = badge.dataset.value;
+        });
+    });
+
+    document.querySelectorAll('.keyword-badge').forEach(badge => {
+        badge.addEventListener('click', () => {
+            const input = document.querySelector('input[name=name]');
+            if (input) {
+                const val = badge.dataset.value;
+                input.value += (input.value ? ', ' : '') + val;
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

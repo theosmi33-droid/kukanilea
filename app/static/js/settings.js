@@ -43,6 +43,10 @@ function initConfirmGates() {
                 alert('Sicherheitsbestätigung erforderlich: Bitte geben Sie "CONFIRM" ein.');
                 confirmInput.focus();
                 confirmInput.classList.add('is-invalid');
+            } else {
+                if (!confirm('Riskante Aktion ausführen?')) {
+                    e.preventDefault();
+                }
             }
         });
     });

@@ -89,7 +89,7 @@
                 <h3 class="text-xl font-bold text-main">Details</h3>
                 <p class="text-[10px] text-muted uppercase font-black tracking-widest mt-1">Aufgaben-Kontext</p>
             </div>
-            <button class="btn btn-ghost btn-icon hover:bg-neutral-50 rounded-full" onclick="closeDrawer()">
+            <button class="btn btn-ghost btn-icon hover:bg-neutral-50 rounded-full" id="close-drawer-btn">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </header>
@@ -161,6 +161,9 @@
 
   function closeDrawer() { document.getElementById('detail-drawer').classList.add('translate-x-full'); }
   function openDrawer() { document.getElementById('detail-drawer').classList.remove('translate-x-full'); }
+
+  const closeBtn = document.getElementById('close-drawer-btn');
+  if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
 
   function esc(v) { return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function setStatus(m, e) { statusLine.textContent = m; statusLine.className = e ? "text-error" : "text-muted"; }

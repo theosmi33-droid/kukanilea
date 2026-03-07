@@ -24,7 +24,7 @@
             {% endfor %}
           </select>
       </div>
-      <button class="btn btn-primary shadow-sm h-10 px-5" onclick="openAddCard()">
+      <button class="btn btn-primary shadow-sm h-10 px-5" id="open-add-card-btn">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           <span class="font-bold">Neu</span>
       </button>
@@ -61,8 +61,8 @@
             <!-- Cards are injected by JS -->
         </div>
 
-        <button class="btn btn-ghost btn-sm w-full text-neutral-400 hover:text-primary-600 hover:bg-primary-50 border border-dashed border-transparent hover:border-primary-200 justify-start transition-all" 
-                onclick="openQuickAdd('{{ col.id }}')">
+        <button class="btn btn-ghost btn-sm w-full text-neutral-400 hover:text-primary-600 hover:bg-primary-50 border border-dashed border-transparent hover:border-primary-200 justify-start transition-all quick-add-btn" 
+                data-column-id="{{ col.id }}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             <span>Aufgabe hinzufügen</span>
         </button>
@@ -92,7 +92,7 @@
                 <h3 class="text-xl font-bold text-main" id="drawer-title">Aufgaben-Details</h3>
                 <p class="text-xs text-muted mt-1" id="drawer-subtitle">Zuletzt aktualisiert: gerade eben</p>
             </div>
-            <button class="btn btn-ghost btn-icon hover:bg-neutral-50 rounded-full" onclick="closeDrawer()">
+            <button class="btn btn-ghost btn-icon hover:bg-neutral-50 rounded-full" id="close-drawer-btn">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </header>
@@ -176,11 +176,34 @@
 /**
  * Project Hub Engine v2.0 (Worker 4 Polish)
  */
-// Reuse existing logic but with improved UI selectors
-const drawer = document.getElementById('detail-drawer');
-function openDrawer() { drawer.classList.remove('translate-x-full'); }
-function closeDrawer() { drawer.classList.add('translate-x-full'); }
+document.addEventListener("DOMContentLoaded", () => {
+    const drawer = document.getElementById('detail-drawer');
+    const openDrawer = () => { drawer.classList.remove('translate-x-full'); }
+    const closeDrawer = () => { drawer.classList.add('translate-x-full'); }
 
-// Integration with existing project logic ...
+    const closeBtn = document.getElementById('close-drawer-btn');
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+
+    const openAddBtn = document.getElementById('open-add-card-btn');
+    if (openAddBtn) openAddBtn.addEventListener('click', () => {
+        const t = prompt("Titel der neuen Karte?");
+        if (t) {
+            // Placeholder for API call
+            console.log("Create card:", t);
+            window.location.reload(); 
+        }
+    });
+
+    document.querySelectorAll('.quick-add-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const colId = btn.dataset.columnId;
+            const t = prompt("Schnell-Aufgabe für Spalte " + colId + "?");
+            if (t) {
+                console.log("Quick add:", t, "to", colId);
+                window.location.reload();
+            }
+        });
+    });
+});
 </script>
 {% endblock %}

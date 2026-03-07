@@ -66,8 +66,7 @@ def test_trust_safety_ux_audit_runs_2200_plus_actions(tmp_path, monkeypatch):
     assert settings.status_code == 200
     assert "name=\"confirm\"" in page
     assert "placeholder=\"CONFIRM\"" in page
-    assert "confirmRisk(form)" in page
-    assert "Riskante Aktion ausführen?" in page
+    assert "/static/js/settings.js" in page
 
     # Confirm gate: write-like AI skill cannot execute without explicit confirm.
     denied = client.post(

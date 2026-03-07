@@ -22,7 +22,8 @@ def test_normalize_contract_payload_enforces_requested_tenant_scope() -> None:
     normalized, errors = contracts._normalize_contract_payload(payload, "tasks", tenant="KUKANILEA")
 
     assert errors == []
-    assert normalized["status"] == "ok"
+    assert normalized["status"] == "degraded"
+    assert normalized["degraded_reason"] == "tenant_scope_corrected"
     assert normalized["details"]["tenant"] == "KUKANILEA"
 
 

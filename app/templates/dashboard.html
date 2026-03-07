@@ -172,7 +172,7 @@
         <div class="card-body flex flex-column gap-4">
             {% if items %}
                 {% for token in items[:5] %}
-                <div class="card card-interactive border-light hover:border-primary-300 group" onclick="location.href='/review/{{ token }}/kdnr'">
+                <div class="card card-interactive border-light hover:border-primary-300 group review-card" data-href="/review/{{ token }}/kdnr">
                     <div class="card-body p-4 flex items-center justify-between">
                         <div class="flex items-center gap-4">
                             <div class="w-2.5 h-2.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] animate-pulse"></div>
@@ -446,6 +446,13 @@ document.addEventListener("DOMContentLoaded", () => {
     loadSpeedToLeadAndHealth();
     setInterval(loadToolMatrix, REFRESH_INTERVAL_MS);
     setInterval(loadSpeedToLeadAndHealth, REFRESH_INTERVAL_MS);
+
+    document.querySelectorAll('.review-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const href = card.dataset.href;
+            if (href) window.location.href = href;
+        });
+    });
 });
 </script>
 {% endblock %}
