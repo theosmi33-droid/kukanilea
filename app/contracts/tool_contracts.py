@@ -167,6 +167,30 @@ def _row_count(row: object) -> int:
         return 0
 
 
+def _route_available(path: str, method: str = "GET") -> bool:
+    if not has_app_context():
+        return False
+    wanted = str(method or "GET").upper()
+    try:
+        for rule in current_app.url_map.iter_rules():
+            if rule.rule == path and wanted in (rule.methods or set()):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _sqlite_table_exists(con: object, table_name: str) -> bool:
+    try:
+        row = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+            (table_name,),
+        ).fetchone()
+    except Exception:
+        return False
+    return row is not None
+
+
 def _contract_errors(payload: dict) -> list[str]:
     errors: list[str] = []
     for field in REQUIRED_TOP_LEVEL_FIELDS:
@@ -463,20 +487,150 @@ def _collect_tasks_summary(tenant: str) -> tuple[dict, dict, str]:
 
 
 def _collect_messenger_summary(tenant: str) -> tuple[dict, dict, str]:
-    metrics = {"confirm_gate": 1, "channels": 4}
+    route_checks = {
+        "chat_api": _route_available("/api/chat", "POST"),
+        "summary_api": _route_available("/api/messenger/summary", "GET")
+        or _route_available("/api/<tool>/summary", "GET"),
+        "messenger_page": _route_available("/messenger", "GET"),
+    }
+    confirm_required = False
+    parse_error = ""
+    try:
+        from app.modules.messenger import parse_chat_intake
+
+        parsed = parse_chat_intake(
+            "Bitte erstelle eine Aufgabe fuer Kunde Muster GmbH",
+            actions=[{"type": "create_task"}],
+        )
+        suggested = parsed.get("suggested_next_actions") if isinstance(parsed, dict) else []
+        if isinstance(suggested, list):
+            confirm_required = any(
+                isinstance(item, dict)
+                and str(item.get("type") or "") == "create_task"
+                and bool(item.get("confirm_required"))
+                for item in suggested
+            )
+    except Exception as exc:
+        parse_error = str(exc)
+
+    audit_sink_ready = callable(_core_get("audit_log"))
+    metrics = {
+        "confirm_gate": int(confirm_required),
+        "channels": 4,
+        "routes_online": sum(1 for ok in route_checks.values() if ok),
+        "audit_sink_ready": int(audit_sink_ready),
+    }
     details = {
         "chat_endpoint": "/api/chat",
         "message_fields": ["q", "message", "msg"],
-        "confirm_gate": True,
+        "confirm_gate": bool(confirm_required),
+        "runtime": {
+            "routes": route_checks,
+            "intake_parser_ready": bool(confirm_required),
+            "audit_sink_ready": bool(audit_sink_ready),
+        },
         "tenant": tenant,
     }
-    return metrics, details, ""
+    reason = ""
+    if not all(route_checks.values()):
+        reason = "messenger_routes_missing"
+    if not confirm_required:
+        reason = "messenger_confirm_contract_unavailable"
+    if parse_error:
+        details["runtime"]["parser_error"] = parse_error
+    return metrics, details, reason
 
 
 def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
-    metrics = {"draft_supported": 1, "send_supported": 1}
-    details = {"draft_endpoint": "/api/mail/draft", "eml_endpoint": "/api/mail/eml", "tenant": tenant}
-    return metrics, details, ""
+    route_checks = {
+        "legacy_summary": _route_available("/api/mail/summary", "GET"),
+        "legacy_health": _route_available("/api/mail/health", "GET"),
+        "postfach_summary": _route_available("/api/emailpostfach/summary", "GET"),
+        "postfach_ingest": _route_available("/api/emailpostfach/ingest", "POST"),
+        "postfach_send": _route_available("/api/emailpostfach/draft/<draft_id>/send", "POST"),
+    }
+    table_checks = {
+        "emailpostfach_messages": False,
+        "emailpostfach_drafts": False,
+        "emailpostfach_audit": False,
+    }
+    unread_count = 0
+    draft_count = 0
+    audit_events = 0
+    confirm_required = False
+    reason = ""
+
+    if has_app_context():
+        try:
+            from app.modules.mail.postfach import EmailpostfachService
+
+            auth_db = current_app.extensions.get("auth_db")
+            if auth_db is not None:
+                con = auth_db._db()
+                try:
+                    for table_name in table_checks:
+                        table_checks[table_name] = _sqlite_table_exists(con, table_name)
+                    if all(table_checks.values()):
+                        unread_row = con.execute(
+                            "SELECT COUNT(*) AS c FROM emailpostfach_messages WHERE tenant_id = ? AND unread = 1",
+                            (tenant,),
+                        ).fetchone()
+                        draft_row = con.execute(
+                            "SELECT COUNT(*) AS c FROM emailpostfach_drafts WHERE tenant_id = ? AND status != 'sent'",
+                            (tenant,),
+                        ).fetchone()
+                        audit_row = con.execute(
+                            "SELECT COUNT(*) AS c FROM emailpostfach_audit WHERE tenant_id = ?",
+                            (tenant,),
+                        ).fetchone()
+                        unread_count = _row_count(unread_row)
+                        draft_count = _row_count(draft_row)
+                        audit_events = _row_count(audit_row)
+                    else:
+                        reason = reason or "emailpostfach_tables_missing"
+                finally:
+                    con.close()
+
+                service = EmailpostfachService(db_path=str(auth_db.path))
+                probe = service.send_draft(
+                    tenant_id=tenant,
+                    actor="summary_probe",
+                    draft_id="missing",
+                    confirm=False,
+                )
+                confirm_required = (
+                    isinstance(probe, dict)
+                    and str(probe.get("status") or "") == "blocked"
+                    and bool(probe.get("confirm_required"))
+                )
+        except Exception:
+            if not reason:
+                reason = "email_runtime_unavailable"
+
+    if not all(route_checks.values()):
+        reason = reason or "email_routes_missing"
+    if not confirm_required:
+        reason = reason or "email_confirm_contract_unavailable"
+
+    metrics = {
+        "draft_supported": int(route_checks["legacy_summary"]),
+        "send_supported": int(route_checks["postfach_send"]),
+        "unread_count": unread_count,
+        "open_drafts": draft_count,
+        "audit_events": audit_events,
+        "confirm_gate": int(confirm_required),
+    }
+    details = {
+        "draft_endpoint": "/api/mail/draft",
+        "eml_endpoint": "/api/mail/eml",
+        "tenant": tenant,
+        "runtime": {
+            "routes": route_checks,
+            "tables": table_checks,
+            "confirm_gate": bool(confirm_required),
+        },
+    }
+    return metrics, details, reason
 
 
 def _collect_calendar_summary(tenant: str) -> tuple[dict, dict, str]:
@@ -497,10 +651,63 @@ def _collect_time_summary(tenant: str) -> tuple[dict, dict, str]:
 
 
 def _collect_visualizer_summary(tenant: str) -> tuple[dict, dict, str]:
-    build_visualizer_payload = _core_get("build_visualizer_payload")
-    metrics = {"sources_endpoint": 1, "summary_endpoint": 1}
-    reason = "visualizer_logic_missing" if not callable(build_visualizer_payload) else ""
-    return metrics, {"source": "core.build_visualizer_payload", "tenant": tenant}, reason
+    render_backend = _core_get("build_visualizer_payload")
+    list_pending = _core_get("list_pending")
+    list_recent_docs = _core_get("list_recent_docs")
+    route_checks = {
+        "sources": _route_available("/api/visualizer/sources", "GET"),
+        "render": _route_available("/api/visualizer/render", "GET"),
+        "summary": _route_available("/api/visualizer/summary", "POST"),
+        "markup_get": _route_available("/api/visualizer/markup", "GET"),
+        "markup_post": _route_available("/api/visualizer/markup", "POST"),
+    }
+    pending_count = 0
+    recent_docs_count = 0
+    source_error = ""
+    if callable(list_pending):
+        try:
+            pending_items = list_pending() or []
+            pending_count = len(pending_items) if isinstance(pending_items, list) else 0
+        except Exception as exc:
+            source_error = str(exc)
+    if callable(list_recent_docs):
+        try:
+            recent_items = list_recent_docs(tenant_id=tenant, limit=10) or []
+            recent_docs_count = len(recent_items) if isinstance(recent_items, list) else 0
+        except Exception as exc:
+            if not source_error:
+                source_error = str(exc)
+
+    from app.core.visualizer_markup import append_markup, load_markup_document
+
+    markup_ready = callable(append_markup) and callable(load_markup_document)
+    metrics = {
+        "sources_endpoint": int(route_checks["sources"]),
+        "summary_endpoint": int(route_checks["summary"]),
+        "render_backend_ready": int(callable(render_backend)),
+        "markup_ready": int(markup_ready),
+        "sources_indexed": pending_count + recent_docs_count,
+    }
+    reason = ""
+    if not callable(render_backend):
+        reason = "visualizer_logic_missing"
+    elif not all(route_checks.values()):
+        reason = "visualizer_routes_missing"
+
+    details = {
+        "source": "core.build_visualizer_payload",
+        "tenant": tenant,
+        "runtime": {
+            "routes": route_checks,
+            "pending_items": pending_count,
+            "recent_docs": recent_docs_count,
+            "markup_ready": bool(markup_ready),
+            "render_backend_ready": bool(callable(render_backend)),
+        },
+    }
+    if source_error:
+        details["runtime"]["source_error"] = source_error
+    return metrics, details, reason
 
 
 def _collect_settings_summary(tenant: str) -> tuple[dict, dict, str]:
