@@ -25,16 +25,20 @@ def build_summary(tenant: str) -> dict:
 
 
 def build_health(tenant: str) -> tuple[dict, int]:
-    payload = build_summary(tenant)
-    payload["details"] = {
-        **(payload.get("details") or {}),
-        "checks": {
+    summary = build_summary(tenant)
+    return build_health_response(
+        tool="aufgaben",
+        status=summary["status"],
+        metrics=summary["metrics"],
+        details=summary["details"],
+        tenant=tenant,
+        degraded_reason=summary.get("degraded_reason", ""),
+        checks={
             "summary_contract": True,
             "backend_ready": True,
             "offline_safe": True,
         },
-    }
-    return payload, 200
+    )
 
 
 def create_task(
