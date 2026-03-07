@@ -92,4 +92,8 @@ def build_audit_event(
 
 
 def has_required_audit_fields(payload: Mapping[str, Any]) -> bool:
-    return all(str(payload.get(field, "")).strip() for field in REQUIRED_AUDIT_FIELDS)
+    for field in REQUIRED_AUDIT_FIELDS:
+        value = payload.get(field)
+        if value is None or not str(value).strip():
+            return False
+    return True
