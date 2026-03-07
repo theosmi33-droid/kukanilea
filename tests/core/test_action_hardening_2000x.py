@@ -68,6 +68,10 @@ def test_registry_schema_blocks_missing_required_field(isolated_registry: None, 
     }
 
     result = executor.execute_plan(plan, dry_run=False)
+    if result["status"] == "confirmation_required":
+        proposal_id = result["proposal_id"]
+        assert executor.confirm(proposal_id, approved=True) is True
+        result = executor.execute_plan(plan, dry_run=False, proposal_id=proposal_id)
 
     assert result["status"] == "ok"
     assert result["results"][0]["status"] == "validation_failed"
