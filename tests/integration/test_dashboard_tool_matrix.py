@@ -113,3 +113,19 @@ def test_summary_endpoint_returns_error_payload_instead_of_500_on_collector_exce
     body = response.get_json()
     assert body["status"] == "error"
     assert body["metrics"]["collector_error"] == 1
+
+
+def test_dashboard_mia_parity_endpoint_reports_aligned_baseline(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    response = client.get("/api/dashboard/mia-parity")
+    assert response.status_code == 200
+
+    body = response.get_json()
+    assert body["ok"] is True
+    assert body["tenant"] == "KUKANILEA"
+    assert body["baseline_status"] == "parity_aligned"
+    assert body["low_parity"] == []
+    assert body["priority_low_parity"] == []
+    assert len(body["rows"]) == 11

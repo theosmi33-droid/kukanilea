@@ -24,7 +24,7 @@ run_step() {
 run_cmd() {
   local cmd="$1"
   echo "\$ ${cmd}"
-  bash -lc "$cmd"
+  bash -c "$cmd"
 }
 
 GH_STATUS="ok"

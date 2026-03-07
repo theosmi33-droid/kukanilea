@@ -1,5 +1,6 @@
 from .action_registry import ActionRegistry, ActionSpec, ActionPolicyMetadata, DomainSpec, EntitySpec, RiskPolicy
 from .action_catalog import create_action_registry, registry_summary
+from .approval_runtime import ApprovalRuntime
 from .manager_agent import DeterministicToolRouter, EventBus, ManagerAgent, RouteDecision, RouteResult
 from .intent import IntentParser, IntentResult
 from .orchestrator import Orchestrator, OrchestratorResult
@@ -14,6 +15,7 @@ __all__ = [
     "IntentResult",
     "PolicyEngine",
     "ToolRegistry",
+    "ApprovalRuntime",
     "ManagerAgent",
     "DeterministicToolRouter",
     "EventBus",
