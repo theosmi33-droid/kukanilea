@@ -6,13 +6,16 @@ from app.core.mia_cross_tool_flows import MiaFlowEngine
 def test_flow_catalog_contains_five_roi_flows() -> None:
     engine = MiaFlowEngine()
     flows = engine.list_flows()
-    assert len(flows) == 5
+    assert len(flows) == 8
     assert {flow["flow_id"] for flow in flows} == {
         "email_to_task",
         "email_to_meeting_proposal",
         "messenger_to_followup_task",
+        "messenger_to_task",
         "document_to_deadline_task",
+        "upload_to_project_proposal",
         "invoice_receipt_triage",
+        "task_to_calendar_proposal",
     }
 
 

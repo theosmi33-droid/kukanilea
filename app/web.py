@@ -183,7 +183,7 @@ task_resolve = _core_get("task_resolve")
 task_dismiss = _core_get("task_dismiss")
 
 
-def _aufgaben_action_list(payload: dict[str, object]) -> dict[str, object]:
+def _tasks_action_list(payload: dict[str, object]) -> dict[str, object]:
     status = str(payload.get("status") or "OPEN").strip().upper()
     if status == "DONE":
         status = "RESOLVED"
@@ -196,7 +196,7 @@ def _aufgaben_action_list(payload: dict[str, object]) -> dict[str, object]:
     return {"status": status, "items": tasks}
 
 
-def _aufgaben_action_create(payload: dict[str, object]) -> dict[str, object]:
+def _tasks_action_create(payload: dict[str, object]) -> dict[str, object]:
     title = str(payload.get("title") or "").strip()
     if not title:
         raise ValueError("title_missing")
@@ -212,11 +212,26 @@ def _aufgaben_action_create(payload: dict[str, object]) -> dict[str, object]:
     return {"created": created}
 
 
-AUFGABEN_ACTIONS_TEMPLATE = ActionApiTemplate(
-    tool="aufgaben",
+def _tasks_action_resolve(payload: dict[str, object]) -> dict[str, object]:
+    task_id = payload.get("id")
+    if task_id is None:
+        raise ValueError("task_id_missing")
+    task_set_status = _core_get("task_set_status")
+    if not callable(task_set_status):
+        raise RuntimeError("task_set_status_unavailable")
+    ok = task_set_status(
+        task_id=int(task_id),
+        status="RESOLVED",
+        resolved_by=str(current_user() or "system"),
+    )
+    return {"ok": ok}
+
+
+TASKS_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="tasks",
     actions=[
         ActionDefinition(
-            name="list",
+            name="task.list",
             title="Aufgaben lesen",
             permission="read",
             risk="low",
@@ -227,10 +242,24 @@ AUFGABEN_ACTIONS_TEMPLATE = ActionApiTemplate(
                 },
             },
             output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
-            handler=_aufgaben_action_list,
+            handler=_tasks_action_list,
         ),
         ActionDefinition(
-            name="create",
+            name="list", # Legacy alias
+            title="Aufgaben lesen",
+            permission="read",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["OPEN", "RESOLVED", "DISMISSED", "DONE"]},
+                },
+            },
+            output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+            handler=_tasks_action_list,
+        ),
+        ActionDefinition(
+            name="task.create",
             title="Aufgabe anlegen",
             permission="write",
             risk="high_risk",
@@ -245,13 +274,578 @@ AUFGABEN_ACTIONS_TEMPLATE = ActionApiTemplate(
                 },
             },
             output_schema={"type": "object", "properties": {"created": {"type": "object"}}},
-            handler=_aufgaben_action_create,
+            handler=_tasks_action_create,
+        ),
+        ActionDefinition(
+            name="create", # Legacy alias
+            title="Aufgabe anlegen",
+            permission="write",
+            risk="high_risk",
+            input_schema={
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "details": {"type": "string"},
+                    "due_date": {"type": "string"},
+                    "confirm": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"created": {"type": "object"}}},
+            handler=_tasks_action_create,
+        ),
+        ActionDefinition(
+            name="task.resolve",
+            title="Aufgabe abschließen",
+            permission="write",
+            risk="medium",
+            input_schema={
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": {"type": "integer"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"ok": {"type": "boolean"}}},
+            handler=_tasks_action_resolve,
+        ),
+    ],
+)
+
+from app.modules.mail.ai_actions import (
+    email_search_action,
+    email_summarize_thread_action,
+    email_draft_reply_action,
+    email_send_reply_action,
+)
+
+EMAIL_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="email",
+    actions=[
+        ActionDefinition(
+            name="mail.search",
+            title="E-Mails suchen",
+            permission="read",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string"},
+                    "account_id": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"messages": {"type": "array"}}},
+            handler=email_search_action,
+        ),
+        ActionDefinition(
+            name="search", # Legacy alias
+            title="E-Mails suchen",
+            permission="read",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string"},
+                    "account_id": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"messages": {"type": "array"}}},
+            handler=email_search_action,
+        ),
+        ActionDefinition(
+            name="mail.summarize",
+            title="Thread zusammenfassen",
+            permission="read",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "required": ["thread_id"],
+                "properties": {
+                    "thread_id": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"summary": {"type": "object"}}},
+            handler=email_summarize_thread_action,
+        ),
+        ActionDefinition(
+            name="summarize_thread", # Legacy alias
+            title="Thread zusammenfassen",
+            permission="read",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "required": ["thread_id"],
+                "properties": {
+                    "thread_id": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"summary": {"type": "object"}}},
+            handler=email_summarize_thread_action,
+        ),
+        ActionDefinition(
+            name="mail.draft",
+            title="Antwort entwerfen",
+            permission="write",
+            risk="medium",
+            input_schema={
+                "type": "object",
+                "required": ["thread_id"],
+                "properties": {
+                    "thread_id": {"type": "string"},
+                    "instruction": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"draft": {"type": "object"}}},
+            handler=email_draft_reply_action,
+        ),
+        ActionDefinition(
+            name="draft_reply", # Legacy alias
+            title="Antwort entwerfen",
+            permission="write",
+            risk="medium",
+            input_schema={
+                "type": "object",
+                "required": ["thread_id"],
+                "properties": {
+                    "thread_id": {"type": "string"},
+                    "instruction": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"draft": {"type": "object"}}},
+            handler=email_draft_reply_action,
+        ),
+        ActionDefinition(
+            name="mail.send",
+            title="Antwort senden",
+            permission="write",
+            risk="high",
+            input_schema={
+                "type": "object",
+                "required": ["draft_id", "idempotency_key"],
+                "properties": {
+                    "draft_id": {"type": "string"},
+                    "idempotency_key": {"type": "string"},
+                    "confirm": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"ok": {"type": "boolean"}}},
+            handler=email_send_reply_action,
+        ),
+        ActionDefinition(
+            name="send_reply", # Legacy alias
+            title="Antwort senden",
+            permission="write",
+            risk="high",
+            input_schema={
+                "type": "object",
+                "required": ["draft_id", "idempotency_key"],
+                "properties": {
+                    "draft_id": {"type": "string"},
+                    "idempotency_key": {"type": "string"},
+                    "confirm": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"ok": {"type": "boolean"}}},
+            handler=email_send_reply_action,
+        ),
+    ],
+)
+
+
+def _projects_action_list(payload: dict[str, object]) -> dict[str, object]:
+    from app.modules.projects.logic import ProjectManager
+    manager = ProjectManager(current_app.extensions["auth_db"])
+    tenant = str(current_tenant() or "default")
+    projects = manager.list_projects(tenant_id=tenant)
+    return {"items": projects}
+
+
+def _projects_action_create(payload: dict[str, object]) -> dict[str, object]:
+    from app.modules.projects.logic import ProjectManager
+    manager = ProjectManager(current_app.extensions["auth_db"])
+    tenant = str(current_tenant() or "default")
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("project_name_missing")
+    pid = manager.create_project(
+        tenant_id=tenant,
+        name=name,
+        description=str(payload.get("description") or ""),
+    )
+    return {"project_id": pid}
+
+
+PROJECTS_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="projects",
+    actions=[
+        ActionDefinition(
+            name="project.list",
+            title="Projekte auflisten",
+            permission="read",
+            risk="low",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+            handler=_projects_action_list,
+        ),
+        ActionDefinition(
+            name="list", # Legacy alias
+            title="Projekte auflisten",
+            permission="read",
+            risk="low",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+            handler=_projects_action_list,
+        ),
+        ActionDefinition(
+            name="project.create",
+            title="Projekt erstellen",
+            permission="write",
+            risk="high",
+            input_schema={
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "confirm": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"project_id": {"type": "string"}}},
+            handler=_projects_action_create,
+        ),
+        ActionDefinition(
+            name="create", # Legacy alias
+            title="Projekt erstellen",
+            permission="write",
+            risk="high",
+            input_schema={
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "confirm": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"project_id": {"type": "string"}}},
+            handler=_projects_action_create,
+        ),
+    ],
+)
+
+
+def _dashboard_action_briefing(payload: dict[str, object]) -> dict[str, object]:
+    from app.modules.dashboard.briefing import generate_daily_briefing
+    tenant = str(current_tenant() or "default")
+    result = generate_daily_briefing(tenant_id=tenant, audit=True)
+    return result
+
+
+DASHBOARD_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="dashboard",
+    actions=[
+        ActionDefinition(
+            name="summary.read",
+            title="Zusammenfassung lesen",
+            permission="read",
+            risk="low",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {"summary": {"type": "string"}}},
+            handler=_dashboard_action_briefing,
+        ),
+    ],
+)
+
+
+def _messenger_action_chat(payload: dict[str, object]) -> dict[str, object]:
+    from app.agents.orchestrator import answer
+    msg = str(payload.get("message") or "").strip()
+    if not msg:
+        raise ValueError("message_required")
+    ans = answer(msg)
+    return normalize_chat_response(ans)
+
+
+MESSENGER_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="messenger",
+    actions=[
+        ActionDefinition(
+            name="message.send",
+            title="Chat-Nachricht senden",
+            permission="write",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                    "message": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"response": {"type": "string"}}},
+            handler=_messenger_action_chat,
+        ),
+    ],
+)
+
+def _time_action_start(payload: dict[str, object]) -> dict[str, object]:
+    tenant = str(current_tenant() or "default")
+    user = str(current_user() or "system")
+    project_id = payload.get("project_id")
+    if project_id is not None:
+        project_id = int(project_id)
+    entry = time_entry_start(
+        tenant_id=tenant,
+        user=user,
+        project_id=project_id,
+        note=str(payload.get("note") or "").strip(),
+    )
+    return {"entry": entry}
+
+
+def _time_action_stop(payload: dict[str, object]) -> dict[str, object]:
+    tenant = str(current_tenant() or "default")
+    user = str(current_user() or "system")
+    entry = time_entry_stop(
+        tenant_id=tenant,
+        user=user,
+    )
+    return {"entry": entry}
+
+
+def _time_action_list(payload: dict[str, object]) -> dict[str, object]:
+    tenant = str(current_tenant() or "default")
+    items = time_entry_list(tenant=tenant)
+    return {"items": items}
+
+
+TIME_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="time",
+    actions=[
+        ActionDefinition(
+            name="entry.start",
+            title="Zeiterfassung starten",
+            permission="write",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "integer"},
+                    "note": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"entry": {"type": "object"}}},
+            handler=_time_action_start,
+        ),
+        ActionDefinition(
+            name="entry.stop",
+            title="Zeiterfassung stoppen",
+            permission="write",
+            risk="low",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {"entry": {"type": "object"}}},
+            handler=_time_action_stop,
+        ),
+        ActionDefinition(
+            name="entry.list",
+            title="Zeiteinträge auflisten",
+            permission="read",
+            risk="low",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+            handler=_time_action_list,
+        ),
+    ],
+)
+
+from app.knowledge.ics_source import (
+    knowledge_calendar_event_create,
+    knowledge_calendar_events_list,
+)
+
+
+def _upload_action_execute(payload: dict[str, object]) -> dict[str, object]:
+    tenant = str(current_tenant() or "default")
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise ValueError("text_required")
+    result = ingest_unstructured_bytes(
+        source=str(payload.get("source") or "text"),
+        tenant=tenant,
+        payload_bytes=text.encode("utf-8"),
+        filename=str(payload.get("filename") or "upload.txt"),
+    )
+    return result
+
+
+UPLOAD_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="upload",
+    actions=[
+        ActionDefinition(
+            name="intake.execute",
+            title="Dokument verarbeiten",
+            permission="write",
+            risk="medium",
+            input_schema={
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                    "text": {"type": "string"},
+                    "source": {"type": "string"},
+                    "filename": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"audit": {"type": "object"}}},
+            handler=_upload_action_execute,
+        ),
+    ],
+)
+
+
+def _calendar_action_list(payload: dict[str, object]) -> dict[str, object]:
+    tenant = str(current_tenant() or "default")
+    events = knowledge_calendar_events_list(tenant_id=tenant)
+    return {"items": events}
+
+
+def _calendar_action_create(payload: dict[str, object]) -> dict[str, object]:
+    tenant = str(current_tenant() or "default")
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        raise ValueError("summary_required")
+    event = knowledge_calendar_event_create(
+        tenant_id=tenant,
+        summary=summary,
+        start_at=str(payload.get("start_at") or ""),
+        end_at=str(payload.get("end_at") or ""),
+        description=str(payload.get("description") or ""),
+    )
+    return {"event": event}
+
+
+CALENDAR_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="calendar",
+    actions=[
+        ActionDefinition(
+            name="event.list",
+            title="Termine auflisten",
+            permission="read",
+            risk="low",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+            handler=_calendar_action_list,
+        ),
+        ActionDefinition(
+            name="event.create",
+            title="Termin erstellen",
+            permission="write",
+            risk="medium",
+            input_schema={
+                "type": "object",
+                "required": ["summary", "start_at"],
+                "properties": {
+                    "summary": {"type": "string"},
+                    "start_at": {"type": "string"},
+                    "end_at": {"type": "string"},
+                    "description": {"type": "string"},
+                    "confirm": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"event": {"type": "object"}}},
+            handler=_calendar_action_create,
+        ),
+    ],
+)
+
+def _visualizer_action_list(payload: dict[str, object]) -> dict[str, object]:
+    from app.routes.visualizer import _collect_visualizer_items
+    tenant = str(current_tenant() or "default")
+    items = _collect_visualizer_items(tenant=tenant)
+    return {"items": items}
+
+
+def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
+    from app.routes.visualizer import build_visualizer_payload, _summarize_payload
+    src_b64 = str(payload.get("source") or "")
+    if not src_b64:
+        raise ValueError("source_required")
+    raw_path = _unb64(src_b64)
+    fp = Path(raw_path)
+    page = int(payload.get("page") or 0)
+    sheet = str(payload.get("sheet") or "")
+    data = build_visualizer_payload(fp, page=page, sheet=sheet)
+    summary = _summarize_payload(data)
+    return {"summary": summary}
+
+
+VISUALIZER_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="visualizer",
+    actions=[
+        ActionDefinition(
+            name="source.list",
+            title="Quellen auflisten",
+            permission="read",
+            risk="low",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+            handler=_visualizer_action_list,
+        ),
+        ActionDefinition(
+            name="summary.build",
+            title="Zusammenfassung erstellen",
+            permission="read",
+            risk="low",
+            input_schema={
+                "type": "object",
+                "required": ["source"],
+                "properties": {
+                    "source": {"type": "string"},
+                    "page": {"type": "integer"},
+                    "sheet": {"type": "string"},
+                },
+            },
+            output_schema={"type": "object", "properties": {"summary": {"type": "string"}}},
+            handler=_visualizer_action_summary,
+        ),
+    ],
+)
+
+def _settings_action_read(payload: dict[str, object]) -> dict[str, object]:
+    return {"pages": ["/settings", "/admin/logs", "/admin/audit"], "security_headers": "active"}
+
+
+SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
+    tool="settings",
+    actions=[
+        ActionDefinition(
+            name="setting.read",
+            title="Einstellungen lesen",
+            permission="read",
+            risk="low",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {"pages": {"type": "array"}}},
+            handler=_settings_action_read,
         ),
     ],
 )
 
 TOOL_ACTION_TEMPLATES = {
-    "aufgaben": AUFGABEN_ACTIONS_TEMPLATE,
+    "tasks": TASKS_ACTIONS_TEMPLATE,
+    "aufgaben": TASKS_ACTIONS_TEMPLATE,  # Legacy alias
+    "email": EMAIL_ACTIONS_TEMPLATE,
+    "mail": EMAIL_ACTIONS_TEMPLATE,      # Legacy alias
+    "projects": PROJECTS_ACTIONS_TEMPLATE,
+    "dashboard": DASHBOARD_ACTIONS_TEMPLATE,
+    "messenger": MESSENGER_ACTIONS_TEMPLATE,
+    "chatbot": MESSENGER_ACTIONS_TEMPLATE,
+    "time": TIME_ACTIONS_TEMPLATE,
+    "upload": UPLOAD_ACTIONS_TEMPLATE,
+    "calendar": CALENDAR_ACTIONS_TEMPLATE,
+    "visualizer": VISUALIZER_ACTIONS_TEMPLATE,
+    "settings": SETTINGS_ACTIONS_TEMPLATE,
 }
 
 # Optional calendar reminders
