@@ -88,7 +88,7 @@ def test_email_routes_tables_and_confirm_behavior(monkeypatch, tmp_path: Path):
     _app, client = _authed_client(tmp_path, monkeypatch)
     headers = {"X-CSRF-Token": "test-csrf"}
 
-    page = client.get("/email")
+    assert client.get("/email").status_code == 200
     summary = client.get("/api/emailpostfach/summary")
     ingest = client.post("/api/emailpostfach/ingest", json={"provider": "imap_stub", "actor": "admin"}, headers=headers)
     draft = client.post(
