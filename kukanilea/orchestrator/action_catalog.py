@@ -5,6 +5,7 @@ from .action_registry import (
     DomainSpec,
     EntitySpec,
     RiskPolicy,
+    detect_duplicate_action_ids,
     generate_domain_actions,
 )
 
@@ -55,7 +56,11 @@ def create_action_registry() -> ActionRegistry:
     registry = ActionRegistry()
     for domain in domain_specs():
         registry.domains[domain.name] = domain
-        registry.bulk_register(generate_domain_actions(domain, risk_policies=RISK_POLICIES))
+        generated_actions = generate_domain_actions(domain, risk_policies=RISK_POLICIES)
+        duplicates = detect_duplicate_action_ids(generated_actions)
+        if duplicates:
+            raise ValueError(f"Duplicate generated action ids in domain '{domain.name}': {', '.join(duplicates)}")
+        registry.bulk_register(generated_actions)
 
     # Compatibility aliases for existing deterministic router intents.
     alias_ids = (
@@ -85,4 +90,21 @@ def registry_summary() -> dict[str, int]:
         "registered_actions": stats.registered_actions,
         "derivable_actions": stats.derivable_action_ids,
         "domains": stats.domain_count,
+        "write_actions": stats.write_actions,
+        "external_actions": stats.external_actions,
+    }
+
+
+def derived_registry_artifact() -> dict[str, object]:
+    """Generate a derived snapshot for reporting/export without becoming a second source of truth."""
+    registry = create_action_registry()
+    validation = registry.validation_summary()
+    return {
+        "summary": registry_summary(),
+        "validation": {
+            "valid": validation.is_valid,
+            "duplicate_action_ids": list(validation.duplicate_action_ids),
+            "incomplete_policy_action_ids": list(validation.incomplete_policy_action_ids),
+            "non_derivable_action_ids": list(validation.non_derivable_action_ids),
+        },
     }

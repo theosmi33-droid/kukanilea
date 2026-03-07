@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from kukanilea.orchestrator.action_catalog import create_action_registry, registry_summary
-from kukanilea.orchestrator.action_registry import ActionRegistry, ActionSpec, ActionPolicyMetadata, canonical_action_id
+from kukanilea.orchestrator.action_catalog import create_action_registry, derived_registry_artifact, registry_summary
+from kukanilea.orchestrator.action_registry import (
+    ActionRegistry,
+    ActionPolicyMetadata,
+    ActionSpec,
+    canonical_action_id,
+    detect_duplicate_action_ids,
+)
 
 
 def test_registry_generates_canonical_action_ids() -> None:
@@ -62,3 +68,37 @@ def test_registry_action_ids_match_canonical_components() -> None:
     registry = create_action_registry()
     for action_id, spec in registry.actions.items():
         assert action_id == canonical_action_id(spec.domain, spec.entity, spec.verb, spec.modifiers)
+
+
+def test_generated_actions_have_no_duplicates() -> None:
+    registry = create_action_registry()
+
+    duplicates = detect_duplicate_action_ids(registry.actions.values())
+
+    assert duplicates == ()
+
+
+def test_write_actions_require_confirm_and_audit() -> None:
+    registry = create_action_registry()
+
+    for spec in registry.actions.values():
+        if spec.is_write:
+            assert spec.policy.confirm_required is True
+            assert spec.policy.audit_required is True
+
+
+def test_registry_stats_are_plausible_and_derived_artifact_is_valid() -> None:
+    registry = create_action_registry()
+    stats = registry.stats()
+    artifact = derived_registry_artifact()
+
+    assert stats.registered_actions == stats.derivable_action_ids
+    assert stats.write_actions > 0
+    assert stats.external_actions > 0
+    assert stats.write_actions < stats.registered_actions
+    assert stats.external_actions <= stats.write_actions
+
+    assert artifact["validation"]["valid"] is True
+    assert artifact["validation"]["duplicate_action_ids"] == []
+    assert artifact["validation"]["incomplete_policy_action_ids"] == []
+    assert artifact["validation"]["non_derivable_action_ids"] == []
