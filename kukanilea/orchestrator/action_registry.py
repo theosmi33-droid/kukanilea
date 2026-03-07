@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from itertools import product
 from typing import Iterable, Mapping
@@ -76,6 +77,19 @@ class ActionRegistryStats:
     registered_actions: int
     derivable_action_ids: int
     domain_count: int
+    write_actions: int
+    external_actions: int
+
+
+@dataclass(frozen=True)
+class ActionRegistryValidationSummary:
+    duplicate_action_ids: tuple[str, ...]
+    incomplete_policy_action_ids: tuple[str, ...]
+    non_derivable_action_ids: tuple[str, ...]
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.duplicate_action_ids and not self.incomplete_policy_action_ids and not self.non_derivable_action_ids
 
 
 @dataclass
@@ -123,17 +137,46 @@ class ActionRegistry:
     def as_dict(self) -> dict[str, ActionSpec]:
         return dict(self.actions)
 
-    def validate(self) -> None:
+    def derivable_action_ids(self) -> set[str]:
+        derivable: set[str] = set()
+        for domain in self.domains.values():
+            for entity in domain.entities:
+                for verb in entity.verbs:
+                    for modifiers in compose_modifiers(domain.modifiers):
+                        derivable.add(canonical_action_id(domain.name, entity.name, verb, modifiers))
+        return derivable
+
+    def validation_summary(self) -> ActionRegistryValidationSummary:
+        policy_issues: list[str] = []
         for action_id, spec in self.actions.items():
             policy = spec.policy
             if policy is None:
-                raise ValueError(f"Missing policy metadata: {action_id}")
+                policy_issues.append(action_id)
+                continue
+            required_values = [policy.risk, policy.idempotency]
+            if any(not str(v).strip() for v in required_values):
+                policy_issues.append(action_id)
+
+        non_derivable = sorted(action_id for action_id in self.actions if action_id not in self.derivable_action_ids())
+        return ActionRegistryValidationSummary(
+            duplicate_action_ids=(),
+            incomplete_policy_action_ids=tuple(sorted(policy_issues)),
+            non_derivable_action_ids=tuple(non_derivable),
+        )
+
+    def validate(self) -> None:
+        summary = self.validation_summary()
+        if summary.duplicate_action_ids:
+            raise ValueError(f"Duplicate action ids found: {', '.join(summary.duplicate_action_ids)}")
+        if summary.incomplete_policy_action_ids:
+            raise ValueError(
+                f"Incomplete policy metadata: {', '.join(summary.incomplete_policy_action_ids)}"
+            )
+        for action_id, spec in self.actions.items():
+            policy = spec.policy
             expected_action_id = canonical_action_id(spec.domain, spec.entity, spec.verb, spec.modifiers)
             if action_id != expected_action_id:
                 raise ValueError(f"Non-canonical action id: {action_id} != {expected_action_id}")
-            required_values = [policy.risk, policy.idempotency]
-            if any(not str(v).strip() for v in required_values):
-                raise ValueError(f"Incomplete policy metadata: {action_id}")
             if not isinstance(spec.parameter_schema, dict) or not all(
                 isinstance(k, str) and isinstance(v, str) for k, v in spec.parameter_schema.items()
             ):
@@ -148,12 +191,19 @@ class ActionRegistry:
                 if not policy.confirm_required or not policy.audit_required:
                     raise ValueError(f"External action without confirm+audit policy: {action_id}")
 
+        if self.domains and summary.non_derivable_action_ids:
+            raise ValueError(
+                f"Non-derivable registered action ids: {', '.join(summary.non_derivable_action_ids)}"
+            )
+
     def stats(self) -> ActionRegistryStats:
         derivable = sum(_count_derivable_actions(spec) for spec in self.domains.values())
         return ActionRegistryStats(
             registered_actions=len(self.actions),
             derivable_action_ids=derivable,
             domain_count=len(self.domains),
+            write_actions=sum(1 for spec in self.actions.values() if spec.is_write),
+            external_actions=sum(1 for spec in self.actions.values() if spec.policy.external_call),
         )
 
 
@@ -213,6 +263,11 @@ def generate_domain_actions(
                     )
                 )
     return actions
+
+
+def detect_duplicate_action_ids(action_specs: Iterable[ActionSpec]) -> tuple[str, ...]:
+    counter = Counter(spec.action_id for spec in action_specs)
+    return tuple(sorted(action_id for action_id, count in counter.items() if count > 1))
 
 
 def _count_derivable_actions(domain_spec: DomainSpec) -> int:
