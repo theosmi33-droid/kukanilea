@@ -12,12 +12,12 @@
 - Phase 2.3: Document intake → review → archive hardening.
 
 ## DONE
-- Spec-first contracts (/contracts) and ADRs (/docs/adr) created for enterprise core.
+- Spec-first contracts (/contracts) und ADRs (/docs/adr) bilden den auditierbaren KUKANILEA-Kern.
 - Chat API returns structured JSON with suggestions, results, and actions; UI shows tool actions and quick suggestions.
 - Intent parsing expanded for short queries, KDNR-only, and “wer ist <kdnr>” routing.
 - Search ranking improved (KDNR, name similarity, doctype match, recency) with deterministic fallback + fuzzy suggestions.
 - DEV Settings page includes DB/base-path switching, rebuild index, and drift scan actions.
-- Ollama provider gated by feature flag with deterministic fallback.
+- Sovereign-11 Inferenzpfad ist feature-flag-gesteuert mit deterministischem Fallback.
 - Prompt injection guardrails + regression tests for blocked prompts.
 - Phase 2 spec + ADR for time tracking created.
 - PR1 started: re-extract path resolution now uses allowlisted DB fallback (`versions.file_path`) with deterministic `source_not_found` metadata and audit events (`reextract_ok` / `reextract_failed`).

@@ -155,6 +155,6 @@ Jede Domaene gilt nur als abgeschlossen, wenn alle Punkte erfuellt sind:
 - Kurze User-Doku/Release Note angelegt
 
 ## 6) Praktische Nutzung
-- Dieses Dokument ist verbindliche Referenz fuer Devs, Codex und Gemini.
+- Dieses Dokument ist verbindliche Referenz fuer Devs und MIA innerhalb von KUKANILEA.
 - Bei Konflikten entscheidet zuerst Scope-Regel, dann Security, dann Feature-Wunsch.
 - Neue Teammitglieder starten immer mit diesem Dokument.
