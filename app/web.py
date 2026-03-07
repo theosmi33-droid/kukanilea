@@ -115,7 +115,7 @@ from app.modules.actions_api import (
     ActionDefinition,
     register_actions_endpoints,
 )
-from app.modules.upload.ingestion import ingest_unstructured_input
+from app.modules.upload.ingestion import ingest_unstructured_bytes
 
 logger = logging.getLogger("kukanilea.web")
 
@@ -4403,23 +4403,26 @@ def api_upload_ingest():
         source = str(request.form.get("source") or "text")
         raw_text = str(request.form.get("text") or request.form.get("transcript") or "")
 
-    if not raw_text.strip() and request.files.get("file") is not None:
-        file_storage = request.files.get("file")
-        if file_storage is not None and file_storage.filename:
-            source = str(
-                request.form.get("source")
-                or Path(file_storage.filename).suffix.lstrip(".")
-                or "text"
-            )
-            file_bytes = file_storage.read()
-            raw_text = file_bytes.decode("utf-8", errors="replace")
-            metadata["filename"] = file_storage.filename
-            metadata["content_type"] = str(file_storage.content_type or "")
-    payload = ingest_unstructured_input(
+    file_storage = request.files.get("file") if request.files else None
+    if file_storage is not None and file_storage.filename:
+        source = str(
+            request.form.get("source")
+            or Path(file_storage.filename).suffix.lstrip(".")
+            or source
+        )
+        payload_bytes = file_storage.read()
+        metadata["filename"] = file_storage.filename
+        metadata["content_type"] = str(file_storage.content_type or "")
+    else:
+        payload_bytes = raw_text.encode("utf-8")
+
+    payload = ingest_unstructured_bytes(
         source=source,
         tenant=tenant,
-        text=raw_text,
+        payload_bytes=payload_bytes,
         metadata=metadata,
+        filename=str(metadata.get("filename") or ""),
+        content_type=str(metadata.get("content_type") or ""),
     )
     return jsonify(payload)
 
