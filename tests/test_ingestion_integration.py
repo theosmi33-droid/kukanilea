@@ -44,3 +44,37 @@ def test_analyze_worker_writes_dlq_on_ocr_failure(monkeypatch, tmp_path: Path) -
     assert writes
     assert writes[-1]["status"] == "ERROR"
     assert "ocr_extraction_failed" in writes[-1]["error"]
+
+
+def test_start_index_warmup_thread_if_needed_limits_parallel_threads(monkeypatch) -> None:
+    created_threads = []
+
+    class _FakeThread:
+        def __init__(self, target, daemon, name):
+            self.target = target
+            self.daemon = daemon
+            self.name = name
+            self._alive = False
+            created_threads.append(self)
+
+        def start(self):
+            self._alive = True
+
+        def is_alive(self):
+            return self._alive
+
+    monkeypatch.setattr(logic.threading, "Thread", _FakeThread)
+    monkeypatch.setattr(logic, "_INDEX_WARMUP_THREAD", None)
+
+    assert logic._start_index_warmup_thread_if_needed() is True
+    assert len(created_threads) == 1
+    assert created_threads[0].name == "kukanilea-index-warmup"
+
+    # While active, no additional background index thread may be spawned.
+    assert logic._start_index_warmup_thread_if_needed() is False
+    assert len(created_threads) == 1
+
+    # After the previous worker is no longer alive, a new one may start.
+    created_threads[0]._alive = False
+    assert logic._start_index_warmup_thread_if_needed() is True
+    assert len(created_threads) == 2

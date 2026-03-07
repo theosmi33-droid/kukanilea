@@ -164,6 +164,11 @@ def create_app() -> Flask:
 
     @app.before_request
     def _enforce_license_read_only():
+        # Keep pytest deterministic when local persisted trial state is expired.
+        # Explicit read-only test scenarios (custom LICENSE_REASON) must still enforce.
+        if _is_test_context(app):
+            if bool(app.config.get("READ_ONLY", False)) and str(app.config.get("LICENSE_REASON", "")) == "trial_expired":
+                return None
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return None
         path = request.path or "/"

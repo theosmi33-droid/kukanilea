@@ -562,6 +562,8 @@ _FTS5_AVAILABLE: Optional[bool] = None
 
 _DB_INITIALIZED = False
 _DB_INIT_LOCK = threading.RLock()
+_INDEX_WARMUP_THREAD_LOCK = threading.RLock()
+_INDEX_WARMUP_THREAD: Optional[threading.Thread] = None
 
 def _db() -> sqlite3.Connection:
     global _DB_INITIALIZED
@@ -3615,10 +3617,12 @@ def sync_customers_from_hierarchy() -> None:
 def index_warmup(tenant_id: str = "") -> Dict[str, Any]:
     # Sync customers first
     sync_customers_from_hierarchy()
-    
-    # Trigger indexing in background if it's the test DB
+
+    # Trigger a single background indexer for DB-test fixtures.
+    # Repeated app/bootstrap calls in large suites must not fan out into
+    # hundreds of concurrent index threads.
     if "DB-test" in str(BASE_PATH):
-         threading.Thread(target=index_run_full, daemon=True).start()
+        _start_index_warmup_thread_if_needed()
 
     tenant_id = normalize_component(tenant_id)
     with _DB_LOCK:
@@ -3650,6 +3654,21 @@ def set_db_path(new_path: Path) -> None:
     global DB_PATH
     DB_PATH = Path(new_path)
     db_init()
+
+
+def _start_index_warmup_thread_if_needed() -> bool:
+    """Start background index warmup once while an existing thread is alive."""
+    global _INDEX_WARMUP_THREAD
+    with _INDEX_WARMUP_THREAD_LOCK:
+        if _INDEX_WARMUP_THREAD and _INDEX_WARMUP_THREAD.is_alive():
+            return False
+        _INDEX_WARMUP_THREAD = threading.Thread(
+            target=index_run_full,
+            daemon=True,
+            name="kukanilea-index-warmup",
+        )
+        _INDEX_WARMUP_THREAD.start()
+        return True
 
 
 def get_db_info() -> Dict[str, Any]:

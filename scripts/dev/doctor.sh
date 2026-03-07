@@ -40,7 +40,10 @@ fail() { echo "[doctor] FAIL: $*"; failures=$((failures+1)); }
 ok() { echo "[doctor] OK: $*"; }
 
 is_truthy() {
-  case "${1,,}" in
+  local raw="${1:-}"
+  local lowered
+  lowered="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  case "$lowered" in
     1|true|yes|on) return 0 ;;
     *) return 1 ;;
   esac
