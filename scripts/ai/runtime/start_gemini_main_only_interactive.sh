@@ -5,12 +5,18 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$ROOT"
 
 echo "[preflight] repo=$ROOT"
-echo "[preflight] branch=$(git rev-parse --abbrev-ref HEAD)"
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+echo "[preflight] branch=$CURRENT_BRANCH"
 
-# Main-first sync without destructive commands.
-git fetch origin --prune >/dev/null 2>&1 || true
-if [[ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]]; then
-  git checkout main
+# Main-only policy: never auto-switch branches.
+if [[ "$CURRENT_BRANCH" != "main" ]]; then
+  echo "[error] main-only policy active: current branch is '$CURRENT_BRANCH' (expected 'main')." >&2
+  exit 2
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "[error] working tree has local changes. commit/stash first for clean main-only execution." >&2
+  exit 2
 fi
 
 MODEL="${GEMINI_MODEL:-gemini-3-flash-preview}"
@@ -34,6 +40,8 @@ ARBEITSMODUS:
 - Immer kurz berichten: Analyse, Änderung, Validierung, Restrisiko.
 EOF
 
+trap 'rm -f "$PROMPT_FILE"' EXIT
+
 echo "[start] launching Gemini interactive (main-only guidance)"
 exec gemini \
   --approval-mode default \
@@ -41,4 +49,3 @@ exec gemini \
   --extensions github \
   --extensions code-review \
   --prompt-interactive "$(cat "$PROMPT_FILE")"
-
