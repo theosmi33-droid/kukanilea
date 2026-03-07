@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
 from app import core, create_app
-from app.core.event_bus import EventBus
+from app.core.event_bus import EventBus, EventType
 from app.knowledge.ics_source import knowledge_calendar_events_list
 import app.knowledge.ics_source as ics_source
 from app.modules.kalender.contracts import build_summary
@@ -138,3 +139,32 @@ def test_event_bus_document_processed_with_deadline_creates_calendar_event(tmp_p
         for event in local_summary.get("events_next_7_days", [])
     )
     assert knowledge_hit or local_hit
+
+
+def test_event_bus_audit_and_structured_logging(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    EventBus.reset()
+
+    payloads: list[dict] = []
+
+    def _handler(payload: dict) -> None:
+        payloads.append(payload)
+
+    EventBus.subscribe(EventType.EMAIL_RECEIVED, _handler)
+    EventBus.publish(EventType.EMAIL_RECEIVED, {"tenant": "KUKANILEA", "email_id": "mail-audit-1"})
+
+    assert payloads == [{"tenant": "KUKANILEA", "email_id": "mail-audit-1"}]
+
+    entries = EventBus.audit_entries()
+    assert len(entries) == 1
+    assert entries[0].event_type == EventType.EMAIL_RECEIVED.value
+    assert entries[0].subscriber_count == 1
+    assert entries[0].delivered_count == 1
+
+    log_path = tmp_path / "instance" / "agent_events.jsonl"
+    assert log_path.exists()
+    lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    log_entry = json.loads(lines[0])
+    assert log_entry["type"] == "eventbus.publish"
+    assert log_entry["data"]["event_type"] == EventType.EMAIL_RECEIVED.value
