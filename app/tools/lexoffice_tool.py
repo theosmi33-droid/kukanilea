@@ -4,12 +4,13 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.config import Config
 from app.tools.base_tool import BaseTool
 from app.tools.registry import registry
-from flask import current_app, g
+from app.tools.shared_services import get_auth_db, get_tenant_id
+
 
 class LexofficeUploadTool(BaseTool):
     """
@@ -37,8 +38,8 @@ class LexofficeUploadTool(BaseTool):
         if not path.exists():
             return {"error": f"Datei nicht gefunden: {file_path}"}
 
-        tenant_id = g.get("tenant_id", "default")
-        auth_db = current_app.extensions.get("auth_db")
+        tenant_id = get_tenant_id(default="default")
+        auth_db = get_auth_db()
         if not auth_db:
             return {"error": "Datenbank nicht verfügbar."}
 
@@ -65,6 +66,7 @@ class LexofficeUploadTool(BaseTool):
             }
         except Exception as e:
             return {"error": f"Fehler beim Warteschlangen-Eintrag: {e}"}
+
 
 # Register tool
 registry.register(LexofficeUploadTool())
