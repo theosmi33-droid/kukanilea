@@ -64,7 +64,7 @@ jobs:
     env:
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
-      PYTHON: ./.venv/bin/python
+      PYTHON: python
     steps:
       - name: Checkout
         uses: actions/checkout@v4
