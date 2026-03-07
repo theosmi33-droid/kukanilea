@@ -39,10 +39,14 @@ class ApprovalRuntime:
         self,
         *,
         ttl_seconds: int = 300,
+        scope_ttl_seconds: Mapping[str, int] | None = None,
         now_fn: Callable[[], datetime] | None = None,
         audit_logger: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.ttl_seconds = max(1, int(ttl_seconds))
+        self.scope_ttl_seconds = {
+            str(scope): max(1, int(scope_ttl)) for scope, scope_ttl in dict(scope_ttl_seconds or {}).items()
+        }
         self._now_fn = now_fn or (lambda: datetime.now(UTC))
         self._audit_logger = audit_logger
         self._challenges: dict[str, ApprovalChallenge] = {}
@@ -65,12 +69,15 @@ class ApprovalRuntime:
         if challenge is None:
             return ApprovalDecision(False, "approval_not_found")
 
-        if challenge.status != "approved":
-            return ApprovalDecision(False, "approval_not_approved", challenge.challenge_id)
-
         if self._is_expired(challenge):
             self._expire(challenge)
             return ApprovalDecision(False, "approval_expired", challenge.challenge_id)
+
+        if challenge.status == "denied":
+            return ApprovalDecision(False, "approval_denied", challenge.challenge_id)
+
+        if challenge.status != "approved":
+            return ApprovalDecision(False, "approval_pending", challenge.challenge_id)
 
         if challenge.tenant != tenant:
             return ApprovalDecision(False, "approval_tenant_mismatch", challenge.challenge_id)
@@ -109,7 +116,7 @@ class ApprovalRuntime:
             params_fingerprint=self._fingerprint(params),
             status="pending",
             created_at=now,
-            expires_at=now + timedelta(seconds=self.ttl_seconds),
+            expires_at=now + timedelta(seconds=self._resolve_ttl_seconds(scope)),
         )
         self._challenges[challenge.challenge_id] = challenge
         self._audit("approval.create", challenge)
@@ -177,6 +184,9 @@ class ApprovalRuntime:
 
     def _is_expired(self, challenge: ApprovalChallenge) -> bool:
         return self._now_fn() >= challenge.expires_at
+
+    def _resolve_ttl_seconds(self, scope: str) -> int:
+        return self.scope_ttl_seconds.get(str(scope), self.ttl_seconds)
 
     @staticmethod
     def _fingerprint(params: Mapping[str, Any] | None) -> str:

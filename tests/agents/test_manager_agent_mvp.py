@@ -139,9 +139,9 @@ def test_write_with_foreign_user_approval_is_blocked() -> None:
     )
 
     assert result.ok is False
-    assert result.status == "confirm_required"
+    assert result.status == "blocked"
     assert result.reason == "approval_user_mismatch"
-    assert "confirm_required" in result.audit_event["audit_states"]
+    assert "blocked" in result.audit_event["audit_states"]
     assert "denied" in result.audit_event["audit_states"]
 
 
@@ -167,9 +167,30 @@ def test_write_with_expired_approval_is_blocked_and_audited() -> None:
     )
 
     assert result.ok is False
-    assert result.status == "confirm_required"
+    assert result.status == "blocked"
     assert result.reason == "approval_expired"
+    assert "expired" in result.audit_event["audit_states"]
     assert any(item["event"] == "approval.expire" for item in audit_payloads)
+
+
+def test_write_with_denied_approval_is_blocked_with_deny_state() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus)
+
+    first = agent.route("Bitte erstelle eine Aufgabe für morgen", {"tenant": "KUKANILEA", "user": "admin"})
+    approval_id = first.audit_event["approval_id"]
+    denied = agent.approvals.deny(approval_id, tenant="KUKANILEA", actor_user="security-admin")
+    assert denied is not None
+
+    result = agent.route(
+        "Bitte erstelle eine Aufgabe für morgen",
+        {"tenant": "KUKANILEA", "user": "admin", "approval_id": approval_id},
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert result.reason == "approval_denied"
+    assert "denied" in result.audit_event["audit_states"]
 
 
 def test_write_with_valid_approval_is_routed() -> None:
