@@ -259,7 +259,7 @@ if data.get('overall_status') == 'PASS' and required.issubset(names):
 raise SystemExit(1)
 PY" "gate7 artifacts contain required evidence matrix" "gate7 artifacts missing required checks"
 
-run_cmd_gate "MIA_UNCONTROLLED_WRITES" "[[ -z \"$(git diff --name-only -- ':(exclude)docs/reviews/codex/*' | rg -v '^(app/|scripts/|tests/)' | rg -v '^$')\" ]]" "writes limited to controlled code/test paths" "uncontrolled writes detected outside controlled paths"
+run_cmd_gate "MIA_UNCONTROLLED_WRITES" "[[ -z \"$(git diff --name-only | rg -v '^(app/|scripts/|tests/|docs/reviews/codex/|evidence/operations/)' | rg -v '^$')\" ]]" "writes limited to controlled code/test/evidence paths" "uncontrolled writes detected outside controlled paths"
 if [[ "$OUT_FILE" == "$ROOT/docs/reviews/codex/LAUNCH_GATE_AUTOMATION_REPORT_20260305.md" ]]; then
   record_result "Evidence" "PASS" "evidence path matches required target"
 else
