@@ -7,7 +7,15 @@ from typing import Any
 from app.core.logic import DB_PATH
 
 OPEN_STATUSES = {"OPEN", "IN_PROGRESS", "BLOCKED"}
+TASK_STATUSES = OPEN_STATUSES | {"DONE", "CANCELLED"}
 PRIORITIES = {"LOW", "MEDIUM", "HIGH", "URGENT"}
+STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "OPEN": {"IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"},
+    "IN_PROGRESS": {"OPEN", "BLOCKED", "DONE", "CANCELLED"},
+    "BLOCKED": {"OPEN", "IN_PROGRESS", "DONE", "CANCELLED"},
+    "DONE": {"OPEN"},
+    "CANCELLED": {"OPEN"},
+}
 
 
 def _now_iso() -> str:
@@ -55,9 +63,25 @@ def _norm_priority(value: str | None) -> str:
     return normalized if normalized in PRIORITIES else "MEDIUM"
 
 
-def _norm_status(value: str | None) -> str:
+def _norm_status(value: str | None, *, fallback: str = "OPEN") -> str:
     normalized = str(value or "OPEN").strip().upper()
-    return normalized if normalized else "OPEN"
+    if not normalized:
+        return fallback
+    return normalized if normalized in TASK_STATUSES else fallback
+
+
+def _normalize_due_date(value: str | None) -> str | None:
+    raw_due = str(value or "").strip()
+    if not raw_due:
+        return None
+    parsed = _parse_due_date(raw_due)
+    return parsed.isoformat() if parsed else None
+
+
+def _can_transition(*, previous: str, target: str) -> bool:
+    if previous == target:
+        return True
+    return target in STATUS_TRANSITIONS.get(previous, set())
 
 
 def _task_row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -93,7 +117,7 @@ def create_task(
                 str(title).strip() or "Neue Aufgabe",
                 str(details or "").strip(),
                 "OPEN",
-                str(due_date).strip() if due_date else None,
+                _normalize_due_date(due_date),
                 _norm_priority(priority),
                 str(assigned_to).strip() if assigned_to else None,
                 str(source_type).strip() if source_type else None,
@@ -151,7 +175,10 @@ def update_task(*, tenant: str, task_id: int, payload: dict[str, Any]) -> dict[s
 
     title = str(payload.get("title", existing["title"]))
     details = str(payload.get("details", existing.get("details") or ""))
-    status = _norm_status(payload.get("status", existing["status"]))
+    current_status = _norm_status(existing.get("status"), fallback="OPEN")
+    status = _norm_status(payload.get("status", current_status), fallback=current_status)
+    if not _can_transition(previous=current_status, target=status):
+        status = current_status
     due_date = payload.get("due_date", existing.get("due_date"))
     priority = _norm_priority(payload.get("priority", existing["priority"]))
     assigned_to = payload.get("assigned_to", existing.get("assigned_to"))
@@ -171,7 +198,7 @@ def update_task(*, tenant: str, task_id: int, payload: dict[str, Any]) -> dict[s
                 title.strip() or existing["title"],
                 details.strip(),
                 status,
-                str(due_date).strip() if due_date else None,
+                _normalize_due_date(due_date),
                 priority,
                 str(assigned_to).strip() if assigned_to else None,
                 str(source_type).strip() if source_type else None,

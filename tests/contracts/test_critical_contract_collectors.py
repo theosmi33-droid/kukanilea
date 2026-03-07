@@ -11,7 +11,11 @@ def test_normalize_contract_payload_enforces_requested_tenant_scope() -> None:
         "metrics": {"tasks_total": 1},
         "details": {
             "tenant": "wrong-tenant",
-            "contract": {"version": contracts.CONTRACT_VERSION, "read_only": False},
+            "contract": {
+                "version": contracts.CONTRACT_VERSION,
+                "kind": "summary",
+                "read_only": False,
+            },
         },
     }
 

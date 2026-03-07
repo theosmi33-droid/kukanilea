@@ -57,6 +57,26 @@ def test_unit_template_fallback_and_confirm_gate(tmp_path):
     assert draft["send_allowed"] is False
 
 
+
+
+def test_unit_draft_prepares_attachment_handover(tmp_path):
+    auth_db = _init_auth_db(tmp_path / "auth.sqlite3")
+    service = EmailpostfachService(db_path=str(auth_db.path))
+
+    draft = service.create_draft(
+        tenant_id="KUKANILEA",
+        actor="admin",
+        message={
+            "subject": "Rechnung",
+            "from": "kunde@example.com",
+            "attachments": [{"id": "att-1", "filename": "rechnung.pdf", "mime_type": "application/pdf"}],
+        },
+    )
+
+    assert draft["triage"]["category"] == "invoice"
+    assert draft["attachment_handover"]["ready"] is True
+    assert draft["attachment_handover"]["items"][0]["forward_to"] == "upload_dms"
+
 def test_unit_ingest_summary_and_send_audit(tmp_path):
     auth_db = _init_auth_db(tmp_path / "auth.sqlite3")
     service = EmailpostfachService(db_path=str(auth_db.path))

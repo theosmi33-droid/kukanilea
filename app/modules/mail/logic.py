@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Iterable
+from typing import Any, Iterable
 
-MAIL_CATEGORIES = ("urgent", "offer", "appointment", "invoice")
+MAIL_CATEGORIES = ("request", "invoice", "spam", "follow_up")
 
 
 @dataclass(frozen=True)
@@ -26,17 +26,42 @@ def classify_message(message: dict | None) -> TriageResult:
     )
 
     keyword_sets: list[tuple[str, tuple[str, ...], str]] = [
-        ("invoice", ("rechnung", "invoice", "zahlungsziel", "fällig", "iban"), "invoice_keywords"),
-        ("appointment", ("termin", "meeting", "kalender", "verschieben", "uhr"), "appointment_keywords"),
-        ("offer", ("angebot", "quote", "rabatt", "preis", "offerte"), "offer_keywords"),
-        ("urgent", ("dringend", "asap", "sofort", "urgent", "eilt"), "urgent_keywords"),
+        ("spam", ("gewinnspiel", "lotterie", "bitcoin", "casino", "viagra", "free money", "klicken sie hier"), "spam_keywords"),
+        ("invoice", ("rechnung", "invoice", "zahlungsziel", "fällig", "iban", "mahnung"), "invoice_keywords"),
+        ("follow_up", ("erinnerung", "nachfassen", "follow up", "statusupdate", "rückmeldung ausstehend"), "follow_up_keywords"),
+        ("request", ("anfrage", "angebot", "quote", "rabatt", "preis", "offerte", "hilfe", "support"), "request_keywords"),
     ]
 
     for category, words, reason in keyword_sets:
         if any(word in text for word in words):
             return TriageResult(category=category, confidence=0.9, reason=reason)
 
-    return TriageResult(category="offer", confidence=0.3, reason="fallback_offer")
+    return TriageResult(category="request", confidence=0.35, reason="fallback_request")
+
+
+def build_attachment_handover(message: dict | None) -> dict[str, Any]:
+    attachments_raw = (message or {}).get("attachments")
+    attachments = attachments_raw if isinstance(attachments_raw, list) else []
+    normalized: list[dict[str, Any]] = []
+    for idx, item in enumerate(attachments, start=1):
+        if not isinstance(item, dict):
+            continue
+        attachment_id = str(item.get("id") or item.get("upload_id") or f"att-{idx}").strip() or f"att-{idx}"
+        normalized.append(
+            {
+                "id": attachment_id,
+                "filename": str(item.get("filename") or item.get("name") or "").strip(),
+                "mime_type": str(item.get("mime_type") or "application/octet-stream"),
+                "source": str(item.get("source") or "mail_attachment"),
+                "forward_to": "upload_dms",
+            }
+        )
+    return {
+        "target": "upload_dms",
+        "ready": bool(normalized),
+        "count": len(normalized),
+        "items": normalized,
+    }
 
 
 def generate_reply_draft(message: dict | None, *, read_only_default: bool = True, external_api_enabled: bool = False) -> dict:
@@ -44,17 +69,18 @@ def generate_reply_draft(message: dict | None, *, read_only_default: bool = True
     sender = str((message or {}).get("from") or "Kontakt")
 
     templates = {
-        "urgent": "Vielen Dank für Ihre Nachricht. Wir priorisieren Ihr Anliegen und melden uns kurzfristig mit einem konkreten Update.",
-        "offer": "Vielen Dank für Ihre Anfrage. Wir prüfen das Angebot intern und senden Ihnen eine Rückmeldung mit den nächsten Schritten.",
-        "appointment": "Vielen Dank für die Termin-Nachricht. Wir bestätigen Ihnen zeitnah einen passenden Termin.",
+        "request": "Vielen Dank für Ihre Anfrage. Wir prüfen Ihr Anliegen intern und senden Ihnen die nächsten Schritte.",
         "invoice": "Vielen Dank für die Zusendung. Wir prüfen die Rechnung und melden uns bei Rückfragen.",
+        "spam": "Diese Nachricht wurde als potenzieller Spam markiert und wird nicht automatisch beantwortet.",
+        "follow_up": "Vielen Dank für die Erinnerung. Wir priorisieren die Folgeaktion und melden uns zeitnah mit einem Status.",
     }
     subject_prefix = {
-        "urgent": "Priorisierte Rückmeldung",
-        "offer": "Rückmeldung zum Angebot",
-        "appointment": "Rückmeldung zum Termin",
+        "request": "Rückmeldung zur Anfrage",
         "invoice": "Rückmeldung zur Rechnung",
+        "spam": "Interner Hinweis: Spam-Prüfung",
+        "follow_up": "Rückmeldung zur Folgeaktion",
     }
+    handover = build_attachment_handover(message)
 
     return {
         "status": "draft_created",
@@ -66,6 +92,7 @@ def generate_reply_draft(message: dict | None, *, read_only_default: bool = True
         "send_allowed": False,
         "external_api_used": False,
         "external_api_enabled": bool(external_api_enabled),
+        "attachment_handover": handover,
     }
 
 

@@ -93,3 +93,92 @@ def test_email_received_todo_creates_task_and_notification(auth_client):
         n["message"] == "Aufgabe aus E-Mail erstellt" and n["data"].get("source") == "email.received"
         for n in shared_services.notifications
     )
+
+
+def test_aufgaben_due_date_normalized_and_overdue_detection_is_stable(auth_client):
+    created = auth_client.post(
+        "/api/aufgaben",
+        json={
+            "title": "Frist aus Upload",
+            "due_date": "2030-03-04T12:13:14+00:00",
+            "source_type": "upload",
+        },
+    )
+    assert created.status_code == 201
+    task_id = int(created.get_json()["task"]["id"])
+
+    get_task = auth_client.get(f"/api/aufgaben/{task_id}")
+    assert get_task.status_code == 200
+    assert get_task.get_json()["task"]["due_date"] == "2030-03-04"
+
+    invalid_update = auth_client.patch(
+        f"/api/aufgaben/{task_id}",
+        json={"due_date": "morgen irgendwann"},
+    )
+    assert invalid_update.status_code == 200
+    assert invalid_update.get_json()["task"]["due_date"] is None
+
+
+def test_aufgaben_status_transition_blocks_invalid_path(auth_client):
+    created = auth_client.post(
+        "/api/aufgaben",
+        json={
+            "title": "Statuspfad",
+            "source_type": "messenger",
+            "source_ref": "chat-77",
+        },
+    )
+    assert created.status_code == 201
+    task_id = int(created.get_json()["task"]["id"])
+
+    done = auth_client.patch(f"/api/aufgaben/{task_id}", json={"status": "DONE"})
+    assert done.status_code == 200
+    assert done.get_json()["task"]["status"] == "DONE"
+
+    blocked_invalid = auth_client.patch(
+        f"/api/aufgaben/{task_id}",
+        json={"status": "BLOCKED"},
+    )
+    assert blocked_invalid.status_code == 200
+    assert blocked_invalid.get_json()["task"]["status"] == "DONE"
+
+    reopened = auth_client.patch(f"/api/aufgaben/{task_id}", json={"status": "OPEN"})
+    assert reopened.status_code == 200
+    assert reopened.get_json()["task"]["status"] == "OPEN"
+
+
+def test_intake_execute_creates_task_for_mail_messenger_upload_sources(auth_client):
+    scenarios = [
+        ("mail", "mail-thread-1", "Mail Aufgabe"),
+        ("messenger", "chat-thread-1", "Messenger Follow-up"),
+        ("upload", "upload-thread-1", "Upload Frist"),
+    ]
+
+    for source, thread_id, title in scenarios:
+        normalized = auth_client.post(
+            "/api/intake/normalize",
+            json={
+                "source": source,
+                "thread_id": thread_id,
+                "subject": title,
+                "message": f"Bitte als Aufgabe erfassen: {title}",
+                "due_date": "2031-01-15",
+            },
+        )
+        assert normalized.status_code == 200
+        envelope = normalized.get_json()["envelope"]
+
+        executed = auth_client.post(
+            "/api/intake/execute",
+            json={"envelope": envelope, "requires_confirm": True, "confirm": "YES"},
+        )
+        assert executed.status_code == 200
+        assert executed.get_json()["status"] == "executed"
+
+    listing = auth_client.get("/api/aufgaben")
+    assert listing.status_code == 200
+    items = listing.get_json()["items"]
+    refs = {item.get("source_ref"): item for item in items}
+    assert "mail-thread-1" in refs
+    assert "chat-thread-1" in refs
+    assert "upload-thread-1" in refs
