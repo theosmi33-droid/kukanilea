@@ -825,7 +825,7 @@ def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
     setting_key = str(payload.get("key") or "").strip()
     if not setting_key:
         raise ValueError("key_required")
-    scope = str(payload.get("scope") or "tenant").strip() or "tenant"
+    scope = str(payload.get("scope") or "tenant").strip()
     value = payload.get("value")
     value_type = type(value).__name__ if value is not None else "null"
     return {
@@ -838,7 +838,7 @@ def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
 
 
 def _settings_action_rotate_key(payload: dict[str, object]) -> dict[str, object]:
-    key_name = str(payload.get("key_name") or "mesh-signing-key").strip() or "mesh-signing-key"
+    key_name = str(payload.get("key_name") or "mesh-signing-key").strip()
     return {
         "rotation_available": False,
         "blocked": True,
