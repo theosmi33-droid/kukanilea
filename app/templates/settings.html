@@ -214,6 +214,7 @@
           {% endfor %}
         </select>
         <label class="router-note"><input type="checkbox" name="external_apis_enabled" {{ 'checked' if (system_settings.external_apis_enabled if system_settings is mapping else false) }}> Externe APIs aktiv (Default: aus)</label>
+        <label class="router-note"><input type="checkbox" name="external_translation_enabled" {{ 'checked' if (system_settings.external_translation_enabled if system_settings is mapping else false) }}> Externe Übersetzung (DeepL/API) aktiv (Default: aus, benötigt auch Externe APIs)</label>
         <div>
           <label class="router-note">Memory Retention (Tage)</label>
           <input class="router-input" type="number" min="1" name="memory_retention_days" value="{{ system_settings.memory_retention_days if system_settings is mapping else 60 }}">
