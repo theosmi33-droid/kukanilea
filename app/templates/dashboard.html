@@ -227,15 +227,19 @@ function renderToolMatrix(payload) {
     const borderColor = isOk ? "var(--success)" : (isDegraded ? "var(--warning)" : "var(--error)");
     const bgClass = isOk ? "bg-success-bg" : (isDegraded ? "bg-warning-bg" : "bg-error-bg");
     
-    const reason = tool.degraded_reason ? `<div class="text-[10px] text-muted mt-1 leading-tight">${tool.degraded_reason}</div>` : "";
-    
+    const hint = isOk
+      ? "Läuft stabil"
+      : (isDegraded ? "Eingeschränkt verfügbar" : "Aktion nötig");
+    const reason = tool.degraded_reason ? `<details class="mt-1"><summary class="text-[10px] text-muted cursor-pointer">Mehr anzeigen</summary><div class="text-[10px] text-muted mt-1 leading-tight">${tool.degraded_reason}</div></details>` : "";
+
     return `
     <article class="card card-tight border-light" style="border-left: 4px solid ${borderColor};">
       <div class="card-body">
-        <div class="flex justify-between items-center">
+        <div class="flex justify-between items-center gap-2">
             <span class="text-sm font-bold text-main">${tool.tool}</span>
             <span class="text-[10px] font-black uppercase ${colorClass}">${status}</span>
         </div>
+        <div class="text-[11px] mt-1 text-muted">${hint}</div>
         ${reason}
       </div>
     </article>`;
@@ -281,11 +285,14 @@ function renderAlertDigest(signals) {
   if (!digest) return;
   if (!signals.toolsDown && !signals.toolsWarn) {
     digest.className = "mt-4 p-3 rounded-xl border border-success/20 bg-success-bg text-sm text-main";
-    digest.innerHTML = "<strong>Keine kritischen Tool-Alarme.</strong> Fokus auf Review-Durchsatz und schnelle Freigaben.";
+    digest.innerHTML = "<strong>Alle Kernsysteme sind stabil.</strong> Fokus auf Review-Durchsatz und schnelle Freigaben.";
     return;
   }
+  const action = signals.toolsDown
+    ? "Bitte zuerst rote Tool-Checks prüfen."
+    : "Bitte eingeschränkte Tools beobachten und später erneut prüfen.";
   digest.className = "mt-4 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main";
-  digest.innerHTML = `<strong>Priorität:</strong> ${signals.toolsDown} kritisch, ${signals.toolsWarn} eingeschränkt. Bitte zuerst rote Tool-Checks bearbeiten.`;
+  digest.innerHTML = `<strong>Systemhinweis:</strong> ${signals.toolsDown} kritisch, ${signals.toolsWarn} eingeschränkt. ${action}`;
 }
 
 function executeOptimizerActions(signals, targetActions = 2200) {
