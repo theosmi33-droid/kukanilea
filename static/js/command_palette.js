@@ -10,7 +10,7 @@ const CommandPalette = {
     { id: 'nav-agents', title: 'Agents', subtitle: 'Assistant and agent controls', action: () => { window.location.href = '/assistant'; } },
     { id: 'nav-files', title: 'Files', subtitle: 'Upload and file workflows', action: () => { window.location.href = '/upload'; } },
     { id: 'nav-automation', title: 'Automation', subtitle: 'Task and automation center', action: () => { window.location.href = '/tasks'; } },
-    { id: 'nav-logs', title: 'Logs', subtitle: 'System logs and audit events', action: () => { window.location.href = '/system-logs'; } },
+    { id: 'nav-logs', title: 'Logs', subtitle: 'System logs and audit events', action: () => { window.location.href = '/system/logs'; } },
     { id: 'nav-settings', title: 'Settings', subtitle: 'System and profile configuration', action: () => { window.location.href = '/settings'; } },
   ],
 
