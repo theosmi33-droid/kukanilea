@@ -57,6 +57,7 @@
   </div>
 
   {% include 'partials/sidebar.html' %}
+  <div id="mobile-sidebar-overlay" class="mobile-sidebar-overlay" hidden aria-hidden="true"></div>
 
   <main class="main-content" id="app-main" tabindex="-1" aria-label="Seiteninhalt">
     <h2 class="sr-only" id="main-content-heading">Hauptinhalt</h2>
@@ -88,8 +89,8 @@
   </main>
 
   <!-- KI Chatbot Floating Widget -->
-  <div id="ki-chat-widget" style="position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; gap: 12px;">
-    <div id="ki-chat-window" role="dialog" aria-modal="false" aria-labelledby="ki-chat-title" aria-describedby="chat-messages" aria-hidden="true" style="display: none; width: 350px; height: 450px; background: var(--bg-secondary); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); flex-direction: column; overflow: hidden; backdrop-filter: blur(10px);">
+  <div id="ki-chat-widget" class="ki-chat-widget" style="position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; gap: 12px;">
+    <div id="ki-chat-window" class="ki-chat-window" role="dialog" aria-modal="false" aria-labelledby="ki-chat-title" aria-describedby="chat-messages" aria-hidden="true" style="display: none; width: 350px; height: 450px; background: var(--bg-secondary); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); flex-direction: column; overflow: hidden; backdrop-filter: blur(10px);">
         <div style="padding: 16px; background: var(--color-primary); color: white; display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <div style="width: 8px; height: 8px; background: #4ade80; border-radius: 50%; box-shadow: 0 0 8px #4ade80;"></div>
@@ -113,7 +114,7 @@
             </button>
         </div>
     </div>
-    <button id="ki-chat-toggle" aria-label="KI-Chat öffnen oder schließen" aria-controls="ki-chat-window" aria-expanded="false" style="width: 56px; height: 56px; border-radius: 50%; background: var(--color-primary); color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); display: flex; align-items: center; justify-content: center; transition: transform 0.2s;">
+    <button id="ki-chat-toggle" class="ki-chat-toggle" aria-label="KI-Chat öffnen oder schließen" aria-controls="ki-chat-window" aria-expanded="false" style="width: 56px; height: 56px; border-radius: 50%; background: var(--color-primary); color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); display: flex; align-items: center; justify-content: center; transition: transform 0.2s;">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     </button>
   </div>
