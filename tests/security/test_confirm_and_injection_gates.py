@@ -7,6 +7,12 @@ import pytest
 from tests.time_utils import utc_now_iso
 
 
+def _with_csrf(payload: dict[str, str]) -> dict[str, str]:
+    body = dict(payload)
+    body["csrf_token"] = "csrf-test"
+    return body
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -52,6 +58,7 @@ def admin_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         sess["user"] = "admin"
         sess["role"] = "ADMIN"
         sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "csrf-test"
 
     return app, client
 
@@ -61,7 +68,7 @@ def test_write_routes_require_confirm_gate_accepts_expected_tokens(admin_client,
     _, client = admin_client
     response = client.post(
         "/admin/settings/users/delete",
-        data={"username": "other-admin", "confirm": confirm_value},
+        data=_with_csrf({"username": "other-admin", "confirm": confirm_value}),
     )
     assert response.status_code in {302, 303}
     assert response.headers["Location"].endswith("/admin/settings?section=users")
@@ -72,7 +79,7 @@ def test_delete_user_rejects_invalid_confirm_tokens(admin_client, confirm_value:
     _, client = admin_client
     response = client.post(
         "/admin/settings/users/delete",
-        data={"username": "other-admin", "confirm": confirm_value},
+        data=_with_csrf({"username": "other-admin", "confirm": confirm_value}),
     )
     assert response.status_code == 400
     assert response.get_json()["error"] == "confirm_required"
@@ -82,7 +89,7 @@ def test_delete_user_blocks_sql_pattern_in_confirm(admin_client):
     _, client = admin_client
     response = client.post(
         "/admin/settings/users/delete",
-        data={"username": "other-admin", "confirm": "YES; DROP TABLE users; --"},
+        data=_with_csrf({"username": "other-admin", "confirm": "YES; DROP TABLE users; --"}),
     )
     body = response.get_json()
     assert response.status_code == 400
@@ -112,7 +119,7 @@ def test_delete_user_blocks_sql_pattern_in_confirm(admin_client):
 )
 def test_security_critical_routes_block_injection_payloads(admin_client, route: str, payload: dict[str, str], blocked_field: str):
     _, client = admin_client
-    response = client.post(route, data=payload)
+    response = client.post(route, data=_with_csrf(payload))
     body = response.get_json()
     assert response.status_code == 400
     assert body["error"] == "injection_blocked"
@@ -123,7 +130,7 @@ def test_context_switch_blocks_injection_payload_without_confirm(admin_client):
     _, client = admin_client
     response = client.post(
         "/admin/context/switch",
-        data={"tenant_id": "KUKANILEA%27%20OR%201%3D1--"},
+        data=_with_csrf({"tenant_id": "KUKANILEA%27%20OR%201%3D1--"}),
     )
     body = response.get_json()
     assert response.status_code == 400
@@ -153,7 +160,7 @@ def test_additional_critical_write_routes_require_confirm_gate(admin_client, rou
         import app.routes.admin_tenants as admin_routes
 
         monkeypatch.setattr(admin_routes.MeshNetworkManager, "initiate_handshake", lambda *_args, **_kwargs: True)
-    response = client.post(route, data=payload)
+    response = client.post(route, data=_with_csrf(payload))
     if route == "/admin/settings/backup/restore":
         assert response.status_code == 500
         return
@@ -182,7 +189,7 @@ def test_additional_critical_write_routes_require_confirm_gate(admin_client, rou
 )
 def test_additional_critical_write_routes_reject_missing_confirm(admin_client, route: str, payload: dict[str, str]):
     _, client = admin_client
-    response = client.post(route, data=payload)
+    response = client.post(route, data=_with_csrf(payload))
     body = response.get_json()
     assert response.status_code == 400
     assert body["error"] == "confirm_required"
