@@ -362,3 +362,32 @@ def test_runtime_guard_warns_for_harmless_expert_text_with_trigger_words() -> No
     assert result.ok is False
     assert result.status == "needs_clarification"
     assert audit_payloads[-1]["guard_decision"] == "allow_with_warning"
+
+
+def test_missing_required_entity_blocks_routing_and_requests_clarification() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route("Bitte Kunde suchen", {"tenant": "KUKANILEA", "user": "admin"})
+
+    assert result.ok is False
+    assert result.status == "needs_clarification"
+    assert result.reason == "missing_context"
+    assert result.plan is not None
+    assert result.plan.missing_context == ["customer_id"]
+    assert bus.events[-1]["event_type"] == "manager_agent.needs_clarification"
+
+
+def test_propose_mode_action_is_not_executed_without_context() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route("Mail antworten", {"tenant": "KUKANILEA", "user": "admin"})
+
+    assert result.ok is False
+    assert result.status == "needs_clarification"
+    assert result.reason == "missing_context"
+    assert result.plan is not None
+    assert result.plan.execution_mode == "propose"
+    assert result.decision.action == "mail.mail.reply"
+    assert bus.events[-1]["event_type"] == "manager_agent.needs_clarification"
