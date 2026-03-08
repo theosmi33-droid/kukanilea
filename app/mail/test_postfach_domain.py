@@ -4,7 +4,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from unittest.mock import patch
 
-from app.mail import postfach_imap, sync_engine
+from app.mail import postfach_imap, postfach_store, sync_engine
 
 
 def test_extract_body_and_attachments_detects_attachment():
@@ -74,3 +74,74 @@ def test_sync_all_accounts_aggregates_results():
     assert out["accounts_failed"] == 1
     assert out["imported"] == 3
     assert out["duplicates"] == 1
+
+
+def test_ingest_message_attachments_rejects_tenant_quota(tmp_path, monkeypatch):
+    db_path = tmp_path / "core.sqlite3"
+    monkeypatch.setattr(postfach_store.Config, "USER_DATA_ROOT", tmp_path)
+    monkeypatch.setattr(postfach_store, "MAIL_ATTACHMENT_TENANT_QUOTA_BYTES", 10)
+
+    refs: list[dict] = []
+
+    def _capture_store(*args, **kwargs):
+        refs.append(kwargs["content_ref"])
+        return "att-1"
+
+    with patch("app.mail.postfach_store.ensure_postfach_schema"), patch(
+        "app.mail.postfach_store.store_message_attachment", side_effect=_capture_store
+    ):
+        out = postfach_store.ingest_message_attachments(
+            db_path,
+            tenant_id="tenant1",
+            account_id="acc1",
+            message_id="msg1",
+            attachments=[
+                {
+                    "filename": "a.txt",
+                    "mime_type": "text/plain",
+                    "size_bytes": 11,
+                    "content_bytes": b"hello world",
+                }
+            ],
+        )
+
+    assert out["processed"] == 1
+    assert out["rejected"] == 1
+    assert refs[0]["status"] == "rejected"
+    assert refs[0]["reason"] == "tenant_quota_exceeded"
+
+
+def test_ingest_message_attachments_rejects_oversized_payload(tmp_path, monkeypatch):
+    db_path = tmp_path / "core.sqlite3"
+    monkeypatch.setattr(postfach_store.Config, "USER_DATA_ROOT", tmp_path)
+    monkeypatch.setattr(postfach_store, "MAIL_ATTACHMENT_TENANT_QUOTA_BYTES", 1024)
+    monkeypatch.setattr(postfach_store, "MAX_FILE_SIZE", 5)
+
+    refs: list[dict] = []
+
+    def _capture_store(*args, **kwargs):
+        refs.append(kwargs["content_ref"])
+        return "att-2"
+
+    with patch("app.mail.postfach_store.ensure_postfach_schema"), patch(
+        "app.mail.postfach_store.store_message_attachment", side_effect=_capture_store
+    ):
+        out = postfach_store.ingest_message_attachments(
+            db_path,
+            tenant_id="tenant1",
+            account_id="acc1",
+            message_id="msg1",
+            attachments=[
+                {
+                    "filename": "a.txt",
+                    "mime_type": "text/plain",
+                    "size_bytes": 6,
+                    "content_bytes": b"123456",
+                }
+            ],
+        )
+
+    assert out["processed"] == 1
+    assert out["rejected"] == 1
+    assert refs[0]["status"] == "rejected"
+    assert refs[0]["reason"] == "file_too_large"
