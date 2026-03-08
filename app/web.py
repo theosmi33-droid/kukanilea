@@ -857,7 +857,8 @@ def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
         "briefing_cron",
     }
 
-    scope = str(payload.get("scope") or "tenant").strip()
+    scope_raw = payload.get("scope")
+    scope = str(scope_raw or "tenant").strip()
     key = str(payload.get("key") or "").strip()
     if key not in allowed_keys:
         raise ValueError("setting_key_invalid")
@@ -865,8 +866,14 @@ def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
     settings = _load_system_settings()
     settings[key] = payload.get("value")
     _save_system_settings(settings)
+    updated_value: bool | str = True
+    # Legacy compatibility: older callers expect `updated` to echo flat keys
+    # (for example "language"), while canonical scoped callers expect boolean.
+    if scope_raw is None and "." not in key:
+        updated_value = key
     return {
-        "updated": True,
+        "updated": updated_value,
+        "updated_flag": True,
         "key": key,
         "scope": scope,
         "value": settings.get(key),
@@ -904,7 +911,8 @@ SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
             output_schema={
                 "type": "object",
                 "properties": {
-                    "updated": {"type": "boolean"},
+                    "updated": {"type": ["boolean", "string"]},
+                    "updated_flag": {"type": "boolean"},
                     "key": {"type": "string"},
                     "scope": {"type": "string"},
                     "value": {},
