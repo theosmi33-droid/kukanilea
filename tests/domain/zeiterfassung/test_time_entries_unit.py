@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import io
 
+import pytest
+
 from app import core
 from app.modules.zeiterfassung import contracts
 
@@ -39,6 +41,17 @@ def test_time_entry_start_stop_supports_seconds_and_task_project_link(auth_clien
         assert stopped["end_at_seconds"] == 1772355600
         assert stopped["task_id"] == task_id
         assert stopped["project_id"] == int(project["id"])
+
+
+def test_time_entry_seconds_out_of_range_raise_value_error(auth_client):
+    app = auth_client.application
+    with app.app_context():
+        with pytest.raises(ValueError, match="invalid_timestamp_seconds"):
+            core.time_entry_start(
+                tenant_id="KUKANILEA",
+                user="admin",
+                started_at_seconds=10**30,
+            )
 
 
 def test_absence_export_stub_supports_vacation_and_sick(auth_client):
