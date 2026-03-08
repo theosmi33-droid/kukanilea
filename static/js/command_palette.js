@@ -16,7 +16,7 @@ const CommandPalette = {
 
         // actions
         { id: 'action-create-agent', category: 'actions', title: 'Create Agent', subtitle: 'Open agent setup flow', path: '/agents', keywords: 'new agent create assistant' },
-        { id: 'action-open-logs', category: 'actions', title: 'Open Logs', subtitle: 'Inspect system and automation logs', path: '/system_logs', keywords: 'logs system audit events' },
+        { id: 'action-open-logs', category: 'actions', title: 'Open Logs', subtitle: 'Inspect system and automation logs', path: '/system/logs', keywords: 'logs system audit events' },
         { id: 'action-run-automation', category: 'actions', title: 'Run Automation', subtitle: 'Open automation controls', path: '/automation', keywords: 'automation workflow run' },
         {
             id: 'action-search-system',
