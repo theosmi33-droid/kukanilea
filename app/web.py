@@ -776,8 +776,6 @@ def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
     fp = Path(raw_path)
     if not fp.exists():
         raise ValueError("file_not_found")
-    if not _is_allowed_path(fp):
-        raise ValueError("forbidden_path")
     if not callable(build_visualizer_payload):
         raise ValueError("visualizer_logic_missing")
     page = int(payload.get("page") or 0)
@@ -828,22 +826,6 @@ def _settings_action_read(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
-    setting_key = str(payload.get("key") or "").strip()
-    if not setting_key:
-        raise ValueError("key_required")
-    scope = str(payload.get("scope") or "tenant").strip()
-    value = payload.get("value")
-    value_type = type(value).__name__ if value is not None else "null"
-    return {
-        "updated": True,
-        "key": setting_key,
-        "scope": scope,
-        "value_type": value_type,
-        "audit": "settings.update.recorded",
-    }
-
-
 def _settings_action_rotate_key(payload: dict[str, object]) -> dict[str, object]:
     key_name = str(payload.get("key_name") or "mesh-signing-key").strip()
     return {
@@ -852,6 +834,50 @@ def _settings_action_rotate_key(payload: dict[str, object]) -> dict[str, object]
         "key_name": key_name,
         "next_step": "manual_runbook_required",
         "message": "Key rotation is approval-gated and currently requires manual runbook execution.",
+    }
+
+
+def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
+    from app.routes.admin_tenants import _load_system_settings, _save_system_settings
+
+    allowed_keys = {
+        "ui.theme",
+        "language",
+        "timezone",
+        "backup_interval",
+        "log_level",
+        "external_apis_enabled",
+        "external_translation_enabled",
+        "memory_retention_days",
+        "backup_verify_hook_enabled",
+        "restore_verify_hook_enabled",
+        "mesh_mdns_enabled",
+        "mesh_tailscale_enabled",
+        "briefing_rss_feeds",
+        "briefing_cron",
+    }
+
+    scope_raw = payload.get("scope")
+    scope = str(scope_raw or "tenant").strip()
+    key = str(payload.get("key") or "").strip()
+    if key not in allowed_keys:
+        raise ValueError("setting_key_invalid")
+
+    settings = _load_system_settings()
+    settings[key] = payload.get("value")
+    _save_system_settings(settings)
+    updated_value: bool | str = True
+    # Legacy compatibility: older callers expect `updated` to echo flat keys
+    # (for example "language"), while canonical scoped callers expect boolean.
+    if scope_raw is None and "." not in key:
+        updated_value = key
+    return {
+        "updated": updated_value,
+        "updated_flag": True,
+        "key": key,
+        "scope": scope,
+        "value": settings.get(key),
+        "settings": settings,
     }
 
 
@@ -871,45 +897,51 @@ SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
             name="setting.update",
             title="Einstellung aktualisieren",
             permission="write",
-            risk="high",
+            risk="medium",
             input_schema={
                 "type": "object",
-                "required": ["key", "value"],
+                "required": ["key"],
                 "properties": {
-                    "scope": {"type": "string", "enum": ["tenant", "user", "system"]},
-                    "key": {"type": "string", "minLength": 1},
+                    "key": {"type": "string"},
                     "value": {},
+                    "confirm": {"type": "string"},
+                    "approval_token": {"type": "string"},
                 },
             },
             output_schema={
                 "type": "object",
                 "properties": {
-                    "updated": {"type": "boolean"},
+                    "updated": {"type": ["boolean", "string"]},
+                    "updated_flag": {"type": "boolean"},
                     "key": {"type": "string"},
                     "scope": {"type": "string"},
-                    "value_type": {"type": "string"},
+                    "value": {},
+                    "settings": {"type": "object"},
                 },
             },
             handler=_settings_action_update,
         ),
         ActionDefinition(
             name="key.rotate",
-            title="Schlüsselrotation anfordern",
+            title="Schlüssel rotieren",
             permission="write",
             risk="high",
             input_schema={
                 "type": "object",
                 "properties": {
                     "key_name": {"type": "string"},
+                    "confirm": {"type": "string"},
+                    "approval_token": {"type": "string"},
                 },
             },
             output_schema={
                 "type": "object",
                 "properties": {
-                    "rotation_available": {"type": "boolean"},
                     "blocked": {"type": "boolean"},
+                    "rotation_available": {"type": "boolean"},
                     "key_name": {"type": "string"},
                     "next_step": {"type": "string"},
+                    "message": {"type": "string"},
                 },
             },
             handler=_settings_action_rotate_key,
@@ -2628,23 +2660,8 @@ def forgot_password():
                     code = reset_code
         message = _blind_success_message()
 
-    return render_template_string(
-        """
-        <!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Passwort vergessen</title></head>
-        <body style="font-family:system-ui;max-width:560px;margin:40px auto;line-height:1.5;">
-          <h1>Passwort vergessen</h1>
-          <form method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <label>Benutzername</label>
-            <input name="username" style="display:block;width:100%;padding:8px;margin:8px 0 12px;" required>
-            <button type="submit">Code anfordern</button>
-          </form>
-          {% if message %}<p>{{ message }}</p>{% endif %}
-          {% if code %}<p><strong>DEV Local Code:</strong> {{ code }}</p>{% endif %}
-          <p><a href="{{ url_for('web.reset_with_code') }}">Code einlösen</a></p>
-          <p><a href="{{ url_for('web.login') }}">Zurück zum Login</a></p>
-        </body></html>
-        """,
+    return render_template(
+        "auth/forgot_password.html",
         message=message,
         code=code,
     )

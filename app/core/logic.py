@@ -2580,7 +2580,7 @@ def _read_csv_grid(fp: Path, max_rows: int = MAX_CSV_ROWS, max_cols: int = MAX_C
     sio = io.StringIO(raw)
     try:
         dialect = csv.Sniffer().sniff(sample)
-    except csv.Error:
+    except Exception:
         dialect = csv.excel
 
     grid: List[List[str]] = []
@@ -2641,18 +2641,16 @@ def build_visualizer_payload(fp: Path, page: int = 0, sheet: str = "", force_ocr
             "grid": grid,
         })
     elif ext == ".xlsx":
-        if openpyxl is None:
-            raise RuntimeError("xlsx_backend_missing")
-        wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
-        available = [ws.title for ws in wb.worksheets]
-        selected = sheet if sheet and sheet in available else (available[0] if available else "")
-        grid: list[list[str]] = []
-        if selected:
-            ws = wb[selected]
+        grid, available, selected = _read_xlsx_grid(fp)
+        if sheet and sheet in available and openpyxl is not None:
+            wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
+            ws = wb[sheet]
+            grid = []
             for r_i, row in enumerate(ws.iter_rows(values_only=True)):
                 if r_i >= MAX_XLSX_ROWS:
                     break
                 grid.append([normalize_component(v) if v is not None else "" for v in row[:MAX_XLSX_COLS]])
+            selected = sheet
         payload.update({
             "kind": "sheet",
             "sheet": {"name": selected, "available": available, "rows": len(grid), "cols": max([len(r) for r in grid], default=0)},

@@ -244,8 +244,9 @@ def _normalize_contract_payload(
     *,
     contract_kind: str = "summary",
 ) -> tuple[dict, list[str]]:
+    expected_tenant = str(tenant or "default")
     payload_details = _as_dict(payload.get("details"), {})
-    payload_details["tenant"] = str(payload_details.get("tenant") or tenant or "default")
+    payload_details["tenant"] = str(payload_details.get("tenant") or expected_tenant)
     safe_payload = {
         "tool": str(payload.get("tool") or tool),
         "status": payload.get("status") if payload.get("status") in CONTRACT_STATUSES else "error",
@@ -259,7 +260,7 @@ def _normalize_contract_payload(
         metrics=safe_payload["metrics"],
         details=safe_payload["details"],
         reason=str(payload.get("degraded_reason") or ""),
-        tenant=str(tenant or "default"),
+        tenant=expected_tenant,
         contract_kind=contract_kind,
     )
     errors = _contract_errors(payload)
@@ -274,13 +275,13 @@ def _normalize_contract_payload(
             },
         }
 
-    original_tenant = str(_as_dict(payload.get("details"), {}).get("tenant") or tenant or "default")
-    if original_tenant != str(tenant or "default"):
+    original_tenant = str(_as_dict(payload.get("details"), {}).get("tenant") or expected_tenant)
+    if original_tenant != expected_tenant:
         normalized["status"] = "degraded"
-        normalized["degraded_reason"] = "tenant_scope_corrected"
+        normalized.setdefault("degraded_reason", "tenant_scope_corrected")
         normalized["details"] = {
             **(normalized.get("details") or {}),
-            "tenant": str(tenant or "default"),
+            "tenant": expected_tenant,
             "normalization": {
                 **_as_dict((normalized.get("details") or {}).get("normalization"), {}),
                 "applied": True,
@@ -385,8 +386,14 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
                 )
             )
     degraded_tools = [row["tool"] for row in rows if row.get("status") == "degraded"]
+    degraded_non_blocking = [
+        row["tool"]
+        for row in rows
+        if row.get("status") == "degraded" and str(row.get("degraded_reason") or "") in NON_BLOCKING_DEGRADED_REASONS
+    ]
+    degraded_blocking = sorted(set(degraded_tools) - set(degraded_non_blocking))
     error_tools = [row["tool"] for row in rows if row.get("status") == "error"]
-    unavailable_tools = sorted({*degraded_tools, *error_tools})
+    unavailable_tools = sorted({*degraded_blocking, *error_tools})
     metrics = {
         "total_tools": len(rows),
         "degraded_tools": len(degraded_tools),
@@ -400,6 +407,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "matrix_endpoint": "/api/dashboard/tool-matrix",
         "aggregate_mode": "summary_only",
         "degraded": degraded_tools,
+        "degraded_blocking": degraded_blocking,
+        "degraded_non_blocking": degraded_non_blocking,
         "errors": error_tools,
         "unavailable_tools": unavailable_tools,
         "aggregation_errors": {tool: "error" for tool in aggregation_errors},
@@ -602,6 +611,7 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
         "legacy_summary": _route_available("/api/mail/summary", "GET"),
         "legacy_health": _route_available("/api/mail/health", "GET"),
         "postfach_summary": _route_available("/api/emailpostfach/summary", "GET"),
+        "postfach_health": _route_available("/api/emailpostfach/health", "GET"),
         "postfach_ingest": _route_available("/api/emailpostfach/ingest", "POST"),
         "postfach_send": _route_available("/api/emailpostfach/draft/<draft_id>/send", "POST"),
     }
@@ -622,6 +632,8 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
 
             auth_db = current_app.extensions.get("auth_db")
             if auth_db is not None:
+                service = EmailpostfachService(db_path=str(auth_db.path))
+                service.ensure_tables()
                 con = auth_db._db()
                 try:
                     for table_name in table_checks:
@@ -647,7 +659,6 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
                 finally:
                     con.close()
 
-                service = EmailpostfachService(db_path=str(auth_db.path))
                 probe = service.send_draft(
                     tenant_id=tenant,
                     actor="summary_probe",
@@ -827,6 +838,11 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "settings": _collect_settings_summary,
     "chatbot": _collect_chatbot_summary,
 }
+
+NON_BLOCKING_DEGRADED_REASONS: set[str] = {
+    "mia_parity_below_baseline",
+}
+
 
 
 

@@ -34,3 +34,5 @@ def test_template_routes_still_reference_core_shell():
     assert "{% extends \"layout.html\" %}" in email_html
     assert "ms-hub" in messenger_html
     assert "Email-Cockpit" in email_html
+    assert "email-inbox-list" in email_html
+    assert "Antwortvorschläge" in email_html
