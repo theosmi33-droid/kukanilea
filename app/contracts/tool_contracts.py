@@ -485,7 +485,7 @@ def _processing_queue_items(tenant: str) -> list[dict]:
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
     list_projects = _core_get("project_list")
     projects = list_projects() if callable(list_projects) else []
-    metrics = {"total_projects": len(projects), "active_projects": len(projects), "overdue_tasks": 0, "defects_open": 0}
+    metrics = {"total_projects": len(projects), "active_projects": len(projects), "overdue_tasks": 0, "open_defects": 0}
     details = {"source": "core.project_list", "tenant": tenant}
     reason = "projects_backend_missing" if not callable(list_projects) else ""
 
@@ -525,7 +525,7 @@ def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
 
                 metrics["active_projects"] = _row_count(active_row)
                 metrics["overdue_tasks"] = _row_count(overdue_row)
-                metrics["defects_open"] = _row_count(defects_row)
+                metrics["open_defects"] = _row_count(defects_row)
                 details["source"] = "auth_db.projects+team_tasks+project_defects"
         except Exception:
             if not reason:
