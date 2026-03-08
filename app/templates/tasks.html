@@ -27,6 +27,21 @@
     </div>
     <a href="/projects" class="btn btn-secondary btn-sm">Projektboard öffnen</a>
   </header>
+  {% if degraded_state %}
+  <article class="tasks-card" style="border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.09);">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0; font-size:15px;">Eingeschränkter Modus</h2>
+        <div class="tasks-muted">{{ degraded_state }}</div>
+      </div>
+      <div class="tasks-actions">
+        <a href="/tasks" class="tasks-badge" style="text-decoration:none;">Seite neu laden</a>
+        <a href="/projects" class="tasks-badge" style="text-decoration:none;">Projektboard öffnen</a>
+      </div>
+    </div>
+  </article>
+  {% endif %}
+
   {% if request.args.get('origin') == 'upload' %}
   <article class="tasks-card" style="border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.06);">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
@@ -37,6 +52,21 @@
       <div class="tasks-actions">
         <a href="/upload" class="tasks-badge" style="text-decoration:none;">Neuer Upload</a>
         <a href="/projects?origin=tasks" class="tasks-badge" style="text-decoration:none;">Projektboard öffnen</a>
+      </div>
+    </div>
+  </article>
+  {% endif %}
+
+  {% if tasks_degraded %}
+  <article class="tasks-card" style="border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.08);">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0; font-size:15px;">Aufgaben werden eingeschränkt angezeigt</h2>
+        <div class="tasks-muted">Ein Teil der Daten ist gerade nicht erreichbar. Sie können weiterarbeiten und später aktualisieren.</div>
+      </div>
+      <div class="tasks-actions">
+        <a href="/tasks" class="tasks-badge" style="text-decoration:none;">Ansicht aktualisieren</a>
+        <a href="/projects" class="tasks-badge" style="text-decoration:none;">Zum Projektboard</a>
       </div>
     </div>
   </article>
@@ -95,7 +125,11 @@
           {% endfor %}
           {% if not tasks %}
           <tr>
-            <td colspan="5" class="tasks-muted" style="text-align:center; padding:20px;">Keine Aufgaben vorhanden.</td>
+            <td colspan="5" style="padding:20px;">
+              {% with kicker="Aufgaben", title="Keine offenen Aufgaben", message="Starten Sie mit einem Upload oder legen Sie direkt im Projektboard eine neue Aufgabe an.", tone_class="border-light bg-subtle", ctas=[{"href":"/upload", "label":"Upload starten", "class":"btn-primary btn-sm"}, {"href":"/projects", "label":"Projektboard öffnen", "class":"btn-secondary btn-sm"}] %}
+                {% include "components/state_panel.html" %}
+              {% endwith %}
+            </td>
           </tr>
           {% endif %}
         </tbody>

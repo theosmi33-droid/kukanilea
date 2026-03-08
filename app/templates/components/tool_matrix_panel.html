@@ -1,10 +1,9 @@
 <div class="panel" id="tool-contract-panel" style="margin-bottom:0;">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-    <h2 style="margin:0; font-size:14px; text-transform:uppercase; color:var(--text-tertiary);">Sovereign-11 Tool Status</h2>
-    <span id="tool-contract-updated" class="badge">initialisiere…</span>
-  </div>
-  <div id="tool-contract-grid" class="grid grid-cols-3 gap-3"></div>
-  <p style="margin-top:10px; font-size:11px; color:var(--text-tertiary);">
-    Offline-safe: Bei nicht erreichbaren Backends bleibt das Dashboard verfügbar und markiert Tools als <strong>degraded</strong>.
-  </p>
+  <div id="tool-matrix-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+  <details style="margin-top:10px;">
+    <summary style="font-size:11px; color:var(--text-tertiary); cursor:pointer; font-weight:600;">Technik-Hinweis</summary>
+    <p style="margin:6px 0 0; font-size:11px; color:var(--text-tertiary);">
+      Offline-safe: Bei nicht erreichbaren Backends bleibt das Dashboard verfügbar und markiert Tools als <strong>degraded</strong>.
+    </p>
+  </details>
 </div>

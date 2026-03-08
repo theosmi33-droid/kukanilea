@@ -34,9 +34,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const mobileToggle = document.getElementById('mobile-sidebar-toggle');
   const sidebar = document.querySelector('.sidebar');
+  const mobileOverlay = document.getElementById('mobile-sidebar-overlay');
   const setMobileSidebarState = (isOpen) => {
     if (!sidebar || !mobileToggle) return;
     sidebar.classList.toggle('mobile-open', isOpen);
+    document.body.classList.toggle('mobile-sidebar-open', isOpen);
+    if (mobileOverlay) {
+      mobileOverlay.hidden = !isOpen;
+      mobileOverlay.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+    }
     mobileToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     mobileToggle.setAttribute('aria-label', isOpen ? 'Menü schließen' : 'Menü öffnen');
   };
@@ -45,8 +51,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const nextState = !sidebar.classList.contains('mobile-open');
       setMobileSidebarState(nextState);
     });
-    document.addEventListener('click', (e) => {
-      if (sidebar.classList.contains('mobile-open') && !sidebar.contains(e.target) && !mobileToggle.contains(e.target)) {
+    mobileOverlay?.addEventListener('click', () => setMobileSidebarState(false));
+    sidebar.querySelectorAll('a[href]').forEach((link) => {
+      link.addEventListener('click', () => setMobileSidebarState(false));
+    });
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 768 && sidebar.classList.contains('mobile-open')) {
         setMobileSidebarState(false);
       }
     }, { passive: true });

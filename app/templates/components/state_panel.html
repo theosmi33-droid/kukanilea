@@ -1,0 +1,14 @@
+<div class="state-panel rounded-2xl border {{ tone_class|default('border-light bg-subtle') }} p-5" role="{{ role|default('status') }}"{% if live %} aria-live="{{ live }}"{% endif %}>
+  <div class="text-[10px] font-black uppercase tracking-widest {{ kicker_class|default('text-muted') }}">{{ kicker|default('Hinweis') }}</div>
+  <h3 class="text-base font-bold text-main mt-2 mb-1">{{ title }}</h3>
+  {% if message %}
+  <p class="text-sm text-secondary m-0">{{ message }}</p>
+  {% endif %}
+  {% if ctas %}
+  <div class="flex flex-wrap gap-2 mt-4">
+    {% for cta in ctas %}
+      <a href="{{ cta.href }}" class="btn {{ cta.class|default('btn-secondary btn-sm') }}"{% if cta.id %} id="{{ cta.id }}"{% endif %}>{{ cta.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
