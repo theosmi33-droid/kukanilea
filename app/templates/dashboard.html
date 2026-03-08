@@ -217,6 +217,15 @@ function renderToolMatrix(payload) {
   
   const tools = Array.isArray(payload?.tools) ? payload.tools : [];
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'})}`;
+  if (!tools.length) {
+    grid.innerHTML = `<article class="card card-tight border-light bg-subtle">
+      <div class="card-body">
+        <div class="text-sm font-bold text-main">Noch keine Tool-Status verfügbar</div>
+        <div class="text-xs text-muted mt-1">Sobald die Verbindung steht, werden die Bereiche automatisch ergänzt.</div>
+      </div>
+    </article>`;
+    return;
+  }
   
   grid.innerHTML = tools.map((tool) => {
     const status = String(tool.status || "error");
@@ -227,17 +236,18 @@ function renderToolMatrix(payload) {
     const borderColor = isOk ? "var(--success)" : (isDegraded ? "var(--warning)" : "var(--error)");
     const bgClass = isOk ? "bg-success-bg" : (isDegraded ? "bg-warning-bg" : "bg-error-bg");
     
-    const hint = isOk
-      ? "Läuft stabil"
-      : (isDegraded ? "Eingeschränkt verfügbar" : "Aktion nötig");
-    const reason = tool.degraded_reason ? `<details class="mt-1"><summary class="text-[10px] text-muted cursor-pointer">Mehr anzeigen</summary><div class="text-[10px] text-muted mt-1 leading-tight">${tool.degraded_reason}</div></details>` : "";
-
+    const reasonText = tool.degraded_reason === "summary_unreachable"
+      ? "Status momentan verzögert"
+      : (tool.degraded_reason || "");
+    const reason = reasonText ? `<div class="text-[10px] text-muted mt-1 leading-tight">${reasonText}</div>` : "";
+    const label = isOk ? "Betriebsbereit" : (isDegraded ? "Eingeschränkt" : "Nicht verfügbar");
+    
     return `
     <article class="card card-tight border-light" style="border-left: 4px solid ${borderColor};">
       <div class="card-body">
         <div class="flex justify-between items-center gap-2">
             <span class="text-sm font-bold text-main">${tool.tool}</span>
-            <span class="text-[10px] font-black uppercase ${colorClass}">${status}</span>
+            <span class="text-[10px] font-black uppercase ${colorClass}">${label}</span>
         </div>
         <div class="text-[11px] mt-1 text-muted">${hint}</div>
         ${reason}
@@ -285,14 +295,14 @@ function renderAlertDigest(signals) {
   if (!digest) return;
   if (!signals.toolsDown && !signals.toolsWarn) {
     digest.className = "mt-4 p-3 rounded-xl border border-success/20 bg-success-bg text-sm text-main";
-    digest.innerHTML = "<strong>Alle Kernsysteme sind stabil.</strong> Fokus auf Review-Durchsatz und schnelle Freigaben.";
+    digest.innerHTML = "<strong>System stabil.</strong> Fokus auf Freigaben und neue Uploads.";
     return;
   }
   const action = signals.toolsDown
     ? "Bitte zuerst rote Tool-Checks prüfen."
     : "Bitte eingeschränkte Tools beobachten und später erneut prüfen.";
   digest.className = "mt-4 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main";
-  digest.innerHTML = `<strong>Systemhinweis:</strong> ${signals.toolsDown} kritisch, ${signals.toolsWarn} eingeschränkt. ${action}`;
+  digest.innerHTML = `<strong>Bitte priorisieren:</strong> ${signals.toolsDown} Bereiche nicht verfügbar, ${signals.toolsWarn} eingeschränkt.`;
 }
 
 function executeOptimizerActions(signals, targetActions = 2200) {
@@ -340,6 +350,16 @@ function renderSpeedToLead(summaryMap) {
     { label: "Letzte Reaktion", value: lastResponseAgo === null ? "—" : `${lastResponseAgo} min` },
   ];
 
+  const hasSummaryData = [summaryMap.email, summaryMap.messenger, summaryMap.dashboard].some(Boolean);
+  if (!hasSummaryData) {
+    container.innerHTML = `<article class="rounded-xl border border-warning/20 p-3 bg-warning-bg sm:col-span-3">
+      <div class="text-sm font-bold text-main">Kennzahlen werden vorbereitet</div>
+      <div class="text-xs text-muted mt-1">Die Übersicht bleibt nutzbar. Werte werden nachgeladen, sobald die Quellen antworten.</div>
+    </article>`;
+    updated.textContent = "Wird aktualisiert…";
+    return;
+  }
+
   container.innerHTML = tiles.map((tile) => `
     <article class="rounded-xl border border-light p-3 bg-subtle">
       <div class="text-[10px] uppercase tracking-wider font-black text-muted">${tile.label}</div>
@@ -366,8 +386,8 @@ function renderHealthStrip(summaryMap, appHealthOk) {
 
   summary.className = `text-sm mb-3 ${appHealthOk ? "text-main" : "text-error"}`;
   summary.textContent = appHealthOk
-    ? `${okCount} ok · ${degradedCount} degraded · ${downCount} down`
-    : `App /health nicht erreichbar · ${okCount} ok · ${degradedCount} degraded · ${downCount} down`;
+    ? `${okCount} Bereiche stabil · ${degradedCount} eingeschränkt · ${downCount} nicht verfügbar`
+    : `Systemcheck verzögert · ${okCount} Bereiche stabil · ${degradedCount} eingeschränkt · ${downCount} nicht verfügbar`;
 
   tools.innerHTML = rows.map((row) => `
     <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${row.status}</span>
@@ -441,7 +461,7 @@ async function loadToolMatrix() {
     renderAlertDigest(signals);
     executeOptimizerActions(signals, 2200);
     const updated = document.getElementById("tool-contract-updated");
-    if (updated) updated.textContent = 'Verbindung unterbrochen';
+    if (updated) updated.textContent = 'Verbindung wird erneut aufgebaut';
   } finally {
     matrixRefreshInFlight = false;
   }
