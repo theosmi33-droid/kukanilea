@@ -13,6 +13,7 @@ HEALTH_LOG="/tmp/kukanilea_healthcheck.log"
 PYTHON="${PYTHON:-}"
 DOCTOR_STRICT=0
 SERVER_PID=""
+E2E_MODE="full"
 
 resolve_realpath() {
   local p="$1"
@@ -167,9 +168,11 @@ elif ! "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then
 else
   PYTEST_CMD=("$PYTHON" -m pytest -q)
   if ! "$PYTHON" -c 'import playwright' >/dev/null 2>&1; then
+    E2E_MODE="skip_python_e2e"
     log "[healthcheck] Optional dependency 'playwright' not available (excluding tests/e2e)"
     PYTEST_CMD+=(--ignore=tests/e2e)
   fi
+  log "[healthcheck] e2e.mode=$E2E_MODE"
   run_gate "pytest" bash -lc "cd '$ROOT' && ${PYTEST_CMD[*]@Q}"
 fi
 

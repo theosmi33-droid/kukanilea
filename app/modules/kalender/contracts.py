@@ -267,7 +267,29 @@ def build_summary(tenant: str) -> dict:
 
 
 def build_health(tenant: str) -> tuple[dict, int]:
-    summary = build_summary(tenant)
+    try:
+        summary = build_summary(tenant)
+    except Exception:
+        return build_health_response(
+            tool="kalender",
+            status="degraded",
+            metrics={"collector_error": 1},
+            details={
+                "source": "kalender.events",
+                "window_days": 7,
+                "events_next_7_days": [],
+                "conflicts": [],
+                "reminders_due": [],
+                "offline_persistence": bool(_db_pragmas_offline_safe()),
+            },
+            tenant=tenant,
+            degraded_reason="summary_unavailable",
+            checks={
+                "summary_contract": False,
+                "backend_ready": False,
+                "offline_safe": bool(_db_pragmas_offline_safe()),
+            },
+        )
     return build_health_response(
         tool="kalender",
         status=summary["status"],
