@@ -116,3 +116,28 @@ def test_email_send_reply_requires_confirm(client, monkeypatch: pytest.MonkeyPat
     assert replay.status_code == 200
     assert replay.get_json()["result"]["idempotent_replay"] is True
     assert calls["count"] == 1
+
+
+def test_email_execute_enforces_session_tenant(client, monkeypatch: pytest.MonkeyPatch):
+    from app.modules.mail import ai_actions
+
+    seen: dict[str, str | None] = {"tenant_id": None}
+
+    def _search(*_args, **kwargs):
+        seen["tenant_id"] = kwargs.get("tenant_id")
+        return []
+
+    monkeypatch.setattr(ai_actions, "postfach_search_messages", _search)
+
+    resp = client.post(
+        "/api/ai/execute",
+        json={
+            "skill": "email.search",
+            "payload": {"query": "angebot", "tenant_id": "VICTIM"},
+            "confirm": False,
+        },
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+
+    assert resp.status_code == 200
+    assert seen["tenant_id"] == "KUKANILEA"
