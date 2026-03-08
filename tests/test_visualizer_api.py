@@ -18,20 +18,29 @@ with patch('app.auth.login_required', _mock_login_required):
 class TestVisualizerAPI(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
+        self.app.secret_key = "test-secret"
         self.app.register_blueprint(visualizer.bp)
         self.client = self.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["user"] = "dev"
+            sess["role"] = "DEV"
+            sess["tenant_id"] = "default"
+            sess["csrf_token"] = "test-csrf"
         self.tempdir = tempfile.TemporaryDirectory()
-        self.file_path = Path(self.tempdir.name) / "demo.csv"
+        self.file_path = Path(self.tempdir.name) / "default" / "demo.csv"
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self.file_path.write_text("name,value\nA,12\nB,7\n", encoding="utf-8")
         self.source = base64.b64encode(str(self.file_path).encode("utf-8")).decode("ascii")
+        self.base_path_patch = patch('app.routes.visualizer.BASE_PATH', Path(self.tempdir.name))
+        self.base_path_patch.start()
 
     def tearDown(self):
+        self.base_path_patch.stop()
         self.tempdir.cleanup()
 
-    @patch('app.routes.visualizer._is_tenant_scoped_path', return_value=True)
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
     @patch('app.routes.visualizer.build_visualizer_payload')
-    def test_summary_endpoint_returns_heuristic_text(self, mock_build, _mock_allowed, _mock_scoped):
+    def test_summary_endpoint_returns_heuristic_text(self, mock_build, _mock_allowed):
         mock_build.return_value = {
             "kind": "sheet",
             "sheet": {"rows": 2, "cols": 2},
@@ -49,10 +58,9 @@ class TestVisualizerAPI(unittest.TestCase):
         self.assertEqual(data['model'], 'heuristic')
         self.assertEqual(data['source']['kind'], 'sheet')
 
-    @patch('app.routes.visualizer._is_tenant_scoped_path', return_value=True)
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
     @patch('app.routes.visualizer.build_visualizer_payload')
-    def test_summary_endpoint_includes_excel_analyzer(self, mock_build, _mock_allowed, _mock_scoped):
+    def test_summary_endpoint_includes_excel_analyzer(self, mock_build, _mock_allowed):
         mock_build.return_value = {
             "kind": "sheet",
             "sheet": {"rows": 2, "cols": 2},
@@ -65,6 +73,7 @@ class TestVisualizerAPI(unittest.TestCase):
         self.assertIn('excel_summary', data)
         self.assertEqual(data['excel_summary']['columns'], 2)
 
+
     @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
     @patch('app.routes.visualizer._collect_visualizer_items')
     def test_sources_endpoint_returns_items_and_count(self, mock_collect, _mock_tenant):
@@ -76,18 +85,61 @@ class TestVisualizerAPI(unittest.TestCase):
         self.assertEqual(body['count'], 1)
         self.assertEqual(len(body['items']), 1)
 
-    @patch('app.routes.visualizer._is_tenant_scoped_path', return_value=True)
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
     @patch('app.routes.visualizer.build_visualizer_payload', None)
-    def test_summary_endpoint_degrades_when_backend_missing(self, _mock_allowed, _mock_scoped):
+    def test_summary_endpoint_degrades_when_backend_missing(self, _mock_allowed):
         response = self.client.post('/api/visualizer/summary', json={'source': self.source})
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.get_json()['error'], 'visualizer_logic_missing')
 
-    @patch('app.routes.visualizer._is_tenant_scoped_path', return_value=True)
+    @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
+    @patch('app.routes.visualizer._collect_visualizer_items')
+    def test_sources_endpoint_returns_items_and_count(self, mock_collect, _mock_tenant):
+        mock_collect.return_value = [{"id": "abc", "name": "demo.csv", "ext": ".csv", "size": 10, "source": "pending"}]
+
+        response = self.client.get('/api/visualizer/sources')
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body['count'], 1)
+        self.assertEqual(len(body['items']), 1)
+
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
-    def test_render_endpoint_returns_structured_payload(self, _mock_allowed, _mock_scoped):
+    @patch('app.routes.visualizer.build_visualizer_payload', None)
+    def test_summary_endpoint_degrades_when_backend_missing(self, _mock_allowed):
+        response = self.client.post('/api/visualizer/summary', json={'source': self.source})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'visualizer_logic_missing')
+
+    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
+    def test_render_endpoint_returns_structured_payload(self, _mock_allowed):
         response = self.client.get(f'/api/visualizer/render?source={self.source}&page=0')
+        self.assertEqual(response.status_code, 200)
+
+    @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
+    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
+    def test_render_endpoint_blocks_cross_tenant_path(self, _mock_allowed, _mock_tenant):
+        other = Path(self.tempdir.name) / "tenant-y" / "secret.csv"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        other.write_text("x,y\n1,2\n", encoding="utf-8")
+        source = base64.b64encode(str(other).encode("utf-8")).decode("ascii")
+
+        with patch('app.routes.visualizer.BASE_PATH', Path(self.tempdir.name)):
+            response = self.client.get(f'/api/visualizer/render?source={source}&page=0')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()['error'], 'forbidden_tenant_path')
+
+    @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
+    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
+    def test_render_endpoint_allows_current_tenant_path(self, _mock_allowed, _mock_tenant):
+        own = Path(self.tempdir.name) / "tenant-x" / "own.csv"
+        own.parent.mkdir(parents=True, exist_ok=True)
+        own.write_text("x,y\n1,2\n", encoding="utf-8")
+        source = base64.b64encode(str(own).encode("utf-8")).decode("ascii")
+
+        with patch('app.routes.visualizer.BASE_PATH', Path(self.tempdir.name)):
+            response = self.client.get(f'/api/visualizer/render?source={source}&page=0')
+
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertIn(data.get('kind'), {'sheet', 'text'})
@@ -96,19 +148,18 @@ class TestVisualizerAPI(unittest.TestCase):
 
     @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
-    @patch('app.routes.visualizer._is_tenant_scoped_path', return_value=False)
-    def test_summary_endpoint_forbids_cross_tenant_path(self, _mock_scoped, _mock_allowed, _mock_tenant):
-        response = self.client.post('/api/visualizer/summary', json={'source': self.source})
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()['error'], 'forbidden_path')
+    @patch('app.routes.visualizer.build_visualizer_payload', return_value={'kind': 'text', 'file': {'name': 'x'}})
+    def test_summary_endpoint_blocks_cross_tenant_path(self, _mock_build, _mock_allowed, _mock_tenant):
+        other = Path(self.tempdir.name) / "tenant-y" / "secret.csv"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        other.write_text("x,y\n1,2\n", encoding="utf-8")
+        source = base64.b64encode(str(other).encode("utf-8")).decode("ascii")
 
-    @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
-    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
-    @patch('app.routes.visualizer._is_tenant_scoped_path', return_value=False)
-    def test_render_endpoint_forbids_cross_tenant_path(self, _mock_scoped, _mock_allowed, _mock_tenant):
-        response = self.client.get(f'/api/visualizer/render?source={self.source}&page=0')
+        with patch('app.routes.visualizer.BASE_PATH', Path(self.tempdir.name)):
+            response = self.client.post('/api/visualizer/summary', json={'source': source})
+
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()['error'], 'forbidden_path')
+        self.assertEqual(response.get_json()['error'], 'forbidden_tenant_path')
 
     @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
     def test_markup_endpoints_persist_json_document(self, _mock_tenant):

@@ -1,7 +1,6 @@
 from __future__ import annotations
 import itertools
 import logging
-import os
 from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
@@ -32,24 +31,33 @@ DONE_DIR = _core_get("DONE_DIR")
 _NOTE_COUNTER = itertools.count(1)
 
 
-def _is_tenant_scoped_path(fp: Path, tenant: str) -> bool:
-    tenant = str(tenant or "").strip()
-    if not tenant:
-        return False
+def _norm_tenant(value: str) -> str:
+    return str(value or "default").strip().lower().replace(" ", "_")
+
+
+def _is_tenant_visualizer_path(fp: Path, tenant: str) -> bool:
+    """Allow visualizer access only to files in the current tenant subtree."""
     try:
         rp = fp.resolve()
     except Exception:
         return False
 
-    for root in (EINGANG, BASE_PATH, PENDING_DIR, DONE_DIR):
-        if not isinstance(root, Path):
-            continue
+    tenant_key = _norm_tenant(tenant)
+    scoped_roots = [
+        root
+        for root in (BASE_PATH, EINGANG, PENDING_DIR, DONE_DIR)
+        if isinstance(root, Path)
+    ]
+    for root in scoped_roots:
         try:
-            tenant_root = root.resolve() / tenant
-            if rp == tenant_root or str(rp).startswith(str(tenant_root) + os.sep):
-                return True
+            rr = root.resolve()
+            rel = rp.relative_to(rr)
         except Exception:
             continue
+        if not rel.parts:
+            return False
+        if _norm_tenant(rel.parts[0]) == tenant_key:
+            return True
     return False
 
 def _visualizer_item_from_path(path: Path, source: str = "vault") -> dict | None:
@@ -119,7 +127,6 @@ def api_visualizer_sources():
 @bp.get("/api/visualizer/render")
 @login_required
 def api_visualizer_render():
-    tenant = current_tenant() or "default"
     src_b64 = request.args.get("source", "")
     if not src_b64: return jsonify(error="missing_source"), 400
     try:
@@ -129,7 +136,8 @@ def api_visualizer_render():
     fp = Path(raw_path)
     if not fp.exists(): return jsonify(error="file_not_found"), 404
     if not _is_allowed_path(fp): return jsonify(error="forbidden_path"), 403
-    if not _is_tenant_scoped_path(fp, tenant): return jsonify(error="forbidden_path"), 403
+    if not _is_tenant_visualizer_path(fp, current_tenant() or "default"):
+        return jsonify(error="forbidden_tenant_path"), 403
     
     if not callable(build_visualizer_payload):
         return jsonify(error="visualizer_logic_missing"), 503
@@ -176,7 +184,6 @@ def _summarize_payload(payload: dict) -> str:
 @bp.post("/api/visualizer/summary")
 @login_required
 def api_visualizer_summary():
-    tenant = current_tenant() or "default"
     body = request.get_json(silent=True) or {}
     src_b64 = str(body.get("source") or "")
     if not src_b64:
@@ -191,8 +198,8 @@ def api_visualizer_summary():
         return jsonify(error="file_not_found"), 404
     if not _is_allowed_path(fp):
         return jsonify(error="forbidden_path"), 403
-    if not _is_tenant_scoped_path(fp, tenant):
-        return jsonify(error="forbidden_path"), 403
+    if not _is_tenant_visualizer_path(fp, current_tenant() or "default"):
+        return jsonify(error="forbidden_tenant_path"), 403
     if not callable(build_visualizer_payload):
         return jsonify(error="visualizer_logic_missing"), 503
 
