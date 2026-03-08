@@ -59,19 +59,35 @@ const UIFeedback = {
 
         const icon = this.getIconForLevel(level);
 
-        toast.innerHTML = `
-            <div class="toast-icon">${icon}</div>
-            <div class="toast-content">
-                <span class="toast-title">${titles[level] || 'System'}</span>
-                <div class="toast-message">${message}</div>
-            </div>
-            <button class="toast-close" aria-label="Schließen">✕</button>
-        `;
+        const iconEl = document.createElement('div');
+        iconEl.className = 'toast-icon';
+        iconEl.textContent = icon;
+
+        const contentEl = document.createElement('div');
+        contentEl.className = 'toast-content';
+
+        const titleEl = document.createElement('span');
+        titleEl.className = 'toast-title';
+        titleEl.textContent = titles[level] || 'System';
+
+        const messageEl = document.createElement('div');
+        messageEl.className = 'toast-message';
+        messageEl.textContent = `${message}`;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'toast-close';
+        closeBtn.setAttribute('aria-label', 'Schließen');
+        closeBtn.textContent = '✕';
+
+        contentEl.appendChild(titleEl);
+        contentEl.appendChild(messageEl);
+        toast.appendChild(iconEl);
+        toast.appendChild(contentEl);
+        toast.appendChild(closeBtn);
 
         container.appendChild(toast);
 
         // Auto-remove logic
-        const closeBtn = toast.querySelector('.toast-close');
         closeBtn.onclick = () => this.dismissToast(toast);
 
         const timeout = level === 'error' ? 8000 : 5000;
