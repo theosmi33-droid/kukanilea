@@ -38,6 +38,7 @@
       </div>
       <div class="card-body">
         <div id="speed-to-lead-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+        <div id="speed-to-lead-state" class="mt-3"></div>
         <details class="mt-3">
           <summary class="text-xs text-muted font-semibold cursor-pointer">Details zur Datenquelle</summary>
           <p class="text-xs text-muted mt-2 mb-0">Quelle: Nur Contract-Endpoints <code>/api/&lt;tool&gt;/summary</code>.</p>
@@ -52,6 +53,7 @@
       <div class="card-body">
         <div id="health-strip-summary" class="text-sm text-main mb-3">Status…</div>
         <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
+        <div id="health-strip-state" class="mt-3"></div>
         <details class="mt-3">
           <summary class="text-xs text-muted font-semibold cursor-pointer">Technik-Details</summary>
           <p class="text-xs text-muted mt-2 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
@@ -303,10 +305,43 @@ function _statusTone(status) {
   return "bg-error-bg text-error border-error/20";
 }
 
+function _stateIllustration(kind = "empty") {
+  if (kind === "error") {
+    return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><circle cx="12" cy="16" r=".8" fill="currentColor"/></svg>`;
+  }
+  if (kind === "loading") {
+    return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M21 3v6h-6"/></svg>`;
+  }
+  return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="8" height="6" rx="1"/><rect x="13" y="4" width="8" height="6" rx="1"/><rect x="8" y="14" width="8" height="6" rx="1"/></svg>`;
+}
+
+function _renderState(container, { kind = "empty", title = "", instructions = "", actions = [] } = {}) {
+  if (!container) return;
+  const palette = kind === "error"
+    ? "border-error/20 bg-error-bg text-error"
+    : (kind === "success" ? "border-success/20 bg-success-bg text-success" : "border-light bg-subtle text-main");
+  const safeActions = Array.isArray(actions) ? actions : [];
+  container.innerHTML = `
+    <section class="rounded-2xl border ${palette} p-4" role="status" aria-live="polite">
+      <div class="flex gap-3 items-start">
+        <div class="opacity-70">${_stateIllustration(kind)}</div>
+        <div class="flex-1">
+          <p class="font-bold text-sm mb-1">${title}</p>
+          <p class="text-xs text-muted mb-3">${instructions}</p>
+          <div class="flex flex-wrap gap-2">
+            ${safeActions.map((action) => `<a href="${action.href || '#'}" class="btn ${action.primary ? 'btn-primary' : 'btn-secondary'} btn-sm">${action.label || 'Open'}</a>`).join("")}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderSpeedToLead(summaryMap) {
   const container = document.getElementById("speed-to-lead-cards");
+  const state = document.getElementById("speed-to-lead-state");
   const updated = document.getElementById("speed-to-lead-updated");
-  if (!container || !updated) return;
+  if (!container || !updated || !state) return;
 
   const emailPending = Number(summaryMap.email?.metrics?.pending_threads || summaryMap.email?.metrics?.inbox_unread || 0);
   const messengerPending = Number(summaryMap.messenger?.metrics?.pending_conversations || summaryMap.messenger?.metrics?.unread_threads || 0);
@@ -331,14 +366,24 @@ function renderSpeedToLead(summaryMap) {
       ${tile.hint ? `<div class="text-[10px] text-muted mt-1">${tile.hint}</div>` : ""}
     </article>
   `).join("");
+  _renderState(state, {
+    kind: "success",
+    title: "Lead-Signale aktiv",
+    instructions: "Alle Eingangskanäle melden live. Priorisieren Sie offene Kontakte, um die Reaktionszeit stabil niedrig zu halten.",
+    actions: [
+      { label: "Inbox öffnen", href: "/mail", primary: true },
+      { label: "Messenger prüfen", href: "/messenger" },
+    ],
+  });
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 function renderHealthStrip(summaryMap, appHealthOk) {
   const summary = document.getElementById("health-strip-summary");
   const tools = document.getElementById("health-strip-tools");
+  const state = document.getElementById("health-strip-state");
   const updated = document.getElementById("health-strip-updated");
-  if (!summary || !tools || !updated) return;
+  if (!summary || !tools || !updated || !state) return;
 
   const rows = DASHBOARD_TOOLS.map((tool) => {
     const status = String(summaryMap[tool]?.status || "down").replace("error", "down");
@@ -356,6 +401,37 @@ function renderHealthStrip(summaryMap, appHealthOk) {
   tools.innerHTML = rows.map((row) => `
     <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${row.status}</span>
   `).join("");
+
+  if (!rows.length || downCount === rows.length) {
+    _renderState(state, {
+      kind: "empty",
+      title: "No agents running",
+      instructions: "Keine aktiven Service-Agents erkannt. Starten Sie einen Agenten, um Monitoring und Automationen zu aktivieren.",
+      actions: [
+        { label: "Create Agent", href: "/settings", primary: true },
+        { label: "System-Logs", href: "/system_logs" },
+      ],
+    });
+  } else if (!appHealthOk || downCount > 0) {
+    _renderState(state, {
+      kind: "error",
+      title: "Störung erkannt",
+      instructions: "Mindestens ein kritischer Dienst ist nicht erreichbar. Prüfen Sie Logs und starten Sie den Health-Check erneut.",
+      actions: [
+        { label: "Health-Check", href: "/system_logs", primary: true },
+        { label: "Einstellungen", href: "/settings" },
+      ],
+    });
+  } else {
+    _renderState(state, {
+      kind: "success",
+      title: "System stabil",
+      instructions: "Alle Kern-Agents sind online. Sie können neue Automationen gefahrlos starten.",
+      actions: [
+        { label: "Automationen öffnen", href: "/automation", primary: true },
+      ],
+    });
+  }
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
@@ -435,8 +511,26 @@ async function loadToolMatrix() {
   }
 }
 
+function renderLoadingStates() {
+  const speedState = document.getElementById("speed-to-lead-state");
+  const healthState = document.getElementById("health-strip-state");
+  _renderState(speedState, {
+    kind: "loading",
+    title: "Daten werden synchronisiert",
+    instructions: "Wir laden gerade Speed-to-Lead Signale aus den Contract-Endpunkten.",
+    actions: [{ label: "Seite neu laden", href: "/dashboard", primary: true }],
+  });
+  _renderState(healthState, {
+    kind: "loading",
+    title: "Agent-Status wird geprüft",
+    instructions: "Bitte warten Sie einen Moment, während der Dashboard-Healthcheck läuft.",
+    actions: [{ label: "Status aktualisieren", href: "/dashboard", primary: true }],
+  });
+}
+
 // Initial Load
 document.addEventListener("DOMContentLoaded", () => {
+    renderLoadingStates();
     loadToolMatrix();
     loadSpeedToLeadAndHealth();
     setInterval(loadToolMatrix, REFRESH_INTERVAL_MS);
