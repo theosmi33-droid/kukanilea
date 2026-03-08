@@ -6,6 +6,8 @@ import os
 import sqlite3
 from flask import Blueprint, Response
 
+from app.auth import login_required, require_role
+
 bp = Blueprint("metrics", __name__)
 
 
@@ -16,6 +18,8 @@ def get_last_backup_age_seconds(tenant_id: str = "M001") -> int:
 
 
 @bp.route("/metrics")
+@login_required
+@require_role("ADMIN")
 def metrics() -> Response:
     lines = [f"kukanilea_last_backup_age_seconds {get_last_backup_age_seconds()}"]
 
