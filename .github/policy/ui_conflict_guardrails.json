@@ -48,6 +48,7 @@
       "app/static/css/motion.css",
       "app/static/css/shell-navigation.css",
       "app/static/js/command_palette.js",
+      "app/static/js/layout-shell.js",
       "app/static/js/ui-",
       "app/static/js/app.js"
     ]
