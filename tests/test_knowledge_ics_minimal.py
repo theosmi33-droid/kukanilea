@@ -6,10 +6,13 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
+from app.knowledge import ics_source
 from app.knowledge.ics_source import (
     _extract_deadline_events_from_ocr_text,
     _parse_events,
     _parse_ics_dt,
+    knowledge_calendar_event_delete,
+    knowledge_calendar_event_update,
 )
 
 
@@ -54,3 +57,32 @@ def test_extract_deadline_events_from_ocr_text_detects_payment_due() -> None:
     assert events[0]["kind"] == "payment_due"
     assert events[0]["due_date"] == "2026-02-15"
     assert events[0]["source_filename"] == "rechnung_4711.pdf"
+
+
+def test_manual_calendar_update_blocked_by_policy(monkeypatch) -> None:
+    monkeypatch.setattr(ics_source, "knowledge_policy_get", lambda tenant_id: {"allow_calendar": 0, "allow_customer_pii": 1})
+
+    try:
+        knowledge_calendar_event_update(
+            "tenant-a",
+            "user-a",
+            event_id="evt-1",
+            title="blocked",
+        )
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert str(exc) == "policy_blocked"
+
+
+def test_manual_calendar_delete_blocked_by_policy(monkeypatch) -> None:
+    monkeypatch.setattr(ics_source, "knowledge_policy_get", lambda tenant_id: {"allow_calendar": 0, "allow_customer_pii": 1})
+
+    try:
+        knowledge_calendar_event_delete(
+            "tenant-a",
+            "user-a",
+            event_id="evt-1",
+        )
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert str(exc) == "policy_blocked"

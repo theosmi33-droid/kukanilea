@@ -1574,6 +1574,9 @@ def knowledge_calendar_event_update(
 ) -> dict[str, Any]:
     _ensure_writable()
     tenant = _tenant(tenant_id)
+    policy_row = knowledge_policy_get(tenant)
+    if not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
     source_ref = _manual_source_ref(event_id)
 
     def _tx(con: sqlite3.Connection) -> dict[str, Any]:
@@ -1688,6 +1691,9 @@ def knowledge_calendar_event_delete(
 ) -> dict[str, Any]:
     _ensure_writable()
     tenant = _tenant(tenant_id)
+    policy_row = knowledge_policy_get(tenant)
+    if not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
     source_ref = _manual_source_ref(event_id)
 
     def _tx(con: sqlite3.Connection) -> dict[str, Any]:
