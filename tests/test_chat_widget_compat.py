@@ -104,6 +104,22 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
     assert "fetch('/api/chat/compact'" in runtime_source
 
 
+def test_confirm_dialog_component_uses_human_friendly_copy():
+    from pathlib import Path
+
+    floating_chat = Path("app/templates/partials/floating_chat.html").read_text(encoding="utf-8")
+    template = Path("app/templates/components/confirm_dialog.html").read_text(encoding="utf-8")
+    ui_feedback = Path("app/static/js/ui-feedback.js").read_text(encoding="utf-8")
+
+    assert "id=\"floating-chat-confirm-risk\"" in floating_chat
+    assert "id=\"floating-chat-confirm-preview\"" in floating_chat
+    assert "Freigeben &amp; ausführen" in floating_chat
+    assert "Sicherheitsabfrage" in template
+    assert "Nicht ausführen" in template
+    assert "Freigeben" in template
+    assert "normalizeConfirmMessage" in ui_feedback
+
+
 def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     client = app.test_client()
