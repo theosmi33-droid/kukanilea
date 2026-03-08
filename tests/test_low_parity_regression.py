@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+import re
+import sqlite3
 from pathlib import Path
 
 from flask import Flask
@@ -120,6 +122,29 @@ def test_email_routes_tables_and_confirm_behavior(monkeypatch, tmp_path: Path):
     assert sent.get_json()["result"]["status"] == "sent"
 
 
+def test_email_summary_and_health_degrade_cleanly_when_runtime_unavailable(monkeypatch, tmp_path: Path):
+    _app, client = _authed_client(tmp_path, monkeypatch)
+
+    import app.routes.email as email_routes
+
+    monkeypatch.setattr(email_routes, "_postfach_service", lambda: (_ for _ in ()).throw(sqlite3.OperationalError("db down")))
+
+    summary = client.get("/api/emailpostfach/summary")
+    health = client.get("/api/emailpostfach/health")
+
+    assert summary.status_code == 503
+    summary_payload = summary.get_json()
+    assert summary_payload["status"] == "degraded"
+    assert summary_payload["degraded_reason"] == "email_runtime_unavailable"
+    assert summary_payload["metrics"] == {"unread_count": 0, "follow_ups_due": 0}
+
+    assert health.status_code == 503
+    health_payload = health.get_json()
+    assert health_payload["status"] == "degraded"
+    assert health_payload["degraded_reason"] == "email_runtime_unavailable"
+    assert health_payload["checks"]["summary_runtime"] is False
+
+
 def test_visualizer_routes_and_render_backend_contract(monkeypatch, tmp_path: Path):
     _app, client = _authed_client(tmp_path, monkeypatch)
 
@@ -133,6 +158,7 @@ def test_visualizer_routes_and_render_backend_contract(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(visualizer_routes, "build_visualizer_payload", None)
 
     missing_backend = client.get(f"/api/visualizer/render?source={source}")
+    missing_summary_backend = client.post("/api/visualizer/summary", json={"source": source})
     sources = client.get("/api/visualizer/sources")
 
     monkeypatch.setattr(
@@ -151,6 +177,8 @@ def test_visualizer_routes_and_render_backend_contract(monkeypatch, tmp_path: Pa
     assert sources.status_code == 200
     assert missing_backend.status_code == 503
     assert missing_backend.get_json()["error"] == "visualizer_logic_missing"
+    assert missing_summary_backend.status_code == 503
+    assert missing_summary_backend.get_json()["error"] == "visualizer_logic_missing"
     assert rendered.status_code == 200
     payload = rendered.get_json()
     assert payload["kind"] == "sheet"
@@ -227,3 +255,24 @@ def test_settings_read_update_rotate_parity(monkeypatch, tmp_path: Path):
     assert calls == ["called"]
     assert priv.read_text(encoding="utf-8") == "new"
     assert pub.read_text(encoding="utf-8") == "new"
+
+
+def test_settings_template_and_actions_api_stay_in_parity(monkeypatch, tmp_path: Path):
+    _app, client = _authed_client(tmp_path, monkeypatch)
+
+    from app.security.gates import CRITICAL_CONFIRM_GATE_MATRIX
+
+    settings_template = Path("app/templates/settings.html").read_text(encoding="utf-8")
+    template_actions = set(re.findall(r'action="([^"]+)"', settings_template))
+    critical_settings_routes = {
+        policy.route for policy in CRITICAL_CONFIRM_GATE_MATRIX if policy.route.startswith("/admin/settings/")
+    }
+    assert critical_settings_routes.issubset(template_actions)
+
+    actions_response = client.get("/api/settings/actions")
+    assert actions_response.status_code == 200
+    action_rows = {row["name"]: row for row in actions_response.get_json()["actions"]}
+    assert set(action_rows) == {"setting.read", "setting.update", "key.rotate"}
+    assert action_rows["setting.read"]["confirm_required"] is False
+    assert action_rows["setting.update"]["confirm_required"] is True
+    assert action_rows["key.rotate"]["confirm_required"] is True
