@@ -43,3 +43,14 @@ def test_upload_ingest_contract_includes_classification_and_actions(auth_client)
     assert set(body["classification"].keys()) >= {"label", "confidence", "scores", "rationale", "version"}
     assert set(body["extraction"].keys()) >= {"strategy", "warnings", "text_length"}
     assert isinstance(body["proposed_actions"], list)
+
+
+def test_upload_ingest_respects_artifact_quota(auth_client, monkeypatch):
+    monkeypatch.setattr("app.modules.upload.ingestion.INGEST_ARTIFACT_QUOTA_BYTES", 10)
+    response = auth_client.post(
+        "/api/upload/ingest",
+        json={"source": "text", "text": "this payload is too large"},
+    )
+    assert response.status_code == 403
+    body = response.get_json()
+    assert body["error"] == "quota_exceeded"
