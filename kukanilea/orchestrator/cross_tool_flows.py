@@ -381,8 +381,15 @@ def create_default_registry() -> AtomicActionRegistry:
     registry.register(
         "invoice_extract_due",
         lambda p: {
-            "invoice_id": str(p.get("invoice_id") or p.get("document_id") or "unbekannt")[:50],
-            "invoice_due_date": str(p.get("invoice_due_date") or p.get("default_due_date") or ""),
+            "invoice_id": (
+                _extract_untrusted_text(p, "invoice_id")
+                or _extract_untrusted_text(p, "document_id")
+                or "unbekannt"
+            )[:50],
+            "invoice_due_date": (
+                _extract_untrusted_text(p, "invoice_due_date")
+                or _extract_untrusted_text(p, "default_due_date")
+            ),
         },
     )
     registry.register(
