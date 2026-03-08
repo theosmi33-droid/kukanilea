@@ -68,3 +68,4 @@ def test_navigation_js_tracks_htmx_loading_state_and_accessibility() -> None:
     assert "document.body.addEventListener('htmx:afterRequest'" in js
     assert "document.body.addEventListener('htmx:responseError'" in js
     assert "document.body.addEventListener('htmx:sendError'" in js
+    assert "markCurrentNavigation();" in js
