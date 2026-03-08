@@ -80,6 +80,8 @@ Lokale Verifikation ist dann "CI-nah", wenn folgende Signale lokal ebenfalls gr�
 - Täglich vor Arbeitsstart: `gh pr status` + `git pull --ff-only`.
 - Vor jedem Push: ein lokaler Smokecheck.
 - Bei roten Checks: zuerst Log analysieren, dann minimaler Fix.
+- Bei roten GitHub-Action-Runs: nur actionable Failures prüfen
+  (`main` + offene PR-Branches), keine historische Branch-Historie jagen.
 
 ## Copy/Paste Command Bundle
 
@@ -92,6 +94,7 @@ bash scripts/dev_run.sh
 bash scripts/dev/pr_quality_guard.sh --ci
 ./scripts/ops/healthcheck.sh
 scripts/ops/launch_evidence_gate.sh
+scripts/ops/list_actionable_failures.sh
 
 # targeted tests examples
 PYENV_VERSION=3.12.0 pytest -q tests/test_tool_interface.py
