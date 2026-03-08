@@ -15,7 +15,7 @@
     markCurrentNavigation();
 
     document.body.addEventListener('htmx:afterSettle', () => {
-      markCurrentNavigation();
+      window.requestAnimationFrame(markCurrentNavigation);
     }, { passive: true });
   };
 
@@ -26,12 +26,17 @@
   }
 
   function setupPressedState() {
-    document.querySelectorAll('.nav-link, .btn, .mobile-nav-item').forEach((el) => {
-      el.addEventListener('pointerdown', () => el.classList.add('is-pressed'), { passive: true });
-      el.addEventListener('pointerup', () => el.classList.remove('is-pressed'), { passive: true });
-      el.addEventListener('pointercancel', () => el.classList.remove('is-pressed'), { passive: true });
-      el.addEventListener('blur', () => el.classList.remove('is-pressed'), { passive: true });
-    });
+    const targetSelector = '.nav-link, .btn, .mobile-nav-item';
+
+    const setPressed = (event, value) => {
+      const target = event.target instanceof Element ? event.target.closest(targetSelector) : null;
+      if (target) target.classList.toggle('is-pressed', value);
+    };
+
+    document.addEventListener('pointerdown', (event) => setPressed(event, true), { passive: true });
+    document.addEventListener('pointerup', (event) => setPressed(event, false), { passive: true });
+    document.addEventListener('pointercancel', (event) => setPressed(event, false), { passive: true });
+    document.addEventListener('blur', (event) => setPressed(event, false), { capture: true, passive: true });
   }
 
   function setupHtmxLoadingFeedback() {
@@ -94,7 +99,8 @@
   }
 
   function markCurrentNavigation() {
-    document.querySelectorAll('.nav-link[data-route], .mobile-nav-item[data-route]').forEach((link) => {
+    const links = document.querySelectorAll('.nav-link[data-route], .mobile-nav-item[data-route]');
+    links.forEach((link) => {
       const isCurrent = link.getAttribute('aria-current') === 'page' || link.classList.contains('active');
       link.toggleAttribute('data-current', isCurrent);
     });
