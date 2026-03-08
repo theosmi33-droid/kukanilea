@@ -14,7 +14,10 @@
   --accent-hover: #1d4ed8;
 
   --border-default: #e5e7eb;
+  --border-hover: #d1d5db;
   --border-soft: #f0f0f0;
+  --z-index-sticky: 20;
+  --background-primary-rgb: 255, 255, 255;
 
   /* Semantic aliases */
   --surface-page: var(--background-primary);

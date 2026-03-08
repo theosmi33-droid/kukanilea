@@ -24,7 +24,7 @@
 .input:hover,
 .select:hover,
 .textarea:hover {
-  border-color: #d1d5db;
+  border-color: var(--border-hover);
 }
 
 .input:focus,
