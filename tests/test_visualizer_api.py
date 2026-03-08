@@ -28,9 +28,11 @@ class TestVisualizerAPI(unittest.TestCase):
     def tearDown(self):
         self.tempdir.cleanup()
 
+    @patch('app.routes.visualizer._resolve_authorized_source')
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
     @patch('app.routes.visualizer.build_visualizer_payload')
-    def test_summary_endpoint_returns_heuristic_text(self, mock_build, _mock_allowed):
+    def test_summary_endpoint_returns_heuristic_text(self, mock_build, _mock_allowed, mock_resolve):
+        mock_resolve.return_value = self.file_path
         mock_build.return_value = {
             "kind": "sheet",
             "sheet": {"rows": 2, "cols": 2},
@@ -48,9 +50,11 @@ class TestVisualizerAPI(unittest.TestCase):
         self.assertEqual(data['model'], 'heuristic')
         self.assertEqual(data['source']['kind'], 'sheet')
 
+    @patch('app.routes.visualizer._resolve_authorized_source')
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
     @patch('app.routes.visualizer.build_visualizer_payload')
-    def test_summary_endpoint_includes_excel_analyzer(self, mock_build, _mock_allowed):
+    def test_summary_endpoint_includes_excel_analyzer(self, mock_build, _mock_allowed, mock_resolve):
+        mock_resolve.return_value = self.file_path
         mock_build.return_value = {
             "kind": "sheet",
             "sheet": {"rows": 2, "cols": 2},
@@ -75,9 +79,11 @@ class TestVisualizerAPI(unittest.TestCase):
         self.assertEqual(body['count'], 1)
         self.assertEqual(len(body['items']), 1)
 
+    @patch('app.routes.visualizer._resolve_authorized_source')
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
     @patch('app.routes.visualizer.build_visualizer_payload', None)
-    def test_summary_endpoint_degrades_when_backend_missing(self, _mock_allowed):
+    def test_summary_endpoint_degrades_when_backend_missing(self, _mock_allowed, mock_resolve):
+        mock_resolve.return_value = self.file_path
         response = self.client.post('/api/visualizer/summary', json={'source': self.source})
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.get_json()['error'], 'visualizer_logic_missing')
@@ -93,15 +99,19 @@ class TestVisualizerAPI(unittest.TestCase):
         self.assertEqual(body['count'], 1)
         self.assertEqual(len(body['items']), 1)
 
+    @patch('app.routes.visualizer._resolve_authorized_source')
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
     @patch('app.routes.visualizer.build_visualizer_payload', None)
-    def test_summary_endpoint_degrades_when_backend_missing(self, _mock_allowed):
+    def test_summary_endpoint_degrades_when_backend_missing(self, _mock_allowed, mock_resolve):
+        mock_resolve.return_value = self.file_path
         response = self.client.post('/api/visualizer/summary', json={'source': self.source})
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.get_json()['error'], 'visualizer_logic_missing')
 
+    @patch('app.routes.visualizer._resolve_authorized_source')
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
-    def test_render_endpoint_returns_structured_payload(self, _mock_allowed):
+    def test_render_endpoint_returns_structured_payload(self, _mock_allowed, mock_resolve):
+        mock_resolve.return_value = self.file_path
         response = self.client.get(f'/api/visualizer/render?source={self.source}&page=0')
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
