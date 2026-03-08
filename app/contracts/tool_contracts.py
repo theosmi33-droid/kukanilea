@@ -699,11 +699,33 @@ def _collect_calendar_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_time_summary(tenant: str) -> tuple[dict, dict, str]:
     time_entry_list = _core_get("time_entry_list")
-    entries = time_entry_list(tenant=tenant) if callable(time_entry_list) else []
-    running = sum(1 for e in entries if not e.get("ended_at")) if entries else 0
-    metrics = {"entries": len(entries), "running": running}
+    time_entry_billing_basis = _core_get("time_entries_billing_basis")
+    entries = time_entry_list(tenant_id=tenant, limit=500) if callable(time_entry_list) else []
+    billing_basis_entries = (
+        time_entry_billing_basis(tenant_id=tenant, limit=500)
+        if callable(time_entry_billing_basis)
+        else [
+            entry
+            for entry in entries
+            if entry.get("end_at")
+            and str(entry.get("entry_type") or "WORK").upper() == "WORK"
+            and str(entry.get("approval_status") or "").upper() == "APPROVED"
+            and int(entry.get("duration_seconds") or 0) > 0
+        ]
+    )
+    running = sum(1 for e in entries if not e.get("end_at")) if entries else 0
+    metrics = {
+        "entries": len(entries),
+        "running": running,
+        "billing_basis_entries": len(billing_basis_entries),
+        "billing_basis_seconds": sum(int(e.get("duration_seconds") or 0) for e in billing_basis_entries),
+    }
     reason = "time_tracking_unavailable" if not callable(time_entry_list) else ""
-    return metrics, {"source": "core.time_entry_list", "tenant": tenant}, reason
+    return metrics, {
+        "source": "core.time_entry_list",
+        "billing_basis_source": "core.time_entries_billing_basis",
+        "tenant": tenant,
+    }, reason
 
 
 def _collect_visualizer_summary(tenant: str) -> tuple[dict, dict, str]:

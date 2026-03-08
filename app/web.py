@@ -3777,6 +3777,7 @@ def api_time_export():
         )
     range_name = (request.args.get("range") or "week").strip().lower()
     date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
+    basis = (request.args.get("basis") or "all").strip().lower()
     user = (request.args.get("user") or "").strip()
     if current_role() not in {"ADMIN", "DEV"}:
         user = current_user() or ""
@@ -3786,6 +3787,7 @@ def api_time_export():
         user=user or None,
         start_at=start_at,
         end_at=end_at,
+        billing_basis_only=(basis == "billing"),
     )
     response = current_app.response_class(csv_payload, mimetype="text/csv")
     response.headers["Content-Disposition"] = "attachment; filename=time_entries.csv"

@@ -1771,6 +1771,36 @@ def time_entries_list(
             con.close()
 
 
+def time_entries_billing_basis(
+    *,
+    tenant_id: str,
+    user: Optional[str] = None,
+    start_at: Optional[str] = None,
+    end_at: Optional[str] = None,
+    limit: int = 2000,
+) -> List[Dict[str, Any]]:
+    """Return deterministic billable entries (closed, approved work only)."""
+    entries = time_entries_list(
+        tenant_id=tenant_id,
+        user=user,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    )
+    billable_entries: List[Dict[str, Any]] = []
+    for entry in entries:
+        if not entry.get("end_at"):
+            continue
+        if str(entry.get("entry_type") or "WORK").upper() != "WORK":
+            continue
+        if str(entry.get("approval_status") or "").upper() != "APPROVED":
+            continue
+        if int(entry.get("duration_seconds") or 0) <= 0:
+            continue
+        billable_entries.append(entry)
+    return billable_entries
+
+
 def time_entries_export_csv(
     *,
     tenant_id: str,
@@ -1778,13 +1808,24 @@ def time_entries_export_csv(
     start_at: Optional[str] = None,
     end_at: Optional[str] = None,
     limit: int = 2000,
+    billing_basis_only: bool = False,
 ) -> str:
-    entries = time_entries_list(
-        tenant_id=tenant_id,
-        user=user,
-        start_at=start_at,
-        end_at=end_at,
-        limit=limit,
+    entries = (
+        time_entries_billing_basis(
+            tenant_id=tenant_id,
+            user=user,
+            start_at=start_at,
+            end_at=end_at,
+            limit=limit,
+        )
+        if billing_basis_only
+        else time_entries_list(
+            tenant_id=tenant_id,
+            user=user,
+            start_at=start_at,
+            end_at=end_at,
+            limit=limit,
+        )
     )
     output = io.StringIO()
     writer = csv.writer(output)
