@@ -826,22 +826,6 @@ def _settings_action_read(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
-    setting_key = str(payload.get("key") or "").strip()
-    if not setting_key:
-        raise ValueError("key_required")
-    scope = str(payload.get("scope") or "tenant").strip()
-    value = payload.get("value")
-    value_type = type(value).__name__ if value is not None else "null"
-    return {
-        "updated": True,
-        "key": setting_key,
-        "scope": scope,
-        "value_type": value_type,
-        "audit": "settings.update.recorded",
-    }
-
-
 def _settings_action_rotate_key(payload: dict[str, object]) -> dict[str, object]:
     key_name = str(payload.get("key_name") or "mesh-signing-key").strip()
     return {
@@ -857,6 +841,7 @@ def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
     from app.routes.admin_tenants import _load_system_settings, _save_system_settings
 
     allowed_keys = {
+        "ui.theme",
         "language",
         "timezone",
         "backup_interval",
@@ -872,6 +857,7 @@ def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
         "briefing_cron",
     }
 
+    scope = str(payload.get("scope") or "tenant").strip()
     key = str(payload.get("key") or "").strip()
     if key not in allowed_keys:
         raise ValueError("setting_key_invalid")
@@ -879,7 +865,13 @@ def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
     settings = _load_system_settings()
     settings[key] = payload.get("value")
     _save_system_settings(settings)
-    return {"updated": key, "value": settings.get(key), "settings": settings}
+    return {
+        "updated": True,
+        "key": key,
+        "scope": scope,
+        "value": settings.get(key),
+        "settings": settings,
+    }
 
 
 SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
@@ -912,12 +904,39 @@ SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
             output_schema={
                 "type": "object",
                 "properties": {
-                    "updated": {"type": "string"},
+                    "updated": {"type": "boolean"},
+                    "key": {"type": "string"},
+                    "scope": {"type": "string"},
                     "value": {},
                     "settings": {"type": "object"},
                 },
             },
             handler=_settings_action_update,
+        ),
+        ActionDefinition(
+            name="key.rotate",
+            title="Schlüssel rotieren",
+            permission="write",
+            risk="high",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "key_name": {"type": "string"},
+                    "confirm": {"type": "string"},
+                    "approval_token": {"type": "string"},
+                },
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "blocked": {"type": "boolean"},
+                    "rotation_available": {"type": "boolean"},
+                    "key_name": {"type": "string"},
+                    "next_step": {"type": "string"},
+                    "message": {"type": "string"},
+                },
+            },
+            handler=_settings_action_rotate_key,
         ),
     ],
 )
