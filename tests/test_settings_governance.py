@@ -90,10 +90,11 @@ def test_license_upload_refreshes_runtime_state_and_writes_audit(monkeypatch, tm
         sess["user"] = "admin"
         sess["role"] = "ADMIN"
         sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "test-csrf"
 
     response = client.post(
         "/admin/settings/license/upload",
-        data={"license_json": '{"plan":"ENTERPRISE"}', "confirm": "YES"},
+        data={"license_json": '{"plan":"ENTERPRISE"}', "confirm": "YES", "csrf_token": "test-csrf"},
     )
     assert response.status_code in {302, 303}
     assert app.config["READ_ONLY"] is False
