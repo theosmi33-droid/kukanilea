@@ -72,7 +72,7 @@ def test_format_runs_contains_branch_workflow_and_url() -> None:
 def test_cli_actionable_mode_uses_fixture_inputs() -> None:
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "scripts/ops/actionable_failures.py",
             "--repo",
             "theosmi33-droid/kukanilea",
@@ -94,7 +94,7 @@ def test_cli_actionable_mode_uses_fixture_inputs() -> None:
 def test_cli_actionable_mode_handles_no_open_prs() -> None:
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "scripts/ops/actionable_failures.py",
             "--repo",
             "theosmi33-droid/kukanilea",
@@ -117,7 +117,7 @@ def test_cli_actionable_mode_handles_no_open_prs() -> None:
 def test_cli_all_mode_shows_all_entries() -> None:
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "scripts/ops/actionable_failures.py",
             "--all",
             "--failed-runs-json",

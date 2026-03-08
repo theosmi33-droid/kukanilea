@@ -48,6 +48,8 @@
       "app/templates/partials/",
       "app/templates/skeletons/",
       "app/static/css/design-system.css",
+      "app/static/css/components.css",
+      "app/static/css/system.css",
       "app/static/css/motion.css",
       "app/static/css/sovereign-shell.css",
       "app/static/css/shell-navigation.css",
@@ -56,6 +58,7 @@
       "app/static/js/data-table.js",
       "app/static/js/layout-shell.js",
       "app/static/js/navigation.js",
+      "app/static/js/tasks-performance.js",
       "app/static/js/ui-",
       "app/static/js/app.js"
     ],
