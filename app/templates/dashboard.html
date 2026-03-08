@@ -48,6 +48,7 @@
       </div>
       <div class="card-body">
         <div id="health-strip-summary" class="text-sm text-main mb-3">Status initialisiert…</div>
+        <p class="text-xs text-muted mb-2">Standardansicht zeigt nur Bereiche mit Handlungsbedarf.</p>
         <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
         <p class="text-xs text-muted mt-3 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
       </div>
@@ -383,15 +384,28 @@ function renderHealthStrip(summaryMap, appHealthOk) {
   const okCount = rows.filter((row) => row.status === "ok").length;
   const degradedCount = rows.filter((row) => row.status === "degraded").length;
   const downCount = rows.filter((row) => row.status === "down").length;
+  const focusRows = rows.filter((row) => row.status !== "ok");
 
   summary.className = `text-sm mb-3 ${appHealthOk ? "text-main" : "text-error"}`;
   summary.textContent = appHealthOk
     ? `${okCount} stabil · ${degradedCount} eingeschränkt · ${downCount} nicht erreichbar`
     : `Systemstatus ist eingeschränkt · ${okCount} stabil · ${degradedCount} eingeschränkt · ${downCount} nicht erreichbar`;
 
-  tools.innerHTML = rows.map((row) => `
-    <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${statusLabel(row.status)}</span>
-  `).join("");
+  if (!focusRows.length) {
+    tools.innerHTML = `<span class="badge border ${_statusTone("ok")}">Alle ${rows.length} Bereiche stabil</span>`;
+  } else {
+    const focusMarkup = focusRows.map((row) => `
+      <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${statusLabel(row.status)}</span>
+    `).join("");
+    const fullMarkup = rows.map((row) => `
+      <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${statusLabel(row.status)}</span>
+    `).join("");
+    tools.innerHTML = `${focusMarkup}
+      <details class="w-full mt-1">
+        <summary class="text-xs text-muted font-semibold cursor-pointer">Alle Bereiche anzeigen (${rows.length})</summary>
+        <div class="flex flex-wrap gap-2 mt-2">${fullMarkup}</div>
+      </details>`;
+  }
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
