@@ -242,11 +242,52 @@ document.addEventListener("DOMContentLoaded", function() {
             phase.textContent = "Schritt 2: KI-Analyse...";
             status.textContent = "Inhalte werden extrahiert...";
 
-            const check = setInterval(() => {
+            const VISIBLE_POLL_INTERVAL_MS = 1000;
+            const HIDDEN_POLL_INTERVAL_MS = 5000;
+            const ERROR_BACKOFF_BASE_MS = 2000;
+            const ERROR_BACKOFF_MAX_MS = 30000;
+            let progressPollRetryCount = 0;
+            let progressPollTimer = null;
+            let progressPollingStopped = false;
+
+            const stopProgressPolling = () => {
+              progressPollingStopped = true;
+              if (progressPollTimer) {
+                clearTimeout(progressPollTimer);
+                progressPollTimer = null;
+              }
+            };
+
+            const nextPollInterval = () => (
+              document.hidden ? HIDDEN_POLL_INTERVAL_MS : VISIBLE_POLL_INTERVAL_MS
+            );
+
+            const scheduleProgressPoll = (delayMs = nextPollInterval()) => {
+              if (progressPollingStopped) return;
+              if (progressPollTimer) clearTimeout(progressPollTimer);
+              progressPollTimer = setTimeout(runProgressPoll, delayMs);
+            };
+
+            const scheduleProgressPollAfterError = () => {
+              progressPollRetryCount += 1;
+              const errorDelay = Math.min(
+                ERROR_BACKOFF_BASE_MS * (2 ** (progressPollRetryCount - 1)),
+                ERROR_BACKOFF_MAX_MS
+              );
+              scheduleProgressPoll(Math.max(errorDelay, nextPollInterval()));
+            };
+
+            const runProgressPoll = () => {
+              if (progressPollingStopped) return;
               const pXhr = new XMLHttpRequest();
               pXhr.open("GET", "/api/progress?tokens=" + tokens.join(","), true);
               pXhr.onload = () => {
-                if(pXhr.status === 200){
+                if (pXhr.status !== 200) {
+                  scheduleProgressPollAfterError();
+                  return;
+                }
+
+                try {
                   const data = JSON.parse(pXhr.responseText);
                   let allDone = true;
                   let minP = 100;
@@ -257,8 +298,9 @@ document.addEventListener("DOMContentLoaded", function() {
                     if(d.progress < minP) minP = d.progress;
                   });
                   targetProgress = 35 + (minP * 0.65);
-                  if(allDone){
-                    clearInterval(check);
+
+                  if (allDone) {
+                    stopProgressPolling();
                     clearInterval(sim);
                     bar.style.width = "100%";
                     pLabel.textContent = "100%";
@@ -278,11 +320,25 @@ document.addEventListener("DOMContentLoaded", function() {
                         setTimeout(() => window.location.href = "/tasks?origin=upload", 800);
                       }
                     }
+                    return;
                   }
+
+                  progressPollRetryCount = 0;
+                  scheduleProgressPoll();
+                } catch (e) {
+                  scheduleProgressPollAfterError();
                 }
               };
+              pXhr.onerror = scheduleProgressPollAfterError;
               pXhr.send();
-            }, 1000);
+            };
+
+            document.addEventListener("visibilitychange", () => {
+              if (progressPollingStopped) return;
+              scheduleProgressPoll();
+            });
+
+            scheduleProgressPoll(0);
           } else {
             handleError("Upload angekommen, aber es wurden keine Dateien übernommen.");
           }
