@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -51,6 +52,26 @@ def _build_external_ack(challenge: str) -> dict:
     }
     signature = base64.b64encode(ext_priv.sign(_canonical_bytes(data))).decode("ascii")
     return {"data": data, "signature": signature, "algorithm": "ed25519"}
+
+
+def _build_external_init(*, challenge: str = "challenge-1", node_id: str | None = None) -> tuple[dict, str]:
+    ext_priv = Ed25519PrivateKey.generate()
+    ext_pub_raw = ext_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    ext_pub_b64 = base64.b64encode(ext_pub_raw).decode("ascii")
+    data = {
+        "purpose": HANDSHAKE_INIT_PURPOSE,
+        "node_id": node_id or compute_node_id(ext_pub_b64),
+        "name": "External Hub",
+        "public_key": ext_pub_b64,
+        "nonce": secrets.token_urlsafe(24),
+        "challenge": challenge,
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    signature = base64.b64encode(ext_priv.sign(_canonical_bytes(data))).decode("ascii")
+    return {"data": data, "signature": signature, "algorithm": "ed25519"}, ext_pub_b64
 
 
 def test_multi_hub_sync():
@@ -134,3 +155,57 @@ def test_multi_hub_sync():
 
 if __name__ == "__main__":
     test_multi_hub_sync()
+
+
+def test_mesh_handshake_endpoint_validates_envelope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from app import create_app
+
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+    monkeypatch.setattr(Config, "AUTH_DB", tmp_path / "auth.sqlite3")
+    monkeypatch.setattr(Config, "CORE_DB", tmp_path / "core.sqlite3")
+    monkeypatch.setattr(Config, "LICENSE_PATH", tmp_path / "license.json")
+    monkeypatch.setattr(Config, "TRIAL_PATH", tmp_path / "trial.json")
+
+    app = create_app()
+    app.config["TESTING"] = True
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        with auth_db._db() as con:
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS mesh_nodes(
+                    node_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_ip TEXT,
+                    last_seen TEXT,
+                    status TEXT DEFAULT 'OFFLINE',
+                    trust_level INTEGER DEFAULT 0
+                )
+                """
+            )
+            con.commit()
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+
+    good_envelope, ext_pub_b64 = _build_external_init(challenge="hello")
+    ok_resp = client.post("/api/mesh/handshake", json=good_envelope)
+    assert ok_resp.status_code == 200
+
+    bad_envelope, _ = _build_external_init(challenge="hello", node_id="HUB-FAKEFAKEFAKEFAKE")
+    bad_resp = client.post("/api/mesh/handshake", json=bad_envelope)
+    assert bad_resp.status_code == 401
+    assert bad_resp.get_json()["error"] == "node_key_mismatch"
+
+    with app.app_context():
+        auth_db = app.extensions["auth_db"]
+        with auth_db._db() as con:
+            row = con.execute(
+                "SELECT node_id, public_key FROM mesh_nodes WHERE public_key = ?",
+                (ext_pub_b64,),
+            ).fetchone()
+            assert row is not None
+            assert row["node_id"] == compute_node_id(ext_pub_b64)
