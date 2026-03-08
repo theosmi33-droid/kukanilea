@@ -225,3 +225,49 @@ def test_actions_read_action_remains_unchanged_without_idempotency_contract(tmp_
     body = response.get_json()
     assert body["ok"] is True
     assert "idempotent_replay" not in body
+
+
+def test_settings_actions_list_exposes_setting_update_with_approval(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    response = client.get("/api/settings/actions")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    actions = {item["name"]: item for item in data["actions"]}
+    assert "setting.read" in actions
+    assert "setting.update" in actions
+    assert actions["setting.update"]["confirm_required"] is True
+
+
+def test_settings_setting_update_requires_approval_and_persists(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    denied = client.post(
+        "/api/settings/actions/setting.update",
+        json={"key": "language", "value": "en"},
+    )
+    assert denied.status_code == 409
+    denied_json = denied.get_json()
+    assert denied_json["error"] == "approval_required"
+
+    token = denied_json["approval"]["approval_token"]
+    approved = client.post(
+        "/api/settings/actions/setting.update",
+        json={"key": "language", "value": "en", "approval_token": token},
+    )
+
+    assert approved.status_code == 200
+    body = approved.get_json()
+    assert body["ok"] is True
+    assert body["name"] == "setting.update"
+    assert body["result"]["updated"] == "language"
+    assert body["result"]["value"] == "en"
+
+    with app.app_context():
+        from app.routes.admin_tenants import _load_system_settings
+
+        settings = _load_system_settings()
+    assert settings["language"] == "en"

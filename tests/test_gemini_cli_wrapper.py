@@ -60,3 +60,41 @@ def test_main_rejects_empty_sanitized_output(monkeypatch: pytest.MonkeyPatch, ca
     captured = capsys.readouterr()
     assert rc == 1
     assert "empty output after sanitization" in captured.err
+
+
+
+def test_main_defaults_missing_skip_alignment(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr(
+        GEMINI_CLI,
+        "parse_args",
+        lambda: type(
+            "Args",
+            (),
+            {
+                "prompt": "x",
+                "prompt_file": None,
+                "domain": None,
+                "context_file": [],
+                "output": None,
+                "log": None,
+                "cwd": None,
+                "approval_mode": "default",
+                "raw": False,
+                "timeout_seconds": 1,
+                "model": None,
+                "extension": [],
+                "require_main": False,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        GEMINI_CLI,
+        "run_gemini",
+        lambda prompt, approval_mode, model, extensions, cwd, timeout_seconds: (0, "answer"),
+    )
+
+    rc = GEMINI_CLI.main()
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out == "answer\n"

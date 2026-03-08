@@ -30,6 +30,7 @@ def test_email_summary_reports_postfach_runtime_and_confirm_gate(auth_client):
     assert runtime["routes"]["legacy_summary"] is True
     assert runtime["routes"]["legacy_health"] is True
     assert runtime["routes"]["postfach_summary"] is True
+    assert runtime["routes"]["postfach_health"] is True
     assert runtime["routes"]["postfach_ingest"] is True
     assert runtime["routes"]["postfach_send"] is True
     assert runtime["confirm_gate"] is True

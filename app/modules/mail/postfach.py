@@ -83,6 +83,7 @@ class EmailpostfachService:
         self._inbox_provider_factory = inbox_provider_factory or (lambda _provider_name: StubInboxProvider())
         self._smtp_provider = smtp_provider or SMTPStubProvider()
         self._llm_draft_generator = llm_draft_generator
+        self.ensure_tables()
 
     def _db(self) -> sqlite3.Connection:
         con = sqlite3.connect(self._db_path)
@@ -93,7 +94,65 @@ class EmailpostfachService:
     def _now_iso() -> str:
         return datetime.now(UTC).isoformat()
 
+    def ensure_tables(self) -> None:
+        with self._db() as con:
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS emailpostfach_messages(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tenant_id TEXT NOT NULL,
+                  provider TEXT NOT NULL,
+                  provider_message_id TEXT NOT NULL,
+                  sender TEXT,
+                  subject TEXT,
+                  body TEXT,
+                  received_at TEXT NOT NULL,
+                  unread INTEGER NOT NULL DEFAULT 1,
+                  follow_up_due_at TEXT,
+                  updated_at TEXT NOT NULL,
+                  UNIQUE(tenant_id, provider, provider_message_id)
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS emailpostfach_drafts(
+                  id TEXT PRIMARY KEY,
+                  tenant_id TEXT NOT NULL,
+                  to_address TEXT NOT NULL,
+                  subject TEXT NOT NULL,
+                  body TEXT NOT NULL,
+                  triage_category TEXT,
+                  status TEXT NOT NULL DEFAULT 'draft',
+                  confirm_required INTEGER NOT NULL DEFAULT 1,
+                  created_by TEXT NOT NULL,
+                  updated_by TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS emailpostfach_audit(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ts TEXT NOT NULL,
+                  tenant_id TEXT NOT NULL,
+                  username TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  target TEXT NOT NULL,
+                  details TEXT
+                );
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emailpostfach_messages_tenant_unread ON emailpostfach_messages(tenant_id, unread);"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emailpostfach_audit_tenant_action_ts ON emailpostfach_audit(tenant_id, action, ts);"
+            )
+
     def ingest(self, *, tenant_id: str, provider_name: str, actor: str) -> dict[str, Any]:
+        self.ensure_tables()
         provider = self._inbox_provider_factory(provider_name)
         try:
             messages = provider.fetch_messages(tenant_id=tenant_id)
@@ -136,6 +195,7 @@ class EmailpostfachService:
         return {"status": "ok", "provider": provider_name, "inserted": inserted, "last_sync": self._now_iso()}
 
     def summary(self, *, tenant_id: str) -> dict[str, Any]:
+        self.ensure_tables()
         with self._db() as con:
             unread_row = con.execute(
                 "SELECT COUNT(*) AS c FROM emailpostfach_messages WHERE tenant_id=? AND unread=1", (tenant_id,)
@@ -170,6 +230,7 @@ class EmailpostfachService:
         }
 
     def create_draft(self, *, tenant_id: str, actor: str, message: dict[str, Any], use_llm: bool = False) -> dict[str, Any]:
+        self.ensure_tables()
         if use_llm and self._llm_draft_generator:
             draft = self._llm_draft_generator(message)
             draft["generator"] = "llm"
@@ -204,6 +265,7 @@ class EmailpostfachService:
         return {"id": draft_id, **draft, "to": to_address}
 
     def edit_draft(self, *, tenant_id: str, actor: str, draft_id: str, subject: str, body: str) -> dict[str, Any]:
+        self.ensure_tables()
         with self._db() as con:
             row = con.execute(
                 "SELECT id FROM emailpostfach_drafts WHERE id=? AND tenant_id=?", (draft_id, tenant_id)
@@ -228,6 +290,7 @@ class EmailpostfachService:
         return {"id": draft_id, "status": "edited", "confirm_required": True}
 
     def send_draft(self, *, tenant_id: str, actor: str, draft_id: str, confirm: bool) -> dict[str, Any]:
+        self.ensure_tables()
         if not confirm:
             return {"status": "blocked", "error": "explicit_confirm_required", "confirm_required": True}
 

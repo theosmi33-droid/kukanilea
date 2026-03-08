@@ -1,0 +1,34 @@
+[
+  {
+    "databaseId": 1001,
+    "workflowName": "KUKANILEA CI",
+    "headBranch": "main",
+    "displayTitle": "Merge pull request #538",
+    "createdAt": "2026-03-08T06:48:20Z",
+    "url": "https://example.invalid/runs/1001"
+  },
+  {
+    "databaseId": 1002,
+    "workflowName": "KUKANILEA CI",
+    "headBranch": "codex/active-pr-1",
+    "displayTitle": "feat: active work",
+    "createdAt": "2026-03-08T06:49:20Z",
+    "url": "https://example.invalid/runs/1002"
+  },
+  {
+    "databaseId": 1003,
+    "workflowName": "KUKANILEA CI",
+    "headBranch": "codex/old-closed-branch",
+    "displayTitle": "old branch failure",
+    "createdAt": "2026-03-08T06:50:20Z",
+    "url": "https://example.invalid/runs/1003"
+  },
+  {
+    "databaseId": 1004,
+    "workflowName": "KUKANILEA CI",
+    "headBranch": "",
+    "displayTitle": "missing branch",
+    "createdAt": "2026-03-08T06:51:20Z",
+    "url": "https://example.invalid/runs/1004"
+  }
+]
