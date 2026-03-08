@@ -8,6 +8,7 @@ def _read(path: str) -> str:
 def test_layout_has_no_inline_onload_in_shell_css_links() -> None:
     html = _read("app/templates/layout.html")
     assert 'onload="this.media=' not in html
+    assert "InterVariable.woff2" not in html
     assert '<link rel="preload" href="/static/css/toast.css" as="style">' in html
     assert '<link rel="preload" href="/static/css/motion.css" as="style">' in html
     assert '<link rel="stylesheet" href="/static/css/toast.css">' in html

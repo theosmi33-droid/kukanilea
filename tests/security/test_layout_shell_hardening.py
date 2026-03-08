@@ -22,3 +22,13 @@ def test_layout_preload_does_not_depend_on_onload_hacks() -> None:
     content = LAYOUT_PATH.read_text(encoding="utf-8")
     assert "rel=\"preload\"" in content
     assert "onload=" not in content
+
+
+def test_layout_does_not_preload_inter_font_directly() -> None:
+    content = LAYOUT_PATH.read_text(encoding="utf-8")
+    assert "InterVariable.woff2" not in content
+
+
+def test_layout_keeps_local_fonts_css_contract() -> None:
+    content = LAYOUT_PATH.read_text(encoding="utf-8")
+    assert '<link rel="stylesheet" href="/static/css/fonts.css">' in content
