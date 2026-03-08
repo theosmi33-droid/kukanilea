@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import secrets
 import time
-import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -257,12 +256,6 @@ def create_app() -> Flask:
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        content_type = str(response.headers.get("Content-Type") or "").lower()
-        if "text/html" in content_type and getattr(g, "csp_nonce", ""):
-            body = response.get_data(as_text=True)
-            script_pattern = re.compile(r"<script(?![^>]*\bnonce=)([^>]*)>", re.IGNORECASE)
-            body = script_pattern.sub(lambda m: f'<script nonce="{g.csp_nonce}"{m.group(1)}>', body)
-            response.set_data(body)
         return response
 
     app.register_blueprint(web.bp)
