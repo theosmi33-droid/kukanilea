@@ -1,0 +1,4 @@
+{"timestamp": "2026-03-07T21:35:25.952165+00:00", "type": "license_transition", "data": {"transition": "trial->grace", "status": "grace", "reason": "trial", "read_only": false, "plan": "TRIAL"}}
+{"timestamp": "2026-03-07T21:35:26.117056+00:00", "type": "license_transition", "data": {"transition": "trial->grace", "status": "grace", "reason": "trial", "read_only": false, "plan": "TRIAL"}}
+{"timestamp": "2026-03-07T21:35:26.251495+00:00", "type": "license_transition", "data": {"transition": "trial->grace", "status": "grace", "reason": "trial", "read_only": false, "plan": "TRIAL"}}
+{"timestamp": "2026-03-07T21:35:26.384796+00:00", "type": "license_transition", "data": {"transition": "trial->grace", "status": "grace", "reason": "trial", "read_only": false, "plan": "TRIAL"}}

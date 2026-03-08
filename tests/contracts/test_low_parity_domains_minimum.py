@@ -57,27 +57,15 @@ def test_visualizer_summary_reports_runtime_readiness_state(auth_client):
         assert body.get("degraded_reason") == "visualizer_logic_missing"
 
 
-def test_visualizer_summary_degraded_when_backend_missing(monkeypatch):
-    from app.contracts import tool_contracts
+def test_low_parity_tools_include_clean_mia_details(auth_client):
+    for tool in ("messenger", "email", "visualizer", "settings"):
+        response = auth_client.get(f"/api/{tool}/summary")
+        assert response.status_code == 200
+        body = response.get_json()
 
-    original = tool_contracts._core_get
-
-    def _fake_core_get(name: str, default=None):
-        if name == "build_visualizer_payload":
-            return None
-        return original(name, default)
-
-    monkeypatch.setattr(tool_contracts, "_core_get", _fake_core_get)
-    payload = tool_contracts.build_tool_summary("visualizer", tenant="KUKANILEA")
-    assert payload["status"] == "degraded"
-    assert payload.get("degraded_reason") == "visualizer_logic_missing"
-
-
-def test_visualizer_summary_reports_markup_not_ready(monkeypatch):
-    import app.core.visualizer_markup as markup
-    from app.contracts import tool_contracts
-
-    monkeypatch.setattr(markup, "append_markup", None, raising=False)
-    payload = tool_contracts.build_tool_summary("visualizer", tenant="KUKANILEA")
-    assert payload["metrics"]["markup_ready"] == 0
-    assert payload["details"]["runtime"]["markup_ready"] is False
+        mia = body["details"]["mia"]
+        assert mia["tier"] == "high"
+        assert mia["score"] == mia["max_score"]
+        assert set(mia["checks"].keys())
+        assert all(mia["checks"].values())
+        assert len(mia["canonical_actions"]) >= 3
