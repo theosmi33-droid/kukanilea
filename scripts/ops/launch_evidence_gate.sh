@@ -176,6 +176,12 @@ else
   run_cmd_gate "Health" "./scripts/ops/healthcheck.sh" "healthcheck passed" "healthcheck failed"
 fi
 
+if "$PYTHON" -c 'import playwright' >/dev/null 2>&1; then
+  record_result "E2E_Runtime" "PASS" "playwright.sync_api available"
+else
+  record_result "E2E_Runtime" "WARN" "playwright.sync_api unavailable (python e2e skipped by contract)"
+fi
+
 run_cmd_gate "Zero-CDN" "'$PYTHON' scripts/ops/verify_guardrails.py" "guardrails passed" "guardrails failed"
 
 DARK_PATTERN="dark:|themeToggle|classList\\.(add|toggle)\\((\"dark\"|'dark')\\)"

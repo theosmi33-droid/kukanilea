@@ -15,6 +15,7 @@
   <link rel="preload" href="/static/css/motion.css" as="style">
   <link rel="stylesheet" href="/static/css/toast.css">
   <link rel="stylesheet" href="/static/css/motion.css">
+  <link rel="stylesheet" href="/static/css/data-table.css">
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
   <script>
     (function () {
@@ -33,6 +34,7 @@
   <script src="/static/js/ui-shell.js" defer></script>
   <script src="/static/js/ui-feedback.js" defer></script>
   <script src="/static/js/layout-shell.js" defer></script>
+  <script src="/static/js/data-table.js" defer></script>
   <script>
     (function(){
       try {
@@ -52,13 +54,20 @@
   {% include 'partials/sidebar.html' %}
   <div id="mobile-sidebar-overlay" class="mobile-sidebar-overlay" hidden aria-hidden="true"></div>
 
-  <main class="main-content" id="app-main" tabindex="-1" aria-label="Seiteninhalt">
-    <h2 class="sr-only" id="main-content-heading">Hauptinhalt</h2>
+  <div class="app-shell" id="app-main-shell">
     {% include 'partials/topbar.html' %}
-    <div class="htmx-indicator-soft" aria-hidden="true"></div>
-    
-    <div id="main-content" hx-history-elt data-page-ready="1">
-      {% block content %}{% endblock %}
+
+    <div class="shell-grid" aria-labelledby="main-content-heading">
+      <main class="main-content" id="app-main" tabindex="-1" aria-label="Seiteninhalt">
+        <h2 class="sr-only" id="main-content-heading">Hauptinhalt</h2>
+        <div class="htmx-indicator-soft" aria-hidden="true"></div>
+
+        <div id="main-content" hx-history-elt data-page-ready="1">
+          {% block content %}{% endblock %}
+        </div>
+      </main>
+
+      <aside class="context-panel" id="context-panel" aria-label="Kontextbereich">{% block context_panel %}{% endblock %}</aside>
     </div>
 
     <!-- Mobile Bottom Navigation (Task 5) -->
@@ -80,7 +89,7 @@
         <span>Chat</span>
       </a>
     </nav>
-  </main>
+  </div>
 
   {% include 'partials/ki_chat_widget.html' %}
 

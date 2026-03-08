@@ -1,0 +1,17 @@
+.card {
+  background: var(--surface-page);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-1);
+  padding: var(--space-6);
+}
+
+.card--interactive {
+  transition: box-shadow var(--duration-base) var(--ease-standard),
+    transform var(--duration-base) var(--ease-standard);
+}
+
+.card--interactive:hover {
+  box-shadow: var(--elevation-2);
+  transform: translateY(-1px);
+}

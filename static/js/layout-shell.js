@@ -80,9 +80,62 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
+
+
+  const sidebarRouteOrder = ['/dashboard', '/visualizer', '/assistant', '/upload', '/tasks', '/system-logs', '/settings'];
+  const quickNavigate = (index) => {
+    const target = sidebarRouteOrder[index];
+    if (target) window.location.href = target;
+  };
+
+  const initKeyboardNavigation = () => {
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        const searchInput = document.getElementById('topbar-search');
+        if (searchInput) {
+          event.preventDefault();
+          searchInput.focus();
+          searchInput.select?.();
+        }
+      }
+
+      if (event.altKey && /^[1-7]$/.test(event.key)) {
+        event.preventDefault();
+        quickNavigate(Number(event.key) - 1);
+      }
+
+      if (event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+        const links = Array.from(document.querySelectorAll('#sidebar-primary-nav .nav-link'));
+        if (!links.length) return;
+        event.preventDefault();
+        const activeElement = document.activeElement;
+        let idx = links.indexOf(activeElement);
+        if (idx < 0) {
+          idx = links.findIndex((l) => l.classList.contains('active'));
+        }
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        const nextIdx = (idx + delta + links.length) % links.length;
+        links[nextIdx].focus();
+      }
+    });
+
+    const topbarSearch = document.getElementById('topbar-search');
+    if (topbarSearch) {
+      topbarSearch.addEventListener('focus', () => {
+        if (window.CommandPalette?.open) window.CommandPalette.open();
+      });
+      topbarSearch.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (window.CommandPalette?.open) window.CommandPalette.open();
+        }
+      });
+    }
+  };
   const initializeUi = () => {
     updateSidebarLabel();
     updateActiveRoutes();
+    initKeyboardNavigation();
     const chatToggle = document.getElementById('ki-chat-toggle');
     if (chatToggle) {
       chatToggle.addEventListener('click', () => toggleChat());
