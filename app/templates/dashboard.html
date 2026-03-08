@@ -30,7 +30,7 @@
     </div>
   </section>
 
-  <section class="grid grid-cols-1 lg:grid-cols-3 gap-6" aria-label="Speed-to-Lead und Systemgesundheit">
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Speed-to-Lead und Systemgesundheit">
     <article class="card border-light" id="speed-to-lead-widget">
       <div class="card-header border-light">
         <h2 class="card-title text-base">Speed-to-Lead</h2>
@@ -50,23 +50,6 @@
         <div id="health-strip-summary" class="text-sm text-main mb-3">Status initialisiert…</div>
         <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
         <p class="text-xs text-muted mt-3 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
-      </div>
-    </article>
-
-    <article class="card border-light" id="daily-briefing-widget">
-      <div class="card-header border-light">
-        <h2 class="card-title text-base">Daily Briefing</h2>
-        <span class="text-[10px] font-bold text-muted uppercase tracking-wider">{{ briefing.generated_at or 'lokal' }}</span>
-      </div>
-      <div class="card-body">
-        <p class="text-sm text-main">{{ briefing.summary if briefing else 'Noch kein Briefing verfügbar.' }}</p>
-        <ul class="text-xs text-muted" style="padding-left: 16px; margin: 10px 0 0 0; display: grid; gap: 6px;">
-          {% for link in (briefing.links if briefing else [])[:6] %}
-          <li>
-            {% if link.url %}<a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.title }}</a>{% else %}{{ link.title }}{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
       </div>
     </article>
   </section>
@@ -153,11 +136,10 @@
                 </table>
             </div>
             {% else %}
-            <div class="p-16 text-center">
-                <div class="text-neutral-200 mb-4 flex justify-center">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-                </div>
-                <p class="text-muted text-sm">Noch keine archivierten Belege vorhanden.</p>
+            <div class="p-6">
+                {% with kicker="Archiv", title="Noch keine Belege im Archiv", message="Sobald Uploads abgeschlossen sind, sehen Sie hier die letzten Dokumente.", tone_class="border-light bg-subtle", ctas=[{"href":"/upload", "label":"Jetzt Upload starten", "class":"btn-primary btn-sm"}] %}
+                  {% include "components/state_panel.html" %}
+                {% endwith %}
             </div>
             {% endif %}
         </div>
@@ -186,12 +168,10 @@
                 </div>
                 {% endfor %}
             {% else %}
-                <div class="p-16 text-center">
-                    <div class="text-success mb-4 flex justify-center opacity-30">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
-                    </div>
-                    <p class="text-main font-bold">Alles erledigt!</p>
-                    <p class="text-muted text-xs mt-1">Keine Dokumente warten auf Ihre Freigabe.</p>
+                <div class="p-6">
+                    {% with kicker="Review", title="Review-Postkorb ist leer", message="Aktuell wartet kein Dokument auf Freigabe.", tone_class="border-success/20 bg-success-bg", kicker_class="text-success", ctas=[{"href":"/upload", "label":"Neue Dokumente hinzufügen", "class":"btn-primary btn-sm"}] %}
+                      {% include "components/state_panel.html" %}
+                    {% endwith %}
                 </div>
             {% endif %}
         </div>
@@ -236,11 +216,7 @@ function renderToolMatrix(payload) {
     const borderColor = isOk ? "var(--success)" : (isDegraded ? "var(--warning)" : "var(--error)");
     const bgClass = isOk ? "bg-success-bg" : (isDegraded ? "bg-warning-bg" : "bg-error-bg");
     
-    const reasonText = tool.degraded_reason === "summary_unreachable"
-      ? "Status momentan verzögert"
-      : (tool.degraded_reason || "");
-    const reason = reasonText ? `<div class="text-[10px] text-muted mt-1 leading-tight">${reasonText}</div>` : "";
-    const label = isOk ? "Betriebsbereit" : (isDegraded ? "Eingeschränkt" : "Nicht verfügbar");
+    const reason = tool.degraded_reason ? `<div class="text-[10px] text-muted mt-1 leading-tight">${humanizeDegradedReason(tool.degraded_reason)}</div>` : "";
     
     return `
     <article class="card card-tight border-light" style="border-left: 4px solid ${borderColor};">
@@ -319,6 +295,22 @@ function executeOptimizerActions(signals, targetActions = 2200) {
   }
 }
 
+
+function humanizeDegradedReason(reason) {
+  const labels = {
+    summary_unreachable: "Live-Daten aktuell nicht erreichbar",
+    timeout: "Antwort dauert länger als erwartet",
+    unknown: "Vorübergehend eingeschränkter Dienst",
+  };
+  return labels[String(reason || "")] || "Vorübergehend eingeschränkter Dienst";
+}
+
+function statusLabel(status) {
+  if (status === "ok") return "stabil";
+  if (status === "degraded") return "eingeschränkt";
+  return "nicht erreichbar";
+}
+
 const DASHBOARD_TOOLS = [
   "dashboard", "upload", "projects", "tasks", "messenger", "email", "calendar", "time", "visualizer", "settings", "chatbot",
 ];
@@ -386,11 +378,11 @@ function renderHealthStrip(summaryMap, appHealthOk) {
 
   summary.className = `text-sm mb-3 ${appHealthOk ? "text-main" : "text-error"}`;
   summary.textContent = appHealthOk
-    ? `${okCount} Bereiche stabil · ${degradedCount} eingeschränkt · ${downCount} nicht verfügbar`
-    : `Systemcheck verzögert · ${okCount} Bereiche stabil · ${degradedCount} eingeschränkt · ${downCount} nicht verfügbar`;
+    ? `${okCount} stabil · ${degradedCount} eingeschränkt · ${downCount} nicht erreichbar`
+    : `Systemstatus ist eingeschränkt · ${okCount} stabil · ${degradedCount} eingeschränkt · ${downCount} nicht erreichbar`;
 
   tools.innerHTML = rows.map((row) => `
-    <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${row.status}</span>
+    <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${statusLabel(row.status)}</span>
   `).join("");
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
@@ -426,7 +418,11 @@ async function loadSpeedToLeadAndHealth() {
   healthRefreshInFlight = true;
   try {
     const settled = await Promise.allSettled(DASHBOARD_TOOLS.map((tool) => _fetchToolSummary(tool)));
-    const summaryPairs = settled.map((item) => item.value);
+    const summaryPairs = settled.map((item, index) => {
+      if (item.status === "fulfilled" && Array.isArray(item.value)) return item.value;
+      const tool = DASHBOARD_TOOLS[index];
+      return [tool, { tool, status: "degraded", degraded_reason: "summary_unreachable", metrics: {}, updated_at: null }];
+    });
     const summaryMap = Object.fromEntries(summaryPairs);
 
     let appHealthOk = false;
@@ -461,7 +457,7 @@ async function loadToolMatrix() {
     renderAlertDigest(signals);
     executeOptimizerActions(signals, 2200);
     const updated = document.getElementById("tool-contract-updated");
-    if (updated) updated.textContent = 'Verbindung wird erneut aufgebaut';
+    if (updated) updated.textContent = 'Live-Daten derzeit nicht verfügbar';
   } finally {
     matrixRefreshInFlight = false;
   }
