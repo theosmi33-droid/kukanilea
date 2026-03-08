@@ -2,20 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+source "$ROOT/scripts/ai/runtime/lib_main_only.sh"
 cd "$ROOT"
 
 echo "[preflight] repo=$ROOT"
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 echo "[preflight] branch=$CURRENT_BRANCH"
 
-# Main-only policy: never auto-switch branches.
-if [[ "$CURRENT_BRANCH" != "main" ]]; then
-  echo "[error] main-only policy active: current branch is '$CURRENT_BRANCH' (expected 'main')." >&2
-  exit 2
-fi
-
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "[error] working tree has local changes. commit/stash first for clean main-only execution." >&2
+if ! main_only_preflight "$ROOT"; then
   exit 2
 fi
 

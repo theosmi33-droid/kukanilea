@@ -4,6 +4,21 @@
 {% block content %}
 <div class="page-container p-6 flex flex-column gap-6" id="project-hub" data-board-id="{{ board.id }}" data-project-id="{{ project.id }}">
 
+  {% if projects_degraded %}
+  <section class="card border-light" style="border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.08);">
+    <div class="card-body p-4 flex justify-between items-start gap-3 flex-wrap">
+      <div>
+        <div class="text-xs font-black uppercase tracking-widest text-warning">Eingeschränkter Betrieb</div>
+        <div class="text-sm text-main">Das Projektboard konnte nicht vollständig geladen werden. Die Ansicht bleibt verfügbar, bis alle Daten wieder bereit sind.</div>
+      </div>
+      <div class="flex gap-2">
+        <a href="/projects" class="btn btn-secondary btn-sm">Neu laden</a>
+        <a href="/tasks" class="btn btn-ghost btn-sm">Zu Aufgaben</a>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   {% if request.args.get('origin') in ['upload', 'tasks'] %}
   <section class="card border-light bg-subtle">
     <div class="card-body p-4 flex justify-between items-center gap-3 flex-wrap">
@@ -48,8 +63,23 @@
 
   <!-- 2. Board Status -->
   <div class="status-bar h-6 flex items-center px-2">
-      <div id="status-line" class="text-[11px] font-medium text-muted italic">Bereit.</div>
+      <div id="status-line" class="text-[11px] font-medium text-muted italic">Board startet…</div>
   </div>
+
+  {% if degraded_state %}
+  <section class="card border-warning/30 bg-warning-bg">
+    <div class="card-body p-4 flex justify-between items-center gap-3 flex-wrap">
+      <div>
+        <div class="text-xs font-black uppercase tracking-widest text-warning">Eingeschränkter Modus</div>
+        <div class="text-sm text-main">{{ degraded_state }}</div>
+      </div>
+      <div class="flex gap-2">
+        <a href="/projects" class="btn btn-secondary btn-sm">Neu laden</a>
+        <a href="/tasks" class="btn btn-ghost btn-sm">Zu Aufgaben</a>
+      </div>
+    </div>
+  </section>
+  {% endif %}
 
   <!-- 3. Kanban Area -->
   <div class="kanban-outer-wrap overflow-x-auto pb-6 -mx-6 px-6">
@@ -71,6 +101,14 @@
         <div class="cards flex flex-column gap-3 flex-1" data-column-id="{{ col.id }}"></div>
       </article>
       {% endfor %}
+
+      {% if not columns %}
+      <div style="width: min(560px, 90vw);">
+        {% with kicker="Projektboard", title="Noch keine Spalten vorhanden", message="Legen Sie Ihre erste Spalte an, um Aufgaben zu planen.", tone_class="border-light bg-subtle", ctas=[{"href":"#", "label":"Erste Spalte anlegen", "class":"btn-primary btn-sm", "id":"focus-new-column"}, {"href":"/tasks", "label":"Aufgaben öffnen", "class":"btn-secondary btn-sm"}] %}
+          {% include "components/state_panel.html" %}
+        {% endwith %}
+      </div>
+      {% endif %}
 
       <div class="flex flex-column gap-4" style="width: 320px;">
           <input id="new-col-name" class="input font-bold text-sm" type="text" placeholder="Spaltenname...">
@@ -163,7 +201,7 @@
   function openDrawer() { document.getElementById('detail-drawer').classList.remove('translate-x-full'); }
 
   function esc(v) { return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-  function setStatus(m, e) { statusLine.textContent = m; statusLine.className = e ? "text-error" : "text-muted"; }
+  function setStatus(m, e) { statusLine.textContent = m; statusLine.className = e ? "text-error text-[11px] font-medium italic" : "text-muted text-[11px] font-medium italic"; }
 
   async function api(url, method="GET", payload=null) {
     const res = await fetch(url, {
@@ -171,7 +209,7 @@
       body: payload ? JSON.stringify(payload) : null, credentials: "same-origin"
     });
     const d = await res.json().catch(()=>({}));
-    if (!res.ok || !d.ok) throw new Error(d.error || `Error ${res.status}`);
+    if (!res.ok || !d.ok) throw new Error(d.error || "Aktion konnte nicht abgeschlossen werden.");
     return d;
   }
 
@@ -179,7 +217,8 @@
     document.querySelectorAll(".cards").forEach(el => {
       el.innerHTML = "";
       const colId = el.dataset.columnId;
-      state.cards.filter(c => c.column_id === colId).sort((a,b)=>a.position-b.position).forEach(card => {
+      const cardsInColumn = state.cards.filter(c => c.column_id === colId).sort((a,b)=>a.position-b.position);
+      cardsInColumn.forEach(card => {
         const cEl = document.createElement("div");
         cEl.className = "card card-drag p-4 border-light shadow-sm hover:border-primary-300";
         cEl.draggable = true;
@@ -193,8 +232,14 @@
         cEl.ondragend = () => { state.draggedCardId = null; cEl.classList.remove("dragging"); };
         el.appendChild(cEl);
       });
+      if (!cardsInColumn.length) {
+        const emptyState = document.createElement("div");
+        emptyState.className = "rounded-xl border border-dashed border-neutral-200 p-4 text-center text-xs text-muted bg-white";
+        emptyState.innerHTML = "<strong style='display:block; margin-bottom:4px; color:var(--color-text-main);'>Keine Aufgaben in dieser Spalte</strong>Nutzen Sie \"Neu\", um den nächsten Schritt festzuhalten.";
+        el.appendChild(emptyState);
+      }
       const count = el.closest(".lane").querySelector("[data-count]");
-      if (count) count.textContent = el.children.length;
+      if (count) count.textContent = cardsInColumn.length;
     });
   }
 
@@ -226,14 +271,16 @@
     state.cards = d.state.cards || [];
     state.activities = d.state.activities || [];
     renderCards();
+    setStatus("Board ist bereit.", false);
   }
 
   window.openDrawer = openDrawer;
   window.closeDrawer = closeDrawer;
 
   document.getElementById("create-card-btn-top").onclick = () => {
+      setStatus("Neue Aufgabe wird angelegt…", false);
       const t = prompt("Titel der neuen Karte?");
-      if(t) api("/api/projects/cards", "POST", {board_id: state.boardId, column_id: state.columns[0]?.id, title: t}).then(refreshState);
+      if(t) api("/api/projects/cards", "POST", {board_id: state.boardId, column_id: state.columns[0]?.id, title: t}).then(refreshState).then(()=>setStatus("Aufgabe angelegt.", false)).catch(()=>setStatus("Aufgabe konnte nicht angelegt werden.", true));
   };
   document.getElementById("save-card-btn").onclick = () => {
       const c = state.cards.find(x => x.id === state.selectedCardId);
@@ -243,12 +290,23 @@
           description: document.getElementById("sel-description").value,
           due_date: document.getElementById("sel-due").value,
           assignee: document.getElementById("sel-assignee").value
-      }).then(refreshState).then(()=>setStatus("Gespeichert."));
+      }).then(refreshState).then(()=>setStatus("Änderungen gespeichert.", false)).catch(()=>setStatus("Änderungen konnten nicht gespeichert werden.", true));
   };
 
   state.columns = {{ columns|tojson }};
   state.cards = {{ cards|tojson }};
   state.activities = {{ activities|tojson }};
+
+  const focusNewColumnBtn = document.getElementById("focus-new-column");
+  if (focusNewColumnBtn) {
+    focusNewColumnBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      const input = document.getElementById("new-col-name");
+      if (input) input.focus();
+      setStatus("Namen eingeben und Spalte hinzufügen.", false);
+    });
+  }
+
   renderCards();
 })();
 </script>
