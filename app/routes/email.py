@@ -19,6 +19,19 @@ logger = logging.getLogger("kukanilea.email")
 bp = Blueprint("email", __name__)
 
 
+def _json_object_payload() -> dict:
+    payload = request.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _sla_hours_arg(default: int = 24) -> int:
+    raw_value = request.args.get("sla_hours", default)
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _postfach_service() -> EmailpostfachService:
     auth_db = current_app.extensions["auth_db"]
 
@@ -54,7 +67,7 @@ def email_page():
 @login_required
 @csrf_protected
 def api_mail_draft():
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object_payload()
     try:
         message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
         draft = generate_reply_draft(message, read_only_default=True, external_api_enabled=False)
@@ -68,7 +81,7 @@ def api_mail_draft():
 @login_required
 @csrf_protected
 def api_mail_triage():
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object_payload()
     message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
     result = classify_message(message)
     return jsonify(ok=True, triage=result.__dict__)
@@ -78,7 +91,7 @@ def api_mail_triage():
 @login_required
 @csrf_protected
 def api_mail_draft_generate():
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object_payload()
     message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
     draft = generate_reply_draft(message, read_only_default=True, external_api_enabled=False)
     return jsonify(ok=True, draft=draft)
@@ -88,7 +101,7 @@ def api_mail_draft_generate():
 @login_required
 def api_mail_summary():
     tenant = str(current_tenant() or "default")
-    sla_hours = int(request.args.get("sla_hours", 24))
+    sla_hours = _sla_hours_arg()
     return jsonify(build_mail_summary(tenant, messages=[], sla_hours=sla_hours))
 
 
@@ -96,7 +109,7 @@ def api_mail_summary():
 @login_required
 def api_mail_health():
     tenant = str(current_tenant() or "default")
-    sla_hours = int(request.args.get("sla_hours", 24))
+    sla_hours = _sla_hours_arg()
     payload, code = build_mail_health(tenant, messages=[], sla_hours=sla_hours)
     return jsonify(payload), code
 
