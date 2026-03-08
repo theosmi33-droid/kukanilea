@@ -17,3 +17,8 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
 - Thin PR: **FAIL**
 - Solid PR: **PASS**
 - Overlap PR: **FAIL**
+
+## 2026-03-08 Addendum
+- Case: Layout-only hardening (`app/templates/layout.html`) to remove unused font preload warning.
+- Initial result: **FAIL** (MIN_SCOPE, MIN_TESTS).
+- Normalized result: **PASS target** after adding focused regression tests and evidence docs without widening runtime scope.
