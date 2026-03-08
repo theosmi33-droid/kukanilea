@@ -906,7 +906,7 @@ SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
         ActionDefinition(
             name="setting.update",
             title="Einstellung aktualisieren",
-            permission="write",
+            permission="admin",
             risk="medium",
             input_schema={
                 "type": "object",
