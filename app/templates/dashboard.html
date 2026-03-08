@@ -38,6 +38,7 @@
       </div>
       <div class="card-body">
         <div id="speed-to-lead-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+        <div id="speed-to-lead-state" class="mt-3"></div>
         <p class="text-xs text-muted mt-3 mb-0">Quelle: Nur Contract-Endpoints <code>/api/&lt;tool&gt;/summary</code>.</p>
       </div>
     </article>
@@ -49,6 +50,7 @@
       <div class="card-body">
         <div id="health-strip-summary" class="text-sm text-main mb-3">Status initialisiert…</div>
         <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
+        <div id="health-strip-state" class="mt-3"></div>
         <p class="text-xs text-muted mt-3 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
       </div>
     </article>
@@ -329,10 +331,56 @@ function _statusTone(status) {
   return "bg-error-bg text-error border-error/20";
 }
 
+function _stateIllustration(kind = "empty") {
+  if (kind === "error") {
+    return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><circle cx="12" cy="16" r=".8" fill="currentColor"/></svg>`;
+  }
+  if (kind === "loading") {
+    return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M21 3v6h-6"/></svg>`;
+  }
+  return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="8" height="6" rx="1"/><rect x="13" y="4" width="8" height="6" rx="1"/><rect x="8" y="14" width="8" height="6" rx="1"/></svg>`;
+}
+
+function _renderState(container, { kind = "empty", title = "", instructions = "", actions = [] } = {}) {
+  if (!container) return;
+  const palette = kind === "error"
+    ? "border-error/20 bg-error-bg text-error"
+    : (kind === "loading" ? "border-light bg-subtle text-muted" : "border-warning/20 bg-warning-bg text-main");
+  const actionsHtml = actions.map((action) => {
+    const href = action.href || "#";
+    const label = action.label || "Öffnen";
+    return `<a href="${href}" class="btn btn-secondary btn-xs">${label}</a>`;
+  }).join("");
+  container.innerHTML = `<section class="rounded-xl border p-4 ${palette}">
+    <div class="flex items-start gap-3">
+      <div class="shrink-0">${_stateIllustration(kind)}</div>
+      <div class="grow min-w-0">
+        <div class="font-bold text-sm">${title}</div>
+        <div class="text-xs mt-1">${instructions}</div>
+        ${actionsHtml ? `<div class="mt-3 flex flex-wrap gap-2">${actionsHtml}</div>` : ""}
+      </div>
+    </div>
+  </section>`;
+}
+
+function renderLoadingStates() {
+  _renderState(document.getElementById("speed-to-lead-state"), {
+    kind: "loading",
+    title: "Kennzahlen werden geladen",
+    instructions: "Die Speed-to-Lead-Werte werden vorbereitet.",
+  });
+  _renderState(document.getElementById("health-strip-state"), {
+    kind: "loading",
+    title: "Systemstatus wird geladen",
+    instructions: "Tool- und Gesundheitsdaten werden aktualisiert.",
+  });
+}
+
 function renderSpeedToLead(summaryMap) {
   const container = document.getElementById("speed-to-lead-cards");
+  const state = document.getElementById("speed-to-lead-state");
   const updated = document.getElementById("speed-to-lead-updated");
-  if (!container || !updated) return;
+  if (!container || !updated || !state) return;
 
   const emailPending = Number(summaryMap.email?.metrics?.pending_threads || summaryMap.email?.metrics?.inbox_unread || 0);
   const messengerPending = Number(summaryMap.messenger?.metrics?.pending_conversations || summaryMap.messenger?.metrics?.unread_threads || 0);
@@ -356,6 +404,12 @@ function renderSpeedToLead(summaryMap) {
       <div class="text-sm font-bold text-main">Kennzahlen werden vorbereitet</div>
       <div class="text-xs text-muted mt-1">Die Übersicht bleibt nutzbar. Werte werden nachgeladen, sobald die Quellen antworten.</div>
     </article>`;
+    _renderState(state, {
+      kind: "empty",
+      title: "No agents running",
+      instructions: "Es sind noch keine Agent- und Kommunikationsdaten verfügbar.",
+      actions: [{ href: "/settings", label: "Create Agent" }],
+    });
     updated.textContent = "Wird aktualisiert…";
     return;
   }
@@ -367,14 +421,16 @@ function renderSpeedToLead(summaryMap) {
       ${tile.hint ? `<div class="text-[10px] text-muted mt-1">${tile.hint}</div>` : ""}
     </article>
   `).join("");
+  state.innerHTML = "";
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 function renderHealthStrip(summaryMap, appHealthOk) {
   const summary = document.getElementById("health-strip-summary");
   const tools = document.getElementById("health-strip-tools");
+  const state = document.getElementById("health-strip-state");
   const updated = document.getElementById("health-strip-updated");
-  if (!summary || !tools || !updated) return;
+  if (!summary || !tools || !updated || !state) return;
 
   const rows = DASHBOARD_TOOLS.map((tool) => {
     const status = String(summaryMap[tool]?.status || "down").replace("error", "down");
@@ -392,6 +448,25 @@ function renderHealthStrip(summaryMap, appHealthOk) {
   tools.innerHTML = rows.map((row) => `
     <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${statusLabel(row.status)}</span>
   `).join("");
+
+  if (!appHealthOk || downCount > 0) {
+    _renderState(state, {
+      kind: "error",
+      title: "Eingeschränkt verfügbar",
+      instructions: "Ein Teil der Services ist aktuell nicht erreichbar. Dashboard bleibt bedienbar.",
+      actions: [{ href: "/settings", label: "System prüfen" }],
+    });
+  } else if (degradedCount > 0) {
+    _renderState(state, {
+      kind: "empty",
+      title: "Teilweise eingeschränkt",
+      instructions: "Einzelne Tools liefern gerade reduzierte Daten.",
+      actions: [{ href: "/dashboard", label: "Neu laden" }],
+    });
+  } else {
+    state.innerHTML = "";
+  }
+
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
@@ -473,6 +548,7 @@ async function loadToolMatrix() {
 
 // Initial Load
 document.addEventListener("DOMContentLoaded", () => {
+    renderLoadingStates();
     loadToolMatrix();
     loadSpeedToLeadAndHealth();
     setInterval(loadToolMatrix, REFRESH_INTERVAL_MS);
