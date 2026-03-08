@@ -36,5 +36,9 @@ def admin_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         sess["user"] = "admin"
         sess["role"] = "ADMIN"
         sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "csrf-test"
+
+    # Default CSRF header for security tests that exercise non-CSRF gates.
+    client.environ_base["HTTP_X_CSRF_TOKEN"] = "csrf-test"
 
     return app, client
