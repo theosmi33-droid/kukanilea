@@ -144,3 +144,51 @@ def test_news_summary_online_with_confirm_uses_connector(tmp_path, monkeypatch):
     assert body["provenance"]["mode"] == "online"
     assert body["sources"][0]["title"] == "Live News A"
     assert connector.calls == 1
+
+
+def test_research_summary_note_uses_tenant_scoped_db_path(tmp_path, monkeypatch):
+    app, client = _bootstrap(tmp_path, monkeypatch)
+    tenant_db = tmp_path / "tenant_core.sqlite3"
+    with client.session_transaction() as sess:
+        sess["tenant_id"] = "TENANT_B"
+        sess["tenant_db_path"] = str(tenant_db)
+
+    _write_cache(
+        tmp_path / "research_cache.json",
+        [
+            {
+                "topic": "research",
+                "query": "isolation",
+                "title": "Tenant Scoped Source",
+                "excerpt": "Tenant-specific note",
+                "source": "cache:local",
+                "fetched_at": "2026-01-01T00:00:00Z",
+            }
+        ],
+    )
+
+    response = client.post("/api/research/summary", json={"query": "isolation", "online": False})
+
+    assert response.status_code == 200
+
+    con = sqlite3.connect(str(tenant_db))
+    try:
+        row = con.execute(
+            "SELECT tenant_id, title FROM ai_summary_notes ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        con.close()
+
+    assert row is not None
+    assert row[0] == "TENANT_B"
+    assert "Research summary" in str(row[1])
+
+    con = sqlite3.connect(str(app.config["CORE_DB"]))
+    try:
+        row = con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_summary_notes'"
+        ).fetchone()
+    finally:
+        con.close()
+
+    assert row is None

@@ -103,10 +103,27 @@ def _resolve_cache_store() -> CachedSourceStore:
     )
 
 
+def _resolve_core_db_path() -> str:
+    session_db_path = session.get("tenant_db_path")
+    if session_db_path:
+        return str(session_db_path)
+
+    try:
+        from app.core import logic as core_logic
+
+        db_path = getattr(core_logic, "DB_PATH", None)
+        if db_path:
+            return str(db_path)
+    except Exception:
+        pass
+
+    return str(current_app.config["CORE_DB"])
+
+
 def _store_summary_note(*, tenant_id: str, owner_user_id: str, title: str, body: str, metadata: dict[str, Any]) -> dict[str, Any]:
     note_id = f"sum-{uuid.uuid4().hex[:16]}"
     now = _now_iso()
-    db_path = str(current_app.config["CORE_DB"])
+    db_path = _resolve_core_db_path()
     with sqlite3.connect(db_path) as con:
         con.execute(
             """
