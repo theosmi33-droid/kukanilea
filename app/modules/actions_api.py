@@ -152,7 +152,8 @@ class ActionApiTemplate:
         try:
             require_permission(action.permission)
         except PermissionDeniedError:
-            return json_error("forbidden", "Nicht erlaubt.", status=403).get_json(), 403
+            response, status = json_error("forbidden", "Nicht erlaubt.", status=403)
+            return response.get_json(), status
 
         payload = req.get_json(silent=True) or {}
         if not isinstance(payload, dict):

@@ -18,8 +18,14 @@ with patch('app.auth.login_required', _mock_login_required):
 class TestVisualizerAPI(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
+        self.app.secret_key = "test-secret"
         self.app.register_blueprint(visualizer.bp)
         self.client = self.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["user"] = "dev"
+            sess["role"] = "DEV"
+            sess["tenant_id"] = "default"
+            sess["csrf_token"] = "test-csrf"
         self.tempdir = tempfile.TemporaryDirectory()
         self.file_path = Path(self.tempdir.name) / "default" / "demo.csv"
         self.file_path.parent.mkdir(parents=True, exist_ok=True)

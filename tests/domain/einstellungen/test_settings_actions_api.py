@@ -18,20 +18,20 @@ def _make_app(tmp_path, monkeypatch):
     return app
 
 
-def _auth_client(app):
+def _auth_client(app, *, role: str = "OPERATOR", username: str = "operator"):
     with app.app_context():
         auth_db = app.extensions["auth_db"]
         now = utc_now_iso()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
-        auth_db.upsert_user("operator", hash_password("operator"), now)
-        auth_db.upsert_membership("operator", "KUKANILEA", "OPERATOR", now)
+        auth_db.upsert_user(username, hash_password(username), now)
+        auth_db.upsert_membership(username, "KUKANILEA", role, now)
 
     client = app.test_client()
     with client.session_transaction() as sess:
-        sess["user"] = "operator"
-        sess["role"] = "OPERATOR"
+        sess["user"] = username
+        sess["role"] = role
         sess["tenant_id"] = "KUKANILEA"
     return client
 
@@ -47,7 +47,8 @@ def test_settings_actions_list_exposes_parity_actions(tmp_path, monkeypatch):
     actions = {item["name"]: item for item in payload["actions"]}
     assert {"setting.read", "setting.update", "key.rotate"}.issubset(actions.keys())
     assert actions["setting.read"]["confirm_required"] is False
-    assert actions["setting.update"]["confirm_required"] is True
+    assert actions["setting.update"]["permission"] == "admin"
+    assert actions["setting.update"]["confirm_required"] is False
     assert actions["key.rotate"]["confirm_required"] is True
 
 
@@ -66,20 +67,24 @@ def test_settings_read_action_returns_expected_contract_payload(tmp_path, monkey
     assert result["actions"] == ["setting.read", "setting.update", "key.rotate"]
 
 
-def test_settings_update_action_requires_confirm_then_succeeds(tmp_path, monkeypatch):
+def test_settings_update_action_requires_admin_role(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
-    client = _auth_client(app)
+    client = _auth_client(app, role="OPERATOR", username="operator")
 
     denied = client.post(
         "/api/settings/actions/setting.update",
         json={"scope": "tenant", "key": "ui.theme", "value": "dark"},
     )
-    assert denied.status_code == 409
-    assert denied.get_json()["error"] == "approval_required"
+    assert denied.status_code == 403
+
+
+def test_settings_update_action_admin_succeeds_without_confirm(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app, role="ADMIN", username="admin")
 
     approved = client.post(
         "/api/settings/actions/setting.update",
-        json={"scope": "tenant", "key": "ui.theme", "value": "dark", "confirm": "CONFIRM"},
+        json={"scope": "tenant", "key": "ui.theme", "value": "dark"},
     )
     assert approved.status_code == 200
     result = approved.get_json()["result"]
