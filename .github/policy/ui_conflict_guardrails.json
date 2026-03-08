@@ -59,7 +59,8 @@
     ],
     "dashboard_components": [
       "app/templates/components/confirm_dialog.html",
-      "app/templates/components/tool_matrix_panel.html"
+      "app/templates/components/tool_matrix_panel.html",
+      "app/templates/components/state_panel.html"
     ]
   },
   "validation_rounds": 6
