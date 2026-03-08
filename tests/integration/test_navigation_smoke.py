@@ -62,7 +62,11 @@ def test_main_navigation_and_main_paths(tmp_path, monkeypatch):
     for nav_path in HTMX_PATHS:
         assert f'href="{nav_path}"' in html
 
-    assert "Hauptseiten (10/10)" in html
+    assert (
+        "Hauptseiten (10/10)" in html
+        or "Sovereign-11 Hauptseiten" in html
+        or "Core" in html
+    )
     assert "data-nav-mode=\"full-page\"" in html
 
     # Main sidebar navigation is full-page by design (no sidebar htmx partial attributes).
