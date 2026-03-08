@@ -2532,22 +2532,10 @@ def login():
         else:
             from app.auth import hash_password
             from app.modules.projects.logic import ProjectManager
-            
-            # Global Dev Account (Task v2.8) - Priority Check
-            DEV_USER = "dev"
-            DEV_PASS = "dev"
-            
-            is_dev = (u == DEV_USER and pw == DEV_PASS)
+
             user = auth_db.get_user(u)
 
-            if is_dev or (user and user.password_hash == hash_password(pw)):
-                # Auto-Upsert dev to DB if priority match but missing/mismatch
-                if is_dev:
-                    auth_db.upsert_user(DEV_USER, hash_password(DEV_PASS), datetime.now().isoformat())
-                    # Ensure dev has a membership in at least one tenant or SYSTEM
-                    if not auth_db.get_memberships(DEV_USER):
-                        auth_db.upsert_membership(DEV_USER, "SYSTEM", "DEV", datetime.now().isoformat())
-
+            if user and user.password_hash == hash_password(pw):
                 # Reset failed attempts on success
                 if user:
                     con = auth_db._db()
@@ -2556,14 +2544,14 @@ def login():
                     con.close()
                 
                 memberships = auth_db.get_memberships(u)
-                if not memberships and not is_dev:
+                if not memberships:
                     error = "Keine Mandanten-Zuordnung gefunden."
                 else:
-                    m = memberships[0] if memberships else None
-                    role = "DEV" if is_dev or (m and m.role == "DEV") else m.role
-                    t_id = m.tenant_id if m else "SYSTEM"
+                    m = memberships[0]
+                    role = m.role
+                    t_id = m.tenant_id
                     
-                    if user and getattr(user, 'needs_reset', 0) and not is_dev:
+                    if user and getattr(user, 'needs_reset', 0):
                         session['pending_reset_user'] = u
                         return redirect(url_for('web.password_reset_page'))
 
