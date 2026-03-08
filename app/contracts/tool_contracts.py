@@ -433,7 +433,7 @@ def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
                 pending = []
                 degraded_reason = degraded_reason or "pending_pipeline_unavailable"
                 pending_error = pending_error or f"list_pending returned {type(raw_pending).__name__}"
-        except Exception:
+        except Exception as exc:
             pending = []
             degraded_reason = "pending_pipeline_unavailable"
             pending_error = str(exc)
