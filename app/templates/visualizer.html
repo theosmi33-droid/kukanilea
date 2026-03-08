@@ -498,7 +498,7 @@
     el.list.innerHTML = files.map((it) => {
       const active = it.id === state.activeId ? "active" : "";
       const ext = String(it.ext || "").replace(".", "").toUpperCase();
-      return `<li class="vz-item ${active}" data-id="${it.id}"><div class="vz-item-name">${esc(it.name || "(ohne Name)")}</div><div class="vz-item-meta"><span>${esc(ext)}</span><span>${humanBytes(it.size)}</span><span>${esc(it.source || "vault")}</span></div></li>`;
+      return `<li class="vz-item ${active}" data-id="${esc(it.id)}"><div class="vz-item-name">${esc(it.name || "(ohne Name)")}</div><div class="vz-item-meta"><span>${esc(ext)}</span><span>${humanBytes(it.size)}</span><span>${esc(it.source || "vault")}</span></div></li>`;
     }).join("");
 
     for (const node of el.list.querySelectorAll(".vz-item")) {
