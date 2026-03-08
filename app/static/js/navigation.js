@@ -11,6 +11,7 @@
     setupPressedState();
     setupHtmxLoadingFeedback();
     setupDisclosure();
+    setupAutoAriaLabels();
     syncDrawerVisualState();
     markCurrentNavigation();
 
@@ -77,6 +78,49 @@
       toggle.addEventListener('click', () => {
         setExpanded(toggle.getAttribute('aria-expanded') !== 'true');
       });
+
+      toggle.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          setExpanded(toggle.getAttribute('aria-expanded') !== 'true');
+          return;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setExpanded(false);
+          toggle.focus();
+          return;
+        }
+        if (event.key === 'ArrowDown' && toggle.getAttribute('aria-expanded') === 'true') {
+          event.preventDefault();
+          panel.querySelector('a, button, [tabindex]:not([tabindex="-1"])')?.focus();
+        }
+      });
+
+      panel.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        setExpanded(false);
+        toggle.focus();
+      });
+    });
+  }
+
+
+
+  function setupAutoAriaLabels() {
+    document.querySelectorAll('button, [role="button"], a, input:not([type="hidden"]), select, textarea').forEach((el) => {
+      if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby')) return;
+      const id = el.getAttribute('id');
+      if (id) {
+        const label = document.querySelector(`label[for="${id}"]`);
+        if (label && label.textContent?.trim()) {
+          el.setAttribute('aria-label', label.textContent.trim());
+          return;
+        }
+      }
+      const text = el.getAttribute('title') || el.getAttribute('placeholder') || el.textContent;
+      if (text && text.trim()) el.setAttribute('aria-label', text.trim());
     });
   }
 
