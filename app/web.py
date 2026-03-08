@@ -906,7 +906,7 @@ SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
         ActionDefinition(
             name="setting.update",
             title="Einstellung aktualisieren",
-            permission="write",
+            permission="admin",
             risk="medium",
             input_schema={
                 "type": "object",
@@ -2574,22 +2574,10 @@ def login():
         else:
             from app.auth import hash_password
             from app.modules.projects.logic import ProjectManager
-            
-            # Global Dev Account (Task v2.8) - Priority Check
-            DEV_USER = "dev"
-            DEV_PASS = "dev"
-            
-            is_dev = (u == DEV_USER and pw == DEV_PASS)
+
             user = auth_db.get_user(u)
 
-            if is_dev or (user and user.password_hash == hash_password(pw)):
-                # Auto-Upsert dev to DB if priority match but missing/mismatch
-                if is_dev:
-                    auth_db.upsert_user(DEV_USER, hash_password(DEV_PASS), datetime.now().isoformat())
-                    # Ensure dev has a membership in at least one tenant or SYSTEM
-                    if not auth_db.get_memberships(DEV_USER):
-                        auth_db.upsert_membership(DEV_USER, "SYSTEM", "DEV", datetime.now().isoformat())
-
+            if user and user.password_hash == hash_password(pw):
                 # Reset failed attempts on success
                 if user:
                     con = auth_db._db()
@@ -2598,14 +2586,14 @@ def login():
                     con.close()
                 
                 memberships = auth_db.get_memberships(u)
-                if not memberships and not is_dev:
+                if not memberships:
                     error = "Keine Mandanten-Zuordnung gefunden."
                 else:
-                    m = memberships[0] if memberships else None
-                    role = "DEV" if is_dev or (m and m.role == "DEV") else m.role
-                    t_id = m.tenant_id if m else "SYSTEM"
+                    m = memberships[0]
+                    role = m.role
+                    t_id = m.tenant_id
                     
-                    if user and getattr(user, 'needs_reset', 0) and not is_dev:
+                    if user and getattr(user, 'needs_reset', 0):
                         session['pending_reset_user'] = u
                         return redirect(url_for('web.password_reset_page'))
 
@@ -3267,6 +3255,10 @@ def api_ai_execute():
     skill_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
     confirm = bool(payload.get("confirm"))
     source = str(payload.get("source") or "chat")
+    tenant_id = str(current_tenant() or "").strip()
+
+    if not tenant_id:
+        return jsonify(error="tenant_required"), 403
 
     definition = skills_registry.get(skill_name)
     if not definition:
@@ -3304,8 +3296,10 @@ def api_ai_execute():
         if not send_limiter.allow(key):
             return jsonify(error="rate_limited"), 429
 
+    handler_payload = {key: value for key, value in skill_payload.items() if key != "tenant_id"}
+
     try:
-        result = definition.handler({**skill_payload, "confirm": confirm})
+        result = definition.handler({**handler_payload, "tenant_id": tenant_id, "confirm": confirm})
     except Exception:
         logger.exception("ai_execute_handler_failed", extra={"skill": skill_name})
         return jsonify(error="skill_execution_failed"), 500
@@ -5005,6 +4999,7 @@ def api_tool_summary(tool: str):
 
 @bp.post("/api/upload/ingest")
 @login_required
+@upload_limiter.limit_required
 def api_upload_ingest():
     tenant = str(current_tenant() or "default")
     body = request.get_json(silent=True) if request.is_json else None
@@ -5032,14 +5027,19 @@ def api_upload_ingest():
     else:
         payload_bytes = raw_text.encode("utf-8")
 
-    payload = ingest_unstructured_bytes(
-        source=source,
-        tenant=tenant,
-        payload_bytes=payload_bytes,
-        metadata=metadata,
-        filename=str(metadata.get("filename") or ""),
-        content_type=str(metadata.get("content_type") or ""),
-    )
+    try:
+        payload = ingest_unstructured_bytes(
+            source=source,
+            tenant=tenant,
+            payload_bytes=payload_bytes,
+            metadata=metadata,
+            filename=str(metadata.get("filename") or ""),
+            content_type=str(metadata.get("content_type") or ""),
+        )
+    except ValueError as exc:
+        if str(exc) == "quota_exceeded":
+            return jsonify(error="quota_exceeded", message="Speicherlimit für Mandant erreicht."), 403
+        raise
     return jsonify(payload)
 
 

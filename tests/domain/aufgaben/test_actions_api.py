@@ -18,20 +18,21 @@ def _make_app(tmp_path, monkeypatch):
     return app
 
 
-def _auth_client(app):
+def _auth_client(app, *, role="OPERATOR", username="operator"):
+
     with app.app_context():
         auth_db = app.extensions["auth_db"]
         now = utc_now_iso()
         from app.auth import hash_password
 
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
-        auth_db.upsert_user("operator", hash_password("operator"), now)
-        auth_db.upsert_membership("operator", "KUKANILEA", "OPERATOR", now)
+        auth_db.upsert_user(username, hash_password(username), now)
+        auth_db.upsert_membership(username, "KUKANILEA", role, now)
 
     client = app.test_client()
     with client.session_transaction() as sess:
-        sess["user"] = "operator"
-        sess["role"] = "OPERATOR"
+        sess["user"] = username
+        sess["role"] = role
         sess["tenant_id"] = "KUKANILEA"
     return client
 
@@ -227,7 +228,7 @@ def test_actions_read_action_remains_unchanged_without_idempotency_contract(tmp_
     assert "idempotent_replay" not in body
 
 
-def test_settings_actions_list_exposes_setting_update_with_approval(tmp_path, monkeypatch):
+def test_settings_actions_list_exposes_setting_update_with_admin_permission(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
@@ -238,25 +239,27 @@ def test_settings_actions_list_exposes_setting_update_with_approval(tmp_path, mo
     actions = {item["name"]: item for item in data["actions"]}
     assert "setting.read" in actions
     assert "setting.update" in actions
-    assert actions["setting.update"]["confirm_required"] is True
+    assert actions["setting.update"]["permission"] == "admin"
 
 
-def test_settings_setting_update_requires_approval_and_persists(tmp_path, monkeypatch):
+def test_settings_setting_update_requires_admin_role(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
-    client = _auth_client(app)
+    operator_client = _auth_client(app)
 
-    denied = client.post(
+    denied = operator_client.post(
         "/api/settings/actions/setting.update",
         json={"key": "language", "value": "en"},
     )
-    assert denied.status_code == 409
-    denied_json = denied.get_json()
-    assert denied_json["error"] == "approval_required"
+    assert denied.status_code == 403
 
-    token = denied_json["approval"]["approval_token"]
-    approved = client.post(
+
+def test_settings_setting_update_admin_can_persist(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    admin_client = _auth_client(app, role="ADMIN", username="admin")
+
+    approved = admin_client.post(
         "/api/settings/actions/setting.update",
-        json={"key": "language", "value": "en", "approval_token": token},
+        json={"key": "language", "value": "en"},
     )
 
     assert approved.status_code == 200

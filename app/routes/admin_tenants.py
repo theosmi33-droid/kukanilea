@@ -35,6 +35,7 @@ from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
 from app.license import load_license, load_runtime_license_state
+from app.security import csrf_protected
 from app.security.gates import (
     CRITICAL_CONFIRM_GATE_BY_ROUTE,
     confirm_gate,
@@ -329,6 +330,7 @@ def settings_console():
 
 @bp.route("/settings/profile", methods=["POST"])
 @login_required
+@csrf_protected
 def update_profile_preferences():
     confirm_error = _enforce_critical_gate("/admin/settings/profile")
     if confirm_error:
@@ -341,6 +343,7 @@ def update_profile_preferences():
 
 @bp.route("/settings/users/create", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def create_user():
     confirm_error = _enforce_critical_gate("/admin/settings/users/create")
@@ -374,6 +377,7 @@ def create_user():
 
 @bp.route("/settings/users/update", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def update_user_role():
     confirm_error = _enforce_critical_gate("/admin/settings/users/update")
@@ -403,6 +407,7 @@ def update_user_role():
 
 @bp.route("/settings/users/disable", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def disable_user():
     confirm_error = _enforce_critical_gate("/admin/settings/users/disable")
@@ -436,6 +441,7 @@ def disable_user():
 
 @bp.route("/settings/users/delete", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def delete_user():
     confirm_error = _enforce_critical_gate("/admin/settings/users/delete")
@@ -475,6 +481,7 @@ def delete_user():
 
 @bp.route("/settings/tenants/add", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def add_tenant():
     confirm_error = _enforce_critical_gate("/admin/settings/tenants/add")
@@ -512,6 +519,7 @@ def add_tenant():
 
 @bp.route("/context/switch", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def switch_context():
     gate_error = _enforce_critical_gate("/admin/context/switch")
@@ -537,6 +545,7 @@ def switch_context():
 
 @bp.route("/settings/license/upload", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def upload_license():
     confirm_error = _enforce_critical_gate("/admin/settings/license/upload")
@@ -623,6 +632,7 @@ def upload_license():
 
 @bp.route("/settings/system", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def save_system_settings():
     confirm_error = _enforce_critical_gate("/admin/settings/system")
@@ -667,6 +677,7 @@ def save_system_settings():
 
 @bp.route("/settings/branding", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def save_branding():
     confirm_error = _enforce_critical_gate("/admin/settings/branding")
@@ -700,6 +711,7 @@ def save_branding():
 
 @bp.route("/settings/backup/run", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def backup_run():
     confirm_error = _enforce_critical_gate("/admin/settings/backup/run")
@@ -719,6 +731,7 @@ def backup_run():
 
 @bp.route("/settings/backup/restore", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def backup_restore():
     confirm_error = _enforce_critical_gate("/admin/settings/backup/restore")
@@ -740,6 +753,7 @@ def backup_restore():
 
 @bp.route("/settings/mesh/connect", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def mesh_connect():
     confirm_error = _enforce_critical_gate("/admin/settings/mesh/connect")
@@ -778,6 +792,7 @@ def mesh_connect():
 
 @bp.route("/settings/mesh/rotate-key", methods=["POST"])
 @login_required
+@csrf_protected
 @require_role("ADMIN")
 def mesh_rotate_key():
     confirm_error = _enforce_critical_gate("/admin/settings/mesh/rotate-key")

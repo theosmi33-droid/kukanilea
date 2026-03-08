@@ -25,7 +25,34 @@ list_pending = _core_get("list_pending")
 list_recent_docs = _core_get("list_recent_docs")
 build_visualizer_payload = _core_get("build_visualizer_payload")
 EINGANG = _core_get("EINGANG")
+BASE_PATH = _core_get("BASE_PATH")
 _NOTE_COUNTER = itertools.count(1)
+
+
+def _norm_tenant(value: str) -> str:
+    return str(value or "default").strip().lower().replace(" ", "_")
+
+
+def _is_tenant_visualizer_path(fp: Path, tenant: str) -> bool:
+    """Allow visualizer access only to files in the current tenant subtree."""
+    try:
+        rp = fp.resolve()
+    except Exception:
+        return False
+
+    tenant_key = _norm_tenant(tenant)
+    scoped_roots = [root for root in (BASE_PATH, EINGANG) if isinstance(root, Path)]
+    for root in scoped_roots:
+        try:
+            rr = root.resolve()
+            rel = rp.relative_to(rr)
+        except Exception:
+            continue
+        if not rel.parts:
+            return False
+        if _norm_tenant(rel.parts[0]) == tenant_key:
+            return True
+    return False
 
 def _visualizer_item_from_path(path: Path, source: str = "vault") -> dict | None:
     try:
@@ -108,9 +135,15 @@ def _resolve_authorized_source(src_b64: str, tenant: str, username: str | None) 
 def api_visualizer_render():
     src_b64 = request.args.get("source", "")
     if not src_b64: return jsonify(error="missing_source"), 400
-    tenant = current_tenant() or "default"
-    fp = _resolve_authorized_source(src_b64, tenant=tenant, username=current_user())
-    if fp is None: return jsonify(error="forbidden_source"), 403
+    try:
+        raw_path = _unb64(src_b64)
+    except Exception: return jsonify(error="invalid_source"), 400
+
+    fp = Path(raw_path)
+    if not fp.exists(): return jsonify(error="file_not_found"), 404
+    if not _is_allowed_path(fp): return jsonify(error="forbidden_path"), 403
+    if not _is_tenant_visualizer_path(fp, current_tenant() or "default"):
+        return jsonify(error="forbidden_tenant_path"), 403
     
     if not callable(build_visualizer_payload):
         return jsonify(error="visualizer_logic_missing"), 503
@@ -160,10 +193,18 @@ def api_visualizer_summary():
     src_b64 = str(body.get("source") or "")
     if not src_b64:
         return jsonify(error="missing_source"), 400
-    tenant = current_tenant() or "default"
-    fp = _resolve_authorized_source(src_b64, tenant=tenant, username=current_user())
-    if fp is None:
-        return jsonify(error="forbidden_source"), 403
+    try:
+        raw_path = _unb64(src_b64)
+    except Exception:
+        return jsonify(error="invalid_source"), 400
+
+    fp = Path(raw_path)
+    if not fp.exists():
+        return jsonify(error="file_not_found"), 404
+    if not _is_allowed_path(fp):
+        return jsonify(error="forbidden_path"), 403
+    if not _is_tenant_visualizer_path(fp, current_tenant() or "default"):
+        return jsonify(error="forbidden_tenant_path"), 403
     if not callable(build_visualizer_payload):
         return jsonify(error="visualizer_logic_missing"), 503
 

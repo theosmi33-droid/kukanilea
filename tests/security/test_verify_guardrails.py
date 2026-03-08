@@ -91,3 +91,17 @@ def test_shell_template_inline_handler_check_flags_onclick_and_preload_onload(tm
     assert len(errors) >= 2
     assert any("Inline event handler" in item for item in errors)
     assert any("preload onload" in item for item in errors)
+
+
+def test_external_asset_check_allows_local_fonts_css_link(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    layout_path = tmp_path / "app" / "templates" / "layout.html"
+    layout_path.parent.mkdir(parents=True, exist_ok=True)
+    layout_path.write_text(
+        '<link rel="stylesheet" href="/static/css/fonts.css">\n',
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_external_asset_urls(paths=[str(tmp_path / "app" / "templates")])
+
+    assert errors == []
