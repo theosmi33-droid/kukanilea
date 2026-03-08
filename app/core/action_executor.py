@@ -33,17 +33,21 @@ class ActionExecutor:
         self.tools[name] = handler
 
     def confirm(self, proposal_id: str, approved: bool) -> bool:
+        proposal = self._pending.get(proposal_id)
+
         if not approved:
             self._pending.pop(proposal_id, None)
             self._confirmations.pop(proposal_id, None)
+            self._audit_confirmation(proposal_id=proposal_id, event="confirm_denied", proposal=proposal)
             return False
-        
-        proposal = self._pending.get(proposal_id)
+
         if not proposal:
             return False
             
         count = self._confirmations.get(proposal_id, 0) + 1
         self._confirmations[proposal_id] = count
+
+        self._audit_confirmation(proposal_id=proposal_id, event="confirm_granted", proposal=proposal)
         
         logger.info("proposal_confirm proposal_id=%s count=%s max_level=%s", 
                     proposal_id, count, proposal.max_level)
@@ -80,9 +84,34 @@ class ActionExecutor:
             max_level=max_level,
         )
         self._confirmations[proposal_id] = 0
+        self._audit_proposal(proposal_id=proposal_id, plan=plan, max_level=max_level, event="propose")
         return proposal_id
 
-    def _audit(self, step: dict[str, Any], status: str, proposal_id: str | None) -> None:
+    def _audit_proposal(self, *, proposal_id: str, plan: dict[str, Any], max_level: int, event: str) -> None:
+        self.audit_log.append(
+            {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "proposal_id": proposal_id,
+                "event": event,
+                "status": event,
+                "max_level": max_level,
+                "step_count": len(plan.get("steps", [])),
+            }
+        )
+
+    def _audit_confirmation(self, *, proposal_id: str, event: str, proposal: PendingProposal | None) -> None:
+        self.audit_log.append(
+            {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "proposal_id": proposal_id,
+                "event": event,
+                "status": event,
+                "max_level": proposal.max_level if proposal else None,
+                "current_confirms": self._confirmations.get(proposal_id, 0),
+            }
+        )
+
+    def _audit(self, step: dict[str, Any], status: str, proposal_id: str | None, *, event: str | None = None) -> None:
         action_type = step.get("action_type")
         # Only audit Level 3+ (write/destructive)
         from app.tools.action_registry import action_registry
@@ -96,6 +125,7 @@ class ActionExecutor:
         entry = {
             "timestamp": datetime.now(UTC).isoformat(),
             "proposal_id": proposal_id,
+            "event": event or status,
             "tool": tool_name,
             "action_type": action_type or (f"level_{action_def.level}" if action_def else "unknown"),
             "status": status,
@@ -128,7 +158,7 @@ class ActionExecutor:
             if not proposal_id:
                 new_proposal_id = self._propose(plan, max_level)
                 for step in plan.get("steps", []):
-                    self._audit(step, "awaiting_confirmation", new_proposal_id)
+                    self._audit(step, "awaiting_confirmation", new_proposal_id, event="confirm_requested")
                 return {
                     "status": "confirmation_required",
                     "proposal_id": new_proposal_id,
@@ -164,18 +194,24 @@ class ActionExecutor:
                 continue
 
             if not self._validate_step(step):
-                self._audit(step, "validation_failed", proposal_id)
+                self._audit(step, "validation_failed", proposal_id, event="execution_failed")
                 results.append({"tool": tool_name, "status": "validation_failed"})
                 continue
 
             handler = self.tools.get(tool_name)
             if handler is None:
-                self._audit(step, "tool_not_found", proposal_id)
+                self._audit(step, "tool_not_found", proposal_id, event="execution_failed")
                 results.append({"tool": tool_name, "status": "tool_not_found"})
                 continue
 
-            output = handler(step.get("params", {}))
-            self._audit(step, "executed", proposal_id)
+            self._audit(step, "execution_started", proposal_id, event="execution_started")
+            try:
+                output = handler(step.get("params", {}))
+            except Exception:
+                self._audit(step, "execution_failed", proposal_id, event="execution_failed")
+                raise
+
+            self._audit(step, "executed", proposal_id, event="execution_succeeded")
             results.append({"tool": tool_name, "status": "executed", "output": output})
 
         if proposal_id:

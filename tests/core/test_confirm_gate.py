@@ -30,6 +30,9 @@ def test_confirm_protocol_executes_after_approval_and_writes_audit_log():
     assert executed["status"] == "ok"
     assert executed["results"][0]["status"] == "executed"
 
-    statuses = [row["status"] for row in executor.audit_log]
-    assert "awaiting_confirmation" in statuses
-    assert "executed" in statuses
+    events = [row.get("event") for row in executor.audit_log]
+    assert "propose" in events
+    assert "confirm_requested" in events
+    assert "confirm_granted" in events
+    assert "execution_started" in events
+    assert "execution_succeeded" in events

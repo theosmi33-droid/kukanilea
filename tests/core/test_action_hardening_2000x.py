@@ -115,8 +115,9 @@ def test_critical_action_requires_confirmation(isolated_registry: None, executor
 
     assert pending["status"] == "confirmation_required"
     assert pending["proposal_id"].startswith("proposal-")
-    assert len(executor.audit_log) == 1
-    assert executor.audit_log[0]["status"] == "awaiting_confirmation"
+    events = [entry["event"] for entry in executor.audit_log]
+    assert "propose" in events
+    assert "confirm_requested" in events
 
 
 def test_critical_action_executes_after_approval(isolated_registry: None, executor: ActionExecutor) -> None:
@@ -151,7 +152,10 @@ def test_critical_action_executes_after_approval(isolated_registry: None, execut
     assert executed["results"][0]["status"] == "executed"
     assert executed["results"][0]["output"] == "sent"
     assert called == [{"invoice_id": "INV-42"}]
-    assert executor.audit_log[-1]["status"] == "executed"
+    events = [entry["event"] for entry in executor.audit_log]
+    assert "confirm_granted" in events
+    assert "execution_started" in events
+    assert "execution_succeeded" in events
 
 
 def test_confirmation_reject_discards_pending(isolated_registry: None, executor: ActionExecutor) -> None:
@@ -176,6 +180,36 @@ def test_confirmation_reject_discards_pending(isolated_registry: None, executor:
 
     assert response["status"] in ("confirmation_missing", "proposal_not_found")
     assert response["proposal_id"] == proposal_id
+    assert any(entry["event"] == "confirm_denied" for entry in executor.audit_log)
+
+
+def test_execution_failure_is_audited(isolated_registry: None) -> None:
+    _register_action("billing.invoice.send", is_critical=True, required=["invoice_id"])
+
+    def _failing_handler(_: dict[str, str]) -> str:
+        raise RuntimeError("boom")
+
+    executor = ActionExecutor(tools={"billing.invoice.send": _failing_handler})
+    plan = {
+        "steps": [
+            {
+                "tool": "billing.invoice.send",
+                "action_type": "write",
+                "params": {"invoice_id": "INV-99"},
+            }
+        ]
+    }
+
+    pending = executor.execute_plan(plan, dry_run=False)
+    proposal_id = pending["proposal_id"]
+    assert executor.confirm(proposal_id, approved=True) is True
+
+    with pytest.raises(RuntimeError, match="boom"):
+        executor.execute_plan(plan, dry_run=False, proposal_id=proposal_id)
+
+    events = [entry["event"] for entry in executor.audit_log]
+    assert "execution_started" in events
+    assert "execution_failed" in events
 
 
 @pytest.mark.parametrize(
