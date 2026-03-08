@@ -80,6 +80,9 @@ PASS wenn:
 - Keine unerwarteten lokalen Änderungen für den Release-Scope.
 - Healthcheck Exit-Code 0 (inkl. Security- und Contract-Gates).
 - Pytest ohne Failures.
+- Bei fehlendem Python-Playwright nur deterministische E2E-Skips:
+  - `tests/e2e/test_ui_workflow.py` wird via `importorskip` übersprungen
+  - Healthcheck schreibt `e2e.mode=skip_python_e2e`
 
 Evidence:
 - Working tree:
