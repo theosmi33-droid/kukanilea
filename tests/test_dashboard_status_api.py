@@ -7,6 +7,7 @@ mock_login_required = lambda x: x
 with patch('app.auth.login_required', mock_login_required):
     from app.routes.dashboard_api import dashboard_bp
 
+
 class TestDashboardAPI(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
@@ -17,6 +18,7 @@ class TestDashboardAPI(unittest.TestCase):
             sess["user"] = "dev"
             sess["role"] = "DEV"
             sess["tenant_id"] = "KUKANILEA"
+            sess["csrf_token"] = "csrf-test-token"
 
     @patch('app.routes.dashboard_api.run_vault_selftest')
     def test_vault_selftest_success(self, mock_selftest):
@@ -27,8 +29,11 @@ class TestDashboardAPI(unittest.TestCase):
             "files_missing": [],
             "timestamp": "test_ts"
         }
-        
-        response = self.client.post('/api/dashboard/selftest')
+
+        response = self.client.post(
+            '/api/dashboard/selftest',
+            headers={"X-CSRF-Token": "csrf-test-token"},
+        )
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data['status'], 'OK')
@@ -40,11 +45,19 @@ class TestDashboardAPI(unittest.TestCase):
             "integrity_ok": False,
             "files_missing": ["app/core/logic.py"]
         }
-        
-        response = self.client.post('/api/dashboard/selftest')
+
+        response = self.client.post(
+            '/api/dashboard/selftest',
+            headers={"X-CSRF-Token": "csrf-test-token"},
+        )
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data['status'], 'ERROR')
+
+    def test_vault_selftest_requires_csrf(self):
+        response = self.client.post('/api/dashboard/selftest')
+        self.assertEqual(response.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
