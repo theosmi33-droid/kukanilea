@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.contracts.tool_contracts import build_contract_response
+from app.contracts.tool_contracts import build_contract_response, build_health_response
 
 
 def build_summary(tenant: str) -> dict:
@@ -10,10 +10,17 @@ def build_summary(tenant: str) -> dict:
         metrics={
             "security_headers": 1,
             "admin_tools": 1,
+            "actions_available": 3,
+            "write_actions_gated": 2,
         },
         details={
             "source": "settings.runtime",
             "pages": ["/settings", "/admin/logs", "/admin/audit"],
+            "actions": ["setting.read", "setting.update", "key.rotate"],
+            "approval_gate": {
+                "write_confirm_required": True,
+                "write_audit_required": True,
+            },
         },
         tenant=tenant,
     )

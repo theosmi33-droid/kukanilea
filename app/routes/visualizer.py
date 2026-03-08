@@ -62,9 +62,11 @@ def _collect_visualizer_items(tenant: str, limit: int = 80) -> list:
                 seen.add(k)
         except Exception: pass
 
-    for p_info in (list_pending() or []):
-        raw = p_info.get("path", "")
-        if raw: add_p(Path(raw), "pending")
+    if callable(list_pending):
+        for p_info in (list_pending() or []):
+            raw = p_info.get("path", "")
+            if raw:
+                add_p(Path(raw), "pending")
 
     if callable(list_recent_docs):
         try:
@@ -73,8 +75,8 @@ def _collect_visualizer_items(tenant: str, limit: int = 80) -> list:
                 if raw: add_p(Path(raw), "archive")
         except Exception: pass
 
-    tenant_in = EINGANG / tenant
-    if tenant_in.exists():
+    tenant_in = (EINGANG / tenant) if isinstance(EINGANG, Path) else None
+    if tenant_in and tenant_in.exists():
         for fp in sorted(tenant_in.glob("*"), key=lambda x: x.stat().st_mtime if x.exists() else 0, reverse=True):
             add_p(fp, "eingang")
             if len(items) >= limit * 2: break
