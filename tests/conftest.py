@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.tools.action_registry import action_registry
+from app.tools.registry import registry
 from tests.stubs.authdb_stub import _AuthDBStub
 from tests.time_utils import utc_now_iso
 
@@ -50,3 +52,27 @@ def seeded_auth_db(app):
         auth_db.upsert_user("admin", hash_password("admin"), now)
         auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
         return auth_db
+
+
+@pytest.fixture(autouse=True)
+def isolate_registry_and_action_state(request: pytest.FixtureRequest):
+    """Keep global tool/action registries isolated for action/registry-centric tests."""
+    nodeid = request.node.nodeid
+    needs_isolation = (
+        "test_action_" in nodeid
+        or "test_registry_" in nodeid
+        or nodeid.startswith("tests/agents/test_action_registry.py")
+        or nodeid.startswith("tests/core/test_mia_audit_layer.py")
+    )
+    if not needs_isolation:
+        yield
+        return
+
+    previous_tools = dict(registry.tools)
+    previous_actions = action_registry.snapshot()
+    try:
+        yield
+    finally:
+        registry.tools.clear()
+        registry.tools.update(previous_tools)
+        action_registry.reset(previous_actions)

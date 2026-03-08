@@ -150,5 +150,13 @@ class ActionRegistry:
             summary[action.tool] = summary.get(action.tool, 0) + 1
         return dict(sorted(summary.items()))
 
+    def snapshot(self) -> Dict[str, ActionDefinition]:
+        return dict(self._actions_by_id)
+
+    def reset(self, snapshot: Dict[str, ActionDefinition] | None = None) -> None:
+        self._actions_by_id.clear()
+        if snapshot:
+            self._actions_by_id.update(snapshot)
+
 
 action_registry = ActionRegistry()

@@ -43,13 +43,12 @@ def _register_action(
 
 @pytest.fixture()
 def isolated_registry() -> None:
-    previous = dict(action_registry._actions_by_id)
-    action_registry._actions_by_id.clear()
+    previous = action_registry.snapshot()
+    action_registry.reset()
     try:
         yield
     finally:
-        action_registry._actions_by_id.clear()
-        action_registry._actions_by_id.update(previous)
+        action_registry.reset(previous)
 
 
 @pytest.fixture()

@@ -56,3 +56,30 @@ def test_manager_can_list_search_and_compose_with_events() -> None:
             "step_index": 0,
         }
     ]
+
+
+class _IsolatedProbeTool:
+    name = "isolation_probe"
+
+    def actions(self):
+        return [
+            {
+                "action_id": "probe.default.get",
+                "name": "probe.default.get",
+                "inputs_schema": {"type": "object", "properties": {}},
+                "permissions": ["tenant:read"],
+                "confirm_required": False,
+                "audit_required": False,
+                "action_type": "read",
+            }
+        ]
+
+
+def test_registry_mutation_in_one_test_is_not_persisted() -> None:
+    before = action_registry.count()
+    action_registry.register_tool(_IsolatedProbeTool())
+    assert action_registry.count() == before + 1
+
+
+def test_registry_starts_clean_for_followup_tests() -> None:
+    assert all(item["action_id"] != "probe.default.get" for item in action_registry.list_actions())
