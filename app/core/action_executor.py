@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Callable
@@ -75,7 +76,7 @@ class ActionExecutor:
         proposal_id = f"proposal-{uuid.uuid4().hex[:12]}"
         self._pending[proposal_id] = PendingProposal(
             proposal_id=proposal_id,
-            plan=plan,
+            plan=deepcopy(plan),
             created_at=datetime.now(UTC).isoformat(),
             max_level=max_level,
         )
@@ -123,6 +124,7 @@ class ActionExecutor:
 
     def execute_plan(self, plan: dict[str, Any], dry_run: bool = True, proposal_id: str | None = None) -> dict[str, Any]:
         max_level = self._get_max_level(plan)
+        plan_to_execute = plan
         
         if max_level >= 3 and not dry_run:
             if not proposal_id:
@@ -155,8 +157,16 @@ class ActionExecutor:
                     "required_confirms": required,
                 }
 
+            if plan != proposal.plan:
+                return {
+                    "status": "plan_mismatch",
+                    "proposal_id": proposal_id,
+                }
+
+            plan_to_execute = proposal.plan
+
         results: list[dict[str, Any]] = []
-        for step in plan.get("steps", []):
+        for step in plan_to_execute.get("steps", []):
             tool_name = step.get("tool")
             if dry_run:
                 self._audit(step, "dry_run", proposal_id)
