@@ -142,6 +142,12 @@ class ActionExecutor:
                     "status": "proposal_not_found",
                     "proposal_id": proposal_id,
                 }
+
+            if plan != proposal.plan:
+                return {
+                    "status": "proposal_plan_mismatch",
+                    "proposal_id": proposal_id,
+                }
                 
             confirms = self._confirmations.get(proposal_id, 0)
             required = 2 if proposal.max_level >= 4 else 1
