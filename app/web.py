@@ -4460,6 +4460,7 @@ def tasks_page():
         return redirect(url_for("web.login", next=request.path))
 
     pm = ProjectManager(current_app.extensions["auth_db"])
+    degraded_state = None
     try:
         workspace = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
         board = workspace["board"]
@@ -4472,6 +4473,7 @@ def tasks_page():
         items = []
         inbox = []
         notifications = []
+        degraded_state = "Aufgaben werden momentan eingeschränkt geladen. Bitte aktualisieren Sie die Seite in einigen Minuten."
 
     return _render_base(
         "tasks.html",
@@ -4479,6 +4481,7 @@ def tasks_page():
         tasks=items,
         inbox=inbox,
         notifications=notifications,
+        degraded_state=degraded_state,
     )
 
 
@@ -4852,12 +4855,18 @@ def projects_list():
         activities = board_state.get("activities") or []
     except Exception:
         current_app.logger.exception("Fehler in /projects")
-        return _render_base(
-            "<div class='card p-4'><h2>Projekte konnten nicht geladen werden</h2><p class='muted mt-2'>Leerer Zustand wird angezeigt, bis die Projekt-Daten wieder verfügbar sind.</p></div>",
-            active_tab="projects",
-        )
+        project = {"id": "degraded", "name": "Projektboard", "description": "Projektdaten werden gerade synchronisiert."}
+        board = {"id": "degraded", "name": "Standard-Board"}
+        boards = [board]
+        columns = []
+        cards = []
+        activities = []
+        board_id = "degraded"
+        degraded_state = "Projektdaten sind derzeit nur eingeschränkt verfügbar."
+    else:
+        degraded_state = None
 
-    tasks = pm.list_tasks(board_id)
+    tasks = pm.list_tasks(board_id) if board_id != "degraded" else []
     return _render_base(
         "kanban.html",
         active_tab="projects",
@@ -4868,6 +4877,7 @@ def projects_list():
         cards=cards,
         activities=activities,
         tasks=tasks,
+        degraded_state=degraded_state,
     )
 
 
