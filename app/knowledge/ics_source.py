@@ -2021,6 +2021,13 @@ def knowledge_calendar_suggest_from_text(
     suggestions = _extract_deadline_events_from_ocr_text(text, filename_hint=filename_hint)
     created: list[dict[str, Any]] = []
     if persist and suggestions:
+        policy_row = knowledge_policy_get(tenant)
+        if not _policy_allows_ocr_calendar(policy_row):
+            return {
+                "tenant_id": tenant,
+                "suggestions": suggestions,
+                "created": created,
+            }
         for ev in suggestions:
             due = _parse_iso_date(ev.get("due_date"))
             if not due:

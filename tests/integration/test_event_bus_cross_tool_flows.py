@@ -141,6 +141,44 @@ def test_event_bus_document_processed_with_deadline_creates_calendar_event(tmp_p
     assert knowledge_hit or local_hit
 
 
+def test_event_bus_document_processed_respects_allow_ocr_policy(tmp_path, monkeypatch):
+    monkeypatch.setenv("KUKANILEA_AUTH_DB", str(tmp_path / "auth.sqlite3"))
+    monkeypatch.setenv("KUKANILEA_CORE_DB", str(tmp_path / "core.sqlite3"))
+
+    app = create_app()
+    app.config["READ_ONLY"] = False
+    _ensure_knowledge_tables(str(app.config["CORE_DB"]))
+
+    with app.app_context():
+        monkeypatch.setattr(
+            ics_source,
+            "knowledge_policy_get",
+            lambda *_args, **_kwargs: {
+                "allow_calendar": 1,
+                "allow_customer_pii": 1,
+                "allow_ocr": 0,
+            },
+        )
+
+        EventBus.publish(
+            "document.processed",
+            {
+                "tenant": "KUKANILEA",
+                "filename": "angebot.pdf",
+                "ocr_text": "Zahlbar bis 15.04.2026",
+            },
+        )
+
+        events = knowledge_calendar_events_list(
+            "KUKANILEA",
+            include_manual=True,
+            include_deadlines=True,
+            include_tasks=False,
+        )
+
+    assert events == []
+
+
 def test_event_bus_audit_and_structured_logging(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     EventBus.reset()
