@@ -136,6 +136,7 @@ class MessengerAgent(BaseAgent):
         history = []
         final_answer = ""
         actions: List[Dict[str, Any]] = []
+        deferred_tools = {"create_task", "create_appointment", "mail_generate", "messenger_send", "search_docs"}
         for i in range(max_steps):
             plan = self.planner.plan(intent, message, tenant_id=context.tenant_id, history=history)
             if not plan: break
@@ -145,14 +146,23 @@ class MessengerAgent(BaseAgent):
             if tool_name == "final_answer":
                 final_answer = params.get("answer", thought)
                 break
-            try:
-                observation = self.executor.execute(tool_name, params)
-                history.append({"thought": thought, "action": tool_name, "params": params, "observation": observation})
-                if tool_name in ["create_task", "create_appointment", "mail_generate", "messenger_send"]:
-                    actions.append({"type": tool_name, **params})
-            except Exception as e:
-                history.append({"thought": thought, "action": tool_name, "params": params, "observation": {"error": str(e)}})
-        
+            if tool_name in deferred_tools:
+                history.append({
+                    "thought": thought,
+                    "action": tool_name,
+                    "params": params,
+                    "observation": {"status": "deferred", "reason": "policy_gate"},
+                })
+                actions.append({"type": tool_name, **params})
+                break
+
+            history.append({
+                "thought": thought,
+                "action": tool_name,
+                "params": params,
+                "observation": {"status": "blocked", "reason": "tool_not_allowed_in_messenger_loop"},
+            })
+
         return AgentResult(
             text=final_answer or f"Ich habe die Nachricht analysiert ({len(history)} Schritte).",
             actions=actions,
