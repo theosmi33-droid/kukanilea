@@ -9,7 +9,7 @@
     <div>
         <p class="page-kicker">Dashboard</p>
         <h1 class="m-0 text-3xl font-bold tracking-tight">Übersicht</h1>
-        <p class="text-secondary mt-2">Alles Wichtige auf einen Blick.</p>
+        <p class="text-secondary mt-2">Beleg-Zentrale kompakt: alles Wichtige auf einen Blick.</p>
     </div>
     <div class="flex gap-3">
         <a href="/upload" class="btn btn-primary btn-lg shadow-sm">
@@ -30,7 +30,20 @@
     </div>
   </section>
 
-  <section class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Aufmerksamkeit nötig und nächster Schritt">
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Speed-to-Lead und Systemgesundheit">
+    <article class="card border-light" id="speed-to-lead-widget">
+      <div class="card-header border-light">
+        <h2 class="card-title text-base">Speed-to-Lead</h2>
+        <span id="speed-to-lead-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
+      </div>
+      <div class="card-body">
+        <div id="speed-to-lead-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+        <details class="mt-3">
+          <summary class="text-xs text-muted font-semibold cursor-pointer">Details zur Datenquelle</summary>
+          <p class="text-xs text-muted mt-2 mb-0">Quelle: Nur Contract-Endpoints <code>/api/&lt;tool&gt;/summary</code>.</p>
+        </details>
+      </div>
+    </article>
     <article class="card border-light" id="system-health-strip">
       <div class="card-header border-light">
         <h2 class="card-title text-base">Aufmerksamkeit nötig</h2>
@@ -39,16 +52,10 @@
       <div class="card-body">
         <div id="health-strip-summary" class="text-sm text-main mb-3">Status…</div>
         <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
-      </div>
-    </article>
-    <article class="card border-light" id="speed-to-lead-widget">
-      <div class="card-header border-light">
-        <h2 class="card-title text-base">Nächster Schritt</h2>
-        <span id="speed-to-lead-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
-      </div>
-      <div class="card-body">
-        <div id="speed-to-lead-cards" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
-        <p class="text-xs text-muted mt-2 mb-0">Offene Kontakte zuerst klären.</p>
+        <details class="mt-3">
+          <summary class="text-xs text-muted font-semibold cursor-pointer">Technik-Details</summary>
+          <p class="text-xs text-muted mt-2 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
+        </details>
       </div>
     </article>
   </section>
@@ -107,32 +114,23 @@
     <!-- Activity Feed -->
     <div class="card border-light shadow-sm">
         <div class="card-header border-light">
-            <h3 class="card-title text-base">Letzte Aktivitäten</h3>
+            <h3 class="card-title text-base">Neu im Archiv</h3>
             <a href="/admin/audit" class="btn btn-ghost btn-xs text-primary-600 font-bold">Verlauf →</a>
         </div>
-        <div class="card-body p-0">
+        <div class="card-body p-4">
             {% if recent %}
-            <div class="table-container">
-                <table class="table w-full text-sm">
-                    <tbody>
-                        {% for entry in recent[:6] %}
-                        <tr class="border-b last:border-0 hover:bg-neutral-25 transition-colors">
-                            <td class="p-4" style="width: 48px;">
-                                <div class="p-2 bg-neutral-50 text-neutral-400 rounded-lg">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                </div>
-                            </td>
-                            <td class="p-4">
-                                <div class="font-semibold text-main">{{ entry.get('filename') or entry.get('name') or 'Beleg' }}</div>
-                                <div class="text-xs text-muted">{{ entry.get('timestamp', 'Archiviert') }}</div>
-                            </td>
-                            <td class="p-4 text-right">
-                                <span class="badge text-[10px] font-bold px-2 py-0.5 rounded-full bg-success-bg text-success border border-success/10 uppercase tracking-tighter">Bereit</span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="flex flex-column gap-3">
+                {% for entry in recent[:5] %}
+                <article class="rounded-xl border border-light bg-subtle px-3 py-2.5">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <div class="font-semibold text-main text-sm">{{ entry.get('filename') or entry.get('name') or 'Beleg' }}</div>
+                            <div class="text-xs text-muted mt-0.5">{{ entry.get('timestamp', 'Archiviert') }}</div>
+                        </div>
+                        <span class="badge text-[10px] font-bold px-2 py-0.5 rounded-full bg-success-bg text-success border border-success/10 uppercase tracking-tighter">Bereit</span>
+                    </div>
+                </article>
+                {% endfor %}
             </div>
             {% else %}
             <div class="p-16 text-center">
@@ -160,7 +158,13 @@
                             <div class="w-2.5 h-2.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] animate-pulse"></div>
                             <div>
                                 <div class="font-bold text-sm text-main group-hover:text-primary-600 transition-colors">{{ meta.get(token, {}).get('filename', 'Analysiere Dokument...') }}</div>
-                                <div class="text-[10px] text-muted font-mono mt-0.5">ID: {{ token[:12] }}</div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <span class="badge text-[10px] font-bold px-2 py-0.5 rounded-full bg-warning-bg text-warning border border-warning/20 uppercase">Wartet</span>
+                                    <details>
+                                      <summary class="text-[10px] text-muted cursor-pointer">Details</summary>
+                                      <div class="text-[10px] text-muted font-mono mt-1">ID: {{ token[:12] }}</div>
+                                    </details>
+                                </div>
                             </div>
                         </div>
                         <button class="btn btn-secondary btn-sm font-bold">Review</button>
@@ -209,14 +213,16 @@ function renderToolMatrix(payload) {
     const borderColor = isOk ? "var(--success)" : (isDegraded ? "var(--warning)" : "var(--error)");
     const bgClass = isOk ? "bg-success-bg" : (isDegraded ? "bg-warning-bg" : "bg-error-bg");
     
-    const reason = tool.degraded_reason ? `<div class="text-[10px] text-muted mt-1 leading-tight">Hinweis: ${tool.degraded_reason}</div>` : "";
+    const reason = tool.degraded_reason
+      ? `<details class="mt-2"><summary class="text-[10px] text-muted cursor-pointer">Diagnose</summary><div class="text-[10px] text-muted mt-1 leading-tight">${tool.degraded_reason}</div></details>`
+      : "";
     
     return `
     <article class="card card-tight border-light" style="border-left: 4px solid ${borderColor};">
       <div class="card-body">
         <div class="flex justify-between items-center">
             <span class="text-sm font-bold text-main">${tool.tool}</span>
-            <span class="text-[10px] font-black uppercase ${colorClass}">${status}</span>
+            <span class="badge border ${bgClass} text-[10px] font-black uppercase ${colorClass}">${status}</span>
         </div>
         ${reason}
       </div>
