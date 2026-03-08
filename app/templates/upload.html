@@ -45,6 +45,7 @@
             </div>
             <h2 class="text-xl font-bold text-main mb-2">Dateien ablegen oder klicken</h2>
             <p class="text-secondary max-w-md mx-auto">Ziehen Sie Ihre Belege, Rechnungen oder Angebote direkt in dieses Fenster oder wählen Sie Dateien von Ihrem Computer aus.</p>
+            <p class="text-[11px] text-muted mt-4 mb-0">Noch keine Datei ausgewählt. Starten Sie mit einem Beleg oder Angebot.</p>
             <div class="flex justify-center gap-4 mt-8">
                 <span class="text-[10px] font-bold text-muted uppercase tracking-widest px-3 py-1 bg-neutral-50 rounded-full border border-neutral-100">PDF</span>
                 <span class="text-[10px] font-bold text-muted uppercase tracking-widest px-3 py-1 bg-neutral-50 rounded-full border border-neutral-100">JPG/PNG</span>
@@ -75,7 +76,7 @@
                 <div class="flex justify-between items-end mb-6">
                     <div>
                         <div id="phase" class="text-xs font-black text-primary-600 uppercase tracking-widest mb-2">Initialisiere...</div>
-                        <div id="status" class="text-xl font-bold text-main">Analyse läuft...</div>
+                        <div id="status" class="text-xl font-bold text-main">Analyse wird vorbereitet…</div>
                     </div>
                     <div id="pLabel" class="text-4xl font-black text-primary-600 tabular-nums">0.0%</div>
                 </div>
@@ -86,6 +87,7 @@
             </div>
             
             <div id="errorActions" class="mt-6 flex gap-4" style="display: none;">
+                <div id="uploadErrorMessage" class="w-full" style="display:none;"></div>
                 <button id="retryBtn" class="btn btn-primary flex-1 py-4 font-bold">Erneut versuchen</button>
                 <button id="cancelBtn" class="btn btn-secondary flex-1 py-4 font-bold">Abbrechen</button>
             </div>
@@ -139,8 +141,13 @@ document.addEventListener("DOMContentLoaded", function() {
   const status = document.getElementById("status");
   const phase = document.getElementById("phase");
   const dropZone = document.getElementById("dropZone");
+  const retryBtn = document.getElementById("retryBtn");
+  const cancelBtn = document.getElementById("cancelBtn");
+  const errorActions = document.getElementById("errorActions");
+  const uploadErrorMessage = document.getElementById("uploadErrorMessage");
 
   let stagedFiles = [];
+  let lastErrorMessage = "";
 
   const updateUI = () => {
     fileList.innerHTML = "";
@@ -198,7 +205,11 @@ document.addEventListener("DOMContentLoaded", function() {
     if(stagedFiles.length === 0) return;
     stagingArea.style.display = "none";
     progressArea.style.display = "block";
-    document.getElementById("errorActions").style.display = "none";
+    errorActions.style.display = "none";
+    uploadErrorMessage.style.display = "none";
+    status.classList.remove("text-error", "text-warning");
+    phase.textContent = "Schritt 1: Upload läuft";
+    status.textContent = "Dateien werden übertragen…";
     
     const formData = new FormData();
     stagedFiles.forEach(f => formData.append("file", f));
@@ -231,52 +242,166 @@ document.addEventListener("DOMContentLoaded", function() {
             phase.textContent = "Schritt 2: KI-Analyse...";
             status.textContent = "Inhalte werden extrahiert...";
 
-            const check = setInterval(() => {
+            const VISIBLE_POLL_INTERVAL_MS = 1000;
+            const HIDDEN_POLL_INTERVAL_MS = 5000;
+            const ERROR_BACKOFF_BASE_MS = 2000;
+            const ERROR_BACKOFF_MAX_MS = 30000;
+            let progressPollRetryCount = 0;
+            let progressPollTimer = null;
+            let progressPollingStopped = false;
+
+            const stopProgressPolling = () => {
+              progressPollingStopped = true;
+              if (progressPollTimer) {
+                clearTimeout(progressPollTimer);
+                progressPollTimer = null;
+              }
+            };
+
+            const nextPollInterval = () => (
+              document.hidden ? HIDDEN_POLL_INTERVAL_MS : VISIBLE_POLL_INTERVAL_MS
+            );
+
+            const scheduleProgressPoll = (delayMs = nextPollInterval()) => {
+              if (progressPollingStopped) return;
+              if (progressPollTimer) clearTimeout(progressPollTimer);
+              progressPollTimer = setTimeout(runProgressPoll, delayMs);
+            };
+
+            const scheduleProgressPollAfterError = () => {
+              progressPollRetryCount += 1;
+              const errorDelay = Math.min(
+                ERROR_BACKOFF_BASE_MS * (2 ** (progressPollRetryCount - 1)),
+                ERROR_BACKOFF_MAX_MS
+              );
+              scheduleProgressPoll(Math.max(errorDelay, nextPollInterval()));
+            };
+
+            const runProgressPoll = () => {
+              if (progressPollingStopped) return;
               const pXhr = new XMLHttpRequest();
               pXhr.open("GET", "/api/progress?tokens=" + tokens.join(","), true);
               pXhr.onload = () => {
-                if(pXhr.status === 200){
+                if (pXhr.status !== 200) {
+                  scheduleProgressPollAfterError();
+                  return;
+                }
+
+                try {
                   const data = JSON.parse(pXhr.responseText);
                   let allDone = true;
                   let minP = 100;
+                  let failedCount = 0;
                   Object.values(data).forEach(d => {
                     if(d.status !== "READY" && d.status !== "ERROR") allDone = false;
+                    if(d.status === "ERROR") failedCount += 1;
                     if(d.progress < minP) minP = d.progress;
                   });
                   targetProgress = 35 + (minP * 0.65);
-                  if(allDone){
-                    clearInterval(check);
+
+                  if (allDone) {
+                    stopProgressPolling();
                     clearInterval(sim);
                     bar.style.width = "100%";
                     pLabel.textContent = "100%";
-                    phase.textContent = "Abgeschlossen";
-                    status.textContent = "Analyse fertig. Öffne Review...";
-                    if(tokens.length === 1){
-                      setTimeout(() => window.location.href = "/review/" + tokens[0] + "/kdnr", 800);
+                    phase.textContent = failedCount > 0 ? "Teilweise abgeschlossen" : "Abgeschlossen";
+                    if (failedCount > 0) {
+                      status.textContent = `${failedCount} Dokument(e) konnten nicht vollständig gelesen werden.`;
+                      status.classList.add("text-warning");
+                      errorActions.style.display = "flex";
+                      retryBtn.textContent = "Erneut versuchen";
+                      cancelBtn.textContent = "Zu Aufgaben";
+                      cancelBtn.onclick = () => { window.location.href = "/tasks?origin=upload"; };
                     } else {
-                      setTimeout(() => window.location.href = "/dashboard", 800);
+                      status.textContent = "Analyse fertig. Öffne nächsten Schritt…";
+                      if(tokens.length === 1){
+                        setTimeout(() => window.location.href = "/review/" + tokens[0] + "/kdnr", 800);
+                      } else {
+                        setTimeout(() => window.location.href = "/tasks?origin=upload", 800);
+                      }
                     }
+                    return;
                   }
+
+                  progressPollRetryCount = 0;
+                  scheduleProgressPoll();
+                } catch (e) {
+                  scheduleProgressPollAfterError();
                 }
               };
+              pXhr.onerror = scheduleProgressPollAfterError;
               pXhr.send();
-            }, 1000);
+            };
+
+            document.addEventListener("visibilitychange", () => {
+              if (progressPollingStopped) return;
+              scheduleProgressPoll();
+            });
+
+            scheduleProgressPoll(0);
+          } else {
+            handleError("Upload angekommen, aber es wurden keine Dateien übernommen.");
           }
-        } catch(e) { handleError("Fehlerhafte Server-Antwort."); }
-      } else { handleError("Upload fehlgeschlagen."); }
+        } catch(e) { handleError("Die Antwort konnte nicht verarbeitet werden. Bitte erneut starten."); }
+      } else { handleError("Upload konnte nicht abgeschlossen werden. Bitte prüfen Sie Dateigröße und Verbindung."); }
     };
+
+    xhr.onerror = () => handleError("Verbindung unterbrochen. Bitte erneut versuchen.");
 
     const handleError = (msg) => {
       clearInterval(sim);
+      lastErrorMessage = msg;
+      phase.textContent = "Unterbrochen";
       status.textContent = msg;
+      status.classList.remove("text-warning");
       status.classList.add("text-error");
-      document.getElementById("errorActions").style.display = "flex";
+      uploadErrorMessage.innerHTML = `<div class="rounded-xl border border-error/20 bg-error-bg p-3 text-sm">${msg}</div>`;
+      uploadErrorMessage.style.display = "block";
+      errorActions.style.display = "flex";
+      retryBtn.textContent = "Erneut versuchen";
+      cancelBtn.textContent = "Zur Upload-Auswahl";
+      cancelBtn.onclick = () => {
+        progressArea.style.display = "none";
+        stagingArea.style.display = stagedFiles.length > 0 ? "flex" : "none";
+        dropZone.style.display = stagedFiles.length > 0 ? "none" : "block";
+      };
     };
+
+    xhr.onerror = () => handleError("Keine Verbindung zum Upload-Service. Bitte später erneut versuchen.");
     
     xhr.send(formData);
   };
 
+  retryBtn.addEventListener("click", () => {
+    if (!stagedFiles.length && lastErrorMessage) {
+      progressArea.style.display = "none";
+      dropZone.style.display = "block";
+      return;
+    }
+    uploadAction();
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    progressArea.style.display = "none";
+    updateUI();
+  });
+
   startBtn.addEventListener("click", uploadAction);
+  retryBtn.addEventListener("click", uploadAction);
+  cancelBtn.addEventListener("click", () => {
+    progressArea.style.display = "none";
+    status.classList.remove("text-error");
+    phase.textContent = "Initialisiere...";
+    status.textContent = "Analyse läuft...";
+    bar.style.width = "0%";
+    pLabel.textContent = "0.0%";
+    errorActions.style.display = "none";
+    if (stagedFiles.length > 0) {
+      stagingArea.style.display = "flex";
+    } else {
+      dropZone.style.display = "block";
+    }
+  });
 });
 </script>
 {% endblock %}

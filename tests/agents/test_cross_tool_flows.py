@@ -108,6 +108,59 @@ def test_tool_health_degrades_without_unsafe_write() -> None:
     assert any(e["event"] == "flow.fallback_applied" for e in result.audit_evidence)
 
 
+def test_document_flow_happy_path_links_extraction_classification_and_proposal() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_document_extract_deadline_task",
+        context={"document_text": "Rechnung: Frist bis 20.03.", "default_deadline": "2026-03-20"},
+        confirmations={"propose_deadline_task": True},
+        tool_health={"ocr": True, "tasks": True},
+    )
+
+    assert result.ok is True
+    assert result.status == "completed"
+    assert result.executed_steps == ["extract_document", "classify_document", "propose_deadline_task"]
+    assert result.outputs["classification_label"] == "deadline_candidate"
+    assert result.outputs["task_proposal_state"] == "ready_for_confirm"
+    assert any(
+        e["event"] == "flow.step_executed" and e["step_id"] == "classify_document"
+        for e in result.audit_evidence
+    )
+
+
+def test_document_flow_missing_context_returns_missing_context_proposal() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_document_extract_deadline_task",
+        context={},
+        confirmations={"propose_deadline_task": True},
+    )
+
+    assert result.ok is False
+    assert result.status == "propose_and_ask_confirmation"
+    assert result.proposals == [{"type": "missing_context", "required": ["document_text"]}]
+    assert any(e["event"] == "flow.context_missing" for e in result.audit_evidence)
+
+
+def test_document_flow_reject_without_confirm_keeps_write_gated() -> None:
+    engine = _engine()
+
+    result = engine.run(
+        flow_id="flow_document_extract_deadline_task",
+        context={"document_text": "Bitte Frist prüfen"},
+        confirmations={"propose_deadline_task": False},
+        tool_health={"ocr": True, "tasks": True},
+    )
+
+    assert result.ok is False
+    assert result.status == "propose_and_ask_confirmation"
+    assert "propose_deadline_task" not in result.executed_steps
+    assert any(p["type"] == "confirm_required" and p["step_id"] == "propose_deadline_task" for p in result.proposals)
+    assert any(e["event"] == "flow.confirm_required" and e["step_id"] == "propose_deadline_task" for e in result.audit_evidence)
+
+
 def test_prompt_injection_in_untrusted_text_is_neutralized() -> None:
     engine = _engine()
 
