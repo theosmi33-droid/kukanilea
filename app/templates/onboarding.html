@@ -6,6 +6,19 @@
   <title>Onboarding - {{ branding.app_name }}</title>
   <link rel="stylesheet" href="/static/css/design-system.css">
   <link rel="stylesheet" href="/static/css/components.css">
+  <style>
+    .onboard-fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px; margin-bottom: var(--spacing-3); background: color-mix(in srgb, var(--color-bg-panel) 92%, white); }
+    .onboard-legend { padding: 0 6px; font-size: 12px; font-weight: 700; color: var(--color-text-main); }
+    .onboard-hint { margin-top: 6px; font-size: 12px; color: var(--color-text-muted); }
+    .onboard-disclosure summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--color-text-main); }
+    .onboard-disclosure[open] summary { margin-bottom: 10px; }
+    .form-input:focus-visible,
+    .btn:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--color-accent) 80%, white);
+      outline-offset: 2px;
+    }
+  </style>
 </head>
 <body style="display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--color-bg-root);">
   <div class="panel" style="width:100%; max-width:500px; padding:var(--spacing-6);">
@@ -15,23 +28,32 @@
       <p style="color: var(--color-text-muted);">Lassen Sie uns Ihr System in 30 Sekunden einrichten.</p>
     </div>
 
-    <form method="post">
+    <form method="post" id="onboarding-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <div class="form-group">
-        <label class="form-label">Name Ihres Betriebs (Mandant)</label>
-        <input type="text" name="tenant_name" class="form-input" placeholder="z.B. Heizung & Sanitär Müller" required autofocus>
-      </div>
+      <fieldset class="onboard-fieldset">
+        <legend class="onboard-legend">Schritt 1 · Betrieb anlegen</legend>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label" for="tenant-name">Name Ihres Betriebs (Mandant)</label>
+          <input id="tenant-name" type="text" name="tenant_name" class="form-input" placeholder="z.B. Heizung & Sanitär Müller" required autofocus aria-describedby="tenant-hint">
+          <p id="tenant-hint" class="onboard-hint">Dieser Name erscheint später in Navigation und Berichten.</p>
+        </div>
+      </fieldset>
 
-      <div class="form-group">
-        <label class="form-label">Administrator Benutzername</label>
-        <input type="text" name="admin_user" class="form-input" placeholder="z.B. admin" required>
-      </div>
+      <details class="onboard-disclosure onboard-fieldset" id="advanced-bootstrap">
+        <summary>Schritt 2 · Zugangsdaten selbst festlegen (optional)</summary>
+        <div class="form-group">
+          <label class="form-label" for="admin-user">Administrator Benutzername</label>
+          <input id="admin-user" type="text" name="admin_user" class="form-input" placeholder="z.B. admin" aria-describedby="admin-user-hint">
+          <p id="admin-user-hint" class="onboard-hint">Leer lassen = automatisch "dev".</p>
+        </div>
 
-      <div class="form-group">
-        <label class="form-label">Sicheres Passwort</label>
-        <input type="password" name="admin_pass" class="form-input" placeholder="••••••••" required>
-      </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label" for="admin-pass">Sicheres Passwort</label>
+          <input id="admin-pass" type="password" name="admin_pass" class="form-input" placeholder="••••••••" aria-describedby="admin-pass-hint">
+          <p id="admin-pass-hint" class="onboard-hint">Leer lassen = automatisch generiertes Einmal-Passwort.</p>
+        </div>
+      </details>
 
       <div style="margin-top:var(--spacing-4);">
         <button type="submit" class="btn btn-primary" style="width:100%; height:52px; font-size:16px;">EINRICHTUNG ABSCHLIESSEN</button>
@@ -42,5 +64,14 @@
       Ihre Daten verbleiben zu 100% lokal auf diesem Gerät.
     </div>
   </div>
+  <script>
+    const advanced = document.getElementById('advanced-bootstrap');
+    const adminUser = document.getElementById('admin-user');
+    advanced?.addEventListener('toggle', () => {
+      if (advanced.open) {
+        adminUser?.focus();
+      }
+    });
+  </script>
 </body>
 </html>
