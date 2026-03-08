@@ -44,3 +44,27 @@ def test_login_template_boot_sequence_and_error_banner_contract() -> None:
     assert "SYSTEM READY." in html
     assert 'class="error-banner"' in html
     assert "role=\"alert\"" in html
+
+
+def test_components_css_contains_layout_and_table_utilities() -> None:
+    css = _read("app/static/css/components.css")
+    utility_rules = [
+        ".app-layout",
+        ".app-sidebar",
+        ".app-main",
+        ".app-header",
+        ".app-content",
+        ".content-container",
+        ".toolbar",
+        ".table",
+        ".table th",
+        ".table td",
+        ".grid",
+        ".grid-cols-2",
+        ".grid-cols-3",
+        ".flex",
+        ".items-center",
+        ".justify-between",
+    ]
+    for rule in utility_rules:
+        assert rule in css
