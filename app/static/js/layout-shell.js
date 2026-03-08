@@ -1,3 +1,4 @@
+let lastChatTrigger = null;
 let chatPendingId = '';
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -81,6 +82,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (chatClose) {
       chatClose.addEventListener('click', () => toggleChat(false));
     }
+    const chatForm = document.querySelector('.ki-chat-composer');
+    if (chatForm) {
+      chatForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        sendChatMessage();
+      });
+    }
     const chatSendBtn = document.getElementById('chat-send-btn');
     if (chatSendBtn) {
       chatSendBtn.addEventListener('click', () => sendChatMessage());
@@ -124,11 +132,17 @@ function toggleChat(forceOpen) {
   const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : isHidden;
   win.style.display = shouldOpen ? 'flex' : 'none';
   win.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+  win.setAttribute('aria-modal', shouldOpen ? 'true' : 'false');
   toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
   if (shouldOpen) {
+    lastChatTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : toggle;
+    document.body.classList.add('chat-open');
+    if (window.UIShell) window.UIShell.trapFocus(win);
     document.getElementById('chat-input')?.focus();
   } else {
-    toggle.focus();
+    document.body.classList.remove('chat-open');
+    (lastChatTrigger || toggle).focus();
+    lastChatTrigger = null;
   }
 }
 

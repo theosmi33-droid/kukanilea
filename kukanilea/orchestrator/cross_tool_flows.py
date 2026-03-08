@@ -329,13 +329,37 @@ def create_default_registry() -> AtomicActionRegistry:
     )
     registry.register(
         "document_extract",
-        lambda p: {"document_text": _extract_untrusted_text(p, "document_text")},
+        lambda p: {
+            "document_text": _extract_untrusted_text(p, "document_text"),
+            "document_has_due_hint": any(
+                marker in _extract_untrusted_text(p, "document_text").lower()
+                for marker in ("frist", "fällig", "due", "deadline")
+            ),
+        },
+    )
+    registry.register(
+        "document_classify_deadline_task",
+        lambda p: {
+            "classification_label": (
+                "deadline_candidate" if p.get("document_has_due_hint") else "general_document"
+            ),
+            "task_title": (
+                "Frist aus Dokument prüfen"
+                if p.get("document_has_due_hint")
+                else str(p.get("task_title") or "Dokument prüfen")[:120]
+            ),
+            "default_deadline": (
+                str(p.get("default_deadline") or "")
+                or ("asap" if p.get("document_has_due_hint") else "")
+            ),
+        },
     )
     registry.register(
         "document_suggest_deadline_task",
         lambda p: {
             "suggested_deadline": str(p.get("default_deadline") or ""),
-            "task_title": str(p.get("task_title") or "Dokument prüfen"),
+            "task_title": str(p.get("task_title") or "Dokument prüfen")[:120],
+            "task_proposal_state": "ready_for_confirm",
         },
     )
     registry.register(
@@ -527,6 +551,7 @@ def build_core_flows() -> dict[str, FlowDefinition]:
             trigger="document_uploaded",
             steps=(
                 FlowStep("extract_document", "document_extract", required_tool="ocr"),
+                FlowStep("classify_document", "document_classify_deadline_task"),
                 FlowStep("propose_deadline_task", "document_suggest_deadline_task", writes_state=True, required_tool="tasks"),
             ),
             required_context=("document_text",),

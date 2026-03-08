@@ -108,6 +108,8 @@ from app.contracts.tool_contracts import (
     build_tool_summary,
     extract_chat_message,
     normalize_chat_response,
+    normalize_contract_tool_slug,
+    contract_tool_response_label,
 )
 from app.modules.aufgaben.contracts import create_task as aufgaben_create_task
 from app.modules.actions_api import (
@@ -116,6 +118,14 @@ from app.modules.actions_api import (
     register_actions_endpoints,
 )
 from app.modules.upload.ingestion import ingest_unstructured_bytes
+from app.widget_pending import (
+    compact_pending_actions,
+    get_widget_pending_queue,
+    mark_actions_confirm_required,
+    serialize_pending_approvals,
+    set_widget_pending_queue,
+    widget_requires_confirm,
+)
 
 logger = logging.getLogger("kukanilea.web")
 
@@ -2859,33 +2869,6 @@ def _mock_generate(prompt: str) -> str:
 
 
 
-_WIDGET_READONLY_ACTIONS = {
-    "search_docs",
-    "open_token",
-    "show_customer",
-    "summarize_doc",
-    "list_tasks",
-    "memory_search",
-}
-
-def _widget_requires_confirm(actions: List[Dict[str, Any]]) -> bool:
-    for action in actions:
-        action_type = str(action.get("type", "")).strip().lower()
-        if action_type and action_type not in _WIDGET_READONLY_ACTIONS:
-            return True
-    return False
-
-
-def _mark_actions_confirm_required(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    marked: List[Dict[str, Any]] = []
-    for action in actions or []:
-        item = dict(action)
-        item["requires_confirm"] = True
-        item["confirm_required"] = True
-        marked.append(item)
-    return marked
-
-
 def _widget_compact_response(
     *,
     text: str,
@@ -2919,59 +2902,6 @@ def _widget_compact_response(
         "pending_approvals": pending_approvals or [],
     }
 
-
-def _get_widget_pending_queue() -> List[Dict[str, Any]]:
-    queue = session.get("widget_pending_actions")
-    if isinstance(queue, list):
-        return [item for item in queue if isinstance(item, dict)]
-    legacy = session.get("widget_pending_action")
-    if isinstance(legacy, dict) and legacy.get("id"):
-        return [legacy]
-    return []
-
-
-WIDGET_PENDING_QUEUE_LIMIT = 5
-WIDGET_PENDING_ACTION_PREVIEW_LIMIT = 3
-
-
-def _compact_pending_actions(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    compact: List[Dict[str, Any]] = []
-    for action in actions[:WIDGET_PENDING_ACTION_PREVIEW_LIMIT]:
-        if not isinstance(action, dict):
-            continue
-        compact.append(
-            {
-                "type": str(action.get("type") or action.get("name") or "action"),
-                "label": str(action.get("label") or action.get("type") or action.get("name") or "Aktion"),
-                "confirm_required": bool(action.get("confirm_required")),
-            }
-        )
-    return compact
-
-
-def _set_widget_pending_queue(queue: List[Dict[str, Any]]) -> None:
-    normalized = [item for item in queue if isinstance(item, dict)]
-    session["widget_pending_actions"] = normalized[-WIDGET_PENDING_QUEUE_LIMIT:]
-    session.pop("widget_pending_action", None)
-    session.modified = True
-
-
-def _serialize_pending_approvals(queue: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    serialized: List[Dict[str, Any]] = []
-    for item in queue:
-        pending_id = str(item.get("id") or "").strip()
-        if not pending_id:
-            continue
-        actions = item.get("actions") if isinstance(item.get("actions"), list) else []
-        serialized.append(
-            {
-                "pending_id": pending_id,
-                "current_context": str(item.get("current_context") or "/"),
-                "confirm_prompt": str(item.get("confirm_prompt") or "Bestätigung erforderlich."),
-                "action_count": len(actions),
-            }
-        )
-    return serialized
 
 @bp.route("/api/chat", methods=["POST"])
 @login_required
@@ -3056,8 +2986,8 @@ def api_chat_compact():
 
     if request.method == "GET":
         if request.args.get("pending") == "1":
-            pending_queue = _get_widget_pending_queue()
-            return jsonify({"ok": True, "pending_approvals": _serialize_pending_approvals(pending_queue)})
+            pending_queue = get_widget_pending_queue()
+            return jsonify({"ok": True, "pending_approvals": serialize_pending_approvals(pending_queue)})
         # Simplified history for widget
         return jsonify({"ok": True, "messages": []})
 
@@ -3065,7 +2995,7 @@ def api_chat_compact():
     payload = request.get_json(silent=True) or {}
     current_context = (payload.get("current_context") or "/").strip()
     
-    pending_queue = _get_widget_pending_queue()
+    pending_queue = get_widget_pending_queue()
 
     # Check for confirmation of pending action
     if bool(payload.get("confirm")):
@@ -3084,14 +3014,14 @@ def api_chat_compact():
                 model="local",
                 context_tag=current_context,
                 latency_ms=int((time.perf_counter() - started) * 1000),
-                pending_approvals=_serialize_pending_approvals(pending_queue),
+                pending_approvals=serialize_pending_approvals(pending_queue),
                 ok=False
             )), 400
 
         actions = pending.get("actions") or []
         object_refs = pending.get("object_refs") or {}
         pending_queue.pop(pending_index)
-        _set_widget_pending_queue(pending_queue)
+        set_widget_pending_queue(pending_queue)
         session.pop("widget_pending_action", None)
         history = list(session.get("manager_chat_history") or [])
         history.append({
@@ -3111,7 +3041,7 @@ def api_chat_compact():
             context_tag=current_context,
             latency_ms=int((time.perf_counter() - started) * 1000),
             actions=actions,
-            pending_approvals=_serialize_pending_approvals(pending_queue),
+            pending_approvals=serialize_pending_approvals(pending_queue),
             thinking_steps=[step.get("step", "") for step in (pending.get("plan") or [])],
             status="Aktion ausgeführt"
         ))
@@ -3176,15 +3106,15 @@ def api_chat_compact():
     
     actions_raw = list(result.get("actions", []))
     write_intent = detect_write_intent(user_msg)
-    requires_confirm = _widget_requires_confirm(actions_raw) or write_intent
+    requires_confirm = widget_requires_confirm(actions_raw) or write_intent
     if requires_confirm:
-        actions_raw = _mark_actions_confirm_required(actions_raw)
+        actions_raw = mark_actions_confirm_required(actions_raw)
 
     pending_id = ""
     confirm_prompt = ""
     if requires_confirm:
         pending_id = secrets.token_urlsafe(12)
-        compact_actions = _compact_pending_actions(actions_raw)
+        compact_actions = compact_pending_actions(actions_raw)
         pending_item = {
             "id": pending_id,
             "actions": compact_actions,
@@ -3195,7 +3125,7 @@ def api_chat_compact():
         }
         session["widget_pending_action"] = dict(pending_item)
         pending_queue.append(pending_item)
-        _set_widget_pending_queue(pending_queue)
+        set_widget_pending_queue(pending_queue)
         confirm_prompt = str(pending_item["confirm_prompt"])
         _audit("chat_confirm_required", target="/api/chat/compact", meta={"write_intent": write_intent, "action_count": len(actions_raw)})
 
@@ -3211,7 +3141,7 @@ def api_chat_compact():
         requires_confirm=requires_confirm,
         pending_id=pending_id,
         confirm_prompt=confirm_prompt,
-        pending_approvals=_serialize_pending_approvals(pending_queue),
+        pending_approvals=serialize_pending_approvals(pending_queue),
         status="Bestätigung erforderlich" if requires_confirm else "Bereit"
     )
     response_payload["manager_agent"] = result.get("manager_agent") or {}
@@ -3794,6 +3724,7 @@ def api_time_export():
         )
     range_name = (request.args.get("range") or "week").strip().lower()
     date_value = (request.args.get("date") or datetime.now().date().isoformat()).strip()
+    basis = (request.args.get("basis") or "all").strip().lower()
     user = (request.args.get("user") or "").strip()
     if current_role() not in {"ADMIN", "DEV"}:
         user = current_user() or ""
@@ -3803,6 +3734,7 @@ def api_time_export():
         user=user or None,
         start_at=start_at,
         end_at=end_at,
+        billing_basis_only=(basis == "billing"),
     )
     response = current_app.response_class(csv_payload, mimetype="text/csv")
     response.headers["Content-Disposition"] = "attachment; filename=time_entries.csv"
@@ -4477,6 +4409,7 @@ def tasks_page():
         return redirect(url_for("web.login", next=request.path))
 
     pm = ProjectManager(current_app.extensions["auth_db"])
+    degraded_state = None
     try:
         workspace = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
         board = workspace["board"]
@@ -4489,6 +4422,7 @@ def tasks_page():
         items = []
         inbox = []
         notifications = []
+        degraded_state = "Aufgaben werden momentan eingeschränkt geladen. Bitte aktualisieren Sie die Seite in einigen Minuten."
 
     return _render_base(
         "tasks.html",
@@ -4496,6 +4430,8 @@ def tasks_page():
         tasks=items,
         inbox=inbox,
         notifications=notifications,
+        degraded_state=degraded_state,
+        tasks_degraded=bool(degraded_state),
     )
 
 
@@ -4857,6 +4793,15 @@ def projects_list():
         current_app.logger.warning("/projects called without tenant in session")
         return redirect(url_for("web.login", next=request.path))
 
+    project = {"id": "fallback", "name": "Projektboard", "description": "Board-Ansicht"}
+    board = {"id": "fallback", "name": "Standard-Board"}
+    boards = []
+    columns = []
+    cards = []
+    activities = []
+    tasks = []
+    projects_degraded = False
+
     try:
         workspace = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
         project = workspace["project"]
@@ -4867,14 +4812,21 @@ def projects_list():
         columns = board_state.get("columns") or workspace.get("columns") or []
         cards = board_state.get("cards") or []
         activities = board_state.get("activities") or []
+        tasks = pm.list_tasks(board_id)
     except Exception:
         current_app.logger.exception("Fehler in /projects")
-        return _render_base(
-            "<div class='card p-4'><h2>Projekte konnten nicht geladen werden</h2><p class='muted mt-2'>Leerer Zustand wird angezeigt, bis die Projekt-Daten wieder verfügbar sind.</p></div>",
-            active_tab="projects",
-        )
+        project = {"id": "degraded", "name": "Projektboard", "description": "Projektdaten werden gerade synchronisiert."}
+        board = {"id": "degraded", "name": "Standard-Board"}
+        boards = [board]
+        columns = []
+        cards = []
+        activities = []
+        board_id = "degraded"
+        degraded_state = "Projektdaten sind derzeit nur eingeschränkt verfügbar."
+    else:
+        degraded_state = None
 
-    tasks = pm.list_tasks(board_id)
+    tasks = pm.list_tasks(board_id) if board_id != "degraded" else []
     return _render_base(
         "kanban.html",
         active_tab="projects",
@@ -4885,6 +4837,8 @@ def projects_list():
         cards=cards,
         activities=activities,
         tasks=tasks,
+        degraded_state=degraded_state,
+        projects_degraded=bool(degraded_state),
     )
 
 
@@ -5035,51 +4989,17 @@ def api_list_tools():
     return jsonify(ok=True, tools=registry.list())
 
 
-def _normalize_contract_tool(tool: str) -> str | None:
-    raw = str(tool or "").strip().lower()
-    if not raw or not re.fullmatch(r"[a-z0-9_-]{2,40}", raw):
-        return None
-    aliases = {
-        "kalender": "calendar",
-        "aufgaben": "tasks",
-        "projekte": "projects",
-        "zeiterfassung": "time",
-        "einstellungen": "settings",
-        "emailpostfach": "email",
-    }
-    resolved = aliases.get(raw, raw)
-    if resolved not in CONTRACT_TOOLS:
-        return None
-    return resolved
-
-
-def _contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
-    raw = str(requested_tool or "").strip().lower()
-    if raw in {
-        "kalender",
-        "aufgaben",
-        "projekte",
-        "zeiterfassung",
-        "einstellungen",
-        "emailpostfach",
-    }:
-        return raw
-    if raw in CONTRACT_TOOLS:
-        return raw
-    return normalized_tool
-
-
 
 @bp.get("/api/<tool>/summary")
 @login_required
 def api_tool_summary(tool: str):
     tenant = str(current_tenant() or "default")
-    normalized_tool = _normalize_contract_tool(tool)
+    normalized_tool = normalize_contract_tool_slug(tool)
     if normalized_tool is None:
         return jsonify(error="unknown_tool", tool=tool), 404
 
     payload = build_tool_summary(normalized_tool, tenant=tenant)
-    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
+    payload["tool"] = contract_tool_response_label(tool, normalized_tool)
     return jsonify(payload)
 
 
@@ -5127,12 +5047,12 @@ def api_upload_ingest():
 @login_required
 def api_tool_health(tool: str):
     tenant = str(current_tenant() or "default")
-    normalized_tool = _normalize_contract_tool(tool)
+    normalized_tool = normalize_contract_tool_slug(tool)
     if normalized_tool is None:
         return jsonify(error="unknown_tool", tool=tool), 404
 
     payload = build_tool_health(normalized_tool, tenant=tenant)
-    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
+    payload["tool"] = contract_tool_response_label(tool, normalized_tool)
     code = 200 if payload.get("status") in {"ok", "degraded"} else 503
     return jsonify(payload), code
 
