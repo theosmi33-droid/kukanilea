@@ -176,8 +176,10 @@ def _contract_payload(
         contract_meta = dict(contract_payload)
     else:
         contract_meta = {}
-    contract_meta.setdefault("version", CONTRACT_VERSION)
-    contract_meta.setdefault("read_only", False)
+    version = contract_meta.get("version", CONTRACT_VERSION)
+    contract_meta["version"] = version if isinstance(version, str) and version.strip() else CONTRACT_VERSION
+    read_only = contract_meta.get("read_only", False)
+    contract_meta["read_only"] = read_only if isinstance(read_only, bool) else False
     contract_meta["kind"] = contract_kind if contract_kind in CONTRACT_KINDS else "summary"
     safe_details["contract"] = contract_meta
 
