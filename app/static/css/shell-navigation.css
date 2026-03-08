@@ -317,7 +317,7 @@ body.mobile-sidebar-open .mobile-sidebar-overlay {
 }
 
 /* --- Accessibility & Focus --- */
-.skip-link:focus {
+.skip-link:focus-visible {
   outline: 4px solid var(--color-primary);
   outline-offset: 4px;
 }
@@ -328,13 +328,13 @@ body.mobile-sidebar-open .mobile-sidebar-overlay {
 #chat-send-btn:focus-visible,
 #chat-input:focus-visible,
 #mobile-sidebar-toggle:focus-visible {
-  outline: 3px solid var(--color-primary);
-  outline-offset: 3px;
+  outline: 3px solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  outline: 3px solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* --- Layout adjustments --- */
