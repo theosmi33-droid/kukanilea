@@ -37,8 +37,14 @@
   function setupHtmxLoadingFeedback() {
     let requestsInFlight = 0;
 
+    const contentRoot = document.getElementById('main-content');
+
     const setLoading = (isLoading) => {
       document.body.setAttribute('data-htmx-loading', isLoading ? '1' : '0');
+      if (contentRoot) {
+        contentRoot.classList.toggle('loading-skeleton', isLoading);
+        contentRoot.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+      }
     };
 
     setLoading(false);

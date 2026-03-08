@@ -151,7 +151,11 @@ const UIFeedback = {
 
     closeConfirmDialog() {
         const dialog = document.getElementById('confirm-dialog-backdrop');
-        if (dialog) dialog.remove();
+        if (!dialog) return;
+
+        if (dialog.classList.contains('is-closing')) return;
+        dialog.classList.add('is-closing');
+        setTimeout(() => dialog.remove(), 180);
     }
 };
 
