@@ -1,6 +1,7 @@
 from __future__ import annotations
 import itertools
 import logging
+import os
 from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
@@ -25,7 +26,31 @@ list_pending = _core_get("list_pending")
 list_recent_docs = _core_get("list_recent_docs")
 build_visualizer_payload = _core_get("build_visualizer_payload")
 EINGANG = _core_get("EINGANG")
+BASE_PATH = _core_get("BASE_PATH")
+PENDING_DIR = _core_get("PENDING_DIR")
+DONE_DIR = _core_get("DONE_DIR")
 _NOTE_COUNTER = itertools.count(1)
+
+
+def _is_tenant_scoped_path(fp: Path, tenant: str) -> bool:
+    tenant = str(tenant or "").strip()
+    if not tenant:
+        return False
+    try:
+        rp = fp.resolve()
+    except Exception:
+        return False
+
+    for root in (EINGANG, BASE_PATH, PENDING_DIR, DONE_DIR):
+        if not isinstance(root, Path):
+            continue
+        try:
+            tenant_root = root.resolve() / tenant
+            if rp == tenant_root or str(rp).startswith(str(tenant_root) + os.sep):
+                return True
+        except Exception:
+            continue
+    return False
 
 def _visualizer_item_from_path(path: Path, source: str = "vault") -> dict | None:
     try:
@@ -94,6 +119,7 @@ def api_visualizer_sources():
 @bp.get("/api/visualizer/render")
 @login_required
 def api_visualizer_render():
+    tenant = current_tenant() or "default"
     src_b64 = request.args.get("source", "")
     if not src_b64: return jsonify(error="missing_source"), 400
     try:
@@ -103,6 +129,7 @@ def api_visualizer_render():
     fp = Path(raw_path)
     if not fp.exists(): return jsonify(error="file_not_found"), 404
     if not _is_allowed_path(fp): return jsonify(error="forbidden_path"), 403
+    if not _is_tenant_scoped_path(fp, tenant): return jsonify(error="forbidden_path"), 403
     
     if not callable(build_visualizer_payload):
         return jsonify(error="visualizer_logic_missing"), 503
@@ -149,6 +176,7 @@ def _summarize_payload(payload: dict) -> str:
 @bp.post("/api/visualizer/summary")
 @login_required
 def api_visualizer_summary():
+    tenant = current_tenant() or "default"
     body = request.get_json(silent=True) or {}
     src_b64 = str(body.get("source") or "")
     if not src_b64:
@@ -162,6 +190,8 @@ def api_visualizer_summary():
     if not fp.exists():
         return jsonify(error="file_not_found"), 404
     if not _is_allowed_path(fp):
+        return jsonify(error="forbidden_path"), 403
+    if not _is_tenant_scoped_path(fp, tenant):
         return jsonify(error="forbidden_path"), 403
     if not callable(build_visualizer_payload):
         return jsonify(error="visualizer_logic_missing"), 503
