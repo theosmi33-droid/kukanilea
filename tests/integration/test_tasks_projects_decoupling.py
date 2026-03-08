@@ -201,3 +201,86 @@ def test_execute_task_command_prefers_project_board_id_over_legacy_alias(tmp_pat
     assert row["project_board_id"] == "project-board-explicit"
     assert row["project_id"] == "project-zeta"
     assert row["project_card_id"] == "card-zeta-1"
+
+
+def test_team_task_schema_migrates_project_link_columns_for_existing_install(tmp_path, monkeypatch):
+    auth_db = tmp_path / "auth.sqlite3"
+    con = sqlite3.connect(auth_db)
+    try:
+        con.execute(
+            """
+            CREATE TABLE team_tasks(
+              id TEXT PRIMARY KEY,
+              tenant_id TEXT NOT NULL,
+              board_id TEXT,
+              title TEXT NOT NULL,
+              description TEXT,
+              priority TEXT NOT NULL DEFAULT 'MEDIUM',
+              due_at TEXT,
+              status TEXT NOT NULL DEFAULT 'OPEN',
+              created_by TEXT NOT NULL,
+              assigned_to TEXT,
+              rejection_reason TEXT,
+              source_type TEXT,
+              source_ref TEXT,
+              parent_task_id TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO team_tasks(
+              id, tenant_id, board_id, title, description, priority, due_at, status,
+              created_by, assigned_to, rejection_reason, source_type, source_ref,
+              parent_task_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            """,
+            (
+                "legacy-1",
+                "KUKANILEA",
+                "legacy-board",
+                "Legacy row",
+                "",
+                "MEDIUM",
+                None,
+                "OPEN",
+                "dev",
+                "dev",
+                None,
+                None,
+                None,
+                None,
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    monkeypatch.setenv("KUKANILEA_AUTH_DB", str(auth_db))
+    monkeypatch.setenv("KUKANILEA_CORE_DB", str(tmp_path / "core.sqlite3"))
+    app = create_app()
+    pm = ProjectManager(app.extensions["auth_db"])
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        columns = {
+            row["name"]
+            for row in con.execute("PRAGMA table_info(team_tasks)").fetchall()
+        }
+        row = con.execute(
+            "SELECT board_id, project_id, project_board_id, project_card_id FROM team_tasks WHERE id = ?",
+            ("legacy-1",),
+        ).fetchone()
+    finally:
+        con.close()
+
+    assert pm is not None
+    assert {"project_id", "project_board_id", "project_card_id"}.issubset(columns)
+    assert row is not None
+    assert row["board_id"] == "legacy-board"
+    assert row["project_board_id"] == "legacy-board"
+    assert row["project_id"] is None
+    assert row["project_card_id"] is None

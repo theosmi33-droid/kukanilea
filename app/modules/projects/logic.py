@@ -231,6 +231,14 @@ class ProjectManager:
                 );
                 """
             )
+            existing_columns = {
+                str(row[1])
+                for row in con.execute("PRAGMA table_info(team_tasks)").fetchall()
+                if row and len(row) > 1
+            }
+            for column_name in ("project_id", "project_board_id", "project_card_id"):
+                if column_name not in existing_columns:
+                    con.execute(f"ALTER TABLE team_tasks ADD COLUMN {column_name} TEXT")
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_team_tasks_tenant ON team_tasks(tenant_id, status, due_at);"
             )
