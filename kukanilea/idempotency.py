@@ -24,6 +24,7 @@ class IdempotencyDecision:
 @dataclass
 class _Entry:
     request_hash: str
+    created_at: float
     expires_at: float
     status: str
     token: str
@@ -32,10 +33,12 @@ class _Entry:
 
 
 class IdempotencyStore:
-    def __init__(self) -> None:
+    def __init__(self, *, max_entries: int = 1024, max_response_bytes: int = 64 * 1024) -> None:
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
         self._counter = 0
+        self._max_entries = max(1, int(max_entries))
+        self._max_response_bytes = max(512, int(max_response_bytes))
 
     def _next_token(self) -> str:
         self._counter += 1
@@ -45,6 +48,26 @@ class IdempotencyStore:
         expired = [key for key, entry in self._entries.items() if entry.expires_at <= now]
         for key in expired:
             self._entries.pop(key, None)
+
+    def _evict_one_for_capacity(self) -> None:
+        if not self._entries:
+            return
+        completed = [(key, entry) for key, entry in self._entries.items() if entry.status == "completed"]
+        candidates = completed or list(self._entries.items())
+        victim_key, _ = min(candidates, key=lambda item: (item[1].expires_at, item[1].created_at))
+        self._entries.pop(victim_key, None)
+
+    def _bounded_response(self, response: Mapping[str, Any]) -> dict[str, Any]:
+        copy = dict(response)
+        serialized = json.dumps(copy, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        if len(serialized.encode("utf-8")) <= self._max_response_bytes:
+            return copy
+        return {
+            "ok": bool(copy.get("ok", True)),
+            "tool": copy.get("tool"),
+            "name": copy.get("name"),
+            "result": {"truncated": True},
+        }
 
     def begin(self, *, scope: str, key: str, request_hash: str, ttl_seconds: int) -> IdempotencyDecision:
         now = time.time()
@@ -64,8 +87,11 @@ class IdempotencyStore:
                 )
 
             token = self._next_token()
+            while len(self._entries) >= self._max_entries:
+                self._evict_one_for_capacity()
             self._entries[scoped_key] = _Entry(
                 request_hash=request_hash,
+                created_at=now,
                 expires_at=now + max(1, int(ttl_seconds)),
                 status="in_flight",
                 token=token,
@@ -89,7 +115,7 @@ class IdempotencyStore:
             if entry is None or entry.token != token:
                 return
             entry.status = "completed"
-            entry.response = dict(response)
+            entry.response = self._bounded_response(response)
             entry.status_code = int(status_code)
             entry.expires_at = now + max(1, int(ttl_seconds))
 
@@ -103,4 +129,3 @@ class IdempotencyStore:
 
 
 GLOBAL_IDEMPOTENCY_STORE = IdempotencyStore()
-
