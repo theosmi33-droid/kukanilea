@@ -44,7 +44,7 @@ def build_prompt(
     user_prompt: str,
     domain: str | None,
     context_files: list[Path],
-    skip_alignment: bool,
+    skip_alignment: bool = False,
 ) -> str:
     parts: list[str] = []
 

@@ -7,40 +7,87 @@
   .tasks-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .tasks-card { border: 1px solid var(--color-border); background: var(--bg-secondary); border-radius: 12px; padding: 12px; }
   .tasks-muted { color: var(--color-text-muted); font-size: 12px; }
-  .tasks-title { margin: 0 0 4px 0; font-size: 13px; text-transform: uppercase; color: var(--color-text-muted); letter-spacing: 0.06em; }
+  .tasks-title { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; color: var(--color-text-muted); letter-spacing: 0.06em; }
   .tasks-value { font-size: 26px; font-weight: 700; margin: 0; }
   .tasks-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .tasks-table th, .tasks-table td { padding: 10px 8px; border-top: 1px solid var(--color-border); vertical-align: top; }
   .tasks-badge { border: 1px solid var(--color-border); border-radius: 999px; padding: 2px 8px; font-size: 11px; display: inline-block; }
   .tasks-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tasks-stack { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tasks-stack--top { margin-bottom: 8px; }
+  .tasks-heading { margin: 0; }
+  .tasks-subline { margin-top: 6px; }
+  .tasks-warning { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.09); }
+  .tasks-warning-soft { border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.08); }
+  .tasks-info { border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.06); }
+  .tasks-link-reset { text-decoration: none; }
+  .tasks-panel-scroll { overflow: auto; max-height: 520px; }
+  .tasks-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .tasks-search { display: flex; align-items: center; gap: 8px; }
+  .tasks-search-input { min-width: 240px; max-width: 320px; width: 100%; }
+  .tasks-empty { padding: 20px; text-align: center; }
+  .tasks-spacer td { padding: 0; border-top: 0; }
   @media (max-width: 980px) {
     .tasks-stats { grid-template-columns: 1fr; }
+    .tasks-search-input { min-width: 100%; }
   }
 </style>
 
-<section class="tasks-grid page-shell">
+<section class="tasks-grid page-shell" id="tasks-virtualized">
   <header class="page-header">
     <div>
       <p class="page-kicker">Tasks</p>
       <h1 class="m-0 text-3xl font-bold tracking-tight">Aufgaben</h1>
-      <p class="tasks-muted" style="margin-top:6px;">Zentrale Übersicht aller Projektaufgaben.</p>
+      <p class="tasks-muted tasks-subline">Zentrale Übersicht aller Projektaufgaben.</p>
     </div>
     <a href="/projects" class="btn btn-secondary btn-sm">Projektboard öffnen</a>
   </header>
-  {% if request.args.get('origin') == 'upload' %}
-  <article class="tasks-card" style="border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.06);">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+
+  {% if degraded_state %}
+  <article class="tasks-card tasks-warning">
+    <div class="tasks-stack">
       <div>
-        <h2 style="margin:0; font-size:15px;">Upload erfolgreich verarbeitet</h2>
-        <div class="tasks-muted">Nächster Schritt: Aufgabe priorisieren oder direkt im Projektboard weiterarbeiten.</div>
+        <h2 class="tasks-heading" style="font-size:15px;">Eingeschränkter Modus</h2>
+        <div class="tasks-muted">{{ degraded_state }}</div>
       </div>
       <div class="tasks-actions">
-        <a href="/upload" class="tasks-badge" style="text-decoration:none;">Neuer Upload</a>
-        <a href="/projects?origin=tasks" class="tasks-badge" style="text-decoration:none;">Projektboard öffnen</a>
+        <a href="/tasks" class="tasks-badge tasks-link-reset">Seite neu laden</a>
+        <a href="/projects" class="tasks-badge tasks-link-reset">Projektboard öffnen</a>
       </div>
     </div>
   </article>
   {% endif %}
+
+  {% if request.args.get('origin') == 'upload' %}
+  <article class="tasks-card tasks-info">
+    <div class="tasks-stack">
+      <div>
+        <h2 class="tasks-heading" style="font-size:15px;">Upload erfolgreich verarbeitet</h2>
+        <div class="tasks-muted">Nächster Schritt: Aufgabe priorisieren oder direkt im Projektboard weiterarbeiten.</div>
+      </div>
+      <div class="tasks-actions">
+        <a href="/upload" class="tasks-badge tasks-link-reset">Neuer Upload</a>
+        <a href="/projects?origin=tasks" class="tasks-badge tasks-link-reset">Projektboard öffnen</a>
+      </div>
+    </div>
+  </article>
+  {% endif %}
+
+  {% if tasks_degraded %}
+  <article class="tasks-card tasks-warning-soft">
+    <div class="tasks-stack" style="align-items:flex-start;">
+      <div>
+        <h2 class="tasks-heading" style="font-size:15px;">Aufgaben werden eingeschränkt angezeigt</h2>
+        <div class="tasks-muted">Ein Teil der Daten ist gerade nicht erreichbar. Sie können weiterarbeiten und später aktualisieren.</div>
+      </div>
+      <div class="tasks-actions">
+        <a href="/tasks" class="tasks-badge tasks-link-reset">Ansicht aktualisieren</a>
+        <a href="/projects" class="tasks-badge tasks-link-reset">Zum Projektboard</a>
+      </div>
+    </div>
+  </article>
+  {% endif %}
+
   <div class="tasks-stats">
     <article class="tasks-card">
       <p class="tasks-title">Gesamt</p>
@@ -57,17 +104,26 @@
   </div>
 
   <article class="tasks-card">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px;">
+    <div class="tasks-stack tasks-stack--top">
       <div>
-        <h2 style="margin:0;">Aufgabenübersicht</h2>
+        <h2 class="tasks-heading">Aufgabenübersicht</h2>
         <div class="tasks-muted">Live aus dem Projektaufgaben-Backend</div>
       </div>
       <div class="tasks-actions">
-        <a href="/projects" class="tasks-badge" style="text-decoration:none;">Zum Projektboard</a>
+        <a href="/projects" class="tasks-badge tasks-link-reset">Zum Projektboard</a>
       </div>
     </div>
 
-    <div style="overflow:auto;">
+    {% if tasks %}
+    <div class="tasks-toolbar">
+      <label class="tasks-search" for="tasks-search-input">
+        <span class="tasks-muted">Suche</span>
+        <input id="tasks-search-input" class="input tasks-search-input" type="search" placeholder="Titel, Status, Spalte, Verantwortlich" autocomplete="off">
+      </label>
+      <span id="tasks-search-count" class="tasks-muted">{{ (tasks or [])|length }} Ergebnisse</span>
+    </div>
+
+    <div id="tasks-table-viewport" class="tasks-panel-scroll" aria-live="polite">
       <table class="tasks-table">
         <thead>
           <tr>
@@ -78,29 +134,24 @@
             <th align="left">Fällig</th>
           </tr>
         </thead>
-        <tbody>
-          {% for t in tasks or [] %}
-          <tr>
-            <td>
-              <strong>{{ t.get("title", "Ohne Titel") }}</strong>
-              {% if t.get("description") %}
-              <div class="tasks-muted">{{ t.get("description") }}</div>
-              {% endif %}
-            </td>
-            <td><span class="tasks-badge">{{ t.get("status", "-") }}</span></td>
-            <td>{{ t.get("column_name", "-") }}</td>
-            <td>{{ t.get("assigned_to") or t.get("assigned_user") or "-" }}</td>
-            <td>{{ t.get("due_at") or t.get("due_date") or "-" }}</td>
-          </tr>
-          {% endfor %}
-          {% if not tasks %}
-          <tr>
-            <td colspan="5" class="tasks-muted" style="text-align:center; padding:20px;">Keine Aufgaben vorhanden.</td>
-          </tr>
-          {% endif %}
-        </tbody>
+        <tbody id="tasks-table-body"></tbody>
       </table>
     </div>
+    <script id="tasks-data-json" type="application/json">{{ (tasks or [])|tojson }}</script>
+    {% else %}
+    <div class="tasks-empty">
+      {% with kicker="Aufgaben", title="Keine offenen Aufgaben", message="Starten Sie mit einem Upload oder legen Sie direkt im Projektboard eine neue Aufgabe an.", tone_class="border-light bg-subtle", ctas=[{"href":"/upload", "label":"Upload starten", "class":"btn-primary btn-sm"}, {"href":"/projects", "label":"Projektboard öffnen", "class":"btn-secondary btn-sm"}] %}
+        {% include "components/state_panel.html" %}
+      {% endwith %}
+    </div>
+    {% endif %}
   </article>
 </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script type="module">
+    import('/static/js/tasks-performance.js');
+  </script>
 {% endblock %}

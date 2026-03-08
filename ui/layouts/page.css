@@ -1,0 +1,26 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.page__title {
+  margin: 0;
+}
+
+.page__meta {
+  color: var(--text-muted);
+  font-size: var(--font-size-14);
+}
+
+.grid-auto {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
