@@ -68,3 +68,10 @@ def test_components_css_contains_layout_and_table_utilities() -> None:
     ]
     for rule in utility_rules:
         assert rule in css
+
+
+def test_login_template_keeps_local_recovery_links() -> None:
+    html = _read("app/templates/login.html")
+    assert 'href="/forgot"' in html
+    assert 'href="/bootstrap"' in html
+    assert "Bootstrap (lokal)" in html
