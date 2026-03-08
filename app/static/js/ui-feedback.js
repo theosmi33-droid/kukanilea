@@ -4,6 +4,8 @@
  */
 
 const UIFeedback = {
+    lastFocusedElement: null,
+
     init() {
         this.ensureContainers();
     },
@@ -25,11 +27,11 @@ const UIFeedback = {
             const template = document.createElement('template');
             template.id = 'confirm-dialog-template';
             template.innerHTML = `
-                <div class="confirm-dialog-inner" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10100; padding: 20px;">
-                    <div class="confirm-dialog card" style="max-width: 400px; width: 100%; padding: 24px; box-shadow: var(--shadow-xl); border: 1px solid var(--border-color); background: var(--bg-primary); border-radius: 16px;">
+                <div class="confirm-dialog-inner" role="presentation" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10100; padding: 20px;">
+                    <div class="confirm-dialog card" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message" style="max-width: 400px; width: 100%; padding: 24px; box-shadow: var(--shadow-xl); border: 1px solid var(--border-color); background: var(--bg-primary); border-radius: 16px;">
                         <p class="confirm-eyebrow" style="margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary);">Sicherheitsabfrage</p>
-                        <h3 class="confirm-title" style="margin-top: 0; font-size: 18px; color: var(--text-primary);">Bestätigung</h3>
-                        <p class="confirm-message" style="font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.5;"></p>
+                        <h3 id="confirm-dialog-title" class="confirm-title" style="margin-top: 0; font-size: 18px; color: var(--text-primary);">Bestätigung</h3>
+                        <p id="confirm-dialog-message" class="confirm-message" style="font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.5;"></p>
                         <p class="confirm-risk" style="font-size: 13px; color: var(--text-secondary); margin: -14px 0 20px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--surface-muted, #f8fafc);">Bitte prüfen: Erst nach Ihrer Freigabe wird die Aktion ausgeführt.</p>
                         <div class="confirm-actions" style="display: flex; gap: 12px; justify-content: flex-end;">
                             <button class="confirm-btn-no btn btn-secondary" style="min-width: 120px;">Nicht ausführen</button>
@@ -112,6 +114,7 @@ const UIFeedback = {
 
         // Remove existing if any
         this.closeConfirmDialog();
+        this.lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
         const backdrop = document.createElement('div');
         backdrop.id = 'confirm-dialog-backdrop';
@@ -136,6 +139,21 @@ const UIFeedback = {
             if (onCancel) onCancel();
         };
 
+        backdrop.addEventListener('click', (event) => {
+            if (event.target === backdrop || event.target.classList.contains('confirm-dialog-inner')) {
+                this.closeConfirmDialog();
+                if (onCancel) onCancel();
+            }
+        });
+
+        backdrop.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                this.closeConfirmDialog();
+                if (onCancel) onCancel();
+            }
+        });
+
         // Trap focus
         if (window.UIShell) UIShell.trapFocus(backdrop);
     },
@@ -152,6 +170,10 @@ const UIFeedback = {
     closeConfirmDialog() {
         const dialog = document.getElementById('confirm-dialog-backdrop');
         if (dialog) dialog.remove();
+        if (this.lastFocusedElement) {
+            this.lastFocusedElement.focus();
+            this.lastFocusedElement = null;
+        }
     }
 };
 
