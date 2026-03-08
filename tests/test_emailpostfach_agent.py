@@ -124,10 +124,16 @@ def test_unit_ingest_failure_auth_and_network(tmp_path):
 
 
 def test_integration_emailpostfach_api_flow(tmp_path, monkeypatch):
+    import sqlite3
+
     client = _client(tmp_path, monkeypatch)
     headers = {"X-CSRF-Token": "test-csrf"}
 
-    ingest = client.post("/api/emailpostfach/ingest", json={"provider": "imap_stub", "actor": "admin"}, headers=headers)
+    ingest = client.post(
+        "/api/emailpostfach/ingest",
+        json={"provider": "imap_stub", "actor": "spoofed-admin"},
+        headers=headers,
+    )
     assert ingest.status_code == 200
     assert ingest.get_json()["result"]["inserted"] == 1
 
@@ -140,7 +146,7 @@ def test_integration_emailpostfach_api_flow(tmp_path, monkeypatch):
 
     draft_resp = client.post(
         "/api/emailpostfach/draft/generate",
-        json={"message": {"subject": "Termin", "from": "kunde@example.com"}, "actor": "admin"},
+        json={"message": {"subject": "Termin", "from": "kunde@example.com"}, "actor": "spoofed-editor"},
         headers=headers,
     )
     assert draft_resp.status_code == 200
@@ -148,24 +154,43 @@ def test_integration_emailpostfach_api_flow(tmp_path, monkeypatch):
 
     edit = client.post(
         f"/api/emailpostfach/draft/{draft_id}/edit",
-        json={"subject": "Aktualisiert", "body": "Neue Nachricht", "actor": "admin"},
+        json={"subject": "Aktualisiert", "body": "Neue Nachricht", "actor": "spoofed-editor"},
         headers=headers,
     )
     assert edit.status_code == 200
 
     blocked_send = client.post(
         f"/api/emailpostfach/draft/{draft_id}/send",
-        json={"confirm": "no", "actor": "admin"},
+        json={"confirm": "no", "actor": "spoofed-sender"},
         headers=headers,
     )
     assert blocked_send.status_code == 409
 
     send = client.post(
         f"/api/emailpostfach/draft/{draft_id}/send",
-        json={"confirm": "yes", "actor": "admin"},
+        json={"confirm": "yes", "actor": "spoofed-sender"},
         headers=headers,
     )
     assert send.status_code == 200
+
+    con = sqlite3.connect(str(tmp_path / "auth.sqlite3"))
+    con.row_factory = sqlite3.Row
+    draft_row = con.execute(
+        "SELECT created_by, updated_by FROM emailpostfach_drafts WHERE id=?",
+        (draft_id,),
+    ).fetchone()
+    audit_users = [
+        row["username"]
+        for row in con.execute(
+            "SELECT username FROM emailpostfach_audit WHERE tenant_id=? ORDER BY ts",
+            ("KUKANILEA",),
+        ).fetchall()
+    ]
+    con.close()
+
+    assert draft_row["created_by"] == "admin"
+    assert draft_row["updated_by"] == "admin"
+    assert all(user == "admin" for user in audit_users)
 
 
 def test_integration_ingest_failure_responses(tmp_path, monkeypatch):
