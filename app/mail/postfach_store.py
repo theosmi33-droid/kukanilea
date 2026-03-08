@@ -16,9 +16,14 @@ from typing import Any
 
 from app import core as core
 from app.config import Config
+from app.core.upload_pipeline import MAX_FILE_SIZE
 from app.event_id_map import entity_id_int
 from app.eventlog.core import event_append
 from app.knowledge import knowledge_redact_text
+
+MAIL_ATTACHMENT_TENANT_QUOTA_BYTES = int(
+    os.environ.get("KUKANILEA_MAIL_ATTACHMENT_TENANT_QUOTA_BYTES", str(100 * 1024 * 1024))
+)
 
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -1135,14 +1140,16 @@ def ingest_message_attachments(
     attachments: list[dict[str, Any]],
 ) -> dict[str, Any]:
     ensure_postfach_schema(db_path)
+    tenant_key = str(tenant_id or "default")
     base_dir = (
         Config.USER_DATA_ROOT
         / "mail_attachments"
-        / str(tenant_id or "default")
+        / tenant_key
         / str(account_id or "unknown")
         / str(message_id or "unknown")
     )
     quarantine_dir = Config.USER_DATA_ROOT / "mail_quarantine"
+    tenant_dir = Config.USER_DATA_ROOT / "mail_attachments" / tenant_key
     base_dir.mkdir(parents=True, exist_ok=True)
     quarantine_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1152,6 +1159,9 @@ def ingest_message_attachments(
     quarantined = 0
     errors = 0
     attachment_ids: list[str] = []
+    tenant_usage_bytes = sum(
+        path.stat().st_size for path in tenant_dir.rglob("*") if path.is_file()
+    )
 
     for idx, attachment in enumerate(attachments, start=1):
         filename = _safe_attachment_filename(
@@ -1161,6 +1171,7 @@ def ingest_message_attachments(
         mime_type = str(attachment.get("mime_type") or "application/octet-stream")
         payload = bytes(attachment.get("content_bytes") or b"")
         size_bytes = int(attachment.get("size_bytes") or len(payload))
+        payload_size_bytes = max(0, len(payload), size_bytes)
         if not payload and size_bytes <= 0:
             continue
         processed += 1
@@ -1170,11 +1181,44 @@ def ingest_message_attachments(
             "status": "pending",
             "filename": filename,
             "mime_type": mime_type,
-            "size_bytes": size_bytes,
+            "size_bytes": payload_size_bytes,
         }
+
+        if payload_size_bytes > MAX_FILE_SIZE:
+            ref["status"] = "rejected"
+            ref["reason"] = "file_too_large"
+            rejected += 1
+            attachment_id = store_message_attachment(
+                db_path,
+                tenant_id=tenant_id,
+                message_id=message_id,
+                filename=filename,
+                mime_type=mime_type,
+                size_bytes=payload_size_bytes,
+                content_ref=ref,
+            )
+            attachment_ids.append(attachment_id)
+            continue
+
+        if tenant_usage_bytes + payload_size_bytes > MAIL_ATTACHMENT_TENANT_QUOTA_BYTES:
+            ref["status"] = "rejected"
+            ref["reason"] = "tenant_quota_exceeded"
+            rejected += 1
+            attachment_id = store_message_attachment(
+                db_path,
+                tenant_id=tenant_id,
+                message_id=message_id,
+                filename=filename,
+                mime_type=mime_type,
+                size_bytes=payload_size_bytes,
+                content_ref=ref,
+            )
+            attachment_ids.append(attachment_id)
+            continue
 
         try:
             target.write_bytes(payload)
+            tenant_usage_bytes += payload_size_bytes
             from app.core.malware_scanner import scan_file_stream
             from app.core.upload_pipeline import process_upload
 
@@ -1216,7 +1260,7 @@ def ingest_message_attachments(
             message_id=message_id,
             filename=filename,
             mime_type=mime_type,
-            size_bytes=size_bytes,
+            size_bytes=payload_size_bytes,
             content_ref=ref,
         )
         attachment_ids.append(attachment_id)
