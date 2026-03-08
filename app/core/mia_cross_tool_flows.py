@@ -46,6 +46,12 @@ DEFAULT_ACTIONS: dict[str, RegisteredAction] = {
 
 FLOW_CATALOG: tuple[FlowDefinition, ...] = (
     FlowDefinition(
+        flow_id="inquiry_to_task_project_calendar_proposal",
+        trigger="inquiry.received",
+        title="Anfrage -> Task/Projekt -> Termin",
+        value="Produktiv-kritischer Kernflow: Anfrage wird als Task/Projekt plus Termin-Vorschlag vorbereitet.",
+    ),
+    FlowDefinition(
         flow_id="email_to_task",
         trigger="email.received",
         title="E-Mail -> Aufgabe",
@@ -187,6 +193,33 @@ class MiaFlowEngine:
                     {"step_index": index, "action": action, "reason": "action_not_registered", "tenant_id": tenant_id},
                 )
                 continue
+            action_def = self.registered_actions[action]
+            if action_def.kind == "write" and not step.get("confirm_required", False):
+                results.append({"action": action, "status": "blocked", "reason": "write_requires_confirm"})
+                self._audit(
+                    "mia.step.blocked",
+                    proposal_id,
+                    {
+                        "step_index": index,
+                        "action": action,
+                        "reason": "write_requires_confirm",
+                        "tenant_id": tenant_id,
+                    },
+                )
+                continue
+            if action_def.kind == "write" and not confirmed:
+                results.append({"action": action, "status": "blocked", "reason": "confirmation_required"})
+                self._audit(
+                    "mia.step.blocked",
+                    proposal_id,
+                    {
+                        "step_index": index,
+                        "action": action,
+                        "reason": "confirmation_required",
+                        "tenant_id": tenant_id,
+                    },
+                )
+                continue
             if step.get("mode") == "propose":
                 results.append({"action": action, "status": "proposed_only", "reason": step.get("reason", "missing_context")})
                 self._audit(
@@ -236,6 +269,68 @@ class MiaFlowEngine:
             str(payload.get(key) or "")
             for key in ("subject", "body", "message", "ocr_text", "filename", "title", "description")
         ).lower()
+
+        # 0. Anfrage -> Task/Projekt -> Termin-Vorschlag (Kernflow)
+        if trigger == "inquiry.received" and any(word in text for word in ("anfrage", "inquiry", "angebot", "projekt", "termin")):
+            task_title = str(payload.get("task_title") or payload.get("subject") or "").strip()
+            project_name = str(payload.get("project_name") or "").strip()
+            starts_at = str(payload.get("suggested_start") or payload.get("due_at") or "").strip()
+            clarifications: list[str] = []
+            if not task_title:
+                clarifications.append("Welche konkrete Aufgabe soll aus der Anfrage entstehen?")
+            if not project_name:
+                clarifications.append("Wie soll das Projekt heißen?")
+            if not starts_at:
+                clarifications.append("Wann soll der Termin stattfinden?")
+            return {
+                "flow_id": "inquiry_to_task_project_calendar_proposal",
+                "flow_title": "Anfrage -> Task/Projekt -> Termin",
+                "degradation": "proposal_chain_for_missing_context" if clarifications else "offline_local_delivery_chain",
+                "clarifications": clarifications,
+                "steps": [
+                    {
+                        "action": "create_task",
+                        "confirm_required": True,
+                        "mode": "confirm" if task_title else "propose",
+                        "reason": "missing_task_title" if not task_title else "",
+                        "payload": {
+                            "tenant": str(payload.get("tenant") or "KUKANILEA"),
+                            "title": task_title or "Aufgabe aus Anfrage",
+                            "details": str(payload.get("body") or payload.get("description") or ""),
+                            "source_ref": str(payload.get("inquiry_id") or payload.get("id") or ""),
+                        },
+                    },
+                    {
+                        "action": "create_project_proposal",
+                        "confirm_required": True,
+                        "mode": "confirm" if project_name else "propose",
+                        "reason": "missing_project_name" if not project_name else "",
+                        "payload": {
+                            "tenant": str(payload.get("tenant") or "KUKANILEA"),
+                            "name": project_name or "Projekt aus Anfrage",
+                            "description": str(payload.get("body") or "Projektvorschlag aus Anfrage"),
+                        },
+                    },
+                    {
+                        "action": "suggest_meeting_slots",
+                        "confirm_required": False,
+                        "mode": "execute",
+                        "payload": {"text": text, "tenant": str(payload.get("tenant") or "KUKANILEA")},
+                    },
+                    {
+                        "action": "create_calendar_event",
+                        "confirm_required": True,
+                        "mode": "confirm" if starts_at else "propose",
+                        "reason": "missing_start_time" if not starts_at else "",
+                        "payload": {
+                            "tenant": str(payload.get("tenant") or "KUKANILEA"),
+                            "title": str(payload.get("meeting_title") or "Termin aus Anfrage"),
+                            "start_at": starts_at,
+                            "description": str(payload.get("body") or ""),
+                        },
+                    },
+                ],
+            }
 
         # 1. E-Mail -> Aufgabe
         if trigger == "email.received" and any(word in text for word in ("todo", "aufgabe", "task")):
