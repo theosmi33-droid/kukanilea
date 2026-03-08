@@ -56,3 +56,29 @@ def test_visualizer_summary_reports_runtime_readiness_state(auth_client):
     if body["metrics"]["render_backend_ready"] == 0:
         assert body["status"] == "degraded"
         assert body.get("degraded_reason") == "visualizer_logic_missing"
+
+
+def test_visualizer_summary_degraded_when_backend_missing(monkeypatch):
+    from app.contracts import tool_contracts
+
+    original = tool_contracts._core_get
+
+    def _fake_core_get(name: str, default=None):
+        if name == "build_visualizer_payload":
+            return None
+        return original(name, default)
+
+    monkeypatch.setattr(tool_contracts, "_core_get", _fake_core_get)
+    payload = tool_contracts.build_tool_summary("visualizer", tenant="KUKANILEA")
+    assert payload["status"] == "degraded"
+    assert payload.get("degraded_reason") == "visualizer_logic_missing"
+
+
+def test_visualizer_summary_reports_markup_not_ready(monkeypatch):
+    import app.core.visualizer_markup as markup
+    from app.contracts import tool_contracts
+
+    monkeypatch.setattr(markup, "append_markup", None, raising=False)
+    payload = tool_contracts.build_tool_summary("visualizer", tenant="KUKANILEA")
+    assert payload["metrics"]["markup_ready"] == 0
+    assert payload["details"]["runtime"]["markup_ready"] is False

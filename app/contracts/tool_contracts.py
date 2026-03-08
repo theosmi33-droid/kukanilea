@@ -769,8 +769,21 @@ def _collect_visualizer_summary(tenant: str) -> tuple[dict, dict, str]:
 
 
 def _collect_settings_summary(tenant: str) -> tuple[dict, dict, str]:
-    metrics = {"security_headers": 1, "admin_tools": 1}
-    details = {"pages": ["/settings", "/admin/logs", "/admin/audit"], "tenant": tenant}
+    metrics = {
+        "security_headers": 1,
+        "admin_tools": 1,
+        "actions_available": 3,
+        "write_actions_gated": 2,
+    }
+    details = {
+        "pages": ["/settings", "/admin/logs", "/admin/audit"],
+        "actions": ["setting.read", "setting.update", "key.rotate"],
+        "approval_gate": {
+            "write_confirm_required": True,
+            "write_audit_required": True,
+        },
+        "tenant": tenant,
+    }
     return metrics, details, ""
 
 
