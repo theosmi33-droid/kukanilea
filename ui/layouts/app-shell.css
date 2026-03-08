@@ -1,0 +1,33 @@
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  background: var(--surface-page);
+}
+
+.app-shell__sidebar {
+  border-right: 1px solid var(--border-soft);
+  background: var(--surface-panel);
+  padding: var(--space-6) var(--space-4);
+}
+
+.app-shell__main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+}
+
+.app-shell__topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border-soft);
+  padding: var(--space-3) var(--space-6);
+}
+
+.app-shell__content {
+  padding: var(--space-6);
+  background: var(--background-secondary);
+}
