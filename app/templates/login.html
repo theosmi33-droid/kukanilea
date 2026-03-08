@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anmeldung - {{ branding.app_name }}</title>
+  <link rel="stylesheet" href="/static/css/fonts.css">
   <link rel="stylesheet" href="/static/css/system.css">
   <link rel="stylesheet" href="/static/css/components.css">
   <style>
@@ -20,6 +21,46 @@
       width: 100%;
       max-width: 400px;
     }
+    .login-intro {
+      color: var(--color-text-muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+    .login-fieldset {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      margin-bottom: 14px;
+      background: color-mix(in srgb, var(--color-bg-panel) 92%, white);
+    }
+    .login-legend {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--color-text-main);
+      padding: 0 6px;
+      letter-spacing: .02em;
+    }
+    .input-hint {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--color-text-muted);
+    }
+    .input:focus-visible,
+    .btn:focus-visible,
+    a:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--color-accent) 80%, white);
+      outline-offset: 2px;
+    }
+    .error-banner {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: var(--color-danger);
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 16px;
+      font-size: 13px;
+      font-weight: 500;
+    }
   </style>
 </head>
 <body>
@@ -31,25 +72,30 @@
     <div style="text-align:center; margin-bottom: 32px;">
       <img src="/static/logo.svg" width="64" height="64" alt="Logo" style="margin-bottom: 16px;">
       <h1 style="font-size: 24px; font-weight: 700;">{{ branding.app_name }}</h1>
-      <p style="color: var(--color-text-muted); font-size: 14px;">Enterprise Core Access</p>
+      <p class="login-intro">Sicher anmelden und direkt weiterarbeiten.</p>
     </div>
 
     {% if error %}
-    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: var(--color-danger); padding: 12px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; font-weight: 500;">
+    <div class="error-banner" role="alert" aria-live="assertive">
       {{ error }}
     </div>
     {% endif %}
 
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="input-group">
-        <label>Benutzername</label>
-        <input type="text" name="username" class="input" required autofocus>
-      </div>
-      <div class="input-group">
-        <label>Passwort</label>
-        <input type="password" name="password" class="input" required>
-      </div>
+      <fieldset class="login-fieldset">
+        <legend class="login-legend">Ihre Zugangsdaten</legend>
+        <div class="input-group">
+          <label for="login-username">Benutzername</label>
+          <input id="login-username" type="text" name="username" class="input" required autocomplete="username" aria-describedby="username-hint" autofocus>
+          <p id="username-hint" class="input-hint">So wie bei der Ersteinrichtung angelegt.</p>
+        </div>
+        <div class="input-group" style="margin-bottom:0;">
+          <label for="login-password">Passwort</label>
+          <input id="login-password" type="password" name="password" class="input" required autocomplete="current-password" aria-describedby="password-hint">
+          <p id="password-hint" class="input-hint">Mindestens 8 Zeichen empfohlen.</p>
+        </div>
+      </fieldset>
       <button type="submit" class="btn btn-primary" style="width:100%; margin-top: 8px; height: 48px;">System betreten</button>
     </form>
     <div style="margin-top:12px; display:flex; justify-content:space-between; gap:12px; font-size:12px;">

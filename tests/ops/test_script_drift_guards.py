@@ -6,6 +6,8 @@ def test_healthcheck_supports_skip_pytest_fallback():
     assert "--skip-pytest" in script
     assert "continuing outside CI mode" in script
     assert "skipping HTTP route probes" in script
+    assert "e2e.mode=" in script
+    assert "skip_python_e2e" in script
     assert "CI mode enabled" in script
     assert "scripts/dev/doctor.sh --strict --ci" in script
 
