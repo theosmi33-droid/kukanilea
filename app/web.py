@@ -4503,6 +4503,7 @@ def tasks_page():
         inbox=inbox,
         notifications=notifications,
         degraded_state=degraded_state,
+        tasks_degraded=bool(degraded_state),
     )
 
 
@@ -4909,6 +4910,7 @@ def projects_list():
         activities=activities,
         tasks=tasks,
         degraded_state=degraded_state,
+        projects_degraded=bool(degraded_state),
     )
 
 
