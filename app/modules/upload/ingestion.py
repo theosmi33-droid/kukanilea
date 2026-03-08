@@ -12,6 +12,7 @@ from typing import Any
 from app.config import Config
 
 PARSER_VERSION = "2026-03-05"
+INGEST_ARTIFACT_QUOTA_BYTES = 100 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,9 @@ def store_artifact(*, tenant: str, source: str, payload_bytes: bytes, metadata: 
 
     raw_path = artifact_root / f"{artifact_hash}.bin"
     if not raw_path.exists():
+        current_usage = sum(path.stat().st_size for path in artifact_root.glob("*.bin") if path.is_file())
+        if current_usage + len(payload_bytes) > INGEST_ARTIFACT_QUOTA_BYTES:
+            raise ValueError("quota_exceeded")
         raw_path.write_bytes(payload_bytes)
 
     sidecar = {

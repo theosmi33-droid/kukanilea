@@ -4999,6 +4999,7 @@ def api_tool_summary(tool: str):
 
 @bp.post("/api/upload/ingest")
 @login_required
+@upload_limiter.limit_required
 def api_upload_ingest():
     tenant = str(current_tenant() or "default")
     body = request.get_json(silent=True) if request.is_json else None
@@ -5026,14 +5027,19 @@ def api_upload_ingest():
     else:
         payload_bytes = raw_text.encode("utf-8")
 
-    payload = ingest_unstructured_bytes(
-        source=source,
-        tenant=tenant,
-        payload_bytes=payload_bytes,
-        metadata=metadata,
-        filename=str(metadata.get("filename") or ""),
-        content_type=str(metadata.get("content_type") or ""),
-    )
+    try:
+        payload = ingest_unstructured_bytes(
+            source=source,
+            tenant=tenant,
+            payload_bytes=payload_bytes,
+            metadata=metadata,
+            filename=str(metadata.get("filename") or ""),
+            content_type=str(metadata.get("content_type") or ""),
+        )
+    except ValueError as exc:
+        if str(exc) == "quota_exceeded":
+            return jsonify(error="quota_exceeded", message="Speicherlimit für Mandant erreicht."), 403
+        raise
     return jsonify(payload)
 
 
