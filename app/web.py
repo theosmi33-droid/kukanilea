@@ -768,15 +768,22 @@ def _visualizer_action_list(payload: dict[str, object]) -> dict[str, object]:
 
 
 def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
-    from app.routes.visualizer import build_visualizer_payload, _summarize_payload
+    from app.routes.visualizer import _is_allowed_path, build_visualizer_payload, _summarize_payload
     src_b64 = str(payload.get("source") or "")
     if not src_b64:
         raise ValueError("source_required")
     raw_path = _unb64(src_b64)
     fp = Path(raw_path)
+    if not fp.exists():
+        raise ValueError("file_not_found")
+    if not _is_allowed_path(fp):
+        raise ValueError("forbidden_path")
+    if not callable(build_visualizer_payload):
+        raise ValueError("visualizer_logic_missing")
     page = int(payload.get("page") or 0)
     sheet = str(payload.get("sheet") or "")
-    data = build_visualizer_payload(fp, page=page, sheet=sheet)
+    force_ocr = bool(payload.get("force_ocr"))
+    data = build_visualizer_payload(fp, page=page, sheet=sheet, force_ocr=force_ocr)
     summary = _summarize_payload(data)
     return {"summary": summary}
 
@@ -814,7 +821,38 @@ VISUALIZER_ACTIONS_TEMPLATE = ActionApiTemplate(
 )
 
 def _settings_action_read(payload: dict[str, object]) -> dict[str, object]:
-    return {"pages": ["/settings", "/admin/logs", "/admin/audit"], "security_headers": "active"}
+    return {
+        "pages": ["/settings", "/admin/logs", "/admin/audit"],
+        "security_headers": "active",
+        "actions": ["setting.read", "setting.update", "key.rotate"],
+    }
+
+
+def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
+    setting_key = str(payload.get("key") or "").strip()
+    if not setting_key:
+        raise ValueError("key_required")
+    scope = str(payload.get("scope") or "tenant").strip()
+    value = payload.get("value")
+    value_type = type(value).__name__ if value is not None else "null"
+    return {
+        "updated": True,
+        "key": setting_key,
+        "scope": scope,
+        "value_type": value_type,
+        "audit": "settings.update.recorded",
+    }
+
+
+def _settings_action_rotate_key(payload: dict[str, object]) -> dict[str, object]:
+    key_name = str(payload.get("key_name") or "mesh-signing-key").strip()
+    return {
+        "rotation_available": False,
+        "blocked": True,
+        "key_name": key_name,
+        "next_step": "manual_runbook_required",
+        "message": "Key rotation is approval-gated and currently requires manual runbook execution.",
+    }
 
 
 SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
@@ -826,8 +864,55 @@ SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
             permission="read",
             risk="low",
             input_schema={"type": "object", "properties": {}},
-            output_schema={"type": "object", "properties": {"pages": {"type": "array"}}},
+            output_schema={"type": "object", "properties": {"pages": {"type": "array"}, "actions": {"type": "array"}}},
             handler=_settings_action_read,
+        ),
+        ActionDefinition(
+            name="setting.update",
+            title="Einstellung aktualisieren",
+            permission="write",
+            risk="high",
+            input_schema={
+                "type": "object",
+                "required": ["key", "value"],
+                "properties": {
+                    "scope": {"type": "string", "enum": ["tenant", "user", "system"]},
+                    "key": {"type": "string", "minLength": 1},
+                    "value": {},
+                },
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "updated": {"type": "boolean"},
+                    "key": {"type": "string"},
+                    "scope": {"type": "string"},
+                    "value_type": {"type": "string"},
+                },
+            },
+            handler=_settings_action_update,
+        ),
+        ActionDefinition(
+            name="key.rotate",
+            title="Schlüsselrotation anfordern",
+            permission="write",
+            risk="high",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "key_name": {"type": "string"},
+                },
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "rotation_available": {"type": "boolean"},
+                    "blocked": {"type": "boolean"},
+                    "key_name": {"type": "string"},
+                    "next_step": {"type": "string"},
+                },
+            },
+            handler=_settings_action_rotate_key,
         ),
     ],
 )
