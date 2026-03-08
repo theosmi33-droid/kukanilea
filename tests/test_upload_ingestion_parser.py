@@ -114,3 +114,31 @@ def test_ingest_bytes_handles_invalid_json_with_fallback_warning(tmp_path: Path,
 
     assert payload["extraction"]["strategy"].startswith("json:invalid")
     assert "invalid_json" in payload["extraction"]["warnings"]
+
+
+def test_ingest_enforces_per_tenant_artifact_quota(tmp_path: Path, monkeypatch) -> None:
+    from app.config import Config
+
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+
+    quota = 32
+    monkeypatch.setattr("app.modules.upload.ingestion.INGEST_ARTIFACT_QUOTA_BYTES", quota)
+
+    ingest_unstructured_bytes(
+        source="text",
+        tenant="tenant-a",
+        payload_bytes=b"a" * 24,
+        metadata={},
+    )
+
+    try:
+        ingest_unstructured_bytes(
+            source="text",
+            tenant="tenant-a",
+            payload_bytes=b"b" * 16,
+            metadata={},
+        )
+    except ValueError as exc:
+        assert str(exc) == "quota_exceeded"
+    else:
+        raise AssertionError("Expected quota_exceeded when tenant artifact quota is exceeded")
