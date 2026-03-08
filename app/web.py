@@ -776,6 +776,8 @@ def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
     fp = Path(raw_path)
     if not fp.exists():
         raise ValueError("file_not_found")
+    if not _is_allowed_path(fp):
+        raise ValueError("forbidden_path")
     if not callable(build_visualizer_payload):
         raise ValueError("visualizer_logic_missing")
     page = int(payload.get("page") or 0)
