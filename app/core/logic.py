@@ -2361,7 +2361,7 @@ def _extract_csv_text(fp: Path) -> str:
         try:
             raw = fp.read_text(encoding=enc, errors="strict")
             break
-        except Exception:
+        except (UnicodeDecodeError, OSError):
             continue
     if raw is None:
         try:
@@ -2565,6 +2565,109 @@ def _generate_thumbnail_b64(fp: Path) -> str:
     return ""
 
 
+def _read_csv_grid(fp: Path, max_rows: int = MAX_CSV_ROWS, max_cols: int = MAX_CSV_COLS) -> List[List[str]]:
+    raw = None
+    for enc in ("utf-8-sig", "utf-8", "latin1"):
+        try:
+            raw = fp.read_text(encoding=enc, errors="strict")
+            break
+        except Exception:
+            continue
+    if raw is None:
+        raw = fp.read_text(encoding="utf-8", errors="ignore")
+
+    sample = raw[:4096]
+    sio = io.StringIO(raw)
+    try:
+        dialect = csv.Sniffer().sniff(sample)
+    except csv.Error:
+        dialect = csv.excel
+
+    grid: List[List[str]] = []
+    for r_i, row in enumerate(csv.reader(sio, dialect)):
+        if r_i >= max_rows:
+            break
+        grid.append([normalize_component(c) for c in row[:max_cols]])
+    return grid
+
+
+def _read_xlsx_grid(fp: Path, max_rows: int = MAX_XLSX_ROWS, max_cols: int = MAX_XLSX_COLS) -> tuple[list[list[str]], list[str], str]:
+    if openpyxl is None:
+        raise RuntimeError("xlsx_backend_missing")
+    wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
+    names = [ws.title for ws in wb.worksheets]
+    sheet_name = names[0] if names else ""
+    ws = wb[sheet_name] if sheet_name else wb.active
+    grid: list[list[str]] = []
+    for r_i, row in enumerate(ws.iter_rows(values_only=True)):
+        if r_i >= max_rows:
+            break
+        vals: list[str] = []
+        for v in row[:max_cols]:
+            vals.append(normalize_component(v) if v is not None else "")
+        grid.append(vals)
+    return grid, names, sheet_name
+
+
+def build_visualizer_payload(fp: Path, page: int = 0, sheet: str = "", force_ocr: bool = False) -> dict:
+    start = time.perf_counter()
+    ext = fp.suffix.lower()
+    payload: dict[str, Any] = {
+        "kind": "doc",
+        "file": {"name": fp.name, "path": str(fp), "ext": ext},
+        "perf": {"server_ms": 0.0, "cache_hit": False},
+    }
+
+    if ext == ".pdf" and fitz is not None:
+        doc = fitz.open(str(fp))
+        total = max(1, len(doc))
+        idx = max(0, min(int(page or 0), total - 1))
+        pg = doc.load_page(idx)
+        pix = pg.get_pixmap(dpi=120)
+        payload.update({
+            "kind": "pdf",
+            "page": {
+                "index": idx,
+                "count": total,
+                "image_b64": base64.b64encode(pix.tobytes("png")).decode("utf-8"),
+            },
+            "layers": {"ocr": [], "meta": []},
+        })
+    elif ext == ".csv":
+        grid = _read_csv_grid(fp)
+        payload.update({
+            "kind": "sheet",
+            "sheet": {"name": fp.name, "available": [fp.name], "rows": len(grid), "cols": max([len(r) for r in grid], default=0)},
+            "grid": grid,
+        })
+    elif ext == ".xlsx":
+        if openpyxl is None:
+            raise RuntimeError("xlsx_backend_missing")
+        wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
+        available = [ws.title for ws in wb.worksheets]
+        selected = sheet if sheet and sheet in available else (available[0] if available else "")
+        grid: list[list[str]] = []
+        if selected:
+            ws = wb[selected]
+            for r_i, row in enumerate(ws.iter_rows(values_only=True)):
+                if r_i >= MAX_XLSX_ROWS:
+                    break
+                grid.append([normalize_component(v) if v is not None else "" for v in row[:MAX_XLSX_COLS]])
+        payload.update({
+            "kind": "sheet",
+            "sheet": {"name": selected, "available": available, "rows": len(grid), "cols": max([len(r) for r in grid], default=0)},
+            "grid": grid,
+        })
+    elif ext in (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"):
+        payload.update({"kind": "image", "image_b64": _generate_thumbnail_b64(fp), "layers": {"ocr": [], "meta": []}})
+    else:
+        txt, used_ocr = _extract_text(fp, force_ocr=force_ocr)
+        payload.update({"kind": "doc", "text": {"content": txt}, "used_ocr": bool(used_ocr)})
+
+    payload["perf"] = {"server_ms": (time.perf_counter() - start) * 1000.0, "cache_hit": False}
+    return payload
+
+
 def _extract_text(fp: Path, force_ocr: bool = False) -> Tuple[str, bool]:
     """
     Returns (text, used_ocr)
@@ -2632,6 +2735,232 @@ def _extract_text(fp: Path, force_ocr: bool = False) -> Tuple[str, bool]:
         return _clip_text(o), True if o else False
 
     return "", False
+
+
+def _visualizer_base_meta(fp: Path) -> Dict[str, Any]:
+    return {
+        "file": {
+            "name": fp.name,
+            "ext": fp.suffix.lower(),
+            "size": int(fp.stat().st_size) if fp.exists() else 0,
+        },
+        "layers": {"ocr": [], "meta": []},
+    }
+
+
+def _visualizer_perf(started_at: float) -> Dict[str, Any]:
+    elapsed = max(0.0, (time.perf_counter() - started_at) * 1000.0)
+    return {"server_ms": round(elapsed, 2), "cache_hit": False}
+
+
+def _visualizer_text_payload(fp: Path, *, force_ocr: bool = False) -> Dict[str, Any]:
+    text, used_ocr = _extract_text(fp, force_ocr=force_ocr)
+    payload = _visualizer_base_meta(fp)
+    payload.update(
+        {
+            "kind": "text",
+            "text": {
+                "content": text
+                or f"Für '{fp.name}' steht keine strukturierte Vorschau bereit.",
+            },
+        }
+    )
+    payload["layers"]["meta"] = [
+        {
+            "x": 0.01,
+            "y": 0.01,
+            "label": f"OCR: {'aktiv' if used_ocr else 'aus'}",
+        }
+    ]
+    return payload
+
+
+def _visualizer_csv_payload(fp: Path) -> Dict[str, Any]:
+    raw = None
+    for enc in ("utf-8-sig", "utf-8", "latin1"):
+        try:
+            raw = fp.read_text(encoding=enc, errors="strict")
+            break
+        except Exception:
+            continue
+    if raw is None:
+        raw = fp.read_text(encoding="utf-8", errors="ignore")
+
+    sio = io.StringIO(raw)
+    rows: List[List[str]] = []
+    try:
+        sample = raw[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample)
+        except Exception:
+            dialect = csv.excel
+        reader = csv.reader(sio, dialect)
+        for r_i, row in enumerate(reader):
+            if r_i >= 200:
+                break
+            normalized = [normalize_component(c) for c in row[:40]]
+            while normalized and not normalized[-1]:
+                normalized.pop()
+            rows.append(normalized or [""])
+    except Exception:
+        rows = [["CSV konnte nicht strukturiert gelesen werden."]]
+
+    col_count = max((len(r) for r in rows), default=1)
+    for row in rows:
+        if len(row) < col_count:
+            row.extend([""] * (col_count - len(row)))
+
+    payload = _visualizer_base_meta(fp)
+    payload.update(
+        {
+            "kind": "sheet",
+            "sheet": {
+                "name": "CSV",
+                "available": ["CSV"],
+                "rows": len(rows),
+                "cols": col_count,
+            },
+            "grid": rows,
+        }
+    )
+    return payload
+
+
+def _visualizer_xlsx_payload(fp: Path, *, sheet: str = "") -> Dict[str, Any]:
+    if openpyxl is None:
+        return _visualizer_text_payload(fp)
+
+    try:
+        wb = openpyxl.load_workbook(str(fp), read_only=True, data_only=True)
+    except Exception:
+        return _visualizer_text_payload(fp)
+
+    available = [ws.title for ws in wb.worksheets]
+    ws = None
+    if sheet:
+        ws = wb[sheet] if sheet in wb.sheetnames else None
+    if ws is None:
+        ws = wb.worksheets[0] if wb.worksheets else None
+    if ws is None:
+        return _visualizer_text_payload(fp)
+
+    rows: List[List[str]] = []
+    for r_i, row in enumerate(ws.iter_rows(values_only=True)):
+        if r_i >= 200:
+            break
+        normalized = [normalize_component(v) for v in row[:40]]
+        while normalized and not normalized[-1]:
+            normalized.pop()
+        rows.append(normalized or [""])
+
+    col_count = max((len(r) for r in rows), default=1)
+    for row in rows:
+        if len(row) < col_count:
+            row.extend([""] * (col_count - len(row)))
+
+    payload = _visualizer_base_meta(fp)
+    payload.update(
+        {
+            "kind": "sheet",
+            "sheet": {
+                "name": ws.title,
+                "available": available,
+                "rows": len(rows),
+                "cols": col_count,
+            },
+            "grid": rows,
+        }
+    )
+    return payload
+
+
+def _visualizer_pdf_payload(fp: Path, *, page: int = 0, force_ocr: bool = False) -> Dict[str, Any]:
+    if fitz is None:
+        return _visualizer_text_payload(fp, force_ocr=force_ocr)
+
+    try:
+        doc = fitz.open(str(fp))
+    except Exception:
+        return _visualizer_text_payload(fp, force_ocr=force_ocr)
+
+    if len(doc) <= 0:
+        return _visualizer_text_payload(fp, force_ocr=force_ocr)
+
+    index = max(0, min(int(page), len(doc) - 1))
+    pdf_page = doc.load_page(index)
+    pix = pdf_page.get_pixmap(dpi=130)
+    image_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+
+    ocr_boxes: List[Dict[str, Any]] = []
+    try:
+        words = pdf_page.get_text("words") or []
+        width = max(float(pdf_page.rect.width or 1.0), 1.0)
+        height = max(float(pdf_page.rect.height or 1.0), 1.0)
+        for word in words[:500]:
+            if len(word) < 5:
+                continue
+            x0, y0, x1, y1, text = word[:5]
+            ocr_boxes.append(
+                {
+                    "x": max(0.0, min(1.0, float(x0) / width)),
+                    "y": max(0.0, min(1.0, float(y0) / height)),
+                    "w": max(0.0, min(1.0, (float(x1) - float(x0)) / width)),
+                    "h": max(0.0, min(1.0, (float(y1) - float(y0)) / height)),
+                    "text": str(text or ""),
+                }
+            )
+    except Exception:
+        ocr_boxes = []
+
+    payload = _visualizer_base_meta(fp)
+    payload.update(
+        {
+            "kind": "pdf",
+            "page": {
+                "index": index,
+                "count": len(doc),
+                "image_b64": image_b64,
+            },
+            "text": {"content": _clip_text(pdf_page.get_text("text"), 12_000)},
+            "layers": {
+                "ocr": ocr_boxes,
+                "meta": [
+                    {
+                        "x": 0.01,
+                        "y": 0.01,
+                        "label": f"Seite {index + 1}/{len(doc)}",
+                    }
+                ],
+            },
+        }
+    )
+    return payload
+
+
+def build_visualizer_payload(
+    fp: Path, *, page: int = 0, sheet: str = "", force_ocr: bool = False
+) -> Dict[str, Any]:
+    """
+    Deterministic local visualizer payload builder used by render/summary APIs.
+    Falls back to safe text previews if specialized extractors are unavailable.
+    """
+    started_at = time.perf_counter()
+    target = Path(fp)
+    if not target.exists():
+        raise FileNotFoundError(target)
+
+    ext = target.suffix.lower()
+    if ext == ".pdf":
+        payload = _visualizer_pdf_payload(target, page=page, force_ocr=force_ocr)
+    elif ext == ".csv":
+        payload = _visualizer_csv_payload(target)
+    elif ext == ".xlsx":
+        payload = _visualizer_xlsx_payload(target, sheet=sheet)
+    else:
+        payload = _visualizer_text_payload(target, force_ocr=force_ocr)
+
+    payload["perf"] = _visualizer_perf(started_at)
+    return payload
 
 
 # ============================================================
