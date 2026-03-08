@@ -7,14 +7,28 @@ from app.core import logic as core_logic
 
 def build_summary(tenant: str) -> dict:
     time_entry_list = getattr(core, "time_entry_list", None)
+    time_entry_billing_basis = getattr(core, "time_entries_billing_basis", None)
     entries = (
         time_entry_list(tenant_id=tenant, limit=500)
         if callable(time_entry_list)
         else []
     )
+    billing_basis_entries = (
+        time_entry_billing_basis(tenant_id=tenant, limit=500)
+        if callable(time_entry_billing_basis)
+        else [
+            entry
+            for entry in entries
+            if entry.get("end_at")
+            and str(entry.get("entry_type") or "WORK").upper() == "WORK"
+            and str(entry.get("approval_status") or "").upper() == "APPROVED"
+            and int(entry.get("duration_seconds") or 0) > 0
+        ]
+    )
     running = sum(1 for entry in entries if not entry.get("end_at")) if entries else 0
     status = "ok" if callable(time_entry_list) else "degraded"
     degraded_reason = "time_tracking_unavailable" if status == "degraded" else ""
+    billable_seconds = sum(int(entry.get("duration_seconds") or 0) for entry in billing_basis_entries)
     return build_contract_response(
         tool="zeiterfassung",
         status=status,
@@ -22,9 +36,12 @@ def build_summary(tenant: str) -> dict:
         metrics={
             "entries": len(entries),
             "running": running,
+            "billing_basis_entries": len(billing_basis_entries),
+            "billing_basis_seconds": billable_seconds,
         },
         details={
             "source": "core.time_entry_list",
+            "billing_basis_source": "core.time_entries_billing_basis",
         },
         tenant=tenant,
     )
