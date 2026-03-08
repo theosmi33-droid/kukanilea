@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import shutil
 import subprocess
 import tarfile
@@ -67,7 +68,7 @@ class InPlaceUpdater:
             extract_root = Path(tmpdir) / "payload"
             extract_root.mkdir(parents=True, exist_ok=True)
             with tarfile.open(tarball, "r:*") as tf:
-                tf.extractall(extract_root)
+                self._safe_extract_tar(tf, extract_root)
 
             source_dir = self._resolve_payload_root(extract_root)
             return self.apply_from_directory(
@@ -204,3 +205,28 @@ class InPlaceUpdater:
         if len(children) == 1 and children[0].is_dir():
             return children[0]
         return extract_root
+
+    @staticmethod
+    def _safe_extract_tar(tf: tarfile.TarFile, extract_root: Path) -> None:
+        for member in tf.getmembers():
+            normalized = posixpath.normpath(member.name)
+            if normalized in ("", "."):
+                continue
+            if member.name.startswith(("/", "\\")) or normalized == ".." or normalized.startswith("../"):
+                raise UpdateError(f"Unsafe path in update archive: {member.name}")
+            if member.issym() or member.islnk() or member.isdev():
+                raise UpdateError(f"Unsupported entry type in update archive: {member.name}")
+
+            destination = (extract_root / normalized).resolve()
+            destination.relative_to(extract_root)
+
+            if member.isdir():
+                destination.mkdir(parents=True, exist_ok=True)
+                continue
+
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            extracted = tf.extractfile(member)
+            if extracted is None:
+                raise UpdateError(f"Unable to extract archive entry: {member.name}")
+            with extracted, destination.open("wb") as dst:
+                shutil.copyfileobj(extracted, dst)

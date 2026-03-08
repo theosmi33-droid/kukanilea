@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -83,3 +84,21 @@ def test_rejects_install_and_data_dir_overlap(tmp_path: Path):
 
     with pytest.raises(UpdateError, match="Data directory must be outside install root"):
         updater.apply_from_directory(source_v2, "v2")
+
+
+def test_apply_from_tarball_rejects_path_traversal(tmp_path: Path):
+    install_root = tmp_path / "opt" / "kukanilea"
+    data_dir = tmp_path / "var" / "kukanilea-data"
+    data_dir.mkdir(parents=True)
+    updater = InPlaceUpdater(install_root=install_root, data_dir=data_dir)
+
+    tarball = tmp_path / "payload.tar"
+    with tarfile.open(tarball, "w") as tf:
+        payload = tmp_path / "payload.txt"
+        payload.write_text("malicious", encoding="utf-8")
+        tf.add(payload, arcname="../escaped.txt")
+
+    with pytest.raises(UpdateError, match="Unsafe path in update archive"):
+        updater.apply_from_tarball(tarball, "v2")
+
+    assert not (tmp_path / "escaped.txt").exists()
