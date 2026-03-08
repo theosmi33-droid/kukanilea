@@ -27,6 +27,7 @@ TOOL_LEGACY_ALIASES: dict[str, str] = {
     "aufgaben": "tasks",
     "projekte": "projects",
     "zeiterfassung": "time",
+    "mail": "email",
     "einstellungen": "settings",
     "emailpostfach": "email",
 }
@@ -882,7 +883,6 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "aufgaben": _collect_tasks_summary,  # Legacy alias
     "messenger": _collect_messenger_summary,
     "email": _collect_email_summary,
-    "mail": _collect_email_summary,      # Legacy alias
     "calendar": _collect_calendar_summary,
     "time": _collect_time_summary,
     "visualizer": _collect_visualizer_summary,
@@ -1002,7 +1002,7 @@ def build_tool_health(tool: str, tenant: str = "default") -> dict:
         **(summary.get("details") or {}),
         "checks": checks,
     }
-    if tool in {"time", "zeiterfassung"}:
+    if tool == "time":
         summary["details"]["offline_persistence"] = bool(summary["details"].get("offline_persistence", False))
     normalized, _ = _normalize_contract_payload(summary, tool, tenant=tenant, contract_kind="health")
     return normalized

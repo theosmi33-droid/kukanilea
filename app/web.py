@@ -955,7 +955,6 @@ TOOL_ACTION_TEMPLATES = {
     "tasks": TASKS_ACTIONS_TEMPLATE,
     "aufgaben": TASKS_ACTIONS_TEMPLATE,  # Legacy alias
     "email": EMAIL_ACTIONS_TEMPLATE,
-    "mail": EMAIL_ACTIONS_TEMPLATE,      # Legacy alias
     "projects": PROJECTS_ACTIONS_TEMPLATE,
     "dashboard": DASHBOARD_ACTIONS_TEMPLATE,
     "messenger": MESSENGER_ACTIONS_TEMPLATE,

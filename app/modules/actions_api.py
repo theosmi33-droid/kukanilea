@@ -350,11 +350,23 @@ class ActionApiTemplate:
         return response, 200
 
 
+
+def _normalize_tool_name(tool: str) -> str:
+    raw = str(tool or "").strip().lower()
+    if not raw:
+        return ""
+    try:
+        from app.contracts.tool_contracts import normalize_contract_tool_slug
+    except Exception:
+        return raw
+    return normalize_contract_tool_slug(raw) or raw
+
 def register_actions_endpoints(bp, templates: Mapping[str, ActionApiTemplate]) -> None:
     @bp.get("/api/<tool>/actions")
     @login_required
     def api_tool_actions(tool: str):
-        template = templates.get(tool)
+        normalized_tool = _normalize_tool_name(tool)
+        template = templates.get(normalized_tool)
         if template is None:
             return jsonify(error="unknown_tool", tool=tool), 404
         return jsonify(template.list_actions_payload())
@@ -362,7 +374,8 @@ def register_actions_endpoints(bp, templates: Mapping[str, ActionApiTemplate]) -
     @bp.post("/api/<tool>/actions/<name>")
     @login_required
     def api_tool_action_execute(tool: str, name: str):
-        template = templates.get(tool)
+        normalized_tool = _normalize_tool_name(tool)
+        template = templates.get(normalized_tool)
         if template is None:
             return jsonify(error="unknown_tool", tool=tool), 404
         payload, status = template.execute(action_name=name, req=request)
