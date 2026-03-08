@@ -21,11 +21,15 @@ class TestVisualizerAPI(unittest.TestCase):
         self.app.register_blueprint(visualizer.bp)
         self.client = self.app.test_client()
         self.tempdir = tempfile.TemporaryDirectory()
-        self.file_path = Path(self.tempdir.name) / "demo.csv"
+        self.file_path = Path(self.tempdir.name) / "default" / "demo.csv"
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self.file_path.write_text("name,value\nA,12\nB,7\n", encoding="utf-8")
         self.source = base64.b64encode(str(self.file_path).encode("utf-8")).decode("ascii")
+        self.base_path_patch = patch('app.routes.visualizer.BASE_PATH', Path(self.tempdir.name))
+        self.base_path_patch.start()
 
     def tearDown(self):
+        self.base_path_patch.stop()
         self.tempdir.cleanup()
 
     @patch('app.routes.visualizer._is_allowed_path', return_value=True)
@@ -104,10 +108,52 @@ class TestVisualizerAPI(unittest.TestCase):
     def test_render_endpoint_returns_structured_payload(self, _mock_allowed):
         response = self.client.get(f'/api/visualizer/render?source={self.source}&page=0')
         self.assertEqual(response.status_code, 200)
+
+    @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
+    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
+    def test_render_endpoint_blocks_cross_tenant_path(self, _mock_allowed, _mock_tenant):
+        other = Path(self.tempdir.name) / "tenant-y" / "secret.csv"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        other.write_text("x,y\n1,2\n", encoding="utf-8")
+        source = base64.b64encode(str(other).encode("utf-8")).decode("ascii")
+
+        with patch('app.routes.visualizer.BASE_PATH', Path(self.tempdir.name)):
+            response = self.client.get(f'/api/visualizer/render?source={source}&page=0')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()['error'], 'forbidden_tenant_path')
+
+    @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
+    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
+    def test_render_endpoint_allows_current_tenant_path(self, _mock_allowed, _mock_tenant):
+        own = Path(self.tempdir.name) / "tenant-x" / "own.csv"
+        own.parent.mkdir(parents=True, exist_ok=True)
+        own.write_text("x,y\n1,2\n", encoding="utf-8")
+        source = base64.b64encode(str(own).encode("utf-8")).decode("ascii")
+
+        with patch('app.routes.visualizer.BASE_PATH', Path(self.tempdir.name)):
+            response = self.client.get(f'/api/visualizer/render?source={source}&page=0')
+
+        self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertIn(data.get('kind'), {'sheet', 'text'})
         self.assertIn('perf', data)
         self.assertIn('server_ms', data['perf'])
+
+    @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
+    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
+    @patch('app.routes.visualizer.build_visualizer_payload', return_value={'kind': 'text', 'file': {'name': 'x'}})
+    def test_summary_endpoint_blocks_cross_tenant_path(self, _mock_build, _mock_allowed, _mock_tenant):
+        other = Path(self.tempdir.name) / "tenant-y" / "secret.csv"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        other.write_text("x,y\n1,2\n", encoding="utf-8")
+        source = base64.b64encode(str(other).encode("utf-8")).decode("ascii")
+
+        with patch('app.routes.visualizer.BASE_PATH', Path(self.tempdir.name)):
+            response = self.client.post('/api/visualizer/summary', json={'source': source})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()['error'], 'forbidden_tenant_path')
 
     @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
     def test_markup_endpoints_persist_json_document(self, _mock_tenant):
