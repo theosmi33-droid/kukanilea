@@ -222,6 +222,7 @@ class Orchestrator:
             "generate_zugferd_xml",
             "mesh_sync",
             "mail_generate",
+            "mail_send",
         }
         self.agents = [
             OpenFileAgent(),
