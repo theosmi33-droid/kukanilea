@@ -50,3 +50,17 @@ def test_dashboard_speed_to_lead_empty_state_contract_copy_present(tmp_path, mon
     assert "No agents running" in html
     assert "Create Agent" in html
     assert "Eingeschränkt verfügbar" in html
+
+
+def test_dashboard_state_renderer_declares_html_escape_helper(tmp_path, monkeypatch):
+    html = _dashboard_html(tmp_path, monkeypatch)
+    assert "function _escapeHtml(value = \"\")" in html
+    assert ".replaceAll(\"<\", \"&lt;\")" in html
+    assert ".replaceAll(\">\", \"&gt;\")" in html
+
+
+def test_dashboard_state_renderer_declares_internal_href_guard(tmp_path, monkeypatch):
+    html = _dashboard_html(tmp_path, monkeypatch)
+    assert "function _safeActionHref(value = \"#\")" in html
+    assert "if (!href.startsWith(\"/\")) return \"#\";" in html
+    assert "if (href.startsWith(\"//\")) return \"#\";" in html

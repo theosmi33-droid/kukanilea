@@ -341,22 +341,38 @@ function _stateIllustration(kind = "empty") {
   return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="8" height="6" rx="1"/><rect x="13" y="4" width="8" height="6" rx="1"/><rect x="8" y="14" width="8" height="6" rx="1"/></svg>`;
 }
 
+function _escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function _safeActionHref(value = "#") {
+  const href = String(value || "#").trim();
+  if (!href.startsWith("/")) return "#";
+  if (href.startsWith("//")) return "#";
+  return href;
+}
+
 function _renderState(container, { kind = "empty", title = "", instructions = "", actions = [] } = {}) {
   if (!container) return;
   const palette = kind === "error"
     ? "border-error/20 bg-error-bg text-error"
     : (kind === "loading" ? "border-light bg-subtle text-muted" : "border-warning/20 bg-warning-bg text-main");
   const actionsHtml = actions.map((action) => {
-    const href = action.href || "#";
-    const label = action.label || "Öffnen";
+    const href = _safeActionHref(action.href || "#");
+    const label = _escapeHtml(action.label || "Öffnen");
     return `<a href="${href}" class="btn btn-secondary btn-xs">${label}</a>`;
   }).join("");
   container.innerHTML = `<section class="rounded-xl border p-4 ${palette}">
     <div class="flex items-start gap-3">
       <div class="shrink-0">${_stateIllustration(kind)}</div>
       <div class="grow min-w-0">
-        <div class="font-bold text-sm">${title}</div>
-        <div class="text-xs mt-1">${instructions}</div>
+        <div class="font-bold text-sm">${_escapeHtml(title)}</div>
+        <div class="text-xs mt-1">${_escapeHtml(instructions)}</div>
         ${actionsHtml ? `<div class="mt-3 flex flex-wrap gap-2">${actionsHtml}</div>` : ""}
       </div>
     </div>
