@@ -2351,8 +2351,9 @@ def _apply_tenant_context():
     try:
         db_path = _get_tenant_db_path()
         core_logic = importlib.import_module("app.core.logic")
-        core_logic.DB_PATH = db_path
-        core_logic._DB_INITIALIZED = False
+        if getattr(core_logic, "DB_PATH", None) != db_path:
+            core_logic.DB_PATH = db_path
+            core_logic._DB_INITIALIZED = False
     except Exception:
         pass
 
