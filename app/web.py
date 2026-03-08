@@ -855,6 +855,35 @@ def _settings_action_rotate_key(payload: dict[str, object]) -> dict[str, object]
     }
 
 
+def _settings_action_update(payload: dict[str, object]) -> dict[str, object]:
+    from app.routes.admin_tenants import _load_system_settings, _save_system_settings
+
+    allowed_keys = {
+        "language",
+        "timezone",
+        "backup_interval",
+        "log_level",
+        "external_apis_enabled",
+        "external_translation_enabled",
+        "memory_retention_days",
+        "backup_verify_hook_enabled",
+        "restore_verify_hook_enabled",
+        "mesh_mdns_enabled",
+        "mesh_tailscale_enabled",
+        "briefing_rss_feeds",
+        "briefing_cron",
+    }
+
+    key = str(payload.get("key") or "").strip()
+    if key not in allowed_keys:
+        raise ValueError("setting_key_invalid")
+
+    settings = _load_system_settings()
+    settings[key] = payload.get("value")
+    _save_system_settings(settings)
+    return {"updated": key, "value": settings.get(key), "settings": settings}
+
+
 SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
     tool="settings",
     actions=[
@@ -871,48 +900,26 @@ SETTINGS_ACTIONS_TEMPLATE = ActionApiTemplate(
             name="setting.update",
             title="Einstellung aktualisieren",
             permission="write",
-            risk="high",
+            risk="medium",
             input_schema={
                 "type": "object",
-                "required": ["key", "value"],
+                "required": ["key"],
                 "properties": {
-                    "scope": {"type": "string", "enum": ["tenant", "user", "system"]},
-                    "key": {"type": "string", "minLength": 1},
+                    "key": {"type": "string"},
                     "value": {},
+                    "confirm": {"type": "string"},
+                    "approval_token": {"type": "string"},
                 },
             },
             output_schema={
                 "type": "object",
                 "properties": {
-                    "updated": {"type": "boolean"},
-                    "key": {"type": "string"},
-                    "scope": {"type": "string"},
-                    "value_type": {"type": "string"},
+                    "updated": {"type": "string"},
+                    "value": {},
+                    "settings": {"type": "object"},
                 },
             },
             handler=_settings_action_update,
-        ),
-        ActionDefinition(
-            name="key.rotate",
-            title="Schlüsselrotation anfordern",
-            permission="write",
-            risk="high",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "key_name": {"type": "string"},
-                },
-            },
-            output_schema={
-                "type": "object",
-                "properties": {
-                    "rotation_available": {"type": "boolean"},
-                    "blocked": {"type": "boolean"},
-                    "key_name": {"type": "string"},
-                    "next_step": {"type": "string"},
-                },
-            },
-            handler=_settings_action_rotate_key,
         ),
     ],
 )
