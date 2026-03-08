@@ -24,7 +24,6 @@
     ],
     "messenger": [
       "app/templates/messenger.html",
-      "app/templates/partials/floating_chat.html",
       "app/static/js/chatbot.js"
     ],
     "kalender": [
@@ -36,21 +35,37 @@
       "app/templates/projekte/"
     ],
     "system_pages": [
+      "app/templates/auth/",
+      "app/templates/email.html",
       "app/templates/login.html",
+      "app/templates/onboarding.html",
       "app/templates/settings.html",
       "app/templates/visualizer.html"
     ],
     "shared_ui_shell": [
+      "app/static/css/email.css",
       "app/templates/layout.html",
       "app/templates/partials/",
       "app/templates/skeletons/",
       "app/static/css/design-system.css",
+      "app/static/css/components.css",
+      "app/static/css/system.css",
       "app/static/css/motion.css",
+      "app/static/css/sovereign-shell.css",
       "app/static/css/shell-navigation.css",
+      "app/static/css/data-table.css",
       "app/static/js/command_palette.js",
+      "app/static/js/data-table.js",
       "app/static/js/layout-shell.js",
+      "app/static/js/navigation.js",
+      "app/static/js/tasks-performance.js",
       "app/static/js/ui-",
       "app/static/js/app.js"
+    ],
+    "dashboard_components": [
+      "app/templates/components/confirm_dialog.html",
+      "app/templates/components/tool_matrix_panel.html",
+      "app/templates/components/state_panel.html"
     ]
   },
   "validation_rounds": 6
