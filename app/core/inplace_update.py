@@ -208,6 +208,7 @@ class InPlaceUpdater:
 
     @staticmethod
     def _safe_extract_tar(tf: tarfile.TarFile, extract_root: Path) -> None:
+        extract_root_resolved = extract_root.resolve()
         for member in tf.getmembers():
             normalized = posixpath.normpath(member.name)
             if normalized in ("", "."):
@@ -217,8 +218,8 @@ class InPlaceUpdater:
             if member.issym() or member.islnk() or member.isdev():
                 raise UpdateError(f"Unsupported entry type in update archive: {member.name}")
 
-            destination = (extract_root / normalized).resolve()
-            destination.relative_to(extract_root)
+            destination = (extract_root_resolved / normalized).resolve()
+            destination.relative_to(extract_root_resolved)
 
             if member.isdir():
                 destination.mkdir(parents=True, exist_ok=True)
