@@ -40,6 +40,16 @@ def _tenant() -> str:
     return str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
 
 
+def _public_health_profile(profile: dict) -> dict:
+    if not isinstance(profile, dict):
+        return {}
+    return {
+        "name": profile.get("name"),
+        "profile_id": profile.get("profile_id"),
+        "gewerk_name": profile.get("gewerk_name"),
+    }
+
+
 @bp.get("/ping")
 @search_limiter.limit_required
 def ping():
@@ -62,7 +72,8 @@ def health():
         if core and callable(getattr(core, "get_health_stats", None)):
             core_stats = core.get_health_stats(tenant_id=tenant_id)
         if core and callable(getattr(core, "get_profile", None)):
-            profile = core.get_profile()
+            full_profile = core.get_profile()
+            profile = full_profile if session.get("user") else _public_health_profile(full_profile)
         db_path = str(getattr(core, "DB_PATH", "")) if core else ""
     except Exception:
         core_stats = {}
