@@ -22,6 +22,16 @@ CONTRACT_TOOLS = [
     "chatbot",
 ]
 
+TOOL_LEGACY_ALIASES: dict[str, str] = {
+    "kalender": "calendar",
+    "aufgaben": "tasks",
+    "projekte": "projects",
+    "zeiterfassung": "time",
+    "einstellungen": "settings",
+    "emailpostfach": "email",
+}
+LEGACY_TOOL_SLUGS = frozenset(TOOL_LEGACY_ALIASES)
+
 CONTRACT_STATUSES = {"ok", "degraded", "error"}
 CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
 CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
@@ -122,6 +132,23 @@ def _core_get(name: str, default=None):
     return getattr(core, name, default)
 
 
+def normalize_contract_tool_slug(tool: str) -> str | None:
+    raw = str(tool or "").strip().lower()
+    if not raw or not re.fullmatch(r"[a-z0-9_-]{2,40}", raw):
+        return None
+    resolved = TOOL_LEGACY_ALIASES.get(raw, raw)
+    if resolved not in CONTRACT_TOOLS:
+        return None
+    return resolved
+
+
+def contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
+    raw = str(requested_tool or "").strip().lower()
+    if raw in LEGACY_TOOL_SLUGS or raw in CONTRACT_TOOLS:
+        return raw
+    return normalized_tool
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -149,8 +176,10 @@ def _contract_payload(
         contract_meta = dict(contract_payload)
     else:
         contract_meta = {}
-    contract_meta.setdefault("version", CONTRACT_VERSION)
-    contract_meta.setdefault("read_only", False)
+    version = contract_meta.get("version", CONTRACT_VERSION)
+    contract_meta["version"] = version if isinstance(version, str) and version.strip() else CONTRACT_VERSION
+    read_only = contract_meta.get("read_only", False)
+    contract_meta["read_only"] = read_only if isinstance(read_only, bool) else False
     contract_meta["kind"] = contract_kind if contract_kind in CONTRACT_KINDS else "summary"
     safe_details["contract"] = contract_meta
 
@@ -244,8 +273,9 @@ def _normalize_contract_payload(
     *,
     contract_kind: str = "summary",
 ) -> tuple[dict, list[str]]:
+    expected_tenant = str(tenant or "default")
     payload_details = _as_dict(payload.get("details"), {})
-    payload_details["tenant"] = str(payload_details.get("tenant") or tenant or "default")
+    payload_details["tenant"] = str(payload_details.get("tenant") or expected_tenant)
     safe_payload = {
         "tool": str(payload.get("tool") or tool),
         "status": payload.get("status") if payload.get("status") in CONTRACT_STATUSES else "error",
@@ -259,7 +289,7 @@ def _normalize_contract_payload(
         metrics=safe_payload["metrics"],
         details=safe_payload["details"],
         reason=str(payload.get("degraded_reason") or ""),
-        tenant=str(tenant or "default"),
+        tenant=expected_tenant,
         contract_kind=contract_kind,
     )
     errors = _contract_errors(payload)
@@ -274,13 +304,13 @@ def _normalize_contract_payload(
             },
         }
 
-    original_tenant = str(_as_dict(payload.get("details"), {}).get("tenant") or tenant or "default")
-    if original_tenant != str(tenant or "default"):
+    original_tenant = str(_as_dict(payload.get("details"), {}).get("tenant") or expected_tenant)
+    if original_tenant != expected_tenant:
         normalized["status"] = "degraded"
-        normalized["degraded_reason"] = "tenant_scope_corrected"
+        normalized.setdefault("degraded_reason", "tenant_scope_corrected")
         normalized["details"] = {
             **(normalized.get("details") or {}),
-            "tenant": str(tenant or "default"),
+            "tenant": expected_tenant,
             "normalization": {
                 **_as_dict((normalized.get("details") or {}).get("normalization"), {}),
                 "applied": True,
@@ -385,8 +415,14 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
                 )
             )
     degraded_tools = [row["tool"] for row in rows if row.get("status") == "degraded"]
+    degraded_non_blocking = [
+        row["tool"]
+        for row in rows
+        if row.get("status") == "degraded" and str(row.get("degraded_reason") or "") in NON_BLOCKING_DEGRADED_REASONS
+    ]
+    degraded_blocking = sorted(set(degraded_tools) - set(degraded_non_blocking))
     error_tools = [row["tool"] for row in rows if row.get("status") == "error"]
-    unavailable_tools = sorted({*degraded_tools, *error_tools})
+    unavailable_tools = sorted({*degraded_blocking, *error_tools})
     metrics = {
         "total_tools": len(rows),
         "degraded_tools": len(degraded_tools),
@@ -400,6 +436,8 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
         "matrix_endpoint": "/api/dashboard/tool-matrix",
         "aggregate_mode": "summary_only",
         "degraded": degraded_tools,
+        "degraded_blocking": degraded_blocking,
+        "degraded_non_blocking": degraded_non_blocking,
         "errors": error_tools,
         "unavailable_tools": unavailable_tools,
         "aggregation_errors": {tool: "error" for tool in aggregation_errors},
@@ -485,7 +523,7 @@ def _processing_queue_items(tenant: str) -> list[dict]:
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
     list_projects = _core_get("project_list")
     projects = list_projects() if callable(list_projects) else []
-    metrics = {"total_projects": len(projects), "active_projects": len(projects), "overdue_tasks": 0, "defects_open": 0}
+    metrics = {"total_projects": len(projects), "active_projects": len(projects), "overdue_tasks": 0, "open_defects": 0}
     details = {"source": "core.project_list", "tenant": tenant}
     reason = "projects_backend_missing" if not callable(list_projects) else ""
 
@@ -525,7 +563,7 @@ def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
 
                 metrics["active_projects"] = _row_count(active_row)
                 metrics["overdue_tasks"] = _row_count(overdue_row)
-                metrics["defects_open"] = _row_count(defects_row)
+                metrics["open_defects"] = _row_count(defects_row)
                 details["source"] = "auth_db.projects+team_tasks+project_defects"
         except Exception:
             if not reason:
@@ -602,6 +640,7 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
         "legacy_summary": _route_available("/api/mail/summary", "GET"),
         "legacy_health": _route_available("/api/mail/health", "GET"),
         "postfach_summary": _route_available("/api/emailpostfach/summary", "GET"),
+        "postfach_health": _route_available("/api/emailpostfach/health", "GET"),
         "postfach_ingest": _route_available("/api/emailpostfach/ingest", "POST"),
         "postfach_send": _route_available("/api/emailpostfach/draft/<draft_id>/send", "POST"),
     }
@@ -622,6 +661,8 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
 
             auth_db = current_app.extensions.get("auth_db")
             if auth_db is not None:
+                service = EmailpostfachService(db_path=str(auth_db.path))
+                service.ensure_tables()
                 con = auth_db._db()
                 try:
                     for table_name in table_checks:
@@ -647,7 +688,6 @@ def _collect_email_summary(tenant: str) -> tuple[dict, dict, str]:
                 finally:
                     con.close()
 
-                service = EmailpostfachService(db_path=str(auth_db.path))
                 probe = service.send_draft(
                     tenant_id=tenant,
                     actor="summary_probe",
@@ -699,11 +739,33 @@ def _collect_calendar_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_time_summary(tenant: str) -> tuple[dict, dict, str]:
     time_entry_list = _core_get("time_entry_list")
-    entries = time_entry_list(tenant=tenant) if callable(time_entry_list) else []
-    running = sum(1 for e in entries if not e.get("ended_at")) if entries else 0
-    metrics = {"entries": len(entries), "running": running}
+    time_entry_billing_basis = _core_get("time_entries_billing_basis")
+    entries = time_entry_list(tenant_id=tenant, limit=500) if callable(time_entry_list) else []
+    billing_basis_entries = (
+        time_entry_billing_basis(tenant_id=tenant, limit=500)
+        if callable(time_entry_billing_basis)
+        else [
+            entry
+            for entry in entries
+            if entry.get("end_at")
+            and str(entry.get("entry_type") or "WORK").upper() == "WORK"
+            and str(entry.get("approval_status") or "").upper() == "APPROVED"
+            and int(entry.get("duration_seconds") or 0) > 0
+        ]
+    )
+    running = sum(1 for e in entries if not e.get("end_at")) if entries else 0
+    metrics = {
+        "entries": len(entries),
+        "running": running,
+        "billing_basis_entries": len(billing_basis_entries),
+        "billing_basis_seconds": sum(int(e.get("duration_seconds") or 0) for e in billing_basis_entries),
+    }
     reason = "time_tracking_unavailable" if not callable(time_entry_list) else ""
-    return metrics, {"source": "core.time_entry_list", "tenant": tenant}, reason
+    return metrics, {
+        "source": "core.time_entry_list",
+        "billing_basis_source": "core.time_entries_billing_basis",
+        "tenant": tenant,
+    }, reason
 
 
 def _collect_visualizer_summary(tenant: str) -> tuple[dict, dict, str]:
@@ -827,6 +889,11 @@ SUMMARY_COLLECTORS: dict[str, Callable[[str], tuple[dict, dict, str]]] = {
     "settings": _collect_settings_summary,
     "chatbot": _collect_chatbot_summary,
 }
+
+NON_BLOCKING_DEGRADED_REASONS: set[str] = {
+    "mia_parity_below_baseline",
+}
+
 
 
 

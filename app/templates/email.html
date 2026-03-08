@@ -2,42 +2,136 @@
 {% block title %}Email-Postfach{% endblock %}
 
 {% block content %}
-<div style="display:grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--spacing-4);">
-  <section class="panel" style="margin-bottom:0;">
-    <h2 style="margin:0 0 var(--spacing-3); font-size:13px; text-transform:uppercase; color:var(--text-tertiary);">Ordner</h2>
-    <div style="display:flex; flex-direction:column; gap:8px;">
-      <button class="btn btn-ghost" style="justify-content:flex-start;">Posteingang</button>
-      <button class="btn btn-ghost" style="justify-content:flex-start;">Entwürfe</button>
-      <button class="btn btn-ghost" style="justify-content:flex-start;">Gesendet</button>
-      <button class="btn btn-ghost" style="justify-content:flex-start;">Archiv</button>
+<div class="email-hub">
+  <aside class="panel email-sidebar-panel">
+    <h2 class="email-section-label">Ordner</h2>
+    <div class="email-sidebar">
+      <button class="btn btn-ghost email-nav-item active" type="button"><span>Posteingang</span><span class="badge">12</span></button>
+      <button class="btn btn-ghost email-nav-item" type="button"><span>Entwürfe</span><span class="badge">3</span></button>
+      <button class="btn btn-ghost email-nav-item" type="button"><span>Gesendet</span></button>
+      <button class="btn btn-ghost email-nav-item" type="button"><span>Archiv</span></button>
     </div>
-  </section>
+  </aside>
 
-  <section class="panel" style="margin-bottom:0; display:flex; flex-direction:column; gap:var(--spacing-3);">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-      <h1 style="margin:0; font-size:22px;">Email-Cockpit</h1>
-      <span class="badge">Lokale Verarbeitung · Zero-CDN</span>
-    </div>
-    <p style="margin:0; color:var(--text-tertiary);">Der Mail-Agent erstellt Entwürfe lokal und kann über die API `/api/mail/draft` angesteuert werden.</p>
-
-    <form id="email-draft-form" style="display:flex; flex-direction:column; gap:10px;">
-      <input id="draft-to" class="input" type="email" placeholder="Empfänger">
-      <input id="draft-subject" class="input" type="text" placeholder="Betreff">
-      <textarea id="draft-body" class="input" rows="6" placeholder="Nachricht"></textarea>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <button type="button" id="draft-generate" class="btn btn-primary">KI-Entwurf erzeugen</button>
-        <span id="draft-status" style="font-size:12px; color:var(--text-tertiary);"></span>
+  <section class="panel email-main-panel">
+    <header class="email-topbar">
+      <div>
+        <h1 class="email-title">Email-Cockpit</h1>
+        <p class="email-subtitle">Leiser Überblick über Inbox, Thread und Entwurf in einem Blick.</p>
       </div>
-    </form>
+      <span class="badge">Lokale Verarbeitung · Zero-CDN</span>
+    </header>
+
+    <div class="email-content-grid">
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Inbox</h2>
+          <span class="email-meta-muted">zuletzt aktualisiert · gerade eben</span>
+        </div>
+        <ul class="email-inbox-list">
+          <li class="email-inbox-item active">
+            <div class="email-subject-line">
+              <span class="email-subject">Abnahme nächste Woche abstimmen</span>
+              <span class="email-time">09:24</span>
+            </div>
+            <p class="email-preview">Kunde fragt nach finalem Termin und bittet um kurze Rückmeldung.</p>
+            <div class="email-meta-row"><span>Von: bauleitung@kunde.de</span><span>2 Anhänge</span><span class="email-pill">offen</span></div>
+          </li>
+          <li class="email-inbox-item">
+            <div class="email-subject-line">
+              <span class="email-subject">Nachtrag Angebot Elektro</span>
+              <span class="email-time">Gestern</span>
+            </div>
+            <p class="email-preview">Bitte Position 14 separat ausweisen, Budget bleibt unverändert.</p>
+            <div class="email-meta-row"><span>Von: einkauf@alpha.de</span><span>kein Anhang</span><span class="email-pill neutral">in Prüfung</span></div>
+          </li>
+          <li class="email-inbox-item">
+            <div class="email-subject-line">
+              <span class="email-subject">Rechnung 2026-017 Korrektur</span>
+              <span class="email-time">Mo</span>
+            </div>
+            <p class="email-preview">Steuersatz wurde angepasst, neue PDF liegt bei.</p>
+            <div class="email-meta-row"><span>Von: buchhaltung@lieferant.de</span><span>1 Anhang</span><span class="email-pill">wichtig</span></div>
+          </li>
+        </ul>
+      </section>
+
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Thread</h2>
+          <span class="email-meta-muted">3 Nachrichten</span>
+        </div>
+        <div class="email-thread">
+          <article class="email-thread-item incoming">
+            <div class="email-thread-top"><strong>Kunde</strong><span>09:24</span></div>
+            <p>Wir möchten den Abnahmetermin am Dienstag bestätigen. Können Sie die Uhrzeit kurz freigeben?</p>
+            <div class="email-attachments">
+              <span class="email-attachment">📎 abnahme-plan.pdf</span>
+              <span class="email-attachment">📎 zufahrt.jpg</span>
+            </div>
+          </article>
+          <article class="email-thread-item outgoing">
+            <div class="email-thread-top"><strong>Du</strong><span>09:31</span></div>
+            <p>Danke für die Info. Ich prüfe intern den Slot und melde mich bis 11:00 Uhr zurück.</p>
+          </article>
+          <article class="email-thread-item incoming">
+            <div class="email-thread-top"><strong>Kunde</strong><span>09:36</span></div>
+            <p>Perfekt, danke. Wir halten den Zugang dann frei.</p>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <section class="email-block">
+      <div class="email-block-head">
+        <h2>Antwortvorschläge</h2>
+        <span id="draft-status" class="email-meta-muted"></span>
+      </div>
+      <div class="email-draft-suggestions" id="draft-suggestions">
+        <button type="button" class="email-draft-card active" data-tone="freundlich-präzise">
+          <strong>Freundlich & klar</strong>
+          <p>Bestätigt Terminrahmen, nennt konkrete Rückmeldezeit und wirkt verbindlich.</p>
+        </button>
+        <button type="button" class="email-draft-card" data-tone="kurz-pragmatisch">
+          <strong>Kurz & pragmatisch</strong>
+          <p>Ein Satz zur Prüfung, ein Satz zur nächsten Aktion. Für schnelle operative Loops.</p>
+        </button>
+        <button type="button" class="email-draft-card" data-tone="formell-ruhig">
+          <strong>Formell & ruhig</strong>
+          <p>Neutraler Ton mit sauberer Struktur, wenn mehrere Stakeholder mitlesen.</p>
+        </button>
+      </div>
+
+      <form id="email-draft-form" class="email-compose-form">
+        <div class="email-compose-grid">
+          <input id="draft-to" class="input" type="email" placeholder="Empfänger">
+          <input id="draft-subject" class="input" type="text" placeholder="Betreff">
+        </div>
+        <textarea id="draft-body" class="input" rows="6" placeholder="Nachricht"></textarea>
+        <div class="email-compose-actions">
+          <button type="button" id="draft-generate" class="btn btn-primary">Vorschlag aktualisieren</button>
+          <span class="email-meta-muted">Der Entwurf bleibt lokal und kann vor Versand frei angepasst werden.</span>
+        </div>
+      </form>
+    </section>
   </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  const draftSuggestions = document.querySelectorAll('.email-draft-card');
+  draftSuggestions.forEach((card) => {
+    card.addEventListener('click', () => {
+      draftSuggestions.forEach((item) => item.classList.remove('active'));
+      card.classList.add('active');
+    });
+  });
+
   document.getElementById('draft-generate')?.addEventListener('click', async () => {
     const status = document.getElementById('draft-status');
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const selectedTone = document.querySelector('.email-draft-card.active')?.dataset?.tone || 'freundlich-präzise';
     status.textContent = 'Erzeuge Entwurf…';
     try {
       const res = await fetch('/api/mail/draft', {
@@ -51,11 +145,15 @@
           to: document.getElementById('draft-to')?.value || '',
           subject: document.getElementById('draft-subject')?.value || '',
           body: document.getElementById('draft-body')?.value || '',
+          tone: selectedTone,
         }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-      document.getElementById('draft-body').value = data?.draft?.body || document.getElementById('draft-body').value;
+      const generatedBody = data?.draft?.body || data?.text || '';
+      if (generatedBody) {
+        document.getElementById('draft-body').value = generatedBody;
+      }
       status.textContent = 'Entwurf aktualisiert.';
     } catch (err) {
       status.textContent = `Fehler: ${err.message || 'Unbekannt'}`;

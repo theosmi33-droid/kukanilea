@@ -231,7 +231,7 @@ code, pre { font-family: var(--font-mono); font-size: 0.875em; }
 
 /* Sidebar */
 .sidebar {
-  position: fixed; top: 0; left: 0; bottom: 0; width: 260px;
+  position: fixed; top: 0; left: 0; bottom: 0; width: 240px;
   background: var(--bg-primary); border-right: 1px solid var(--border-color);
   display: flex; flex-direction: column; z-index: 1020;
 }
@@ -247,7 +247,7 @@ code, pre { font-family: var(--font-mono); font-size: 0.875em; }
 .nav-link.active { background: var(--color-primary); color: white; font-weight: var(--font-weight-medium); }
 .nav-icon { margin-right: var(--spacing-2); flex-shrink: 0; }
 .nav-text { flex: 1; }
-.main-content { margin-left: 260px; padding: var(--spacing-6); }
+.main-content { margin-left: 240px; padding: var(--spacing-6); }
 
 html.sidebar-collapsed .sidebar { width: 84px; }
 html.sidebar-collapsed .main-content { margin-left: 84px; }
