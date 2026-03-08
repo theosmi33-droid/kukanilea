@@ -68,6 +68,7 @@ def test_main_navigation_and_main_paths(tmp_path, monkeypatch):
         or "Core" in html
     )
     assert "data-nav-mode=\"full-page\"" in html
+    assert "InterVariable.woff2" not in html
 
     # Main sidebar navigation is full-page by design (no sidebar htmx partial attributes).
     assert not re.search(r'<a[^>]+data-route="[^"]+"[^>]+hx-get=', html)

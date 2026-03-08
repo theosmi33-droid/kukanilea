@@ -8,7 +8,7 @@ from tests.time_utils import utc_now_iso
 
 
 @pytest.fixture()
-def admin_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app import create_app
     from app.auth import hash_password
     from app.config import Config
@@ -26,19 +26,28 @@ def admin_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         auth_db = app.extensions["auth_db"]
         now = utc_now_iso()
         auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
-        auth_db.upsert_user("admin", hash_password("admin"), now)
-        auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
-        auth_db.upsert_user("other-admin", hash_password("admin"), now)
-        auth_db.upsert_membership("other-admin", "KUKANILEA", "ADMIN", now)
+        auth_db.upsert_user("dev", hash_password("dev"), now)
+        auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
 
-    client = app.test_client()
-    with client.session_transaction() as sess:
-        sess["user"] = "admin"
-        sess["role"] = "ADMIN"
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess["user"] = "dev"
+        sess["role"] = "DEV"
         sess["tenant_id"] = "KUKANILEA"
         sess["csrf_token"] = "csrf-test"
+    return c
 
-    # Default CSRF header for security tests that exercise non-CSRF gates.
-    client.environ_base["HTTP_X_CSRF_TOKEN"] = "csrf-test"
 
-    return app, client
+def test_ai_execute_rejects_missing_session_tenant(client, monkeypatch: pytest.MonkeyPatch):
+    import app.web as web_module
+
+    monkeypatch.setattr(web_module, "current_tenant", lambda: "")
+
+    response = client.post(
+        "/api/ai/execute",
+        json={"skill": "email.search", "payload": {"query": "angebot"}, "confirm": False},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "tenant_required"
