@@ -119,6 +119,7 @@ def test_knowledge_memory_topic_retrieval_and_tenant_isolation(tmp_path):
     assert len(hits) == 2
     assert "CRM" in hits[0]["content"]
     assert all("B-only" not in item["content"] for item in hits)
+    assert hits[0]["score"] > hits[1]["score"]
 
 
 def test_knowledge_memory_cleanup_writes_delete_audit(tmp_path):

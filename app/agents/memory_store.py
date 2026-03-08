@@ -29,7 +29,23 @@ class MemoryManager:
         return con
 
     def _utcnow(self) -> str:
-        return datetime.now(timezone.utc).isoformat() + "Z"
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _parse_utc_timestamp(self, raw_value: str, *, fallback: datetime) -> datetime:
+        ts_value = (raw_value or "").strip()
+        if not ts_value:
+            return fallback
+        if ts_value.endswith("Z"):
+            ts_value = ts_value[:-1]
+            if not ts_value.endswith(("+00:00", "-00:00")):
+                ts_value += "+00:00"
+        try:
+            parsed = datetime.fromisoformat(ts_value)
+        except ValueError:
+            return fallback
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
 
     def _audit_memory_event(
         self,
@@ -258,7 +274,7 @@ class MemoryManager:
             "crm_match": crm_match or {},
             "direction": direction,
             "status": status,
-            "created_at": datetime.now(timezone.utc).isoformat() + "Z",
+            "created_at": self._utcnow(),
         }
         return bool(
             self.store_memory(
@@ -361,10 +377,7 @@ class MemoryManager:
             ranked: List[Tuple[float, Dict[str, Any]]] = []
             for row in rows:
                 ts_raw = row["timestamp"] or ""
-                try:
-                    ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
-                except ValueError:
-                    ts = now
+                ts = self._parse_utc_timestamp(ts_raw, fallback=now)
                 age_days = max((now - ts).total_seconds() / 86400.0, 0.0)
                 recency = max(0.0, 1.0 - (age_days / max(recency_days, 1)))
                 score = (0.75 * recency) + 0.25
