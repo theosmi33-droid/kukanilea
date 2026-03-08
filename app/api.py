@@ -105,14 +105,23 @@ def kalender_create_event():
     starts_at = str(payload.get("starts_at") or "").strip()
     if not title or not starts_at:
         return jsonify(ok=False, error="title_and_starts_at_required"), 400
-    event_payload = create_event(
-        tenant=tenant,
-        title=title,
-        starts_at=starts_at,
-        ends_at=str(payload.get("ends_at") or "").strip() or None,
-        reminder_minutes=int(payload.get("reminder_minutes") or 0),
-        created_by=actor,
-    )
+    try:
+        event_payload = create_event(
+            tenant=tenant,
+            title=title,
+            starts_at=starts_at,
+            ends_at=str(payload.get("ends_at") or "").strip() or None,
+            reminder_minutes=int(payload.get("reminder_minutes") or 0),
+            created_by=actor,
+        )
+    except PermissionError as exc:
+        if str(exc) == "read_only":
+            return jsonify(ok=False, error="read_only"), 403
+        raise
+    except ValueError as exc:
+        if str(exc) == "policy_blocked":
+            return jsonify(ok=False, error="policy_blocked"), 403
+        raise
     return jsonify(ok=True, event=event_payload), 201
 
 
@@ -122,15 +131,26 @@ def kalender_update_event(event_id: str):
     payload = request.get_json(silent=True) or {}
     tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
     actor = str(session.get("user") or "system")
-    event_payload = update_event(
-        tenant=tenant,
-        event_id=str(event_id),
-        updated_by=actor,
-        title=payload.get("title"),
-        starts_at=payload.get("starts_at"),
-        ends_at=payload.get("ends_at"),
-        reminder_minutes=payload.get("reminder_minutes"),
-    )
+    try:
+        event_payload = update_event(
+            tenant=tenant,
+            event_id=str(event_id),
+            updated_by=actor,
+            title=payload.get("title"),
+            starts_at=payload.get("starts_at"),
+            ends_at=payload.get("ends_at"),
+            reminder_minutes=payload.get("reminder_minutes"),
+        )
+    except PermissionError as exc:
+        if str(exc) == "read_only":
+            return jsonify(ok=False, error="read_only"), 403
+        raise
+    except ValueError as exc:
+        if str(exc) == "policy_blocked":
+            return jsonify(ok=False, error="policy_blocked"), 403
+        if str(exc) == "event_not_found":
+            return jsonify(ok=False, error="not_found"), 404
+        raise
     return jsonify(ok=True, event=event_payload)
 
 

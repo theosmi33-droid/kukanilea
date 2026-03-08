@@ -429,6 +429,17 @@ def create_event(
     reminder_minutes: int = 0,
     source: str = "calendar.api",
 ) -> dict:
+    from app.knowledge.core import knowledge_policy_get
+    from app.knowledge.ics_source import _ensure_writable, _policy_allows_calendar
+
+    _ensure_writable()
+    try:
+        policy_row = knowledge_policy_get(tenant)
+    except sqlite3.OperationalError:
+        policy_row = None
+    if policy_row is not None and not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
+
     event_id = str(uuid.uuid4())
     now = _timestamp()
     payload = {
@@ -485,6 +496,17 @@ def update_event(
     ends_at: str | None = None,
     reminder_minutes: int | None = None,
 ) -> dict:
+    from app.knowledge.core import knowledge_policy_get
+    from app.knowledge.ics_source import _ensure_writable, _policy_allows_calendar
+
+    _ensure_writable()
+    try:
+        policy_row = knowledge_policy_get(tenant)
+    except sqlite3.OperationalError:
+        policy_row = None
+    if policy_row is not None and not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
+
     con = _db()
     try:
         row = con.execute(

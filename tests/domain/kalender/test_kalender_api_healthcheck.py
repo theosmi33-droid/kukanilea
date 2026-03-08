@@ -69,3 +69,17 @@ def test_kalender_invitation_requires_confirm(auth_client):
     )
     assert allowed.status_code == 202
     assert allowed.get_json()["status"] == "queued"
+
+
+def test_kalender_events_endpoint_blocked_in_read_only_mode(auth_client):
+    auth_client.application.config["READ_ONLY"] = True
+    blocked = auth_client.post(
+        "/api/kalender/events",
+        json={
+            "title": "Blocked Termin",
+            "starts_at": "2031-01-03T09:00:00+00:00",
+        },
+    )
+    assert blocked.status_code == 403
+    body = blocked.get_json()
+    assert body["error"]["code"] == "read_only"
