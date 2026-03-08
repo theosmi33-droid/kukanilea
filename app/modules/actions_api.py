@@ -8,6 +8,7 @@ from flask import Request, jsonify, request
 
 from app.auth import current_role, current_tenant, current_user, login_required
 from app.errors import json_error
+from app.security import csrf_protected
 from app.security import (
     ApprovalEngine,
     ApprovalScope,
@@ -361,6 +362,7 @@ def register_actions_endpoints(bp, templates: Mapping[str, ActionApiTemplate]) -
 
     @bp.post("/api/<tool>/actions/<name>")
     @login_required
+    @csrf_protected
     def api_tool_action_execute(tool: str, name: str):
         template = templates.get(tool)
         if template is None:
