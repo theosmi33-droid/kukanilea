@@ -22,6 +22,16 @@ CONTRACT_TOOLS = [
     "chatbot",
 ]
 
+TOOL_LEGACY_ALIASES: dict[str, str] = {
+    "kalender": "calendar",
+    "aufgaben": "tasks",
+    "projekte": "projects",
+    "zeiterfassung": "time",
+    "einstellungen": "settings",
+    "emailpostfach": "email",
+}
+LEGACY_TOOL_SLUGS = frozenset(TOOL_LEGACY_ALIASES)
+
 CONTRACT_STATUSES = {"ok", "degraded", "error"}
 CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
 CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
@@ -120,6 +130,23 @@ MIA_LOW_PARITY_TOOLS = ("messenger", "email", "visualizer", "settings")
 
 def _core_get(name: str, default=None):
     return getattr(core, name, default)
+
+
+def normalize_contract_tool_slug(tool: str) -> str | None:
+    raw = str(tool or "").strip().lower()
+    if not raw or not re.fullmatch(r"[a-z0-9_-]{2,40}", raw):
+        return None
+    resolved = TOOL_LEGACY_ALIASES.get(raw, raw)
+    if resolved not in CONTRACT_TOOLS:
+        return None
+    return resolved
+
+
+def contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
+    raw = str(requested_tool or "").strip().lower()
+    if raw in LEGACY_TOOL_SLUGS or raw in CONTRACT_TOOLS:
+        return raw
+    return normalized_tool
 
 
 def _now_iso() -> str:

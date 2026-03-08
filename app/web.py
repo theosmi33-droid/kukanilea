@@ -108,6 +108,8 @@ from app.contracts.tool_contracts import (
     build_tool_summary,
     extract_chat_message,
     normalize_chat_response,
+    normalize_contract_tool_slug,
+    contract_tool_response_label,
 )
 from app.modules.aufgaben.contracts import create_task as aufgaben_create_task
 from app.modules.actions_api import (
@@ -5057,51 +5059,17 @@ def api_list_tools():
     return jsonify(ok=True, tools=registry.list())
 
 
-def _normalize_contract_tool(tool: str) -> str | None:
-    raw = str(tool or "").strip().lower()
-    if not raw or not re.fullmatch(r"[a-z0-9_-]{2,40}", raw):
-        return None
-    aliases = {
-        "kalender": "calendar",
-        "aufgaben": "tasks",
-        "projekte": "projects",
-        "zeiterfassung": "time",
-        "einstellungen": "settings",
-        "emailpostfach": "email",
-    }
-    resolved = aliases.get(raw, raw)
-    if resolved not in CONTRACT_TOOLS:
-        return None
-    return resolved
-
-
-def _contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
-    raw = str(requested_tool or "").strip().lower()
-    if raw in {
-        "kalender",
-        "aufgaben",
-        "projekte",
-        "zeiterfassung",
-        "einstellungen",
-        "emailpostfach",
-    }:
-        return raw
-    if raw in CONTRACT_TOOLS:
-        return raw
-    return normalized_tool
-
-
 
 @bp.get("/api/<tool>/summary")
 @login_required
 def api_tool_summary(tool: str):
     tenant = str(current_tenant() or "default")
-    normalized_tool = _normalize_contract_tool(tool)
+    normalized_tool = normalize_contract_tool_slug(tool)
     if normalized_tool is None:
         return jsonify(error="unknown_tool", tool=tool), 404
 
     payload = build_tool_summary(normalized_tool, tenant=tenant)
-    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
+    payload["tool"] = contract_tool_response_label(tool, normalized_tool)
     return jsonify(payload)
 
 
@@ -5149,12 +5117,12 @@ def api_upload_ingest():
 @login_required
 def api_tool_health(tool: str):
     tenant = str(current_tenant() or "default")
-    normalized_tool = _normalize_contract_tool(tool)
+    normalized_tool = normalize_contract_tool_slug(tool)
     if normalized_tool is None:
         return jsonify(error="unknown_tool", tool=tool), 404
 
     payload = build_tool_health(normalized_tool, tenant=tenant)
-    payload["tool"] = _contract_tool_response_label(tool, normalized_tool)
+    payload["tool"] = contract_tool_response_label(tool, normalized_tool)
     code = 200 if payload.get("status") in {"ok", "degraded"} else 503
     return jsonify(payload), code
 
