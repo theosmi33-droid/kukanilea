@@ -1,115 +1,160 @@
 /**
- * static/js/command_palette.js
- * Global command palette (Ctrl+K) for KUKANILEA v2.0.
+ * Accessible command palette for AI OS shell.
  */
 const CommandPalette = {
-    isOpen: false,
-    commands: [
-        { id: 'nav-dash', title: 'Übersicht', subtitle: 'Zur Übersicht', icon: 'layout', action: () => window.location.href = '/' },
-        { id: 'nav-crm', title: 'CRM - Kontakte', subtitle: 'Kunden verwalten', icon: 'users', action: () => window.location.href = '/crm/contacts' },
-        { id: 'nav-tasks', title: 'Aufgaben', subtitle: 'To-Dos und Projekte', icon: 'check-square', action: () => window.location.href = '/tasks' },
-        { id: 'nav-docs', title: 'Dokumente', subtitle: 'Archiv durchsuchen', icon: 'file-text', action: () => window.location.href = '/documents' },
-        { id: 'nav-assistant', title: 'KI-Assistent', subtitle: 'Frag die KI', icon: 'cpu', action: () => window.location.href = '/assistant' },
-        { id: 'nav-audit', title: 'Audit Trail', subtitle: 'GoBD Compliance prüfen', icon: 'shield', action: () => window.location.href = '/admin/audit' },
-        { id: 'action-theme', title: 'White Mode sichern', subtitle: 'Sovereign-11 White-Mode-Only aktivieren', icon: 'sun', action: () => StateStore.toggleTheme() },
-        { id: 'nav-settings', title: 'Einstellungen', subtitle: 'System-Konfiguration', icon: 'settings', action: () => window.location.href = '/settings' },
-    ],
+  isOpen: false,
+  selectedIndex: 0,
+  filtered: [],
+  commands: [
+    { id: 'nav-dash', title: 'Übersicht', subtitle: 'Zur Startübersicht', keywords: 'dashboard home', href: '/dashboard' },
+    { id: 'nav-projects', title: 'Projekte', subtitle: 'Projektstatus und Steuerung', keywords: 'projects kunden', href: '/projects' },
+    { id: 'nav-tasks', title: 'Aufgaben', subtitle: 'To-Dos und Workflows', keywords: 'tasks todos', href: '/tasks' },
+    { id: 'nav-upload', title: 'Hochladen', subtitle: 'Neue Dokumente verarbeiten', keywords: 'upload dokumente', href: '/upload' },
+    { id: 'nav-messenger', title: 'Messenger', subtitle: 'Teamkommunikation', keywords: 'chat messages', href: '/messenger' },
+    { id: 'nav-assistant', title: 'KI Assistant', subtitle: 'Mit dem Assistenten arbeiten', keywords: 'assistant ai', href: '/assistant' },
+    { id: 'nav-settings', title: 'Einstellungen', subtitle: 'System konfigurieren', keywords: 'settings admin', href: '/settings' },
+  ],
 
-    init() {
-        this.render();
-        window.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-                e.preventDefault();
-                this.toggle();
-            }
-            if (e.key === 'Escape' && this.isOpen) {
-                this.close();
-            }
-        });
-    },
+  init() {
+    this.render();
+    this.bindEvents();
+    this.filtered = this.commands.slice();
+    this.renderResults();
+  },
 
-    render() {
-        const html = `
-            <div id="cmd-palette-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:9000; align-items:flex-start; justify-content:center; padding-top:15vh;">
-                <div id="cmd-palette-modal" class="panel" style="width:100%; max-width:600px; padding:0; overflow:hidden; background:var(--color-bg-root); border:1px solid var(--color-border); box-shadow:var(--shadow-2xl);">
-                    <div style="padding:16px; border-bottom:1px solid var(--color-border); display:flex; align-items:center; gap:12px;">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input type="text" id="cmd-input" placeholder="Befehl oder Suche..." style="flex:1; background:none; border:none; color:var(--color-text-main); font-size:16px; outline:none; font-family:var(--font-primary);">
-                        <kbd style="padding:2px 6px; background:var(--bg-tertiary); border-radius:4px; font-size:10px; color:var(--text-tertiary); border:1px solid var(--color-border);">ESC</kbd>
-                    </div>
-                    <div id="cmd-results" style="max-height:400px; overflow-y:auto; padding:8px;"></div>
-                    <div style="padding:12px; background:var(--bg-secondary); border-top:1px solid var(--color-border); display:flex; gap:16px; font-size:11px; color:var(--text-tertiary);">
-                        <span><kbd>↑↓</kbd> Navigieren</span>
-                        <span><kbd>↵</kbd> Auswählen</span>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', html);
+  render() {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="cmd-palette-overlay" class="cmdk-overlay" aria-hidden="true">
+        <section class="cmdk-modal" role="dialog" aria-modal="true" aria-label="Command Palette">
+          <header class="cmdk-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <input id="cmd-input" class="cmdk-input" type="text" placeholder="Befehl, Seite oder Aktion…" autocomplete="off" />
+            <kbd class="topbar-shortcut">ESC</kbd>
+          </header>
+          <div id="cmd-results" class="cmdk-list" role="listbox" aria-label="Suchergebnisse"></div>
+          <footer class="cmdk-footer"><span>↑↓ Navigieren</span><span>↵ Ausführen</span><span>ESC schließen</span></footer>
+        </section>
+      </div>
+    `);
 
-        this.overlay = document.getElementById('cmd-palette-overlay');
-        this.input = document.getElementById('cmd-input');
-        this.resultsContainer = document.getElementById('cmd-results');
+    this.overlay = document.getElementById('cmd-palette-overlay');
+    this.input = document.getElementById('cmd-input');
+    this.resultsContainer = document.getElementById('cmd-results');
+  },
 
-        this.input.oninput = () => this.filter();
-        this.overlay.onclick = (e) => { if(e.target === this.overlay) this.close(); };
-    },
+  bindEvents() {
+    window.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        this.toggle();
+        return;
+      }
+      if (!this.isOpen) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.close();
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        this.move(1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        this.move(-1);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        this.execute(this.filtered[this.selectedIndex]);
+      }
+    });
 
-    toggle() {
-        this.isOpen ? this.close() : this.open();
-    },
+    this.input.addEventListener('input', () => {
+      this.filter(this.input.value);
+    });
 
-    open() {
-        this.isOpen = true;
-        this.overlay.style.display = 'flex';
-        this.input.value = '';
-        this.filter();
-        setTimeout(() => this.input.focus(), 10);
-    },
+    this.overlay.addEventListener('click', (event) => {
+      if (event.target === this.overlay) {
+        this.close();
+      }
+    });
 
-    close() {
-        this.isOpen = false;
-        this.overlay.style.display = 'none';
-    },
+    document.getElementById('topbar-search-trigger')?.addEventListener('click', () => this.open());
+  },
 
-    filter() {
-        const query = this.input.value.toLowerCase();
-        const filtered = this.commands.filter(c =>
-            c.title.toLowerCase().includes(query) ||
-            c.subtitle.toLowerCase().includes(query)
-        );
-        this.renderResults(filtered);
-    },
+  filter(query = '') {
+    const normalized = query.trim().toLowerCase();
+    this.filtered = this.commands.filter((command) => {
+      const haystack = `${command.title} ${command.subtitle} ${command.keywords || ''}`.toLowerCase();
+      return haystack.includes(normalized);
+    });
+    this.selectedIndex = 0;
+    this.renderResults();
+  },
 
-    renderResults(list) {
-        this.resultsContainer.innerHTML = '';
-        list.forEach((c, idx) => {
-            const div = document.createElement('div');
-            div.style.cssText = `
-                padding: 12px 16px;
-                border-radius: var(--radius-md);
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                gap: 16px;
-                transition: background 0.1s;
-            `;
-            div.className = 'cmd-item';
-            if(idx === 0) div.style.background = 'rgba(255,255,255,0.05)';
-
-            div.innerHTML = `
-                <div style="width:32px; height:32px; border-radius:6px; background:rgba(255,255,255,0.02); border:1px solid var(--color-border); display:flex; align-items:center; justify-content:center; color:var(--color-accent);">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>
-                </div>
-                <div style="flex:1;">
-                    <div style="font-weight:600; font-size:14px; color:var(--color-text-main);">${c.title}</div>
-                    <div style="font-size:12px; color:var(--color-text-muted);">${c.subtitle}</div>
-                </div>
-            `;
-            div.onclick = () => { c.action(); this.close(); };
-            this.resultsContainer.appendChild(div);
-        });
+  renderResults() {
+    if (!this.resultsContainer) return;
+    if (!this.filtered.length) {
+      this.resultsContainer.innerHTML = '<p class="cmdk-empty">Keine Treffer. Versuche einen anderen Begriff.</p>';
+      return;
     }
+
+    this.resultsContainer.innerHTML = this.filtered.map((command, index) => `
+      <button type="button" class="cmdk-item" role="option" aria-selected="${index === this.selectedIndex ? 'true' : 'false'}" data-index="${index}">
+        <span class="cmdk-item-icon" aria-hidden="true">⌘</span>
+        <span>
+          <span class="cmdk-item-title">${command.title}</span>
+          <span class="cmdk-item-subtitle">${command.subtitle}</span>
+        </span>
+      </button>
+    `).join('');
+
+    this.resultsContainer.querySelectorAll('.cmdk-item').forEach((item) => {
+      item.addEventListener('mouseenter', () => {
+        this.selectedIndex = Number(item.dataset.index || 0);
+        this.renderResults();
+      });
+      item.addEventListener('click', () => {
+        const idx = Number(item.dataset.index || 0);
+        this.execute(this.filtered[idx]);
+      });
+    });
+  },
+
+  execute(command) {
+    if (!command) return;
+    if (command.href) {
+      window.location.href = command.href;
+      return;
+    }
+    this.close();
+  },
+
+  move(direction) {
+    if (!this.filtered.length) return;
+    const length = this.filtered.length;
+    this.selectedIndex = (this.selectedIndex + direction + length) % length;
+    this.renderResults();
+  },
+
+  open() {
+    this.isOpen = true;
+    this.overlay.classList.add('is-open');
+    this.overlay.setAttribute('aria-hidden', 'false');
+    this.input.value = '';
+    this.filter('');
+    window.setTimeout(() => this.input.focus(), 0);
+  },
+
+  close() {
+    this.isOpen = false;
+    this.overlay.classList.remove('is-open');
+    this.overlay.setAttribute('aria-hidden', 'true');
+  },
+
+  toggle() {
+    if (this.isOpen) {
+      this.close();
+      return;
+    }
+    this.open();
+  },
 };
 
 document.addEventListener('DOMContentLoaded', () => CommandPalette.init());

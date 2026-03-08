@@ -1,56 +1,102 @@
-{% set primary_nav = [
-  {'label': 'Dashboard', 'href': '/dashboard', 'key': 'dashboard', 'match': request.path in ['/', '/dashboard'], 'icon': 'icon-dashboard', 'preview': 'KPIs, Aufgaben und Live-Status auf einen Blick'},
-  {'label': 'Systems', 'href': '/visualizer', 'key': 'systems', 'match': request.path.startswith('/visualizer') or request.path.startswith('/system'), 'icon': 'icon-systems', 'preview': 'Systemansicht, Telemetrie und Infrastrukturzustand'},
-  {'label': 'Agents', 'href': '/assistant', 'key': 'agents', 'match': request.path.startswith('/assistant'), 'icon': 'icon-agents', 'preview': 'Agenten starten, überwachen und steuern'},
-  {'label': 'Files', 'href': '/upload', 'key': 'files', 'match': request.path.startswith('/upload'), 'icon': 'icon-files', 'preview': 'Dateien importieren, verwalten und durchsuchen'},
-  {'label': 'Automation', 'href': '/tasks', 'key': 'automation', 'match': request.path.startswith('/tasks'), 'icon': 'icon-automation', 'preview': 'Automationen und Aufgaben schnell wechseln'},
-  {'label': 'Logs', 'href': '/system-logs', 'key': 'logs', 'match': request.path.startswith('/system-logs') or request.path.startswith('/audit'), 'icon': 'icon-logs', 'preview': 'Ereignisse, Fehler und Verlauf analysieren'},
-  {'label': 'Settings', 'href': '/settings', 'key': 'settings', 'match': request.path.startswith('/settings'), 'icon': 'icon-settings', 'preview': 'System, Profil und Governance konfigurieren'}
+{% set main_nav = [
+  {'label': 'Übersicht', 'href': '/dashboard', 'key': 'dashboard', 'match': request.path in ['/', '/dashboard'], 'icon': 'icon-dashboard'},
+  {'label': 'Projekte', 'href': '/projects', 'key': 'projects', 'match': request.path.startswith('/projects'), 'icon': 'icon-projects'},
+  {'label': 'Aufgaben', 'href': '/tasks', 'key': 'tasks', 'match': request.path.startswith('/tasks'), 'icon': 'icon-tasks'},
+  {'label': 'Hochladen', 'href': '/upload', 'key': 'upload', 'match': request.path == '/upload', 'icon': 'icon-upload'},
+  {'label': 'Kalender', 'href': '/calendar', 'key': 'calendar', 'match': request.path.startswith('/calendar'), 'icon': 'icon-calendar'}
 ] %}
 
-<nav class="sidebar" hx-boost="false" id="app-sidebar" aria-label="Primary navigation" data-nav-group="main" data-nav-mode="full-page">
+{% set communication_nav = [
+  {'label': 'Nachrichten', 'href': '/messenger', 'key': 'messenger', 'match': request.path.startswith('/messenger'), 'icon': 'icon-messenger'},
+  {'label': 'E-Mails', 'href': '/email', 'key': 'email', 'match': request.path.startswith('/email') or request.path.startswith('/mail'), 'icon': 'icon-email'}
+] %}
+
+{% set system_nav = [
+  {'label': 'Analyseansicht', 'href': '/visualizer', 'key': 'visualizer', 'match': request.path.startswith('/visualizer'), 'icon': 'icon-visualizer'},
+  {'label': 'Zeiterfassung', 'href': '/time', 'key': 'time', 'match': request.path.startswith('/time'), 'icon': 'icon-time'},
+  {'label': 'Einstellungen', 'href': '/settings', 'key': 'settings', 'match': request.path.startswith('/settings'), 'icon': 'icon-settings'}
+] %}
+
+<nav class="sidebar" hx-boost="false" id="app-sidebar" aria-label="Hauptnavigation" data-nav-group="main" data-nav-mode="full-page">
   <div class="sidebar-header">
     {% include 'partials/logo.html' %}
-    <button id="sidebar-toggle" class="btn btn-ghost btn-sm" type="button" aria-label="Sidebar einklappen" aria-controls="sidebar-primary-nav" aria-expanded="true" title="Sidebar einklappen" style="margin-left:auto;">
+    <button id="sidebar-toggle" class="btn btn-ghost btn-sm" type="button" aria-label="Sidebar einklappen" aria-controls="sidebar-primary-nav" aria-expanded="true" title="Sidebar einklappen">
       <svg class="nav-icon nav-icon-ui" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-sidebar-collapse"></use></svg>
     </button>
   </div>
 
-  <div class="sidebar-search-launcher-wrap">
-    <button type="button" class="sidebar-search-launcher" data-open-global-search aria-label="Global search öffnen">
-      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-search"></use></svg>
-      <span class="nav-text">Global Search</span>
-      <kbd>⌘K</kbd>
-    </button>
+  <div class="sidebar-workspace">
+    <p>Workspace</p>
+    <strong>{{ active_tenant_id or 'SYSTEM' }}</strong>
   </div>
 
-  <div class="nav-scroll-area" style="flex: 1; overflow-y: auto;">
-    <p class="sidebar-section-label">Workspace</p>
-    <ul id="sidebar-primary-nav" class="nav-list" role="list" aria-label="Primary sections">
-      {% for item in primary_nav %}
+  <div class="nav-scroll-area">
+    <section class="sidebar-section">
+      <p class="sidebar-section-label">Core</p>
+      <ul id="sidebar-primary-nav" class="nav-list" role="list" aria-label="Sovereign-11 Hauptseiten">
+        {% for item in main_nav %}
+        <li class="nav-item">
+          <a href="{{ item.href }}" data-route="{{ item.href }}" data-nav-key="{{ item.key }}" data-nav-active="{{ '1' if item.match else '0' }}" aria-current="{{ 'page' if item.match else 'false' }}" class="nav-link {{ 'active' if item.match }}" title="{{ item.label }}">
+            <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/static/icons/sprite.svg#{{ item.icon }}"></use></svg>
+            <span class="nav-text">{{ item.label }}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="sidebar-section">
+      <p class="sidebar-section-label">Kommunikation</p>
+      <ul class="nav-list" role="list" aria-label="Kommunikation">
+      {% for item in communication_nav %}
       <li class="nav-item">
-        <a href="{{ item.href }}" data-route="{{ item.href }}" data-nav-key="{{ item.key }}" data-nav-active="{{ '1' if item.match else '0' }}" aria-current="{{ 'page' if item.match else 'false' }}" class="nav-link {{ 'active' if item.match }}" title="{{ item.label }}" data-preview="{{ item.preview }}">
+        <a href="{{ item.href }}" data-route="{{ item.href }}" data-nav-key="{{ item.key }}" data-nav-active="{{ '1' if item.match else '0' }}" aria-current="{{ 'page' if item.match else 'false' }}" class="nav-link {{ 'active' if item.match }}" title="{{ item.label }}">
           <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/static/icons/sprite.svg#{{ item.icon }}"></use></svg>
           <span class="nav-text">{{ item.label }}</span>
-          <span class="nav-preview" aria-hidden="true">{{ item.preview }}</span>
         </a>
       </li>
       {% endfor %}
-    </ul>
+      </ul>
+    </section>
+
+    <section class="sidebar-section">
+      <p class="sidebar-section-label">System</p>
+      <ul class="nav-list" role="list" aria-label="System">
+      {% for item in system_nav %}
+      <li class="nav-item">
+        <a href="{{ item.href }}" data-route="{{ item.href }}" data-nav-key="{{ item.key }}" data-nav-active="{{ '1' if item.match else '0' }}" aria-current="{{ 'page' if item.match else 'false' }}" class="nav-link {{ 'active' if item.match }}" title="{{ item.label }}">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/static/icons/sprite.svg#{{ item.icon }}"></use></svg>
+          <span class="nav-text">{{ item.label }}</span>
+        </a>
+      </li>
+      {% endfor %}
+      </ul>
+    </section>
+
+    <button class="sidebar-section-label btn btn-ghost btn-sm sidebar-disclosure" type="button" data-disclosure-toggle data-disclosure-target="assistenz-nav" aria-expanded="true">
+      <span>Assistenz</span>
+      <span aria-hidden="true">▾</span>
+    </button>
+    <div id="assistenz-nav" data-disclosure-panel class="is-open">
+      <ul class="nav-list" role="list" aria-label="Assistenz">
+      <li class="nav-item">
+        <a href="/assistant" data-route="/assistant" data-nav-key="assistant" data-nav-active="{{ '1' if request.path.startswith('/assistant') else '0' }}" aria-label="Assistant öffnen" aria-current="{{ 'page' if request.path.startswith('/assistant') else 'false' }}" class="nav-link {{ 'active' if request.path.startswith('/assistant') }}" title="Assistant">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-assistant"></use></svg>
+          <span class="nav-text">Assistant</span>
+        </a>
+      </li>
+      </ul>
+    </div>
   </div>
 
-  <div class="sidebar-footer" style="margin-top: auto; padding: var(--spacing-4); border-top: 1px solid var(--border-color);">
+  <div class="sidebar-footer">
     {% if user and user != '-' %}
-    <div style="display:flex; align-items:center; gap:12px;">
-      <div style="width:36px; height:36px; border-radius:var(--radius-md); background:var(--color-gray-200); display:flex; align-items:center; justify-content:center; font-weight:700;">
-        {{ user[0]|upper }}
+    <div class="sidebar-user">
+      <div class="sidebar-user-avatar" aria-hidden="true">{{ user[0]|upper }}</div>
+      <div class="sidebar-user-meta">
+        <strong>{{ user }}</strong>
+        <span>{{ roles or 'USER' }}</span>
       </div>
-      <div class="nav-text" style="flex:1; min-width:0;">
-        <div style="font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ user }}</div>
-      </div>
-      <a href="/logout" class="nav-text btn btn-ghost btn-sm" style="padding:4px; margin-left:auto;" aria-label="Abmelden">
-        <svg class="nav-icon nav-icon-ui" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-logout"></use></svg>
-      </a>
     </div>
     {% endif %}
   </div>
