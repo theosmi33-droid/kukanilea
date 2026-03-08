@@ -64,6 +64,9 @@ def test_dashboard_widget_script_consumes_summary_and_health_contracts(tmp_path,
     assert "REFRESH_INTERVAL_MS" in body
     assert "healthRefreshInFlight" in body
     assert "matrixRefreshInFlight" in body
+    assert "Mehr anzeigen" in body
+    assert "Eingeschränkt verfügbar" in body
+    assert "Systemhinweis:" in body
 
 
 def test_dashboard_summary_contract_for_messenger_and_email_available(tmp_path, monkeypatch):

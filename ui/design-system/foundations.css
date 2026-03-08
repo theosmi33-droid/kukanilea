@@ -1,0 +1,56 @@
+@import url("./tokens.css");
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--surface-page);
+  color: var(--text-body);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-16);
+  line-height: var(--line-height-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0 0 var(--space-4);
+  color: var(--text-heading);
+  line-height: var(--line-height-tight);
+}
+
+h1 { font-size: var(--font-size-30); }
+h2 { font-size: var(--font-size-24); }
+h3 { font-size: var(--font-size-20); }
+
+p {
+  margin: 0 0 var(--space-4);
+}
+
+a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.u-muted { color: var(--text-caption); }
+.u-stack-sm > * + * { margin-top: var(--space-2); }
+.u-stack-md > * + * { margin-top: var(--space-4); }
+.u-stack-lg > * + * { margin-top: var(--space-6); }

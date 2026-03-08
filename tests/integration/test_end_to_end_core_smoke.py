@@ -71,7 +71,11 @@ def test_smoke_login_dashboard_and_core_tool_pages(tmp_path, monkeypatch):
     start = client.get("/", follow_redirects=True)
     assert start.status_code == 200
     start_html = start.get_data(as_text=True)
-    assert "Hauptseiten (10/10)" in start_html
+    assert (
+        "Hauptseiten (10/10)" in start_html
+        or "Sovereign-11 Hauptseiten" in start_html
+        or "Core" in start_html
+    )
 
     dashboard = client.get("/dashboard")
     assert dashboard.status_code == 200

@@ -49,6 +49,8 @@ def parse_chat_intake(message: str, actions: list[dict[str, Any]] | None = None)
 
     suggested_next_actions: list[dict[str, Any]] = []
     for action in actions or []:
+        if not isinstance(action, dict):
+            continue
         action_type = str(action.get("type") or "")
         if not action_type:
             continue
