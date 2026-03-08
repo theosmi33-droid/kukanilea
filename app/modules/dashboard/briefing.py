@@ -5,9 +5,11 @@ import os
 import threading
 import urllib.request
 import xml.etree.ElementTree as ET
+from ipaddress import ip_address
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from flask import current_app, has_app_context
 
@@ -93,6 +95,29 @@ def save_briefing_settings(*, feeds: list[str], cron_expression: str) -> dict[st
 def _default_fetch(url: str) -> str:
     with urllib.request.urlopen(url, timeout=8) as res:  # nosec B310
         return res.read().decode("utf-8", errors="replace")
+
+
+def _is_allowed_feed_url(url: str) -> bool:
+    parsed = urlparse(str(url or "").strip())
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if not parsed.hostname:
+        return False
+    host = parsed.hostname.strip().lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return False
+    try:
+        address = ip_address(host)
+    except ValueError:
+        return True
+    return not (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    )
 
 
 def _strip(tag: str) -> str:
@@ -181,6 +206,8 @@ def refresh_feed_cache(
     for url in feed_urls:
         source = str(url or "").strip()
         if not source:
+            continue
+        if not _is_allowed_feed_url(source):
             continue
         try:
             xml_text = fetch(source)
