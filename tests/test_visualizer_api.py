@@ -6,8 +6,12 @@ from unittest.mock import patch
 
 from flask import Flask
 
-mock_login_required = lambda x: x
-with patch('app.auth.login_required', mock_login_required):
+
+def _mock_login_required(func):
+    return func
+
+
+with patch('app.auth.login_required', _mock_login_required):
     from app.routes import visualizer
 
 
@@ -58,6 +62,33 @@ class TestVisualizerAPI(unittest.TestCase):
         data = response.get_json()
         self.assertIn('excel_summary', data)
         self.assertEqual(data['excel_summary']['columns'], 2)
+
+    @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
+    @patch('app.routes.visualizer._collect_visualizer_items')
+    def test_sources_endpoint_returns_items_and_count(self, mock_collect, _mock_tenant):
+        mock_collect.return_value = [{"id": "abc", "name": "demo.csv", "ext": ".csv", "size": 10, "source": "pending"}]
+
+        response = self.client.get('/api/visualizer/sources')
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body['count'], 1)
+        self.assertEqual(len(body['items']), 1)
+
+    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
+    @patch('app.routes.visualizer.build_visualizer_payload', None)
+    def test_summary_endpoint_degrades_when_backend_missing(self, _mock_allowed):
+        response = self.client.post('/api/visualizer/summary', json={'source': self.source})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'visualizer_logic_missing')
+
+    @patch('app.routes.visualizer._is_allowed_path', return_value=True)
+    def test_render_endpoint_returns_structured_payload(self, _mock_allowed):
+        response = self.client.get(f'/api/visualizer/render?source={self.source}&page=0')
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertIn(data.get('kind'), {'sheet', 'text'})
+        self.assertIn('perf', data)
+        self.assertIn('server_ms', data['perf'])
 
     @patch('app.routes.visualizer.current_tenant', return_value='tenant-x')
     def test_markup_endpoints_persist_json_document(self, _mock_tenant):
