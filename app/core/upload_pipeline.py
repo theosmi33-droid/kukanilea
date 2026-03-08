@@ -26,8 +26,6 @@ ALLOWED_EXTENSIONS = {
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 INGESTION_TARGET_SECONDS = float(os.environ.get("KUKANILEA_INGESTION_TARGET_SECONDS", "3.0"))
 MALWARE_SCAN_TIMEOUT_SECONDS = float(os.environ.get("KUKANILEA_CLAMAV_TIMEOUT_SECONDS", "4"))
-MAX_HASH_LINES = 40
-MAX_HASH_CHARS = 2400
 STREAM_CHUNK_SIZE = 1024 * 1024
 
 
@@ -258,18 +256,23 @@ def ensure_ocr_corrections_table(auth_db_path: Optional[Path] = None) -> None:
 
 def compute_layout_hash(text: str, file_name: str = "") -> str:
     """
-    Deterministic layout hash based on stable text segments.
+    Deterministic layout hash for OCR correction reuse.
+
+    Uses normalized full-text content to reduce collisions between
+    unrelated documents. If no meaningful OCR text is available,
+    no deterministic hash is produced.
     """
-    lines = []
-    for raw in (text or "").splitlines():
-        normalized = _normalize_text(raw).lower()
-        if normalized:
-            lines.append(normalized)
-        if len(lines) >= MAX_HASH_LINES:
-            break
-    base = "\n".join(lines)[:MAX_HASH_CHARS]
-    if not base:
-        base = Path(file_name or "").suffix.lower()
+    del file_name  # Backward-compatible signature for callers.
+
+    normalized_lines = [
+        normalized
+        for raw in (text or "").splitlines()
+        if (normalized := _normalize_text(raw).lower())
+    ]
+    if not normalized_lines:
+        return ""
+
+    base = "\n".join(normalized_lines)
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
@@ -300,7 +303,7 @@ def store_ocr_corrections(
     corrections: List[Tuple[str, str]],
     auth_db_path: Optional[Path] = None,
 ) -> int:
-    if not corrections:
+    if not corrections or not layout_hash:
         return 0
     ensure_ocr_corrections_table(auth_db_path)
     db_path = Path(auth_db_path or Config.AUTH_DB)
