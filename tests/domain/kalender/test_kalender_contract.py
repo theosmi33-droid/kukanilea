@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.modules.kalender import contracts as kalender_contracts
+
 
 def test_kalender_summary_contract(auth_client):
     response = auth_client.get("/api/kalender/summary")
@@ -26,3 +28,19 @@ def test_kalender_health_contract(auth_client):
     checks = body["details"].get("checks") or {}
     assert set(checks.keys()) == {"summary_contract", "backend_ready", "offline_safe"}
     assert isinstance(body["details"].get("offline_persistence"), bool)
+
+
+def test_kalender_health_gracefully_degrades_when_summary_fails(monkeypatch):
+    def _boom(_tenant: str) -> dict:
+        raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr(kalender_contracts, "build_summary", _boom)
+
+    payload, code = kalender_contracts.build_health("KUKANILEA")
+
+    assert code == 200
+    assert payload["status"] == "degraded"
+    assert payload.get("degraded_reason") == "summary_unavailable"
+    checks = payload["details"].get("checks") or {}
+    assert checks.get("summary_contract") is False
+    assert checks.get("backend_ready") is False

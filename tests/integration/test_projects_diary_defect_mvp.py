@@ -93,6 +93,7 @@ def test_projects_diary_and_defect_execute_persists_and_updates_summary(tmp_path
     summary = client.get("/api/projects/summary")
     assert summary.status_code == 200
     summary_body = summary.get_json()
-    assert summary_body["metrics"]["defects_open"] == 2
+    assert summary_body["metrics"]["open_defects"] == 2
+    assert "defects_open" not in summary_body["metrics"]
     assert "overdue_tasks" in summary_body["metrics"]
     assert "active_projects" in summary_body["metrics"]

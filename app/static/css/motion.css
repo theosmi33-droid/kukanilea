@@ -97,12 +97,67 @@
 
 /* Confirm Dialog Motion */
 .confirm-backdrop {
-    animation: fadeIn 0.2s var(--ease-in-out-sine) both;
+    animation: fadeIn 160ms ease-out both;
     backdrop-filter: blur(4px);
 }
 
 .confirm-dialog {
-    animation: dialogIn 0.3s var(--ease-out-expo) both;
+    animation: dialogIn 180ms ease-out both;
+}
+
+.floating-chat-confirm-eyebrow {
+    margin: 0 0 4px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary, #6b7280);
+}
+
+.floating-chat-confirm-title {
+    margin: 0 0 8px;
+    font-weight: 600;
+}
+
+.floating-chat-confirm-text {
+    margin: 0;
+}
+
+.floating-chat-confirm-risk {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 0.86rem;
+    border: 1px solid var(--border-color, #d1d5db);
+    background: var(--surface-muted, #f8fafc);
+}
+
+.floating-chat-confirm-risk[data-risk-level="medium"] {
+    background: #fff7ed;
+    border-color: #fdba74;
+}
+
+.floating-chat-confirm-risk[data-risk-level="high"] {
+    background: #fef2f2;
+    border-color: #fca5a5;
+}
+
+.floating-chat-confirm-preview {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color, #d1d5db);
+    background: var(--surface-muted, #f8fafc);
+}
+
+.floating-chat-confirm-preview-title {
+    margin: 0 0 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+#floating-chat-confirm-actions {
+    margin: 0;
+    padding-left: 18px;
 }
 
 @keyframes fadeIn {
@@ -110,14 +165,38 @@
     to { opacity: 1; }
 }
 
+@keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+.confirm-backdrop.is-closing {
+    animation: fadeOut 120ms ease-out both;
+}
+
+.confirm-backdrop.is-closing .confirm-dialog {
+    animation: dialogOut 120ms ease-out both;
+}
+
 @keyframes dialogIn {
     from {
         opacity: 0;
-        transform: scale(0.95) translateY(10px);
+        transform: scale(0.98) translateY(6px);
     }
     to {
         opacity: 1;
         transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes dialogOut {
+    from {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: scale(0.98) translateY(5px);
     }
 }
 

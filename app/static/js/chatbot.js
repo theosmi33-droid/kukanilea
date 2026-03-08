@@ -20,7 +20,11 @@
     thinking: document.getElementById("floating-chat-thinking"),
     steps: document.getElementById("floating-chat-steps"),
     confirm: document.getElementById("floating-chat-confirm"),
+    confirmTitle: document.getElementById("floating-chat-confirm-title"),
     confirmText: document.getElementById("floating-chat-confirm-text"),
+    confirmRisk: document.getElementById("floating-chat-confirm-risk"),
+    confirmPreview: document.getElementById("floating-chat-confirm-preview"),
+    confirmActions: document.getElementById("floating-chat-confirm-actions"),
     confirmYes: document.getElementById("floating-chat-confirm-yes"),
     confirmNo: document.getElementById("floating-chat-confirm-no"),
     pendingQueue: document.getElementById("floating-chat-pending-queue"),
@@ -197,6 +201,76 @@
     pendingConfirmId = "";
     if (els.confirm) els.confirm.hidden = true;
     if (els.confirmText) els.confirmText.textContent = "";
+    if (els.confirmTitle) els.confirmTitle.textContent = "Bitte kurz prüfen";
+    if (els.confirmRisk) {
+      els.confirmRisk.hidden = true;
+      els.confirmRisk.textContent = "";
+      delete els.confirmRisk.dataset.riskLevel;
+    }
+    if (els.confirmPreview) {
+      els.confirmPreview.hidden = true;
+    }
+    if (els.confirmActions) {
+      els.confirmActions.innerHTML = "";
+    }
+  }
+
+  function toSentenceCase(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function summarizeAction(action) {
+    const type = String(action?.type || "").trim();
+    const label = String(action?.label || "").trim();
+    const target = String(action?.target || action?.resource || "").trim();
+    if (label) return toSentenceCase(label);
+    if (type && target) {
+      return toSentenceCase(type.replace(/[_-]+/g, " ")) + ": " + target;
+    }
+    if (type) return toSentenceCase(type.replace(/[_-]+/g, " "));
+    return "Schritt wird ausgeführt";
+  }
+
+  function classifyRisk(actions, confirmText) {
+    const source = (
+      (Array.isArray(actions) ? actions.map((item) => `${item?.type || ""} ${item?.label || ""}`).join(" ") : "") +
+      " " +
+      String(confirmText || "")
+    ).toLowerCase();
+    if (/delete|drop|destroy|remove|lösch|entfern|kündig|reset/.test(source)) {
+      return {
+        level: "high",
+        message: "Erhöhtes Risiko: Diese Freigabe kann Daten oder Zustände dauerhaft verändern.",
+      };
+    }
+    if (/send|mail|message|notify|calendar|appointment|create|update|write|task/.test(source)) {
+      return {
+        level: "medium",
+        message: "Hinweis: Nach der Freigabe wird eine Änderung aktiv ausgeführt.",
+      };
+    }
+    return {
+      level: "low",
+      message: "Prüfen Sie kurz die Vorschau und geben Sie dann bei Bedarf frei.",
+    };
+  }
+
+  function renderConfirmPreview(actions) {
+    if (!els.confirmPreview || !els.confirmActions) return;
+    const list = Array.isArray(actions) ? actions : [];
+    els.confirmActions.innerHTML = "";
+    if (!list.length) {
+      els.confirmPreview.hidden = true;
+      return;
+    }
+    for (const action of list.slice(0, 4)) {
+      const li = document.createElement("li");
+      li.textContent = summarizeAction(action);
+      els.confirmActions.appendChild(li);
+    }
+    els.confirmPreview.hidden = false;
   }
 
   function renderPendingQueue(items) {
@@ -210,7 +284,7 @@
 
     const title = document.createElement("p");
     title.className = "floating-chat-pending-title";
-    title.textContent = "Pending approvals (" + queue.length + ")";
+    title.textContent = "Ausstehende Freigaben (" + queue.length + ")";
     els.pendingQueue.appendChild(title);
 
     const list = document.createElement("ul");
@@ -219,7 +293,7 @@
       const pid = String(item.pending_id || "");
       const prompt = String(item.confirm_prompt || "Bestätigung erforderlich.");
       const count = Number(item.action_count || 0);
-      li.textContent = (count > 0 ? count + " Aktion(en): " : "") + prompt;
+      li.textContent = (count > 0 ? count + " Schritt(e): " : "") + prompt;
       li.dataset.pendingId = pid;
       list.appendChild(li);
     }
@@ -230,14 +304,27 @@
   function showConfirmGate(confirmText, pendingId, actions) {
     pendingConfirmId = String(pendingId || "");
     if (!els.confirm || !pendingConfirmId) return;
-    const labels = Array.isArray(actions)
-      ? actions.map((a) => a.label || a.type || "Aktion").join(", ")
+    const actionList = Array.isArray(actions) ? actions : [];
+    const labels = actionList.length
+      ? actionList.map((a) => a.label || a.type || "Aktion").join(", ")
       : "Aktion";
+    const risk = classifyRisk(actionList, confirmText);
     els.confirm.hidden = false;
+    if (els.confirmTitle) {
+      els.confirmTitle.textContent = actionList.length > 1
+        ? "Bitte diese Freigabe sorgfältig prüfen"
+        : "Bitte diese Freigabe prüfen";
+    }
     if (els.confirmText) {
       els.confirmText.textContent = confirmText ||
         "Bestätigung erforderlich für: " + labels;
     }
+    if (els.confirmRisk) {
+      els.confirmRisk.hidden = false;
+      els.confirmRisk.dataset.riskLevel = risk.level;
+      els.confirmRisk.textContent = risk.message;
+    }
+    renderConfirmPreview(actionList);
   }
 
   async function loadPendingQueue() {
@@ -482,7 +569,7 @@
     if (els.confirmNo) {
       els.confirmNo.addEventListener("click", function () {
         hideConfirmGate();
-        addMessage("assistant", "Aktion wurde abgebrochen.");
+        addMessage("assistant", "Freigabe wurde nicht erteilt. Es wurde nichts ausgeführt.");
       });
     }
 
