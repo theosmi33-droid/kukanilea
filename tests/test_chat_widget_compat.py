@@ -1,8 +1,9 @@
 import sys
 from pathlib import Path
-from tests.time_utils import utc_now_iso
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from tests.time_utils import utc_now_iso
 
 
 def test_standard_request_detector_handles_common_messages():
@@ -96,6 +97,11 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
     assert "fetch('/api/chat/compact'" in source
     assert "pending_id: chatPendingId" in source
     assert "data.text || data.response" in source
+
+    runtime_shell_js = Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "layout-shell.js"
+    assert runtime_shell_js.exists()
+    runtime_source = runtime_shell_js.read_text(encoding="utf-8")
+    assert "fetch('/api/chat/compact'" in runtime_source
 
 
 def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_path, monkeypatch):
