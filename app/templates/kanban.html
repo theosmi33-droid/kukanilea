@@ -4,6 +4,21 @@
 {% block content %}
 <div class="page-container p-6 flex flex-column gap-6" id="project-hub" data-board-id="{{ board.id }}" data-project-id="{{ project.id }}">
 
+  {% if projects_degraded %}
+  <section class="card border-light" style="border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.08);">
+    <div class="card-body p-4 flex justify-between items-start gap-3 flex-wrap">
+      <div>
+        <div class="text-xs font-black uppercase tracking-widest text-warning">Eingeschränkter Betrieb</div>
+        <div class="text-sm text-main">Das Projektboard konnte nicht vollständig geladen werden. Die Ansicht bleibt verfügbar, bis alle Daten wieder bereit sind.</div>
+      </div>
+      <div class="flex gap-2">
+        <a href="/projects" class="btn btn-secondary btn-sm">Neu laden</a>
+        <a href="/tasks" class="btn btn-ghost btn-sm">Zu Aufgaben</a>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   {% if request.args.get('origin') in ['upload', 'tasks'] %}
   <section class="card border-light bg-subtle">
     <div class="card-body p-4 flex justify-between items-center gap-3 flex-wrap">
@@ -179,7 +194,8 @@
     document.querySelectorAll(".cards").forEach(el => {
       el.innerHTML = "";
       const colId = el.dataset.columnId;
-      state.cards.filter(c => c.column_id === colId).sort((a,b)=>a.position-b.position).forEach(card => {
+      const cardsInColumn = state.cards.filter(c => c.column_id === colId).sort((a,b)=>a.position-b.position);
+      cardsInColumn.forEach(card => {
         const cEl = document.createElement("div");
         cEl.className = "card card-drag p-4 border-light shadow-sm hover:border-primary-300";
         cEl.draggable = true;
@@ -193,8 +209,14 @@
         cEl.ondragend = () => { state.draggedCardId = null; cEl.classList.remove("dragging"); };
         el.appendChild(cEl);
       });
+      if (!cardsInColumn.length) {
+        const emptyState = document.createElement("div");
+        emptyState.className = "rounded-xl border border-dashed border-neutral-200 p-4 text-center text-xs text-muted bg-white";
+        emptyState.innerHTML = "<strong style='display:block; margin-bottom:4px; color:var(--color-text-main);'>Keine Aufgaben in dieser Spalte</strong>Nutzen Sie \"Neu\", um den nächsten Schritt festzuhalten.";
+        el.appendChild(emptyState);
+      }
       const count = el.closest(".lane").querySelector("[data-count]");
-      if (count) count.textContent = el.children.length;
+      if (count) count.textContent = cardsInColumn.length;
     });
   }
 

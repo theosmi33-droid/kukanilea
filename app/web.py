@@ -4460,6 +4460,7 @@ def tasks_page():
         return redirect(url_for("web.login", next=request.path))
 
     pm = ProjectManager(current_app.extensions["auth_db"])
+    tasks_degraded = False
     try:
         workspace = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
         board = workspace["board"]
@@ -4472,6 +4473,7 @@ def tasks_page():
         items = []
         inbox = []
         notifications = []
+        tasks_degraded = True
 
     return _render_base(
         "tasks.html",
@@ -4479,6 +4481,7 @@ def tasks_page():
         tasks=items,
         inbox=inbox,
         notifications=notifications,
+        tasks_degraded=tasks_degraded,
     )
 
 
@@ -4840,6 +4843,15 @@ def projects_list():
         current_app.logger.warning("/projects called without tenant in session")
         return redirect(url_for("web.login", next=request.path))
 
+    project = {"id": "fallback", "name": "Projektboard", "description": "Board-Ansicht"}
+    board = {"id": "fallback", "name": "Standard-Board"}
+    boards = []
+    columns = []
+    cards = []
+    activities = []
+    tasks = []
+    projects_degraded = False
+
     try:
         workspace = pm.ensure_default_hub(tenant_id, actor=current_user() or "system")
         project = workspace["project"]
@@ -4850,14 +4862,11 @@ def projects_list():
         columns = board_state.get("columns") or workspace.get("columns") or []
         cards = board_state.get("cards") or []
         activities = board_state.get("activities") or []
+        tasks = pm.list_tasks(board_id)
     except Exception:
         current_app.logger.exception("Fehler in /projects")
-        return _render_base(
-            "<div class='card p-4'><h2>Projekte konnten nicht geladen werden</h2><p class='muted mt-2'>Leerer Zustand wird angezeigt, bis die Projekt-Daten wieder verfügbar sind.</p></div>",
-            active_tab="projects",
-        )
+        projects_degraded = True
 
-    tasks = pm.list_tasks(board_id)
     return _render_base(
         "kanban.html",
         active_tab="projects",
@@ -4868,6 +4877,7 @@ def projects_list():
         cards=cards,
         activities=activities,
         tasks=tasks,
+        projects_degraded=projects_degraded,
     )
 
 
