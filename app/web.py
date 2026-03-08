@@ -3320,6 +3320,10 @@ def api_ai_execute():
     skill_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
     confirm = bool(payload.get("confirm"))
     source = str(payload.get("source") or "chat")
+    tenant_id = str(current_tenant() or "").strip()
+
+    if not tenant_id:
+        return jsonify(error="tenant_required"), 403
 
     definition = skills_registry.get(skill_name)
     if not definition:
@@ -3357,8 +3361,10 @@ def api_ai_execute():
         if not send_limiter.allow(key):
             return jsonify(error="rate_limited"), 429
 
+    handler_payload = {key: value for key, value in skill_payload.items() if key != "tenant_id"}
+
     try:
-        result = definition.handler({**skill_payload, "confirm": confirm})
+        result = definition.handler({**handler_payload, "tenant_id": tenant_id, "confirm": confirm})
     except Exception:
         logger.exception("ai_execute_handler_failed", extra={"skill": skill_name})
         return jsonify(error="skill_execution_failed"), 500
