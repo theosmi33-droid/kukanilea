@@ -22,6 +22,16 @@ CONTRACT_TOOLS = [
     "chatbot",
 ]
 
+TOOL_LEGACY_ALIASES: dict[str, str] = {
+    "kalender": "calendar",
+    "aufgaben": "tasks",
+    "projekte": "projects",
+    "zeiterfassung": "time",
+    "einstellungen": "settings",
+    "emailpostfach": "email",
+}
+LEGACY_TOOL_SLUGS = frozenset(TOOL_LEGACY_ALIASES)
+
 CONTRACT_STATUSES = {"ok", "degraded", "error"}
 CHATBOT_REQUEST_FIELDS = ["message", "msg", "q"]
 CHATBOT_RESPONSE_FIELDS = ["ok", "response"]
@@ -122,6 +132,23 @@ def _core_get(name: str, default=None):
     return getattr(core, name, default)
 
 
+def normalize_contract_tool_slug(tool: str) -> str | None:
+    raw = str(tool or "").strip().lower()
+    if not raw or not re.fullmatch(r"[a-z0-9_-]{2,40}", raw):
+        return None
+    resolved = TOOL_LEGACY_ALIASES.get(raw, raw)
+    if resolved not in CONTRACT_TOOLS:
+        return None
+    return resolved
+
+
+def contract_tool_response_label(requested_tool: str, normalized_tool: str) -> str:
+    raw = str(requested_tool or "").strip().lower()
+    if raw in LEGACY_TOOL_SLUGS or raw in CONTRACT_TOOLS:
+        return raw
+    return normalized_tool
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -149,8 +176,10 @@ def _contract_payload(
         contract_meta = dict(contract_payload)
     else:
         contract_meta = {}
-    contract_meta.setdefault("version", CONTRACT_VERSION)
-    contract_meta.setdefault("read_only", False)
+    version = contract_meta.get("version", CONTRACT_VERSION)
+    contract_meta["version"] = version if isinstance(version, str) and version.strip() else CONTRACT_VERSION
+    read_only = contract_meta.get("read_only", False)
+    contract_meta["read_only"] = read_only if isinstance(read_only, bool) else False
     contract_meta["kind"] = contract_kind if contract_kind in CONTRACT_KINDS else "summary"
     safe_details["contract"] = contract_meta
 
@@ -494,7 +523,7 @@ def _processing_queue_items(tenant: str) -> list[dict]:
 def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
     list_projects = _core_get("project_list")
     projects = list_projects() if callable(list_projects) else []
-    metrics = {"total_projects": len(projects), "active_projects": len(projects), "overdue_tasks": 0, "defects_open": 0}
+    metrics = {"total_projects": len(projects), "active_projects": len(projects), "overdue_tasks": 0, "open_defects": 0}
     details = {"source": "core.project_list", "tenant": tenant}
     reason = "projects_backend_missing" if not callable(list_projects) else ""
 
@@ -534,7 +563,7 @@ def _collect_projects_summary(tenant: str) -> tuple[dict, dict, str]:
 
                 metrics["active_projects"] = _row_count(active_row)
                 metrics["overdue_tasks"] = _row_count(overdue_row)
-                metrics["defects_open"] = _row_count(defects_row)
+                metrics["open_defects"] = _row_count(defects_row)
                 details["source"] = "auth_db.projects+team_tasks+project_defects"
         except Exception:
             if not reason:
@@ -710,11 +739,33 @@ def _collect_calendar_summary(tenant: str) -> tuple[dict, dict, str]:
 
 def _collect_time_summary(tenant: str) -> tuple[dict, dict, str]:
     time_entry_list = _core_get("time_entry_list")
-    entries = time_entry_list(tenant=tenant) if callable(time_entry_list) else []
-    running = sum(1 for e in entries if not e.get("ended_at")) if entries else 0
-    metrics = {"entries": len(entries), "running": running}
+    time_entry_billing_basis = _core_get("time_entries_billing_basis")
+    entries = time_entry_list(tenant_id=tenant, limit=500) if callable(time_entry_list) else []
+    billing_basis_entries = (
+        time_entry_billing_basis(tenant_id=tenant, limit=500)
+        if callable(time_entry_billing_basis)
+        else [
+            entry
+            for entry in entries
+            if entry.get("end_at")
+            and str(entry.get("entry_type") or "WORK").upper() == "WORK"
+            and str(entry.get("approval_status") or "").upper() == "APPROVED"
+            and int(entry.get("duration_seconds") or 0) > 0
+        ]
+    )
+    running = sum(1 for e in entries if not e.get("end_at")) if entries else 0
+    metrics = {
+        "entries": len(entries),
+        "running": running,
+        "billing_basis_entries": len(billing_basis_entries),
+        "billing_basis_seconds": sum(int(e.get("duration_seconds") or 0) for e in billing_basis_entries),
+    }
     reason = "time_tracking_unavailable" if not callable(time_entry_list) else ""
-    return metrics, {"source": "core.time_entry_list", "tenant": tenant}, reason
+    return metrics, {
+        "source": "core.time_entry_list",
+        "billing_basis_source": "core.time_entries_billing_basis",
+        "tenant": tenant,
+    }, reason
 
 
 def _collect_visualizer_summary(tenant: str) -> tuple[dict, dict, str]:

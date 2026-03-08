@@ -29,3 +29,12 @@ def test_summary_contract_for_each_tool(auth_client, tool):
         assert isinstance(body.get("degraded_reason"), str) and body.get("degraded_reason"), (
             f"{tool}: degraded status must include non-empty degraded_reason"
         )
+
+
+def test_projects_summary_uses_open_defects_metric(auth_client):
+    response = auth_client.get("/api/projects/summary")
+    assert response.status_code == 200
+
+    metrics = response.get_json()["metrics"]
+    assert "open_defects" in metrics
+    assert "defects_open" not in metrics
