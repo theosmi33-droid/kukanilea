@@ -462,3 +462,133 @@ html.sidebar-collapsed .app-shell {
     display: none;
   }
 }
+
+/* --- Navigation redesign --- */
+.sidebar-search-launcher-wrap {
+  padding: var(--spacing-3) var(--spacing-3) var(--spacing-1);
+}
+
+.sidebar-search-launcher {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.sidebar-search-launcher kbd {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  padding: 1px 4px;
+  background: var(--bg-primary);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-preview {
+  display: none;
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 220px;
+  max-width: 260px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  box-shadow: var(--shadow-sm);
+  z-index: 20;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+html.sidebar-collapsed .nav-link:hover .nav-preview,
+html.sidebar-collapsed .nav-link:focus-visible .nav-preview {
+  display: block;
+}
+
+.topbar {
+  height: auto;
+  padding: var(--spacing-3) var(--spacing-6);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.topbar-main-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.topbar-leading { display: flex; align-items: center; gap: 10px; }
+
+.topbar-profile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+}
+
+.topbar-profile span {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.context-panel {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  padding: 8px 10px;
+}
+
+.context-panel-label {
+  margin: 0;
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.context-panel-value {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+@media (max-width: 1000px) {
+  .context-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .topbar-main-row { flex-wrap: wrap; }
+  .topbar-search-container { max-width: 100%; }
+}
