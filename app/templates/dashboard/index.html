@@ -9,7 +9,7 @@
     <div>
         <p class="page-kicker">Dashboard</p>
         <h1 class="m-0 text-3xl font-bold tracking-tight">Übersicht</h1>
-        <p class="text-secondary mt-2">Willkommen zurück. Hier sind die aktuellen Status Ihrer Beleg-Zentrale.</p>
+        <p class="text-secondary mt-2">Beleg-Zentrale kompakt: alles Wichtige auf einen Blick.</p>
     </div>
     <div class="flex gap-3">
         <a href="/upload" class="btn btn-primary btn-lg shadow-sm">
@@ -19,14 +19,14 @@
     </div>
   </header>
 
-  <section class="card border-light" aria-label="KPI Schnellscan">
+  <section class="card border-light" aria-label="Jetzt wichtig">
     <div class="card-body py-4 px-6">
       <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
-        <h2 class="m-0 text-base font-bold">Leitstand-Schnellscan</h2>
-        <span id="optimizer-action-counter" class="badge bg-primary-50 text-primary-700 border border-primary-100 text-[10px] font-black tracking-wider uppercase">Optimierung läuft…</span>
+        <h2 class="m-0 text-base font-bold">Jetzt wichtig</h2>
+        <span id="optimizer-action-counter" class="badge bg-primary-50 text-primary-700 border border-primary-100 text-[10px] font-black tracking-wider uppercase">Scan läuft…</span>
       </div>
       <div id="kpi-scan-rail" class="grid grid-cols-1 md:grid-cols-4 gap-3"></div>
-      <div id="alert-digest" class="mt-4 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main" role="status" aria-live="polite"></div>
+      <div id="alert-digest" class="mt-3 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main" role="status" aria-live="polite"></div>
     </div>
   </section>
 
@@ -38,24 +38,32 @@
       </div>
       <div class="card-body">
         <div id="speed-to-lead-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
-        <p class="text-xs text-muted mt-3 mb-0">Quelle: Nur Contract-Endpoints <code>/api/&lt;tool&gt;/summary</code>.</p>
+        <div id="speed-to-lead-state" class="mt-3"></div>
+        <details class="mt-3">
+          <summary class="text-xs text-muted font-semibold cursor-pointer">Details zur Datenquelle</summary>
+          <p class="text-xs text-muted mt-2 mb-0">Quelle: Nur Contract-Endpoints <code>/api/&lt;tool&gt;/summary</code>.</p>
+        </details>
       </div>
     </article>
     <article class="card border-light" id="system-health-strip">
       <div class="card-header border-light">
-        <h2 class="card-title text-base">System Health Strip</h2>
+        <h2 class="card-title text-base">Aufmerksamkeit nötig</h2>
         <span id="health-strip-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
       </div>
       <div class="card-body">
-        <div id="health-strip-summary" class="text-sm text-main mb-3">Status initialisiert…</div>
+        <div id="health-strip-summary" class="text-sm text-main mb-3">Status…</div>
         <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
-        <p class="text-xs text-muted mt-3 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
+        <div id="health-strip-state" class="mt-3"></div>
+        <details class="mt-3">
+          <summary class="text-xs text-muted font-semibold cursor-pointer">Technik-Details</summary>
+          <p class="text-xs text-muted mt-2 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
+        </details>
       </div>
     </article>
   </section>
 
-  <!-- 2. Priority Stats Grid -->
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+  <!-- 2. Kompakte Kennzahlen -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
     <!-- Archivierte Belege -->
     <div class="card card-featured border-light">
         <div class="card-body flex items-center gap-5">
@@ -63,7 +71,7 @@
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             </div>
             <div>
-                <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Archivierte Belege</div>
+                <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Belege gesamt</div>
                 <div class="text-3xl font-bold text-main">{{ (recent|length if recent else 0) + (items|length if items else 0) }}</div>
             </div>
         </div>
@@ -76,7 +84,7 @@
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </div>
             <div>
-                <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Vault Integrität</div>
+                <div class="text-[11px] font-black text-muted uppercase tracking-widest mb-1">Vault</div>
                 <div class="text-3xl font-bold text-success">100%</div>
             </div>
         </div>
@@ -108,32 +116,23 @@
     <!-- Activity Feed -->
     <div class="card border-light shadow-sm">
         <div class="card-header border-light">
-            <h3 class="card-title text-base">Letzte Aktivitäten</h3>
+            <h3 class="card-title text-base">Neu im Archiv</h3>
             <a href="/admin/audit" class="btn btn-ghost btn-xs text-primary-600 font-bold">Verlauf →</a>
         </div>
-        <div class="card-body p-0">
+        <div class="card-body p-4">
             {% if recent %}
-            <div class="table-container">
-                <table class="table w-full text-sm">
-                    <tbody>
-                        {% for entry in recent[:6] %}
-                        <tr class="border-b last:border-0 hover:bg-neutral-25 transition-colors">
-                            <td class="p-4" style="width: 48px;">
-                                <div class="p-2 bg-neutral-50 text-neutral-400 rounded-lg">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                </div>
-                            </td>
-                            <td class="p-4">
-                                <div class="font-semibold text-main">{{ entry.get('filename') or entry.get('name') or 'Beleg' }}</div>
-                                <div class="text-xs text-muted">{{ entry.get('timestamp', 'Archiviert') }}</div>
-                            </td>
-                            <td class="p-4 text-right">
-                                <span class="badge text-[10px] font-bold px-2 py-0.5 rounded-full bg-success-bg text-success border border-success/10 uppercase tracking-tighter">Bereit</span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="flex flex-column gap-3">
+                {% for entry in recent[:5] %}
+                <article class="rounded-xl border border-light bg-subtle px-3 py-2.5">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <div class="font-semibold text-main text-sm">{{ entry.get('filename') or entry.get('name') or 'Beleg' }}</div>
+                            <div class="text-xs text-muted mt-0.5">{{ entry.get('timestamp', 'Archiviert') }}</div>
+                        </div>
+                        <span class="badge text-[10px] font-bold px-2 py-0.5 rounded-full bg-success-bg text-success border border-success/10 uppercase tracking-tighter">Bereit</span>
+                    </div>
+                </article>
+                {% endfor %}
             </div>
             {% else %}
             <div class="p-16 text-center">
@@ -161,7 +160,13 @@
                             <div class="w-2.5 h-2.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] animate-pulse"></div>
                             <div>
                                 <div class="font-bold text-sm text-main group-hover:text-primary-600 transition-colors">{{ meta.get(token, {}).get('filename', 'Analysiere Dokument...') }}</div>
-                                <div class="text-[10px] text-muted font-mono mt-0.5">ID: {{ token[:12] }}</div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <span class="badge text-[10px] font-bold px-2 py-0.5 rounded-full bg-warning-bg text-warning border border-warning/20 uppercase">Wartet</span>
+                                    <details>
+                                      <summary class="text-[10px] text-muted cursor-pointer">Details</summary>
+                                      <div class="text-[10px] text-muted font-mono mt-1">ID: {{ token[:12] }}</div>
+                                    </details>
+                                </div>
                             </div>
                         </div>
                         <button class="btn btn-secondary btn-sm font-bold">Review</button>
@@ -210,14 +215,16 @@ function renderToolMatrix(payload) {
     const borderColor = isOk ? "var(--success)" : (isDegraded ? "var(--warning)" : "var(--error)");
     const bgClass = isOk ? "bg-success-bg" : (isDegraded ? "bg-warning-bg" : "bg-error-bg");
     
-    const reason = tool.degraded_reason ? `<div class="text-[10px] text-muted mt-1 leading-tight">${tool.degraded_reason}</div>` : "";
+    const reason = tool.degraded_reason
+      ? `<details class="mt-2"><summary class="text-[10px] text-muted cursor-pointer">Diagnose</summary><div class="text-[10px] text-muted mt-1 leading-tight">${tool.degraded_reason}</div></details>`
+      : "";
     
     return `
     <article class="card card-tight border-light" style="border-left: 4px solid ${borderColor};">
       <div class="card-body">
         <div class="flex justify-between items-center">
             <span class="text-sm font-bold text-main">${tool.tool}</span>
-            <span class="text-[10px] font-black uppercase ${colorClass}">${status}</span>
+            <span class="badge border ${bgClass} text-[10px] font-black uppercase ${colorClass}">${status}</span>
         </div>
         ${reason}
       </div>
@@ -244,17 +251,20 @@ function renderKpiRail(signals) {
   const rail = document.getElementById("kpi-scan-rail");
   if (!rail) return;
   const cards = [
-    { label: "Stabilitäts-Score", value: `${signals.score}%`, tone: signals.score >= 85 ? "success" : "warning" },
-    { label: "Review-Pipeline", value: signals.reviewQueue, tone: signals.reviewQueue > 3 ? "warning" : "success" },
-    { label: "Warnungen", value: signals.toolsWarn, tone: signals.toolsWarn ? "warning" : "success" },
-    { label: "Kritische Alerts", value: signals.toolsDown, tone: signals.toolsDown ? "error" : "success" },
+    { label: "Score", value: `${signals.score}%`, tone: signals.score >= 85 ? "success" : "warning", meta: "System" },
+    { label: "Review", value: signals.reviewQueue, tone: signals.reviewQueue > 3 ? "warning" : "success", meta: "offen" },
+    { label: "Degraded", value: signals.toolsWarn, tone: signals.toolsWarn ? "warning" : "success", meta: "Tools" },
+    { label: "Down", value: signals.toolsDown, tone: signals.toolsDown ? "error" : "success", meta: "kritisch" },
   ];
 
   rail.innerHTML = cards.map((card) => {
     const toneClass = card.tone === "error" ? "text-error border-error/20 bg-error-bg" : (card.tone === "warning" ? "text-warning border-warning/20 bg-warning-bg" : "text-success border-success/20 bg-success-bg");
-    return `<article class="rounded-xl border p-3 ${toneClass}">
-      <div class="text-[10px] uppercase tracking-wider font-black opacity-80">${card.label}</div>
-      <div class="text-2xl font-bold mt-1">${card.value}</div>
+    return `<article class="rounded-xl border px-3 py-2.5 ${toneClass}">
+      <div class="flex items-start justify-between gap-2">
+        <div class="text-[10px] uppercase tracking-wider font-black opacity-80">${card.label}</div>
+        <div class="text-[10px] opacity-80">${card.meta}</div>
+      </div>
+      <div class="text-2xl font-bold leading-none mt-1.5">${card.value}</div>
     </article>`;
   }).join("");
 }
@@ -264,11 +274,11 @@ function renderAlertDigest(signals) {
   if (!digest) return;
   if (!signals.toolsDown && !signals.toolsWarn) {
     digest.className = "mt-4 p-3 rounded-xl border border-success/20 bg-success-bg text-sm text-main";
-    digest.innerHTML = "<strong>Keine kritischen Tool-Alarme.</strong> Fokus auf Review-Durchsatz und schnelle Freigaben.";
+    digest.innerHTML = "<strong>Alles stabil.</strong> Fokus: Review abschließen.";
     return;
   }
   digest.className = "mt-4 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main";
-  digest.innerHTML = `<strong>Priorität:</strong> ${signals.toolsDown} kritisch, ${signals.toolsWarn} eingeschränkt. Bitte zuerst rote Tool-Checks bearbeiten.`;
+  digest.innerHTML = `<strong>Priorität:</strong> ${signals.toolsDown} down · ${signals.toolsWarn} degraded.`;
 }
 
 function executeOptimizerActions(signals, targetActions = 2200) {
@@ -281,7 +291,7 @@ function executeOptimizerActions(signals, targetActions = 2200) {
   }
   const counter = document.getElementById("optimizer-action-counter");
   if (counter) {
-    counter.textContent = `${actionCount} Aktionen ausgeführt · KPI-Scan priorisiert`;
+    counter.textContent = `${actionCount} Aktionen · Scan priorisiert`;
   }
 }
 
@@ -295,10 +305,43 @@ function _statusTone(status) {
   return "bg-error-bg text-error border-error/20";
 }
 
+function _stateIllustration(kind = "empty") {
+  if (kind === "error") {
+    return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><circle cx="12" cy="16" r=".8" fill="currentColor"/></svg>`;
+  }
+  if (kind === "loading") {
+    return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M21 3v6h-6"/></svg>`;
+  }
+  return `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="8" height="6" rx="1"/><rect x="13" y="4" width="8" height="6" rx="1"/><rect x="8" y="14" width="8" height="6" rx="1"/></svg>`;
+}
+
+function _renderState(container, { kind = "empty", title = "", instructions = "", actions = [] } = {}) {
+  if (!container) return;
+  const palette = kind === "error"
+    ? "border-error/20 bg-error-bg text-error"
+    : (kind === "success" ? "border-success/20 bg-success-bg text-success" : "border-light bg-subtle text-main");
+  const safeActions = Array.isArray(actions) ? actions : [];
+  container.innerHTML = `
+    <section class="rounded-2xl border ${palette} p-4" role="status" aria-live="polite">
+      <div class="flex gap-3 items-start">
+        <div class="opacity-70">${_stateIllustration(kind)}</div>
+        <div class="flex-1">
+          <p class="font-bold text-sm mb-1">${title}</p>
+          <p class="text-xs text-muted mb-3">${instructions}</p>
+          <div class="flex flex-wrap gap-2">
+            ${safeActions.map((action) => `<a href="${action.href || '#'}" class="btn ${action.primary ? 'btn-primary' : 'btn-secondary'} btn-sm">${action.label || 'Open'}</a>`).join("")}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderSpeedToLead(summaryMap) {
   const container = document.getElementById("speed-to-lead-cards");
+  const state = document.getElementById("speed-to-lead-state");
   const updated = document.getElementById("speed-to-lead-updated");
-  if (!container || !updated) return;
+  if (!container || !updated || !state) return;
 
   const emailPending = Number(summaryMap.email?.metrics?.pending_threads || summaryMap.email?.metrics?.inbox_unread || 0);
   const messengerPending = Number(summaryMap.messenger?.metrics?.pending_conversations || summaryMap.messenger?.metrics?.unread_threads || 0);
@@ -310,27 +353,37 @@ function renderSpeedToLead(summaryMap) {
   const lastResponseAgo = updatedAt.length ? Math.max(0, Math.round((Date.now() - Math.max(...updatedAt)) / 60000)) : null;
 
   const tiles = [
-    { label: "E-Mail offen", value: emailPending },
-    { label: "Messenger offen", value: messengerPending },
-    { label: "Anrufe offen", value: callsPending, hint: "Platzhalter" },
-    { label: "Letzte Reaktion", value: lastResponseAgo === null ? "—" : `${lastResponseAgo} min` },
+    { label: "E-Mail", value: emailPending, hint: "offen" },
+    { label: "Messenger", value: messengerPending, hint: "offen" },
+    { label: "Anrufe", value: callsPending, hint: "offen" },
+    { label: "Letzte Reaktion", value: lastResponseAgo === null ? "—" : `${lastResponseAgo}m` },
   ];
 
   container.innerHTML = tiles.map((tile) => `
-    <article class="rounded-xl border border-light p-3 bg-subtle">
+    <article class="rounded-xl border border-light px-3 py-2.5 bg-subtle">
       <div class="text-[10px] uppercase tracking-wider font-black text-muted">${tile.label}</div>
-      <div class="text-2xl font-bold text-main mt-1">${tile.value}</div>
+      <div class="text-2xl font-bold text-main leading-none mt-1.5">${tile.value}</div>
       ${tile.hint ? `<div class="text-[10px] text-muted mt-1">${tile.hint}</div>` : ""}
     </article>
   `).join("");
+  _renderState(state, {
+    kind: "success",
+    title: "Lead-Signale aktiv",
+    instructions: "Alle Eingangskanäle melden live. Priorisieren Sie offene Kontakte, um die Reaktionszeit stabil niedrig zu halten.",
+    actions: [
+      { label: "Inbox öffnen", href: "/mail", primary: true },
+      { label: "Messenger prüfen", href: "/messenger" },
+    ],
+  });
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 function renderHealthStrip(summaryMap, appHealthOk) {
   const summary = document.getElementById("health-strip-summary");
   const tools = document.getElementById("health-strip-tools");
+  const state = document.getElementById("health-strip-state");
   const updated = document.getElementById("health-strip-updated");
-  if (!summary || !tools || !updated) return;
+  if (!summary || !tools || !updated || !state) return;
 
   const rows = DASHBOARD_TOOLS.map((tool) => {
     const status = String(summaryMap[tool]?.status || "down").replace("error", "down");
@@ -343,11 +396,42 @@ function renderHealthStrip(summaryMap, appHealthOk) {
   summary.className = `text-sm mb-3 ${appHealthOk ? "text-main" : "text-error"}`;
   summary.textContent = appHealthOk
     ? `${okCount} ok · ${degradedCount} degraded · ${downCount} down`
-    : `App /health nicht erreichbar · ${okCount} ok · ${degradedCount} degraded · ${downCount} down`;
+    : `App down · ${okCount} ok · ${degradedCount} degraded · ${downCount} down`;
 
   tools.innerHTML = rows.map((row) => `
     <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${row.status}</span>
   `).join("");
+
+  if (!rows.length || downCount === rows.length) {
+    _renderState(state, {
+      kind: "empty",
+      title: "No agents running",
+      instructions: "Keine aktiven Service-Agents erkannt. Starten Sie einen Agenten, um Monitoring und Automationen zu aktivieren.",
+      actions: [
+        { label: "Create Agent", href: "/settings", primary: true },
+        { label: "System-Logs", href: "/system_logs" },
+      ],
+    });
+  } else if (!appHealthOk || downCount > 0) {
+    _renderState(state, {
+      kind: "error",
+      title: "Störung erkannt",
+      instructions: "Mindestens ein kritischer Dienst ist nicht erreichbar. Prüfen Sie Logs und starten Sie den Health-Check erneut.",
+      actions: [
+        { label: "Health-Check", href: "/system_logs", primary: true },
+        { label: "Einstellungen", href: "/settings" },
+      ],
+    });
+  } else {
+    _renderState(state, {
+      kind: "success",
+      title: "System stabil",
+      instructions: "Alle Kern-Agents sind online. Sie können neue Automationen gefahrlos starten.",
+      actions: [
+        { label: "Automationen öffnen", href: "/automation", primary: true },
+      ],
+    });
+  }
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
@@ -427,8 +511,26 @@ async function loadToolMatrix() {
   }
 }
 
+function renderLoadingStates() {
+  const speedState = document.getElementById("speed-to-lead-state");
+  const healthState = document.getElementById("health-strip-state");
+  _renderState(speedState, {
+    kind: "loading",
+    title: "Daten werden synchronisiert",
+    instructions: "Wir laden gerade Speed-to-Lead Signale aus den Contract-Endpunkten.",
+    actions: [{ label: "Seite neu laden", href: "/dashboard", primary: true }],
+  });
+  _renderState(healthState, {
+    kind: "loading",
+    title: "Agent-Status wird geprüft",
+    instructions: "Bitte warten Sie einen Moment, während der Dashboard-Healthcheck läuft.",
+    actions: [{ label: "Status aktualisieren", href: "/dashboard", primary: true }],
+  });
+}
+
 // Initial Load
 document.addEventListener("DOMContentLoaded", () => {
+    renderLoadingStates();
     loadToolMatrix();
     loadSpeedToLeadAndHealth();
     setInterval(loadToolMatrix, REFRESH_INTERVAL_MS);

@@ -28,6 +28,13 @@
 
   .vz-stage-wrap { padding:12px; overflow:auto; background: radial-gradient(circle at 8% 4%, color-mix(in srgb, var(--color-primary) 9%, transparent), transparent 40%), var(--bg-primary); }
   .vz-empty { min-height:460px; border:1px dashed var(--color-border); border-radius:12px; display:grid; place-items:center; text-align:center; color:var(--color-text-muted); font-size:13px; padding:16px; }
+  .vz-state-card { max-width: 520px; margin: 0 auto; border:1px solid var(--color-border); border-radius: 14px; padding:18px; background: var(--bg-secondary); text-align:left; box-shadow: 0 10px 24px rgba(15,23,42,.06); }
+  .vz-state-card h3 { margin:0; font-size:16px; color:var(--color-text-main); }
+  .vz-state-card p { margin:8px 0 0 0; color:var(--color-text-muted); line-height:1.5; font-size:13px; }
+  .vz-state-card details { margin-top:10px; }
+  .vz-state-card summary { cursor:pointer; font-size:12px; color:var(--color-text-muted); }
+  .vz-state-card pre { margin:6px 0 0 0; padding:8px 10px; border-radius:8px; border:1px solid var(--color-border); background: var(--bg-tertiary); color:var(--color-text-main); font-size:11px; white-space:pre-wrap; word-break:break-word; }
+  .vz-state-card .vz-btn { margin-top:12px; }
   .vz-viewport { transform-origin: top left; transition: transform .1s linear; width: fit-content; margin: 0 auto; }
 
   .pdf-wrap, .img-wrap { position:relative; border:1px solid var(--color-border); border-radius:10px; overflow:hidden; background:#f8f8f8; }
@@ -166,6 +173,21 @@
 
   const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
   const n = (v) => Number(v || 0);
+
+  function renderStageState({ title, message, actionLabel = "", action = null, details = "" }) {
+    el.stage.className = "vz-empty";
+    el.stage.innerHTML = `
+      <div class="vz-state-card" role="status" aria-live="polite">
+        <h3>${esc(title)}</h3>
+        <p>${esc(message)}</p>
+        ${details ? `<details><summary>Mehr anzeigen</summary><pre>${esc(details)}</pre></details>` : ""}
+        ${actionLabel ? `<button class="vz-btn" type="button" id="vz-stage-action">${esc(actionLabel)}</button>` : ""}
+      </div>`;
+    if (actionLabel && typeof action === "function") {
+      const btn = document.getElementById("vz-stage-action");
+      if (btn) btn.addEventListener("click", action, { once: true });
+    }
+  }
 
   function humanBytes(bytes) {
     let v = n(bytes); if (!v) return "0 B";
@@ -441,8 +463,10 @@
   function renderPayload(payload, clientMs) {
     state.payload = payload;
     if (!payload) {
-      el.stage.className = "vz-empty";
-      el.stage.textContent = "Keine Darstellungsdaten verfügbar.";
+      renderStageState({
+        title: "Noch keine Vorschau verfügbar",
+        message: "Wählen Sie links ein Dokument aus, um die Analyse zu starten.",
+      });
       return;
     }
     try {
@@ -455,15 +479,20 @@
       updatePager(payload);
       updatePerf(payload, clientMs);
     } catch (err) {
-      el.stage.className = "vz-empty";
-      el.stage.textContent = `Darstellungsfehler: ${String(err.message || err)}`;
+      renderStageState({
+        title: "Die Vorschau konnte nicht aufgebaut werden",
+        message: "Bitte versuchen Sie es erneut. Wenn das Problem bleibt, nutzen Sie die Details für den Support.",
+        actionLabel: "Vorschau neu laden",
+        action: () => void loadRender(),
+        details: String(err.message || err),
+      });
     }
   }
 
   function renderList() {
     const files = state.filtered;
     if (!files.length) {
-      el.list.innerHTML = '<li class="vz-empty" style="min-height:120px;">Keine Dokumente gefunden.</li>';
+      el.list.innerHTML = '<li class="vz-empty" style="min-height:120px;">Keine Dokumente gefunden. Passen Sie die Suche an oder laden Sie neue Dateien hoch.</li>';
       return;
     }
     el.list.innerHTML = files.map((it) => {
@@ -497,8 +526,7 @@
   }
 
   async function loadSources() {
-    el.stage.className = "vz-empty";
-    el.stage.textContent = "Quellen werden vorbereitet…";
+    renderStageState({ title: "Quellen werden vorbereitet", message: "Einen Moment bitte – wir laden Ihre Dokumentquellen." });
     try {
       const res = await fetch("/api/visualizer/sources", { headers: { Accept: "application/json" } });
       const data = await res.json();
@@ -509,15 +537,22 @@
       renderList();
 
       if (!items.length) {
-        el.stage.className = "vz-empty";
-        el.stage.innerHTML = "Keine unterstützten Dokumente gefunden.<br>Bitte zuerst hochladen.";
+        renderStageState({
+          title: "Noch keine unterstützten Dokumente gefunden",
+          message: "Laden Sie zuerst PDF-, Bild- oder Tabellen-Dateien hoch, damit hier eine Vorschau erscheint.",
+        });
         updatePager(null);
         return;
       }
       await loadRender();
     } catch (err) {
-      el.stage.className = "vz-empty";
-      el.stage.textContent = `Quellen konnten nicht geladen werden: ${String(err.message || err)}`;
+      renderStageState({
+        title: "Quellen konnten nicht geladen werden",
+        message: "Bitte prüfen Sie kurz die Verbindung und versuchen Sie es erneut.",
+        actionLabel: "Erneut laden",
+        action: () => void loadSources(),
+        details: String(err.message || err),
+      });
       updatePager(null);
     }
   }
@@ -550,8 +585,13 @@
       if (!res.ok) throw new Error(payload?.detail || payload?.error || "Render fehlgeschlagen");
       requestAnimationFrame(() => renderPayload(payload, performance.now() - t0));
     } catch (err) {
-      el.stage.className = "vz-empty";
-      el.stage.textContent = `Fehler beim Rendern: ${String(err.message || err)}`;
+      renderStageState({
+        title: "Dokument konnte gerade nicht gerendert werden",
+        message: "Sie können es sofort erneut versuchen.",
+        actionLabel: "Rendern erneut starten",
+        action: () => void loadRender(),
+        details: String(err.message || err),
+      });
     } finally {
       state.loading = false;
       updatePager(state.payload);

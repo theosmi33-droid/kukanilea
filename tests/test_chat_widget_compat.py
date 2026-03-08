@@ -104,6 +104,22 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
     assert "fetch('/api/chat/compact'" in runtime_source
 
 
+def test_confirm_dialog_component_uses_human_friendly_copy():
+    from pathlib import Path
+
+    floating_chat = Path("app/templates/partials/floating_chat.html").read_text(encoding="utf-8")
+    template = Path("app/templates/components/confirm_dialog.html").read_text(encoding="utf-8")
+    ui_feedback = Path("app/static/js/ui-feedback.js").read_text(encoding="utf-8")
+
+    assert "id=\"floating-chat-confirm-risk\"" in floating_chat
+    assert "id=\"floating-chat-confirm-preview\"" in floating_chat
+    assert "Freigeben &amp; ausführen" in floating_chat
+    assert "Sicherheitsabfrage" in template
+    assert "Nicht ausführen" in template
+    assert "Freigeben" in template
+    assert "normalizeConfirmMessage" in ui_feedback
+
+
 def test_compact_chat_write_intent_requires_confirm_and_executes_after_yes(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     client = app.test_client()
@@ -199,3 +215,39 @@ def test_compact_chat_maintains_pending_approvals_queue(tmp_path, monkeypatch):
     listed = listing.get_json()
     assert listed["ok"] is True
     assert len(listed["pending_approvals"]) == 2
+
+
+def test_widget_pending_helpers_keep_contract_shape():
+    from app.widget_pending import (
+        compact_pending_actions,
+        mark_actions_confirm_required,
+        serialize_pending_approvals,
+        widget_requires_confirm,
+    )
+
+    actions = [{"type": "send_message", "label": "Senden"}]
+    marked = mark_actions_confirm_required(actions)
+
+    assert marked[0]["requires_confirm"] is True
+    assert marked[0]["confirm_required"] is True
+    assert widget_requires_confirm(marked) is True
+
+    compact = compact_pending_actions(marked)
+    assert compact == [{"type": "send_message", "label": "Senden", "confirm_required": True}]
+
+    pending = serialize_pending_approvals([
+        {
+            "id": "abc",
+            "actions": compact,
+            "current_context": "/messenger",
+            "confirm_prompt": "Bestätigen",
+        }
+    ])
+    assert pending == [
+        {
+            "pending_id": "abc",
+            "current_context": "/messenger",
+            "confirm_prompt": "Bestätigen",
+            "action_count": 1,
+        }
+    ]
