@@ -3,11 +3,12 @@ from __future__ import annotations
 from app.core.mia_cross_tool_flows import MiaFlowEngine
 
 
-def test_flow_catalog_contains_five_roi_flows() -> None:
+def test_flow_catalog_contains_roi_flows() -> None:
     engine = MiaFlowEngine()
     flows = engine.list_flows()
-    assert len(flows) == 8
+    assert len(flows) == 9
     assert {flow["flow_id"] for flow in flows} == {
+        "inquiry_to_task_project_calendar_proposal",
         "email_to_task",
         "email_to_meeting_proposal",
         "messenger_to_followup_task",
@@ -17,6 +18,47 @@ def test_flow_catalog_contains_five_roi_flows() -> None:
         "invoice_receipt_triage",
         "task_to_calendar_proposal",
     }
+
+
+def test_inquiry_core_flow_proposes_missing_context_instead_of_blind_writes() -> None:
+    engine = MiaFlowEngine()
+    proposal = engine.plan(
+        "inquiry.received",
+        {
+            "tenant": "KUKANILEA",
+            "subject": "Neue Anfrage für Projekt Alpha",
+            "body": "Kunde fragt nach einem Termin für das Angebot.",
+            "inquiry_id": "inq-1",
+        },
+    )
+
+    assert proposal["flow_id"] == "inquiry_to_task_project_calendar_proposal"
+    assert proposal["confirm_points"] == ["create_task", "create_project_proposal", "create_calendar_event"]
+    assert proposal["clarifications"]
+    steps = {step["action"]: step for step in proposal["steps"]}
+    assert steps["create_task"]["mode"] == "confirm"
+    assert steps["create_project_proposal"]["mode"] == "propose"
+    assert steps["create_calendar_event"]["mode"] == "propose"
+
+
+def test_execute_blocks_unconfirmed_write_even_if_step_is_misconfigured() -> None:
+    engine = MiaFlowEngine()
+    proposal = engine.plan(
+        "email.received",
+        {
+            "tenant": "KUKANILEA",
+            "subject": "TODO: Angebot senden",
+            "body": "Bitte heute.",
+            "email_id": "mail-guard-1",
+        },
+    )
+    proposal_id = proposal["proposal_id"]
+    engine._proposals[proposal_id]["steps"][0]["confirm_required"] = False
+
+    result = engine.execute(proposal_id, confirmed=True)
+    first = result["results"][0]
+    assert first["status"] == "blocked"
+    assert first["reason"] == "write_requires_confirm"
 
 
 def test_email_to_task_requires_confirm_and_audit_points() -> None:

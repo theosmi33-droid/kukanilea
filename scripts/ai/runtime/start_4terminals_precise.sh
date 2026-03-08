@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+source "$ROOT/scripts/ai/runtime/lib_main_only.sh"
+main_only_preflight "$ROOT"
+
 MODEL="${GEMINI_MODEL:-gemini-3-flash-preview}"
 EXTS="${GEMINI_PRECISE_EXTENSIONS:-github}"
 TIMEOUT="${GEMINI_TIMEOUT_SECONDS:-420}"
