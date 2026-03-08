@@ -5000,13 +5000,16 @@ def calendar_export_ics():
     from app.knowledge.ics_source import knowledge_ics_build_local_feed
 
     tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
-    ics_content = knowledge_ics_build_local_feed(tenant_id)
+    feed_info = knowledge_ics_build_local_feed(tenant_id)
+    feed_path = Path(str(feed_info.get("feed_path", ""))).expanduser()
+    ics_content = feed_path.read_bytes() if feed_path.exists() else b""
+    filename = str(feed_info.get("feed_filename") or "calendar.ics")
     return (
         ics_content,
         200,
         {
             "Content-Type": "text/calendar; charset=utf-8",
-            "Content-Disposition": "attachment; filename=calendar.ics",
+            "Content-Disposition": f"attachment; filename={filename}",
         },
     )
 
