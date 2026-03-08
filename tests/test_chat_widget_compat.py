@@ -215,3 +215,39 @@ def test_compact_chat_maintains_pending_approvals_queue(tmp_path, monkeypatch):
     listed = listing.get_json()
     assert listed["ok"] is True
     assert len(listed["pending_approvals"]) == 2
+
+
+def test_widget_pending_helpers_keep_contract_shape():
+    from app.widget_pending import (
+        compact_pending_actions,
+        mark_actions_confirm_required,
+        serialize_pending_approvals,
+        widget_requires_confirm,
+    )
+
+    actions = [{"type": "send_message", "label": "Senden"}]
+    marked = mark_actions_confirm_required(actions)
+
+    assert marked[0]["requires_confirm"] is True
+    assert marked[0]["confirm_required"] is True
+    assert widget_requires_confirm(marked) is True
+
+    compact = compact_pending_actions(marked)
+    assert compact == [{"type": "send_message", "label": "Senden", "confirm_required": True}]
+
+    pending = serialize_pending_approvals([
+        {
+            "id": "abc",
+            "actions": compact,
+            "current_context": "/messenger",
+            "confirm_prompt": "Bestätigen",
+        }
+    ])
+    assert pending == [
+        {
+            "pending_id": "abc",
+            "current_context": "/messenger",
+            "confirm_prompt": "Bestätigen",
+            "action_count": 1,
+        }
+    ]

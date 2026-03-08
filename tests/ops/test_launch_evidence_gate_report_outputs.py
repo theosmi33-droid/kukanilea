@@ -24,6 +24,7 @@ def test_launch_gate_declares_required_gate_names() -> None:
         "Repo/CI",
         "MIN_SCOPE",
         "Health",
+        "E2E_Runtime",
         "Zero-CDN",
         "White-mode",
         "License",
@@ -34,6 +35,12 @@ def test_launch_gate_declares_required_gate_names() -> None:
         "Evidence",
     ]:
         assert gate in text
+
+
+def test_launch_gate_declares_playwright_runtime_note() -> None:
+    text = _script()
+    assert "playwright.sync_api unavailable" in text
+    assert "python e2e skipped by contract" in text
 
 
 def test_launch_gate_checks_backup_restore_hook_markers() -> None:
