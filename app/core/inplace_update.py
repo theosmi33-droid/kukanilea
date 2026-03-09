@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 import shutil
 import subprocess
 import tarfile
@@ -210,16 +211,31 @@ class InPlaceUpdater:
     def _safe_extract_tar(tf: tarfile.TarFile, extract_root: Path) -> None:
         extract_root_resolved = extract_root.resolve()
         for member in tf.getmembers():
-            normalized = posixpath.normpath(member.name)
+            member_name = str(member.name or "")
+            normalized = posixpath.normpath(member_name.replace("\\", "/"))
             if normalized in ("", "."):
                 continue
-            if member.name.startswith(("/", "\\")) or normalized == ".." or normalized.startswith("../"):
+            if (
+                member_name.startswith(("/", "\\"))
+                or normalized == ".."
+                or normalized.startswith("../")
+                or re.match(r"^[A-Za-z]:", normalized)
+            ):
                 raise UpdateError(f"Unsafe path in update archive: {member.name}")
-            if member.issym() or member.islnk() or member.isdev():
+            if (
+                member.issym()
+                or member.islnk()
+                or member.isdev()
+                or member.isfifo()
+                or not (member.isdir() or member.isfile())
+            ):
                 raise UpdateError(f"Unsupported entry type in update archive: {member.name}")
 
             destination = (extract_root_resolved / normalized).resolve()
-            destination.relative_to(extract_root_resolved)
+            try:
+                destination.relative_to(extract_root_resolved)
+            except ValueError as exc:
+                raise UpdateError(f"Unsafe path in update archive: {member.name}") from exc
 
             if member.isdir():
                 destination.mkdir(parents=True, exist_ok=True)
