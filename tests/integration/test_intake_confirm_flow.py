@@ -93,3 +93,32 @@ def test_intake_execute_confirm_creates_task_and_logs(tmp_path, monkeypatch):
     assert audit_count == 1
     assert event_count == 1
     assert mia_count >= 6
+
+
+def test_intake_execute_forbids_readonly_role(tmp_path, monkeypatch):
+    monkeypatch.setenv("KUKANILEA_AUTH_DB", str(tmp_path / "auth.sqlite3"))
+    monkeypatch.setenv("KUKANILEA_CORE_DB", str(tmp_path / "core.sqlite3"))
+    app = create_app()
+    client = app.test_client()
+
+    with client.session_transaction() as sess:
+        sess["user"] = "readonly-user"
+        sess["role"] = "READONLY"
+        sess["tenant_id"] = "KUKANILEA"
+
+    envelope = client.post("/api/intake/normalize", json=_payload()).get_json()["envelope"]
+    resp = client.post(
+        "/api/intake/execute",
+        json={"envelope": envelope, "requires_confirm": True, "confirm": "YES"},
+    )
+
+    assert resp.status_code == 403
+
+    with app.app_context():
+        con = sqlite3.connect(app.config["CORE_DB"])
+        try:
+            task_count = con.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        finally:
+            con.close()
+
+    assert task_count == 0

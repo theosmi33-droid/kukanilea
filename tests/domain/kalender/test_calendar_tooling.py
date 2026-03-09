@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.modules.kalender.calendar_store import CalendarStore
-from app.tools.calendar_tools import CalendarCreateEventTool
+from app.tools.calendar_tools import CalendarCreateEventTool, CalendarFindFreeSlotTool
 
 
 def test_find_free_slot_is_deterministic(tmp_path):
@@ -62,6 +62,7 @@ def test_create_event_emits_audit_event(tmp_path, monkeypatch):
             super().__init__(db_path=db_path)
 
     monkeypatch.setattr("app.tools.calendar_tools.CalendarStore", _Store)
+    monkeypatch.setattr("app.tools.calendar_tools.get_tenant_id", lambda: "KUKANILEA")
     tool = CalendarCreateEventTool()
 
     pending = tool.run(
@@ -90,3 +91,19 @@ def test_create_event_emits_audit_event(tmp_path, monkeypatch):
     assert len(audits) == 1
     assert audits[0]["action"] == "calendar.create_event"
     assert audits[0]["payload"]["created_by"] == "tester"
+
+
+def test_calendar_tool_rejects_mismatched_tenant(monkeypatch):
+    monkeypatch.setattr("app.tools.calendar_tools.get_tenant_id", lambda: "KUKANILEA")
+    tool = CalendarFindFreeSlotTool()
+
+    try:
+        tool.run(
+            tenant_id="OTHER",
+            window_start="2026-04-03T09:00:00Z",
+            window_end="2026-04-03T10:00:00Z",
+        )
+    except PermissionError as exc:
+        assert str(exc) == "tenant_mismatch"
+    else:
+        raise AssertionError("Expected tenant_mismatch PermissionError")
