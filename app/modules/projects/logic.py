@@ -1891,7 +1891,21 @@ class ProjectManager:
                 except (ValueError, PermissionError) as exc:
                     return {"ok": False, "error": str(exc)}
 
-            # Legacy board fallback.
+            # Legacy board fallback: enforce tenant boundary by joining task->board->project.
+            _actor, _role, tenant_id = self._context_identity()
+            legacy_task = con.execute(
+                """
+                SELECT t.id
+                FROM tasks t
+                JOIN boards b ON b.id = t.board_id
+                JOIN projects p ON p.id = b.project_id
+                WHERE t.id = ? AND p.tenant_id = ?
+                """,
+                (task_id, tenant_id),
+            ).fetchone()
+            if not legacy_task:
+                return {"ok": False, "error": "task_not_found_or_forbidden"}
+
             con.execute("UPDATE tasks SET column_name = ? WHERE id = ?", (new_column, task_id))
             con.commit()
             return {"ok": True, "task_id": task_id, "legacy": True}

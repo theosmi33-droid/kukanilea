@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, render_template, request, session
 
 from app.mail.intake import envelope_from_payload, normalize_intake_payload
+from app.auth import login_required, require_role
 from app.modules.aufgaben.contracts import create_task
 from app.modules.aufgaben.logic import delete_task as aufgaben_delete_task
 from app.modules.aufgaben.logic import get_task as aufgaben_get_task
@@ -216,6 +217,8 @@ def intake_normalize():
 
 
 @bp.post("/intake/execute")
+@login_required
+@require_role("OPERATOR")
 def intake_execute():
     payload = request.get_json(silent=True) or {}
     envelope_payload = payload.get("envelope") if isinstance(payload.get("envelope"), dict) else {}

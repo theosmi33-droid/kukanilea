@@ -8,6 +8,8 @@ def test_visualizer_summary_build_action_returns_summary(auth_client, tmp_path, 
     source_file.write_text("name,value\nA,1\n", encoding="utf-8")
     src_b64 = base64.b64encode(str(source_file).encode("utf-8")).decode("ascii")
 
+    monkeypatch.setattr("app.routes.visualizer._is_allowed_path", lambda _path: True)
+
     monkeypatch.setattr(
         "app.routes.visualizer.build_visualizer_payload",
         lambda *_args, **_kwargs: {
@@ -29,6 +31,7 @@ def test_visualizer_summary_build_action_degrades_without_backend(auth_client, t
     source_file.write_text("name,value\nA,1\n", encoding="utf-8")
     src_b64 = base64.b64encode(str(source_file).encode("utf-8")).decode("ascii")
 
+    monkeypatch.setattr("app.routes.visualizer._is_allowed_path", lambda _path: True)
     monkeypatch.setattr("app.routes.visualizer.build_visualizer_payload", None)
 
     response = auth_client.post("/api/visualizer/actions/summary.build", json={"source": src_b64})
@@ -36,3 +39,17 @@ def test_visualizer_summary_build_action_degrades_without_backend(auth_client, t
     body = response.get_json()
     assert body["ok"] is False
     assert body["error"] == "visualizer_logic_missing"
+
+
+def test_visualizer_summary_build_action_rejects_forbidden_path(auth_client, tmp_path, monkeypatch):
+    source_file = tmp_path / "viz.csv"
+    source_file.write_text("name,value\nA,1\n", encoding="utf-8")
+    src_b64 = base64.b64encode(str(source_file).encode("utf-8")).decode("ascii")
+
+    monkeypatch.setattr("app.routes.visualizer._is_allowed_path", lambda _path: False)
+
+    response = auth_client.post("/api/visualizer/actions/summary.build", json={"source": src_b64})
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["error"] == "forbidden_path"
