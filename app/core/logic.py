@@ -4650,15 +4650,29 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     tenant_dir = BASE_PATH / _safe_fs(tenant) if tenant else BASE_PATH
     tenant_dir.mkdir(parents=True, exist_ok=True)
 
+    tenant_dir_resolved = tenant_dir.resolve()
+
+    def _default_customer_folder() -> Path:
+        return tenant_dir / _compose_object_folder(kdnr_raw, name, addr, plzort)
+
     created_new_object = False
     if use_existing:
-        folder = Path(use_existing)
-        if not folder.exists() or not folder.is_dir():
-            folder = tenant_dir / _compose_object_folder(kdnr_raw, name, addr, plzort)
+        candidate = Path(use_existing)
+        if not candidate.is_absolute():
+            candidate = tenant_dir / candidate
+
+        try:
+            folder = candidate.resolve()
+            folder.relative_to(tenant_dir_resolved)
+        except Exception:
+            folder = _default_customer_folder()
             created_new_object = True
+        else:
+            if not folder.exists() or not folder.is_dir():
+                folder = _default_customer_folder()
+                created_new_object = True
     else:
-        folder_name = _compose_object_folder(kdnr_raw, name, addr, plzort)
-        folder = tenant_dir / folder_name
+        folder = _default_customer_folder()
         if not folder.exists():
             created_new_object = True
 
