@@ -222,6 +222,39 @@ def test_apply_from_tarball_rejects_fifo_entries(tmp_path: Path):
         updater.apply_from_tarball(tarball, "v2")
 
 
+def test_apply_from_tarball_rejects_backslash_absolute_paths(tmp_path: Path):
+    install_root = tmp_path / "opt" / "kukanilea"
+    data_dir = tmp_path / "var" / "kukanilea-data"
+    data_dir.mkdir(parents=True)
+    updater = InPlaceUpdater(install_root=install_root, data_dir=data_dir)
+
+    tarball = tmp_path / "payload-backslash-abs.tar"
+    with tarfile.open(tarball, "w") as tf:
+        payload = b"malicious"
+        member = tarfile.TarInfo("\\escaped.txt")
+        member.size = len(payload)
+        tf.addfile(member, fileobj=BytesIO(payload))
+
+    with pytest.raises(UpdateError, match="Unsafe path in update archive"):
+        updater.apply_from_tarball(tarball, "v2")
+
+
+def test_apply_from_tarball_rejects_character_device_entries(tmp_path: Path):
+    install_root = tmp_path / "opt" / "kukanilea"
+    data_dir = tmp_path / "var" / "kukanilea-data"
+    data_dir.mkdir(parents=True)
+    updater = InPlaceUpdater(install_root=install_root, data_dir=data_dir)
+
+    tarball = tmp_path / "payload-chardev.tar"
+    with tarfile.open(tarball, "w") as tf:
+        chardev = tarfile.TarInfo("char-device")
+        chardev.type = tarfile.CHRTYPE
+        tf.addfile(chardev)
+
+    with pytest.raises(UpdateError, match="Unsupported entry type in update archive"):
+        updater.apply_from_tarball(tarball, "v2")
+
+
 def test_apply_from_tarball_accepts_regular_payload_and_switches_release(tmp_path: Path):
     install_root = tmp_path / "opt" / "kukanilea"
     data_dir = tmp_path / "var" / "kukanilea-data"
