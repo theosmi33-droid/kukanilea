@@ -46,7 +46,7 @@ class TimeTool(BaseTool):
             # Call core logic
             try:
                 # from app.core.logic import time_entry_start
-                # time_entry_start(tenant_id, project_id, task_id, description)
+                # time_entry_start(resolved_tenant_id, project_id, task_id, description)
                 return {"status": "started", "tenant_id": resolved_tenant_id, "project_id": project_id, "action": "track_time"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
