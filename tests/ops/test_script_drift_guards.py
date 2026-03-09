@@ -22,6 +22,7 @@ def test_launch_evidence_handles_missing_origin_main_without_fatal_fetch():
 def test_launch_evidence_does_not_use_literal_gate7_output_dir_path():
     script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
     assert "base = Path('$GATE7_OUTPUT_DIR')" not in script
+    assert "GATE7_OUTPUT_DIR=\\\"$GATE7_OUTPUT_DIR\\\" \\\"$PYTHON\\\" - <<'PY'" not in script
     assert "base = Path(os.environ['GATE7_OUTPUT_DIR'])" in script
 
 

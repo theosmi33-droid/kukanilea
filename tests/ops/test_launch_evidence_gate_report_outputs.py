@@ -71,7 +71,7 @@ def test_launch_gate_enforces_ops_test_count_threshold() -> None:
 
 def test_launch_gate_binds_gate7_artifact_dir_via_environment() -> None:
     text = _script()
-    assert "GATE7_OUTPUT_DIR=\\\"$GATE7_OUTPUT_DIR\\\"" in text
+    assert "export GATE7_OUTPUT_DIR" in text
     assert "base = Path(os.environ['GATE7_OUTPUT_DIR'])" in text
 
 

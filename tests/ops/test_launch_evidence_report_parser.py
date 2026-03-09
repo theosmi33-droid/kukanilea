@@ -55,5 +55,5 @@ def test_load_report_reads_json(tmp_path: Path):
 
 def test_gate7_artifact_path_contract_is_env_resolved() -> None:
     script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
-    assert "GATE7_OUTPUT_DIR=\\\"$GATE7_OUTPUT_DIR\\\"" in script
+    assert "export GATE7_OUTPUT_DIR" in script
     assert "base = Path(os.environ['GATE7_OUTPUT_DIR'])" in script
