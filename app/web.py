@@ -1353,6 +1353,20 @@ def _is_hx_partial_request() -> bool:
     return hx_request and not hx_history_restore
 
 
+def _pending_for_current_tenant(token: str) -> Optional[dict]:
+    p = read_pending(token)
+    if not p:
+        return None
+
+    session_tenant = _norm_tenant(current_tenant() or "default")
+    pending_tenant = _norm_tenant(
+        p.get("tenant") or p.get("tenant_id") or p.get("tenant_suggested") or "default"
+    )
+    if pending_tenant != session_tenant:
+        return None
+    return p
+
+
 def _render_sovereign_tool(
     tool_key: str, title: str, message: str, active_tab: str = "dashboard"
 ) -> str:
@@ -4560,8 +4574,11 @@ def upload():
 
 
 @bp.route("/review/<token>/delete", methods=["POST"])
+@login_required
 @csrf_protected
 def review_delete(token: str):
+    if not _pending_for_current_tenant(token):
+        abort(404)
     try:
         delete_pending(token)
     except Exception:
@@ -4570,8 +4587,9 @@ def review_delete(token: str):
 
 
 @bp.route("/file/<token>")
+@login_required
 def file_preview(token: str):
-    p = read_pending(token)
+    p = _pending_for_current_tenant(token)
     if not p:
         abort(404)
     file_path = Path(p.get("path", ""))
@@ -4583,9 +4601,10 @@ def file_preview(token: str):
 
 
 @bp.route("/review/<token>/kdnr", methods=["GET", "POST"])
+@login_required
 @csrf_protected
 def review(token: str):
-    p = read_pending(token)
+    p = _pending_for_current_tenant(token)
     if not p:
         return _render_base(_card("error", "Nicht gefunden."), active_tab="upload")
     if p.get("status") == "ANALYZING":
