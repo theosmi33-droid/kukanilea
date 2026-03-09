@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import tarfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -102,3 +103,53 @@ def test_apply_from_tarball_rejects_path_traversal(tmp_path: Path):
         updater.apply_from_tarball(tarball, "v2")
 
     assert not (tmp_path / "escaped.txt").exists()
+
+
+def test_apply_from_tarball_rejects_absolute_member_paths(tmp_path: Path):
+    install_root = tmp_path / "opt" / "kukanilea"
+    data_dir = tmp_path / "var" / "kukanilea-data"
+    data_dir.mkdir(parents=True)
+    updater = InPlaceUpdater(install_root=install_root, data_dir=data_dir)
+
+    tarball = tmp_path / "payload-abs.tar"
+    with tarfile.open(tarball, "w") as tf:
+        payload = b"malicious"
+        member = tarfile.TarInfo("/escaped.txt")
+        member.size = len(payload)
+        tf.addfile(member, fileobj=BytesIO(payload))
+
+    with pytest.raises(UpdateError, match="Unsafe path in update archive"):
+        updater.apply_from_tarball(tarball, "v2")
+
+
+def test_apply_from_tarball_rejects_windows_style_backslash_traversal(tmp_path: Path):
+    install_root = tmp_path / "opt" / "kukanilea"
+    data_dir = tmp_path / "var" / "kukanilea-data"
+    data_dir.mkdir(parents=True)
+    updater = InPlaceUpdater(install_root=install_root, data_dir=data_dir)
+
+    tarball = tmp_path / "payload-win-traversal.tar"
+    with tarfile.open(tarball, "w") as tf:
+        payload = tmp_path / "payload.txt"
+        payload.write_text("malicious", encoding="utf-8")
+        tf.add(payload, arcname="..\\escaped.txt")
+
+    with pytest.raises(UpdateError, match="Unsafe path in update archive"):
+        updater.apply_from_tarball(tarball, "v2")
+
+
+def test_apply_from_tarball_rejects_symbolic_links(tmp_path: Path):
+    install_root = tmp_path / "opt" / "kukanilea"
+    data_dir = tmp_path / "var" / "kukanilea-data"
+    data_dir.mkdir(parents=True)
+    updater = InPlaceUpdater(install_root=install_root, data_dir=data_dir)
+
+    tarball = tmp_path / "payload-symlink.tar"
+    with tarfile.open(tarball, "w") as tf:
+        symlink = tarfile.TarInfo("link-to-host")
+        symlink.type = tarfile.SYMTYPE
+        symlink.linkname = "../escaped.txt"
+        tf.addfile(symlink)
+
+    with pytest.raises(UpdateError, match="Unsupported entry type in update archive"):
+        updater.apply_from_tarball(tarball, "v2")
