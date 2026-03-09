@@ -19,6 +19,12 @@ def test_launch_evidence_handles_missing_origin_main_without_fatal_fetch():
     assert "git fetch origin --prune" not in script
 
 
+def test_launch_evidence_does_not_use_literal_gate7_output_dir_path():
+    script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
+    assert "base = Path('$GATE7_OUTPUT_DIR')" not in script
+    assert "base = Path(os.environ['GATE7_OUTPUT_DIR'])" in script
+
+
 def test_healthcheck_checks_ops_release_levers():
     script = Path("scripts/ops/healthcheck.sh").read_text(encoding="utf-8")
     assert "ops settings defaults" in script

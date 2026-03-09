@@ -46,3 +46,9 @@ def test_launch_evidence_allows_gate7_evidence_paths_for_controlled_writes():
     script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
     assert "MIA_UNCONTROLLED_WRITES" in script
     assert "evidence/operations/" in script
+
+
+def test_launch_evidence_gate7_artifacts_use_env_bound_output_dir():
+    script = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
+    assert "GATE7_OUTPUT_DIR=\\\"$GATE7_OUTPUT_DIR\\\"" in script
+    assert "base = Path(os.environ['GATE7_OUTPUT_DIR'])" in script
