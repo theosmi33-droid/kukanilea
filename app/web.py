@@ -4886,17 +4886,25 @@ def projects_list():
 
 @bp.post("/api/tasks/<task_id>/move")
 @login_required
+@require_role("OPERATOR")
 @csrf_protected
 def api_task_move(task_id: str):
-    payload = request.get_json() or {}
+    payload = request.get_json(silent=True) or {}
     new_col = payload.get("column")
     if not new_col:
         return jsonify(ok=False), 400
         
     from app.modules.projects.logic import ProjectManager
     pm = ProjectManager(current_app.extensions["auth_db"])
-    pm.update_task_column(task_id, new_col)
-    
+    result = pm.update_task_column(task_id, str(new_col))
+    if not result.get("ok"):
+        err = str(result.get("error") or "task_move_failed")
+        if err in {"task_not_found_or_forbidden", "task_action_forbidden", "cross_tenant_forbidden"}:
+            return jsonify(ok=False, error=err), 403
+        if err == "task_not_found":
+            return jsonify(ok=False, error=err), 404
+        return jsonify(ok=False, error=err), 400
+
     return jsonify(ok=True)
 
 

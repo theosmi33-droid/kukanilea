@@ -1850,7 +1850,7 @@ class ProjectManager:
         finally:
             con.close()
 
-    def update_task_column(self, task_id: str, new_column: str) -> None:
+    def update_task_column(self, task_id: str, new_column: str) -> dict[str, Any]:
         con = self.db._db()
         try:
             parsed: dict[str, Any] | None = None
@@ -1871,13 +1871,20 @@ class ProjectManager:
                 except (ValueError, PermissionError) as exc:
                     return {"ok": False, "error": str(exc)}
 
-            row = con.execute("SELECT id FROM team_tasks WHERE id=?", (task_id,)).fetchone()
+            actor, role, tenant_id = self._context_identity()
+            row = con.execute(
+                "SELECT id FROM team_tasks WHERE id=? AND tenant_id=?",
+                (task_id, tenant_id),
+            ).fetchone()
             if row:
                 mapped_status = COLUMN_TO_STATUS.get(str(new_column), "OPEN")
-                actor, role, _tenant_id = self._context_identity()
-                full_task = self._fetch_task(con, task_id)
+                full_task_row = con.execute(
+                    "SELECT * FROM team_tasks WHERE id=? AND tenant_id=?",
+                    (task_id, tenant_id),
+                ).fetchone()
+                full_task = dict(full_task_row) if full_task_row else None
                 if not full_task:
-                    raise ValueError("task_not_found")
+                    return {"ok": False, "error": "task_not_found_or_forbidden"}
                 try:
                     self._transition_status(
                         con,
@@ -1892,7 +1899,6 @@ class ProjectManager:
                     return {"ok": False, "error": str(exc)}
 
             # Legacy board fallback: enforce tenant boundary by joining task->board->project.
-            _actor, _role, tenant_id = self._context_identity()
             legacy_task = con.execute(
                 """
                 SELECT t.id
