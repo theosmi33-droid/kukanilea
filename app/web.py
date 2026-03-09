@@ -1936,6 +1936,15 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     return `${h}h ${m}m`;
   }
 
+  function escapeHtml(value){
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
   function setStatus(msg, isError){
     timeStatus.textContent = msg;
     timeStatus.style.color = isError ? "#f87171" : "";
@@ -1966,7 +1975,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     items.forEach(day => {
       const card = document.createElement("div");
       card.className = "rounded-xl border p-3";
-      card.innerHTML = `<div class="text-sm font-semibold">${day.date}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
+      card.innerHTML = `<div class="text-sm font-semibold">${escapeHtml(day.date)}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
       weekSummary.appendChild(card);
     });
   }
@@ -1980,19 +1989,20 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     entries.forEach(entry => {
       const wrap = document.createElement("div");
       wrap.className = "rounded-xl border p-3";
+      const entryId = Number.isFinite(Number(entry.id)) ? Number(entry.id) : 0;
       const approveBtn = (role === "ADMIN" || role === "DEV") && entry.approval_status !== "APPROVED"
-        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entry.id}">Freigeben</button>`
+        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entryId}">Freigeben</button>`
         : "";
       wrap.innerHTML = `
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div>
-            <div class="text-sm font-semibold">${entry.project_name || "Ohne Projekt"}</div>
-            <div class="muted text-xs">${entry.start_at} → ${entry.end_at || "läuft"} · ${fmtDuration(entry.duration_seconds || 0)}</div>
-            <div class="muted text-xs">Status: ${entry.approval_status || "PENDING"} ${entry.approved_by ? "(von " + entry.approved_by + ")" : ""}</div>
-            ${entry.note ? `<div class="text-xs mt-1">${entry.note}</div>` : ""}
+            <div class="text-sm font-semibold">${escapeHtml(entry.project_name || "Ohne Projekt")}</div>
+            <div class="muted text-xs">${escapeHtml(entry.start_at)} → ${escapeHtml(entry.end_at || "läuft")} · ${fmtDuration(entry.duration_seconds || 0)}</div>
+            <div class="muted text-xs">Status: ${escapeHtml(entry.approval_status || "PENDING")} ${entry.approved_by ? "(von " + escapeHtml(entry.approved_by) + ")" : ""}</div>
+            ${entry.note ? `<div class="text-xs mt-1">${escapeHtml(entry.note)}</div>` : ""}
           </div>
           <div class="flex gap-2">
-            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entry.id}">Bearbeiten</button>
+            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entryId}">Bearbeiten</button>
             ${approveBtn}
           </div>
         </div>`;
@@ -2144,6 +2154,17 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   }
   window.openToken = openToken;
   window.copyToken = copyToken;
+  function escHtml(value){
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+  function escJsSingle(value){
+    return String(value ?? "").replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  }
   function add(role, text, actions, results, suggestions){
     const d = document.createElement("div");
     d.className = "mb-3";
@@ -2151,10 +2172,13 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     if(actions && actions.length){
       actionHtml = actions.map(a => {
         if(a.type === "open_token" && a.token){
-          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${a.token}')">Öffnen ${a.token.slice(0,10)}…</button>
-            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${a.token}')">Token ${a.token.slice(0,10)}…</button>`;
+          const token = String(a.token || "");
+          const safeToken = escHtml(escJsSingle(token));
+          const shortToken = escHtml(token.slice(0,10));
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${safeToken}')">Öffnen ${shortToken}…</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${safeToken}')">Token ${shortToken}…</button>`;
         }
-        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${a.type || 'tool'}</span>`;
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${escHtml(a.type || 'tool')}</span>`;
       }).join("");
     }
     let resultHtml = "";
@@ -2163,17 +2187,18 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
         const token = r.token || r.doc_id || "";
         const label = r.file_name || token;
         if(token){
-          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${token}')">${label}</button>
-            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${token}')">Token ${token.slice(0,10)}…</button>`;
+          const safeToken = escHtml(escJsSingle(token));
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${safeToken}')">${escHtml(label)}</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${safeToken}')">Token ${escHtml(token.slice(0,10))}…</button>`;
         }
-        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${label}</span>`;
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${escHtml(label)}</span>`;
       }).join("");
     }
     let suggestionHtml = "";
     if(suggestions && suggestions.length){
-      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${s}">${s}</button>`).join("");
+      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${escHtml(s)}">${escHtml(s)}</button>`).join("");
     }
-    d.innerHTML = `<div class="muted text-[11px]">${role}</div><div class="text-sm whitespace-pre-wrap">${text}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
+    d.innerHTML = `<div class="muted text-[11px]">${escHtml(role)}</div><div class="text-sm whitespace-pre-wrap">${escHtml(text)}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
   }
