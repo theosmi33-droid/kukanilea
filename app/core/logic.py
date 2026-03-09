@@ -33,12 +33,13 @@ import threading
 import time
 import unicodedata
 import zipfile
+from contextvars import ContextVar
 from datetime import UTC, date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.core.gewerke_profiles import get_active_profile
 
@@ -560,13 +561,25 @@ _DB_LOCK = threading.RLock()
 _FTS5_AVAILABLE: Optional[bool] = None
 
 
-_DB_INITIALIZED = False
+_DB_INITIALIZED_PATHS: Set[str] = set()
 _DB_INIT_LOCK = threading.RLock()
 _INDEX_WARMUP_THREAD_LOCK = threading.RLock()
 _INDEX_WARMUP_THREAD: Optional[threading.Thread] = None
+_REQUEST_DB_PATH: ContextVar[Optional[Path]] = ContextVar(
+    "kukanilea_request_db_path", default=None
+)
+
+
+def bind_request_db_path(path: Optional[Path]) -> None:
+    """Binds the core DB path to the current request/thread context."""
+    _REQUEST_DB_PATH.set(Path(path).expanduser() if path else None)
+
+
+def _active_db_path() -> Path:
+    return _REQUEST_DB_PATH.get() or DB_PATH
 
 def _open_db_connection(*, configure_wal: bool = False) -> sqlite3.Connection:
-    con = sqlite3.connect(str(DB_PATH), timeout=5.0)
+    con = sqlite3.connect(str(_active_db_path()), timeout=5.0)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA busy_timeout=5000;")
     if configure_wal:
@@ -584,13 +597,13 @@ def _open_db_connection(*, configure_wal: bool = False) -> sqlite3.Connection:
 
 
 def _db() -> sqlite3.Connection:
-    global _DB_INITIALIZED
-    
-    if not _DB_INITIALIZED:
+    db_key = str(_active_db_path().resolve())
+
+    if db_key not in _DB_INITIALIZED_PATHS:
         with _DB_INIT_LOCK:
-            if not _DB_INITIALIZED:
+            if db_key not in _DB_INITIALIZED_PATHS:
                 db_init()
-                _DB_INITIALIZED = True
+                _DB_INITIALIZED_PATHS.add(db_key)
 
     return _open_db_connection()
 
@@ -629,7 +642,7 @@ def _has_fts5(con: sqlite3.Connection) -> bool:
 
 
 def db_init() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _active_db_path().parent.mkdir(parents=True, exist_ok=True)
     with _DB_LOCK:
         con = _open_db_connection(configure_wal=True)
         try:
