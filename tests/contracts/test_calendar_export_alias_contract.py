@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Regression suite for calendar export endpoint wiring and rendering contracts.
+# Regression suite for calendar export endpoint wiring and rendering contracts (v2).
 
 
 def _ics_bytes() -> bytes:
