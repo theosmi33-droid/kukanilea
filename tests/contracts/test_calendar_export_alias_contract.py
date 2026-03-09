@@ -154,6 +154,24 @@ def test_calendar_page_survives_event_source_exception(auth_client, monkeypatch)
     assert "Keine Termine gefunden." in body
 
 
+def test_calendar_page_contains_expected_table_structure(auth_client, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routes.calendar.knowledge_calendar_events_list",
+        lambda _tenant_id: [],
+    )
+
+    response = auth_client.get("/calendar")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    assert "<table" in body
+    assert "Datum" in body
+    assert "Ereignis" in body
+    assert "Typ" in body
+    assert "Notizen" in body
+    assert "ICS Export" in body
+
+
 def test_calendar_blueprint_export_view_returns_ics_response(auth_client, tmp_path, monkeypatch):
     feed = tmp_path / "calendar.ics"
     feed.write_bytes(_ics_bytes())
