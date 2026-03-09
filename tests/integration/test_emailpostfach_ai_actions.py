@@ -141,3 +141,24 @@ def test_email_execute_enforces_session_tenant(client, monkeypatch: pytest.Monke
 
     assert resp.status_code == 200
     assert seen["tenant_id"] == "KUKANILEA"
+
+
+def test_email_actions_api_enforces_session_tenant(client, monkeypatch: pytest.MonkeyPatch):
+    from app.modules.mail import ai_actions
+
+    seen: dict[str, str | None] = {"tenant_id": None}
+
+    def _search(*_args, **kwargs):
+        seen["tenant_id"] = kwargs.get("tenant_id")
+        return []
+
+    monkeypatch.setattr(ai_actions, "postfach_search_messages", _search)
+
+    resp = client.post(
+        "/api/email/actions/search",
+        json={"query": "angebot", "tenant_id": "VICTIM"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["ok"] is True
+    assert seen["tenant_id"] == "KUKANILEA"
