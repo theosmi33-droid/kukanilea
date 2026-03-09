@@ -110,3 +110,37 @@ def test_settings_rotate_action_is_approval_gated_and_blocked_placeholder(tmp_pa
     assert result["blocked"] is True
     assert result["rotation_available"] is False
     assert result["next_step"] == "manual_runbook_required"
+
+
+def test_settings_actions_enforce_session_tenant_in_handler_payload(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    from app.modules.actions_api import ActionDefinition
+    from app.web import TOOL_ACTION_TEMPLATES
+
+    template = TOOL_ACTION_TEMPLATES["settings"]
+    original_action = template._actions["setting.read"]
+    seen: dict[str, str | None] = {"tenant_id": None}
+
+    def _capture(payload):
+        seen["tenant_id"] = str(payload.get("tenant_id") or "")
+        return {"tenant_id": seen["tenant_id"], "actions": []}
+
+    template._actions["setting.read"] = ActionDefinition(
+        name=original_action.name,
+        title=original_action.title,
+        permission=original_action.permission,
+        risk=original_action.risk,
+        input_schema=original_action.input_schema,
+        output_schema=original_action.output_schema,
+        handler=_capture,
+    )
+
+    try:
+        response = client.post("/api/settings/actions/setting.read", json={"tenant_id": "VICTIM"})
+    finally:
+        template._actions["setting.read"] = original_action
+
+    assert response.status_code == 200
+    assert seen["tenant_id"] == "KUKANILEA"

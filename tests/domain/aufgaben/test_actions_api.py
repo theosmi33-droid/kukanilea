@@ -228,6 +228,40 @@ def test_actions_read_action_remains_unchanged_without_idempotency_contract(tmp_
     assert "idempotent_replay" not in body
 
 
+def test_actions_api_enforces_session_tenant_in_handler_payload(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    from app.modules.actions_api import ActionDefinition
+    from app.web import TOOL_ACTION_TEMPLATES
+
+    template = TOOL_ACTION_TEMPLATES["aufgaben"]
+    original_action = template._actions["list"]
+    seen: dict[str, str | None] = {"tenant_id": None}
+
+    def _capture(payload):
+        seen["tenant_id"] = str(payload.get("tenant_id") or "")
+        return {"items": []}
+
+    template._actions["list"] = ActionDefinition(
+        name=original_action.name,
+        title=original_action.title,
+        permission=original_action.permission,
+        risk=original_action.risk,
+        input_schema=original_action.input_schema,
+        output_schema=original_action.output_schema,
+        handler=_capture,
+    )
+
+    try:
+        response = client.post("/api/aufgaben/actions/list", json={"tenant_id": "VICTIM"})
+    finally:
+        template._actions["list"] = original_action
+
+    assert response.status_code == 200
+    assert seen["tenant_id"] == "KUKANILEA"
+
+
 def test_settings_actions_list_exposes_setting_update_with_admin_permission(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
