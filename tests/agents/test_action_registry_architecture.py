@@ -114,3 +114,8 @@ def test_invoice_due_contract_sanitizes_untrusted_due_date_fields() -> None:
     source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
     assert '_extract_untrusted_text(p, "invoice_due_date")' in source
     assert '_extract_untrusted_text(p, "default_due_date")' in source
+
+
+def test_manager_agent_runtime_guard_contract_has_no_neutral_downgrade_path() -> None:
+    source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+    assert "warning_matches = sorted(set(warning_matches + injection_matches))" not in source

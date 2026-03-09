@@ -37,5 +37,9 @@ class TestMessengerAgent(unittest.TestCase):
         self.assertIn('"invoice_extract_due"', source)
         self.assertIn('_extract_untrusted_text(p, "invoice_due_date")', source)
 
+    def test_manager_agent_contract_removes_neutral_prompt_injection_downgrade(self):
+        source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+        self.assertNotIn("if injection_matches and neutral_context and not action_context:", source)
+
 if __name__ == "__main__":
     unittest.main()
