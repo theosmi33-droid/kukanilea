@@ -21,6 +21,16 @@ _IMPERATIVE_PATTERN = re.compile(
 )
 _POLICY_BYPASS_PATTERN = re.compile(r"(?i)\b(?:bypass|disable)\b.{0,20}\b(?:security|guardrails?|safety)\b")
 _PROMPT_LEAK_PATTERN = re.compile(r"(?i)\b(?:show|reveal|print|dump)\b.{0,30}\b(?:system\s+prompt|hidden\s+instructions?)\b")
+_NON_DOWNGRADABLE_SIGNALS = frozenset(
+    {
+        "instruction_override",
+        "tool_escalation",
+        "role_confusion",
+        "prompt_leak",
+        "hidden_directive",
+        "credential_rotation",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +55,8 @@ def _enforce_no_free_shell(text: str, reasons: list[str]) -> bool:
 
 def _is_benign_security_discussion(text: str, assessment: GuardrailAssessment) -> bool:
     if not assessment.matched_signals:
+        return False
+    if any(s in _NON_DOWNGRADABLE_SIGNALS for s in assessment.matched_signals):
         return False
     high_risk = {"destructive_request", "exfiltration", "filesystem_network"}
     if any(s in high_risk for s in assessment.matched_signals):
