@@ -779,7 +779,12 @@ def _visualizer_action_list(payload: dict[str, object]) -> dict[str, object]:
 
 
 def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
-    from app.routes.visualizer import _is_allowed_path, build_visualizer_payload, _summarize_payload
+    from app.routes.visualizer import (
+        _is_allowed_path,
+        _is_tenant_visualizer_path,
+        build_visualizer_payload,
+        _summarize_payload,
+    )
     src_b64 = str(payload.get("source") or "")
     if not src_b64:
         raise ValueError("source_required")
@@ -789,6 +794,8 @@ def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
         raise ValueError("file_not_found")
     if not _is_allowed_path(fp):
         raise ValueError("forbidden_path")
+    if not _is_tenant_visualizer_path(fp, str(current_tenant() or "default")):
+        raise ValueError("forbidden_tenant_path")
     if not callable(build_visualizer_payload):
         raise ValueError("visualizer_logic_missing")
     page = int(payload.get("page") or 0)
