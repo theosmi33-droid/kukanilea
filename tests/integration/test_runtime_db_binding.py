@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import app as app_pkg
@@ -63,7 +64,8 @@ def test_before_request_binds_session_tenant_db_path_override(tmp_path, monkeypa
 
     import app.core.logic as core_logic
 
-    assert Path(core_logic.DB_PATH) == override_path
+    assert Path(core_logic.DB_PATH) == Path(app.config["CORE_DB"])
+    assert Path(core_logic._active_db_path()) == override_path
 
 
 def test_before_request_falls_back_to_core_db_without_override(tmp_path, monkeypatch):
@@ -78,6 +80,7 @@ def test_before_request_falls_back_to_core_db_without_override(tmp_path, monkeyp
 
     expected = Path(app.config["CORE_DB"])
     assert Path(core_logic.DB_PATH) == expected
+    assert Path(core_logic._active_db_path()) == expected
 
 
 def test_switching_tenant_db_path_between_requests_rebinds_core_logic(tmp_path, monkeypatch):
@@ -91,13 +94,173 @@ def test_switching_tenant_db_path_between_requests_rebinds_core_logic(tmp_path, 
     first = client.get("/api/health")
     assert first.status_code == 200
 
+    import app.core.logic as core_logic
+
+    assert Path(core_logic.DB_PATH) == Path(app.config["CORE_DB"])
+    assert Path(core_logic._active_db_path()) == first_path
+
     _seed_user_session(client, tenant_db_path=str(second_path))
     second = client.get("/api/health")
     assert second.status_code == 200
 
+    assert Path(core_logic.DB_PATH) == Path(app.config["CORE_DB"])
+    assert Path(core_logic._active_db_path()) == second_path
+
+
+def test_bind_request_db_path_none_restores_global_fallback(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
     import app.core.logic as core_logic
 
-    assert Path(core_logic.DB_PATH) == second_path
+    global_path = Path(app.config["CORE_DB"])
+    custom_path = tmp_path / "isolated.sqlite3"
+
+    core_logic.bind_request_db_path(custom_path)
+    assert Path(core_logic._active_db_path()) == custom_path
+
+    core_logic.bind_request_db_path(None)
+    assert Path(core_logic._active_db_path()) == global_path
+
+
+def test_db_initialization_is_tracked_per_active_path(tmp_path, monkeypatch):
+    _build_app(tmp_path, monkeypatch)
+    import app.core.logic as core_logic
+
+    first_path = tmp_path / "tenant_a.sqlite3"
+    second_path = tmp_path / "tenant_b.sqlite3"
+
+    core_logic.bind_request_db_path(first_path)
+    con = core_logic._db()
+    con.close()
+    assert first_path.exists()
+
+    core_logic.bind_request_db_path(second_path)
+    con = core_logic._db()
+    con.close()
+    assert second_path.exists()
+
+    initialized = set(core_logic._DB_INITIALIZED_PATHS)
+    assert str(first_path.resolve()) in initialized
+    assert str(second_path.resolve()) in initialized
+
+    core_logic.bind_request_db_path(None)
+
+
+def test_before_request_error_clears_request_binding(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    import app.core.logic as core_logic
+    import app.web as web_module
+
+    prebound = tmp_path / "prebound.sqlite3"
+    core_logic.bind_request_db_path(prebound)
+    assert Path(core_logic._active_db_path()) == prebound
+
+    def _raise_path_error():
+        raise RuntimeError("tenant_path_lookup_failed")
+
+    monkeypatch.setattr(web_module, "_get_tenant_db_path", _raise_path_error)
+    _seed_user_session(client, tenant_db_path=str(tmp_path / "ignored.sqlite3"))
+    response = client.get("/api/health")
+    assert response.status_code == 200
+
+    assert Path(core_logic._active_db_path()) == Path(core_logic.DB_PATH)
+
+
+def test_request_db_binding_is_thread_local(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    import app.core.logic as core_logic
+
+    default_path = Path(app.config["CORE_DB"])
+    first_path = tmp_path / "thread_one.sqlite3"
+    second_path = tmp_path / "thread_two.sqlite3"
+    seen: dict[str, Path] = {}
+    lock = threading.Lock()
+
+    def _worker(name: str, db_path: Path) -> None:
+        core_logic.bind_request_db_path(db_path)
+        con = core_logic._db()
+        con.close()
+        with lock:
+            seen[name] = Path(core_logic._active_db_path())
+        core_logic.bind_request_db_path(None)
+
+    t1 = threading.Thread(target=_worker, args=("one", first_path))
+    t2 = threading.Thread(target=_worker, args=("two", second_path))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert seen["one"] == first_path
+    assert seen["two"] == second_path
+    assert Path(core_logic.DB_PATH) == default_path
+    assert Path(core_logic._active_db_path()) == default_path
+
+
+def test_rebinding_same_path_keeps_single_init_marker(tmp_path, monkeypatch):
+    _build_app(tmp_path, monkeypatch)
+    import app.core.logic as core_logic
+
+    tenant_path = tmp_path / "tenant_rebind.sqlite3"
+
+    core_logic.bind_request_db_path(tenant_path)
+    con = core_logic._db()
+    con.close()
+
+    initialized_before = set(core_logic._DB_INITIALIZED_PATHS)
+    con = core_logic._db()
+    con.close()
+    initialized_after = set(core_logic._DB_INITIALIZED_PATHS)
+
+    assert initialized_before == initialized_after
+    assert str(tenant_path.resolve()) in initialized_after
+    core_logic.bind_request_db_path(None)
+
+
+def test_set_db_path_does_not_override_active_request_binding(tmp_path, monkeypatch):
+    _build_app(tmp_path, monkeypatch)
+    import app.core.logic as core_logic
+
+    original_global = Path(core_logic.DB_PATH)
+    request_path = tmp_path / "request_bound.sqlite3"
+    new_global = tmp_path / "new_global.sqlite3"
+    try:
+        core_logic.bind_request_db_path(request_path)
+        assert Path(core_logic._active_db_path()) == request_path
+
+        core_logic.set_db_path(new_global)
+        assert Path(core_logic.DB_PATH) == new_global
+        assert Path(core_logic._active_db_path()) == request_path
+
+        core_logic.bind_request_db_path(None)
+        assert Path(core_logic._active_db_path()) == new_global
+    finally:
+        core_logic.bind_request_db_path(None)
+        core_logic.set_db_path(original_global)
+
+
+def test_before_request_can_recover_after_lookup_error(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    import app.core.logic as core_logic
+    import app.web as web_module
+
+    base_path = Path(app.config["CORE_DB"])
+    failing_path = tmp_path / "will_not_apply.sqlite3"
+    healthy_path = tmp_path / "healthy.sqlite3"
+
+    _seed_user_session(client, tenant_db_path=str(failing_path))
+    monkeypatch.setattr(web_module, "_get_tenant_db_path", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    failed = client.get("/api/health")
+    assert failed.status_code == 200
+    assert Path(core_logic._active_db_path()) == base_path
+
+    monkeypatch.setattr(web_module, "_get_tenant_db_path", lambda: healthy_path)
+    healthy = client.get("/api/health")
+    assert healthy.status_code == 200
+    assert Path(core_logic._active_db_path()) == healthy_path
 
 
 def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(tmp_path, monkeypatch):
