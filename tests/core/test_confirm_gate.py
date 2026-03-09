@@ -33,3 +33,27 @@ def test_confirm_protocol_executes_after_approval_and_writes_audit_log():
     statuses = [row["status"] for row in executor.audit_log]
     assert "awaiting_confirmation" in statuses
     assert "executed" in statuses
+
+
+def test_confirm_protocol_rejects_plan_mismatch_for_same_proposal_id():
+    executor = ActionExecutor({
+        "core.write_action": lambda params: {"ok": True, "tenant": params.get("tenant")},
+        "core.delete_action": lambda params: {"ok": True, "tenant": params.get("tenant")},
+    })
+    write_plan = {
+        "steps": [
+            {"tool": "core.write_action", "action_type": "write", "params": {"tenant": "alpha"}},
+        ]
+    }
+    destructive_plan = {
+        "steps": [
+            {"tool": "core.delete_action", "action_type": "high_risk", "params": {"tenant": "alpha"}},
+        ]
+    }
+
+    proposed = executor.execute_plan(write_plan, dry_run=False)
+    proposal_id = proposed["proposal_id"]
+    assert executor.confirm(proposal_id, approved=True) is True
+
+    blocked = executor.execute_plan(destructive_plan, dry_run=False, proposal_id=proposal_id)
+    assert blocked["status"] == "proposal_plan_mismatch"
