@@ -27,7 +27,8 @@
       "app/static/js/chatbot.js"
     ],
     "kalender": [
-      "app/templates/kalender"
+      "app/templates/kalender",
+      "app/templates/calendar.html"
     ],
     "aufgaben_projekte": [
       "app/templates/kanban.html",
