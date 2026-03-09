@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +19,12 @@ def test_router_maps_read_intent_to_registered_action_deterministically() -> Non
     assert result.decision.action == "dashboard.summary.read"
     assert result.plan is not None
     assert result.plan.execution_mode == "read"
+
+
+def test_invoice_reminder_contract_uses_guarded_invoice_id_source() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '_extract_untrusted_text(p, "invoice_id")' in source
+    assert '_extract_untrusted_text(p, "document_id")' in source
 
 
 

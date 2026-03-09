@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.agents.action_manager import ActionManager
 from app.core.tool_loader import load_all_tools
 from app.tools.action_registry import action_registry
@@ -56,3 +58,9 @@ def test_manager_can_list_search_and_compose_with_events() -> None:
             "step_index": 0,
         }
     ]
+
+
+def test_invoice_flow_contract_uses_untrusted_extraction_guard() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '"invoice_extract_due"' in source
+    assert '_extract_untrusted_text(p, "invoice_id")' in source
