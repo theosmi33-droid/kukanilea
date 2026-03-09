@@ -143,7 +143,8 @@ def test_email_execute_enforces_session_tenant(client, monkeypatch: pytest.Monke
     assert seen["tenant_id"] == "KUKANILEA"
 
 
-def test_email_actions_api_enforces_session_tenant(client, monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("tenant_key", ["tenant_id", "tenant", "tenantId"])
+def test_email_actions_api_enforces_session_tenant(client, monkeypatch: pytest.MonkeyPatch, tenant_key: str):
     from app.modules.mail import ai_actions
 
     seen: dict[str, str | None] = {"tenant_id": None}
@@ -156,7 +157,7 @@ def test_email_actions_api_enforces_session_tenant(client, monkeypatch: pytest.M
 
     resp = client.post(
         "/api/email/actions/search",
-        json={"query": "angebot", "tenant_id": "VICTIM"},
+        json={"query": "angebot", tenant_key: "VICTIM"},
     )
 
     assert resp.status_code == 200
