@@ -21,6 +21,18 @@ def test_compute_layout_hash_is_stable_for_normalized_text() -> None:
     assert compute_layout_hash(text_a) == compute_layout_hash(text_b)
 
 
+def test_compute_layout_hash_uses_full_normalized_text() -> None:
+    shared_prefix = "\n".join([f"line {i}" for i in range(1, 41)])
+    text_a = f"{shared_prefix}\nA"
+    text_b = f"{shared_prefix}\nB"
+
+    assert compute_layout_hash(text_a) != compute_layout_hash(text_b)
+
+
+def test_compute_layout_hash_empty_text_disables_layout_matching() -> None:
+    assert compute_layout_hash("   \n\n ", file_name="invoice.pdf") == ""
+
+
 def test_collect_manual_corrections_returns_only_changed_fields() -> None:
     original = {
         "doctype_suggested": "RECHNUNG",
