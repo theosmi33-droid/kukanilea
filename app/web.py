@@ -786,6 +786,8 @@ def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
     fp = Path(raw_path)
     if not fp.exists():
         raise ValueError("file_not_found")
+    if not _is_allowed_path(fp):
+        raise ValueError("forbidden_path")
     if not callable(build_visualizer_payload):
         raise ValueError("visualizer_logic_missing")
     page = int(payload.get("page") or 0)
@@ -4341,18 +4343,26 @@ def index():
 def _dashboard_payload(tenant: str) -> dict:
     from app.modules.dashboard.briefing import get_latest_briefing
 
-    items: list[str] = []
+    username = str(current_user() or "").strip()
+    candidate_items: list[str] = []
     if (PENDING_DIR / tenant).exists():
-        items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
+        candidate_items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
 
+    items: list[str] = []
     meta = {}
-    for token in items:
+    for token in candidate_items:
         m_path = PENDING_DIR / tenant / token / "meta.json"
         if m_path.exists():
             with open(m_path, "r") as f:
-                meta[token] = json.load(f)
+                token_meta = json.load(f)
         else:
-            meta[token] = {"filename": "Unbekannt", "status": "PENDING"}
+            token_meta = {"filename": "Unbekannt", "status": "PENDING"}
+
+        if username and token_meta.get("owner") and token_meta.get("owner") != username:
+            continue
+
+        items.append(token)
+        meta[token] = token_meta
 
     recent = []
     if callable(_core_get("get_recent_docs")):
