@@ -26,6 +26,8 @@ list_recent_docs = _core_get("list_recent_docs")
 build_visualizer_payload = _core_get("build_visualizer_payload")
 EINGANG = _core_get("EINGANG")
 BASE_PATH = _core_get("BASE_PATH")
+PENDING_DIR = _core_get("PENDING_DIR")
+DONE_DIR = _core_get("DONE_DIR")
 _NOTE_COUNTER = itertools.count(1)
 
 
@@ -41,7 +43,11 @@ def _is_tenant_visualizer_path(fp: Path, tenant: str) -> bool:
         return False
 
     tenant_key = _norm_tenant(tenant)
-    scoped_roots = [root for root in (BASE_PATH, EINGANG) if isinstance(root, Path)]
+    scoped_roots = [
+        root
+        for root in (BASE_PATH, EINGANG, PENDING_DIR, DONE_DIR)
+        if isinstance(root, Path)
+    ]
     for root in scoped_roots:
         try:
             rr = root.resolve()
