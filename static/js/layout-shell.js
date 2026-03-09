@@ -82,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-  const sidebarRouteOrder = ['/dashboard', '/visualizer', '/assistant', '/upload', '/tasks', '/system-logs', '/settings'];
+  const sidebarRouteOrder = ['/dashboard', '/visualizer', '/assistant', '/upload', '/tasks', '/system/logs', '/settings'];
   const quickNavigate = (index) => {
     const target = sidebarRouteOrder[index];
     if (target) window.location.href = target;

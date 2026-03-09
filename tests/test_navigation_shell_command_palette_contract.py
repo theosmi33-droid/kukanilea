@@ -41,6 +41,12 @@ def test_layout_shell_marks_current_nav_and_mobile_routes() -> None:
     assert "aria-current" in js
 
 
+def test_layout_shell_uses_supported_logs_route_for_quick_navigation() -> None:
+    js = _read("static/js/layout-shell.js")
+    assert "/system/logs" in js
+    assert "/system-logs" not in js
+
+
 def test_shell_navigation_css_contains_new_layout_regions() -> None:
     css = _read("static/css/shell-navigation.css")
     required = [
