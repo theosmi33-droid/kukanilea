@@ -37,6 +37,21 @@ def test_prompt_injection_surface_skips_allowlisted_security_file(tmp_path: Path
     assert errors == []
 
 
+def test_prompt_injection_surface_flags_runtime_guardrail_downgrade_snippet(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    runtime_file = tmp_path / "app" / "ai" / "runtime_guardrails.py"
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    runtime_file.write_text(
+        "decision = 'allow_with_warning' if 'ignore previous instructions' else 'allow'\n",
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_prompt_injection_surface(paths=[str(tmp_path / "app")])
+
+    assert errors
+    assert "runtime_guardrails.py" in errors[0]
+
+
 def test_htmx_confirm_detects_missing_confirm(tmp_path: Path) -> None:
     guardrails = _load_guardrails_module()
     html_path = tmp_path / "app" / "templates" / "unsafe.html"
