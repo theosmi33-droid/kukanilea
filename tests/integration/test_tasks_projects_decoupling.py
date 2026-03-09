@@ -382,3 +382,102 @@ def test_api_task_move_returns_403_for_cross_tenant_legacy_task(tmp_path, monkey
 
     assert row is not None
     assert row["column_name"] == "To Do"
+
+
+def test_api_task_move_requires_operator_role(tmp_path, monkeypatch):
+    app, client = _bootstrap(tmp_path, monkeypatch)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "readonly-user"
+        sess["role"] = "READONLY"
+        sess["tenant_id"] = "TENANT_A"
+        sess["csrf_token"] = "csrf-test"
+
+    response = client.post(
+        "/api/tasks/any-task/move",
+        json={"column": "Done"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+
+    assert response.status_code == 403
+    body = response.get_json()
+    assert body["error"]["code"] == "forbidden"
+
+
+def test_api_task_move_allows_same_tenant_legacy_task_update(tmp_path, monkeypatch):
+    app, client = _bootstrap(tmp_path, monkeypatch)
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute(
+            "INSERT OR REPLACE INTO tenants(tenant_id, display_name, created_at) VALUES (?, ?, datetime('now'))",
+            ("TENANT_A", "Tenant A"),
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO projects(id, tenant_id, name, created_at) VALUES (?, ?, ?, datetime('now'))",
+            ("project-a", "TENANT_A", "Project A"),
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO boards(id, project_id, name, created_at) VALUES (?, ?, ?, datetime('now'))",
+            ("board-a", "project-a", "Board A"),
+        )
+        con.execute(
+            """
+            INSERT OR REPLACE INTO tasks(
+                id, board_id, column_name, title, content, assigned_user,
+                due_date, priority, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            ("legacy-task-3", "board-a", "To Do", "Legacy Task", "", "", None, None),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    with client.session_transaction() as sess:
+        sess["user"] = "alice"
+        sess["role"] = "OPERATOR"
+        sess["tenant_id"] = "TENANT_A"
+        sess["csrf_token"] = "csrf-test"
+
+    response = client.post(
+        "/api/tasks/legacy-task-3/move",
+        json={"column": "Done"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute("SELECT column_name FROM tasks WHERE id = ?", ("legacy-task-3",)).fetchone()
+    finally:
+        con.close()
+
+    assert row is not None
+    assert row["column_name"] == "Done"
+
+
+def test_api_task_move_returns_403_for_unknown_task(tmp_path, monkeypatch):
+    app, client = _bootstrap(tmp_path, monkeypatch)
+
+    with client.session_transaction() as sess:
+        sess["user"] = "alice"
+        sess["role"] = "OPERATOR"
+        sess["tenant_id"] = "TENANT_A"
+        sess["csrf_token"] = "csrf-test"
+
+    response = client.post(
+        "/api/tasks/does-not-exist/move",
+        json={"column": "Done"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+
+    assert response.status_code == 403
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["error"] == "task_not_found_or_forbidden"
