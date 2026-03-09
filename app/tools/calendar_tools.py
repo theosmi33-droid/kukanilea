@@ -5,6 +5,16 @@ from typing import Any
 from app.modules.kalender.calendar_store import CalendarStore
 from app.tools.base_tool import BaseTool
 from app.tools.registry import registry
+from app.tools.shared_services import get_tenant_id
+
+
+def _resolve_tenant_id(requested_tenant_id: str | None) -> str | None:
+    active_tenant_id = get_tenant_id()
+    if not active_tenant_id:
+        return None
+    if requested_tenant_id and requested_tenant_id != active_tenant_id:
+        raise PermissionError("tenant_mismatch")
+    return active_tenant_id
 
 
 class CalendarFindFreeSlotTool(BaseTool):
@@ -32,9 +42,12 @@ class CalendarFindFreeSlotTool(BaseTool):
         granularity_minutes: int = 15,
         ics_texts: list[str] | None = None,
     ) -> Any:
+        resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        if not resolved_tenant_id:
+            return {"error": "No tenant context found."}
         store = CalendarStore()
         return store.find_free_slot(
-            tenant_id=tenant_id,
+            tenant_id=resolved_tenant_id,
             window_start=window_start,
             window_end=window_end,
             duration_minutes=duration_minutes,
@@ -72,13 +85,16 @@ class CalendarCreateEventTool(BaseTool):
         created_by: str = "system",
         confirm: bool = False,
     ) -> Any:
+        resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        if not resolved_tenant_id:
+            return {"error": "No tenant context found."}
         if not confirm:
             return {
                 "status": "pending_confirmation",
                 "requires_confirm": True,
                 "action": self.name,
                 "preview": {
-                    "tenant_id": tenant_id,
+                    "tenant_id": resolved_tenant_id,
                     "title": title,
                     "start_at": start_at,
                     "end_at": end_at,
@@ -88,7 +104,7 @@ class CalendarCreateEventTool(BaseTool):
             }
         store = CalendarStore()
         event = store.create_event(
-            tenant_id=tenant_id,
+            tenant_id=resolved_tenant_id,
             title=title,
             start_at=start_at,
             end_at=end_at,
@@ -130,13 +146,16 @@ class CalendarUpdateEventTool(BaseTool):
         updated_by: str = "system",
         confirm: bool = False,
     ) -> Any:
+        resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        if not resolved_tenant_id:
+            return {"error": "No tenant context found."}
         if not confirm:
             return {
                 "status": "pending_confirmation",
                 "requires_confirm": True,
                 "action": self.name,
                 "preview": {
-                    "tenant_id": tenant_id,
+                    "tenant_id": resolved_tenant_id,
                     "event_id": event_id,
                     "title": title,
                     "start_at": start_at,
@@ -147,7 +166,7 @@ class CalendarUpdateEventTool(BaseTool):
             }
         store = CalendarStore()
         event = store.update_event(
-            tenant_id=tenant_id,
+            tenant_id=resolved_tenant_id,
             event_id=event_id,
             title=title,
             start_at=start_at,
