@@ -413,6 +413,7 @@ def create_default_registry() -> AtomicActionRegistry:
             "invoice_due_date": (
                 _extract_untrusted_text(p, "invoice_due_date")
                 or _extract_untrusted_text(p, "default_due_date")
+                or ""
             ),
         },
     )
