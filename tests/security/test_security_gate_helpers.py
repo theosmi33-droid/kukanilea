@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from app.security.gates import (
@@ -79,6 +80,29 @@ def test_confirm_matrix_contains_context_switch_injection_guard_only():
 
 def test_runtime_guardrails_non_downgradable_signals_contract():
     root = Path(__file__).resolve().parents[2]
-    content = (root / "app/ai/runtime_guardrails.py").read_text(encoding="utf-8")
-    assert "_NON_DOWNGRADABLE_SIGNALS" in content
-    assert '"instruction_override"' in content
+    path = root / "app/ai/runtime_guardrails.py"
+    content = path.read_text(encoding="utf-8")
+    tree = ast.parse(content, filename=str(path))
+    const_assign = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "_NON_DOWNGRADABLE_SIGNALS" for target in node.targets)
+        ),
+        None,
+    )
+    assert const_assign is not None
+
+    value = const_assign.value
+    assert isinstance(value, ast.Call)
+    assert getattr(value.func, "id", None) == "frozenset"
+    assert len(value.args) == 1
+    assert isinstance(value.args[0], ast.Set)
+
+    values = {
+        elt.value
+        for elt in value.args[0].elts
+        if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+    }
+    assert "instruction_override" in values
