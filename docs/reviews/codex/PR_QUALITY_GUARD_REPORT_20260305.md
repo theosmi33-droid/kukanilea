@@ -22,3 +22,16 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
 - Case: Layout-only hardening (`app/templates/layout.html`) to remove unused font preload warning.
 - Initial result: **FAIL** (MIN_SCOPE, MIN_TESTS).
 - Normalized result: **PASS target** after adding focused regression tests and evidence docs without widening runtime scope.
+
+## 2026-03-09 Addendum
+- Case: Session-tenant enforcement for generic Tool Actions API execution path.
+- Security objective: block cross-tenant payload spoofing via `/api/<tool>/actions/<name>`.
+- Evidence set:
+  - Runtime enforcement in `app/modules/actions_api.py`
+  - Integration regression in `tests/integration/test_emailpostfach_ai_actions.py`
+  - Additional regression coverage in:
+    - `tests/domain/aufgaben/test_actions_api.py`
+    - `tests/domain/einstellungen/test_settings_actions_api.py`
+  - Policy docs:
+    - `docs/security/SESSION_TENANT_ENFORCEMENT_POLICY.md`
+    - `docs/security/TOOL_ACTIONS_TENANT_BINDING_POLICY.md`

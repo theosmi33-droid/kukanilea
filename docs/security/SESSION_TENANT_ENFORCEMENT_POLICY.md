@@ -1,4 +1,4 @@
-# Session Tenant Enforcement Policy (AI Skill Runtime)
+# Session Tenant Enforcement Policy (AI Skill + Tool Actions Runtime)
 
 ## Policy
 - Tenant authority comes from authenticated server session context.
@@ -9,6 +9,8 @@
 - `/api/ai/execute` returns `403 tenant_required` when session tenant is missing.
 - `payload.tenant_id` is stripped before handler invocation.
 - Handler receives canonical `tenant_id` from `current_tenant()`.
+- `/api/<tool>/actions/<name>` strips caller tenant hints (`tenant_id`, `tenant`, `tenantId`) before execution.
+- Tool action handlers always receive the canonical session tenant as `tenant_id`.
 
 ## Why
-This prevents cross-tenant access attempts where an attacker injects a foreign tenant ID into AI skill payloads.
+This prevents cross-tenant access attempts where an attacker injects a foreign tenant ID into AI skill or tool action payloads.

@@ -17,7 +17,6 @@ from app.security import (
 )
 from kukanilea.idempotency import GLOBAL_IDEMPOTENCY_STORE, canonical_hash
 
-
 PermissionChecker = Callable[[str, str], bool]
 ActionHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
@@ -162,13 +161,21 @@ class ActionApiTemplate:
         actor = str(current_user() or "system")
         tenant = str(current_tenant() or "default")
 
-        request_hash = self._request_hash(payload)
+        # Never trust tenant hints from callers. Tool actions always execute in the
+        # authenticated session tenant.
+        handler_payload = dict(payload)
+        handler_payload.pop("tenant_id", None)
+        handler_payload.pop("tenant", None)
+        handler_payload.pop("tenantId", None)
+        handler_payload["tenant_id"] = tenant
+
+        request_hash = self._request_hash(handler_payload)
         idempotency_key = ""
         idem_scope = ""
         idem_token = ""
         idempotency_mode = "none"
         if action.write_operation:
-            idempotency_key, idem_ttl, idempotency_mode = self._resolve_idempotency_key(req, payload, request_hash)
+            idempotency_key, idem_ttl, idempotency_mode = self._resolve_idempotency_key(req, handler_payload, request_hash)
             idem_scope = f"{tenant}:{self.tool}:{action.name}"
             decision = GLOBAL_IDEMPOTENCY_STORE.begin(
                 scope=idem_scope,
@@ -222,12 +229,12 @@ class ActionApiTemplate:
             risk=action.risk,
         )
         if approval_required:
-            scope = _build_scope(tool=self.tool, action_name=action.name, tenant=tenant, user=actor, payload=payload)
-            approval_token = payload.get("approval_token") or req.headers.get("X-Approval-Token")
+            scope = _build_scope(tool=self.tool, action_name=action.name, tenant=tenant, user=actor, payload=handler_payload)
+            approval_token = handler_payload.get("approval_token") or req.headers.get("X-Approval-Token")
 
             # Backward-compatible gate: allow legacy explicit confirm tokens while migrating to challenge-based approvals.
             if not approval_token:
-                legacy_confirm = payload.get("confirm") or req.headers.get("X-Confirm")
+                legacy_confirm = handler_payload.get("confirm") or req.headers.get("X-Confirm")
                 if confirm_gate(str(legacy_confirm or "")):
                     SharedServices.log_event(
                         "tool_action_approval_legacy_confirm",
@@ -254,10 +261,10 @@ class ActionApiTemplate:
                         "tool": self.tool,
                         "name": action.name,
                     }, 409
-            elif not confirm_gate(str(payload.get("confirm") or req.headers.get("X-Confirm") or "")):
+            elif not confirm_gate(str(handler_payload.get("confirm") or req.headers.get("X-Confirm") or "")):
                 if idem_token:
                     GLOBAL_IDEMPOTENCY_STORE.complete_failure(scope=idem_scope, key=idempotency_key, token=idem_token)
-                ttl_seconds = self._resolve_approval_ttl(payload)
+                ttl_seconds = self._resolve_approval_ttl(handler_payload)
                 challenge = _approval_engine().request_challenge(scope=scope, ttl_seconds=ttl_seconds)
                 return {
                     "ok": False,
@@ -290,7 +297,7 @@ class ActionApiTemplate:
         )
 
         try:
-            result = action.handler(payload)
+            result = action.handler(handler_payload)
         except ValueError as exc:
             if idem_token:
                 GLOBAL_IDEMPOTENCY_STORE.complete_failure(scope=idem_scope, key=idempotency_key, token=idem_token)
