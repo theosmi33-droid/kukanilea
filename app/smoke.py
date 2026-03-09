@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import tempfile
 import time
 
@@ -26,9 +27,11 @@ def main() -> None:
 
             auth_db: AuthDB = app.extensions["auth_db"]
             now = "2024-01-01T00:00:00"
+            smoke_user = "smoke-dev"
+            smoke_password = secrets.token_urlsafe(16)
             auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
-            auth_db.upsert_user("dev", hash_password("dev"), now)
-            auth_db.upsert_membership("dev", "KUKANILEA", "DEV", now)
+            auth_db.upsert_user(smoke_user, hash_password(smoke_password), now)
+            auth_db.upsert_membership(smoke_user, "KUKANILEA", "DEV", now)
 
         client = app.test_client()
 
@@ -44,7 +47,7 @@ def main() -> None:
         csrf_token = token_match.group(1) if token_match else ""
         login_resp = client.post(
             "/login",
-            data={"username": "dev", "password": "dev", "csrf_token": csrf_token},
+            data={"username": smoke_user, "password": smoke_password, "csrf_token": csrf_token},
             follow_redirects=True,
         )
         if login_resp.status_code != 200:
