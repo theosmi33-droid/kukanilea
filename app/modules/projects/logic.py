@@ -1874,10 +1874,12 @@ class ProjectManager:
             row = con.execute("SELECT id FROM team_tasks WHERE id=?", (task_id,)).fetchone()
             if row:
                 mapped_status = COLUMN_TO_STATUS.get(str(new_column), "OPEN")
-                actor, role, _tenant_id = self._context_identity()
+                actor, role, tenant_id = self._context_identity()
                 full_task = self._fetch_task(con, task_id)
                 if not full_task:
                     raise ValueError("task_not_found")
+                if str(full_task.get("tenant_id") or "") != str(tenant_id or ""):
+                    return {"ok": False, "error": "task_not_found_or_forbidden"}
                 try:
                     self._transition_status(
                         con,

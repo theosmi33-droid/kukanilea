@@ -260,3 +260,39 @@ def test_update_task_column_legacy_fallback_blocks_cross_tenant_move(tmp_path, m
 
     assert row is not None
     assert row["column_name"] == "To Do"
+
+def test_update_task_column_team_task_blocks_cross_tenant_move(tmp_path, monkeypatch):
+    app, _client = _bootstrap(tmp_path, monkeypatch)
+    pm = ProjectManager(app.extensions["auth_db"])
+    _ensure_membership(app, tenant_id="TENANT_A", username="alice", role="DEV")
+    _ensure_membership(app, tenant_id="TENANT_B", username="bob", role="DEV")
+
+    task_id = pm.create_team_task(
+        tenant_id="TENANT_A",
+        actor="alice",
+        actor_role="DEV",
+        title="Tenant A task",
+        due_at="2030-01-10",
+        assigned_to="alice",
+    )
+
+    with app.test_request_context("/"):
+        from flask import session
+
+        session["user"] = "bob"
+        session["role"] = "DEV"
+        session["tenant_id"] = "TENANT_B"
+        result = pm.update_task_column(task_id, "Done")
+
+    assert result["ok"] is False
+    assert result["error"] == "task_not_found_or_forbidden"
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute("SELECT status FROM team_tasks WHERE id = ?", (task_id,)).fetchone()
+    finally:
+        con.close()
+
+    assert row is not None
+    assert row["status"] == "OPEN"
