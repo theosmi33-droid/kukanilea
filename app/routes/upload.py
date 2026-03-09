@@ -271,6 +271,7 @@ def api_progress(token: str):
 
 @bp.route("/api/upload/ingest", methods=["POST"])
 @login_required
+@upload_limiter.limit_required
 def api_upload_ingest():
     tenant = _norm_tenant(current_tenant() or "default")
     body = request.get_json(silent=True) if request.is_json else None
@@ -293,23 +294,27 @@ def api_upload_ingest():
         file_bytes = file_storage.read()
         metadata["filename"] = file_storage.filename
         metadata["content_type"] = str(file_storage.content_type or "")
-        payload = ingest_unstructured_bytes(
-            source=source,
-            tenant=tenant,
-            payload_bytes=file_bytes,
-            metadata=metadata,
-            filename=str(file_storage.filename or ""),
-            content_type=str(file_storage.content_type or ""),
-        )
+        payload_bytes = file_bytes
+        filename = str(file_storage.filename or "")
+        content_type = str(file_storage.content_type or "")
     else:
+        payload_bytes = raw_text.encode("utf-8")
+        filename = str(metadata.get("filename") or "")
+        content_type = str(metadata.get("content_type") or "")
+
+    try:
         payload = ingest_unstructured_bytes(
             source=source,
             tenant=tenant,
-            payload_bytes=raw_text.encode("utf-8"),
+            payload_bytes=payload_bytes,
             metadata=metadata,
-            filename=str(metadata.get("filename") or ""),
-            content_type=str(metadata.get("content_type") or ""),
+            filename=filename,
+            content_type=content_type,
         )
+    except ValueError as exc:
+        if str(exc) == "quota_exceeded":
+            return jsonify(error="quota_exceeded", message="Speicherlimit für Mandant erreicht."), 403
+        raise
     return jsonify(payload), 200
 
 

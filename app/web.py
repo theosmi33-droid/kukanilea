@@ -82,6 +82,7 @@ from .auth import (
     current_tenant,
     current_user,
     hash_password,
+    verify_password,
     login_required,
     login_user,
     logout_user,
@@ -786,6 +787,8 @@ def _visualizer_action_summary(payload: dict[str, object]) -> dict[str, object]:
     fp = Path(raw_path)
     if not fp.exists():
         raise ValueError("file_not_found")
+    if not _is_allowed_path(fp):
+        raise ValueError("forbidden_path")
     if not callable(build_visualizer_payload):
         raise ValueError("visualizer_logic_missing")
     page = int(payload.get("page") or 0)
@@ -1211,13 +1214,31 @@ def _is_storage_path_valid(path: Path) -> bool:
 
 def _seed_dev_users(auth_db: AuthDB) -> str:
     now = datetime.utcnow().isoformat()
+    admin_password = secrets.token_urlsafe(18)
+    dev_password = secrets.token_urlsafe(18)
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
     auth_db.upsert_tenant("KUKANILEA Dev", "KUKANILEA Dev", now)
-    auth_db.upsert_user("admin", hash_password("admin"), now)
-    auth_db.upsert_user("dev", hash_password("dev"), now)
+    auth_db.upsert_user("admin", hash_password(admin_password), now)
+    auth_db.upsert_user("dev", hash_password(dev_password), now)
     auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
     auth_db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
-    return "Seeded users: admin/admin, dev/dev"
+    return (
+        "Seeded users (local-only): "
+        f"admin/{admin_password}, dev/{dev_password}"
+    )
+
+
+def _allow_dev_seed_endpoint() -> bool:
+    env = str(
+        os.environ.get("KUKANILEA_ENV", os.environ.get("FLASK_ENV", ""))
+    ).strip().lower()
+    if env not in {"dev", "development", "test", "testing"}:
+        return False
+
+    addr = (request.remote_addr or "").strip()
+    if addr not in {"127.0.0.1", "::1", "localhost"}:
+        return False
+    return True
 
 
 def _safe_filename(name: str) -> str:
@@ -2515,7 +2536,7 @@ def bootstrap():
 
     if request.method == "POST":
         t_name = request.form.get("tenant_name", "KUKANILEA").strip() or "KUKANILEA"
-        u_name = (request.form.get("admin_user") or "dev").strip().lower() or "dev"
+        u_name = (request.form.get("admin_user") or "admin").strip().lower() or "admin"
         u_pass = (request.form.get("admin_pass") or "").strip() or secrets.token_urlsafe(10)
 
         from app.auth import hash_password
@@ -2572,40 +2593,38 @@ def login():
         if not u or not pw:
             error = "Bitte Username und Passwort eingeben."
         else:
-            from app.auth import hash_password
             from app.modules.projects.logic import ProjectManager
-            
-            # Global Dev Account (Task v2.8) - Priority Check
-            DEV_USER = "dev"
-            DEV_PASS = "dev"
-            
-            is_dev = (u == DEV_USER and pw == DEV_PASS)
+
             user = auth_db.get_user(u)
 
-            if is_dev or (user and user.password_hash == hash_password(pw)):
-                # Auto-Upsert dev to DB if priority match but missing/mismatch
-                if is_dev:
-                    auth_db.upsert_user(DEV_USER, hash_password(DEV_PASS), datetime.now().isoformat())
-                    # Ensure dev has a membership in at least one tenant or SYSTEM
-                    if not auth_db.get_memberships(DEV_USER):
-                        auth_db.upsert_membership(DEV_USER, "SYSTEM", "DEV", datetime.now().isoformat())
+            valid_password = False
+            needs_rehash = False
+            if user:
+                valid_password, needs_rehash = verify_password(user.password_hash, pw)
 
+            if user and valid_password:
                 # Reset failed attempts on success
-                if user:
-                    con = auth_db._db()
+                con = auth_db._db()
+                try:
                     con.execute("UPDATE users SET failed_attempts = 0 WHERE username = ?", (u,))
+                    if needs_rehash:
+                        con.execute(
+                            "UPDATE users SET password_hash = ? WHERE username = ?",
+                            (hash_password(pw), u),
+                        )
                     con.commit()
+                finally:
                     con.close()
                 
                 memberships = auth_db.get_memberships(u)
-                if not memberships and not is_dev:
+                if not memberships:
                     error = "Keine Mandanten-Zuordnung gefunden."
                 else:
-                    m = memberships[0] if memberships else None
-                    role = "DEV" if is_dev or (m and m.role == "DEV") else m.role
-                    t_id = m.tenant_id if m else "SYSTEM"
+                    m = memberships[0]
+                    role = m.role
+                    t_id = m.tenant_id
                     
-                    if user and getattr(user, 'needs_reset', 0) and not is_dev:
+                    if user and getattr(user, 'needs_reset', 0):
                         session['pending_reset_user'] = u
                         return redirect(url_for('web.password_reset_page'))
 
@@ -3267,6 +3286,10 @@ def api_ai_execute():
     skill_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
     confirm = bool(payload.get("confirm"))
     source = str(payload.get("source") or "chat")
+    tenant_id = str(current_tenant() or "").strip()
+
+    if not tenant_id:
+        return jsonify(error="tenant_required"), 403
 
     definition = skills_registry.get(skill_name)
     if not definition:
@@ -3304,8 +3327,10 @@ def api_ai_execute():
         if not send_limiter.allow(key):
             return jsonify(error="rate_limited"), 429
 
+    handler_payload = {key: value for key, value in skill_payload.items() if key != "tenant_id"}
+
     try:
-        result = definition.handler({**skill_payload, "confirm": confirm})
+        result = definition.handler({**handler_payload, "tenant_id": tenant_id, "confirm": confirm})
     except Exception:
         logger.exception("ai_execute_handler_failed", extra={"skill": skill_name})
         return jsonify(error="skill_execution_failed"), 500
@@ -4162,6 +4187,8 @@ def settings_page():
 @login_required
 @require_role("DEV")
 def api_seed_users():
+    if not _allow_dev_seed_endpoint():
+        return json_error("forbidden", "Nur lokal in Entwicklungsmodus erlaubt.", status=403)
     auth_db: AuthDB = current_app.extensions["auth_db"]
     msg = _seed_dev_users(auth_db)
     _audit("seed_users", meta={"status": "ok"})
@@ -4347,18 +4374,26 @@ def index():
 def _dashboard_payload(tenant: str) -> dict:
     from app.modules.dashboard.briefing import get_latest_briefing
 
-    items: list[str] = []
+    username = str(current_user() or "").strip()
+    candidate_items: list[str] = []
     if (PENDING_DIR / tenant).exists():
-        items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
+        candidate_items = [f.name for f in (PENDING_DIR / tenant).iterdir() if f.is_dir()]
 
+    items: list[str] = []
     meta = {}
-    for token in items:
+    for token in candidate_items:
         m_path = PENDING_DIR / tenant / token / "meta.json"
         if m_path.exists():
             with open(m_path, "r") as f:
-                meta[token] = json.load(f)
+                token_meta = json.load(f)
         else:
-            meta[token] = {"filename": "Unbekannt", "status": "PENDING"}
+            token_meta = {"filename": "Unbekannt", "status": "PENDING"}
+
+        if username and token_meta.get("owner") and token_meta.get("owner") != username:
+            continue
+
+        items.append(token)
+        meta[token] = token_meta
 
     recent = []
     if callable(_core_get("get_recent_docs")):
@@ -5005,6 +5040,7 @@ def api_tool_summary(tool: str):
 
 @bp.post("/api/upload/ingest")
 @login_required
+@upload_limiter.limit_required
 def api_upload_ingest():
     tenant = str(current_tenant() or "default")
     body = request.get_json(silent=True) if request.is_json else None
@@ -5032,14 +5068,19 @@ def api_upload_ingest():
     else:
         payload_bytes = raw_text.encode("utf-8")
 
-    payload = ingest_unstructured_bytes(
-        source=source,
-        tenant=tenant,
-        payload_bytes=payload_bytes,
-        metadata=metadata,
-        filename=str(metadata.get("filename") or ""),
-        content_type=str(metadata.get("content_type") or ""),
-    )
+    try:
+        payload = ingest_unstructured_bytes(
+            source=source,
+            tenant=tenant,
+            payload_bytes=payload_bytes,
+            metadata=metadata,
+            filename=str(metadata.get("filename") or ""),
+            content_type=str(metadata.get("content_type") or ""),
+        )
+    except ValueError as exc:
+        if str(exc) == "quota_exceeded":
+            return jsonify(error="quota_exceeded", message="Speicherlimit für Mandant erreicht."), 403
+        raise
     return jsonify(payload)
 
 

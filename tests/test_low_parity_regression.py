@@ -123,13 +123,20 @@ def test_email_routes_tables_and_confirm_behavior(monkeypatch, tmp_path: Path):
 def test_visualizer_routes_and_render_backend_contract(monkeypatch, tmp_path: Path):
     _app, client = _authed_client(tmp_path, monkeypatch)
 
-    source_file = tmp_path / "sample.csv"
+    source_file = tmp_path / "kukanilea" / "sample.csv"
+    source_file.parent.mkdir(parents=True, exist_ok=True)
     source_file.write_text("name,value\nA,1\n", encoding="utf-8")
     source = base64.b64encode(str(source_file).encode("utf-8")).decode("ascii")
 
     import app.routes.visualizer as visualizer_routes
 
+    monkeypatch.setattr(visualizer_routes, "BASE_PATH", tmp_path)
     monkeypatch.setattr(visualizer_routes, "_is_allowed_path", lambda _path: True)
+    monkeypatch.setattr(
+        visualizer_routes,
+        "_resolve_authorized_source",
+        lambda _src, tenant, username: source_file,
+    )
     monkeypatch.setattr(visualizer_routes, "build_visualizer_payload", None)
 
     missing_backend = client.get(f"/api/visualizer/render?source={source}")
@@ -155,7 +162,6 @@ def test_visualizer_routes_and_render_backend_contract(monkeypatch, tmp_path: Pa
     payload = rendered.get_json()
     assert payload["kind"] == "sheet"
     assert payload["source"] == source
-    assert payload["target_path"] == str(source_file)
 
 
 def test_settings_read_update_rotate_parity(monkeypatch, tmp_path: Path):

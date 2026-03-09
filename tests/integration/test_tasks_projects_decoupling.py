@@ -201,3 +201,62 @@ def test_execute_task_command_prefers_project_board_id_over_legacy_alias(tmp_pat
     assert row["project_board_id"] == "project-board-explicit"
     assert row["project_id"] == "project-zeta"
     assert row["project_card_id"] == "card-zeta-1"
+
+
+def test_update_task_column_legacy_fallback_blocks_cross_tenant_move(tmp_path, monkeypatch):
+    app, _client = _bootstrap(tmp_path, monkeypatch)
+    pm = ProjectManager(app.extensions["auth_db"])
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute(
+            "INSERT OR REPLACE INTO tenants(tenant_id, display_name, created_at) VALUES (?, ?, datetime('now'))",
+            ("TENANT_A", "Tenant A"),
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO tenants(tenant_id, display_name, created_at) VALUES (?, ?, datetime('now'))",
+            ("TENANT_B", "Tenant B"),
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO projects(id, tenant_id, name, created_at) VALUES (?, ?, ?, datetime('now'))",
+            ("project-a", "TENANT_A", "Project A"),
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO boards(id, project_id, name, created_at) VALUES (?, ?, ?, datetime('now'))",
+            ("board-a", "project-a", "Board A"),
+        )
+        con.execute(
+            """
+            INSERT OR REPLACE INTO tasks(
+                id, board_id, column_name, title, content, assigned_user,
+                due_date, priority, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            ("legacy-task-1", "board-a", "To Do", "Legacy Task", "", "", None, None),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    with app.test_request_context("/"):
+        from flask import session
+
+        session["user"] = "bob"
+        session["role"] = "DEV"
+        session["tenant_id"] = "TENANT_B"
+        result = pm.update_task_column("legacy-task-1", "Done")
+
+    assert result["ok"] is False
+    assert result["error"] == "task_not_found_or_forbidden"
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute("SELECT column_name FROM tasks WHERE id = ?", ("legacy-task-1",)).fetchone()
+    finally:
+        con.close()
+
+    assert row is not None
+    assert row["column_name"] == "To Do"
