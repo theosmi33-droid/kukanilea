@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from kukanilea.orchestrator.cross_tool_flows import (
@@ -177,6 +179,12 @@ def test_prompt_injection_in_untrusted_text_is_neutralized() -> None:
 
     assert result.ok is True
     assert result.outputs.get("task_notes", "") == ""
+
+
+def test_manager_agent_guard_contract_has_no_neutral_context_injection_downgrade() -> None:
+    source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+    assert "neutral_context = bool(" not in source
+    assert "action_context = bool(" not in source
 
 
 def test_unknown_flow_reports_failure_with_audit_evidence() -> None:

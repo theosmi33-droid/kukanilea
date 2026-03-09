@@ -356,7 +356,7 @@ def test_runtime_guard_blocks_system_prompt_reveal_attempt() -> None:
     assert audit_payloads[-1]["guard_decision"] == "block"
 
 
-def test_runtime_guard_warns_for_harmless_expert_text_with_trigger_words() -> None:
+def test_runtime_guard_blocks_expert_text_with_prompt_injection_markers() -> None:
     bus = EventBus()
     audit_payloads: list[dict] = []
     agent = ManagerAgent(event_bus=bus, audit_logger=lambda payload: audit_payloads.append(payload), external_calls_enabled=True)
@@ -367,5 +367,6 @@ def test_runtime_guard_warns_for_harmless_expert_text_with_trigger_words() -> No
     )
 
     assert result.ok is False
-    assert result.status == "needs_clarification"
-    assert audit_payloads[-1]["guard_decision"] == "allow_with_warning"
+    assert result.status == "blocked"
+    assert result.reason == "prompt_injection"
+    assert audit_payloads[-1]["guard_decision"] == "block"

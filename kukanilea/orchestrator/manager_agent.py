@@ -215,12 +215,6 @@ class DeterministicToolRouter:
         review_matches = [pattern.pattern for pattern in RUNTIME_REVIEW_PATTERNS if pattern.search(normalized)]
         warning_matches = [pattern.pattern for pattern in RUNTIME_WARNING_PATTERNS if pattern.search(normalized)]
 
-        neutral_context = bool(re.search(r"\b(beispiel|analyse|analysieren|zitat|workshop|fachtext)\b", normalized, re.IGNORECASE))
-        action_context = bool(re.search(r"\b(create|erstelle|ausführen|execute|run|delete|sende|send)\b", normalized, re.IGNORECASE))
-        if injection_matches and neutral_context and not action_context:
-            warning_matches = sorted(set(warning_matches + injection_matches))
-            injection_matches = []
-
         if injection_matches:
             return RuntimeGuardResult(
                 decision=GuardDecision.BLOCK,

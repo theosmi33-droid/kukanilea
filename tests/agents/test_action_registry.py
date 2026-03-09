@@ -64,3 +64,9 @@ def test_invoice_flow_contract_uses_untrusted_extraction_guard() -> None:
     source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
     assert '"invoice_extract_due"' in source
     assert '_extract_untrusted_text(p, "invoice_id")' in source
+
+
+def test_manager_agent_contract_keeps_prompt_injection_blocking_in_neutral_context() -> None:
+    source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+    assert "if injection_matches:" in source
+    assert "neutral_context = bool(" not in source
