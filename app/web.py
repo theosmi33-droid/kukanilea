@@ -2426,6 +2426,15 @@ def _apply_tenant_context():
         core_logic.bind_request_db_path(None)
 
 
+@bp.teardown_app_request
+def _clear_tenant_context(_exc):
+    """Prevents request-local DB path from leaking into the next request."""
+    import importlib
+
+    core_logic = importlib.import_module("app.core.logic")
+    core_logic.bind_request_db_path(None)
+
+
 @bp.before_app_request
 def _guard_login():
     p = request.path or "/"

@@ -58,14 +58,24 @@ def test_before_request_binds_session_tenant_db_path_override(tmp_path, monkeypa
     client = app.test_client()
     override_path = tmp_path / "tenant_override.sqlite3"
 
+    import app.core.logic as core_logic
+
+    bind_calls: list[Path | None] = []
+    original_bind = core_logic.bind_request_db_path
+
+    def _record_bind(path: Path | None) -> None:
+        bind_calls.append(Path(path) if path else None)
+        original_bind(path)
+
+    monkeypatch.setattr(core_logic, "bind_request_db_path", _record_bind)
     _seed_user_session(client, tenant_db_path=str(override_path))
     response = client.get("/api/health")
     assert response.status_code == 200
 
-    import app.core.logic as core_logic
-
     assert Path(core_logic.DB_PATH) == Path(app.config["CORE_DB"])
-    assert Path(core_logic._active_db_path()) == override_path
+    assert Path(core_logic._active_db_path()) == Path(app.config["CORE_DB"])
+    assert override_path in bind_calls
+    assert bind_calls[-1] is None
 
 
 def test_before_request_falls_back_to_core_db_without_override(tmp_path, monkeypatch):
@@ -89,22 +99,34 @@ def test_switching_tenant_db_path_between_requests_rebinds_core_logic(tmp_path, 
 
     first_path = tmp_path / "tenant_one.sqlite3"
     second_path = tmp_path / "tenant_two.sqlite3"
+    import app.core.logic as core_logic
+
+    bind_calls: list[Path | None] = []
+    original_bind = core_logic.bind_request_db_path
+
+    def _record_bind(path: Path | None) -> None:
+        bind_calls.append(Path(path) if path else None)
+        original_bind(path)
+
+    monkeypatch.setattr(core_logic, "bind_request_db_path", _record_bind)
 
     _seed_user_session(client, tenant_db_path=str(first_path))
     first = client.get("/api/health")
     assert first.status_code == 200
 
-    import app.core.logic as core_logic
-
     assert Path(core_logic.DB_PATH) == Path(app.config["CORE_DB"])
-    assert Path(core_logic._active_db_path()) == first_path
+    assert Path(core_logic._active_db_path()) == Path(app.config["CORE_DB"])
 
     _seed_user_session(client, tenant_db_path=str(second_path))
     second = client.get("/api/health")
     assert second.status_code == 200
 
     assert Path(core_logic.DB_PATH) == Path(app.config["CORE_DB"])
-    assert Path(core_logic._active_db_path()) == second_path
+    assert Path(core_logic._active_db_path()) == Path(app.config["CORE_DB"])
+    non_none = [item for item in bind_calls if item is not None]
+    assert first_path in non_none
+    assert second_path in non_none
+    assert bind_calls[-1] is None
 
 
 def test_bind_request_db_path_none_restores_global_fallback(tmp_path, monkeypatch):
@@ -250,6 +272,14 @@ def test_before_request_can_recover_after_lookup_error(tmp_path, monkeypatch):
     base_path = Path(app.config["CORE_DB"])
     failing_path = tmp_path / "will_not_apply.sqlite3"
     healthy_path = tmp_path / "healthy.sqlite3"
+    bind_calls: list[Path | None] = []
+    original_bind = core_logic.bind_request_db_path
+
+    def _record_bind(path: Path | None) -> None:
+        bind_calls.append(Path(path) if path else None)
+        original_bind(path)
+
+    monkeypatch.setattr(core_logic, "bind_request_db_path", _record_bind)
 
     _seed_user_session(client, tenant_db_path=str(failing_path))
     monkeypatch.setattr(web_module, "_get_tenant_db_path", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -260,7 +290,8 @@ def test_before_request_can_recover_after_lookup_error(tmp_path, monkeypatch):
     monkeypatch.setattr(web_module, "_get_tenant_db_path", lambda: healthy_path)
     healthy = client.get("/api/health")
     assert healthy.status_code == 200
-    assert Path(core_logic._active_db_path()) == healthy_path
+    assert Path(core_logic._active_db_path()) == base_path
+    assert healthy_path in [item for item in bind_calls if item is not None]
 
 
 def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(tmp_path, monkeypatch):
