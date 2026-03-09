@@ -2173,7 +2173,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
       actionHtml = actions.map(a => {
         if(a.type === "open_token" && a.token){
           const token = String(a.token || "");
-          const safeToken = escJsSingle(token);
+          const safeToken = escHtml(escJsSingle(token));
           const shortToken = escHtml(token.slice(0,10));
           return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${safeToken}')">Öffnen ${shortToken}…</button>
             <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${safeToken}')">Token ${shortToken}…</button>`;
@@ -2187,7 +2187,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
         const token = r.token || r.doc_id || "";
         const label = r.file_name || token;
         if(token){
-          const safeToken = escJsSingle(token);
+          const safeToken = escHtml(escJsSingle(token));
           return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${safeToken}')">${escHtml(label)}</button>
             <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${safeToken}')">Token ${escHtml(token.slice(0,10))}…</button>`;
         }
