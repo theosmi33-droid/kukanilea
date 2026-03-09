@@ -1922,6 +1922,15 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     return `${h}h ${m}m`;
   }
 
+  function escapeHtml(value){
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
   function setStatus(msg, isError){
     timeStatus.textContent = msg;
     timeStatus.style.color = isError ? "#f87171" : "";
@@ -1952,7 +1961,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     items.forEach(day => {
       const card = document.createElement("div");
       card.className = "rounded-xl border p-3";
-      card.innerHTML = `<div class="text-sm font-semibold">${day.date}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
+      card.innerHTML = `<div class="text-sm font-semibold">${escapeHtml(day.date)}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
       weekSummary.appendChild(card);
     });
   }
@@ -1966,19 +1975,20 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     entries.forEach(entry => {
       const wrap = document.createElement("div");
       wrap.className = "rounded-xl border p-3";
+      const entryId = Number.isFinite(Number(entry.id)) ? Number(entry.id) : 0;
       const approveBtn = (role === "ADMIN" || role === "DEV") && entry.approval_status !== "APPROVED"
-        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entry.id}">Freigeben</button>`
+        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entryId}">Freigeben</button>`
         : "";
       wrap.innerHTML = `
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div>
-            <div class="text-sm font-semibold">${entry.project_name || "Ohne Projekt"}</div>
-            <div class="muted text-xs">${entry.start_at} → ${entry.end_at || "läuft"} · ${fmtDuration(entry.duration_seconds || 0)}</div>
-            <div class="muted text-xs">Status: ${entry.approval_status || "PENDING"} ${entry.approved_by ? "(von " + entry.approved_by + ")" : ""}</div>
-            ${entry.note ? `<div class="text-xs mt-1">${entry.note}</div>` : ""}
+            <div class="text-sm font-semibold">${escapeHtml(entry.project_name || "Ohne Projekt")}</div>
+            <div class="muted text-xs">${escapeHtml(entry.start_at)} → ${escapeHtml(entry.end_at || "läuft")} · ${fmtDuration(entry.duration_seconds || 0)}</div>
+            <div class="muted text-xs">Status: ${escapeHtml(entry.approval_status || "PENDING")} ${entry.approved_by ? "(von " + escapeHtml(entry.approved_by) + ")" : ""}</div>
+            ${entry.note ? `<div class="text-xs mt-1">${escapeHtml(entry.note)}</div>` : ""}
           </div>
           <div class="flex gap-2">
-            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entry.id}">Bearbeiten</button>
+            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entryId}">Bearbeiten</button>
             ${approveBtn}
           </div>
         </div>`;
