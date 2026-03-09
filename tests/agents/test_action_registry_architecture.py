@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from kukanilea.orchestrator.action_catalog import create_action_registry, derived_registry_artifact, registry_summary
+from pathlib import Path
+
+from kukanilea.orchestrator.action_catalog import (
+    create_action_registry,
+    derived_registry_artifact,
+    registry_summary,
+)
 from kukanilea.orchestrator.action_registry import (
-    ActionRegistry,
     ActionPolicyMetadata,
+    ActionRegistry,
     ActionSpec,
     canonical_action_id,
     detect_duplicate_action_ids,
@@ -102,3 +108,9 @@ def test_registry_stats_are_plausible_and_derived_artifact_is_valid() -> None:
     assert artifact["validation"]["duplicate_action_ids"] == []
     assert artifact["validation"]["incomplete_policy_action_ids"] == []
     assert artifact["validation"]["non_derivable_action_ids"] == []
+
+
+def test_invoice_due_contract_sanitizes_untrusted_due_date_fields() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '_extract_untrusted_text(p, "invoice_due_date")' in source
+    assert '_extract_untrusted_text(p, "default_due_date")' in source
