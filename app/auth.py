@@ -3,9 +3,10 @@ from __future__ import annotations
 import functools
 import hashlib
 import time
-from typing import Optional
+from typing import Iterable, Optional
 
 from flask import abort, g, redirect, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import AuthDB, Membership
 from .errors import json_error
@@ -14,7 +15,33 @@ ROLE_ORDER = ["READONLY", "OPERATOR", "ADMIN", "DEV"]
 
 
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    # Use a slow, salted KDF for new credentials.
+    return generate_password_hash(password, method="scrypt")
+
+
+def _is_legacy_sha256_hash(password_hash: str) -> bool:
+    if len(password_hash or "") != 64:
+        return False
+    return all(ch in "0123456789abcdef" for ch in password_hash.lower())
+
+
+def verify_password(password_hash: str, password: str) -> tuple[bool, bool]:
+    """
+    Returns (valid, needs_rehash).
+    needs_rehash=True when a legacy SHA-256 hash was accepted.
+    """
+    stored = (password_hash or "").strip()
+    if not stored:
+        return False, False
+
+    if _is_legacy_sha256_hash(stored):
+        incoming = hashlib.sha256(password.encode("utf-8")).hexdigest()
+        return incoming == stored, True
+
+    try:
+        return check_password_hash(stored, password), False
+    except Exception:
+        return False, False
 
 
 def init_auth(app, db: AuthDB) -> None:
@@ -50,9 +77,10 @@ def current_user() -> Optional[str]:
 
 
 def current_role() -> str:
-    if session.get("user") == "dev":
-        return "DEV"
-    return session.get("role") or "READONLY"
+    role = session.get("role")
+    if role in ROLE_ORDER:
+        return role
+    return "READONLY"
 
 
 def current_tenant() -> str:
@@ -74,7 +102,16 @@ def login_required(func):
     return wrapper
 
 
-def require_role(min_role: str):
+def _normalize_role_threshold(min_role: str) -> str:
+    return min_role if min_role in ROLE_ORDER else "READONLY"
+
+
+def _normalize_role_set(allowed_roles: Iterable[str]) -> set[str]:
+    roles = {role for role in allowed_roles if role in ROLE_ORDER}
+    return roles or {"READONLY"}
+
+
+def require_role(min_role: str | Iterable[str]):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -82,8 +119,21 @@ def require_role(min_role: str):
                 role = current_role()
                 if role not in ROLE_ORDER:
                     role = "READONLY"
-                required = min_role if min_role in ROLE_ORDER else "READONLY"
-                if ROLE_ORDER.index(role) < ROLE_ORDER.index(required):
+                allowed_roles: Optional[set[str]] = None
+                required_threshold = "READONLY"
+
+                if isinstance(min_role, str):
+                    required_threshold = _normalize_role_threshold(min_role)
+                else:
+                    allowed_roles = _normalize_role_set(min_role)
+
+                denied = False
+                if allowed_roles is not None:
+                    denied = role not in allowed_roles
+                else:
+                    denied = ROLE_ORDER.index(role) < ROLE_ORDER.index(required_threshold)
+
+                if denied:
                     if request.path.startswith("/api/"):
                         return json_error("forbidden", "Nicht erlaubt.", status=403)
                     abort(403)

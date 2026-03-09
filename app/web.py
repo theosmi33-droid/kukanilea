@@ -82,6 +82,7 @@ from .auth import (
     current_tenant,
     current_user,
     hash_password,
+    verify_password,
     login_required,
     login_user,
     logout_user,
@@ -1213,13 +1214,31 @@ def _is_storage_path_valid(path: Path) -> bool:
 
 def _seed_dev_users(auth_db: AuthDB) -> str:
     now = datetime.utcnow().isoformat()
+    admin_password = secrets.token_urlsafe(18)
+    dev_password = secrets.token_urlsafe(18)
     auth_db.upsert_tenant("KUKANILEA", "KUKANILEA", now)
     auth_db.upsert_tenant("KUKANILEA Dev", "KUKANILEA Dev", now)
-    auth_db.upsert_user("admin", hash_password("admin"), now)
-    auth_db.upsert_user("dev", hash_password("dev"), now)
+    auth_db.upsert_user("admin", hash_password(admin_password), now)
+    auth_db.upsert_user("dev", hash_password(dev_password), now)
     auth_db.upsert_membership("admin", "KUKANILEA", "ADMIN", now)
     auth_db.upsert_membership("dev", "KUKANILEA Dev", "DEV", now)
-    return "Seeded users: admin/admin, dev/dev"
+    return (
+        "Seeded users (local-only): "
+        f"admin/{admin_password}, dev/{dev_password}"
+    )
+
+
+def _allow_dev_seed_endpoint() -> bool:
+    env = str(
+        os.environ.get("KUKANILEA_ENV", os.environ.get("FLASK_ENV", ""))
+    ).strip().lower()
+    if env not in {"dev", "development", "test", "testing"}:
+        return False
+
+    addr = (request.remote_addr or "").strip()
+    if addr not in {"127.0.0.1", "::1", "localhost"}:
+        return False
+    return True
 
 
 def _safe_filename(name: str) -> str:
@@ -2517,7 +2536,7 @@ def bootstrap():
 
     if request.method == "POST":
         t_name = request.form.get("tenant_name", "KUKANILEA").strip() or "KUKANILEA"
-        u_name = (request.form.get("admin_user") or "dev").strip().lower() or "dev"
+        u_name = (request.form.get("admin_user") or "admin").strip().lower() or "admin"
         u_pass = (request.form.get("admin_pass") or "").strip() or secrets.token_urlsafe(10)
 
         from app.auth import hash_password
@@ -2574,17 +2593,27 @@ def login():
         if not u or not pw:
             error = "Bitte Username und Passwort eingeben."
         else:
-            from app.auth import hash_password
             from app.modules.projects.logic import ProjectManager
 
             user = auth_db.get_user(u)
 
-            if user and user.password_hash == hash_password(pw):
+            valid_password = False
+            needs_rehash = False
+            if user:
+                valid_password, needs_rehash = verify_password(user.password_hash, pw)
+
+            if user and valid_password:
                 # Reset failed attempts on success
-                if user:
-                    con = auth_db._db()
+                con = auth_db._db()
+                try:
                     con.execute("UPDATE users SET failed_attempts = 0 WHERE username = ?", (u,))
+                    if needs_rehash:
+                        con.execute(
+                            "UPDATE users SET password_hash = ? WHERE username = ?",
+                            (hash_password(pw), u),
+                        )
                     con.commit()
+                finally:
                     con.close()
                 
                 memberships = auth_db.get_memberships(u)
@@ -4158,6 +4187,8 @@ def settings_page():
 @login_required
 @require_role("DEV")
 def api_seed_users():
+    if not _allow_dev_seed_endpoint():
+        return json_error("forbidden", "Nur lokal in Entwicklungsmodus erlaubt.", status=403)
     auth_db: AuthDB = current_app.extensions["auth_db"]
     msg = _seed_dev_users(auth_db)
     _audit("seed_users", meta={"status": "ok"})

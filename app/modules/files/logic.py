@@ -4,13 +4,28 @@ File management engine for KUKANILEA v2.1 (Nextcloud-style).
 Handles Step 86-95 (folders, uploads, versioning, search).
 """
 
-import os
-import uuid
-import shutil
 import hashlib
+import re
+import shutil
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List
+
+try:
+    from werkzeug.utils import secure_filename
+except Exception:  # pragma: no cover - defensive fallback
+    secure_filename = None  # type: ignore
+
+
+def _safe_component(raw: str, fallback: str) -> str:
+    value = (raw or "").strip().replace("\\", "_").replace("/", "_")
+    if secure_filename is not None:
+        out = secure_filename(value)
+    else:
+        out = re.sub(r"[^a-zA-Z0-9._-]+", "_", value).strip("._-")
+    return out or fallback
+
 
 class FileManager:
     def __init__(self, db_ext, user_data_root: Path):
@@ -25,11 +40,13 @@ class FileManager:
         f_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         file_hash = hashlib.sha256(content).hexdigest()
+        safe_tenant = _safe_component(tenant_id, "tenant")
+        safe_name = _safe_component(filename, "upload.bin")
 
         # Physical storage
-        tenant_path = self.root / tenant_id
+        tenant_path = self.root / safe_tenant
         tenant_path.mkdir(parents=True, exist_ok=True)
-        dest = tenant_path / f"{f_id}_{filename}"
+        dest = tenant_path / f"{f_id}_{safe_name}"
 
         with open(dest, "wb") as f:
             f.write(content)
@@ -58,7 +75,8 @@ class FileManager:
         con = self.db._db()
         try:
             row = con.execute("SELECT * FROM files WHERE id = ?", (f_id,)).fetchone()
-            if not row: return False
+            if not row:
+                return False
 
             now = datetime.now().isoformat()
             new_version = row["version"] + 1
@@ -86,13 +104,14 @@ class FileManager:
         con = self.db._db()
         try:
             row = con.execute("SELECT * FROM files WHERE id = ? AND tenant_id = ?", (f_id, tenant_id)).fetchone()
-            if not row: return False
+            if not row:
+                return False
 
             now = datetime.now()
             expires = now + timedelta(days=30)
 
             # Move physically
-            trash_path = self.trash / tenant_id
+            trash_path = self.trash / _safe_component(tenant_id, "tenant")
             trash_path.mkdir(parents=True, exist_ok=True)
             dest = trash_path / Path(row["path"]).name
             shutil.move(row["path"], dest)
