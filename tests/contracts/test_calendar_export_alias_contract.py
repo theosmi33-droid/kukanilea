@@ -31,7 +31,7 @@ def test_calendar_export_alias_returns_ics_without_path_metadata(auth_client, tm
 
 
 def test_calendar_template_links_to_calendar_blueprint_export() -> None:
-    template = Path("/Users/gensuminguyen/Kukanilea/app/templates/calendar.html")
+    template = Path(__file__).resolve().parents[2] / "app/templates/calendar.html"
     content = template.read_text(encoding="utf-8")
     assert "url_for('calendar.export_calendar_ics')" in content
     assert "url_for('web.calendar_export_ics')" not in content
