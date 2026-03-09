@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.security.gates import (
     CRITICAL_CONFIRM_GATE_MATRIX,
     confirm_gate,
@@ -73,3 +75,10 @@ def test_confirm_matrix_contains_context_switch_injection_guard_only():
     row = next(item for item in CRITICAL_CONFIRM_GATE_MATRIX if item.route == "/admin/context/switch")
     assert row.required is False
     assert row.fields == ("tenant_id",)
+
+
+def test_runtime_guardrails_non_downgradable_signals_contract():
+    root = Path(__file__).resolve().parents[2]
+    content = (root / "app/ai/runtime_guardrails.py").read_text(encoding="utf-8")
+    assert "_NON_DOWNGRADABLE_SIGNALS" in content
+    assert '"instruction_override"' in content
