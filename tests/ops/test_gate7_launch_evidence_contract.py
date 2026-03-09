@@ -13,7 +13,8 @@ def test_launch_evidence_runs_gate7_smoke_harness() -> None:
 def test_launch_evidence_requires_gate7_artifact_matrix() -> None:
     script = SCRIPT.read_text(encoding="utf-8")
     assert "MIA_GATE7_ARTIFACTS" in script
-    assert "base = Path('$GATE7_OUTPUT_DIR')" in script
+    assert "export GATE7_OUTPUT_DIR" in script
+    assert "base = Path(os.environ['GATE7_OUTPUT_DIR'])" in script
     for name in [
         "lokales_modell_aktiv",
         "summary_read_api_ok",
