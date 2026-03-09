@@ -260,3 +260,125 @@ def test_update_task_column_legacy_fallback_blocks_cross_tenant_move(tmp_path, m
 
     assert row is not None
     assert row["column_name"] == "To Do"
+
+
+def test_update_task_column_team_tasks_path_blocks_cross_tenant_move(tmp_path, monkeypatch):
+    app, _client = _bootstrap(tmp_path, monkeypatch)
+    pm = ProjectManager(app.extensions["auth_db"])
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute(
+            """
+            INSERT OR REPLACE INTO team_tasks(
+                id, tenant_id, board_id, project_id, project_board_id, project_card_id,
+                title, description, priority, due_at, status, created_by, assigned_to,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            """,
+            (
+                "team-task-1",
+                "TENANT_A",
+                "board-a",
+                "project-a",
+                "board-a",
+                "",
+                "Cross Tenant Team Task",
+                "",
+                "MEDIUM",
+                None,
+                "OPEN",
+                "alice",
+                "alice",
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    with app.test_request_context("/"):
+        from flask import session
+
+        session["user"] = "bob"
+        session["role"] = "DEV"
+        session["tenant_id"] = "TENANT_B"
+        result = pm.update_task_column("team-task-1", "Done")
+
+    assert result["ok"] is False
+    assert result["error"] == "task_not_found_or_forbidden"
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute("SELECT status FROM team_tasks WHERE id = ?", ("team-task-1",)).fetchone()
+    finally:
+        con.close()
+
+    assert row is not None
+    assert row["status"] == "OPEN"
+
+
+def test_api_task_move_returns_403_for_cross_tenant_legacy_task(tmp_path, monkeypatch):
+    app, client = _bootstrap(tmp_path, monkeypatch)
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute(
+            "INSERT OR REPLACE INTO tenants(tenant_id, display_name, created_at) VALUES (?, ?, datetime('now'))",
+            ("TENANT_A", "Tenant A"),
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO tenants(tenant_id, display_name, created_at) VALUES (?, ?, datetime('now'))",
+            ("TENANT_B", "Tenant B"),
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO projects(id, tenant_id, name, created_at) VALUES (?, ?, ?, datetime('now'))",
+            ("project-a", "TENANT_A", "Project A"),
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO boards(id, project_id, name, created_at) VALUES (?, ?, ?, datetime('now'))",
+            ("board-a", "project-a", "Board A"),
+        )
+        con.execute(
+            """
+            INSERT OR REPLACE INTO tasks(
+                id, board_id, column_name, title, content, assigned_user,
+                due_date, priority, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            ("legacy-task-2", "board-a", "To Do", "Legacy Task", "", "", None, None),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    with client.session_transaction() as sess:
+        sess["user"] = "bob"
+        sess["role"] = "OPERATOR"
+        sess["tenant_id"] = "TENANT_B"
+        sess["csrf_token"] = "csrf-test"
+
+    response = client.post(
+        "/api/tasks/legacy-task-2/move",
+        json={"column": "Done"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+
+    assert response.status_code == 403
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["error"] == "task_not_found_or_forbidden"
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute("SELECT column_name FROM tasks WHERE id = ?", ("legacy-task-2",)).fetchone()
+    finally:
+        con.close()
+
+    assert row is not None
+    assert row["column_name"] == "To Do"
