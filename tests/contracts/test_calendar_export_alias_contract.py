@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# Regression suite for calendar export endpoint wiring and rendering contracts.
+
 
 def _ics_bytes() -> bytes:
     return b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//KUKANILEA//EN\r\nEND:VCALENDAR\r\n"
