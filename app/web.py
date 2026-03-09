@@ -2415,16 +2415,15 @@ def _get_tenant_db_path() -> Path:
 
 @bp.before_app_request
 def _apply_tenant_context():
-    """Binds the global core logic to the current tenant's database."""
+    """Binds the core logic DB path to the current request context."""
     import importlib
 
+    core_logic = importlib.import_module("app.core.logic")
     try:
         db_path = _get_tenant_db_path()
-        core_logic = importlib.import_module("app.core.logic")
-        core_logic.DB_PATH = db_path
-        core_logic._DB_INITIALIZED = False
+        core_logic.bind_request_db_path(db_path)
     except Exception:
-        pass
+        core_logic.bind_request_db_path(None)
 
 
 @bp.before_app_request
