@@ -57,6 +57,31 @@ def test_api_json_error_response(app):
     assert response.get_json()["error"]["code"] == "NOT_FOUND"
 
 
+def test_html_500_request_id_is_escaped(app):
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+
+    @app.route("/__boom")
+    def _boom():
+        raise RuntimeError("boom")
+
+    app.before_request_funcs[None] = [
+        f for f in app.before_request_funcs.get(None, []) if f.__name__ != "check_onboarding"
+    ]
+
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user"] = "test-user"
+        sess["role"] = "ADMIN"
+
+    payload = '<img src=x onerror=alert(1)>'
+    response = client.get("/__boom", headers={"X-Request-Id": payload})
+
+    assert response.status_code == 500
+    body = response.get_data(as_text=True)
+    assert payload not in body
+    assert "&lt;img src=x onerror=alert(1)&gt;" in body
+
+
 @pytest.fixture
 def app():
     from app import create_app
