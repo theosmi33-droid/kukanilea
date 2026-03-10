@@ -2130,6 +2130,17 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   }
   window.openToken = openToken;
   window.copyToken = copyToken;
+  function escHtml(v){
+    return String(v ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+  function escJs(v){
+    return String(v ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  }
   function add(role, text, actions, results, suggestions){
     const d = document.createElement("div");
     d.className = "mb-3";
@@ -2137,29 +2148,33 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     if(actions && actions.length){
       actionHtml = actions.map(a => {
         if(a.type === "open_token" && a.token){
-          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${a.token}')">Öffnen ${a.token.slice(0,10)}…</button>
-            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${a.token}')">Token ${a.token.slice(0,10)}…</button>`;
+          const safeToken = escJs(a.token);
+          const tokenPreview = escHtml(a.token.slice(0,10));
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${safeToken}')">Öffnen ${tokenPreview}…</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${safeToken}')">Token ${tokenPreview}…</button>`;
         }
-        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${a.type || 'tool'}</span>`;
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${escHtml(a.type || 'tool')}</span>`;
       }).join("");
     }
     let resultHtml = "";
     if(results && results.length){
       resultHtml = results.map(r => {
         const token = r.token || r.doc_id || "";
-        const label = r.file_name || token;
+        const label = escHtml(r.file_name || token);
         if(token){
-          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${token}')">${label}</button>
-            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${token}')">Token ${token.slice(0,10)}…</button>`;
+          const safeToken = escJs(token);
+          const tokenPreview = escHtml(token.slice(0,10));
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${safeToken}')">${label}</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${safeToken}')">Token ${tokenPreview}…</button>`;
         }
         return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${label}</span>`;
       }).join("");
     }
     let suggestionHtml = "";
     if(suggestions && suggestions.length){
-      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${s}">${s}</button>`).join("");
+      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${escHtml(s)}">${escHtml(s)}</button>`).join("");
     }
-    d.innerHTML = `<div class="muted text-[11px]">${role}</div><div class="text-sm whitespace-pre-wrap">${text}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
+    d.innerHTML = `<div class="muted text-[11px]">${escHtml(role)}</div><div class="text-sm whitespace-pre-wrap">${escHtml(text)}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
   }
