@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 import secrets
 import time
-import posixpath
 from datetime import timedelta
 from pathlib import Path
 
