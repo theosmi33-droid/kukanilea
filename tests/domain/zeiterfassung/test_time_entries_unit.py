@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import io
 
+import pytest
+
 from app import core
 from app.modules.zeiterfassung import contracts
 
@@ -66,6 +68,51 @@ def test_absence_export_stub_supports_vacation_and_sick(auth_client):
         assert vacation["absence_type"] == "VACATION"
         assert sick["absence_type"] == "SICK"
         assert [row["absence_type"] for row in rows] == ["SICK", "VACATION"]
+
+
+def test_time_entry_seconds_out_of_range_raise_value_error(auth_client):
+    app = auth_client.application
+    with app.app_context():
+        with pytest.raises(ValueError, match="invalid_timestamp_seconds"):
+            core.time_entry_start(
+                tenant_id="KUKANILEA",
+                user="admin",
+                started_at_seconds=10**30,
+            )
+
+
+def test_time_entry_stop_seconds_out_of_range_raise_value_error(auth_client):
+    app = auth_client.application
+    with app.app_context():
+        running = core.time_entry_start(
+            tenant_id="KUKANILEA",
+            user="admin",
+            started_at="2026-04-10T08:00:00Z",
+        )
+        with pytest.raises(ValueError, match="invalid_timestamp_seconds"):
+            core.time_entry_stop(
+                tenant_id="KUKANILEA",
+                user="admin",
+                entry_id=int(running["id"]),
+                ended_at_seconds=10**30,
+            )
+
+
+def test_time_entry_update_seconds_out_of_range_raise_value_error(auth_client):
+    app = auth_client.application
+    with app.app_context():
+        entry = core.time_entry_start(
+            tenant_id="KUKANILEA",
+            user="admin",
+            started_at="2026-04-10T08:00:00Z",
+        )
+        with pytest.raises(ValueError, match="invalid_timestamp_seconds"):
+            core.time_entry_update(
+                tenant_id="KUKANILEA",
+                entry_id=int(entry["id"]),
+                end_at_seconds=10**30,
+                user="admin",
+            )
 
 
 def test_zeiterfassung_health_reports_offline_persistence(auth_client):

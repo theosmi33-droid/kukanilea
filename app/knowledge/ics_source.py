@@ -656,7 +656,7 @@ def _read_ocr_deadline_events(tenant_id: str) -> list[dict[str, str]]:
         con = _db()
         try:
             try:
-                rows = con.execute(
+                rows = con.execute(  # nosec B608
                     """
                     SELECT chunk_id, body, source_ref
                     FROM knowledge_chunks
@@ -1388,26 +1388,32 @@ def _expand_manual_event_occurrences(
 
 
 def _read_manual_events(tenant_id: str, owner_user_id: str | None = None) -> list[dict[str, Any]]:
-    params: list[Any] = [tenant_id]
-    where = "WHERE tenant_id=? AND source_type='calendar' AND source_ref LIKE ?"
-    params.append(f"{MANUAL_SOURCE_PREFIX}%")
-    if owner_user_id:
-        where += " AND owner_user_id=?"
-        params.append(owner_user_id)
+    source_ref_like = f"{MANUAL_SOURCE_PREFIX}%"
 
     with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
         con = _db()
         try:
             try:
-                rows = con.execute(
-                    f"""
-                    SELECT chunk_id, owner_user_id, source_ref, title, body, tags, created_at, updated_at
-                    FROM knowledge_chunks
-                    {where}
-                    ORDER BY updated_at DESC, created_at DESC, id DESC
-                    """,
-                    tuple(params),
-                ).fetchall()
+                if owner_user_id:
+                    rows = con.execute(
+                        """
+                        SELECT chunk_id, owner_user_id, source_ref, title, body, tags, created_at, updated_at
+                        FROM knowledge_chunks
+                        WHERE tenant_id=? AND source_type='calendar' AND source_ref LIKE ? AND owner_user_id=?
+                        ORDER BY updated_at DESC, created_at DESC, id DESC
+                        """,
+                        (tenant_id, source_ref_like, owner_user_id),
+                    ).fetchall()
+                else:
+                    rows = con.execute(
+                        """
+                        SELECT chunk_id, owner_user_id, source_ref, title, body, tags, created_at, updated_at
+                        FROM knowledge_chunks
+                        WHERE tenant_id=? AND source_type='calendar' AND source_ref LIKE ?
+                        ORDER BY updated_at DESC, created_at DESC, id DESC
+                        """,
+                        (tenant_id, source_ref_like),
+                    ).fetchall()
             except sqlite3.OperationalError as exc:
                 # Test/bootstrap databases may not have the optional knowledge_chunks table yet.
                 if "no such table" in str(exc).lower():
@@ -1574,6 +1580,9 @@ def knowledge_calendar_event_update(
 ) -> dict[str, Any]:
     _ensure_writable()
     tenant = _tenant(tenant_id)
+    policy_row = knowledge_policy_get(tenant)
+    if not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
     source_ref = _manual_source_ref(event_id)
 
     def _tx(con: sqlite3.Connection) -> dict[str, Any]:
@@ -1688,6 +1697,9 @@ def knowledge_calendar_event_delete(
 ) -> dict[str, Any]:
     _ensure_writable()
     tenant = _tenant(tenant_id)
+    policy_row = knowledge_policy_get(tenant)
+    if not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
     source_ref = _manual_source_ref(event_id)
 
     def _tx(con: sqlite3.Connection) -> dict[str, Any]:
@@ -1735,24 +1747,30 @@ def _read_task_deadlines(tenant_id: str) -> list[dict[str, Any]]:
     min_due = (today - timedelta(days=_feed_past_days())).isoformat()
     max_due = (today + timedelta(days=_feed_future_days())).isoformat()
 
-    with legacy_core._DB_LOCK:
-        con = _db()
-        try:
-            # Query team_tasks for entries with due dates in the range
-            rows = con.execute(
-                """
-                SELECT id, title, description, due_at, assigned_to
-                FROM team_tasks
-                WHERE tenant_id=? AND due_at IS NOT NULL
-                AND due_at >= ? AND due_at <= ?
-                AND status != 'CLOSED' AND status != 'REJECTED'
-                """,
-                (tenant_id, min_due, max_due),
-            ).fetchall()
-            return [dict(r) for r in rows]
-        except Exception:
-            return []
-        finally:
+    con: sqlite3.Connection | None = None
+    try:
+        if has_app_context():
+            auth_db = current_app.extensions.get("auth_db")
+            if auth_db is not None:
+                con = auth_db._db()
+        if con is None:
+            with legacy_core._DB_LOCK:
+                con = _db()
+        rows = con.execute(
+            """
+            SELECT id, title, description, due_at, assigned_to
+            FROM team_tasks
+            WHERE tenant_id=? AND due_at IS NOT NULL
+            AND due_at >= ? AND due_at <= ?
+            AND status != 'CLOSED' AND status != 'REJECTED'
+            """,
+            (tenant_id, min_due, max_due),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        if con is not None:
             con.close()
 
 
@@ -2021,6 +2039,13 @@ def knowledge_calendar_suggest_from_text(
     suggestions = _extract_deadline_events_from_ocr_text(text, filename_hint=filename_hint)
     created: list[dict[str, Any]] = []
     if persist and suggestions:
+        policy_row = knowledge_policy_get(tenant)
+        if not _policy_allows_ocr_calendar(policy_row):
+            return {
+                "tenant_id": tenant,
+                "suggestions": suggestions,
+                "created": created,
+            }
         for ev in suggestions:
             due = _parse_iso_date(ev.get("due_date"))
             if not due:

@@ -21,6 +21,25 @@ _IMPERATIVE_PATTERN = re.compile(
 )
 _POLICY_BYPASS_PATTERN = re.compile(r"(?i)\b(?:bypass|disable)\b.{0,20}\b(?:security|guardrails?|safety)\b")
 _PROMPT_LEAK_PATTERN = re.compile(r"(?i)\b(?:show|reveal|print|dump)\b.{0,30}\b(?:system\s+prompt|hidden\s+instructions?)\b")
+_NON_DOWNGRADABLE_SIGNALS = frozenset(
+    {
+        "instruction_override",
+        "tool_escalation",
+        "role_confusion",
+        "prompt_leak",
+        "hidden_directive",
+        "credential_rotation",
+    }
+)
+_NON_DOWNGRADABLE_REASONS = frozenset(
+    {
+        "uncontrolled_tool_selection",
+        "no_policy_bypass",
+        "prompt_leak_request",
+        "no_free_shell_execution",
+        "shell_skill_blocked",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +64,8 @@ def _enforce_no_free_shell(text: str, reasons: list[str]) -> bool:
 
 def _is_benign_security_discussion(text: str, assessment: GuardrailAssessment) -> bool:
     if not assessment.matched_signals:
+        return False
+    if any(s in _NON_DOWNGRADABLE_SIGNALS for s in assessment.matched_signals):
         return False
     high_risk = {"destructive_request", "exfiltration", "filesystem_network"}
     if any(s in high_risk for s in assessment.matched_signals):
@@ -96,7 +117,11 @@ def evaluate_runtime_guardrails(
                 decision = "route_to_review"
             reasons.append("uncontrolled_tool_selection")
 
-    if decision == "route_to_review" and _is_benign_security_discussion(assessment.normalized_text, assessment):
+    if (
+        decision == "route_to_review"
+        and not any(reason in _NON_DOWNGRADABLE_REASONS for reason in reasons)
+        and _is_benign_security_discussion(assessment.normalized_text, assessment)
+    ):
         decision = "allow_with_warning"
         reasons.append("benign_security_discussion")
 
