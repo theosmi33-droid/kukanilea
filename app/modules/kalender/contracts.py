@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
-import re
 from pathlib import Path
 from typing import Any
 
-from app.contracts.tool_contracts import build_contract_response, build_health_response
 from app.config import Config
+from app.contracts.tool_contracts import build_contract_response, build_health_response
 
 SYNC_FLAG_ENV = "KUKANILEA_KALENDER_SYNC_ENABLED"
 _LOCAL_QUEUE_NAME = "kalender_sync_queue.jsonl"
@@ -441,6 +441,36 @@ def build_appointment_proposal(*, lead: str | None, project: str | None, starts_
     }
 
 
+def _ensure_calendar_write_allowed(tenant: str) -> None:
+    from flask import current_app, has_app_context
+
+    from app.knowledge.ics_source import _policy_allows_calendar
+
+    if has_app_context() and bool(current_app.config.get("READ_ONLY", False)):
+        raise PermissionError("read_only")
+
+    con = _db()
+    try:
+        try:
+            row = con.execute(
+                """
+                SELECT allow_calendar, allow_customer_pii
+                FROM knowledge_source_policies
+                WHERE tenant_id=?
+                LIMIT 1
+                """,
+                (tenant,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            raise ValueError("policy_blocked")
+    finally:
+        con.close()
+
+    policy_row = dict(row) if row else {"allow_calendar": 0, "allow_customer_pii": 0}
+    if not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
+
+
 def create_event(
     *,
     tenant: str,
@@ -451,6 +481,7 @@ def create_event(
     reminder_minutes: int = 0,
     source: str = "calendar.api",
 ) -> dict:
+    _ensure_calendar_write_allowed(tenant)
     event_id = str(uuid.uuid4())
     now = _timestamp()
     payload = {
@@ -507,6 +538,7 @@ def update_event(
     ends_at: str | None = None,
     reminder_minutes: int | None = None,
 ) -> dict:
+    _ensure_calendar_write_allowed(tenant)
     con = _db()
     try:
         row = con.execute(

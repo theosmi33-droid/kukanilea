@@ -168,6 +168,26 @@
     outline: 2px dashed var(--primary-300);
     outline-offset: -2px;
 }
+
+@media (max-width: 768px) {
+    .kanban-outer-wrap {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    #kanban {
+        gap: 12px !important;
+    }
+
+    #kanban .lane,
+    #kanban > .btn.btn-ghost.border-2,
+    #kanban > .flex.flex-column.gap-4 {
+        width: min(84vw, 300px) !important;
+        flex: 0 0 auto;
+    }
+}
 </style>
 {% endblock %}
 

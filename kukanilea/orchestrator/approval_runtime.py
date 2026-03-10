@@ -40,10 +40,12 @@ class ApprovalRuntime:
         *,
         ttl_seconds: int = 300,
         scope_ttl_seconds: Mapping[str, int] | None = None,
+        max_challenges: int = 4096,
         now_fn: Callable[[], datetime] | None = None,
         audit_logger: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.ttl_seconds = max(1, int(ttl_seconds))
+        self.max_challenges = max(1, int(max_challenges))
         self.scope_ttl_seconds = {
             str(scope): max(1, int(scope_ttl)) for scope, scope_ttl in dict(scope_ttl_seconds or {}).items()
         }
@@ -106,6 +108,7 @@ class ApprovalRuntime:
         scope: str,
         params: Mapping[str, Any] | None,
     ) -> ApprovalChallenge:
+        self._cleanup()
         now = self._now_fn()
         challenge = ApprovalChallenge(
             challenge_id=f"apr_{uuid.uuid4().hex}",
@@ -119,6 +122,7 @@ class ApprovalRuntime:
             expires_at=now + timedelta(seconds=self._resolve_ttl_seconds(scope)),
         )
         self._challenges[challenge.challenge_id] = challenge
+        self._enforce_size_limit()
         self._audit("approval.create", challenge)
         return challenge
 
@@ -165,6 +169,33 @@ class ApprovalRuntime:
         expired = ApprovalChallenge(**{**challenge.__dict__, "status": "expired"})
         self._challenges[challenge.challenge_id] = expired
         self._audit("approval.expire", expired)
+
+    def _cleanup(self) -> None:
+        now = self._now_fn()
+        purge_ids = [
+            challenge_id
+            for challenge_id, challenge in self._challenges.items()
+            if challenge.status in {"denied", "expired"} or now >= challenge.expires_at
+        ]
+        for challenge_id in purge_ids:
+            self._challenges.pop(challenge_id, None)
+
+    def _enforce_size_limit(self) -> None:
+        overflow = len(self._challenges) - self.max_challenges
+        if overflow <= 0:
+            return
+
+        status_rank = {"denied": 0, "expired": 1, "pending": 2, "approved": 3}
+        ordered = sorted(
+            self._challenges.values(),
+            key=lambda challenge: (
+                status_rank.get(challenge.status, 4),
+                challenge.created_at,
+                challenge.challenge_id,
+            ),
+        )
+        for challenge in ordered[:overflow]:
+            self._challenges.pop(challenge.challenge_id, None)
 
     def _audit(self, event: str, challenge: ApprovalChallenge) -> None:
         if not callable(self._audit_logger):

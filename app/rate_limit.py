@@ -28,10 +28,7 @@ class RateLimiter:
     def limit_required(self, fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
-            import os
             from flask import current_app
-            if os.environ.get("KUKANILEA_DEBUG_STRESS") == "1":
-                return fn(*args, **kwargs)
             if getattr(current_app, "testing", False):
                 return fn(*args, **kwargs)
             key = request.remote_addr or "unknown"
