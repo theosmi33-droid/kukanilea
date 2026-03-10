@@ -119,7 +119,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
   const draftSuggestions = document.querySelectorAll('.email-draft-card');
   draftSuggestions.forEach((card) => {
     card.addEventListener('click', () => {

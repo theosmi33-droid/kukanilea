@@ -24,6 +24,7 @@ from flask import (
 from app import core
 from app.auth import current_role, current_tenant, current_user, login_required, require_role
 from app.config import Config
+from app.security import csrf_protected
 from app.modules.automation import (
     automation_rule_create,
     automation_rule_disable,
@@ -121,6 +122,7 @@ def automation_rule_new_page():
 
 @bp.post("/rules/create")
 @login_required
+@csrf_protected
 @require_role("OPERATOR")
 def automation_rule_create_action():
     guarded = _automation_guard(api=not _is_htmx())

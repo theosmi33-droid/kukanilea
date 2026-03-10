@@ -148,7 +148,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 /**
  * Upload Engine v3.0 (Worker 4 Refinement)
  */

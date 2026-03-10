@@ -111,6 +111,7 @@ def init_json_logging(app) -> None:
         })
 
         from flask import jsonify, render_template_string
+        from markupsafe import escape
 
         request_id = getattr(g, "request_id", "-")
 
@@ -163,6 +164,7 @@ def init_json_logging(app) -> None:
             return render_template_string(halt_html), 500
 
         # HTML Error Page for Browser
+        safe_request_id = escape(request_id)
         error_html = f"""
         <!doctype html>
         <html lang="de">
@@ -182,7 +184,7 @@ def init_json_logging(app) -> None:
             <div class="container">
                 <h1>Ups! Etwas lief schief.</h1>
                 <p>Ein interner Fehler ist aufgetreten. Bitte wenden Sie sich an den Support und geben Sie die folgende ID an:</p>
-                <div class="rid">{request_id}</div>
+                <div class="rid">{safe_request_id}</div>
                 <a href="/">Zurück zum Dashboard</a>
             </div>
         </body>
@@ -193,6 +195,7 @@ def init_json_logging(app) -> None:
     @app.errorhandler(404)
     def handle_404(e):
         from flask import jsonify, render_template_string
+        from markupsafe import escape
 
         request_id = getattr(g, "request_id", "-")
         is_api = request.path.startswith(
@@ -226,6 +229,7 @@ def init_json_logging(app) -> None:
     @app.errorhandler(403)
     def handle_403(e):
         from flask import jsonify, render_template_string
+        from markupsafe import escape
 
         request_id = getattr(g, "request_id", "-")
         is_api = request.path.startswith(

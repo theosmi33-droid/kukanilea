@@ -24,6 +24,7 @@ from app.core.audit import vault_store_evidence
 import base64
 import csv
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -1085,7 +1086,38 @@ def db_init() -> None:
 # RBAC
 # ============================================================
 def _pw_hash(pw: str) -> str:
-    return _sha256_bytes((pw or "").encode("utf-8"))
+    password = (pw or "").encode("utf-8")
+    iterations = 310_000
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password, salt, iterations)
+    salt_b64 = base64.b64encode(salt).decode("ascii")
+    digest_b64 = base64.b64encode(digest).decode("ascii")
+    return f"pbkdf2_sha256${iterations}${salt_b64}${digest_b64}"
+
+
+def _pw_verify(stored_hash: str, pw: str) -> tuple[bool, bool]:
+    stored = (stored_hash or "").strip()
+    password = (pw or "").encode("utf-8")
+    if not stored:
+        return False, False
+
+    # Legacy format: plain SHA-256 hex digest without stretching/salt.
+    if len(stored) == 64 and all(ch in "0123456789abcdef" for ch in stored.lower()):
+        return _sha256_bytes(password) == stored, True
+
+    if not stored.startswith("pbkdf2_sha256$"):
+        return False, False
+
+    try:
+        _, raw_iterations, raw_salt, raw_digest = stored.split("$", 3)
+        iterations = int(raw_iterations)
+        salt = base64.b64decode(raw_salt.encode("ascii"), validate=True)
+        expected = base64.b64decode(raw_digest.encode("ascii"), validate=True)
+    except Exception:
+        return False, False
+
+    calculated = hashlib.pbkdf2_hmac("sha256", password, salt, iterations)
+    return hmac.compare_digest(calculated, expected), False
 
 
 def rbac_create_user(username: str, password: str) -> str:
@@ -1120,7 +1152,14 @@ def rbac_verify_user(username: str, password: str) -> bool:
             ).fetchone()
             if not row:
                 return False
-            return str(row["pass_sha256"]) == _pw_hash(password)
+            valid, needs_rehash = _pw_verify(str(row["pass_sha256"]), password)
+            if valid and needs_rehash:
+                con.execute(
+                    "UPDATE users SET pass_sha256=? WHERE username=?",
+                    (_pw_hash(password), username),
+                )
+                con.commit()
+            return valid
         finally:
             con.close()
 

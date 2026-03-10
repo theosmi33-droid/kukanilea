@@ -362,3 +362,17 @@ def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.get_json()["ok"] is True
+
+
+def test_healthcheck_omits_sensitive_fields_for_anonymous_requests(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert "tenant_id" not in body
+    assert "db_path" not in body
+    assert isinstance(body.get("profile"), dict)
+    assert set(body["profile"].keys()).issubset({"name", "profile_id", "gewerk_name"})

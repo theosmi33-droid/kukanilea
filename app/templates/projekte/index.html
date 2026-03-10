@@ -192,7 +192,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 /**
  * Project Hub Engine v2.0 (Worker 4 Polish)
  */

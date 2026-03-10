@@ -21,7 +21,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
     const logContainer = document.getElementById('log-container');
     const statusBadge = document.getElementById('conn-status');
     const clearBtn = document.getElementById('clear-logs');

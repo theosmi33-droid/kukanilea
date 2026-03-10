@@ -109,6 +109,18 @@ def _context_snapshot(context: Mapping[str, Any]) -> dict[str, str]:
     return out
 
 
+def _pending_action_config(action_type: str, action_cfg: Mapping[str, Any]) -> dict[str, Any]:
+    payload = {"action_type": action_type, **dict(action_cfg)}
+    if action_type != "create_postfach_draft":
+        return payload
+    redacted = dict(payload)
+    for key in ("to", "subject", "body"):
+        if key in redacted:
+            redacted.pop(key, None)
+    redacted["sensitive_fields_redacted"] = True
+    return redacted
+
+
 def _requires_confirm(
     action_type: str, action_cfg: Mapping[str, Any], user_confirmed: bool
 ) -> bool:
@@ -754,7 +766,7 @@ def execute_action(
             tenant_id=tenant,
             rule_id=rid,
             action_type=action_type,
-            action_config={"action_type": action_type, **action_cfg},
+            action_config=_pending_action_config(action_type, action_cfg),
             context_snapshot=_context_snapshot(context),
             db_path=db_resolved,
         )
