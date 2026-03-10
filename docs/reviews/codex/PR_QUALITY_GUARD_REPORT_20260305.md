@@ -35,3 +35,14 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
   - Policy docs:
     - `docs/security/SESSION_TENANT_ENFORCEMENT_POLICY.md`
     - `docs/security/TOOL_ACTIONS_TENANT_BINDING_POLICY.md`
+
+
+## 2026-03-09 Addendum (Small PR / Conflict-Prevention Policy)
+- Ziel: große gemischte PRs unattraktiv machen und Konfliktrate gegen Shared-Core senken.
+- Neue Guard-Policy im Script `scripts/dev/pr_quality_guard.sh`:
+  1. `MAX_SCOPE`: nur kleine Diff-Fläche (`<=12` Dateien und `<=350` LOC).
+  2. `Focused Scope`: maximal `3` Änderungsbereiche, um fachfremde Nebenänderungen zu bremsen.
+  3. `Main-first`: `origin/main` als verpflichtende Basis in CI; lokal Warnung bei fehlendem Remote-Ref.
+  4. Shared-Core-Hotspot-Block für konfliktträchtige Kernpfade (separater PR erforderlich).
+  5. `MIN_TESTS` und Evidence-Report bleiben Pflicht für nachvollziehbare Test-Evidence.
+- Ergebnis: konfliktärmere, reviewbare Einzel-PRs ohne Branch-Stacking-Mechanik.
