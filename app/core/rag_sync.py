@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-import os
-import json
-import sqlite3
+import hashlib
 import logging
+import os
+import sqlite3
 import threading
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
+try:
+    import fcntl
+except Exception:  # pragma: no cover
+    fcntl = None
 
 from app.agents.memory_store import MemoryManager
 from app.config import Config
@@ -22,6 +27,54 @@ from app.core.upload_pipeline import (
 logger = logging.getLogger("kukanilea.rag_sync")
 
 _SYNC_LOCK = threading.RLock()
+_MAX_MEMORY_BYTES = 100 * 1024
+_KEEP_MEMORY_BYTES = 50 * 1024
+
+
+def _safe_tenant_token(tenant_id: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in str(tenant_id or "default"))
+    return cleaned.strip("_") or "default"
+
+
+def _tenant_memory_path(base: Path, tenant_id: str) -> Path:
+    token = _safe_tenant_token(tenant_id)
+    ext = base.suffix or ".md"
+    stem = base.stem or "MEMORY"
+    return base.with_name(f"{stem}__{token}{ext}")
+
+
+def _redact_ref(value: str) -> str:
+    token = str(value or "unknown").encode("utf-8", errors="ignore")
+    return hashlib.sha256(token).hexdigest()[:12]
+
+
+def _truncate_memory_text(text: str) -> str:
+    encoded = text.encode("utf-8")
+    if len(encoded) <= _MAX_MEMORY_BYTES:
+        return text
+    tail = encoded[-_KEEP_MEMORY_BYTES:]
+    safe_tail = tail.decode("utf-8", errors="ignore")
+    return "... (older entries truncated)\n" + safe_tail
+
+
+def _write_tenant_memory(memory_path: Path, entry: str) -> None:
+    memory_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = memory_path.with_suffix(f"{memory_path.suffix}.lock")
+    with _SYNC_LOCK:
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                current = ""
+                if memory_path.exists():
+                    current = memory_path.read_text(encoding="utf-8", errors="replace")
+                new_content = _truncate_memory_text(current + entry)
+                tmp_path = memory_path.with_suffix(f"{memory_path.suffix}.tmp")
+                tmp_path.write_text(new_content, encoding="utf-8")
+                os.replace(tmp_path, memory_path)
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 class RAGSync:
     """
@@ -37,7 +90,8 @@ class RAGSync:
         Extracts high-level intelligence from the individual DB
         and updates the semantic MEMORY.md.
         """
-        logger.info(f"RAG-SYNC: Synchronizing intelligence for tenant {tenant_id}...")
+        tenant_ref = _redact_ref(tenant_id)
+        logger.info("RAG-SYNC: Synchronizing intelligence (tenant_ref=%s)", tenant_ref)
 
         # 1. Fetch top weighted keywords from DB
         intelligence_data = self._extract_key_facts(tenant_id)
@@ -52,22 +106,12 @@ class RAGSync:
         )
         
         # 3. Append and Truncate MEMORY.md (Local-First Long-term Memory)
-        with _SYNC_LOCK:
-            try:
-                content = ""
-                if self.memory_file.exists():
-                    content = self.memory_file.read_text(encoding="utf-8")
-                
-                # Keep only last 100kb or last 10 entries of memory if it grows too large
-                new_content = content + entry
-                if len(new_content) > 100 * 1024:
-                    # Basic truncation: keep last 50kb
-                    new_content = "... (older entries truncated)\n" + new_content[-50 * 1024:]
-                
-                self.memory_file.write_text(new_content, encoding="utf-8")
-                logger.info("RAG-SYNC: Semantic memory updated and maintained.")
-            except Exception as e:
-                logger.error(f"RAG-SYNC: Memory write failed: {e}")
+        try:
+            memory_path = _tenant_memory_path(self.memory_file, tenant_id)
+            _write_tenant_memory(memory_path, entry)
+            logger.info("RAG-SYNC: Semantic memory updated (tenant_ref=%s)", tenant_ref)
+        except Exception as e:
+            logger.error("RAG-SYNC: Memory write failed (tenant_ref=%s): %s", tenant_ref, e)
 
     def _extract_key_facts(self, tenant_id: str) -> Dict[str, Any]:
         """Queries the individual DB for core facts."""
@@ -97,7 +141,7 @@ class RAGSync:
                     "SELECT term FROM vocab_index ORDER BY cnt DESC LIMIT 10"
                 ).fetchall()
                 facts["keywords"] = [r["term"] for r in k_rows]
-            except:
+            except sqlite3.Error:
                 # Fallback: analyze file_name if vocab not available
                 k_rows = conn.execute(
                     "SELECT file_name FROM docs_index WHERE tenant_id = ? LIMIT 20", (tenant_id,)
@@ -190,7 +234,12 @@ def sync_document_to_memory(
     
     # 3. Chunk text
     chunks = chunk_text(text)
-    logger.info(f"Syncing document {file_name} ({doc_id}) to memory. Generated {len(chunks)} chunks.")
+    logger.info(
+        "RAG-SYNC: Syncing document chunks (tenant_ref=%s doc_ref=%s chunks=%s)",
+        _redact_ref(tenant_id),
+        _redact_ref(doc_id),
+        len(chunks),
+    )
     
     # 4. Store each chunk
     stored_count = 0
