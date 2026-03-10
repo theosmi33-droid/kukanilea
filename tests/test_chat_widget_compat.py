@@ -92,16 +92,12 @@ def test_layout_contains_light_theme_and_chat_msg_contract(tmp_path, monkeypatch
     assert "id=\"chat-plan\"" in html
     assert "id=\"chat-actions\"" in html
 
-    shell_js = Path(__file__).resolve().parents[1] / "static" / "js" / "layout-shell.js"
-    source = shell_js.read_text(encoding="utf-8")
-    assert "fetch('/api/chat/compact'" in source
-    assert "pending_id: chatPendingId" in source
-    assert "data.text || data.response" in source
-
     runtime_shell_js = Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "layout-shell.js"
     assert runtime_shell_js.exists()
     runtime_source = runtime_shell_js.read_text(encoding="utf-8")
     assert "fetch('/api/chat/compact'" in runtime_source
+    assert "pending_id: chatPendingId" in runtime_source
+    assert "data.text || data.response" in runtime_source
 
 
 def test_confirm_dialog_component_uses_human_friendly_copy():
