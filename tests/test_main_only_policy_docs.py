@@ -1,5 +1,6 @@
-from pathlib import Path
+from __future__ import annotations
 
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -16,7 +17,7 @@ def test_gemini_doc_mentions_main_only_policy():
 
 def test_contributing_mentions_main_only_base():
     content = _read_text("CONTRIBUTING.md").lower()
-    assert "main-only base" in content
+    assert "main-first base" in content
 
 
 def test_main_policy_doc_has_mandatory_rules():
