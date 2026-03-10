@@ -173,7 +173,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bandit-report
+          name: bandit-report-lint-and-scan
           path: bandit-report.txt
 
       - name: Enforce Bandit policy gate
@@ -309,7 +309,7 @@ jobs:
       - name: Upload bandit report
         uses: actions/upload-artifact@v4
         with:
-          name: bandit-report
+          name: bandit-report-quality-gates
           path: bandit-report.txt
 
   pip-audit-gate:
