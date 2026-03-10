@@ -100,6 +100,19 @@ def test_switching_tenant_db_path_between_requests_rebinds_core_logic(tmp_path, 
     assert Path(core_logic.DB_PATH) == second_path
 
 
+def test_healthcheck_omits_sensitive_fields_for_anonymous_requests(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    response = client.get("/api/health")
+    assert response.status_code == 200
+
+    payload = response.get_json()
+    assert "tenant_id" not in payload
+    assert "db_path" not in payload
+    assert "profile" not in payload
+
+
 def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(tmp_path, monkeypatch):
     app = _build_app(tmp_path, monkeypatch)
     client = app.test_client()

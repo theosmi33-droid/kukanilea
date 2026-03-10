@@ -52,9 +52,8 @@ def ping():
 def health():
     auth_db = current_app.extensions["auth_db"]
     core_stats = {}
-    profile = {}
-    db_path = ""
-    tenant_id = ""
+    profile = None
+    is_authenticated = bool(session.get("user"))
     try:
         from app import web  # local import to avoid circular refs
 
@@ -62,12 +61,11 @@ def health():
         core = getattr(web, "core", None)
         if core and callable(getattr(core, "get_health_stats", None)):
             core_stats = core.get_health_stats(tenant_id=tenant_id)
-        if core and callable(getattr(core, "get_profile", None)):
+        if is_authenticated and core and callable(getattr(core, "get_profile", None)):
             profile = core.get_profile()
-        db_path = str(getattr(core, "DB_PATH", "")) if core else ""
     except Exception:
         core_stats = {}
-    return jsonify(
+    payload = dict(
         ok=True,
         schema_version=auth_db.get_schema_version(),
         auth_db_path=str(auth_db.path),
@@ -75,10 +73,10 @@ def health():
         last_indexed_at=core_stats.get("last_indexed_at"),
         doc_count=core_stats.get("doc_count", 0),
         fts_enabled=core_stats.get("fts_enabled", False),
-        tenant_id=tenant_id,
-        profile=profile or None,
-        db_path=db_path,
     )
+    if is_authenticated:
+        payload["profile"] = profile
+    return jsonify(payload)
 
 
 @bp.get("/kalender/summary")
