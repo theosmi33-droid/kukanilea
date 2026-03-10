@@ -35,6 +35,7 @@ from app.core.mesh_identity import ensure_mesh_identity, get_identity_paths
 from app.core.mesh_network import MeshNetworkManager
 from app.core.tenant_registry import tenant_registry
 from app.license import load_license, load_runtime_license_state
+from app.modules.dashboard.briefing import sanitize_feed_urls
 from app.security import csrf_protected
 from app.security.gates import (
     CRITICAL_CONFIRM_GATE_BY_ROUTE,
@@ -52,6 +53,8 @@ ROLE_LABEL_TO_DB = {
 ROLE_DB_TO_LABEL = {v: k for k, v in ROLE_LABEL_TO_DB.items()}
 HOSTNAME_PATTERN = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$")
 IP_PATTERN = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+
 def _system_settings_file() -> Path:
     # Resolve from Config on each call so tests/runtime overrides are respected.
     return Config.USER_DATA_ROOT / "system_settings.json"
@@ -641,7 +644,7 @@ def save_system_settings():
 
     payload = _load_system_settings()
     rss_raw = (request.form.get("briefing_rss_feeds") or "").strip()
-    rss_feeds = [line.strip() for line in rss_raw.splitlines() if line.strip()]
+    rss_feeds = sanitize_feed_urls([line.strip() for line in rss_raw.splitlines() if line.strip()])
     retention_raw = (request.form.get("memory_retention_days") or payload.get("memory_retention_days") or 60)
     try:
         retention_days = max(1, int(retention_raw))

@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol, Any
+from typing import Any, Protocol
 
 from flask import current_app, session
 
@@ -103,10 +103,27 @@ def _resolve_cache_store() -> CachedSourceStore:
     )
 
 
+def _resolve_core_db_path() -> str:
+    session_db_path = str(session.get("tenant_db_path") or "").strip()
+    if session_db_path:
+        return session_db_path
+
+    try:
+        from app.core import logic as core_logic
+
+        dynamic_db_path = str(getattr(core_logic, "DB_PATH", "") or "").strip()
+        if dynamic_db_path:
+            return dynamic_db_path
+    except Exception:
+        pass
+
+    return str(current_app.config["CORE_DB"])
+
+
 def _store_summary_note(*, tenant_id: str, owner_user_id: str, title: str, body: str, metadata: dict[str, Any]) -> dict[str, Any]:
     note_id = f"sum-{uuid.uuid4().hex[:16]}"
     now = _now_iso()
-    db_path = str(current_app.config["CORE_DB"])
+    db_path = _resolve_core_db_path()
     with sqlite3.connect(db_path) as con:
         con.execute(
             """
