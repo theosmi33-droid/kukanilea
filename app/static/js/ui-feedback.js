@@ -48,11 +48,12 @@ const UIFeedback = {
         this.ensureContainers();
         const container = document.getElementById('toast-container');
         if (!container) return;
+        const safeLevel = ['success', 'warn', 'error', 'info'].includes(level) ? level : 'info';
 
         const toast = document.createElement('div');
-        toast.className = `toast toast-${level}`;
-        toast.setAttribute('role', level === 'error' ? 'alert' : 'status');
-        toast.setAttribute('aria-live', level === 'error' ? 'assertive' : 'polite');
+        toast.className = `toast toast-${safeLevel}`;
+        toast.setAttribute('role', safeLevel === 'error' ? 'alert' : 'status');
+        toast.setAttribute('aria-live', safeLevel === 'error' ? 'assertive' : 'polite');
 
         const titles = {
             'success': 'Erfolg',
@@ -61,24 +62,40 @@ const UIFeedback = {
             'info': 'Information'
         };
 
-        const icon = this.getIconForLevel(level);
+        const icon = this.getIconForLevel(safeLevel);
 
-        toast.innerHTML = `
-            <div class="toast-icon">${icon}</div>
-            <div class="toast-content">
-                <span class="toast-title">${titles[level] || 'System'}</span>
-                <div class="toast-message">${message}</div>
-            </div>
-            <button class="toast-close" aria-label="Schließen">✕</button>
-        `;
+        const iconEl = document.createElement('div');
+        iconEl.className = 'toast-icon';
+        iconEl.textContent = icon;
+
+        const contentEl = document.createElement('div');
+        contentEl.className = 'toast-content';
+
+        const titleEl = document.createElement('span');
+        titleEl.className = 'toast-title';
+        titleEl.textContent = titles[safeLevel] || 'System';
+
+        const messageEl = document.createElement('div');
+        messageEl.className = 'toast-message';
+        messageEl.textContent = `${message}`;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'toast-close';
+        closeBtn.setAttribute('aria-label', 'Schließen');
+        closeBtn.textContent = '✕';
+
+        contentEl.appendChild(titleEl);
+        contentEl.appendChild(messageEl);
+        toast.appendChild(iconEl);
+        toast.appendChild(contentEl);
+        toast.appendChild(closeBtn);
 
         container.appendChild(toast);
 
         // Auto-remove logic
-        const closeBtn = toast.querySelector('.toast-close');
         closeBtn.onclick = () => this.dismissToast(toast);
 
-        const timeout = level === 'error' ? 8000 : 5000;
+        const timeout = safeLevel === 'error' ? 8000 : 5000;
         setTimeout(() => this.dismissToast(toast), timeout);
     },
 
