@@ -74,6 +74,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -138,9 +140,17 @@ jobs:
             mapfile -t py_targets < <(git diff --name-only "${base_ref}...HEAD" -- '*.py' ':!app/static/**')
             target_label="pull_request_diff"
           else
-            base_sha="$(git rev-list --max-count=1 --skip=1 HEAD 2>/dev/null || true)"
-            if [[ -n "${base_sha}" ]]; then
-              mapfile -t py_targets < <(git diff --name-only "${base_sha}...HEAD" -- '*.py' ':!app/static/**')
+            before_sha="$(python -c 'import json, os; from pathlib import Path; event_path = os.environ.get("GITHUB_EVENT_PATH", ""); event = json.loads(Path(event_path).read_text(encoding="utf-8")) if event_path else {}; before = (event.get("before") or "").strip(); print(before) if before and set(before) != {"0"} else None')"
+            if [[ -n "${before_sha}" ]]; then
+              echo "Using push range ${before_sha}...HEAD"
+              git cat-file -e "${before_sha}^{commit}" 2>/dev/null || git fetch --no-tags origin "${before_sha}" || true
+            fi
+
+            if [[ -n "${before_sha}" ]] && git cat-file -e "${before_sha}^{commit}" 2>/dev/null; then
+              mapfile -t py_targets < <(git diff --name-only "${before_sha}...HEAD" -- '*.py' ':!app/static/**')
+            elif [[ -n "${before_sha}" ]]; then
+              echo "Could not resolve before SHA; scanning all tracked Python files as a safe fallback."
+              mapfile -t py_targets < <(git ls-files '*.py' ':!app/static/**')
             else
               mapfile -t py_targets < <(git ls-files '*.py' ':!app/static/**')
             fi
