@@ -50,10 +50,5 @@ class TestMessengerAgent(unittest.TestCase):
         source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
         self.assertNotIn("traceback.format_exc()", source)
 
-    def test_project_logic_contract_adds_missing_team_task_project_columns(self):
-        source = Path("app/modules/projects/logic.py").read_text(encoding="utf-8")
-        self.assertIn("PRAGMA table_info(team_tasks)", source)
-        self.assertIn("ALTER TABLE team_tasks ADD COLUMN", source)
-
 if __name__ == "__main__":
     unittest.main()

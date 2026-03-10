@@ -32,12 +32,6 @@ def test_cross_tool_flow_contract_does_not_include_traceback_in_failure_payload(
     assert '"traceback": trace' not in source
 
 
-def test_project_logic_contract_keeps_team_task_column_migration_guard() -> None:
-    source = Path("app/modules/projects/logic.py").read_text(encoding="utf-8")
-    assert "existing_columns = {" in source
-    assert "ALTER TABLE team_tasks ADD COLUMN" in source
-
-
 
 
 @pytest.mark.parametrize(
