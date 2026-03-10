@@ -1,107 +1,14 @@
 name: KUKANILEA CI/CD Pipeline
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  lint-and-scan:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Install Playwright Chromium (strict doctor prerequisite)
-        run: |
-          python -m playwright install chromium
-          pip install bandit pyyaml
-
-      - name: Validate workflow YAML syntax
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-          workflows = sorted(Path(".github/workflows").glob("*.yml"))
-          assert workflows, "no workflow files found"
-          for wf in workflows:
-              with wf.open("r", encoding="utf-8") as fh:
-                  yaml.safe_load(fh)
-          print(f"validated {len(workflows)} workflow files")
-          PY
-
-      - name: Compile sanity
-        run: |
-          python -m compileall app kukanilea run.py kukanilea_app.py
-
-      - name: Guardrails scan (offline/CSP/no-injection surface)
-        run: |
-          python scripts/ops/verify_guardrails.py
-
-      - name: Security scan report (non-blocking)
-        run: |
-          bandit -r app -x app/static -f txt -o bandit-report.txt || true
-
-      - name: Upload bandit report
-        uses: actions/upload-artifact@v4
-        with:
-          name: bandit-report
-          path: bandit-report.txt
-
-  agent-logic-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [lint-and-scan]
-    env:
-      OLLAMA_ENABLED: "0"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Install Playwright Chromium (strict doctor prerequisite)
-        run: |
-          python -m playwright install chromium
-
-      - name: Healthcheck core gates (without duplicate pytest run)
-        run: |
-          bash scripts/ops/healthcheck.sh --skip-pytest --strict-doctor
-
-      - name: Run contract and smoke bundles
-        run: |
-          pytest -q tests/contracts tests/integration/test_end_to_end_core_smoke.py
-
-      - name: Run selected core tests
-        run: |
-          pytest -q tests/test_memory_system.py tests/test_rag_pipeline.py tests/test_lexoffice.py tests/test_error_ux.py
+  delegated-ci:
+    name: Delegated CI (single source of truth)
+    uses: ./.github/workflows/ci.yml
+    with:
+      run_perf_gate: false
