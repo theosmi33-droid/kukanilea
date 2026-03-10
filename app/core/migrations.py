@@ -231,7 +231,8 @@ def _build_fts_indices(db_path: str):
             return
 
         # 2. Sync from docs + latest version metadata.
-        conn.execute(
+        # text_column is selected from a fixed internal allowlist in _latest_version_text_column.
+        conn.execute(  # nosec B608
             f"""
             INSERT INTO docs_fts(doc_id, tenant_id, kdnr, doctype, doc_date, file_name, file_path, content)
             SELECT
