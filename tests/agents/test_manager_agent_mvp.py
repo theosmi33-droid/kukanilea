@@ -118,6 +118,8 @@ def test_mail_response_with_message_requires_approval_and_routes_after_approval(
 
     assert second.ok is True
     assert second.status == "routed"
+    assert second.audit_event is not None
+    assert second.audit_event["external_policy_decision"] == "external_calls_enabled_no_allowlist"
     assert second.decision.action == "mail.mail.reply"
 
 def test_write_without_approval_is_blocked_and_creates_challenge() -> None:

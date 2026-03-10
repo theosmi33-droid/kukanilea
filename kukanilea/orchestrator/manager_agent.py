@@ -120,6 +120,13 @@ class ExternalCallPolicy:
             return ExternalCallPolicyDecision(allowed=True, reason="not_external", action_allowlisted=False)
         if not self.external_calls_enabled:
             return ExternalCallPolicyDecision(allowed=False, reason="external_calls_disabled", action_allowlisted=False)
+        if not self.allowlisted_actions:
+            # Backward-compatible mode: feature flag enables external calls unless an explicit allowlist is configured.
+            return ExternalCallPolicyDecision(
+                allowed=True,
+                reason="external_calls_enabled_no_allowlist",
+                action_allowlisted=False,
+            )
         is_allowlisted = action_id in self.allowlisted_actions
         if not is_allowlisted:
             return ExternalCallPolicyDecision(allowed=False, reason="external_action_not_allowlisted", action_allowlisted=False)
