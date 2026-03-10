@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def _read(path: str) -> str:
@@ -7,7 +8,10 @@ def _read(path: str) -> str:
 
 def test_command_palette_is_loaded_from_layout_shell() -> None:
     layout = _read("app/templates/layout.html")
-    assert '<script src="/static/js/command_palette.js" defer></script>' in layout
+    assert re.search(
+        r'<script(?:\s+nonce="{{ csp_nonce\(\) }}")?\s+src="/static/js/command_palette\.js"\s+defer></script>',
+        layout,
+    )
 
 
 def test_command_palette_defines_expected_command_groups() -> None:

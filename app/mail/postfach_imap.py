@@ -5,6 +5,7 @@ import imaplib
 import os
 import ssl
 import time
+import base64
 from datetime import UTC, datetime
 from email import message_from_bytes, policy
 from email.utils import getaddresses, parsedate_to_datetime
@@ -325,7 +326,8 @@ def sync_account(
                 xoauth = oauth.xoauth2_auth_string(
                     username, str(auth.get("access_token") or "")
                 )
-                imap.authenticate("XOAUTH2", lambda _: xoauth.encode("utf-8"))
+                xoauth_raw = base64.b64decode(xoauth.encode("ascii"))
+                imap.authenticate("XOAUTH2", lambda _: xoauth_raw)
 
             sel_status, _sel_data = imap.select("INBOX", readonly=True)
             if sel_status != "OK":

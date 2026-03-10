@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def _read(path: str) -> str:
@@ -9,7 +10,10 @@ def test_layout_loads_data_table_assets_once() -> None:
     html = _read("app/templates/layout.html")
     assert html.count('/static/css/data-table.css') == 1
     assert html.count('/static/js/data-table.js') == 1
-    assert '<script src="/static/js/data-table.js" defer></script>' in html
+    assert re.search(
+        r'<script(?:\s+nonce="{{ csp_nonce\(\) }}")?\s+src="/static/js/data-table\.js"\s+defer></script>',
+        html,
+    )
 
 
 def test_data_table_js_enhances_tables_with_controls() -> None:
