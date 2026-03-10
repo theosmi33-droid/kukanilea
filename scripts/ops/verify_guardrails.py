@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 CDN_PATTERNS = re.compile(
@@ -59,6 +60,36 @@ def check_cdn_urls(paths: list[str] | None = None) -> list[str]:
 
 
 def check_external_asset_urls(paths: list[str] | None = None) -> list[str]:
+    class _ExternalAssetHTMLParser(HTMLParser):
+        def __init__(self, full_path: Path, errors: list[str]) -> None:
+            super().__init__(convert_charrefs=False)
+            self.full_path = full_path
+            self.errors = errors
+
+        def _check_tag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            attrs_dict = {name.lower(): value for name, value in attrs}
+            if tag.lower() == "svg" and attrs_dict.get("xmlns") == "http://www.w3.org/2000/svg":
+                return
+
+            for attr_name, attr_value in attrs:
+                if attr_name.lower() not in {"src", "href", "poster", "srcset", "action", "formaction"}:
+                    continue
+                if attr_value is None:
+                    continue
+                if re.match(r"^(?:https?:)?//", attr_value, re.IGNORECASE):
+                    line_num, _ = self.getpos()
+                    tag_preview = (self.get_starttag_text() or f"<{tag}>").splitlines()[0].strip()
+                    self.errors.append(
+                        f"External asset URL found in {self.full_path}:{line_num}: {tag_preview}"
+                    )
+                    return
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self._check_tag(tag, attrs)
+
+        def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self._check_tag(tag, attrs)
+
     roots = [Path(p) for p in (paths or ["app/templates"])]
     errors: list[str] = []
     for root in roots:
@@ -66,14 +97,8 @@ def check_external_asset_urls(paths: list[str] | None = None) -> list[str]:
             continue
         for full_path in root.rglob("*.html"):
             content = full_path.read_text(encoding="utf-8")
-            for match in re.finditer(r"(<[^>]+>)", content, re.DOTALL):
-                tag = match.group(0)
-                if 'xmlns="http://www.w3.org/2000/svg"' in tag:
-                    continue
-                if EXTERNAL_ASSET_PATTERNS.search(tag):
-                    line_num = content.count("\n", 0, match.start()) + 1
-                    tag_preview = tag.splitlines()[0] if "\n" in tag else tag
-                    errors.append(f"External asset URL found in {full_path}:{line_num}: {tag_preview.strip()}")
+            parser = _ExternalAssetHTMLParser(full_path, errors)
+            parser.feed(content)
     return errors
 
 
