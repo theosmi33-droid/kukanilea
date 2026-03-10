@@ -4862,16 +4862,21 @@ def assistant():
                 results.append(r)
         except Exception:
             pass
-    html = """<div class='card p-5'>
-      <div class='text-lg font-semibold mb-1'>Assistant</div>
-      <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
-        <input class='w-full rounded-xl p-2 input' name='q' value='{q}' placeholder='Suche…' />
-        <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{kdnr}' placeholder='Kdnr optional' />
-        <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
-      </form>
-      <div class='muted text-xs'>Treffer: {n}</div>
-    </div>""".format(
-        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
+    html = render_template_string(
+        """
+<div class='card p-5'>
+  <div class='text-lg font-semibold mb-1'>Assistant</div>
+  <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
+    <input class='w-full rounded-xl p-2 input' name='q' value='{{ q|e }}' placeholder='Suche…' />
+    <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{{ kdnr|e }}' placeholder='Kdnr optional' />
+    <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
+  </form>
+  <div class='muted text-xs'>Treffer: {{ n }}</div>
+</div>
+        """,
+        q=q,
+        kdnr=kdnr,
+        n=len(results),
     )
     return _render_base(html, active_tab="assistant")
 
@@ -5073,7 +5078,9 @@ def calendar_export_ics():
     from app.knowledge.ics_source import knowledge_ics_build_local_feed
 
     tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
-    ics_content = knowledge_ics_build_local_feed(tenant_id)
+    feed_info = knowledge_ics_build_local_feed(tenant_id)
+    feed_path = Path(str(feed_info.get("feed_path") or "")).expanduser()
+    ics_content = feed_path.read_bytes() if feed_path.exists() else b""
     return (
         ics_content,
         200,
