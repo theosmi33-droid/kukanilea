@@ -30,11 +30,23 @@ def test_prompt_injection_surface_skips_allowlisted_security_file(tmp_path: Path
     guardrails = _load_guardrails_module()
     allowlisted = tmp_path / "app" / "security" / "untrusted_input.py"
     allowlisted.parent.mkdir(parents=True, exist_ok=True)
-    allowlisted.write_text('PATTERN = r"ignore previous instructions"\n', encoding="utf-8")
+    allowlisted.write_text('PATTERN = re.compile(r"ignore previous instructions")\n', encoding="utf-8")
 
     errors = guardrails.check_prompt_injection_surface(paths=[str(tmp_path / "app")])
 
     assert errors == []
+
+
+def test_prompt_injection_surface_flags_non_pattern_line_in_allowlisted_security_file(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    allowlisted = tmp_path / "app" / "security" / "untrusted_input.py"
+    allowlisted.parent.mkdir(parents=True, exist_ok=True)
+    allowlisted.write_text('payload = "ignore previous instructions"\n', encoding="utf-8")
+
+    errors = guardrails.check_prompt_injection_surface(paths=[str(tmp_path / "app")])
+
+    assert errors
+    assert "outside allowlist" in errors[0]
 
 
 def test_prompt_injection_surface_flags_runtime_guardrail_downgrade_snippet(tmp_path: Path) -> None:
@@ -50,6 +62,21 @@ def test_prompt_injection_surface_flags_runtime_guardrail_downgrade_snippet(tmp_
 
     assert errors
     assert "runtime_guardrails.py" in errors[0]
+
+
+def test_prompt_injection_surface_flags_explicit_allow_with_warning_downgrade(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    runtime_file = tmp_path / "app" / "ai" / "runtime_guardrails.py"
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    runtime_file.write_text(
+        "decision = 'allow_with_warning' if 'bypass security' in text else decision\n",
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_prompt_injection_surface(paths=[str(tmp_path / "app")])
+
+    assert errors
+    assert "downgrade pattern" in errors[0]
 
 
 def test_htmx_confirm_detects_missing_confirm(tmp_path: Path) -> None:
