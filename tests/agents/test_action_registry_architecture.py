@@ -130,3 +130,8 @@ def test_manager_agent_contract_emits_missing_context_audit_payload() -> None:
 def test_cross_tool_flows_failure_contract_avoids_traceback_field() -> None:
     source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
     assert '"traceback":' not in source
+
+
+def test_project_logic_contract_migrates_all_project_link_columns() -> None:
+    source = Path("app/modules/projects/logic.py").read_text(encoding="utf-8")
+    assert 'for column_name in ("project_id", "project_board_id", "project_card_id")' in source

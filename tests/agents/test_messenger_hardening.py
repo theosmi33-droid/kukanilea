@@ -49,3 +49,9 @@ def test_manager_agent_contract_prevents_propose_mode_action_routing_without_con
 def test_cross_tool_flows_contract_excludes_traceback_key_from_failures() -> None:
     source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
     assert '"traceback":' not in source
+
+
+def test_project_logic_contract_migrates_project_card_column_for_legacy_tables() -> None:
+    source = Path("app/modules/projects/logic.py").read_text(encoding="utf-8")
+    assert "project_card_id" in source
+    assert "ALTER TABLE team_tasks ADD COLUMN" in source
