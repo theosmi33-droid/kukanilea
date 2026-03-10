@@ -187,7 +187,7 @@ def test_settings_read_update_rotate_parity(monkeypatch, tmp_path: Path):
             "backup_interval": "weekly",
             "log_level": "debug",
             "memory_retention_days": "45",
-            "briefing_rss_feeds": "https://example.com/feed\n",
+            "briefing_rss_feeds": "file:///tmp/internal.xml\nhttp://127.0.0.1/rss\nhttps://example.com/feed\n",
             "briefing_cron": "0 6 * * *",
             "external_apis_enabled": "on",
             "confirm": "CONFIRM",
