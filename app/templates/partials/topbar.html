@@ -27,6 +27,7 @@
       <select class="form-select"
               name="tenant_id"
               hx-post="/admin/context/switch"
+              hx-headers='{"X-CSRF-Token": "{{ csrf_token() }}"}'
               hx-confirm="Mandanten-Kontext wirklich wechseln?"
               hx-trigger="change"
               aria-label="Aktiver Mandant">
