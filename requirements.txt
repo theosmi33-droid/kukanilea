@@ -8,7 +8,7 @@ requests==2.32.5
 python-dotenv==1.2.2
 pydantic==2.12.5
 rapidfuzz==3.14.3
-pytest==9.0.2
+pytest==8.3.5
 waitress==3.0.2
 platformdirs==4.5.1
 cryptography==46.0.5
