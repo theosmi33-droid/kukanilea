@@ -107,11 +107,11 @@ def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) 
     return column_name in columns
 
 
-def _docs_text_column(conn: sqlite3.Connection) -> str | None:
-    if not _table_exists(conn, "docs"):
+def _latest_version_text_column(conn: sqlite3.Connection) -> str | None:
+    if not _table_exists(conn, "versions"):
         return None
     for candidate in ("extracted_text", "content", "text"):
-        if _column_exists(conn, "docs", candidate):
+        if _column_exists(conn, "versions", candidate):
             return candidate
     return None
 
@@ -181,26 +181,68 @@ def _get_user_version(conn: sqlite3.Connection) -> int:
 def _set_user_version(conn: sqlite3.Connection, version: int):
     conn.execute(f"PRAGMA user_version = {version}")
 
+
+def _ensure_docs_fts_schema(conn: sqlite3.Connection) -> None:
+    expected_cols = {
+        "doc_id", "tenant_id", "kdnr", "doctype", "doc_date", "file_name", "file_path", "content"
+    }
+    if _table_exists(conn, "docs_fts"):
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(docs_fts)").fetchall()}
+        if not expected_cols.issubset(cols):
+            conn.execute("DROP TABLE docs_fts")
+
+    conn.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts
+        USING fts5(
+            doc_id UNINDEXED,
+            tenant_id UNINDEXED,
+            kdnr UNINDEXED,
+            doctype UNINDEXED,
+            doc_date UNINDEXED,
+            file_name UNINDEXED,
+            file_path UNINDEXED,
+            content,
+            tokenize='unicode61'
+        )
+        """
+    )
+
 def _build_fts_indices(db_path: str):
     """Worker to build FTS indices in background to avoid blocking boot."""
     logger.info("Starting background FTS index build...")
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
         conn.execute("PRAGMA busy_timeout=5000;")
-        # 1. Create FTS5 virtual table if missing
-        conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(doc_id, content)")
+        # 1. Create/repair FTS5 virtual table using runtime-compatible schema
+        _ensure_docs_fts_schema(conn)
 
-        text_column = _docs_text_column(conn)
+        text_column = _latest_version_text_column(conn)
         if not text_column:
             logger.info("Skipping FTS sync: docs text column not available yet.")
             return
 
-        # 2. Sync from main docs table
+        # 2. Sync from docs + latest version metadata
         conn.execute(
             f"""
-            INSERT INTO docs_fts(doc_id, content)
-            SELECT doc_id, {text_column} FROM docs
-            WHERE doc_id NOT IN (SELECT doc_id FROM docs_fts)
+            INSERT INTO docs_fts(doc_id, tenant_id, kdnr, doctype, doc_date, file_name, file_path, content)
+            SELECT
+                d.doc_id,
+                COALESCE(d.tenant_id, ''),
+                COALESCE(d.kdnr, ''),
+                COALESCE(d.doctype, ''),
+                COALESCE(d.doc_date, ''),
+                COALESCE(v.file_name, ''),
+                COALESCE(v.file_path, ''),
+                COALESCE(v.{text_column}, '')
+            FROM docs d
+            LEFT JOIN versions v ON v.id = (
+                SELECT vv.id FROM versions vv
+                WHERE vv.doc_id = d.doc_id
+                ORDER BY vv.version_no DESC, vv.id DESC
+                LIMIT 1
+            )
+            WHERE d.doc_id NOT IN (SELECT doc_id FROM docs_fts)
             """
         )
         conn.commit()
@@ -223,7 +265,7 @@ def run_migrations(db_path: Path):
             conn.commit()
 
         if current_version < 2:
-            if _docs_text_column(conn):
+            if _latest_version_text_column(conn):
                 t = threading.Thread(target=_build_fts_indices, args=(str(db_path),), daemon=True)
                 t.start()
             else:
