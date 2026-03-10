@@ -1418,8 +1418,8 @@ HTML_BASE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <title>{{branding.app_name}} Systems</title>
-<script src="/static/js/tailwindcss.min.js"></script>
-<script>
+<script nonce="{{ csp_nonce() }}" src="/static/js/tailwindcss.min.js"></script>
+<script nonce="{{ csp_nonce() }}">
   const savedTheme = "light";
   const savedAccent = localStorage.getItem("ks_accent") || "brand";
   document.documentElement.classList.add("light");
@@ -1589,7 +1589,7 @@ HTML_BASE = r"""<!doctype html>
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function(){
   const btnTheme = document.getElementById("themeBtn");
   const lblTheme = document.getElementById("themeLabel");
@@ -1706,7 +1706,7 @@ HTML_INDEX = r"""<div class="grid lg:grid-cols-2 gap-6">
     {% endif %}
   </div>
 </div>
-<script>
+<script nonce="{{ csp_nonce() }}">
 const form = document.getElementById("upform");
 const fileInput = document.getElementById("file");
 const bar = document.getElementById("bar");
@@ -1914,7 +1914,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     </div>
   </div>
 </div>
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function(){
   const role = "{{role}}";
   const timeProject = document.getElementById("timeProject");
@@ -2118,7 +2118,7 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     Tipp: Nutze „öffne &lt;token&gt;“ um direkt in die Review-Ansicht zu springen.
   </div>
 </div>
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function(){
   const log = document.getElementById("log");
   const q = document.getElementById("q");
@@ -3887,7 +3887,7 @@ HTML_MAIL = """
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function(){
   const gen=document.getElementById('m_gen');
   const copy=document.getElementById('m_copy');
@@ -4064,7 +4064,7 @@ HTML_SETTINGS = """
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function(){
   async function postJson(url, body){
     const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});

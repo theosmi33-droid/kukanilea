@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/static/css/motion.css">
   <link rel="stylesheet" href="/static/css/data-table.css">
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
-  <script>
+  <script nonce="{{ csp_nonce() }}">
     (function () {
         // Sovereign-11: white-mode only.
         document.documentElement.classList.add('light');
@@ -26,15 +26,15 @@
         } catch (e) {}
     })();
   </script>
-  <script src="/static/js/state.js" defer></script>
-  <script src="/static/js/htmx.min.js" defer></script>
-  <script src="/static/js/command_palette.js" defer></script>
-  <script src="/static/js/navigation.js" defer></script>
-  <script src="/static/js/ui-shell.js" defer></script>
-  <script src="/static/js/ui-feedback.js" defer></script>
-  <script src="/static/js/layout-shell.js" defer></script>
-  <script src="/static/js/data-table.js" defer></script>
-  <script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/state.js" defer></script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/htmx.min.js" defer></script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/command_palette.js" defer></script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/navigation.js" defer></script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/ui-shell.js" defer></script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/ui-feedback.js" defer></script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/layout-shell.js" defer></script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/data-table.js" defer></script>
+  <script nonce="{{ csp_nonce() }}">
     (function(){
       try {
         if (localStorage.getItem('ks_sidebar_collapsed') === '1') {

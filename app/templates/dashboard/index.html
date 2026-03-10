@@ -194,7 +194,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 /**
  * Dashboard Logic v2.5 (Worker 4 Refinement)
  */
