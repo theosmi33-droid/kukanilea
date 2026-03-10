@@ -59,6 +59,7 @@
       "app/static/js/data-table.js",
       "app/static/js/layout-shell.js",
       "app/static/js/navigation.js",
+      "app/static/js/state.js",
       "app/static/js/tasks-performance.js",
       "app/static/js/ui-",
       "app/static/js/app.js"
