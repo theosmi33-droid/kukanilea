@@ -49,12 +49,25 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
 
 ## 2026-03-10 Addendum (PR #691 Medium/High-Confidence Bandit Gate)
 - Scope:
-  - `.github/workflows/pipeline.yml`
+  - `.github/workflows/pipeline.yml` (ursprünglicher Vorschlag)
+  - `.github/workflows/ci.yml` (nach CI-Delegation in PR #675 maßgeblich)
   - dieses Evidence-Update
-- Ziel: Bandit blockiert Medium-Severity mit High-Confidence auf geänderten Python-Pfaden (PR-/Push-Delta), statt globaler Altlast-Blockade.
+- Ziel: Bandit-Gate blockiert risikoreiche neue Python-Befunde auf geänderten Pfaden (PR-/Push-Delta), statt globaler Altlast-Blockade.
 - Sicherheitsnutzen:
   - neue risikoreiche Änderungen werden strikt geblockt,
   - historische Befunde außerhalb des Deltas bleiben separat sanierbar.
 - Validierung:
-  - Workflow YAML parsebar.
+  - Workflow YAML parsebar (`pipeline.yml` + `ci.yml`).
   - Job schreibt die gescannten Ziele (`bandit-targets.txt`) und bricht bei Policy-Verstoß ab.
+
+## 2026-03-10 Addendum (PR #674 Incremental Bandit Gate)
+- Scope:
+  - `.github/workflows/pipeline.yml`
+  - dieses Evidence-Update
+- Ziel: Bandit bleibt policy-driven (`severity>=medium`, `confidence>=medium`), aber scannt in PR/Push nur geänderte Python-Ziele (inkrementelles Gate).
+- Sicherheitsnutzen:
+  - verhindert neue Medium/High-Befunde in geänderten Pfaden,
+  - blockiert nicht pauschal auf historische Altbefunde außerhalb des PR-Scopes.
+- Validierung:
+  - Workflow YAML parsed (`yaml.safe_load`) im CI-Job.
+  - Bandit-Targets werden im Job protokolliert (`bandit-targets.txt`) und als Policy-Gate ausgewertet.
