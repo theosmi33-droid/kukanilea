@@ -207,3 +207,8 @@ def test_security_headers_use_hardened_csp(admin_client):
     assert "worker-src 'self'" in csp
     assert "blob:" not in csp
     assert "object-src 'self'" not in csp
+    assert response.headers.get("X-Content-Type-Options") == "nosniff"
+    assert response.headers.get("X-Frame-Options") == "SAMEORIGIN"
+    assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+    assert response.headers.get("Permissions-Policy") == "camera=(), microphone=(), geolocation=()"
+    assert "X-XSS-Protection" not in response.headers

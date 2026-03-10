@@ -66,3 +66,11 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
 - Validierung:
   - `ruff check tests/security/test_session_security_defaults.py`
   - `pytest -q tests/security/test_session_security_defaults.py`
+
+## 2026-03-10 Addendum (PR #685 Security Header Baseline)
+- Scope: `tests/security/test_confirm_and_injection_gates.py`.
+- Ziel: Header-Contract für `/admin/settings` bleibt vollständig und regressionsfest.
+- Sicherheitsnutzen: schützt gegen stillen Abbau von `CSP`, `X-Frame-Options`, `Referrer-Policy` und weiteren Browser-Schutzheadern.
+- Validierung:
+  - `ruff check tests/security/test_confirm_and_injection_gates.py`
+  - `pytest -q tests/security/test_confirm_and_injection_gates.py`
