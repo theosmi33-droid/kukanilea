@@ -62,3 +62,23 @@ def test_preflight_prints_scope_summary() -> None:
     assert "Scope In: automation" in result.stdout
     assert "Scope Out: ui" in result.stdout
     assert "PR-Link: https://github.com/theosmi33-droid/kukanilea/pull/777" in result.stdout
+
+
+def test_preflight_marks_blocked_environment_for_missing_runtime_bin() -> None:
+    env = os.environ.copy()
+    env["PR_NUMBER"] = "999"
+    env["PROD_REPO_PATH"] = "/no/such/path"
+    env["REQUIRED_RUNTIME_BINS"] = "definitely_missing_runtime_bin"
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "Run-Status: BLOCKED_ENVIRONMENT" in result.stdout
+    assert "missing runtime dependency: definitely_missing_runtime_bin" in result.stdout
+    assert result.returncode == 1
