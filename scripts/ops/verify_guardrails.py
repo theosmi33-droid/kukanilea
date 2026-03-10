@@ -128,7 +128,44 @@ def check_htmx_confirm(path: str = "app/templates") -> list[str]:
     return errors
 
 
-def _allowlist_context_patterns(path: Path, allowlist: dict[str, tuple[re.Pattern[str], ...]]) -> tuple[re.Pattern[str], ...]:
+def check_htmx_csrf(path: str = "app/templates") -> list[str]:
+    hx_methods = ["hx-post", "hx-put", "hx-patch", "hx-delete"]
+    root = Path(path)
+    errors: list[str] = []
+    if not root.exists():
+        return errors
+
+    for full_path in root.rglob("*.html"):
+        content = full_path.read_text(encoding="utf-8")
+        tags = list(re.finditer(r"(<[^>]+>)", content, re.DOTALL))
+        for idx, match in enumerate(tags):
+            tag = match.group(0)
+            has_method = any(f"{method}=" in tag for method in hx_methods)
+            if not has_method:
+                continue
+
+            has_csrf_header = "hx-headers" in tag and "X-CSRF-Token" in tag
+            if tag.lower().startswith("<form"):
+                closing_tag = re.search(r"</form>", content[match.end():], re.IGNORECASE)
+                form_end = match.end() + closing_tag.start() if closing_tag else len(content)
+                form_body = content[match.end():form_end]
+                has_hidden_csrf = 'name="csrf_token"' in form_body or "name='csrf_token'" in form_body
+                has_csrf = has_csrf_header or has_hidden_csrf
+            else:
+                has_csrf = has_csrf_header
+
+            if not has_csrf:
+                line_num = content.count("\n", 0, match.start()) + 1
+                tag_preview = tag.splitlines()[0] if "\n" in tag else tag
+                errors.append(
+                    f"HTMX mutation without CSRF token/header in {full_path}:{line_num}: {tag_preview}"
+                )
+    return errors
+
+
+def _allowlist_context_patterns(
+    path: Path, allowlist: dict[str, tuple[re.Pattern[str], ...]]
+) -> tuple[re.Pattern[str], ...]:
     normalized = path.as_posix()
     for entry, patterns in allowlist.items():
         if normalized == entry or normalized.endswith(f"/{entry}"):
@@ -169,14 +206,15 @@ def check_prompt_injection_surface(paths: list[str] | None = None) -> list[str]:
 
 
 if __name__ == "__main__":
-    print("[GUARDRAIL] Verifying CDN, external assets, shell inline handlers, HTMX confirm, and prompt-injection surface...")
+    print("[GUARDRAIL] Verifying CDN, external assets, shell inline handlers, HTMX confirm/CSRF, and prompt-injection surface...")
     cdn_errors = check_cdn_urls()
     external_asset_errors = check_external_asset_urls()
     shell_inline_errors = check_shell_template_inline_handlers()
     htmx_errors = check_htmx_confirm()
+    htmx_csrf_errors = check_htmx_csrf()
     injection_errors = check_prompt_injection_surface()
 
-    all_errors = cdn_errors + external_asset_errors + shell_inline_errors + htmx_errors + injection_errors
+    all_errors = cdn_errors + external_asset_errors + shell_inline_errors + htmx_errors + htmx_csrf_errors + injection_errors
     if all_errors:
         for err in all_errors:
             print(f"FAILED: {err}")

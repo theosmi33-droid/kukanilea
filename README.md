@@ -93,10 +93,12 @@ bash scripts/dev/pr_quality_guard.sh --ci
 ```
 
 Regeln:
-- MIN_SCOPE: `>= 7` Dateien **oder** `>= 200` LOC
+- MAX_SCOPE: `<= 12` Dateien **und** `<= 350` LOC
+- Focused Scope: höchstens `3` Änderungsbereiche (Top-Level + Subpfad)
 - MIN_TESTS: `>= 6` Test-Delta
 - Evidence Report: `docs/reviews/codex/PR_QUALITY_GUARD_REPORT_20260305.md`
-- Lane Overlap: keine Überschneidung mit anderen `codex/*` Branches
+- Main-first: Basis muss `origin/main` sein
+- Shared-Core Hotspots (`app/web.py`, `app/core/logic.py`, `app/__init__.py`, `app/db.py`, `app/templates/layout.html`) sind im gemischten PR gesperrt
 
 Details im Contributing Guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
