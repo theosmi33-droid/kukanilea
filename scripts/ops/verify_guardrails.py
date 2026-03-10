@@ -10,11 +10,15 @@ CDN_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 EXTERNAL_ASSET_PATTERNS = re.compile(
-    r"\b(?:src|href|poster)\s*=\s*[\"'](?:https?:)?//",
+    r"\b(?:src|href|poster|srcset|action|formaction)\s*=\s*(?:[\"'])?(?:https?:)?//",
     re.IGNORECASE,
 )
 INLINE_HANDLER_PATTERN = re.compile(
-    r"\son[a-z]+\s*=",
+    r"(?:^|[\s<])on[a-z]+\s*=",
+    re.IGNORECASE,
+)
+JAVASCRIPT_PATH_PATTERN = re.compile(
+    r"j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:",
     re.IGNORECASE,
 )
 TEXT_EXTENSIONS = {".py", ".html", ".js", ".css", ".txt", ".md", ".json", ".yaml", ".yml"}
@@ -80,7 +84,7 @@ def check_shell_template_inline_handlers(path: str = "app/templates/layout.html"
     for line_num, line in enumerate(content.splitlines(), 1):
         if INLINE_HANDLER_PATTERN.search(line):
             errors.append(f"Inline event handler found in shell template {template}:{line_num}: {line.strip()}")
-        if "javascript:" in line.lower():
+        if JAVASCRIPT_PATH_PATTERN.search(line):
             errors.append(f"javascript: URL found in shell template {template}:{line_num}: {line.strip()}")
         if "rel=\"preload\"" in line and "onload=" in line:
             errors.append(f"CSP-unsafe preload onload hack in {template}:{line_num}: {line.strip()}")
