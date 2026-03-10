@@ -38,3 +38,9 @@ def test_invoice_reminder_contract_keeps_guarded_reminder_template() -> None:
 def test_manager_agent_contract_blocks_injection_even_with_neutral_keywords() -> None:
     source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
     assert "if injection_matches:\n            return RuntimeGuardResult(" in source
+
+
+def test_manager_agent_contract_prevents_propose_mode_action_routing_without_context() -> None:
+    source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+    assert "plan.missing_context or plan.execution_mode == \"propose\"" in source
+    assert 'status="needs_clarification"' in source
