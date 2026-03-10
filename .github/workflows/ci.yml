@@ -60,7 +60,7 @@ jobs:
   quality-gates:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [pr-quality-guard, ui-conflict-guard]
+    needs: [pr-quality-guard, ui-conflict-guard, pip-audit-gate]
     env:
       OLLAMA_ENABLED: "0"
       PYTHONUNBUFFERED: "1"
@@ -119,6 +119,46 @@ jobs:
             tests/security/test_verify_guardrails.py \
             tests/security/test_layout_shell_hardening.py \
             tests/integration/test_end_to_end_core_smoke.py
+
+  pip-audit-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [pr-quality-guard, ui-conflict-guard]
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install prod dependencies + pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pip-audit
+
+      - name: Build pip-audit ignore list arguments
+        id: pip_audit_ignore
+        shell: bash
+        run: |
+          ignore_args=""
+          while IFS= read -r vuln_id; do
+            vuln_id="${vuln_id%%#*}"
+            vuln_id="${vuln_id//[[:space:]]/}"
+            if [ -n "$vuln_id" ]; then
+              ignore_args+=" --ignore-vuln $vuln_id"
+            fi
+          done < .github/pip-audit.ignore
+          echo "ignore_args=$ignore_args" >> "$GITHUB_OUTPUT"
+
+      - name: pip-audit (blocking gate for prod dependencies)
+        shell: bash
+        run: |
+          pip-audit -r requirements.txt --strict ${{ steps.pip_audit_ignore.outputs.ignore_args }}
 
   test:
     runs-on: ubuntu-latest
