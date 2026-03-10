@@ -46,3 +46,11 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
   4. Shared-Core-Hotspot-Block für konfliktträchtige Kernpfade (separater PR erforderlich).
   5. `MIN_TESTS` und Evidence-Report bleiben Pflicht für nachvollziehbare Test-Evidence.
 - Ergebnis: konfliktärmere, reviewbare Einzel-PRs ohne Branch-Stacking-Mechanik.
+
+## 2026-03-10 Addendum (PR #685 Security Header Baseline)
+- Scope: `tests/security/test_confirm_and_injection_gates.py`.
+- Ziel: Header-Contract für `/admin/settings` bleibt vollständig und regressionsfest.
+- Sicherheitsnutzen: schützt gegen stillen Abbau von `CSP`, `X-Frame-Options`, `Referrer-Policy` und weiteren Browser-Schutzheadern.
+- Validierung:
+  - `ruff check tests/security/test_confirm_and_injection_gates.py`
+  - `pytest -q tests/security/test_confirm_and_injection_gates.py`
