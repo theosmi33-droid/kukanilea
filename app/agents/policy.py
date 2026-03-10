@@ -6,13 +6,15 @@ ROLE_ORDER = ["READONLY", "OPERATOR", "ADMIN", "DEV"]
 class PolicyEngine:
     ACTION_ALLOWLIST = {
         "READONLY": {"search_docs", "open_token"},
-        "OPERATOR": {"search_docs", "open_token", "show_customer"},
+        "OPERATOR": {"search_docs", "open_token", "show_customer", "mail_generate", "mail_send"},
         "ADMIN": {
             "search_docs",
             "open_token",
             "show_customer",
             "summarize_doc",
             "list_tasks",
+            "mail_generate",
+            "mail_send",
         },
         "DEV": {
             "search_docs",
@@ -21,6 +23,8 @@ class PolicyEngine:
             "summarize_doc",
             "list_tasks",
             "rebuild_index",
+            "mail_generate",
+            "mail_send",
         },
     }
 

@@ -78,3 +78,28 @@ def test_generate_daily_briefing_with_mocked_feed_fetch(tmp_path, monkeypatch) -
 
     cache_payload = json.loads((tmp_path / "briefing" / "feed_cache.json").read_text(encoding="utf-8"))
     assert "https://example.org/rss" in cache_payload["feeds"]
+
+
+def test_generate_daily_briefing_skips_non_http_and_localhost_feeds(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+    monkeypatch.setenv("ENABLE_EXTERNAL_APIS", "true")
+
+    feeds = ["file:///tmp/internal.xml", "http://127.0.0.1/rss", "https://example.org/rss"]
+    (tmp_path / "system_settings.json").write_text(
+        json.dumps({"briefing_rss_feeds": feeds}),
+        encoding="utf-8",
+    )
+
+    seen: list[str] = []
+
+    def _fetch(url: str) -> str:
+        seen.append(url)
+        return """<rss><channel><item><title>OK</title><link>https://example.org/item</link></item></channel></rss>"""
+
+    briefing = generate_daily_briefing(fetcher=_fetch, audit=False)
+
+    assert briefing["feed_count"] == 1
+    assert briefing["links"][0]["title"] == "OK"
+    assert seen == ["https://example.org/rss"]
+    cache_payload = json.loads((tmp_path / "briefing" / "feed_cache.json").read_text(encoding="utf-8"))
+    assert list(cache_payload["feeds"].keys()) == ["https://example.org/rss"]

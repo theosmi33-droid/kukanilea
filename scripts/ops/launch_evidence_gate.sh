@@ -259,13 +259,15 @@ run_cmd_gate "CI_GATE" "'$PYTHON' -m pytest -q tests/ops" "pytest tests/ops pass
 
 
 GATE7_OUTPUT_DIR="${GATE7_OUTPUT_DIR:-$ROOT/evidence/operations/gate7_latest}"
+export GATE7_OUTPUT_DIR
 run_cmd_gate "MIA_GATE7_SMOKE" "\"$PYTHON\" scripts/ops/gate7_evidence.py --output-dir \"$GATE7_OUTPUT_DIR\"" "gate7 smoke evidence generated in $GATE7_OUTPUT_DIR" "gate7 smoke evidence failed"
 
 run_cmd_gate "MIA_GATE7_ARTIFACTS" "\"$PYTHON\" - <<'PY'
 import json
+import os
 from pathlib import Path
 
-base = Path('$GATE7_OUTPUT_DIR')
+base = Path(os.environ['GATE7_OUTPUT_DIR'])
 data = json.loads((base / 'gate7_smoke.json').read_text(encoding='utf-8'))
 required = {
     'lokales_modell_aktiv',

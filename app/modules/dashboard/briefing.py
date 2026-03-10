@@ -6,8 +6,10 @@ import threading
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from flask import current_app, has_app_context
 
@@ -19,6 +21,7 @@ FetchFn = Callable[[str], str]
 _DEFAULT_CRON = "0 7 * * *"
 _BRIEFING_LOCK = threading.Lock()
 _BRIEFING_SCHEDULER: "BriefingScheduler | None" = None
+_ALLOWED_FEED_SCHEMES = frozenset({"http", "https"})
 
 
 def _now_utc() -> datetime:
@@ -77,14 +80,14 @@ def load_briefing_settings() -> dict[str, Any]:
         feeds = [line.strip() for line in feeds.splitlines() if line.strip()]
     if not isinstance(feeds, list):
         feeds = []
-    settings["briefing_rss_feeds"] = [str(v).strip() for v in feeds if str(v).strip()]
+    settings["briefing_rss_feeds"] = sanitize_feed_urls([str(v).strip() for v in feeds if str(v).strip()])
     settings["briefing_cron"] = str(settings.get("briefing_cron") or _DEFAULT_CRON).strip() or _DEFAULT_CRON
     return settings
 
 
 def save_briefing_settings(*, feeds: list[str], cron_expression: str) -> dict[str, Any]:
     settings = _read_json(_settings_path(), {})
-    settings["briefing_rss_feeds"] = [str(v).strip() for v in feeds if str(v).strip()]
+    settings["briefing_rss_feeds"] = sanitize_feed_urls([str(v).strip() for v in feeds if str(v).strip()])
     settings["briefing_cron"] = str(cron_expression or _DEFAULT_CRON).strip() or _DEFAULT_CRON
     _write_json(_settings_path(), settings)
     return settings
@@ -93,6 +96,43 @@ def save_briefing_settings(*, feeds: list[str], cron_expression: str) -> dict[st
 def _default_fetch(url: str) -> str:
     with urllib.request.urlopen(url, timeout=8) as res:  # nosec B310
         return res.read().decode("utf-8", errors="replace")
+
+
+def _is_allowed_feed_url(url: str) -> bool:
+    parsed = urlparse(str(url or "").strip())
+    if parsed.scheme.lower() not in _ALLOWED_FEED_SCHEMES:
+        return False
+    if not parsed.hostname:
+        return False
+    host = parsed.hostname.strip().lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return False
+    try:
+        address = ip_address(host)
+    except ValueError:
+        return True
+    return not (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    )
+
+
+def sanitize_feed_urls(feed_urls: list[str]) -> list[str]:
+    seen: set[str] = set()
+    sanitized: list[str] = []
+    for raw in feed_urls:
+        source = str(raw or "").strip()
+        if not source or source in seen:
+            continue
+        if not _is_allowed_feed_url(source):
+            continue
+        seen.add(source)
+        sanitized.append(source)
+    return sanitized
 
 
 def _strip(tag: str) -> str:
@@ -173,15 +213,15 @@ def refresh_feed_cache(
     fetcher: FetchFn | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     cache = load_feed_cache()
+    allowed_urls = sanitize_feed_urls(feed_urls)
+    allowed_set = set(allowed_urls)
+    cache = {url: entries for url, entries in cache.items() if url in allowed_set}
     if not _external_enabled():
         return cache
 
     fetch = fetcher or _default_fetch
     updated = dict(cache)
-    for url in feed_urls:
-        source = str(url or "").strip()
-        if not source:
-            continue
+    for source in allowed_urls:
         try:
             xml_text = fetch(source)
             updated[source] = parse_feed_xml(xml_text)

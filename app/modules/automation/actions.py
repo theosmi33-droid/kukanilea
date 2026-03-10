@@ -61,6 +61,28 @@ EMAIL_SUBJECT_MAX_LENGTH = 255
 EMAIL_BODY_MAX_LENGTH = 20000
 
 
+def _resolve_automation_actor_role(*, auth_db: AuthDB, tenant_id: str, actor: str) -> str:
+    actor_name = str(actor or "").strip()
+    tenant = str(tenant_id or "").strip()
+    if not actor_name or not tenant:
+        return "READONLY"
+    try:
+        memberships = auth_db.get_memberships(actor_name)
+    except Exception:
+        return "READONLY"
+    tenant_norm = tenant.lower()
+    for membership in memberships:
+        if str(membership.tenant_id or "").strip().lower() != tenant_norm:
+            continue
+        role = str(membership.role or "").strip().upper()
+        if role in {"ADMIN", "DEV"}:
+            return "ADMIN"
+        if role in {"MANAGER", "OPERATOR", "MITARBEITER", "READONLY"}:
+            return role
+        return "READONLY"
+    return "READONLY"
+
+
 def _resolve_db_path(db_path: Path | str | None) -> Path:
     if db_path is None:
         return Path(core.DB_PATH)
@@ -140,11 +162,18 @@ def _execute_create_task(
 
         auth_db_path = str(os.environ.get("KUKANILEA_AUTH_DB") or "").strip()
         if auth_db_path:
-            pm = ProjectManager(AuthDB(Path(auth_db_path)))
+            auth_db = AuthDB(Path(auth_db_path))
+            pm = ProjectManager(auth_db)
+            actor_name = created_by or "automation"
+            actor_role = _resolve_automation_actor_role(
+                auth_db=auth_db,
+                tenant_id=tenant_id,
+                actor=actor_name,
+            )
             team_task_id = pm.create_team_task(
                 tenant_id=tenant_id,
-                actor=created_by or "automation",
-                actor_role="ADMIN",
+                actor=actor_name,
+                actor_role=actor_role,
                 title=title,
                 description=details,
                 priority=str(action_cfg.get("priority") or "MEDIUM"),
@@ -254,36 +283,73 @@ def _crm_recipients_exist(
     if not recipients:
         return False
 
-    def _read_found(con: sqlite3.Connection, table: str) -> set[str]:
+    def _table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
+        rows = con.execute(
+            "SELECT name FROM pragma_table_info(?)",
+            (table_name,),
+        ).fetchall()
+        return {str(row["name"] or "") for row in rows}
+
+    def _read_found_contacts(con: sqlite3.Connection) -> set[str]:
         table_exists = con.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-            (table,),
+            ("contacts",),
         ).fetchone()
         if table_exists is None:
             return set()
-        cols = {
-            str(row["name"] or "")
-            for row in con.execute(f"PRAGMA table_info({table})").fetchall()
-        }
+        cols = _table_columns(con, "contacts")
         if "tenant_id" not in cols or "email" not in cols:
             return set()
-        placeholders = ",".join(["?"] * len(recipients))
-        rows = con.execute(
-            f"""
-            SELECT LOWER(TRIM(email)) AS email_norm
-            FROM {table}
-            WHERE tenant_id=?
-              AND email IS NOT NULL
-              AND LOWER(TRIM(email)) IN ({placeholders})
-            """,
-            (tenant_id, *recipients),
-        ).fetchall()
-        return {str(row["email_norm"] or "").strip() for row in rows}
+
+        found: set[str] = set()
+        for recipient in recipients:
+            row = con.execute(
+                """
+                SELECT LOWER(TRIM(email)) AS email_norm
+                FROM contacts
+                WHERE tenant_id=?
+                  AND email IS NOT NULL
+                  AND LOWER(TRIM(email))=?
+                LIMIT 1
+                """,
+                (tenant_id, recipient),
+            ).fetchone()
+            if row and str(row["email_norm"] or "").strip():
+                found.add(str(row["email_norm"]).strip())
+        return found
+
+    def _read_found_users(con: sqlite3.Connection) -> set[str]:
+        table_exists = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+            ("users",),
+        ).fetchone()
+        if table_exists is None:
+            return set()
+        cols = _table_columns(con, "users")
+        if "tenant_id" not in cols or "email" not in cols:
+            return set()
+
+        found: set[str] = set()
+        for recipient in recipients:
+            row = con.execute(
+                """
+                SELECT LOWER(TRIM(email)) AS email_norm
+                FROM users
+                WHERE tenant_id=?
+                  AND email IS NOT NULL
+                  AND LOWER(TRIM(email))=?
+                LIMIT 1
+                """,
+                (tenant_id, recipient),
+            ).fetchone()
+            if row and str(row["email_norm"] or "").strip():
+                found.add(str(row["email_norm"]).strip())
+        return found
 
     con = sqlite3.connect(str(db_path), timeout=30)
     con.row_factory = sqlite3.Row
     try:
-        found = _read_found(con, "contacts") | _read_found(con, "users")
+        found = _read_found_contacts(con) | _read_found_users(con)
         return set(recipients).issubset(found)
     except sqlite3.OperationalError:
         return False
@@ -405,42 +471,67 @@ def _docs_exist(*, db_path: Path, tenant_id: str, doc_ids: list[str]) -> bool:
     if not doc_ids:
         return True
 
-    def _read_ids(
-        con: sqlite3.Connection,
-        *,
-        table: str,
-        id_column: str,
-    ) -> set[str]:
+    def _table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
+        rows = con.execute(
+            "SELECT name FROM pragma_table_info(?)",
+            (table_name,),
+        ).fetchall()
+        return {str(row["name"] or "") for row in rows}
+
+    def _read_ids_docs(con: sqlite3.Connection) -> set[str]:
         table_exists = con.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-            (table,),
+            ("docs",),
         ).fetchone()
         if table_exists is None:
             return set()
-        cols = {
-            str(row["name"] or "")
-            for row in con.execute(f"PRAGMA table_info({table})").fetchall()
-        }
-        if "tenant_id" not in cols or id_column not in cols:
+        cols = _table_columns(con, "docs")
+        if "tenant_id" not in cols or "doc_id" not in cols:
             return set()
-        placeholders = ",".join(["?"] * len(doc_ids))
-        rows = con.execute(
-            f"""
-            SELECT {id_column} AS id_value
-            FROM {table}
-            WHERE tenant_id=?
-              AND {id_column} IN ({placeholders})
-            """,
-            (tenant_id, *doc_ids),
-        ).fetchall()
-        return {str(row["id_value"] or "").strip() for row in rows}
+        found: set[str] = set()
+        for doc_id in doc_ids:
+            row = con.execute(
+                """
+                SELECT doc_id AS id_value
+                FROM docs
+                WHERE tenant_id=? AND doc_id=?
+                LIMIT 1
+                """,
+                (tenant_id, doc_id),
+            ).fetchone()
+            if row and str(row["id_value"] or "").strip():
+                found.add(str(row["id_value"]).strip())
+        return found
+
+    def _read_ids_documents(con: sqlite3.Connection) -> set[str]:
+        table_exists = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+            ("documents",),
+        ).fetchone()
+        if table_exists is None:
+            return set()
+        cols = _table_columns(con, "documents")
+        if "tenant_id" not in cols or "id" not in cols:
+            return set()
+        found: set[str] = set()
+        for doc_id in doc_ids:
+            row = con.execute(
+                """
+                SELECT id AS id_value
+                FROM documents
+                WHERE tenant_id=? AND id=?
+                LIMIT 1
+                """,
+                (tenant_id, doc_id),
+            ).fetchone()
+            if row and str(row["id_value"] or "").strip():
+                found.add(str(row["id_value"]).strip())
+        return found
 
     con = sqlite3.connect(str(db_path), timeout=30)
     con.row_factory = sqlite3.Row
     try:
-        found = _read_ids(con, table="docs", id_column="doc_id") | _read_ids(
-            con, table="documents", id_column="id"
-        )
+        found = _read_ids_docs(con) | _read_ids_documents(con)
         return set(doc_ids).issubset(found)
     except sqlite3.OperationalError:
         return False
