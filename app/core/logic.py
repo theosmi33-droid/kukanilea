@@ -353,6 +353,32 @@ def _tenant_prefix_kdnr(tenant: str, kdnr: str) -> str:
     return kdnr
 
 
+def _resolve_existing_folder(use_existing: str, tenant_dir: Path) -> Optional[Path]:
+    """Return a safe existing folder within tenant_dir, otherwise None."""
+    if not use_existing:
+        return None
+
+    candidate = Path(use_existing).expanduser()
+    if not candidate.is_absolute():
+        candidate = tenant_dir / candidate
+
+    try:
+        resolved = candidate.resolve()
+        allowed_root = tenant_dir.resolve()
+    except Exception:
+        return None
+
+    if not resolved.exists() or not resolved.is_dir():
+        return None
+
+    try:
+        resolved.relative_to(allowed_root)
+    except ValueError:
+        return None
+
+    return resolved
+
+
 def _tenant_object_folder_tag(tenant: str, object_folder: str) -> str:
     tenant = normalize_component(tenant)
     object_folder = normalize_component(object_folder)
@@ -4639,8 +4665,8 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
 
     created_new_object = False
     if use_existing:
-        folder = Path(use_existing)
-        if not folder.exists() or not folder.is_dir():
+        folder = _resolve_existing_folder(use_existing, tenant_dir)
+        if folder is None:
             folder = tenant_dir / _compose_object_folder(kdnr_raw, name, addr, plzort)
             created_new_object = True
     else:
