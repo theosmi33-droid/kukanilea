@@ -44,3 +44,8 @@ def test_manager_agent_contract_prevents_propose_mode_action_routing_without_con
     source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
     assert "plan.missing_context or plan.execution_mode == \"propose\"" in source
     assert 'status="needs_clarification"' in source
+
+
+def test_cross_tool_flows_contract_excludes_traceback_key_from_failures() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '"traceback":' not in source

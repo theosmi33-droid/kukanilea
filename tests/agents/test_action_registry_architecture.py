@@ -125,3 +125,8 @@ def test_manager_agent_contract_emits_missing_context_audit_payload() -> None:
     source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
     assert "\"missing_context\": list(plan.missing_context)" in source
     assert "\"manager_agent.needs_clarification\"" in source
+
+
+def test_cross_tool_flows_failure_contract_avoids_traceback_field() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '"traceback":' not in source

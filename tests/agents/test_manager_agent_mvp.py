@@ -27,6 +27,11 @@ def test_invoice_reminder_contract_uses_guarded_invoice_id_source() -> None:
     assert '_extract_untrusted_text(p, "document_id")' in source
 
 
+def test_cross_tool_flow_contract_does_not_include_traceback_in_failure_payload() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '"traceback": trace' not in source
+
+
 
 
 @pytest.mark.parametrize(

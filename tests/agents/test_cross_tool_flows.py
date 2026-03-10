@@ -378,6 +378,37 @@ def test_flow_write_retry_with_same_idempotency_key_replays() -> None:
     assert second.ok is True
     assert first.executed_steps == second.executed_steps
     assert any(event["event"] == "flow.idempotent_replay" for event in second.audit_evidence)
+
+
+def test_action_failure_redacts_traceback_from_result_and_audit() -> None:
+    registry = AtomicActionRegistry()
+
+    def _boom(_: dict[str, str]) -> dict[str, str]:
+        raise RuntimeError("boom: secret /srv/app/config.yaml")
+
+    registry.register("explode", _boom)
+    flow = FlowDefinition(
+        flow_id="flow_fail",
+        title="Failure",
+        trigger="manual",
+        steps=(FlowStep("explode_step", "explode"),),
+        required_context=(),
+        confirmation_points=(),
+        audit_events=("flow.step_failed",),
+        fallback_policy="manual",
+    )
+    engine = CrossToolFlowEngine(action_registry=registry, flows={"flow_fail": flow})
+
+    result = engine.run(flow_id="flow_fail", context={})
+
+    assert result.ok is False
+    assert result.status == "failed"
+    assert result.failures[0]["code"] == "action_failed"
+    assert result.failures[0]["error"].startswith("boom:")
+    assert "traceback" not in result.failures[0]
+    assert "traceback" not in result.audit_evidence[0]
+
+
 def test_engine_rejects_unregistered_actions_during_flow_build() -> None:
     registry = AtomicActionRegistry()
     flows = {
