@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import threading
 from pathlib import Path
 
@@ -76,6 +77,35 @@ def test_before_request_binds_session_tenant_db_path_override(tmp_path, monkeypa
     assert Path(core_logic._active_db_path()) == Path(app.config["CORE_DB"])
     assert override_path in bind_calls
     assert bind_calls[-1] is None
+
+
+def test_aufgaben_api_respects_session_tenant_db_path(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+    tenant_db = tmp_path / "tenant_tasks.sqlite3"
+
+    _seed_user_session(client, tenant_db_path=str(tenant_db))
+    created = client.post("/api/aufgaben", json={"title": "Tenant Scoped Task"})
+    assert created.status_code == 201
+
+    with sqlite3.connect(tenant_db) as con:
+        row = con.execute(
+            "SELECT tenant, title FROM aufgaben_tasks WHERE title=?",
+            ("Tenant Scoped Task",),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "KUKANILEA"
+    assert row[1] == "Tenant Scoped Task"
+
+    with sqlite3.connect(str(app.config["CORE_DB"])) as con:
+        try:
+            default_count = con.execute(
+                "SELECT COUNT(*) FROM aufgaben_tasks WHERE title=?",
+                ("Tenant Scoped Task",),
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            default_count = 0
+    assert default_count == 0
 
 
 def test_before_request_falls_back_to_core_db_without_override(tmp_path, monkeypatch):
@@ -238,6 +268,32 @@ def test_rebinding_same_path_keeps_single_init_marker(tmp_path, monkeypatch):
     assert initialized_before == initialized_after
     assert str(tenant_path.resolve()) in initialized_after
     core_logic.bind_request_db_path(None)
+
+
+def test_health_does_not_reinitialize_db_for_same_path(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+    _seed_user_session(client, tenant_db_path=None)
+
+    import app.core.logic as core_logic
+
+    db_key = str(Path(app.config["CORE_DB"]).resolve())
+    original_db_init = core_logic.db_init
+    init_calls = {"count": 0}
+
+    def _counting_db_init() -> None:
+        init_calls["count"] += 1
+        original_db_init()
+
+    monkeypatch.setattr(core_logic, "db_init", _counting_db_init)
+    core_logic._DB_INITIALIZED_PATHS.discard(db_key)
+
+    first = client.get("/api/health")
+    second = client.get("/api/health")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert init_calls["count"] == 1
 
 
 def test_set_db_path_does_not_override_active_request_binding(tmp_path, monkeypatch):

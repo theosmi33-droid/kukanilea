@@ -64,6 +64,31 @@ def test_preflight_prints_scope_summary() -> None:
     assert "PR-Link: https://github.com/theosmi33-droid/kukanilea/pull/777" in result.stdout
 
 
+def test_preflight_does_not_execute_shell_injection_from_repo_slug(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IEXEC)
+
+    marker = tmp_path / "injected"
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:/usr/bin:/bin"
+    env["RELEASE_REPO_SLUG"] = f"owner/repo; touch {marker}"
+    env["PROD_REPO_PATH"] = str(tmp_path / "missing")
+
+    subprocess.run(
+        ["bash", str(SCRIPT)],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert not marker.exists()
+
+
 def test_preflight_marks_blocked_environment_for_missing_runtime_bin() -> None:
     env = os.environ.copy()
     env["PR_NUMBER"] = "999"

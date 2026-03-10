@@ -30,16 +30,17 @@ jobs:
   pr-quality-guard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.event_name == 'pull_request'
     permissions:
       contents: read
     steps:
       - name: Checkout
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: PR quality guard
+        if: github.event_name == 'pull_request'
         run: |
           bash scripts/dev/pr_quality_guard.sh --ci
 
@@ -47,21 +48,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [pr-quality-guard]
-    if: github.event_name == 'pull_request'
     permissions:
       contents: read
     steps:
       - name: Checkout
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Python
+        if: github.event_name == 'pull_request'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Enforce scoped ownership + merge order gate
+        if: github.event_name == 'pull_request'
         run: |
           python scripts/dev/ui_conflict_preventer.py --base-branch origin/main
 

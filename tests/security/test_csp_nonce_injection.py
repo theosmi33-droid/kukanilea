@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import Response, jsonify
 
 
-def test_injects_nonce_only_into_script_tags_without_existing_nonce(admin_client):
+def test_does_not_auto_inject_nonce_into_script_tags(admin_client):
     app, client = admin_client
 
     @app.route("/__test/csp/mixed")
@@ -20,7 +20,7 @@ def test_injects_nonce_only_into_script_tags_without_existing_nonce(admin_client
     body = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert body.count("nonce=") == 3
+    assert body.count("nonce=") == 1
     assert "nonce='kept'" in body
 
 
@@ -67,4 +67,4 @@ def test_handles_bytes_html_without_decoding_failures(admin_client):
 
     assert response.status_code == 200
     assert body.startswith(b"\xff\xfe")
-    assert b"<script nonce=\"" in body
+    assert b"<script nonce=\"" not in body

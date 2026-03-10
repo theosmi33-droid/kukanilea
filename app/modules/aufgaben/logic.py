@@ -23,7 +23,7 @@ def _now_iso() -> str:
 
 
 def _db() -> sqlite3.Connection:
-    con = sqlite3.connect(core_logic.DB_PATH)
+    con = sqlite3.connect(core_logic._active_db_path())
     con.row_factory = sqlite3.Row
     return con
 

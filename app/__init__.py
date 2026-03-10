@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import posixpath
-import re
 import secrets
 import time
 from datetime import timedelta
@@ -273,22 +272,6 @@ def create_app() -> Flask:
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        content_type = str(response.headers.get("Content-Type") or "").lower()
-        nonce = getattr(g, "csp_nonce", "")
-        if "text/html" not in content_type or not nonce:
-            return response
-        if response.is_streamed or response.direct_passthrough:
-            return response
-        body = response.get_data()
-        if b"<script" not in body.lower():
-            return response
-        script_pattern = re.compile(rb"<script(?![^>]*\bnonce=)([^>]*)>", re.IGNORECASE)
-        body, replacements = script_pattern.subn(
-            lambda m: b'<script nonce="' + nonce.encode("utf-8") + b'"' + m.group(1) + b'>',
-            body,
-        )
-        if replacements:
-            response.set_data(body)
         return response
 
     app.register_blueprint(web.bp)
