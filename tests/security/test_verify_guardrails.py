@@ -75,6 +75,48 @@ def test_cdn_check_ignores_svg_xmlns_line(tmp_path: Path) -> None:
     assert errors == []
 
 
+def test_htmx_csrf_detects_missing_token_and_header(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    html_path = tmp_path / "app" / "templates" / "unsafe_csrf.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text('<button hx-post="/admin/audit/verify" hx-confirm="Jetzt?">Verify</button>\n', encoding="utf-8")
+
+    errors = guardrails.check_htmx_csrf(path=str(tmp_path / "app" / "templates"))
+
+    assert len(errors) == 1
+    assert "unsafe_csrf.html" in errors[0]
+
+
+def test_htmx_csrf_allows_form_hidden_csrf_token(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    html_path = tmp_path / "app" / "templates" / "safe_form.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(
+        '<form hx-post="/admin/tenants/add" hx-confirm="Anlegen?">\n'
+        '  <input type="hidden" name="csrf_token" value="token">\n'
+        '</form>\n',
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_htmx_csrf(path=str(tmp_path / "app" / "templates"))
+
+    assert errors == []
+
+
+def test_htmx_csrf_allows_non_form_hx_headers_token(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    html_path = tmp_path / "app" / "templates" / "safe_button.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(
+        '<button hx-post="/admin/audit/verify" hx-confirm="Verify?" hx-headers="{\"X-CSRF-Token\":\"token\"}">Verify</button>\n',
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_htmx_csrf(path=str(tmp_path / "app" / "templates"))
+
+    assert errors == []
+
+
 def test_external_asset_check_flags_remote_src_href(tmp_path: Path) -> None:
     guardrails = _load_guardrails_module()
     html_path = tmp_path / "app" / "templates" / "unsafe_assets.html"
