@@ -4,10 +4,10 @@ import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
+import app.modules.kalender.contracts as kalender_contracts
 from app import core, create_app
 from app.core.event_bus import EventBus, EventType
 from app.knowledge.ics_source import knowledge_calendar_events_list
-import app.knowledge.ics_source as ics_source
 from app.modules.kalender.contracts import build_summary
 
 
@@ -79,6 +79,38 @@ def _ensure_knowledge_tables(core_db_path: str) -> None:
         con.close()
 
 
+def _set_knowledge_policy(
+    core_db_path: str,
+    *,
+    allow_calendar: int,
+    allow_customer_pii: int,
+    allow_ocr: int,
+) -> None:
+    con = sqlite3.connect(core_db_path)
+    try:
+        con.execute(
+            """
+            INSERT OR REPLACE INTO knowledge_source_policies(
+              tenant_id,
+              allow_calendar,
+              allow_customer_pii,
+              allow_ocr,
+              updated_at
+            ) VALUES (?,?,?,?,?)
+            """,
+            (
+                "KUKANILEA",
+                int(bool(allow_calendar)),
+                int(bool(allow_customer_pii)),
+                int(bool(allow_ocr)),
+                datetime.now(UTC).isoformat(timespec="seconds"),
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
 def test_event_bus_email_todo_creates_task(tmp_path, monkeypatch):
     monkeypatch.setenv("KUKANILEA_AUTH_DB", str(tmp_path / "auth.sqlite3"))
     monkeypatch.setenv("KUKANILEA_CORE_DB", str(tmp_path / "core.sqlite3"))
@@ -109,11 +141,20 @@ def test_event_bus_document_processed_with_deadline_creates_calendar_event(tmp_p
     app = create_app()
     app.config["READ_ONLY"] = False
     _ensure_knowledge_tables(str(app.config["CORE_DB"]))
+    _set_knowledge_policy(
+        str(app.config["CORE_DB"]),
+        allow_calendar=1,
+        allow_customer_pii=1,
+        allow_ocr=1,
+    )
     detected_deadline = (datetime.now(UTC) + timedelta(days=1)).date().isoformat()
 
     with app.app_context():
-        monkeypatch.setattr(ics_source, "_policy_allows_calendar", lambda *_args, **_kwargs: True)
-
+        monkeypatch.setattr(
+            kalender_contracts,
+            "_ensure_calendar_write_allowed",
+            lambda *_args, **_kwargs: None,
+        )
         EventBus.publish(
             "document.processed",
                 {
@@ -139,6 +180,40 @@ def test_event_bus_document_processed_with_deadline_creates_calendar_event(tmp_p
         for event in local_summary.get("events_next_7_days", [])
     )
     assert knowledge_hit or local_hit
+
+
+def test_event_bus_document_processed_respects_allow_ocr_policy(tmp_path, monkeypatch):
+    monkeypatch.setenv("KUKANILEA_AUTH_DB", str(tmp_path / "auth.sqlite3"))
+    monkeypatch.setenv("KUKANILEA_CORE_DB", str(tmp_path / "core.sqlite3"))
+
+    app = create_app()
+    app.config["READ_ONLY"] = False
+    _ensure_knowledge_tables(str(app.config["CORE_DB"]))
+    _set_knowledge_policy(
+        str(app.config["CORE_DB"]),
+        allow_calendar=1,
+        allow_customer_pii=1,
+        allow_ocr=0,
+    )
+
+    with app.app_context():
+        EventBus.publish(
+            "document.processed",
+            {
+                "tenant": "KUKANILEA",
+                "filename": "angebot.pdf",
+                "ocr_text": "Zahlbar bis 15.04.2026",
+            },
+        )
+
+        events = knowledge_calendar_events_list(
+            "KUKANILEA",
+            include_manual=True,
+            include_deadlines=True,
+            include_tasks=False,
+        )
+
+    assert events == []
 
 
 def test_event_bus_audit_and_structured_logging(tmp_path, monkeypatch):

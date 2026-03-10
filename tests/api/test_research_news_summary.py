@@ -37,9 +37,12 @@ def _write_cache(path, rows):
 def _latest_summary_note(core_db_path: str):
     con = sqlite3.connect(core_db_path)
     try:
-        row = con.execute(
-            "SELECT body, metadata_json FROM ai_summary_notes ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        try:
+            row = con.execute(
+                "SELECT body, metadata_json FROM ai_summary_notes ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return "", {}
     finally:
         con.close()
     if not row:
@@ -144,3 +147,38 @@ def test_news_summary_online_with_confirm_uses_connector(tmp_path, monkeypatch):
     assert body["provenance"]["mode"] == "online"
     assert body["sources"][0]["title"] == "Live News A"
     assert connector.calls == 1
+
+
+def test_research_summary_note_uses_tenant_scoped_db_path(tmp_path, monkeypatch):
+    app, client = _bootstrap(tmp_path, monkeypatch)
+    tenant_db = tmp_path / "tenant_core.sqlite3"
+    with client.session_transaction() as sess:
+        sess["tenant_id"] = "TENANT_B"
+        sess["tenant_db_path"] = str(tenant_db)
+
+    _write_cache(
+        tmp_path / "research_cache.json",
+        [
+            {
+                "topic": "research",
+                "query": "isolation",
+                "title": "Tenant Scoped Source",
+                "excerpt": "Tenant-specific note",
+                "source": "cache:local",
+                "fetched_at": "2026-01-01T00:00:00Z",
+            }
+        ],
+    )
+
+    response = client.post("/api/research/summary", json={"query": "isolation", "online": False})
+
+    assert response.status_code == 200
+
+    tenant_note_body, tenant_metadata = _latest_summary_note(str(tenant_db))
+    assert "Tenant Scoped Source" in tenant_note_body
+    assert tenant_metadata["query"] == "isolation"
+    assert tenant_metadata["topic"] == "research"
+
+    default_note_body, default_metadata = _latest_summary_note(str(app.config["CORE_DB"]))
+    assert default_note_body == ""
+    assert default_metadata == {}

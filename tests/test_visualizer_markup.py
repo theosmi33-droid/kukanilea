@@ -3,7 +3,13 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from app.core.visualizer_markup import analyze_excel_summary, append_markup, load_markup_document, validate_markup_payload
+from app.core.visualizer_markup import (
+    _read_table,
+    analyze_excel_summary,
+    append_markup,
+    load_markup_document,
+    validate_markup_payload,
+)
 
 
 def test_validate_markup_payload_rejects_negative_anchor() -> None:
@@ -58,3 +64,30 @@ def test_excel_analyzer_performance_sanity(tmp_path: Path) -> None:
     elapsed = time.perf_counter() - start
     assert out["rows"] >= 2000
     assert elapsed < 1.0
+
+
+def test_csv_reader_stops_after_max_rows(monkeypatch, tmp_path: Path) -> None:
+    fp = tmp_path / "stream.csv"
+    fp.write_text("col1,col2\n", encoding="utf-8")
+
+    class _Reader:
+        def __init__(self):
+            self._idx = -1
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            self._idx += 1
+            if self._idx == 0:
+                return ["col1", "col2"]
+            if self._idx <= 3:
+                return [f"v{self._idx}", str(self._idx)]
+            raise RuntimeError("reader_consumed_too_far")
+
+    monkeypatch.setattr("app.core.visualizer_markup.csv.reader", lambda _f: _Reader())
+
+    headers, rows = _read_table(fp, max_rows=2)
+
+    assert headers == ["col1", "col2"]
+    assert len(rows) == 2
