@@ -74,6 +74,27 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Audit production dependency pinning policy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          req = Path("requirements.txt")
+          violations = []
+          for idx, raw in enumerate(req.read_text().splitlines(), start=1):
+              line = raw.strip()
+              if not line or line.startswith("#"):
+                  continue
+              if "==" not in line:
+                  violations.append(f"Line {idx}: {raw}")
+
+          if violations:
+              raise SystemExit(
+                  "Unpinned production dependencies found:\n" + "\n".join(violations)
+              )
+          print("requirements.txt production dependencies are fully pinned.")
+          PY
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
