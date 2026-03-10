@@ -119,3 +119,14 @@ def test_invoice_due_contract_sanitizes_untrusted_due_date_fields() -> None:
 def test_manager_agent_runtime_guard_contract_has_no_neutral_downgrade_path() -> None:
     source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
     assert "warning_matches = sorted(set(warning_matches + injection_matches))" not in source
+
+
+def test_manager_agent_contract_emits_missing_context_audit_payload() -> None:
+    source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+    assert "\"missing_context\": list(plan.missing_context)" in source
+    assert "\"manager_agent.needs_clarification\"" in source
+
+
+def test_cross_tool_flows_failure_contract_avoids_traceback_field() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '"traceback":' not in source
