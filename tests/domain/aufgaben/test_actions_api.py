@@ -39,9 +39,8 @@ def _auth_client(app, *, role="OPERATOR", username="operator"):
 
 
 def _csrf_headers(headers: dict[str, str] | None = None) -> dict[str, str]:
-    merged = {"X-CSRF-Token": "test-csrf-token"}
-    if headers:
-        merged.update(headers)
+    merged = headers.copy() if headers else {}
+    merged["X-CSRF-Token"] = "test-csrf-token"
     return merged
 
 
