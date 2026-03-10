@@ -362,3 +362,13 @@ def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.get_json()["ok"] is True
+
+
+def test_healthcheck_requires_authentication(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    response = client.get("/api/health")
+    assert response.status_code == 401
+    body = response.get_json()
+    assert body["error"]["code"] == "auth_required"

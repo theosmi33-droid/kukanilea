@@ -109,9 +109,9 @@ def generate_daily_insights(tenant_id: str, day_yyyy_mm_dd: str) -> dict[str, An
                     WHERE event_type='lead_claim_collision'
                       AND entity_type='lead'
                       AND datetime(ts) >= datetime('now','-1 day')
-                      AND payload_json LIKE ?
+                      AND json_extract(payload_json, '$.tenant_id') = ?
                     """,
-                    (f'%"tenant_id":"{t}"%',),
+                    (t,),
                 ).fetchone() or {"c": 0}
         finally:
             con.close()

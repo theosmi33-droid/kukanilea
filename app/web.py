@@ -2485,7 +2485,6 @@ def _guard_login():
         "/forgot",
         "/reset-code",
         "/health",
-        "/api/health",
         "/api/ping",
     ]:
         return None
@@ -2888,6 +2887,8 @@ def logout():
 
 @bp.route("/api/progress")
 def api_progress_multi():
+    if (not current_user()) and (request.remote_addr not in ("127.0.0.1", "::1")):
+        return jsonify(error="unauthorized"), 401
     tokens = request.args.get("tokens", "").split(",")
     results = {}
     for t in tokens:
@@ -4030,6 +4031,7 @@ HTML_SETTINGS = """
   <div class="card p-4 rounded-2xl border">
     <div class="text-sm font-semibold mb-2">Partner Branding (White-Label)</div>
     <form action="/settings/branding" method="POST" class="grid gap-3 text-sm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="grid gap-1">
         <label class="muted text-[10px] uppercase font-bold">Anzeigename</label>
         <input name="app_name" value="{{ branding.app_name }}" class="rounded-xl border px-3 py-2 bg-transparent" />
