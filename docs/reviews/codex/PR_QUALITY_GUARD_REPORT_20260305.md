@@ -47,6 +47,19 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
   5. `MIN_TESTS` und Evidence-Report bleiben Pflicht für nachvollziehbare Test-Evidence.
 - Ergebnis: konfliktärmere, reviewbare Einzel-PRs ohne Branch-Stacking-Mechanik.
 
+## 2026-03-10 Addendum (PR #691 Medium/High-Confidence Bandit Gate)
+- Scope:
+  - `.github/workflows/pipeline.yml` (ursprünglicher Vorschlag)
+  - `.github/workflows/ci.yml` (nach CI-Delegation in PR #675 maßgeblich)
+  - dieses Evidence-Update
+- Ziel: Bandit-Gate blockiert risikoreiche neue Python-Befunde auf geänderten Pfaden (PR-/Push-Delta), statt globaler Altlast-Blockade.
+- Sicherheitsnutzen:
+  - neue risikoreiche Änderungen werden strikt geblockt,
+  - historische Befunde außerhalb des Deltas bleiben separat sanierbar.
+- Validierung:
+  - Workflow YAML parsebar (`pipeline.yml` + `ci.yml`).
+  - Job schreibt die gescannten Ziele (`bandit-targets.txt`) und bricht bei Policy-Verstoß ab.
+
 ## 2026-03-10 Addendum (PR #674 Incremental Bandit Gate)
 - Scope:
   - `.github/workflows/pipeline.yml`
