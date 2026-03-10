@@ -4,7 +4,7 @@ import sqlite3
 from datetime import UTC, date, datetime
 from typing import Any
 
-from app.core.logic import DB_PATH
+from app.core import logic as core_logic
 
 OPEN_STATUSES = {"OPEN", "IN_PROGRESS", "BLOCKED"}
 TASK_STATUSES = OPEN_STATUSES | {"DONE", "CANCELLED"}
@@ -23,7 +23,7 @@ def _now_iso() -> str:
 
 
 def _db() -> sqlite3.Connection:
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(core_logic.DB_PATH)
     con.row_factory = sqlite3.Row
     return con
 
