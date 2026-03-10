@@ -4435,6 +4435,15 @@ def is_allowed_source_path(p: Path) -> bool:
     return False
 
 
+def _is_within_dir(path: Path, root: Path) -> bool:
+    try:
+        rp = Path(path).expanduser().resolve()
+        rr = Path(root).expanduser().resolve()
+    except Exception:
+        return False
+    return rp == rr or str(rp).startswith(str(rr) + os.sep)
+
+
 def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     doc_id = normalize_component(doc_id)
     if not doc_id:
@@ -4639,8 +4648,16 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
 
     created_new_object = False
     if use_existing:
-        folder = Path(use_existing)
-        if not folder.exists() or not folder.is_dir():
+        candidate = Path(use_existing)
+        if not candidate.is_absolute():
+            candidate = tenant_dir / candidate
+        if (
+            _is_within_dir(candidate, tenant_dir)
+            and candidate.exists()
+            and candidate.is_dir()
+        ):
+            folder = candidate
+        else:
             folder = tenant_dir / _compose_object_folder(kdnr_raw, name, addr, plzort)
             created_new_object = True
     else:
