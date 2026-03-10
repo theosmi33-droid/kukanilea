@@ -33,7 +33,14 @@ def _auth_client(app, *, role: str = "OPERATOR", username: str = "operator"):
         sess["user"] = username
         sess["role"] = role
         sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "test-csrf-token"
     return client
+
+
+def _csrf_headers(headers: dict[str, str] | None = None) -> dict[str, str]:
+    merged = headers.copy() if headers else {}
+    merged["X-CSRF-Token"] = "test-csrf-token"
+    return merged
 
 
 def test_settings_actions_list_exposes_parity_actions(tmp_path, monkeypatch):
@@ -56,7 +63,7 @@ def test_settings_read_action_returns_expected_contract_payload(tmp_path, monkey
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
-    response = client.post("/api/settings/actions/setting.read", json={})
+    response = client.post("/api/settings/actions/setting.read", json={}, headers=_csrf_headers())
 
     assert response.status_code == 200
     body = response.get_json()
@@ -74,6 +81,7 @@ def test_settings_update_action_requires_admin_role(tmp_path, monkeypatch):
     denied = client.post(
         "/api/settings/actions/setting.update",
         json={"scope": "tenant", "key": "ui.theme", "value": "dark"},
+        headers=_csrf_headers(),
     )
     assert denied.status_code == 403
 
@@ -85,6 +93,7 @@ def test_settings_update_action_admin_succeeds_without_confirm(tmp_path, monkeyp
     approved = client.post(
         "/api/settings/actions/setting.update",
         json={"scope": "tenant", "key": "ui.theme", "value": "dark"},
+        headers=_csrf_headers(),
     )
     assert approved.status_code == 200
     result = approved.get_json()["result"]
@@ -97,13 +106,14 @@ def test_settings_rotate_action_is_approval_gated_and_blocked_placeholder(tmp_pa
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
-    denied = client.post("/api/settings/actions/key.rotate", json={"key_name": "mesh-signing-key"})
+    denied = client.post("/api/settings/actions/key.rotate", json={"key_name": "mesh-signing-key"}, headers=_csrf_headers())
     assert denied.status_code == 409
     assert denied.get_json()["error"] == "approval_required"
 
     approved = client.post(
         "/api/settings/actions/key.rotate",
         json={"key_name": "mesh-signing-key", "confirm": "CONFIRM"},
+        headers=_csrf_headers(),
     )
     assert approved.status_code == 200
     result = approved.get_json()["result"]
@@ -138,7 +148,7 @@ def test_settings_actions_enforce_session_tenant_in_handler_payload(tmp_path, mo
     )
 
     try:
-        response = client.post("/api/settings/actions/setting.read", json={"tenant_id": "VICTIM"})
+        response = client.post("/api/settings/actions/setting.read", json={"tenant_id": "VICTIM"}, headers=_csrf_headers())
     finally:
         template._actions["setting.read"] = original_action
 
