@@ -193,6 +193,21 @@ def test_external_asset_check_flags_unquoted_srcset_and_formaction(tmp_path: Pat
     assert all("unsafe_attr_bypass.html" in item for item in errors)
 
 
+def test_external_asset_check_flags_remote_src_after_gt_in_quoted_attribute(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    html_path = tmp_path / "app" / "templates" / "quoted_gt_bypass.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(
+        '<img alt=">" src="https://evil.example/asset.png">\n',
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_external_asset_urls(paths=[str(tmp_path / "app" / "templates")])
+
+    assert len(errors) == 1
+    assert "quoted_gt_bypass.html" in errors[0]
+
+
 def test_shell_template_inline_handler_check_flags_onclick_and_preload_onload(tmp_path: Path) -> None:
     guardrails = _load_guardrails_module()
     layout_path = tmp_path / "app" / "templates" / "layout.html"
