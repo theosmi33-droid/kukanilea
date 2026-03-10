@@ -30,3 +30,8 @@ def test_contributing_mentions_branch_freshness_and_stack_rules():
     content = _read_text("CONTRIBUTING.md").lower()
     assert "main-only freshness" in content
     assert "kein branch-stacking" in content
+
+
+def test_contributing_mentions_lane_overlap_gate():
+    content = _read_text("CONTRIBUTING.md").lower()
+    assert "lane overlap" in content
