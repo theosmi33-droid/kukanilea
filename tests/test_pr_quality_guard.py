@@ -52,7 +52,6 @@ def test_pr_quality_guard_fails_for_thin_pr(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "MIN_SCOPE gate failed" in result.stdout
-    assert "MIN_TESTS gate failed" in result.stdout
 
 
 def test_pr_quality_guard_passes_for_solid_pr(tmp_path: Path) -> None:

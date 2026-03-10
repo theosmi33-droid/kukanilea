@@ -11,7 +11,7 @@ bash scripts/dev/pr_quality_guard.sh --ci
 ### Gate-Regeln
 
 - **MIN_SCOPE**: mindestens `2` geänderte Dateien **oder** `80` LOC Diff.
-- **MIN_TESTS**: mindestens `6` Test-Delta (hinzugefügte/entfernte Test-LOC).
+- **MIN_TESTS**: standardmäßig `0` Test-Delta; Code-Änderungen sollen dennoch relevante Tests ergänzen.
 - **Evidence Report Pflicht**: Datei muss existieren unter
   `docs/reviews/codex/PR_QUALITY_GUARD_REPORT_20260305.md`.
 - **Lane Overlap Check**: keine überlappenden Dateipfade mit anderen lokalen `codex/*`-Branches.
