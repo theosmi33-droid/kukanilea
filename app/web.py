@@ -2840,6 +2840,8 @@ def logout():
 
 @bp.route("/api/progress")
 def api_progress_multi():
+    if (not current_user()) and (request.remote_addr not in ("127.0.0.1", "::1")):
+        return jsonify(error="unauthorized"), 401
     tokens = request.args.get("tokens", "").split(",")
     results = {}
     for t in tokens:
