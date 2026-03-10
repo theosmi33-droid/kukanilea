@@ -184,6 +184,7 @@ def _set_user_version(conn: sqlite3.Connection, version: int):
 
 def _ensure_docs_fts_schema(conn: sqlite3.Connection) -> None:
     expected_cols = {
+<<<<<<< HEAD
         "doc_id",
         "tenant_id",
         "kdnr",
@@ -192,6 +193,9 @@ def _ensure_docs_fts_schema(conn: sqlite3.Connection) -> None:
         "file_name",
         "file_path",
         "content",
+=======
+        "doc_id", "tenant_id", "kdnr", "doctype", "doc_date", "file_name", "file_path", "content"
+>>>>>>> 6c2f501 (fix(migrations): align background FTS schema with runtime expectations)
     }
     if _table_exists(conn, "docs_fts"):
         cols = {r[1] for r in conn.execute("PRAGMA table_info(docs_fts)").fetchall()}
@@ -215,7 +219,10 @@ def _ensure_docs_fts_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 6c2f501 (fix(migrations): align background FTS schema with runtime expectations)
 def _build_fts_indices(db_path: str):
     """Worker to build FTS indices in background to avoid blocking boot."""
     logger.info("Starting background FTS index build...")
@@ -250,7 +257,7 @@ def _build_fts_indices(db_path: str):
                 ORDER BY vv.version_no DESC, vv.id DESC
                 LIMIT 1
             )
-            WHERE doc_id NOT IN (SELECT doc_id FROM docs_fts)
+            WHERE d.doc_id NOT IN (SELECT doc_id FROM docs_fts)
             """
         conn.execute(query)
         conn.commit()
