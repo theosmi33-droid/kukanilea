@@ -55,7 +55,7 @@ def test_pr_quality_guard_fails_for_thin_pr(tmp_path: Path) -> None:
     result = _run_guard(repo)
 
     assert result.returncode != 0
-    assert "MIN_TESTS gate failed" in result.stdout
+    assert "MIN_SCOPE gate failed" in result.stdout
 
 
 def test_pr_quality_guard_passes_for_solid_pr(tmp_path: Path) -> None:
@@ -119,7 +119,25 @@ def test_pr_quality_guard_fails_on_unfocused_scope(tmp_path: Path) -> None:
     result = _run_guard(repo)
 
     assert result.returncode != 0
-    assert "FOCUSED_SCOPE gate failed" in result.stdout
+    assert "Lane overlap check failed" in result.stdout
+
+
+def test_pr_quality_guard_fails_on_stacked_codex_branch(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+
+    _run(["git", "checkout", "main"], repo)
+    _run(["git", "checkout", "-b", "codex/20260305-other"], repo)
+    (repo / "other_scope.txt").write_text("other\n")
+    _run(["git", "add", "other_scope.txt"], repo)
+    _run(["git", "commit", "-m", "other scope change"], repo)
+
+    _run(["git", "checkout", "codex/20260305-feature"], repo)
+    _run(["git", "merge", "--no-ff", "--no-edit", "codex/20260305-other"], repo)
+
+    result = _run_guard(repo)
+
+    assert result.returncode != 0
+    assert "Branch context gate failed" in result.stdout
 
 
 def test_project_manager_migrates_legacy_team_tasks_schema(tmp_path: Path, monkeypatch) -> None:
