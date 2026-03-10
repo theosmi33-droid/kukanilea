@@ -23,20 +23,13 @@
   --text-secondary: var(--color-text-muted);
   --border-color: var(--color-border);
 
-  /* Spacing scale */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --spacing-1: var(--space-2);
-  --spacing-2: var(--space-4);
-  --spacing-3: var(--space-5);
-  --spacing-4: var(--space-6);
+  /* Spacing Grid (8px baseline) */
+  --spacing-1: 8px;
+  --spacing-2: 16px;
+  --spacing-3: 24px;
+  --spacing-4: 32px;
   --spacing-5: 40px;
-  --spacing-6: var(--space-7);
+  --spacing-6: 48px;
 
   /* Borders & Radius */
   --radius-sm: 4px;
@@ -45,14 +38,8 @@
   --radius-xl: 16px;
 
   /* Typography */
-  --font-system: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-size-caption: 12px;
-  --font-size-body: 14px;
-  --font-size-base: 16px;
-  --font-size-heading-sm: 20px;
-  --font-size-heading-md: 24px;
-  --font-size-heading-lg: 32px;
-  --base-size: var(--font-size-base);
+  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --base-size: 15px;
 }
 
 * {
@@ -76,9 +63,6 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--color-text-main);
   margin-bottom: var(--spacing-2);
 }
-h1 { font-size: var(--font-size-heading-lg); }
-h2 { font-size: var(--font-size-heading-md); }
-h3 { font-size: var(--font-size-heading-sm); }
 
 p {
   margin-bottom: var(--spacing-2);

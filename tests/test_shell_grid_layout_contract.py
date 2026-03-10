@@ -25,7 +25,7 @@ def test_layout_keeps_mobile_bottom_nav_and_topbar_in_shell() -> None:
 
 
 def test_shell_navigation_css_contains_grid_and_context_rules() -> None:
-    css = _read("static/css/shell-navigation.css")
+    css = _read("app/static/css/shell-navigation.css")
     expected_rules = [
         ".app-shell",
         ".shell-grid",
@@ -40,7 +40,7 @@ def test_shell_navigation_css_contains_grid_and_context_rules() -> None:
 
 
 def test_shell_navigation_css_contains_responsive_mobile_rules() -> None:
-    css = _read("static/css/shell-navigation.css")
+    css = _read("app/static/css/shell-navigation.css")
     assert "@media (max-width: 768px)" in css
     assert ".app-shell" in css
     assert ".shell-grid" in css
@@ -50,7 +50,7 @@ def test_shell_navigation_css_contains_responsive_mobile_rules() -> None:
 
 
 def test_shell_navigation_css_keeps_sidebar_collapse_contract() -> None:
-    css = _read("static/css/shell-navigation.css")
+    css = _read("app/static/css/shell-navigation.css")
     assert "html.sidebar-collapsed .app-shell" in css
     assert "html.sidebar-collapsed .nav-link" in css
     assert "html.sidebar-collapsed .nav-link.active::before" in css

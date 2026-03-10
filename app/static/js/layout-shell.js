@@ -1,4 +1,3 @@
-let lastChatTrigger = null;
 let chatPendingId = '';
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -35,9 +34,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const mobileToggle = document.getElementById('mobile-sidebar-toggle');
   const sidebar = document.querySelector('.sidebar');
+  const mobileOverlay = document.getElementById('mobile-sidebar-overlay');
   const setMobileSidebarState = (isOpen) => {
     if (!sidebar || !mobileToggle) return;
     sidebar.classList.toggle('mobile-open', isOpen);
+    document.body.classList.toggle('mobile-sidebar-open', isOpen);
+    if (mobileOverlay) {
+      mobileOverlay.hidden = !isOpen;
+      mobileOverlay.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+    }
     mobileToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     mobileToggle.setAttribute('aria-label', isOpen ? 'Menü schließen' : 'Menü öffnen');
   };
@@ -46,8 +51,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const nextState = !sidebar.classList.contains('mobile-open');
       setMobileSidebarState(nextState);
     });
-    document.addEventListener('click', (e) => {
-      if (sidebar.classList.contains('mobile-open') && !sidebar.contains(e.target) && !mobileToggle.contains(e.target)) {
+    mobileOverlay?.addEventListener('click', () => setMobileSidebarState(false));
+    sidebar.querySelectorAll('a[href]').forEach((link) => {
+      link.addEventListener('click', () => setMobileSidebarState(false));
+    });
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 768 && sidebar.classList.contains('mobile-open')) {
         setMobileSidebarState(false);
       }
     }, { passive: true });
@@ -71,9 +80,62 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
+
+
+  const sidebarRouteOrder = ['/dashboard', '/visualizer', '/assistant', '/upload', '/tasks', '/system/logs', '/settings'];
+  const quickNavigate = (index) => {
+    const target = sidebarRouteOrder[index];
+    if (target) window.location.href = target;
+  };
+
+  const initKeyboardNavigation = () => {
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        const searchInput = document.getElementById('topbar-search');
+        if (searchInput) {
+          event.preventDefault();
+          searchInput.focus();
+          searchInput.select?.();
+        }
+      }
+
+      if (event.altKey && /^[1-7]$/.test(event.key)) {
+        event.preventDefault();
+        quickNavigate(Number(event.key) - 1);
+      }
+
+      if (event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+        const links = Array.from(document.querySelectorAll('#sidebar-primary-nav .nav-link'));
+        if (!links.length) return;
+        event.preventDefault();
+        const activeElement = document.activeElement;
+        let idx = links.indexOf(activeElement);
+        if (idx < 0) {
+          idx = links.findIndex((l) => l.classList.contains('active'));
+        }
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        const nextIdx = (idx + delta + links.length) % links.length;
+        links[nextIdx].focus();
+      }
+    });
+
+    const topbarSearch = document.getElementById('topbar-search');
+    if (topbarSearch) {
+      topbarSearch.addEventListener('focus', () => {
+        if (window.CommandPalette?.open) window.CommandPalette.open();
+      });
+      topbarSearch.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (window.CommandPalette?.open) window.CommandPalette.open();
+        }
+      });
+    }
+  };
   const initializeUi = () => {
     updateSidebarLabel();
     updateActiveRoutes();
+    initKeyboardNavigation();
     const chatToggle = document.getElementById('ki-chat-toggle');
     if (chatToggle) {
       chatToggle.addEventListener('click', () => toggleChat());
@@ -81,13 +143,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatClose = document.getElementById('ki-chat-close');
     if (chatClose) {
       chatClose.addEventListener('click', () => toggleChat(false));
-    }
-    const chatForm = document.querySelector('.ki-chat-composer');
-    if (chatForm) {
-      chatForm.addEventListener('submit', (event) => {
-        event.preventDefault();
-        sendChatMessage();
-      });
     }
     const chatSendBtn = document.getElementById('chat-send-btn');
     if (chatSendBtn) {
@@ -132,17 +187,11 @@ function toggleChat(forceOpen) {
   const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : isHidden;
   win.style.display = shouldOpen ? 'flex' : 'none';
   win.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
-  win.setAttribute('aria-modal', shouldOpen ? 'true' : 'false');
   toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
   if (shouldOpen) {
-    lastChatTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : toggle;
-    document.body.classList.add('chat-open');
-    if (window.UIShell) window.UIShell.trapFocus(win);
     document.getElementById('chat-input')?.focus();
   } else {
-    document.body.classList.remove('chat-open');
-    (lastChatTrigger || toggle).focus();
-    lastChatTrigger = null;
+    toggle.focus();
   }
 }
 
