@@ -4,20 +4,18 @@ KUKANILEA v2.5 Self-Healing & Auto-Evolution Engine.
 Handles Task 201-210: Detecting system decay and applying autonomous patches.
 """
 
-import os
 import logging
 import sqlite3
-import subprocess
-from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any
+from pathlib import Path
 
 logger = logging.getLogger("kukanilea.healer")
 
 class SystemHealer:
-    def __init__(self, db_path: Path, repo_root: Path):
+    def __init__(self, db_path: Path, repo_root: Path, writable_root: Path | None = None):
         self.db_path = db_path
         self.repo_root = repo_root
+        self.writable_root = writable_root or repo_root
 
     def run_healing_cycle(self):
         """Main loop for forensic repair."""
@@ -126,10 +124,14 @@ class SystemHealer:
 
     def apply_hotfixes(self):
         """Task 202: Apply known patches for common environment issues."""
-        # Example: Ensure certain directories exist
+        # Hotfix folders must be created in a writable runtime location.
         required_dirs = ["logs/crash", "vault", "trash", "instance/backups"]
         for d in required_dirs:
-            (self.repo_root / d).mkdir(parents=True, exist_ok=True)
+            target_dir = self.writable_root / d
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning("Skipping hotfix directory setup for %s: %s", target_dir, e)
 
     def evolution_step(self):
         """Self-optimization: Adjust system threads based on performance_report.json."""
