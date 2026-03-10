@@ -1,11 +1,57 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime, timedelta
 
 from app.modules.kalender import contracts
 
 
+def _enable_calendar_policy(auth_client) -> None:
+    db_path = str(auth_client.application.config["CORE_DB"])
+    with sqlite3.connect(db_path) as con:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_source_policies(
+              tenant_id TEXT PRIMARY KEY,
+              allow_manual INTEGER NOT NULL DEFAULT 1,
+              allow_tasks INTEGER NOT NULL DEFAULT 1,
+              allow_projects INTEGER NOT NULL DEFAULT 1,
+              allow_documents INTEGER NOT NULL DEFAULT 0,
+              allow_leads INTEGER NOT NULL DEFAULT 0,
+              allow_email INTEGER NOT NULL DEFAULT 0,
+              allow_calendar INTEGER NOT NULL DEFAULT 0,
+              allow_ocr INTEGER NOT NULL DEFAULT 0,
+              allow_customer_pii INTEGER NOT NULL DEFAULT 0,
+              updated_at TEXT NOT NULL
+            );
+            """
+        )
+        con.execute(
+            """
+            INSERT OR REPLACE INTO knowledge_source_policies(
+              tenant_id, allow_manual, allow_tasks, allow_projects, allow_documents,
+              allow_leads, allow_email, allow_calendar, allow_ocr, allow_customer_pii, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "KUKANILEA",
+                1,
+                1,
+                1,
+                0,
+                0,
+                0,
+                1,
+                0,
+                1,
+                datetime.now(UTC).isoformat(timespec="seconds"),
+            ),
+        )
+        con.commit()
+
+
 def test_document_processed_event_creates_deadline_event(auth_client):
+    _enable_calendar_policy(auth_client)
     payload = contracts.handle_document_processed_event(
         "KUKANILEA",
         {
@@ -26,6 +72,7 @@ def test_document_processed_event_creates_deadline_event(auth_client):
 
 
 def test_kalender_summary_reports_conflicts_and_reminders(auth_client):
+    _enable_calendar_policy(auth_client)
     base = datetime.now(UTC) + timedelta(hours=2)
     start_a = base.replace(minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
     end_a = (base.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)).isoformat(timespec="seconds")
@@ -57,6 +104,7 @@ def test_kalender_summary_reports_conflicts_and_reminders(auth_client):
 
 
 def test_demo_scenario_confirm_gate_and_summary(auth_client):
+    _enable_calendar_policy(auth_client)
     meeting = auth_client.post(
         "/api/kalender/events",
         json={

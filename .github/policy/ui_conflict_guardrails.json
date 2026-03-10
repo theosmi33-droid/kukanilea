@@ -45,6 +45,7 @@
     ],
     "shared_ui_shell": [
       "app/static/css/email.css",
+      "app/static/css/haptic.css",
       "app/templates/layout.html",
       "app/templates/partials/",
       "app/templates/skeletons/",
@@ -59,6 +60,7 @@
       "app/static/js/data-table.js",
       "app/static/js/layout-shell.js",
       "app/static/js/navigation.js",
+      "app/static/js/state.js",
       "app/static/js/tasks-performance.js",
       "app/static/js/ui-",
       "app/static/js/app.js"

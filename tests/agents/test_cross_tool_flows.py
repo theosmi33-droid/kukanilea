@@ -278,11 +278,9 @@ def test_invoice_flow_sanitizes_prompt_injection_fields() -> None:
         "Zahlungserinnerung für Rechnung unbekannt zum Termin offen erstellen"
     )
 
-
 def test_manager_agent_contract_exposes_missing_context_reason_for_propose_mode() -> None:
     source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
     assert 'reason="missing_context"' in source
-
 
 @pytest.mark.parametrize(
     "flow_id",

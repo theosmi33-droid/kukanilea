@@ -48,6 +48,7 @@ from app.core.indexing_logic import IndividualIntelligence
 from app.core.auto_evolution import SystemHealer
 
 from jinja2 import TemplateNotFound
+from markupsafe import escape
 
 from flask import (
     Blueprint,
@@ -3478,9 +3479,12 @@ def mesh():
         ]
 
     for node in nodes:
-        node["id"] = node.get("node_id")
-        node["ip"] = node.get("last_ip")
-        node["type"] = node.get("type", "ZimaBlade")
+        raw_status = str(node.get("status") or "").strip().upper()
+        node["status"] = escape("ONLINE" if raw_status == "ONLINE" else "OFFLINE")
+        node["id"] = escape(str(node.get("node_id") or node.get("id") or "-"))
+        node["name"] = escape(str(node.get("name") or "Unbekannter Hub"))
+        node["ip"] = escape(str(node.get("last_ip") or node.get("ip") or "-"))
+        node["type"] = escape(str(node.get("type") or "ZimaBlade"))
         node["sync"] = "100%"
         node["conflicts"] = 0
 
@@ -3516,20 +3520,20 @@ HTML_MESH = r"""
                     {% endif %}
                 </div>
                 <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-800 {{ 'text-emerald-500' if node.status == 'ONLINE' else 'text-rose-500' }}">
-                    {{ node.status }}
+                    {{ node.status|e }}
                 </span>
             </div>
             <div>
-                <h3 class="font-bold">{{ node.name }}</h3>
-                <p class="text-xs muted">{{ node.type }} • {{ node.ip }}</p>
+                <h3 class="font-bold">{{ node.name|e }}</h3>
+                <p class="text-xs muted">{{ node.type|e }} • {{ node.ip|e }}</p>
             </div>
             <div class="pt-4 border-t border-slate-800 space-y-2">
                 <div class="flex justify-between text-xs">
                     <span class="muted">Synchronisation</span>
-                    <span>{{ node.sync }}</span>
+                    <span>{{ node.sync|e }}</span>
                 </div>
                 <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                    <div class="h-full bg-indigo-500" style="width: {{ node.sync }};"></div>
+                    <div class="h-full bg-indigo-500" style="width: {{ node.sync|e }};"></div>
                 </div>
                 <div class="flex justify-between text-xs pt-2">
                     <span class="muted">Automatische Konfliktlösungen (CRDT)</span>
@@ -4862,16 +4866,21 @@ def assistant():
                 results.append(r)
         except Exception:
             pass
-    html = """<div class='card p-5'>
-      <div class='text-lg font-semibold mb-1'>Assistant</div>
-      <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
-        <input class='w-full rounded-xl p-2 input' name='q' value='{q}' placeholder='Suche…' />
-        <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{kdnr}' placeholder='Kdnr optional' />
-        <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
-      </form>
-      <div class='muted text-xs'>Treffer: {n}</div>
-    </div>""".format(
-        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
+    html = render_template_string(
+        """
+<div class='card p-5'>
+  <div class='text-lg font-semibold mb-1'>Assistant</div>
+  <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
+    <input class='w-full rounded-xl p-2 input' name='q' value='{{ q|e }}' placeholder='Suche…' />
+    <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{{ kdnr|e }}' placeholder='Kdnr optional' />
+    <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
+  </form>
+  <div class='muted text-xs'>Treffer: {{ n }}</div>
+</div>
+        """,
+        q=q,
+        kdnr=kdnr,
+        n=len(results),
     )
     return _render_base(html, active_tab="assistant")
 
@@ -5073,7 +5082,9 @@ def calendar_export_ics():
     from app.knowledge.ics_source import knowledge_ics_build_local_feed
 
     tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
-    ics_content = knowledge_ics_build_local_feed(tenant_id)
+    feed_info = knowledge_ics_build_local_feed(tenant_id)
+    feed_path = Path(str(feed_info.get("feed_path") or "")).expanduser()
+    ics_content = feed_path.read_bytes() if feed_path.exists() else b""
     return (
         ics_content,
         200,

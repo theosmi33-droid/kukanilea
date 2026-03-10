@@ -20,7 +20,7 @@
     border-radius: 0.5rem;
 }
 
-@Library/Caches/puccinialin/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/web-sys-0.3.82/src/features/gen_CssKeyframesRule.rs skeleton-loading {
+@keyframes skeleton-loading {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }

@@ -26,9 +26,13 @@ run_step() {
 }
 
 run_cmd() {
-  local cmd="$1"
-  echo "\$ ${cmd}"
-  bash -c "$cmd"
+  local arg
+  printf '$'
+  for arg in "$@"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n'
+  "$@"
 }
 
 mark_blocked() {
@@ -64,8 +68,8 @@ PROD_STATUS="ok"
 check_runtime_baseline
 
 if command -v gh >/dev/null 2>&1; then
-  run_step "Open PRs" run_cmd "gh pr list --repo ${REPO_SLUG} --state open --limit 100" || GH_STATUS="warn"
-  run_step "Main branch workflows" run_cmd "gh run list --repo ${REPO_SLUG} --branch main --limit 20" || RUN_STATUS="warn"
+  run_step "Open PRs" run_cmd gh pr list --repo "${REPO_SLUG}" --state open --limit 100 || GH_STATUS="warn"
+  run_step "Main branch workflows" run_cmd gh run list --repo "${REPO_SLUG}" --branch main --limit 20 || RUN_STATUS="warn"
 else
   GH_STATUS="warn"
   RUN_STATUS="warn"
@@ -77,7 +81,7 @@ else
 fi
 
 if [[ -d "${PROD_REPO_PATH}" ]]; then
-  run_step "Production clone status" run_cmd "git -C '${PROD_REPO_PATH}' status --short" || PROD_STATUS="warn"
+  run_step "Production clone status" run_cmd git -C "${PROD_REPO_PATH}" status --short || PROD_STATUS="warn"
 else
   PROD_STATUS="warn"
   echo ""

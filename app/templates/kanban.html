@@ -175,6 +175,25 @@
 .card-drag { cursor: grab; transition: all 0.2s; }
 .card-drag.dragging { opacity: 0.4; transform: scale(0.98); }
 .cards.drop-target { background: rgba(59,130,246,0.05); border-radius: 1rem; }
+
+@media (max-width: 768px) {
+  .kanban-outer-wrap {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  #kanban {
+    gap: 12px !important;
+  }
+
+  #kanban .lane,
+  #kanban > .flex.flex-column.gap-4 {
+    width: min(84vw, 300px) !important;
+    flex: 0 0 auto;
+  }
+}
 </style>
 {% endblock %}
 
