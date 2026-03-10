@@ -18,6 +18,9 @@ jobs:
   lint-and-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      BANDIT_SEVERITY_LEVEL: medium
+      BANDIT_CONFIDENCE_LEVEL: medium
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,15 +62,52 @@ jobs:
         run: |
           python scripts/ops/verify_guardrails.py
 
-      - name: Security scan report (non-blocking)
+      - name: Security scan report (policy-driven)
+        id: bandit_scan
+        continue-on-error: true
         run: |
-          bandit -r app -x app/static -f txt -o bandit-report.txt || true
+          case "${BANDIT_SEVERITY_LEVEL,,}" in
+            low) severity_flag="-l" ;;
+            medium) severity_flag="-ll" ;;
+            high) severity_flag="-lll" ;;
+            *) echo "Invalid BANDIT_SEVERITY_LEVEL=${BANDIT_SEVERITY_LEVEL}" >&2; exit 2 ;;
+          esac
+
+          case "${BANDIT_CONFIDENCE_LEVEL,,}" in
+            low) confidence_flag="-i" ;;
+            medium) confidence_flag="-ii" ;;
+            high) confidence_flag="-iii" ;;
+            *) echo "Invalid BANDIT_CONFIDENCE_LEVEL=${BANDIT_CONFIDENCE_LEVEL}" >&2; exit 2 ;;
+          esac
+
+          echo "Bandit policy threshold: severity>=${BANDIT_SEVERITY_LEVEL}, confidence>=${BANDIT_CONFIDENCE_LEVEL}"
+          set +e
+          bandit -r app -x app/static ${severity_flag} ${confidence_flag} -f txt -o bandit-report.txt
+          bandit_exit_code=$?
+          set -e
+
+          if [ "$bandit_exit_code" -ne 0 ]; then
+            echo "Bandit policy violation detected. See bandit-report.txt artifact for details."
+          else
+            echo "Bandit passed configured policy threshold."
+          fi
+
+          echo "bandit_exit_code=${bandit_exit_code}" >> "$GITHUB_OUTPUT"
 
       - name: Upload bandit report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bandit-report
           path: bandit-report.txt
+
+      - name: Enforce Bandit policy gate
+        if: always()
+        run: |
+          if [ "${{ steps.bandit_scan.outputs.bandit_exit_code }}" != "0" ]; then
+            echo "Blocking merge: Bandit findings exceed configured policy threshold (severity>=${BANDIT_SEVERITY_LEVEL}, confidence>=${BANDIT_CONFIDENCE_LEVEL})." >&2
+            exit 1
+          fi
 
   agent-logic-tests:
     runs-on: ubuntu-latest
