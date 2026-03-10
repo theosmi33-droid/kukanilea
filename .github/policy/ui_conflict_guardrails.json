@@ -45,6 +45,7 @@
     ],
     "shared_ui_shell": [
       "app/static/css/email.css",
+      "app/static/css/haptic.css",
       "app/templates/layout.html",
       "app/templates/partials/",
       "app/templates/skeletons/",
