@@ -3,6 +3,15 @@ from __future__ import annotations
 import base64
 
 
+def _csrf_headers(client):
+    with client.session_transaction() as sess:
+        token = str(sess.get("csrf_token") or "")
+        if not token:
+            token = "test-csrf-token"
+            sess["csrf_token"] = token
+    return {"X-CSRF-Token": token}
+
+
 def test_visualizer_summary_build_action_returns_summary(auth_client, tmp_path, monkeypatch):
     source_file = tmp_path / "tenant-x" / "viz.csv"
     source_file.parent.mkdir(parents=True, exist_ok=True)
@@ -22,7 +31,11 @@ def test_visualizer_summary_build_action_returns_summary(auth_client, tmp_path, 
         },
     )
 
-    response = auth_client.post("/api/visualizer/actions/summary.build", json={"source": src_b64})
+    response = auth_client.post(
+        "/api/visualizer/actions/summary.build",
+        json={"source": src_b64},
+        headers=_csrf_headers(auth_client),
+    )
     assert response.status_code == 200
     body = response.get_json()
     assert body["ok"] is True
@@ -40,7 +53,11 @@ def test_visualizer_summary_build_action_degrades_without_backend(auth_client, t
     monkeypatch.setattr("app.routes.visualizer._is_allowed_path", lambda _path: True)
     monkeypatch.setattr("app.routes.visualizer.build_visualizer_payload", None)
 
-    response = auth_client.post("/api/visualizer/actions/summary.build", json={"source": src_b64})
+    response = auth_client.post(
+        "/api/visualizer/actions/summary.build",
+        json={"source": src_b64},
+        headers=_csrf_headers(auth_client),
+    )
     assert response.status_code == 400
     body = response.get_json()
     assert body["ok"] is False
@@ -54,7 +71,11 @@ def test_visualizer_summary_build_action_rejects_forbidden_path(auth_client, tmp
 
     monkeypatch.setattr("app.routes.visualizer._is_allowed_path", lambda _path: False)
 
-    response = auth_client.post("/api/visualizer/actions/summary.build", json={"source": src_b64})
+    response = auth_client.post(
+        "/api/visualizer/actions/summary.build",
+        json={"source": src_b64},
+        headers=_csrf_headers(auth_client),
+    )
     assert response.status_code == 400
     body = response.get_json()
     assert body["ok"] is False
@@ -71,7 +92,11 @@ def test_visualizer_summary_build_action_rejects_cross_tenant_path(auth_client, 
     monkeypatch.setattr("app.routes.visualizer.BASE_PATH", tmp_path)
     monkeypatch.setattr("app.routes.visualizer._is_allowed_path", lambda _path: True)
 
-    response = auth_client.post("/api/visualizer/actions/summary.build", json={"source": src_b64})
+    response = auth_client.post(
+        "/api/visualizer/actions/summary.build",
+        json={"source": src_b64},
+        headers=_csrf_headers(auth_client),
+    )
     assert response.status_code == 400
     body = response.get_json()
     assert body["ok"] is False

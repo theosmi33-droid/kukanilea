@@ -10,11 +10,15 @@ CDN_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 EXTERNAL_ASSET_PATTERNS = re.compile(
-    r"\b(?:src|href|poster)\s*=\s*[\"'](?:https?:)?//",
+    r"\b(?:src|href|poster|srcset|action|formaction)\s*=\s*(?:[\"'])?(?:https?:)?//",
     re.IGNORECASE,
 )
 INLINE_HANDLER_PATTERN = re.compile(
-    r"\son[a-z]+\s*=",
+    r"(?:^|[\s<])on[a-z]+\s*=",
+    re.IGNORECASE,
+)
+JAVASCRIPT_PATH_PATTERN = re.compile(
+    r"j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:",
     re.IGNORECASE,
 )
 TEXT_EXTENSIONS = {".py", ".html", ".js", ".css", ".txt", ".md", ".json", ".yaml", ".yml"}
@@ -26,14 +30,32 @@ PROMPT_INJECTION_PATTERNS = [
     re.compile(r"(?i)\b(?:bypass|disable)\s+(?:all\s+)?(?:security|guardrails?|safety)\b"),
 ]
 PROMPT_SCAN_ALLOWLIST = {
-    "app/ai/guardrails.py",
-    "app/security/gates.py",
-    "app/security/untrusted_input.py",
-    "app/agents/guards.py",
-    "app/agents/input_validator.py",
-    "kukanilea/guards.py",
-    "kukanilea/orchestrator/manager_agent.py",
+    "app/ai/guardrails.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "app/security/gates.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "app/security/untrusted_input.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "app/agents/guards.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "app/agents/input_validator.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "kukanilea/guards.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "kukanilea/orchestrator/manager_agent.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
 }
+PROMPT_GUARDRAIL_DOWNGRADE_PATTERNS = [
+    re.compile(r"(?i)\ballow_with_warning\b.{0,80}\b(?:ignore|disregard|override|bypass|disable)\b"),
+    re.compile(r"(?i)\b(?:ignore|disregard|override|bypass|disable)\b.{0,80}\ballow_with_warning\b"),
+]
 
 
 def check_cdn_urls(paths: list[str] | None = None) -> list[str]:
@@ -61,12 +83,15 @@ def check_external_asset_urls(paths: list[str] | None = None) -> list[str]:
         if not root.exists():
             continue
         for full_path in root.rglob("*.html"):
-            with full_path.open("r", encoding="utf-8") as fh:
-                for line_num, line in enumerate(fh, 1):
-                    if 'xmlns="http://www.w3.org/2000/svg"' in line:
-                        continue
-                    if EXTERNAL_ASSET_PATTERNS.search(line):
-                        errors.append(f"External asset URL found in {full_path}:{line_num}: {line.strip()}")
+            content = full_path.read_text(encoding="utf-8")
+            for match in re.finditer(r"(<[^>]+>)", content, re.DOTALL):
+                tag = match.group(0)
+                if 'xmlns="http://www.w3.org/2000/svg"' in tag:
+                    continue
+                if EXTERNAL_ASSET_PATTERNS.search(tag):
+                    line_num = content.count("\n", 0, match.start()) + 1
+                    tag_preview = tag.splitlines()[0] if "\n" in tag else tag
+                    errors.append(f"External asset URL found in {full_path}:{line_num}: {tag_preview.strip()}")
     return errors
 
 
@@ -80,7 +105,7 @@ def check_shell_template_inline_handlers(path: str = "app/templates/layout.html"
     for line_num, line in enumerate(content.splitlines(), 1):
         if INLINE_HANDLER_PATTERN.search(line):
             errors.append(f"Inline event handler found in shell template {template}:{line_num}: {line.strip()}")
-        if "javascript:" in line.lower():
+        if JAVASCRIPT_PATH_PATTERN.search(line):
             errors.append(f"javascript: URL found in shell template {template}:{line_num}: {line.strip()}")
         if "rel=\"preload\"" in line and "onload=" in line:
             errors.append(f"CSP-unsafe preload onload hack in {template}:{line_num}: {line.strip()}")
@@ -145,9 +170,14 @@ def check_htmx_csrf(path: str = "app/templates") -> list[str]:
     return errors
 
 
-def _is_allowlisted(path: Path, allowlist: set[str]) -> bool:
+def _allowlist_context_patterns(
+    path: Path, allowlist: dict[str, tuple[re.Pattern[str], ...]]
+) -> tuple[re.Pattern[str], ...]:
     normalized = path.as_posix()
-    return any(normalized == entry or normalized.endswith(f"/{entry}") for entry in allowlist)
+    for entry, patterns in allowlist.items():
+        if normalized == entry or normalized.endswith(f"/{entry}"):
+            return patterns
+    return ()
 
 
 def check_prompt_injection_surface(paths: list[str] | None = None) -> list[str]:
@@ -159,16 +189,30 @@ def check_prompt_injection_surface(paths: list[str] | None = None) -> list[str]:
         for full_path in root.rglob("*"):
             if not full_path.is_file() or full_path.suffix not in TEXT_EXTENSIONS:
                 continue
-            if _is_allowlisted(full_path, PROMPT_SCAN_ALLOWLIST):
-                continue
+            allowlisted_context = _allowlist_context_patterns(full_path, PROMPT_SCAN_ALLOWLIST)
             try:
                 with full_path.open("r", encoding="utf-8") as fh:
+                    recent_lines: list[str] = []
                     for line_num, line in enumerate(fh, 1):
+                        if any(pattern.search(line) for pattern in PROMPT_GUARDRAIL_DOWNGRADE_PATTERNS):
+                            errors.append(
+                                "Prompt-injection downgrade pattern found in "
+                                f"{full_path}:{line_num}: {line.strip()}"
+                            )
+                            recent_lines = (recent_lines + [line])[-3:]
+                            continue
+
                         if any(pattern.search(line) for pattern in PROMPT_INJECTION_PATTERNS):
+                            if allowlisted_context:
+                                context_window = "".join(recent_lines + [line])
+                                if any(p.search(context_window) for p in allowlisted_context):
+                                    recent_lines = (recent_lines + [line])[-3:]
+                                    continue
                             errors.append(
                                 "Prompt-injection control phrase found outside allowlist in "
                                 f"{full_path}:{line_num}: {line.strip()}"
                             )
+                        recent_lines = (recent_lines + [line])[-3:]
             except UnicodeDecodeError:
                 continue
     return errors
