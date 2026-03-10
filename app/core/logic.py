@@ -33,12 +33,13 @@ import threading
 import time
 import unicodedata
 import zipfile
+from contextvars import ContextVar
 from datetime import UTC, date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.core.gewerke_profiles import get_active_profile
 
@@ -499,7 +500,7 @@ def list_recent_docs(tenant_id: str = "", limit: int = 10) -> List[Dict[str, Any
     with _DB_LOCK:
         con = _db()
         try:
-            rows = con.execute(
+            rows = con.execute(  # nosec B608
                 """
                 SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date, d.created_at, 
                        idx.file_name, idx.file_path
@@ -560,13 +561,25 @@ _DB_LOCK = threading.RLock()
 _FTS5_AVAILABLE: Optional[bool] = None
 
 
-_DB_INITIALIZED = False
+_DB_INITIALIZED_PATHS: Set[str] = set()
 _DB_INIT_LOCK = threading.RLock()
 _INDEX_WARMUP_THREAD_LOCK = threading.RLock()
 _INDEX_WARMUP_THREAD: Optional[threading.Thread] = None
+_REQUEST_DB_PATH: ContextVar[Optional[Path]] = ContextVar(
+    "kukanilea_request_db_path", default=None
+)
+
+
+def bind_request_db_path(path: Optional[Path]) -> None:
+    """Binds the core DB path to the current request/thread context."""
+    _REQUEST_DB_PATH.set(Path(path).expanduser() if path else None)
+
+
+def _active_db_path() -> Path:
+    return _REQUEST_DB_PATH.get() or DB_PATH
 
 def _open_db_connection(*, configure_wal: bool = False) -> sqlite3.Connection:
-    con = sqlite3.connect(str(DB_PATH), timeout=5.0)
+    con = sqlite3.connect(str(_active_db_path()), timeout=5.0)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA busy_timeout=5000;")
     if configure_wal:
@@ -584,13 +597,13 @@ def _open_db_connection(*, configure_wal: bool = False) -> sqlite3.Connection:
 
 
 def _db() -> sqlite3.Connection:
-    global _DB_INITIALIZED
-    
-    if not _DB_INITIALIZED:
+    db_key = str(_active_db_path().resolve())
+
+    if db_key not in _DB_INITIALIZED_PATHS:
         with _DB_INIT_LOCK:
-            if not _DB_INITIALIZED:
+            if db_key not in _DB_INITIALIZED_PATHS:
                 db_init()
-                _DB_INITIALIZED = True
+                _DB_INITIALIZED_PATHS.add(db_key)
 
     return _open_db_connection()
 
@@ -629,7 +642,7 @@ def _has_fts5(con: sqlite3.Connection) -> bool:
 
 
 def db_init() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _active_db_path().parent.mkdir(parents=True, exist_ok=True)
     with _DB_LOCK:
         con = _open_db_connection(configure_wal=True)
         try:
@@ -1325,12 +1338,11 @@ def _duration_seconds(start_at: str, end_at: str) -> int:
 def _iso_from_seconds(value: Optional[Any]) -> Optional[str]:
     if value is None or value == "":
         return None
-    return (
-        datetime.fromtimestamp(int(value), tz=timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    try:
+        timestamp = datetime.fromtimestamp(int(value), tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError) as exc:
+        raise ValueError("invalid_timestamp_seconds") from exc
+    return timestamp.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _time_task_lookup(
@@ -1554,7 +1566,7 @@ def time_entry_stop(
         con = _db()
         try:
             if entry_id is None:
-                row = con.execute(
+                row = con.execute(  # nosec B608
                     """
                     SELECT id, start_at FROM time_entries
                     WHERE tenant_id=? AND user=? AND end_at IS NULL
@@ -1562,7 +1574,7 @@ def time_entry_stop(
                     (tenant_id, user),
                 ).fetchone()
             else:
-                row = con.execute(
+                row = con.execute(  # nosec B608
                     """
                     SELECT id, start_at FROM time_entries
                     WHERE tenant_id=? AND user=? AND id=?
@@ -1725,33 +1737,35 @@ def time_entries_list(
     user = normalize_component(user or "").lower()
     limit = max(1, min(int(limit), 2000))
 
-    clauses = ["te.tenant_id=?"]
-    params: List[Any] = [tenant_id]
-    if user:
-        clauses.append("te.user=?")
-        params.append(user)
-    if start_at:
-        clauses.append("te.start_at>=?")
-        params.append(start_at)
-    if end_at:
-        clauses.append("te.start_at<=?")
-        params.append(end_at)
-
-    where_sql = " AND ".join(clauses)
+    user_filter = user or ""
+    start_filter = start_at or ""
+    end_filter = end_at or ""
     with _DB_LOCK:
         con = _db()
         try:
             rows = con.execute(
-                f"""
+                """
                 SELECT te.*, tp.name AS project_name, t.title AS task_title
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
                 LEFT JOIN tasks t ON t.id = te.task_id AND t.tenant = te.tenant_id
-                WHERE {where_sql}
+                WHERE te.tenant_id=?
+                  AND (?='' OR te.user=?)
+                  AND (?='' OR te.start_at>=?)
+                  AND (?='' OR te.start_at<=?)
                 ORDER BY te.start_at DESC, te.id DESC
                 LIMIT ?
                 """,
-                (*params, limit),
+                (
+                    tenant_id,
+                    user_filter,
+                    user_filter,
+                    start_filter,
+                    start_filter,
+                    end_filter,
+                    end_filter,
+                    limit,
+                ),
             ).fetchall()
             entries = [dict(r) for r in rows]
             now = _now_iso()
@@ -4443,31 +4457,44 @@ def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     with _DB_LOCK:
         con = _db()
         try:
-            order_expr = (
-                "version_no DESC, id DESC"
-                if _column_exists(con, "versions", "version_no")
-                else "id DESC"
-            )
-            if _column_exists(con, "versions", "tenant_id"):
+            has_version_no = _column_exists(con, "versions", "version_no")
+            has_tenant_id = _column_exists(con, "versions", "tenant_id")
+            if has_tenant_id and has_version_no:
                 row = con.execute(
                     """
                     SELECT file_path FROM versions
                     WHERE doc_id=? AND tenant_id=?
-                    ORDER BY """
-                    + order_expr
-                    + """
+                    ORDER BY version_no DESC, id DESC
                     LIMIT 1
                     """,
                     (doc_id, tenant_id),
+                ).fetchone()
+            elif has_tenant_id:
+                row = con.execute(
+                    """
+                    SELECT file_path FROM versions
+                    WHERE doc_id=? AND tenant_id=?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (doc_id, tenant_id),
+                ).fetchone()
+            elif has_version_no:
+                row = con.execute(
+                    """
+                    SELECT file_path FROM versions
+                    WHERE doc_id=?
+                    ORDER BY version_no DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (doc_id,),
                 ).fetchone()
             else:
                 row = con.execute(
                     """
                     SELECT file_path FROM versions
                     WHERE doc_id=?
-                    ORDER BY """
-                    + order_expr
-                    + """
+                    ORDER BY id DESC
                     LIMIT 1
                     """,
                     (doc_id,),
@@ -4637,15 +4664,29 @@ def process_with_answers(src: Path, answers: Dict[str, Any]) -> Tuple[Path, Path
     tenant_dir = BASE_PATH / _safe_fs(tenant) if tenant else BASE_PATH
     tenant_dir.mkdir(parents=True, exist_ok=True)
 
+    tenant_dir_resolved = tenant_dir.resolve()
+
+    def _default_customer_folder() -> Path:
+        return tenant_dir / _compose_object_folder(kdnr_raw, name, addr, plzort)
+
     created_new_object = False
     if use_existing:
-        folder = Path(use_existing)
-        if not folder.exists() or not folder.is_dir():
-            folder = tenant_dir / _compose_object_folder(kdnr_raw, name, addr, plzort)
+        candidate = Path(use_existing)
+        if not candidate.is_absolute():
+            candidate = tenant_dir / candidate
+
+        try:
+            folder = candidate.resolve()
+            folder.relative_to(tenant_dir_resolved)
+        except Exception:
+            folder = _default_customer_folder()
             created_new_object = True
+        else:
+            if not folder.exists() or not folder.is_dir():
+                folder = _default_customer_folder()
+                created_new_object = True
     else:
-        folder_name = _compose_object_folder(kdnr_raw, name, addr, plzort)
-        folder = tenant_dir / folder_name
+        folder = _default_customer_folder()
         if not folder.exists():
             created_new_object = True
 

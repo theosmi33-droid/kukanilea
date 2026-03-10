@@ -78,3 +78,16 @@ def test_write_outputs_creates_markdown_and_json(tmp_path) -> None:
     assert persisted["gate"]["overall_status"] == "pass"
     assert "| dashboard_ttfb_ms |" in markdown
     assert "| projekte |" in markdown
+
+
+def test_isolated_perf_datastores_sets_ephemeral_paths_and_restores(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("KUKANILEA_AUTH_DB", str(tmp_path / "existing-auth.sqlite3"))
+
+    before = perf_gate.os.environ["KUKANILEA_AUTH_DB"]
+    with perf_gate._isolated_perf_datastores():
+        inside = perf_gate.os.environ["KUKANILEA_AUTH_DB"]
+        assert inside != before
+        assert inside.endswith("auth.sqlite3")
+        assert "kukanilea-perf-" in perf_gate.os.environ["KUKANILEA_USER_DATA_ROOT"]
+
+    assert perf_gate.os.environ["KUKANILEA_AUTH_DB"] == before

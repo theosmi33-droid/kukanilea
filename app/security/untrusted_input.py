@@ -3,10 +3,10 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+import unicodedata
 from dataclasses import dataclass
 from html import unescape
 from urllib.parse import unquote
-
 
 Decision = str
 
@@ -29,9 +29,11 @@ _OVERRIDE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("destructive_request", re.compile(r"(?i)\b(?:delete|wipe|destroy|drop|purge)\b.{0,30}\b(?:all|backup|database|logs|files?)\b")),
     ("credential_rotation", re.compile(r"(?i)\b(?:rotate|reset|revoke)\b.{0,20}\b(?:key|token|credential|password)\b")),
     ("filesystem_network", re.compile(r"(?i)\b(?:/etc/passwd|\.ssh|id_rsa|curl\s+https?://|wget\s+https?://|scp\s+)\b")),
-    ("prompt_leak", re.compile(r"(?i)\b(?:reveal|print|dump)\b.{0,40}\b(?:system\s+prompt|hidden\s+instructions?)\b")),
+    ("prompt_leak", re.compile(r"(?i)\b(?:show|reveal|print|dump|leak)\b.{0,60}\b(?:system|developer|hidden)\s+(?:prompt|instructions?)\b")),
     ("hidden_directive", re.compile(r"(?is)```(?:prompt|system|instructions)[^`]*```")),
     ("hidden_directive", re.compile(r"(?i)(?:^|\n)\s*>\s*system\s*:\s*")),
+    ("hidden_directive", re.compile(r"(?is)<(?:system|assistant|developer)[^>]*>.*?</(?:system|assistant|developer)>")),
+    ("hidden_directive", re.compile(r"(?i)\b(?:begin|start)\s+(?:system|developer)\s+(?:prompt|instructions?)\b")),
 )
 
 _LOW_RISK_WARN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -41,11 +43,32 @@ _LOW_RISK_WARN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 def _normalize(text: str) -> str:
-    raw = str(text or "")
-    variants = [raw, unescape(raw), unquote(raw), unescape(unquote(raw))]
+    def _strip_invisible_controls(value: str) -> str:
+        cleaned: list[str] = []
+        for ch in value:
+            category = unicodedata.category(ch)
+            if category == "Cf":
+                continue
+            if category == "Cc" and ch not in {"\n", "\r", "\t"}:
+                continue
+            cleaned.append(ch)
+        return "".join(cleaned)
 
-    compact = re.sub(r"\s+", " ", raw).strip()
-    variants.append(compact)
+    raw = str(text or "")
+    deobfuscated = _strip_invisible_controls(raw)
+    variants = [
+        raw,
+        deobfuscated,
+        unescape(raw),
+        unquote(raw),
+        unescape(unquote(raw)),
+        unescape(deobfuscated),
+        unquote(deobfuscated),
+        unescape(unquote(deobfuscated)),
+    ]
+
+    variants.append(re.sub(r"\s+", " ", raw).strip())
+    variants.append(re.sub(r"\s+", " ", deobfuscated).strip())
 
     # Best-effort decode for simple base64-encoded prompt-injection snippets.
     b64_candidate = re.sub(r"\s+", "", raw)
