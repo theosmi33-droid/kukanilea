@@ -7,6 +7,10 @@ LANE="${LANE:-dev-ci}"
 PR_NUMBER="${PR_NUMBER:-TBD}"
 SCOPE_IN="${SCOPE_IN:-CI guardrails, lane discipline, preflight automation}"
 SCOPE_OUT="${SCOPE_OUT:-runtime, ui, security policy changes}"
+REQUIRED_RUNTIME_BINS="${REQUIRED_RUNTIME_BINS:-pytest flask}"
+RUN_STATUS_CLASS="PASS"
+BLOCKED_REASONS=()
+
 
 run_step() {
   local label="$1"
@@ -31,9 +35,37 @@ run_cmd() {
   "$@"
 }
 
+mark_blocked() {
+  local reason="$1"
+  BLOCKED_REASONS+=("$reason")
+  RUN_STATUS_CLASS="BLOCKED_ENVIRONMENT"
+}
+
+check_runtime_baseline() {
+  if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+    mark_blocked "missing git revision (HEAD)"
+  fi
+
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    mark_blocked "missing git remote origin"
+  fi
+
+  if ! git rev-parse --verify main >/dev/null 2>&1 && ! git rev-parse --verify origin/main >/dev/null 2>&1; then
+    mark_blocked "missing main branch (local or origin/main)"
+  fi
+
+  for bin in ${REQUIRED_RUNTIME_BINS}; do
+    if ! command -v "$bin" >/dev/null 2>&1; then
+      mark_blocked "missing runtime dependency: $bin"
+    fi
+  done
+}
+
 GH_STATUS="ok"
 RUN_STATUS="ok"
 PROD_STATUS="ok"
+
+check_runtime_baseline
 
 if command -v gh >/dev/null 2>&1; then
   run_step "Open PRs" run_cmd gh pr list --repo "${REPO_SLUG}" --state open --limit 100 || GH_STATUS="warn"
@@ -91,6 +123,9 @@ fi
 if [[ "$GH_STATUS" == "warn" || "$RUN_STATUS" == "warn" || "$PROD_STATUS" == "warn" ]]; then
   EXIT_CODE=1
 fi
+if [[ "$RUN_STATUS_CLASS" == "BLOCKED_ENVIRONMENT" ]]; then
+  EXIT_CODE=1
+fi
 
 echo ""
 echo "=== Release Conductor Summary ==="
@@ -100,6 +135,13 @@ echo "Scope Out: ${SCOPE_OUT}"
 echo "Guard-Result: ${GUARD_RESULT}"
 echo "Test-Result: ${TEST_RESULT}"
 echo "PR-Link: https://github.com/${REPO_SLUG}/pull/${PR_NUMBER}"
+echo "Run-Status: ${RUN_STATUS_CLASS}"
+if [[ "${#BLOCKED_REASONS[@]}" -gt 0 ]]; then
+  echo "Blocked-Reasons:"
+  for reason in "${BLOCKED_REASONS[@]}"; do
+    echo "  - ${reason}"
+  done
+fi
 
 echo "Checks: gh=${GH_STATUS}, runs=${RUN_STATUS}, prod=${PROD_STATUS}"
 exit "$EXIT_CODE"

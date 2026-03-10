@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from kukanilea.orchestrator.cross_tool_flows import (
@@ -179,6 +181,12 @@ def test_prompt_injection_in_untrusted_text_is_neutralized() -> None:
     assert result.outputs.get("task_notes", "") == ""
 
 
+def test_manager_agent_guard_contract_has_no_neutral_context_injection_downgrade() -> None:
+    source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+    assert "neutral_context = bool(" not in source
+    assert "action_context = bool(" not in source
+
+
 def test_unknown_flow_reports_failure_with_audit_evidence() -> None:
     engine = _engine()
 
@@ -270,6 +278,9 @@ def test_invoice_flow_sanitizes_prompt_injection_fields() -> None:
         "Zahlungserinnerung für Rechnung unbekannt zum Termin offen erstellen"
     )
 
+def test_manager_agent_contract_exposes_missing_context_reason_for_propose_mode() -> None:
+    source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+    assert 'reason="missing_context"' in source
 
 @pytest.mark.parametrize(
     "flow_id",
@@ -365,6 +376,37 @@ def test_flow_write_retry_with_same_idempotency_key_replays() -> None:
     assert second.ok is True
     assert first.executed_steps == second.executed_steps
     assert any(event["event"] == "flow.idempotent_replay" for event in second.audit_evidence)
+
+
+def test_action_failure_redacts_traceback_from_result_and_audit() -> None:
+    registry = AtomicActionRegistry()
+
+    def _boom(_: dict[str, str]) -> dict[str, str]:
+        raise RuntimeError("boom: secret /srv/app/config.yaml")
+
+    registry.register("explode", _boom)
+    flow = FlowDefinition(
+        flow_id="flow_fail",
+        title="Failure",
+        trigger="manual",
+        steps=(FlowStep("explode_step", "explode"),),
+        required_context=(),
+        confirmation_points=(),
+        audit_events=("flow.step_failed",),
+        fallback_policy="manual",
+    )
+    engine = CrossToolFlowEngine(action_registry=registry, flows={"flow_fail": flow})
+
+    result = engine.run(flow_id="flow_fail", context={})
+
+    assert result.ok is False
+    assert result.status == "failed"
+    assert result.failures[0]["code"] == "action_failed"
+    assert result.failures[0]["error"].startswith("boom:")
+    assert "traceback" not in result.failures[0]
+    assert "traceback" not in result.audit_evidence[0]
+
+
 def test_engine_rejects_unregistered_actions_during_flow_build() -> None:
     registry = AtomicActionRegistry()
     flows = {

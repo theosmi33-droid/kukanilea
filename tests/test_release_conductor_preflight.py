@@ -87,3 +87,23 @@ def test_preflight_does_not_execute_shell_injection_from_repo_slug(tmp_path: Pat
     )
 
     assert not marker.exists()
+
+
+def test_preflight_marks_blocked_environment_for_missing_runtime_bin() -> None:
+    env = os.environ.copy()
+    env["PR_NUMBER"] = "999"
+    env["PROD_REPO_PATH"] = "/no/such/path"
+    env["REQUIRED_RUNTIME_BINS"] = "definitely_missing_runtime_bin"
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "Run-Status: BLOCKED_ENVIRONMENT" in result.stdout
+    assert "missing runtime dependency: definitely_missing_runtime_bin" in result.stdout
+    assert result.returncode == 1

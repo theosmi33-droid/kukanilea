@@ -31,6 +31,15 @@ _NON_DOWNGRADABLE_SIGNALS = frozenset(
         "credential_rotation",
     }
 )
+_NON_DOWNGRADABLE_REASONS = frozenset(
+    {
+        "uncontrolled_tool_selection",
+        "no_policy_bypass",
+        "prompt_leak_request",
+        "no_free_shell_execution",
+        "shell_skill_blocked",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -108,7 +117,11 @@ def evaluate_runtime_guardrails(
                 decision = "route_to_review"
             reasons.append("uncontrolled_tool_selection")
 
-    if decision == "route_to_review" and _is_benign_security_discussion(assessment.normalized_text, assessment):
+    if (
+        decision == "route_to_review"
+        and not any(reason in _NON_DOWNGRADABLE_REASONS for reason in reasons)
+        and _is_benign_security_discussion(assessment.normalized_text, assessment)
+    ):
         decision = "allow_with_warning"
         reasons.append("benign_security_discussion")
 

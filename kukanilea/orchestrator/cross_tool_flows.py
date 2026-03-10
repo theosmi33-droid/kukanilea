@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
@@ -217,7 +216,6 @@ class CrossToolFlowEngine:
             try:
                 output = self.action_registry.execute(step.action_id, run_context)
             except Exception as exc:  # deterministic failure reporting
-                trace = traceback.format_exc()
                 result.ok = False
                 result.status = "failed"
                 result.failures.append(
@@ -226,7 +224,6 @@ class CrossToolFlowEngine:
                         "step_id": step.step_id,
                         "action_id": step.action_id,
                         "error": str(exc),
-                        "traceback": trace,
                     }
                 )
                 result.audit_evidence.append(
@@ -236,7 +233,6 @@ class CrossToolFlowEngine:
                         "step_id": step.step_id,
                         "action_id": step.action_id,
                         "error": str(exc),
-                        "traceback": trace,
                     }
                 )
                 break
@@ -413,6 +409,7 @@ def create_default_registry() -> AtomicActionRegistry:
             "invoice_due_date": (
                 _extract_untrusted_text(p, "invoice_due_date")
                 or _extract_untrusted_text(p, "default_due_date")
+                or ""
             ),
         },
     )

@@ -69,6 +69,12 @@ def test_launch_gate_enforces_ops_test_count_threshold() -> None:
     assert "need >=7" in text
 
 
+def test_launch_gate_binds_gate7_artifact_dir_via_environment() -> None:
+    text = _script()
+    assert "export GATE7_OUTPUT_DIR" in text
+    assert "base = Path(os.environ['GATE7_OUTPUT_DIR'])" in text
+
+
 def test_launch_gate_decision_state_values_are_deterministic() -> None:
     text = _script()
     assert 'DECISION="PASS"' in text

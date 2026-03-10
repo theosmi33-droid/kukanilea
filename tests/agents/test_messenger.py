@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 from app.agents.base import AgentContext
@@ -69,6 +70,23 @@ class TestMessengerAgent(unittest.TestCase):
             "blocked",
         )
 
+    def test_invoice_extract_due_contract_contains_untrusted_guard(self):
+        source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+        self.assertIn('"invoice_extract_due"', source)
+        self.assertIn('_extract_untrusted_text(p, "invoice_due_date")', source)
+
+    def test_manager_agent_contract_removes_neutral_prompt_injection_downgrade(self):
+        source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+        self.assertNotIn("if injection_matches and neutral_context and not action_context:", source)
+
+    def test_manager_agent_contract_keeps_missing_context_clarification_gate(self):
+        source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+        self.assertIn('reason="missing_context"', source)
+        self.assertIn("manager_agent.needs_clarification", source)
+
+    def test_cross_tool_flows_contract_avoids_traceback_storage(self):
+        source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+        self.assertNotIn("traceback.format_exc()", source)
 
 if __name__ == "__main__":
     unittest.main()
