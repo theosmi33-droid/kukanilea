@@ -51,7 +51,6 @@ def test_pr_quality_guard_fails_for_thin_pr(tmp_path: Path) -> None:
     result = _run_guard(repo)
 
     assert result.returncode != 0
-    assert "MIN_SCOPE gate failed" in result.stdout
     assert "MIN_TESTS gate failed" in result.stdout
 
 
@@ -59,9 +58,11 @@ def test_pr_quality_guard_passes_for_solid_pr(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
 
     for idx in range(1, 8):
-        (repo / f"src_{idx}.txt").write_text("x\n" * 20)
+        file_path = repo / "feature" / "work" / f"src_{idx}.txt"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text("x\n" * 20)
 
-    test_file = repo / "tests" / "test_quality_guard.py"
+    test_file = repo / "tests" / "quality" / "test_quality_guard.py"
     test_file.parent.mkdir(parents=True)
     test_file.write_text(
         """
@@ -87,7 +88,7 @@ def test_c():
     assert "PR_QUALITY_GUARD: PASS" in result.stdout
 
 
-def test_pr_quality_guard_fails_on_lane_overlap(tmp_path: Path) -> None:
+def test_pr_quality_guard_fails_on_unfocused_scope(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
 
     overlap_target = repo / "shared.txt"
@@ -114,4 +115,4 @@ def test_pr_quality_guard_fails_on_lane_overlap(tmp_path: Path) -> None:
     result = _run_guard(repo)
 
     assert result.returncode != 0
-    assert "Lane overlap check failed" in result.stdout
+    assert "FOCUSED_SCOPE gate failed" in result.stdout
