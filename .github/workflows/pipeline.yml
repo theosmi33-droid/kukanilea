@@ -59,9 +59,9 @@ jobs:
         run: |
           python scripts/ops/verify_guardrails.py
 
-      - name: Security scan report (non-blocking)
+      - name: Security scan report (blocking on medium+ findings)
         run: |
-          bandit -r app -x app/static -f txt -o bandit-report.txt || true
+          bandit -r app -x app/static -ll -ii -f txt -o bandit-report.txt
 
       - name: Upload bandit report
         uses: actions/upload-artifact@v4
