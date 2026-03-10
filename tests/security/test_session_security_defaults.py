@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app import create_app
 from app.config import Config
 from app.security.session_policy import resolve_session_cookie_policy
@@ -87,3 +89,24 @@ def test_test_policy_honors_explicit_secure_override_for_https_ci():
     policy = resolve_session_cookie_policy("testing", configured_secure="1")
     assert policy["SESSION_COOKIE_SECURE"] is True
     assert policy["SESSION_COOKIE_NAME"].startswith("__Host-")
+
+
+@pytest.mark.parametrize(
+    ("env", "configured_secure", "expected_secure", "expected_name"),
+    [
+        pytest.param("production", False, True, "__Host-kukanilea_session", id="prod-strict"),
+        pytest.param("staging", False, True, "__Host-kukanilea_session", id="stage-strict"),
+        pytest.param("development", False, False, "kukanilea_session", id="dev-non-secure-default"),
+        pytest.param("testing", False, False, "kukanilea_session", id="test-non-secure-default"),
+        pytest.param("qa-preview", False, True, "__Host-kukanilea_session", id="unknown-prod-safe"),
+    ],
+)
+def test_resolve_session_cookie_policy_matrix(env, configured_secure, expected_secure, expected_name):
+    policy = resolve_session_cookie_policy(env, configured_secure=configured_secure)
+
+    assert policy["SESSION_COOKIE_NAME"] == expected_name
+    assert policy["SESSION_COOKIE_SECURE"] is expected_secure
+    assert policy["SESSION_COOKIE_HTTPONLY"] is True
+    assert policy["SESSION_COOKIE_SAMESITE"] == "Lax"
+    assert policy["SESSION_COOKIE_DOMAIN"] is None
+    assert policy["SESSION_COOKIE_PATH"] == "/"

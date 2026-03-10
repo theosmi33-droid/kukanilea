@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import secrets
 import time
-import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -11,15 +11,16 @@ from flask import Flask, g, request, session
 
 from .auth import init_auth
 from .autonomy import init_autonomy
-from .config import Config, _is_dev_env
+from .config import Config
+from .core.migrations import run_migrations
 from .db import AuthDB
 from .errors import json_error
 from .license import load_runtime_license_state
+from .lifecycle import SystemState, manager
 from .log_utils import init_request_logging
-from .migrations.ensure_agent_memory import ensure_agent_memory_tables
-from .core.migrations import run_migrations
-from .observability import init_observability
 from .logging.structured_logger import log_event
+from .migrations.ensure_agent_memory import ensure_agent_memory_tables
+from .observability import init_observability
 from .security.session_policy import resolve_session_cookie_policy
 
 
@@ -40,9 +41,6 @@ def _wire_runtime_env(app: Flask) -> None:
         pass
 
 
-from .lifecycle import SystemState, manager
-
-
 def _is_test_context(app: Flask) -> bool:
     # Pytest sets this environment variable for each test case.
     if os.environ.get("PYTEST_CURRENT_TEST"):
@@ -50,6 +48,16 @@ def _is_test_context(app: Flask) -> bool:
     if os.environ.get("KUKANILEA_DISABLE_DAEMONS") == "1":
         return True
     return bool(app.config.get("TESTING"))
+
+
+def _normalize_request_path(path: str | None) -> str:
+    raw = str(path or "/")
+    # Normalize dot-segments to avoid allowlist bypasses like
+    # /api/auth/../admin/settings/system.
+    normalized = posixpath.normpath(raw)
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+    return normalized
 
 
 def _apply_env_runtime_overrides(app: Flask) -> None:
@@ -88,9 +96,16 @@ def create_app() -> Flask:
     manager.set_state(SystemState.INIT, "Initializing modules and databases...")
     # Import blueprints after env/path wiring so legacy modules read correct paths.
     from . import api, web
-    from .routes import system_logs, admin_tenants, automation, visualizer, email, calendar
-    from .core.tool_loader import load_all_tools
     from .core.event_flows import init_event_flows
+    from .core.tool_loader import load_all_tools
+    from .routes import (
+        admin_tenants,
+        automation,
+        calendar,
+        email,
+        system_logs,
+        visualizer,
+    )
 
     load_all_tools(app)
     init_event_flows()
@@ -115,8 +130,8 @@ def create_app() -> Flask:
 
     # Start background dispatcher only for real runtime, not test contexts.
     if not _is_test_context(app):
-        from .services.api_dispatcher import start_dispatcher_daemon
         from .modules.dashboard.briefing import start_briefing_scheduler
+        from .services.api_dispatcher import start_dispatcher_daemon
 
         start_dispatcher_daemon(str(auth_db.path), interval=60)
         start_briefing_scheduler()
@@ -172,7 +187,7 @@ def create_app() -> Flask:
                 return None
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return None
-        path = request.path or "/"
+        path = _normalize_request_path(request.path)
         if bool(app.config.get("READ_ONLY", False)):
             # Auth/session and explicit license-recovery paths stay writable
             # so operators can restore the license state.
@@ -257,12 +272,6 @@ def create_app() -> Flask:
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        content_type = str(response.headers.get("Content-Type") or "").lower()
-        if "text/html" in content_type and getattr(g, "csp_nonce", ""):
-            body = response.get_data(as_text=True)
-            script_pattern = re.compile(r"<script(?![^>]*\bnonce=)([^>]*)>", re.IGNORECASE)
-            body = script_pattern.sub(lambda m: f'<script nonce="{g.csp_nonce}"{m.group(1)}>', body)
-            response.set_data(body)
         return response
 
     app.register_blueprint(web.bp)

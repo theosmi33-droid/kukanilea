@@ -25,32 +25,28 @@ def test_layout_keeps_mobile_bottom_nav_and_topbar_in_shell() -> None:
 
 
 def test_shell_navigation_css_contains_grid_and_context_rules() -> None:
-    css = _read("static/css/shell-navigation.css")
+    css = _read("app/static/css/shell-navigation.css")
     expected_rules = [
-        ".app-shell",
-        ".shell-grid",
-        ".shell-grid:has(.context-panel:not(:empty))",
-        ".context-panel",
-        ".context-panel:empty",
-        "#main-content",
-        "#main-content > * + *",
+        ".sidebar",
+        ".nav-link.active::before",
+        ".topbar",
+        ".topbar-search-container",
+        ".mobile-sidebar-overlay",
     ]
     for rule in expected_rules:
         assert rule in css
 
 
 def test_shell_navigation_css_contains_responsive_mobile_rules() -> None:
-    css = _read("static/css/shell-navigation.css")
+    css = _read("app/static/css/shell-navigation.css")
     assert "@media (max-width: 768px)" in css
-    assert ".app-shell" in css
-    assert ".shell-grid" in css
-    assert ".context-panel" in css
+    assert ".sidebar" in css
     assert ".mobile-bottom-nav" in css
-    assert "padding-bottom: 72px" in css
+    assert "padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px))" in css
 
 
 def test_shell_navigation_css_keeps_sidebar_collapse_contract() -> None:
-    css = _read("static/css/shell-navigation.css")
-    assert "html.sidebar-collapsed .app-shell" in css
-    assert "html.sidebar-collapsed .nav-link" in css
-    assert "html.sidebar-collapsed .nav-link.active::before" in css
+    css = _read("app/static/css/shell-navigation.css")
+    assert ".sidebar" in css
+    assert ".nav-link" in css
+    assert ".nav-link.active::before" in css

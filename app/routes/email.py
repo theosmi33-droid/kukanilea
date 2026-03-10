@@ -1,23 +1,38 @@
 from __future__ import annotations
+
 import logging
 import sqlite3
-from flask import Blueprint, jsonify, request, current_app, Response
 
-from app.auth import login_required, current_tenant
-from app.web import _render_base, _render_sovereign_tool, _is_hx_partial_request
-from app.security import csrf_protected
-from app.modules.mail.logic import classify_message, generate_reply_draft
-from app.modules.mail.contracts import build_summary as build_mail_summary
+from flask import Blueprint, current_app, jsonify, request
+
+from app.auth import current_tenant, current_user, login_required
 from app.modules.mail.contracts import build_health as build_mail_health
+from app.modules.mail.contracts import build_summary as build_mail_summary
+from app.modules.mail.logic import classify_message, generate_reply_draft
 from app.modules.mail.postfach import (
     EmailpostfachService,
     ProviderAuthError,
     ProviderNetworkError,
     StubInboxProvider,
 )
+from app.security import csrf_protected
+from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
 
 logger = logging.getLogger("kukanilea.email")
 bp = Blueprint("email", __name__)
+
+
+def _json_object_payload() -> dict:
+    payload = request.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _sla_hours_arg(default: int = 24) -> int:
+    raw = request.args.get("sla_hours", default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def _postfach_service() -> EmailpostfachService:
@@ -55,7 +70,7 @@ def email_page():
 @login_required
 @csrf_protected
 def api_mail_draft():
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object_payload()
     try:
         message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
         draft = generate_reply_draft(message, read_only_default=True, external_api_enabled=False)
@@ -69,7 +84,7 @@ def api_mail_draft():
 @login_required
 @csrf_protected
 def api_mail_triage():
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object_payload()
     message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
     result = classify_message(message)
     return jsonify(ok=True, triage=result.__dict__)
@@ -79,7 +94,7 @@ def api_mail_triage():
 @login_required
 @csrf_protected
 def api_mail_draft_generate():
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object_payload()
     message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
     draft = generate_reply_draft(message, read_only_default=True, external_api_enabled=False)
     return jsonify(ok=True, draft=draft)
@@ -89,7 +104,7 @@ def api_mail_draft_generate():
 @login_required
 def api_mail_summary():
     tenant = str(current_tenant() or "default")
-    sla_hours = int(request.args.get("sla_hours", 24))
+    sla_hours = _sla_hours_arg()
     return jsonify(build_mail_summary(tenant, messages=[], sla_hours=sla_hours))
 
 
@@ -97,7 +112,7 @@ def api_mail_summary():
 @login_required
 def api_mail_health():
     tenant = str(current_tenant() or "default")
-    sla_hours = int(request.args.get("sla_hours", 24))
+    sla_hours = _sla_hours_arg()
     payload, code = build_mail_health(tenant, messages=[], sla_hours=sla_hours)
     return jsonify(payload), code
 
@@ -148,7 +163,7 @@ def api_emailpostfach_health():
 def api_emailpostfach_ingest():
     payload = request.get_json(silent=True) or {}
     provider = str(payload.get("provider") or "imap_stub")
-    actor = str(payload.get("actor") or "system")
+    actor = str(current_user() or "system")
     tenant = str(current_tenant() or "default")
     service = _postfach_service()
     try:
@@ -166,7 +181,7 @@ def api_emailpostfach_ingest():
 def api_emailpostfach_draft_generate():
     payload = request.get_json(silent=True) or {}
     message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
-    actor = str(payload.get("actor") or "system")
+    actor = str(current_user() or "system")
     use_llm = bool(payload.get("use_llm", False))
     tenant = str(current_tenant() or "default")
     draft = _postfach_service().create_draft(
@@ -183,7 +198,7 @@ def api_emailpostfach_draft_generate():
 @csrf_protected
 def api_emailpostfach_draft_edit(draft_id: str):
     payload = request.get_json(silent=True) or {}
-    actor = str(payload.get("actor") or "system")
+    actor = str(current_user() or "system")
     subject = str(payload.get("subject") or "")
     body = str(payload.get("body") or "")
     tenant = str(current_tenant() or "default")
@@ -205,7 +220,7 @@ def api_emailpostfach_draft_edit(draft_id: str):
 @csrf_protected
 def api_emailpostfach_send(draft_id: str):
     payload = request.get_json(silent=True) or {}
-    actor = str(payload.get("actor") or "system")
+    actor = str(current_user() or "system")
     confirm = str(payload.get("confirm") or "").strip().lower() in {"yes", "true", "1", "y"}
     tenant = str(current_tenant() or "default")
     try:

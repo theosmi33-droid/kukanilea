@@ -16,6 +16,12 @@
 ## Required Tests
 - A regression test must prove payload spoofing is ignored for at least one read-path action.
 - A regression test must prove payload spoofing is ignored for at least one mail action path.
+- A regression test must prove tool-level `tenant_id` parameters are bound to active session context and reject mismatches.
+
+## Prompt-Injection Hardening
+- Prompt/tool parameters are treated as untrusted input.
+- Tenant context must never be accepted from LLM-generated parameters when request/session context exists.
+- Obfuscated injection variants (e.g. zero-width characters and XML-style hidden directives) must be normalized/detected by guardrails before execution.
 
 ## Rationale
 Without central tenant binding, handlers that trust payload tenant hints can read or mutate data across tenant boundaries.
