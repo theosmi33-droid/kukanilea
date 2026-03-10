@@ -1,0 +1,7 @@
+# pip-audit false-positive allowlist (strictly limited)
+#
+# One vulnerability ID per line (e.g. PYSEC-2023-123).
+# Keep this file minimal. Every entry must have a linked justification
+# in the same PR/repository history and should be removed once upstream is fixed.
+#
+# Currently empty by design.
