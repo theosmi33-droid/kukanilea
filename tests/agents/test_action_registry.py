@@ -70,3 +70,14 @@ def test_manager_agent_contract_keeps_prompt_injection_blocking_in_neutral_conte
     source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
     assert "if injection_matches:" in source
     assert "neutral_context = bool(" not in source
+
+
+def test_manager_agent_contract_blocks_action_routing_when_context_is_missing() -> None:
+    source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+    assert 'reason="missing_context"' in source
+    assert "plan.missing_context or plan.execution_mode == \"propose\"" in source
+
+
+def test_cross_tool_flows_contract_does_not_store_raw_tracebacks() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert "traceback.format_exc()" not in source
