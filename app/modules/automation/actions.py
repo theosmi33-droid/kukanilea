@@ -61,6 +61,28 @@ EMAIL_SUBJECT_MAX_LENGTH = 255
 EMAIL_BODY_MAX_LENGTH = 20000
 
 
+def _resolve_automation_actor_role(*, auth_db: AuthDB, tenant_id: str, actor: str) -> str:
+    actor_name = str(actor or "").strip()
+    tenant = str(tenant_id or "").strip()
+    if not actor_name or not tenant:
+        return "READONLY"
+    try:
+        memberships = auth_db.get_memberships(actor_name)
+    except Exception:
+        return "READONLY"
+    tenant_norm = tenant.lower()
+    for membership in memberships:
+        if str(membership.tenant_id or "").strip().lower() != tenant_norm:
+            continue
+        role = str(membership.role or "").strip().upper()
+        if role in {"ADMIN", "DEV"}:
+            return "ADMIN"
+        if role in {"MANAGER", "OPERATOR", "MITARBEITER", "READONLY"}:
+            return role
+        return "READONLY"
+    return "READONLY"
+
+
 def _resolve_db_path(db_path: Path | str | None) -> Path:
     if db_path is None:
         return Path(core.DB_PATH)
@@ -140,11 +162,18 @@ def _execute_create_task(
 
         auth_db_path = str(os.environ.get("KUKANILEA_AUTH_DB") or "").strip()
         if auth_db_path:
-            pm = ProjectManager(AuthDB(Path(auth_db_path)))
+            auth_db = AuthDB(Path(auth_db_path))
+            pm = ProjectManager(auth_db)
+            actor_name = created_by or "automation"
+            actor_role = _resolve_automation_actor_role(
+                auth_db=auth_db,
+                tenant_id=tenant_id,
+                actor=actor_name,
+            )
             team_task_id = pm.create_team_task(
                 tenant_id=tenant_id,
-                actor=created_by or "automation",
-                actor_role="ADMIN",
+                actor=actor_name,
+                actor_role=actor_role,
                 title=title,
                 description=details,
                 priority=str(action_cfg.get("priority") or "MEDIUM"),

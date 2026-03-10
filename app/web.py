@@ -48,6 +48,7 @@ from app.core.indexing_logic import IndividualIntelligence
 from app.core.auto_evolution import SystemHealer
 
 from jinja2 import TemplateNotFound
+from markupsafe import escape
 
 from flask import (
     Blueprint,
@@ -3478,9 +3479,12 @@ def mesh():
         ]
 
     for node in nodes:
-        node["id"] = node.get("node_id")
-        node["ip"] = node.get("last_ip")
-        node["type"] = node.get("type", "ZimaBlade")
+        raw_status = str(node.get("status") or "").strip().upper()
+        node["status"] = escape("ONLINE" if raw_status == "ONLINE" else "OFFLINE")
+        node["id"] = escape(str(node.get("node_id") or node.get("id") or "-"))
+        node["name"] = escape(str(node.get("name") or "Unbekannter Hub"))
+        node["ip"] = escape(str(node.get("last_ip") or node.get("ip") or "-"))
+        node["type"] = escape(str(node.get("type") or "ZimaBlade"))
         node["sync"] = "100%"
         node["conflicts"] = 0
 
@@ -3516,20 +3520,20 @@ HTML_MESH = r"""
                     {% endif %}
                 </div>
                 <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-800 {{ 'text-emerald-500' if node.status == 'ONLINE' else 'text-rose-500' }}">
-                    {{ node.status }}
+                    {{ node.status|e }}
                 </span>
             </div>
             <div>
-                <h3 class="font-bold">{{ node.name }}</h3>
-                <p class="text-xs muted">{{ node.type }} • {{ node.ip }}</p>
+                <h3 class="font-bold">{{ node.name|e }}</h3>
+                <p class="text-xs muted">{{ node.type|e }} • {{ node.ip|e }}</p>
             </div>
             <div class="pt-4 border-t border-slate-800 space-y-2">
                 <div class="flex justify-between text-xs">
                     <span class="muted">Synchronisation</span>
-                    <span>{{ node.sync }}</span>
+                    <span>{{ node.sync|e }}</span>
                 </div>
                 <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                    <div class="h-full bg-indigo-500" style="width: {{ node.sync }};"></div>
+                    <div class="h-full bg-indigo-500" style="width: {{ node.sync|e }};"></div>
                 </div>
                 <div class="flex justify-between text-xs pt-2">
                     <span class="muted">Automatische Konfliktlösungen (CRDT)</span>

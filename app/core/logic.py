@@ -1338,12 +1338,11 @@ def _duration_seconds(start_at: str, end_at: str) -> int:
 def _iso_from_seconds(value: Optional[Any]) -> Optional[str]:
     if value is None or value == "":
         return None
-    return (
-        datetime.fromtimestamp(int(value), tz=timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    try:
+        timestamp = datetime.fromtimestamp(int(value), tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError) as exc:
+        raise ValueError("invalid_timestamp_seconds") from exc
+    return timestamp.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _time_task_lookup(

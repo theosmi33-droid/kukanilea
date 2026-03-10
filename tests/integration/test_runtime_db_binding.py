@@ -270,6 +270,32 @@ def test_rebinding_same_path_keeps_single_init_marker(tmp_path, monkeypatch):
     core_logic.bind_request_db_path(None)
 
 
+def test_health_does_not_reinitialize_db_for_same_path(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+    _seed_user_session(client, tenant_db_path=None)
+
+    import app.core.logic as core_logic
+
+    db_key = str(Path(app.config["CORE_DB"]).resolve())
+    original_db_init = core_logic.db_init
+    init_calls = {"count": 0}
+
+    def _counting_db_init() -> None:
+        init_calls["count"] += 1
+        original_db_init()
+
+    monkeypatch.setattr(core_logic, "db_init", _counting_db_init)
+    core_logic._DB_INITIALIZED_PATHS.discard(db_key)
+
+    first = client.get("/api/health")
+    second = client.get("/api/health")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert init_calls["count"] == 1
+
+
 def test_set_db_path_does_not_override_active_request_binding(tmp_path, monkeypatch):
     _build_app(tmp_path, monkeypatch)
     import app.core.logic as core_logic

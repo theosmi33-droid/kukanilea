@@ -159,10 +159,16 @@ def _read_table(fp: Path, max_rows: int = 2000) -> tuple[list[str], list[list[An
     if ext == ".csv":
         with fp.open("r", encoding="utf-8", newline="") as f:
             reader = csv.reader(f)
-            rows = list(reader)
-        if not rows:
-            return [], []
-        return [str(x).strip() for x in rows[0]], rows[1 : max_rows + 1]
+            header_row = next(reader, None)
+            if header_row is None:
+                return [], []
+            headers = [str(x).strip() for x in header_row]
+            rows: list[list[Any]] = []
+            for idx, row in enumerate(reader):
+                if idx >= max_rows:
+                    break
+                rows.append(row)
+        return headers, rows
 
     if ext == ".xlsx":
         if openpyxl is None:

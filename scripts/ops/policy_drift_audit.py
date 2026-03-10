@@ -230,9 +230,17 @@ def main() -> int:
             if is_protection_scope_error(message):
                 skipped_branches.append(branch)
                 print(
-                    "::warning::Branch protection check skipped for "
+                    "::error::Branch protection check failed for "
                     f"'{branch}' due to token scope on {token_source}. "
                     "Configure secret POLICY_AUDIT_TOKEN with repo admin scope."
+                )
+                drifts.append(
+                    Drift(
+                        branch,
+                        "protection_api_scope",
+                        "branch protection API accessible",
+                        message,
+                    )
                 )
                 continue
 

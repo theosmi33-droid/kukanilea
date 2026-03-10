@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, render_template, request, session
 
@@ -40,6 +39,16 @@ def _tenant() -> str:
     return str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
 
 
+def _public_health_profile(profile: dict) -> dict:
+    if not isinstance(profile, dict):
+        return {}
+    return {
+        "name": profile.get("name"),
+        "profile_id": profile.get("profile_id"),
+        "gewerk_name": profile.get("gewerk_name"),
+    }
+
+
 @bp.get("/ping")
 @search_limiter.limit_required
 def ping():
@@ -62,7 +71,8 @@ def health():
         if core and callable(getattr(core, "get_health_stats", None)):
             core_stats = core.get_health_stats(tenant_id=tenant_id)
         if core and callable(getattr(core, "get_profile", None)):
-            profile = core.get_profile()
+            full_profile = core.get_profile()
+            profile = full_profile if session.get("user") else _public_health_profile(full_profile)
         db_path = str(getattr(core, "DB_PATH", "")) if core else ""
     except Exception:
         core_stats = {}
@@ -476,50 +486,42 @@ def intake_execute():
 @bp.post("/mesh/handshake")
 def mesh_handshake():
     """Handles incoming handshake requests from peer Hubs."""
-    import json
-
-    from flask import request
-
     from app.core.mesh_identity import (
-        ensure_mesh_identity,
-        sign_message,
-        verify_signature,
+        HANDSHAKE_ACK_PURPOSE,
+        HANDSHAKE_INIT_PURPOSE,
+        create_handshake_envelope,
+        verify_handshake_envelope,
     )
     from app.core.mesh_network import MeshNetworkManager
 
-    body = request.json
-    data = body.get("data")
-    sig = body.get("signature")
-
-    if not data or not sig:
-        return jsonify(ok=False, error="invalid_request"), 400
-
-    # Verify peer signature
-    peer_pub_key = data.get("public_key")
-    if not verify_signature(peer_pub_key, json.dumps(data, sort_keys=True).encode('utf-8'), sig):
-        return jsonify(ok=False, error="invalid_signature"), 401
+    body = request.get_json(silent=True) or {}
+    ok, reason, peer_data = verify_handshake_envelope(
+        body,
+        expected_purpose=HANDSHAKE_INIT_PURPOSE,
+    )
+    if not ok or not peer_data:
+        status = 401 if reason in {"invalid_signature", "node_key_mismatch", "stale_timestamp"} else 400
+        return jsonify(ok=False, error=reason), status
+    challenge = str(peer_data.get("challenge") or "").strip()
+    if not challenge:
+        return jsonify(ok=False, error="missing_fields:challenge"), 400
 
     # Register peer locally
     auth_db = current_app.extensions["auth_db"]
     manager = MeshNetworkManager(auth_db)
     manager.register_peer(
-        data["node_id"],
-        data["name"],
-        data["public_key"],
+        str(peer_data["node_id"]),
+        str(peer_data["name"]),
+        str(peer_data["public_key"]),
         request.remote_addr
     )
 
-    # Respond with our identity
-    my_pub, my_node = ensure_mesh_identity()
-    response_data = {
-        "node_id": my_node,
-        "name": current_app.config.get("APP_NAME", "KUKANILEA Hub"),
-        "public_key": my_pub,
-        "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
-    }
-    my_sig = sign_message(json.dumps(response_data, sort_keys=True).encode('utf-8'))
-
-    return jsonify(ok=True, peer=response_data, signature=my_sig)
+    response_envelope = create_handshake_envelope(
+        name=current_app.config.get("APP_NAME", "KUKANILEA Hub"),
+        purpose=HANDSHAKE_ACK_PURPOSE,
+        challenge=challenge,
+    )
+    return jsonify(ok=True, **response_envelope)
 
 
 @bp.get("/outbound/status")

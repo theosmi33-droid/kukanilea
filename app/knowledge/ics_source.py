@@ -1574,6 +1574,9 @@ def knowledge_calendar_event_update(
 ) -> dict[str, Any]:
     _ensure_writable()
     tenant = _tenant(tenant_id)
+    policy_row = knowledge_policy_get(tenant)
+    if not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
     source_ref = _manual_source_ref(event_id)
 
     def _tx(con: sqlite3.Connection) -> dict[str, Any]:
@@ -1688,6 +1691,9 @@ def knowledge_calendar_event_delete(
 ) -> dict[str, Any]:
     _ensure_writable()
     tenant = _tenant(tenant_id)
+    policy_row = knowledge_policy_get(tenant)
+    if not _policy_allows_calendar(policy_row):
+        raise ValueError("policy_blocked")
     source_ref = _manual_source_ref(event_id)
 
     def _tx(con: sqlite3.Connection) -> dict[str, Any]:
@@ -1735,24 +1741,30 @@ def _read_task_deadlines(tenant_id: str) -> list[dict[str, Any]]:
     min_due = (today - timedelta(days=_feed_past_days())).isoformat()
     max_due = (today + timedelta(days=_feed_future_days())).isoformat()
 
-    with legacy_core._DB_LOCK:
-        con = _db()
-        try:
-            # Query team_tasks for entries with due dates in the range
-            rows = con.execute(
-                """
-                SELECT id, title, description, due_at, assigned_to
-                FROM team_tasks
-                WHERE tenant_id=? AND due_at IS NOT NULL
-                AND due_at >= ? AND due_at <= ?
-                AND status != 'CLOSED' AND status != 'REJECTED'
-                """,
-                (tenant_id, min_due, max_due),
-            ).fetchall()
-            return [dict(r) for r in rows]
-        except Exception:
-            return []
-        finally:
+    con: sqlite3.Connection | None = None
+    try:
+        if has_app_context():
+            auth_db = current_app.extensions.get("auth_db")
+            if auth_db is not None:
+                con = auth_db._db()
+        if con is None:
+            with legacy_core._DB_LOCK:
+                con = _db()
+        rows = con.execute(
+            """
+            SELECT id, title, description, due_at, assigned_to
+            FROM team_tasks
+            WHERE tenant_id=? AND due_at IS NOT NULL
+            AND due_at >= ? AND due_at <= ?
+            AND status != 'CLOSED' AND status != 'REJECTED'
+            """,
+            (tenant_id, min_due, max_due),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        if con is not None:
             con.close()
 
 
