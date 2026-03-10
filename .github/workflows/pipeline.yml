@@ -11,13 +11,12 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-permissions:
-  contents: read
-
 jobs:
   lint-and-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,6 +72,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [lint-and-scan]
+    permissions:
+      contents: read
     env:
       OLLAMA_ENABLED: "0"
     steps:
