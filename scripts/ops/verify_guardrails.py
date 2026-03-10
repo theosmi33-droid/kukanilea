@@ -31,14 +31,32 @@ PROMPT_INJECTION_PATTERNS = [
     re.compile(r"(?i)\b(?:bypass|disable)\s+(?:all\s+)?(?:security|guardrails?|safety)\b"),
 ]
 PROMPT_SCAN_ALLOWLIST = {
-    "app/ai/guardrails.py",
-    "app/security/gates.py",
-    "app/security/untrusted_input.py",
-    "app/agents/guards.py",
-    "app/agents/input_validator.py",
-    "kukanilea/guards.py",
-    "kukanilea/orchestrator/manager_agent.py",
+    "app/ai/guardrails.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "app/security/gates.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "app/security/untrusted_input.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "app/agents/guards.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "app/agents/input_validator.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "kukanilea/guards.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
+    "kukanilea/orchestrator/manager_agent.py": (
+        re.compile(r"(?i)re\.compile\("),
+    ),
 }
+PROMPT_GUARDRAIL_DOWNGRADE_PATTERNS = [
+    re.compile(r"(?i)\ballow_with_warning\b.{0,80}\b(?:ignore|disregard|override|bypass|disable)\b"),
+    re.compile(r"(?i)\b(?:ignore|disregard|override|bypass|disable)\b.{0,80}\ballow_with_warning\b"),
+]
 
 
 def check_cdn_urls(paths: list[str] | None = None) -> list[str]:
@@ -177,9 +195,14 @@ def check_htmx_csrf(path: str = "app/templates") -> list[str]:
     return errors
 
 
-def _is_allowlisted(path: Path, allowlist: set[str]) -> bool:
+def _allowlist_context_patterns(
+    path: Path, allowlist: dict[str, tuple[re.Pattern[str], ...]]
+) -> tuple[re.Pattern[str], ...]:
     normalized = path.as_posix()
-    return any(normalized == entry or normalized.endswith(f"/{entry}") for entry in allowlist)
+    for entry, patterns in allowlist.items():
+        if normalized == entry or normalized.endswith(f"/{entry}"):
+            return patterns
+    return ()
 
 
 def check_prompt_injection_surface(paths: list[str] | None = None) -> list[str]:
@@ -191,16 +214,30 @@ def check_prompt_injection_surface(paths: list[str] | None = None) -> list[str]:
         for full_path in root.rglob("*"):
             if not full_path.is_file() or full_path.suffix not in TEXT_EXTENSIONS:
                 continue
-            if _is_allowlisted(full_path, PROMPT_SCAN_ALLOWLIST):
-                continue
+            allowlisted_context = _allowlist_context_patterns(full_path, PROMPT_SCAN_ALLOWLIST)
             try:
                 with full_path.open("r", encoding="utf-8") as fh:
+                    recent_lines: list[str] = []
                     for line_num, line in enumerate(fh, 1):
+                        if any(pattern.search(line) for pattern in PROMPT_GUARDRAIL_DOWNGRADE_PATTERNS):
+                            errors.append(
+                                "Prompt-injection downgrade pattern found in "
+                                f"{full_path}:{line_num}: {line.strip()}"
+                            )
+                            recent_lines = (recent_lines + [line])[-3:]
+                            continue
+
                         if any(pattern.search(line) for pattern in PROMPT_INJECTION_PATTERNS):
+                            if allowlisted_context:
+                                context_window = "".join(recent_lines + [line])
+                                if any(p.search(context_window) for p in allowlisted_context):
+                                    recent_lines = (recent_lines + [line])[-3:]
+                                    continue
                             errors.append(
                                 "Prompt-injection control phrase found outside allowlist in "
                                 f"{full_path}:{line_num}: {line.strip()}"
                             )
+                        recent_lines = (recent_lines + [line])[-3:]
             except UnicodeDecodeError:
                 continue
     return errors
