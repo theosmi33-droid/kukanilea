@@ -431,6 +431,28 @@ class ManagerAgent:
             self._record("manager_agent.blocked", message, ctx, result)
             return result
 
+        if decision.action not in {"safe_follow_up", "safe_fallback"} and (
+            plan.missing_context or plan.execution_mode == "propose"
+        ):
+            result = RouteResult(
+                ok=False,
+                status="needs_clarification",
+                decision=decision,
+                reason="missing_context",
+                plan=plan,
+            )
+            self._record(
+                "manager_agent.needs_clarification",
+                message,
+                ctx,
+                result,
+                extra={
+                    "missing_context": list(plan.missing_context),
+                    "suggestions": list(self.router.SAFE_SUGGESTIONS),
+                },
+            )
+            return result
+
         if plan.candidate_actions and not self.router.validate_parameters(decision.action, ctx.get("params")):
             result = RouteResult(ok=False, status="blocked", decision=decision, reason="schema_validation_failed", plan=plan)
             self._record("manager_agent.blocked", message, ctx, result)

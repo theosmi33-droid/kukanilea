@@ -41,5 +41,10 @@ class TestMessengerAgent(unittest.TestCase):
         source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
         self.assertNotIn("if injection_matches and neutral_context and not action_context:", source)
 
+    def test_manager_agent_contract_keeps_missing_context_clarification_gate(self):
+        source = Path("kukanilea/orchestrator/manager_agent.py").read_text(encoding="utf-8")
+        self.assertIn('reason="missing_context"', source)
+        self.assertIn("manager_agent.needs_clarification", source)
+
 if __name__ == "__main__":
     unittest.main()

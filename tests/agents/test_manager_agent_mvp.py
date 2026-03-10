@@ -234,6 +234,38 @@ def test_read_without_approval_is_allowed() -> None:
     assert result.decision.execution_mode == "read"
 
 
+def test_missing_customer_context_returns_clarification_instead_of_routing() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route("Bitte Kunde suchen", {"tenant": "KUKANILEA", "user": "admin"})
+
+    assert result.ok is False
+    assert result.status == "needs_clarification"
+    assert result.reason == "missing_context"
+    assert result.plan is not None
+    assert result.plan.missing_context == ["customer_id"]
+    assert result.plan.execution_mode == "propose"
+    assert result.decision.action == "crm.customer.search"
+    assert bus.events[-1]["event_type"] == "manager_agent.needs_clarification"
+    assert bus.events[-1]["payload"]["missing_context"] == ["customer_id"]
+
+
+def test_missing_message_context_prevents_mail_response_routing() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route("Mail antworten", {"tenant": "KUKANILEA", "user": "admin"})
+
+    assert result.ok is False
+    assert result.status == "needs_clarification"
+    assert result.reason == "missing_context"
+    assert result.plan is not None
+    assert result.plan.missing_context == ["message"]
+    assert result.decision.action == "mail.mail.reply"
+    assert bus.events[-1]["event_type"] == "manager_agent.needs_clarification"
+
+
 def test_unknown_intent_returns_safe_clarification_instead_of_execution() -> None:
     bus = EventBus()
     agent = ManagerAgent(event_bus=bus)
