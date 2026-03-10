@@ -37,6 +37,23 @@ def test_prompt_injection_surface_skips_allowlisted_security_file(tmp_path: Path
     assert errors == []
 
 
+def test_prompt_injection_surface_skips_multiline_allowlisted_regex_context(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    allowlisted = tmp_path / "app" / "security" / "untrusted_input.py"
+    allowlisted.parent.mkdir(parents=True, exist_ok=True)
+    allowlisted.write_text(
+        "PATTERN = re.compile(\n"
+        '    r"ignore previous instructions",\n'
+        "    re.IGNORECASE,\n"
+        ")\n",
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_prompt_injection_surface(paths=[str(tmp_path / "app")])
+
+    assert errors == []
+
+
 def test_prompt_injection_surface_flags_non_pattern_line_in_allowlisted_security_file(tmp_path: Path) -> None:
     guardrails = _load_guardrails_module()
     allowlisted = tmp_path / "app" / "security" / "untrusted_input.py"

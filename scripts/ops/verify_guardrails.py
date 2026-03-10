@@ -185,21 +185,27 @@ def check_prompt_injection_surface(paths: list[str] | None = None) -> list[str]:
             allowlisted_context = _allowlist_context_patterns(full_path, PROMPT_SCAN_ALLOWLIST)
             try:
                 with full_path.open("r", encoding="utf-8") as fh:
+                    recent_lines: list[str] = []
                     for line_num, line in enumerate(fh, 1):
                         if any(pattern.search(line) for pattern in PROMPT_GUARDRAIL_DOWNGRADE_PATTERNS):
                             errors.append(
                                 "Prompt-injection downgrade pattern found in "
                                 f"{full_path}:{line_num}: {line.strip()}"
                             )
+                            recent_lines = (recent_lines + [line])[-3:]
                             continue
 
                         if any(pattern.search(line) for pattern in PROMPT_INJECTION_PATTERNS):
-                            if allowlisted_context and any(p.search(line) for p in allowlisted_context):
-                                continue
+                            if allowlisted_context:
+                                context_window = "".join(recent_lines + [line])
+                                if any(p.search(context_window) for p in allowlisted_context):
+                                    recent_lines = (recent_lines + [line])[-3:]
+                                    continue
                             errors.append(
                                 "Prompt-injection control phrase found outside allowlist in "
                                 f"{full_path}:{line_num}: {line.strip()}"
                             )
+                        recent_lines = (recent_lines + [line])[-3:]
             except UnicodeDecodeError:
                 continue
     return errors
