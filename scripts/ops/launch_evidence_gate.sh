@@ -262,7 +262,7 @@ GATE7_OUTPUT_DIR="${GATE7_OUTPUT_DIR:-$ROOT/evidence/operations/gate7_latest}"
 export GATE7_OUTPUT_DIR
 run_cmd_gate "MIA_GATE7_SMOKE" "\"$PYTHON\" scripts/ops/gate7_evidence.py --output-dir \"$GATE7_OUTPUT_DIR\"" "gate7 smoke evidence generated in $GATE7_OUTPUT_DIR" "gate7 smoke evidence failed"
 
-run_cmd_gate "MIA_GATE7_ARTIFACTS" "GATE7_OUTPUT_DIR=\"$GATE7_OUTPUT_DIR\" \"$PYTHON\" - <<'PY'
+run_cmd_gate "MIA_GATE7_ARTIFACTS" "\"$PYTHON\" - <<'PY'
 import json
 import os
 from pathlib import Path
