@@ -46,3 +46,11 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
   4. Shared-Core-Hotspot-Block für konfliktträchtige Kernpfade (separater PR erforderlich).
   5. `MIN_TESTS` und Evidence-Report bleiben Pflicht für nachvollziehbare Test-Evidence.
 - Ergebnis: konfliktärmere, reviewbare Einzel-PRs ohne Branch-Stacking-Mechanik.
+
+## 2026-03-10 Addendum (PR #676 Session-Cookie Regression Matrix)
+- Scope: `tests/security/test_session_security_defaults.py`.
+- Ziel: Session-Cookie-Defaults bleiben stabil (`HttpOnly`, `Secure`, `SameSite`) und regressionsfest über Konfigurationskombinationen.
+- Sicherheitsnutzen: verhindert stilles Abschwächen der Cookie-Policy im Runtime-Stack.
+- Validierung:
+  - `ruff check tests/security/test_session_security_defaults.py`
+  - `pytest -q tests/security/test_session_security_defaults.py`
