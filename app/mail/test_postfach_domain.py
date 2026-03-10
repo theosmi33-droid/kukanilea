@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
-from pathlib import Path
 from unittest.mock import patch
 
 from app.mail import postfach_imap, postfach_store, sync_engine
@@ -51,7 +50,7 @@ def test_sync_account_offline_safe_on_connect_failure(tmp_path, monkeypatch):
     assert result["reason"] == "imap_sync_failed"
 
 
-def test_sync_all_accounts_aggregates_results():
+def test_sync_all_accounts_aggregates_results(tmp_path):
     with patch(
         "app.mail.postfach_store.ensure_postfach_schema"
     ), patch(
@@ -65,7 +64,7 @@ def test_sync_all_accounts_aggregates_results():
         ],
     ):
         out = sync_engine.sync_all_accounts(
-            Path("/tmp/core.sqlite3"),
+            tmp_path / "core.sqlite3",
             tenant_id="tenant_a",
             limit_per_account=20,
             auto_download_attachments=False,

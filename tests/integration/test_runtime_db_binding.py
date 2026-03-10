@@ -357,10 +357,12 @@ def test_healthcheck_omits_sensitive_fields_for_anonymous_requests(tmp_path, mon
     response = client.get("/api/health")
     assert response.status_code == 200
 
-    payload = response.get_json()
-    assert "tenant_id" not in payload
-    assert "db_path" not in payload
-    assert "profile" not in payload
+    body = response.get_json()
+    assert body["ok"] is True
+    assert "tenant_id" not in body
+    assert "db_path" not in body
+    assert isinstance(body.get("profile"), dict)
+    assert set(body["profile"].keys()).issubset({"name", "profile_id", "gewerk_name"})
 
 
 def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(tmp_path, monkeypatch):
@@ -375,4 +377,3 @@ def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.get_json()["ok"] is True
-

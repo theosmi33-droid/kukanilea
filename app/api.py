@@ -69,8 +69,9 @@ def health():
         core = getattr(web, "core", None)
         if core and callable(getattr(core, "get_health_stats", None)):
             core_stats = core.get_health_stats(tenant_id=tenant_id)
-        if is_authenticated and core and callable(getattr(core, "get_profile", None)):
-            profile = core.get_profile()
+        if core and callable(getattr(core, "get_profile", None)):
+            full_profile = core.get_profile()
+            profile = full_profile if is_authenticated else _public_health_profile(full_profile)
     except Exception:
         core_stats = {}
     payload = dict(
@@ -82,8 +83,7 @@ def health():
         doc_count=core_stats.get("doc_count", 0),
         fts_enabled=core_stats.get("fts_enabled", False),
     )
-    if is_authenticated:
-        payload["profile"] = profile
+    payload["profile"] = profile
     return jsonify(payload)
 
 
