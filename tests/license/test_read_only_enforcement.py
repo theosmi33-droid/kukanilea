@@ -59,6 +59,38 @@ def test_license_upload_endpoint_not_blocked(tmp_path: Path, monkeypatch) -> Non
     assert resp.status_code != 403
 
 
+def test_auth_prefix_does_not_allow_path_traversal_bypass(tmp_path: Path, monkeypatch) -> None:
+    app = _app(tmp_path, monkeypatch)
+    app.config["READ_ONLY"] = True
+    app.config["LICENSE_REASON"] = "license_blocked"
+    client = app.test_client()
+
+    resp = client.post("/api/auth/../admin/settings/system", json={"x": 1})
+    assert resp.status_code == 403
+    assert "read_only" in resp.get_data(as_text=True)
+
+
+def test_read_only_block_logs_normalized_path(tmp_path: Path, monkeypatch) -> None:
+    app = _app(tmp_path, monkeypatch)
+    app.config["READ_ONLY"] = True
+    app.config["LICENSE_REASON"] = "license_blocked"
+    events = []
+
+    def _capture(event: str, payload: dict):
+        events.append((event, payload))
+
+    monkeypatch.setattr("app.log_event", _capture)
+
+    client = app.test_client()
+    resp = client.post("/api/auth/../admin/settings/system", json={"x": 1})
+    assert resp.status_code == 403
+
+    blocked = [payload for event, payload in events if event == "license_write_blocked"]
+    assert blocked
+    assert blocked[-1]["path"] == "/api/admin/settings/system"
+    assert blocked[-1]["method"] == "POST"
+
+
 def test_non_license_settings_write_blocked_in_read_only(tmp_path: Path, monkeypatch) -> None:
     app = _app(tmp_path, monkeypatch)
     app.config["READ_ONLY"] = True
