@@ -12,6 +12,7 @@
 	    <div id="verify-status">
 	        <button class="btn btn-secondary"
 	                hx-post="/admin/audit/verify"
+	                hx-headers='{"X-CSRF-Token": "{{ csrf_token() }}"}'
 	                hx-target="#verify-status"
 	                hx-confirm="Audit-Chain jetzt verifizieren?"
 	                style="height: 36px; gap: 8px;">
