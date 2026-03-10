@@ -209,3 +209,17 @@ def test_external_asset_check_allows_local_fonts_css_link(tmp_path: Path) -> Non
     errors = guardrails.check_external_asset_urls(paths=[str(tmp_path / "app" / "templates")])
 
     assert errors == []
+
+
+def test_external_asset_check_ignores_plain_text_url_like_snippets(tmp_path: Path) -> None:
+    guardrails = _load_guardrails_module()
+    html_path = tmp_path / "app" / "templates" / "notes.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(
+        "<p>Set src=//cdn.example.com only in documentation, not as an HTML attribute.</p>\n",
+        encoding="utf-8",
+    )
+
+    errors = guardrails.check_external_asset_urls(paths=[str(tmp_path / "app" / "templates")])
+
+    assert errors == []

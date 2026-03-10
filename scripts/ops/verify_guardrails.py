@@ -65,12 +65,15 @@ def check_external_asset_urls(paths: list[str] | None = None) -> list[str]:
         if not root.exists():
             continue
         for full_path in root.rglob("*.html"):
-            with full_path.open("r", encoding="utf-8") as fh:
-                for line_num, line in enumerate(fh, 1):
-                    if 'xmlns="http://www.w3.org/2000/svg"' in line:
-                        continue
-                    if EXTERNAL_ASSET_PATTERNS.search(line):
-                        errors.append(f"External asset URL found in {full_path}:{line_num}: {line.strip()}")
+            content = full_path.read_text(encoding="utf-8")
+            for match in re.finditer(r"(<[^>]+>)", content, re.DOTALL):
+                tag = match.group(0)
+                if 'xmlns="http://www.w3.org/2000/svg"' in tag:
+                    continue
+                if EXTERNAL_ASSET_PATTERNS.search(tag):
+                    line_num = content.count("\n", 0, match.start()) + 1
+                    tag_preview = tag.splitlines()[0] if "\n" in tag else tag
+                    errors.append(f"External asset URL found in {full_path}:{line_num}: {tag_preview.strip()}")
     return errors
 
 
