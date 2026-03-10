@@ -17,6 +17,8 @@ Hard gates:
   - scope: changed files >= ${MIN_SCOPE_FILES} OR changed LOC >= ${MIN_SCOPE_LOC}
   - test delta: >= ${MIN_TESTS}
   - evidence report exists: ${EVIDENCE_REPORT}
+  - branch freshness: HEAD must include latest origin/main (behind=0 when origin/main exists)
+  - branch lineage: HEAD must not equal or be based on another local codex/* branch
   - lane overlap check against local codex/* branches
 USAGE
 }
@@ -68,6 +70,19 @@ fi
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 MERGE_BASE="$(git merge-base HEAD "$BASE_BRANCH")"
 
+MAIN_SYNC_OK=1
+MAIN_SYNC_NOTE="origin/main not available locally"
+if git show-ref --verify --quiet refs/remotes/origin/main; then
+  MAIN_SYNC_OK=0
+  COUNTS="$(git rev-list --left-right --count HEAD...origin/main 2>/dev/null || echo '0 0')"
+  AHEAD="$(awk '{print $1}' <<<"$COUNTS")"
+  BEHIND="$(awk '{print $2}' <<<"$COUNTS")"
+  MAIN_SYNC_NOTE="ahead=${AHEAD}, behind=${BEHIND}"
+  if [[ "$BEHIND" == "0" ]]; then
+    MAIN_SYNC_OK=1
+  fi
+fi
+
 CHANGED_FILES=()
 while IFS= read -r line; do
   CHANGED_FILES+=("$line")
@@ -88,11 +103,19 @@ fi
 OVERLAP_COUNT=0
 OVERLAP_LINES=()
 CODEX_BRANCHES=()
+BRANCH_CONTEXT_OK=1
+BRANCH_CONTEXT_HITS=()
 while IFS= read -r line; do
   CODEX_BRANCHES+=("$line")
 done < <(git for-each-ref --format='%(refname:short)' refs/heads/codex/)
 for BR in "${CODEX_BRANCHES[@]}"; do
   [[ -z "$BR" || "$BR" == "$CURRENT_BRANCH" ]] && continue
+
+  if git merge-base --is-ancestor "$BR" HEAD >/dev/null 2>&1; then
+    BRANCH_CONTEXT_OK=0
+    BRANCH_CONTEXT_HITS+=("$BR")
+  fi
+
   BR_MERGE_BASE="$(git merge-base "$BR" "$BASE_BRANCH" 2>/dev/null || true)"
   [[ -z "$BR_MERGE_BASE" ]] && continue
   BR_FILES=()
@@ -146,7 +169,16 @@ status_line "scope.changed_files" "$CHANGED_FILE_COUNT" "(min: $MIN_SCOPE_FILES 
 status_line "scope.changed_loc" "$LOC_TOTAL" "(min: $MIN_SCOPE_LOC or files >= $MIN_SCOPE_FILES)"
 status_line "tests.delta" "$TEST_DELTA" "(min: $MIN_TESTS)"
 status_line "evidence.report" "$EVIDENCE_REPORT" "(required)"
+status_line "main.sync" "$MAIN_SYNC_NOTE" "(require behind=0 when origin/main exists)"
+status_line "branch.context" "$BRANCH_CONTEXT_OK" "(must be 1; no codex/* ancestor)"
 status_line "lane.overlap_count" "$OVERLAP_COUNT" "(must be 0)"
+
+if (( BRANCH_CONTEXT_OK == 0 )); then
+  echo "branch.context_hits:"
+  for branch_hit in "${BRANCH_CONTEXT_HITS[@]}"; do
+    echo "  - $branch_hit"
+  done
+fi
 
 if (( OVERLAP_COUNT > 0 )); then
   echo "lane.overlaps:"
@@ -159,6 +191,8 @@ FAILURES=()
 (( SCOPE_OK == 1 )) || FAILURES+=("MIN_SCOPE gate failed: need >=${MIN_SCOPE_FILES} changed files OR >=${MIN_SCOPE_LOC} LOC")
 (( TEST_OK == 1 )) || FAILURES+=("MIN_TESTS gate failed: test delta ${TEST_DELTA} < ${MIN_TESTS}")
 (( EVIDENCE_OK == 1 )) || FAILURES+=("Evidence report missing: ${EVIDENCE_REPORT}")
+(( MAIN_SYNC_OK == 1 )) || FAILURES+=("Main sync gate failed: HEAD must include latest origin/main (behind=0)")
+(( BRANCH_CONTEXT_OK == 1 )) || FAILURES+=("Branch context gate failed: HEAD includes commits from another local codex/* branch")
 (( OVERLAP_OK == 1 )) || FAILURES+=("Lane overlap check failed: overlapping files with local codex/* branch(es)")
 
 if (( ${#FAILURES[@]} > 0 )); then
