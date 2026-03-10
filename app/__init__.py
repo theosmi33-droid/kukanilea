@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import time
-import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -11,15 +11,16 @@ from flask import Flask, g, request, session
 
 from .auth import init_auth
 from .autonomy import init_autonomy
-from .config import Config, _is_dev_env
+from .config import Config
+from .core.migrations import run_migrations
 from .db import AuthDB
 from .errors import json_error
 from .license import load_runtime_license_state
+from .lifecycle import SystemState, manager
 from .log_utils import init_request_logging
-from .migrations.ensure_agent_memory import ensure_agent_memory_tables
-from .core.migrations import run_migrations
-from .observability import init_observability
 from .logging.structured_logger import log_event
+from .migrations.ensure_agent_memory import ensure_agent_memory_tables
+from .observability import init_observability
 from .security.session_policy import resolve_session_cookie_policy
 
 
@@ -38,9 +39,6 @@ def _wire_runtime_env(app: Flask) -> None:
     except Exception:
         # Non-fatal: module might not be imported yet in some boot paths.
         pass
-
-
-from .lifecycle import SystemState, manager
 
 
 def _is_test_context(app: Flask) -> bool:
@@ -88,9 +86,16 @@ def create_app() -> Flask:
     manager.set_state(SystemState.INIT, "Initializing modules and databases...")
     # Import blueprints after env/path wiring so legacy modules read correct paths.
     from . import api, web
-    from .routes import system_logs, admin_tenants, automation, visualizer, email, calendar
-    from .core.tool_loader import load_all_tools
     from .core.event_flows import init_event_flows
+    from .core.tool_loader import load_all_tools
+    from .routes import (
+        admin_tenants,
+        automation,
+        calendar,
+        email,
+        system_logs,
+        visualizer,
+    )
 
     load_all_tools(app)
     init_event_flows()
@@ -115,8 +120,8 @@ def create_app() -> Flask:
 
     # Start background dispatcher only for real runtime, not test contexts.
     if not _is_test_context(app):
-        from .services.api_dispatcher import start_dispatcher_daemon
         from .modules.dashboard.briefing import start_briefing_scheduler
+        from .services.api_dispatcher import start_dispatcher_daemon
 
         start_dispatcher_daemon(str(auth_db.path), interval=60)
         start_briefing_scheduler()
@@ -258,10 +263,20 @@ def create_app() -> Flask:
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         content_type = str(response.headers.get("Content-Type") or "").lower()
-        if "text/html" in content_type and getattr(g, "csp_nonce", ""):
-            body = response.get_data(as_text=True)
-            script_pattern = re.compile(r"<script(?![^>]*\bnonce=)([^>]*)>", re.IGNORECASE)
-            body = script_pattern.sub(lambda m: f'<script nonce="{g.csp_nonce}"{m.group(1)}>', body)
+        nonce = getattr(g, "csp_nonce", "")
+        if "text/html" not in content_type or not nonce:
+            return response
+        if response.is_streamed or response.direct_passthrough:
+            return response
+        body = response.get_data()
+        if b"<script" not in body.lower():
+            return response
+        script_pattern = re.compile(rb"<script(?![^>]*\bnonce=)([^>]*)>", re.IGNORECASE)
+        body, replacements = script_pattern.subn(
+            lambda m: b'<script nonce="' + nonce.encode("utf-8") + b'"' + m.group(1) + b'>',
+            body,
+        )
+        if replacements:
             response.set_data(body)
         return response
 
