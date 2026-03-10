@@ -317,8 +317,68 @@ def test_offline_first_blocks_external_action_without_feature_flag() -> None:
     assert result.status == "offline_blocked"
     assert result.reason == "external_calls_disabled"
     assert bus.events[-1]["event_type"] == "manager_agent.offline_blocked"
+    assert bus.events[-1]["payload"]["external_policy_decision"] == "external_calls_disabled"
+    assert bus.events[-1]["payload"]["external_action_allowlisted"] is False
     assert "blocked" in result.audit_event["audit_states"]
 
+
+
+
+def test_external_action_blocked_when_not_allowlisted_even_if_external_calls_enabled() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(
+        event_bus=bus,
+        external_calls_enabled=True,
+        external_call_allowlist=("mail.mail.reply",),
+    )
+
+    first = agent.route(
+        "Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+        {"tenant": "KUKANILEA", "user": "admin"},
+    )
+    approval_id = first.audit_event["approval_id"]
+    approved = agent.approvals.approve(approval_id, tenant="KUKANILEA", approver_user="security-admin")
+    assert approved is not None
+
+    result = agent.route(
+        "Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+        {"tenant": "KUKANILEA", "user": "admin", "approval_id": approval_id},
+    )
+
+    assert result.ok is False
+    assert result.status == "offline_blocked"
+    assert result.reason == "external_action_not_allowlisted"
+    assert bus.events[-1]["event_type"] == "manager_agent.offline_blocked"
+    assert bus.events[-1]["payload"]["external_policy_decision"] == "external_action_not_allowlisted"
+    assert bus.events[-1]["payload"]["external_action_allowlisted"] is False
+
+
+def test_external_action_routes_when_explicitly_allowlisted() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(
+        event_bus=bus,
+        external_calls_enabled=True,
+        external_call_allowlist=("messenger.message.reply",),
+    )
+
+    first = agent.route(
+        "Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+        {"tenant": "KUKANILEA", "user": "admin"},
+    )
+    approval_id = first.audit_event["approval_id"]
+    approved = agent.approvals.approve(approval_id, tenant="KUKANILEA", approver_user="security-admin")
+    assert approved is not None
+
+    result = agent.route(
+        "Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+        {"tenant": "KUKANILEA", "user": "admin", "approval_id": approval_id},
+    )
+
+    assert result.ok is True
+    assert result.status == "routed"
+    assert result.audit_event is not None
+    assert result.audit_event["external_policy_decision"] == "external_action_allowlisted"
+    assert result.audit_event["external_action_allowlisted"] is True
 
 def test_runtime_guard_routes_destructive_request_to_review() -> None:
     bus = EventBus()

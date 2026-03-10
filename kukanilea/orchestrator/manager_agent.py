@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from os import getenv
 from typing import Any, Callable, Mapping
 
 from .action_catalog import create_action_registry
@@ -83,6 +84,46 @@ class RouteResult:
     confirm_required: bool = False
     plan: MIAIntentPlan | None = None
     audit_event: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ExternalCallPolicyDecision:
+    allowed: bool
+    reason: str
+    action_allowlisted: bool
+
+
+class ExternalCallPolicy:
+    """Offline-first policy for external API actions.
+
+    Default behavior blocks external calls unless `external_calls_enabled` is true
+    and the canonical action id is explicitly allowlisted.
+    """
+
+    def __init__(
+        self,
+        *,
+        external_calls_enabled: bool,
+        allowlisted_actions: tuple[str, ...] = (),
+    ) -> None:
+        self.external_calls_enabled = bool(external_calls_enabled)
+        self.allowlisted_actions = {str(action).strip() for action in allowlisted_actions if str(action).strip()}
+
+    @classmethod
+    def from_env(cls, *, external_calls_enabled: bool) -> "ExternalCallPolicy":
+        raw = str(getenv("KUKANILEA_EXTERNAL_CALL_ALLOWLIST", "")).strip()
+        entries = tuple(segment.strip() for segment in raw.split(",") if segment.strip())
+        return cls(external_calls_enabled=external_calls_enabled, allowlisted_actions=entries)
+
+    def evaluate(self, *, action_id: str, external_call: bool) -> ExternalCallPolicyDecision:
+        if not external_call:
+            return ExternalCallPolicyDecision(allowed=True, reason="not_external", action_allowlisted=False)
+        if not self.external_calls_enabled:
+            return ExternalCallPolicyDecision(allowed=False, reason="external_calls_disabled", action_allowlisted=False)
+        is_allowlisted = action_id in self.allowlisted_actions
+        if not is_allowlisted:
+            return ExternalCallPolicyDecision(allowed=False, reason="external_action_not_allowlisted", action_allowlisted=False)
+        return ExternalCallPolicyDecision(allowed=True, reason="external_action_allowlisted", action_allowlisted=True)
 
 
 @dataclass
@@ -344,12 +385,20 @@ class ManagerAgent:
         event_bus: EventBus | None = None,
         audit_logger: Callable[[dict[str, Any]], None] | None = None,
         external_calls_enabled: bool = False,
+        external_call_allowlist: tuple[str, ...] | None = None,
         approval_runtime: ApprovalRuntime | None = None,
     ) -> None:
         self.router = DeterministicToolRouter()
         self.event_bus = event_bus or EventBus()
         self.audit_logger = audit_logger
         self.external_calls_enabled = bool(external_calls_enabled)
+        if external_call_allowlist is None:
+            self.external_call_policy = ExternalCallPolicy.from_env(external_calls_enabled=self.external_calls_enabled)
+        else:
+            self.external_call_policy = ExternalCallPolicy(
+                external_calls_enabled=self.external_calls_enabled,
+                allowlisted_actions=tuple(external_call_allowlist),
+            )
         self.approvals = approval_runtime or ApprovalRuntime(audit_logger=self._record_approval_event)
 
     def route(self, message: str, context: Mapping[str, Any] | None = None) -> RouteResult:
@@ -502,15 +551,25 @@ class ManagerAgent:
             )
             return result
 
-        if decision.external_call and not self.external_calls_enabled:
+        external_call_policy = self.external_call_policy.evaluate(action_id=decision.action, external_call=decision.external_call)
+        if not external_call_policy.allowed:
             result = RouteResult(
                 ok=False,
                 status="offline_blocked",
                 decision=decision,
-                reason="external_calls_disabled",
+                reason=external_call_policy.reason,
                 plan=plan,
             )
-            self._record("manager_agent.offline_blocked", message, ctx, result)
+            self._record(
+                "manager_agent.offline_blocked",
+                message,
+                ctx,
+                result,
+                extra={
+                    "external_policy_decision": external_call_policy.reason,
+                    "external_action_allowlisted": external_call_policy.action_allowlisted,
+                },
+            )
             return result
 
         if decision.action == "safe_follow_up":
@@ -535,6 +594,9 @@ class ManagerAgent:
         if approval and approval.allowed:
             extra["approval_state"] = "approved"
             extra["approval_id"] = approval.challenge_id
+        if decision.external_call:
+            extra["external_policy_decision"] = external_call_policy.reason
+            extra["external_action_allowlisted"] = external_call_policy.action_allowlisted
 
         result = RouteResult(ok=True, status="routed", decision=decision, plan=plan)
         self._record("manager_agent.routed", message, ctx, result, extra=extra or None)
