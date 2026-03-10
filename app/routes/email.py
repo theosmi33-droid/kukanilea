@@ -1,20 +1,22 @@
 from __future__ import annotations
+
 import logging
 import sqlite3
-from flask import Blueprint, jsonify, request, current_app, Response
 
-from app.auth import login_required, current_tenant
-from app.web import _render_base, _render_sovereign_tool, _is_hx_partial_request
-from app.security import csrf_protected
-from app.modules.mail.logic import classify_message, generate_reply_draft
-from app.modules.mail.contracts import build_summary as build_mail_summary
+from flask import Blueprint, current_app, jsonify, request
+
+from app.auth import current_tenant, current_user, login_required
 from app.modules.mail.contracts import build_health as build_mail_health
+from app.modules.mail.contracts import build_summary as build_mail_summary
+from app.modules.mail.logic import classify_message, generate_reply_draft
 from app.modules.mail.postfach import (
     EmailpostfachService,
     ProviderAuthError,
     ProviderNetworkError,
     StubInboxProvider,
 )
+from app.security import csrf_protected
+from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
 
 logger = logging.getLogger("kukanilea.email")
 bp = Blueprint("email", __name__)
@@ -148,7 +150,7 @@ def api_emailpostfach_health():
 def api_emailpostfach_ingest():
     payload = request.get_json(silent=True) or {}
     provider = str(payload.get("provider") or "imap_stub")
-    actor = str(payload.get("actor") or "system")
+    actor = str(current_user() or "system")
     tenant = str(current_tenant() or "default")
     service = _postfach_service()
     try:
@@ -166,7 +168,7 @@ def api_emailpostfach_ingest():
 def api_emailpostfach_draft_generate():
     payload = request.get_json(silent=True) or {}
     message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
-    actor = str(payload.get("actor") or "system")
+    actor = str(current_user() or "system")
     use_llm = bool(payload.get("use_llm", False))
     tenant = str(current_tenant() or "default")
     draft = _postfach_service().create_draft(
@@ -183,7 +185,7 @@ def api_emailpostfach_draft_generate():
 @csrf_protected
 def api_emailpostfach_draft_edit(draft_id: str):
     payload = request.get_json(silent=True) or {}
-    actor = str(payload.get("actor") or "system")
+    actor = str(current_user() or "system")
     subject = str(payload.get("subject") or "")
     body = str(payload.get("body") or "")
     tenant = str(current_tenant() or "default")
@@ -205,7 +207,7 @@ def api_emailpostfach_draft_edit(draft_id: str):
 @csrf_protected
 def api_emailpostfach_send(draft_id: str):
     payload = request.get_json(silent=True) or {}
-    actor = str(payload.get("actor") or "system")
+    actor = str(current_user() or "system")
     confirm = str(payload.get("confirm") or "").strip().lower() in {"yes", "true", "1", "y"}
     tenant = str(current_tenant() or "default")
     try:
