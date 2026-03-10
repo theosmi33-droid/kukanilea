@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import statistics
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -79,9 +81,38 @@ def _seed_perf_user(app) -> None:
         auth_db.upsert_membership("perf-bot", "KUKANILEA", "DEV", now_iso)
 
 
-def run_benchmarks(samples: int = 3) -> dict[str, Any]:
-    from app import create_app
+@contextlib.contextmanager
+def _isolated_perf_datastores() -> Any:
+    tracked_keys = (
+        "KUKANILEA_USER_DATA_ROOT",
+        "KUKANILEA_AUTH_DB",
+        "KUKANILEA_CORE_DB",
+        "KUKANILEA_LICENSE_PATH",
+        "KUKANILEA_TRIAL_PATH",
+        "KUKANILEA_RESEARCH_CACHE_PATH",
+    )
+    previous = {key: os.environ.get(key) for key in tracked_keys}
 
+    with tempfile.TemporaryDirectory(prefix="kukanilea-perf-") as temp_root:
+        root = Path(temp_root)
+        os.environ["KUKANILEA_USER_DATA_ROOT"] = str(root)
+        os.environ["KUKANILEA_AUTH_DB"] = str(root / "auth.sqlite3")
+        os.environ["KUKANILEA_CORE_DB"] = str(root / "core.sqlite3")
+        os.environ["KUKANILEA_LICENSE_PATH"] = str(root / "license.json")
+        os.environ["KUKANILEA_TRIAL_PATH"] = str(root / "trial.json")
+        os.environ["KUKANILEA_RESEARCH_CACHE_PATH"] = str(root / "research_cache.json")
+
+        try:
+            yield
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+
+def run_benchmarks(samples: int = 3) -> dict[str, Any]:
     os.environ.setdefault("KUKANILEA_DISABLE_DAEMONS", "1")
 
     startup_values: list[float] = []
@@ -89,29 +120,32 @@ def run_benchmarks(samples: int = 3) -> dict[str, Any]:
     summary_values: list[float] = []
     summary_by_tool: dict[str, list[float]] = {tool: [] for tool in SUMMARY_TOOLS}
 
-    for _ in range(samples):
-        start = time.perf_counter()
-        app = create_app()
-        startup_values.append((time.perf_counter() - start) * 1000)
+    with _isolated_perf_datastores():
+        from app import create_app
 
-        _seed_perf_user(app)
-        client = app.test_client()
-        _seed_perf_session(client)
+        for _ in range(samples):
+            start = time.perf_counter()
+            app = create_app()
+            startup_values.append((time.perf_counter() - start) * 1000)
 
-        dashboard_start = time.perf_counter()
-        dashboard_response = client.get("/dashboard")
-        dashboard_values.append((time.perf_counter() - dashboard_start) * 1000)
-        if dashboard_response.status_code != 200:
-            raise RuntimeError(f"/dashboard returned HTTP {dashboard_response.status_code}")
+            _seed_perf_user(app)
+            client = app.test_client()
+            _seed_perf_session(client)
 
-        for tool in SUMMARY_TOOLS:
-            summary_start = time.perf_counter()
-            response = client.get(f"/api/{tool}/summary")
-            duration_ms = (time.perf_counter() - summary_start) * 1000
-            summary_values.append(duration_ms)
-            summary_by_tool[tool].append(duration_ms)
-            if response.status_code != 200:
-                raise RuntimeError(f"/api/{tool}/summary returned HTTP {response.status_code}")
+            dashboard_start = time.perf_counter()
+            dashboard_response = client.get("/dashboard")
+            dashboard_values.append((time.perf_counter() - dashboard_start) * 1000)
+            if dashboard_response.status_code != 200:
+                raise RuntimeError(f"/dashboard returned HTTP {dashboard_response.status_code}")
+
+            for tool in SUMMARY_TOOLS:
+                summary_start = time.perf_counter()
+                response = client.get(f"/api/{tool}/summary")
+                duration_ms = (time.perf_counter() - summary_start) * 1000
+                summary_values.append(duration_ms)
+                summary_by_tool[tool].append(duration_ms)
+                if response.status_code != 200:
+                    raise RuntimeError(f"/api/{tool}/summary returned HTTP {response.status_code}")
 
     metrics = {
         "app_start_time_ms": _aggregate(startup_values),

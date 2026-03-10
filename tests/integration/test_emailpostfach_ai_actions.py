@@ -158,6 +158,7 @@ def test_email_actions_api_enforces_session_tenant(client, monkeypatch: pytest.M
     resp = client.post(
         "/api/email/actions/search",
         json={"query": "angebot", tenant_key: "VICTIM"},
+        headers={"X-CSRF-Token": "csrf-test"},
     )
 
     assert resp.status_code == 200
