@@ -65,3 +65,9 @@ def test_gate7_smoke_cli_writes_repo_evidence_artifacts(tmp_path: Path) -> None:
     markdown = (out_dir / "gate7_smoke.md").read_text(encoding="utf-8")
     assert "# Gate 7 Smoke Evidence" in markdown
     assert "| Check | Result | Detail |" in markdown
+
+
+def test_gate7_launch_gate_artifact_reader_uses_env_dir_contract() -> None:
+    launch_gate = Path("scripts/ops/launch_evidence_gate.sh").read_text(encoding="utf-8")
+    assert "MIA_GATE7_ARTIFACTS" in launch_gate
+    assert "base = Path(os.environ['GATE7_OUTPUT_DIR'])" in launch_gate

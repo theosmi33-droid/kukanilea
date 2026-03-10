@@ -119,6 +119,7 @@ def test_knowledge_memory_topic_retrieval_and_tenant_isolation(tmp_path):
     assert len(hits) == 2
     assert "CRM" in hits[0]["content"]
     assert all("B-only" not in item["content"] for item in hits)
+    assert hits[0]["score"] > hits[1]["score"]
 
 
 def test_knowledge_memory_cleanup_writes_delete_audit(tmp_path):
@@ -156,3 +157,50 @@ def test_knowledge_memory_cleanup_writes_delete_audit(tmp_path):
 
     assert remaining == [("Fresh km",)]
     assert ("delete",) in audit_actions
+
+
+def test_knowledge_memory_topic_retrieval_parses_legacy_and_canonical_utc_timestamps(tmp_path):
+    db_path = tmp_path / "auth.sqlite3"
+    _setup_db(str(db_path))
+    manager = MemoryManager(str(db_path))
+
+    now = datetime.now(timezone.utc)
+    canonical_recent = (now - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+    legacy_stale = (now - timedelta(days=30)).isoformat() + "Z"
+
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute(
+            "INSERT INTO agent_memory(tenant_id, timestamp, agent_role, content, embedding, metadata, importance_score, category) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                "TENANT_A",
+                canonical_recent,
+                "agent",
+                "Neue Notiz",
+                sqlite3.Binary(b"\x00\x00\x80?"),
+                '{"topic":"contacts","memory_type":"note"}',
+                5,
+                "KNOWLEDGE_MEMORY",
+            ),
+        )
+        con.execute(
+            "INSERT INTO agent_memory(tenant_id, timestamp, agent_role, content, embedding, metadata, importance_score, category) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                "TENANT_A",
+                legacy_stale,
+                "agent",
+                "Alte Notiz",
+                sqlite3.Binary(b"\x00\x00\x80?"),
+                '{"topic":"contacts","memory_type":"note"}',
+                5,
+                "KNOWLEDGE_MEMORY",
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    hits = manager.retrieve_by_topic(tenant_id="TENANT_A", topic="contacts", limit=2, recency_days=60)
+    assert len(hits) == 2
+    assert hits[0]["content"] == "Neue Notiz"
+    assert hits[0]["score"] > hits[1]["score"]

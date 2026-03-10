@@ -1,25 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+
 from flask import Blueprint, current_app, jsonify, render_template, request, session
 
-from app.mail.intake import envelope_from_payload, normalize_intake_payload
 from app.auth import login_required, require_role
-from app.modules.aufgaben.contracts import create_task
-from app.modules.aufgaben.logic import delete_task as aufgaben_delete_task
-from app.modules.aufgaben.logic import get_task as aufgaben_get_task
-from app.modules.aufgaben.logic import list_tasks as aufgaben_list_tasks
-from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
-from app.modules.aufgaben.logic import update_task as aufgaben_update_task
-from app.modules.kalender.contracts import build_health as build_kalender_health
-from app.modules.kalender.contracts import build_summary as build_kalender_summary
-from app.modules.kalender.contracts import create_invitation
-from app.modules.kalender.contracts import create_event
-from app.modules.kalender.contracts import update_event
-from app.modules.projekte.contracts import create_project
-from app.research.service import generate_summary
-from app.modules.projects.logic import ProjectManager
+from app.mail.intake import envelope_from_payload, normalize_intake_payload
 from app.mia_audit import (
     MIA_EVENT_AUDIT_TRAIL_LINKED,
     MIA_EVENT_CONFIRM_DENIED,
@@ -31,6 +17,18 @@ from app.mia_audit import (
     MIA_EVENT_PROPOSAL_CREATED,
     emit_mia_event,
 )
+from app.modules.aufgaben.contracts import build_summary as build_aufgaben_summary
+from app.modules.aufgaben.contracts import create_task
+from app.modules.aufgaben.logic import delete_task as aufgaben_delete_task
+from app.modules.aufgaben.logic import get_task as aufgaben_get_task
+from app.modules.aufgaben.logic import list_tasks as aufgaben_list_tasks
+from app.modules.aufgaben.logic import update_task as aufgaben_update_task
+from app.modules.kalender.contracts import build_health as build_kalender_health
+from app.modules.kalender.contracts import build_summary as build_kalender_summary
+from app.modules.kalender.contracts import create_event, create_invitation, update_event
+from app.modules.projects.logic import ProjectManager
+from app.modules.projekte.contracts import create_project
+from app.research.service import generate_summary
 
 from .rate_limit import search_limiter
 
@@ -39,6 +37,16 @@ bp = Blueprint("api", __name__, url_prefix="/api")
 
 def _tenant() -> str:
     return str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
+
+
+def _public_health_profile(profile: dict) -> dict:
+    if not isinstance(profile, dict):
+        return {}
+    return {
+        "name": profile.get("name"),
+        "profile_id": profile.get("profile_id"),
+        "gewerk_name": profile.get("gewerk_name"),
+    }
 
 
 @bp.get("/ping")
@@ -63,7 +71,8 @@ def health():
         if core and callable(getattr(core, "get_health_stats", None)):
             core_stats = core.get_health_stats(tenant_id=tenant_id)
         if core and callable(getattr(core, "get_profile", None)):
-            profile = core.get_profile()
+            full_profile = core.get_profile()
+            profile = full_profile if session.get("user") else _public_health_profile(full_profile)
         db_path = str(getattr(core, "DB_PATH", "")) if core else ""
     except Exception:
         core_stats = {}
@@ -106,14 +115,23 @@ def kalender_create_event():
     starts_at = str(payload.get("starts_at") or "").strip()
     if not title or not starts_at:
         return jsonify(ok=False, error="title_and_starts_at_required"), 400
-    event_payload = create_event(
-        tenant=tenant,
-        title=title,
-        starts_at=starts_at,
-        ends_at=str(payload.get("ends_at") or "").strip() or None,
-        reminder_minutes=int(payload.get("reminder_minutes") or 0),
-        created_by=actor,
-    )
+    try:
+        event_payload = create_event(
+            tenant=tenant,
+            title=title,
+            starts_at=starts_at,
+            ends_at=str(payload.get("ends_at") or "").strip() or None,
+            reminder_minutes=int(payload.get("reminder_minutes") or 0),
+            created_by=actor,
+        )
+    except PermissionError as exc:
+        if str(exc) == "read_only":
+            return jsonify(ok=False, error="read_only"), 403
+        raise
+    except ValueError as exc:
+        if str(exc) == "policy_blocked":
+            return jsonify(ok=False, error="policy_blocked"), 403
+        raise
     return jsonify(ok=True, event=event_payload), 201
 
 
@@ -123,15 +141,26 @@ def kalender_update_event(event_id: str):
     payload = request.get_json(silent=True) or {}
     tenant = str(session.get("tenant_id") or current_app.config.get("TENANT_DEFAULT") or "KUKANILEA")
     actor = str(session.get("user") or "system")
-    event_payload = update_event(
-        tenant=tenant,
-        event_id=str(event_id),
-        updated_by=actor,
-        title=payload.get("title"),
-        starts_at=payload.get("starts_at"),
-        ends_at=payload.get("ends_at"),
-        reminder_minutes=payload.get("reminder_minutes"),
-    )
+    try:
+        event_payload = update_event(
+            tenant=tenant,
+            event_id=str(event_id),
+            updated_by=actor,
+            title=payload.get("title"),
+            starts_at=payload.get("starts_at"),
+            ends_at=payload.get("ends_at"),
+            reminder_minutes=payload.get("reminder_minutes"),
+        )
+    except PermissionError as exc:
+        if str(exc) == "read_only":
+            return jsonify(ok=False, error="read_only"), 403
+        raise
+    except ValueError as exc:
+        if str(exc) == "policy_blocked":
+            return jsonify(ok=False, error="policy_blocked"), 403
+        if str(exc) == "event_not_found":
+            return jsonify(ok=False, error="not_found"), 404
+        raise
     return jsonify(ok=True, event=event_payload)
 
 
@@ -457,44 +486,42 @@ def intake_execute():
 @bp.post("/mesh/handshake")
 def mesh_handshake():
     """Handles incoming handshake requests from peer Hubs."""
-    from flask import request
+    from app.core.mesh_identity import (
+        HANDSHAKE_ACK_PURPOSE,
+        HANDSHAKE_INIT_PURPOSE,
+        create_handshake_envelope,
+        verify_handshake_envelope,
+    )
     from app.core.mesh_network import MeshNetworkManager
-    from app.core.mesh_identity import verify_signature, sign_message, ensure_mesh_identity
-    import json
 
-    body = request.json
-    data = body.get("data")
-    sig = body.get("signature")
-
-    if not data or not sig:
-        return jsonify(ok=False, error="invalid_request"), 400
-
-    # Verify peer signature
-    peer_pub_key = data.get("public_key")
-    if not verify_signature(peer_pub_key, json.dumps(data, sort_keys=True).encode('utf-8'), sig):
-        return jsonify(ok=False, error="invalid_signature"), 401
+    body = request.get_json(silent=True) or {}
+    ok, reason, peer_data = verify_handshake_envelope(
+        body,
+        expected_purpose=HANDSHAKE_INIT_PURPOSE,
+    )
+    if not ok or not peer_data:
+        status = 401 if reason in {"invalid_signature", "node_key_mismatch", "stale_timestamp"} else 400
+        return jsonify(ok=False, error=reason), status
+    challenge = str(peer_data.get("challenge") or "").strip()
+    if not challenge:
+        return jsonify(ok=False, error="missing_fields:challenge"), 400
 
     # Register peer locally
     auth_db = current_app.extensions["auth_db"]
     manager = MeshNetworkManager(auth_db)
     manager.register_peer(
-        data["node_id"],
-        data["name"],
-        data["public_key"],
+        str(peer_data["node_id"]),
+        str(peer_data["name"]),
+        str(peer_data["public_key"]),
         request.remote_addr
     )
 
-    # Respond with our identity
-    my_pub, my_node = ensure_mesh_identity()
-    response_data = {
-        "node_id": my_node,
-        "name": current_app.config.get("APP_NAME", "KUKANILEA Hub"),
-        "public_key": my_pub,
-        "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
-    }
-    my_sig = sign_message(json.dumps(response_data, sort_keys=True).encode('utf-8'))
-
-    return jsonify(ok=True, peer=response_data, signature=my_sig)
+    response_envelope = create_handshake_envelope(
+        name=current_app.config.get("APP_NAME", "KUKANILEA Hub"),
+        purpose=HANDSHAKE_ACK_PURPOSE,
+        challenge=challenge,
+    )
+    return jsonify(ok=True, **response_envelope)
 
 
 @bp.get("/outbound/status")

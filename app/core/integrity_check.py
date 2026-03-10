@@ -4,14 +4,14 @@ System-wide integrity verification for KUKANILEA v2.1.
 Ensures file consistency, module availability, and database health.
 """
 
-import os
 import getpass
 import hashlib
 import logging
+import os
 import pwd
 import sqlite3
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 logger = logging.getLogger("kukanilea.integrity")
 
@@ -118,7 +118,8 @@ def check_modules() -> Dict[str, Any]:
 
 
 def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
-    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    safe_table_name = table_name.replace('"', '""')
+    rows = conn.execute(f'PRAGMA table_info("{safe_table_name}")').fetchall()
     return {str(row[1]) for row in rows}
 
 
@@ -155,11 +156,10 @@ def check_database_integrity() -> Dict[str, Any]:
         return {"ok": True, "status": "Database missing (will be created)", "schema": {"ok": True}}
 
     try:
-        conn = sqlite3.connect(str(db_path))
-        integrity = conn.execute("PRAGMA integrity_check;").fetchone()[0]
-        fk_violations = conn.execute("PRAGMA foreign_key_check;").fetchall()
-        schema = _validate_required_tables(conn)
-        conn.close()
+        with sqlite3.connect(str(db_path), timeout=5.0) as conn:
+            integrity = conn.execute("PRAGMA integrity_check;").fetchone()[0]
+            fk_violations = conn.execute("PRAGMA foreign_key_check;").fetchall()
+            schema = _validate_required_tables(conn)
 
         ok = integrity == "ok" and len(fk_violations) == 0 and schema.get("ok", False)
         return {
