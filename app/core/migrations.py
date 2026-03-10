@@ -2,10 +2,10 @@
 app/core/migrations.py
 Database migration system. Supports background index building.
 """
-import sqlite3
-import logging
-import threading
 import hashlib
+import logging
+import sqlite3
+import threading
 from pathlib import Path
 
 logger = logging.getLogger("kukanilea.migrations")
