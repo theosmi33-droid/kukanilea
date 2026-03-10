@@ -1,5 +1,6 @@
-from pathlib import Path
+from __future__ import annotations
 
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,3 +24,9 @@ def test_main_policy_doc_has_mandatory_rules():
     content = _read_text("docs/policies/MAIN_ONLY_SOURCE_OF_TRUTH.md").lower()
     assert "mandatory rules" in content
     assert "every pull request must target `main`".lower() in content
+
+
+def test_contributing_mentions_branch_freshness_and_stack_rules():
+    content = _read_text("CONTRIBUTING.md").lower()
+    assert "main-only freshness" in content
+    assert "kein branch-stacking" in content
