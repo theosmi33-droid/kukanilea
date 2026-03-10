@@ -47,6 +47,18 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
   5. `MIN_TESTS` und Evidence-Report bleiben Pflicht für nachvollziehbare Test-Evidence.
 - Ergebnis: konfliktärmere, reviewbare Einzel-PRs ohne Branch-Stacking-Mechanik.
 
+## 2026-03-10 Addendum (PR #674 Incremental Bandit Gate)
+- Scope:
+  - `.github/workflows/pipeline.yml`
+  - dieses Evidence-Update
+- Ziel: Bandit bleibt policy-driven (`severity>=medium`, `confidence>=medium`), aber scannt in PR/Push nur geänderte Python-Ziele (inkrementelles Gate).
+- Sicherheitsnutzen:
+  - verhindert neue Medium/High-Befunde in geänderten Pfaden,
+  - blockiert nicht pauschal auf historische Altbefunde außerhalb des PR-Scopes.
+- Validierung:
+  - Workflow YAML parsed (`yaml.safe_load`) im CI-Job.
+  - Bandit-Targets werden im Job protokolliert (`bandit-targets.txt`) und als Policy-Gate ausgewertet.
+
 ## 2026-03-10 Addendum (PR #685 Security Header Baseline)
 - Scope: `tests/security/test_confirm_and_injection_gates.py`.
 - Ziel: Header-Contract für `/admin/settings` bleibt vollständig und regressionsfest.
