@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -78,10 +79,36 @@ def _validate_webhook_url(url: str) -> tuple[str, str] | None:
     allowed = _allowed_domains()
     if not allowed or host not in allowed:
         return None
+    try:
+        addrinfo = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return None
+    addresses = {
+        ipaddress.ip_address(str(entry[4][0]))
+        for entry in addrinfo
+        if entry and len(entry) >= 5 and entry[4]
+    }
+    if not addresses:
+        return None
+    if any(
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+        for ip in addresses
+    ):
+        return None
     safe_url = urllib.parse.urlunparse(
         (parsed.scheme, parsed.netloc, parsed.path or "/", "", "", "")
     )
     return safe_url, host
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None
 
 
 def execute_webhook_action(
@@ -121,13 +148,14 @@ def execute_webhook_action(
             headers[name] = str(value or "")[:300]
 
     data = body_text.encode("utf-8")
+    opener = urllib.request.build_opener(_NoRedirectHandler())
     last_error = "webhook_failed"
     for attempt in range(WEBHOOK_MAX_ATTEMPTS):
         req = urllib.request.Request(
             target_url, data=data, headers=headers, method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=WEBHOOK_TIMEOUT_SECONDS) as resp:
+            with opener.open(req, timeout=WEBHOOK_TIMEOUT_SECONDS) as resp:
                 status_code = int(getattr(resp, "status", 0) or 0)
             if HTTPStatus.OK <= status_code < HTTPStatus.MULTIPLE_CHOICES:
                 return {
