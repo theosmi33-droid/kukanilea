@@ -19,6 +19,7 @@ ENV:
 import base64
 import os
 import re
+import secrets
 import time
 from datetime import date, datetime
 from pathlib import Path
@@ -118,9 +119,10 @@ if _missing:
 # Flask
 # ============================================================
 APP = Flask(__name__)
-APP.secret_key = os.environ.get(
-    "TOPHANDWERK_SECRET", "tophandwerk-dev-secret-change-me"
-)
+_secret = (os.environ.get("TOPHANDWERK_SECRET") or "").strip()
+if not _secret:
+    _secret = secrets.token_urlsafe(64)
+APP.secret_key = _secret
 PORT = int(os.environ.get("PORT", 5051))
 
 # Optional hard upload limit (bytes)

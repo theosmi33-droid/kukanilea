@@ -44,7 +44,7 @@ class GitHubAPI:
 
         req = urllib.request.Request(url, method=method, headers=headers, data=body)
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310
                 data = resp.read().decode("utf-8")
                 if not data:
                     return None
@@ -230,9 +230,17 @@ def main() -> int:
             if is_protection_scope_error(message):
                 skipped_branches.append(branch)
                 print(
-                    "::warning::Branch protection check skipped for "
+                    "::error::Branch protection check failed for "
                     f"'{branch}' due to token scope on {token_source}. "
                     "Configure secret POLICY_AUDIT_TOKEN with repo admin scope."
+                )
+                drifts.append(
+                    Drift(
+                        branch,
+                        "protection_api_scope",
+                        "branch protection API accessible",
+                        message,
+                    )
                 )
                 continue
 

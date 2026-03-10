@@ -55,10 +55,10 @@ def run_boot_sequence():
             return False
 
     # 1.1 Auto-Evolution (Task 201)
-    from app.core.auto_evolution import SystemHealer
-    from app.core.rag_sync import RAGSync
-    from app.core.migrations import repair_legacy_customer_fk
     from app.config import Config
+    from app.core.auto_evolution import SystemHealer
+    from app.core.migrations import repair_legacy_customer_fk
+    from app.core.rag_sync import RAGSync
     # Legacy schema recovery (idempotent): ensure customers.id FK target exists
     try:
         repaired = repair_legacy_customer_fk(Config.CORE_DB)
@@ -68,7 +68,7 @@ def run_boot_sequence():
         print(f"Legacy FK repair failed: {e}")
 
     print("Auto-Evolution & RAG-SYNC (v2.5)...")
-    healer = SystemHealer(Config.CORE_DB, Config.BASE_DIR)
+    healer = SystemHealer(Config.CORE_DB, Config.BASE_DIR, Config.USER_DATA_ROOT)
     healer.run_healing_cycle()
     healer.evolution_step()
 

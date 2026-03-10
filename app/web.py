@@ -48,6 +48,7 @@ from app.core.indexing_logic import IndividualIntelligence
 from app.core.auto_evolution import SystemHealer
 
 from jinja2 import TemplateNotFound
+from markupsafe import escape
 
 from flask import (
     Blueprint,
@@ -1353,6 +1354,20 @@ def _is_hx_partial_request() -> bool:
     return hx_request and not hx_history_restore
 
 
+def _pending_for_current_tenant(token: str) -> Optional[dict]:
+    p = read_pending(token)
+    if not p:
+        return None
+
+    session_tenant = _norm_tenant(current_tenant() or "default")
+    pending_tenant = _norm_tenant(
+        p.get("tenant") or p.get("tenant_id") or p.get("tenant_suggested") or "default"
+    )
+    if pending_tenant != session_tenant:
+        return None
+    return p
+
+
 def _render_sovereign_tool(
     tool_key: str, title: str, message: str, active_tab: str = "dashboard"
 ) -> str:
@@ -1922,6 +1937,15 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     return `${h}h ${m}m`;
   }
 
+  function escapeHtml(value){
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
   function setStatus(msg, isError){
     timeStatus.textContent = msg;
     timeStatus.style.color = isError ? "#f87171" : "";
@@ -1952,7 +1976,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     items.forEach(day => {
       const card = document.createElement("div");
       card.className = "rounded-xl border p-3";
-      card.innerHTML = `<div class="text-sm font-semibold">${day.date}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
+      card.innerHTML = `<div class="text-sm font-semibold">${escapeHtml(day.date)}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
       weekSummary.appendChild(card);
     });
   }
@@ -1966,19 +1990,20 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     entries.forEach(entry => {
       const wrap = document.createElement("div");
       wrap.className = "rounded-xl border p-3";
+      const entryId = Number.isFinite(Number(entry.id)) ? Number(entry.id) : 0;
       const approveBtn = (role === "ADMIN" || role === "DEV") && entry.approval_status !== "APPROVED"
-        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entry.id}">Freigeben</button>`
+        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entryId}">Freigeben</button>`
         : "";
       wrap.innerHTML = `
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div>
-            <div class="text-sm font-semibold">${entry.project_name || "Ohne Projekt"}</div>
-            <div class="muted text-xs">${entry.start_at} → ${entry.end_at || "läuft"} · ${fmtDuration(entry.duration_seconds || 0)}</div>
-            <div class="muted text-xs">Status: ${entry.approval_status || "PENDING"} ${entry.approved_by ? "(von " + entry.approved_by + ")" : ""}</div>
-            ${entry.note ? `<div class="text-xs mt-1">${entry.note}</div>` : ""}
+            <div class="text-sm font-semibold">${escapeHtml(entry.project_name || "Ohne Projekt")}</div>
+            <div class="muted text-xs">${escapeHtml(entry.start_at)} → ${escapeHtml(entry.end_at || "läuft")} · ${fmtDuration(entry.duration_seconds || 0)}</div>
+            <div class="muted text-xs">Status: ${escapeHtml(entry.approval_status || "PENDING")} ${entry.approved_by ? "(von " + escapeHtml(entry.approved_by) + ")" : ""}</div>
+            ${entry.note ? `<div class="text-xs mt-1">${escapeHtml(entry.note)}</div>` : ""}
           </div>
           <div class="flex gap-2">
-            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entry.id}">Bearbeiten</button>
+            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entryId}">Bearbeiten</button>
             ${approveBtn}
           </div>
         </div>`;
@@ -2130,6 +2155,17 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
   }
   window.openToken = openToken;
   window.copyToken = copyToken;
+  function escHtml(value){
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+  function escJsSingle(value){
+    return String(value ?? "").replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  }
   function add(role, text, actions, results, suggestions){
     const d = document.createElement("div");
     d.className = "mb-3";
@@ -2137,10 +2173,13 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
     if(actions && actions.length){
       actionHtml = actions.map(a => {
         if(a.type === "open_token" && a.token){
-          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${a.token}')">Öffnen ${a.token.slice(0,10)}…</button>
-            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${a.token}')">Token ${a.token.slice(0,10)}…</button>`;
+          const token = String(a.token || "");
+          const safeToken = escHtml(escJsSingle(token));
+          const shortToken = escHtml(token.slice(0,10));
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${safeToken}')">Öffnen ${shortToken}…</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${safeToken}')">Token ${shortToken}…</button>`;
         }
-        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${a.type || 'tool'}</span>`;
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">Action: ${escHtml(a.type || 'tool')}</span>`;
       }).join("");
     }
     let resultHtml = "";
@@ -2149,17 +2188,18 @@ HTML_CHAT = r"""<div class="rounded-2xl bg-slate-900/60 border border-slate-800 
         const token = r.token || r.doc_id || "";
         const label = r.file_name || token;
         if(token){
-          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${token}')">${label}</button>
-            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${token}')">Token ${token.slice(0,10)}…</button>`;
+          const safeToken = escHtml(escJsSingle(token));
+          return `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="openToken('${safeToken}')">${escHtml(label)}</button>
+            <button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800" onclick="copyToken('${safeToken}')">Token ${escHtml(token.slice(0,10))}…</button>`;
         }
-        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${label}</span>`;
+        return `<span class="inline-block mt-1 rounded-full border px-2 py-1 text-xs">${escHtml(label)}</span>`;
       }).join("");
     }
     let suggestionHtml = "";
     if(suggestions && suggestions.length){
-      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${s}">${s}</button>`).join("");
+      suggestionHtml = suggestions.map(s => `<button class="inline-block mt-1 rounded-full border px-2 py-1 text-xs hover:bg-slate-800 chat-suggestion" data-q="${escHtml(s)}">${escHtml(s)}</button>`).join("");
     }
-    d.innerHTML = `<div class="muted text-[11px]">${role}</div><div class="text-sm whitespace-pre-wrap">${text}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
+    d.innerHTML = `<div class="muted text-[11px]">${escHtml(role)}</div><div class="text-sm whitespace-pre-wrap">${escHtml(text)}</div>${actionHtml}${resultHtml}${suggestionHtml}`;
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
   }
@@ -2415,16 +2455,24 @@ def _get_tenant_db_path() -> Path:
 
 @bp.before_app_request
 def _apply_tenant_context():
-    """Binds the global core logic to the current tenant's database."""
+    """Binds the core logic DB path to the current request context."""
     import importlib
 
+    core_logic = importlib.import_module("app.core.logic")
     try:
         db_path = _get_tenant_db_path()
-        core_logic = importlib.import_module("app.core.logic")
-        core_logic.DB_PATH = db_path
-        core_logic._DB_INITIALIZED = False
+        core_logic.bind_request_db_path(db_path)
     except Exception:
-        pass
+        core_logic.bind_request_db_path(None)
+
+
+@bp.teardown_app_request
+def _clear_tenant_context(_exc):
+    """Prevents request-local DB path from leaking into the next request."""
+    import importlib
+
+    core_logic = importlib.import_module("app.core.logic")
+    core_logic.bind_request_db_path(None)
 
 
 @bp.before_app_request
@@ -3430,9 +3478,12 @@ def mesh():
         ]
 
     for node in nodes:
-        node["id"] = node.get("node_id")
-        node["ip"] = node.get("last_ip")
-        node["type"] = node.get("type", "ZimaBlade")
+        raw_status = str(node.get("status") or "").strip().upper()
+        node["status"] = escape("ONLINE" if raw_status == "ONLINE" else "OFFLINE")
+        node["id"] = escape(str(node.get("node_id") or node.get("id") or "-"))
+        node["name"] = escape(str(node.get("name") or "Unbekannter Hub"))
+        node["ip"] = escape(str(node.get("last_ip") or node.get("ip") or "-"))
+        node["type"] = escape(str(node.get("type") or "ZimaBlade"))
         node["sync"] = "100%"
         node["conflicts"] = 0
 
@@ -3468,20 +3519,20 @@ HTML_MESH = r"""
                     {% endif %}
                 </div>
                 <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-800 {{ 'text-emerald-500' if node.status == 'ONLINE' else 'text-rose-500' }}">
-                    {{ node.status }}
+                    {{ node.status|e }}
                 </span>
             </div>
             <div>
-                <h3 class="font-bold">{{ node.name }}</h3>
-                <p class="text-xs muted">{{ node.type }} • {{ node.ip }}</p>
+                <h3 class="font-bold">{{ node.name|e }}</h3>
+                <p class="text-xs muted">{{ node.type|e }} • {{ node.ip|e }}</p>
             </div>
             <div class="pt-4 border-t border-slate-800 space-y-2">
                 <div class="flex justify-between text-xs">
                     <span class="muted">Synchronisation</span>
-                    <span>{{ node.sync }}</span>
+                    <span>{{ node.sync|e }}</span>
                 </div>
                 <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                    <div class="h-full bg-indigo-500" style="width: {{ node.sync }};"></div>
+                    <div class="h-full bg-indigo-500" style="width: {{ node.sync|e }};"></div>
                 </div>
                 <div class="flex justify-between text-xs pt-2">
                     <span class="muted">Automatische Konfliktlösungen (CRDT)</span>
@@ -4559,8 +4610,11 @@ def upload():
 
 
 @bp.route("/review/<token>/delete", methods=["POST"])
+@login_required
 @csrf_protected
 def review_delete(token: str):
+    if not _pending_for_current_tenant(token):
+        abort(404)
     try:
         delete_pending(token)
     except Exception:
@@ -4569,8 +4623,9 @@ def review_delete(token: str):
 
 
 @bp.route("/file/<token>")
+@login_required
 def file_preview(token: str):
-    p = read_pending(token)
+    p = _pending_for_current_tenant(token)
     if not p:
         abort(404)
     file_path = Path(p.get("path", ""))
@@ -4582,9 +4637,10 @@ def file_preview(token: str):
 
 
 @bp.route("/review/<token>/kdnr", methods=["GET", "POST"])
+@login_required
 @csrf_protected
 def review(token: str):
-    p = read_pending(token)
+    p = _pending_for_current_tenant(token)
     if not p:
         return _render_base(_card("error", "Nicht gefunden."), active_tab="upload")
     if p.get("status") == "ANALYZING":
@@ -4809,16 +4865,21 @@ def assistant():
                 results.append(r)
         except Exception:
             pass
-    html = """<div class='card p-5'>
-      <div class='text-lg font-semibold mb-1'>Assistant</div>
-      <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
-        <input class='w-full rounded-xl p-2 input' name='q' value='{q}' placeholder='Suche…' />
-        <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{kdnr}' placeholder='Kdnr optional' />
-        <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
-      </form>
-      <div class='muted text-xs'>Treffer: {n}</div>
-    </div>""".format(
-        q=q.replace("'", "&#39;"), kdnr=kdnr.replace("'", "&#39;"), n=len(results)
+    html = render_template_string(
+        """
+<div class='card p-5'>
+  <div class='text-lg font-semibold mb-1'>Assistant</div>
+  <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
+    <input class='w-full rounded-xl p-2 input' name='q' value='{{ q|e }}' placeholder='Suche…' />
+    <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{{ kdnr|e }}' placeholder='Kdnr optional' />
+    <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
+  </form>
+  <div class='muted text-xs'>Treffer: {{ n }}</div>
+</div>
+        """,
+        q=q,
+        kdnr=kdnr,
+        n=len(results),
     )
     return _render_base(html, active_tab="assistant")
 
@@ -5020,7 +5081,9 @@ def calendar_export_ics():
     from app.knowledge.ics_source import knowledge_ics_build_local_feed
 
     tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
-    ics_content = knowledge_ics_build_local_feed(tenant_id)
+    feed_info = knowledge_ics_build_local_feed(tenant_id)
+    feed_path = Path(str(feed_info.get("feed_path") or "")).expanduser()
+    ics_content = feed_path.read_bytes() if feed_path.exists() else b""
     return (
         ics_content,
         200,

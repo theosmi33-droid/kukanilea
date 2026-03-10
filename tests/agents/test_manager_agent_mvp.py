@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +19,17 @@ def test_router_maps_read_intent_to_registered_action_deterministically() -> Non
     assert result.decision.action == "dashboard.summary.read"
     assert result.plan is not None
     assert result.plan.execution_mode == "read"
+
+
+def test_invoice_reminder_contract_uses_guarded_invoice_id_source() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '_extract_untrusted_text(p, "invoice_id")' in source
+    assert '_extract_untrusted_text(p, "document_id")' in source
+
+
+def test_cross_tool_flow_contract_does_not_include_traceback_in_failure_payload() -> None:
+    source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+    assert '"traceback": trace' not in source
 
 
 
@@ -106,6 +118,8 @@ def test_mail_response_with_message_requires_approval_and_routes_after_approval(
 
     assert second.ok is True
     assert second.status == "routed"
+    assert second.audit_event is not None
+    assert second.audit_event["external_policy_decision"] == "external_calls_enabled_no_allowlist"
     assert second.decision.action == "mail.mail.reply"
 
 def test_write_without_approval_is_blocked_and_creates_challenge() -> None:
@@ -227,6 +241,38 @@ def test_read_without_approval_is_allowed() -> None:
     assert result.decision.execution_mode == "read"
 
 
+def test_missing_customer_context_returns_clarification_instead_of_routing() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route("Bitte Kunde suchen", {"tenant": "KUKANILEA", "user": "admin"})
+
+    assert result.ok is False
+    assert result.status == "needs_clarification"
+    assert result.reason == "missing_context"
+    assert result.plan is not None
+    assert result.plan.missing_context == ["customer_id"]
+    assert result.plan.execution_mode == "propose"
+    assert result.decision.action == "crm.customer.search"
+    assert bus.events[-1]["event_type"] == "manager_agent.needs_clarification"
+    assert bus.events[-1]["payload"]["missing_context"] == ["customer_id"]
+
+
+def test_missing_message_context_prevents_mail_response_routing() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus, external_calls_enabled=True)
+
+    result = agent.route("Mail antworten", {"tenant": "KUKANILEA", "user": "admin"})
+
+    assert result.ok is False
+    assert result.status == "needs_clarification"
+    assert result.reason == "missing_context"
+    assert result.plan is not None
+    assert result.plan.missing_context == ["message"]
+    assert result.decision.action == "mail.mail.reply"
+    assert bus.events[-1]["event_type"] == "manager_agent.needs_clarification"
+
+
 def test_unknown_intent_returns_safe_clarification_instead_of_execution() -> None:
     bus = EventBus()
     agent = ManagerAgent(event_bus=bus)
@@ -310,8 +356,68 @@ def test_offline_first_blocks_external_action_without_feature_flag() -> None:
     assert result.status == "offline_blocked"
     assert result.reason == "external_calls_disabled"
     assert bus.events[-1]["event_type"] == "manager_agent.offline_blocked"
+    assert bus.events[-1]["payload"]["external_policy_decision"] == "external_calls_disabled"
+    assert bus.events[-1]["payload"]["external_action_allowlisted"] is False
     assert "blocked" in result.audit_event["audit_states"]
 
+
+
+
+def test_external_action_blocked_when_not_allowlisted_even_if_external_calls_enabled() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(
+        event_bus=bus,
+        external_calls_enabled=True,
+        external_call_allowlist=("mail.mail.reply",),
+    )
+
+    first = agent.route(
+        "Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+        {"tenant": "KUKANILEA", "user": "admin"},
+    )
+    approval_id = first.audit_event["approval_id"]
+    approved = agent.approvals.approve(approval_id, tenant="KUKANILEA", approver_user="security-admin")
+    assert approved is not None
+
+    result = agent.route(
+        "Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+        {"tenant": "KUKANILEA", "user": "admin", "approval_id": approval_id},
+    )
+
+    assert result.ok is False
+    assert result.status == "offline_blocked"
+    assert result.reason == "external_action_not_allowlisted"
+    assert bus.events[-1]["event_type"] == "manager_agent.offline_blocked"
+    assert bus.events[-1]["payload"]["external_policy_decision"] == "external_action_not_allowlisted"
+    assert bus.events[-1]["payload"]["external_action_allowlisted"] is False
+
+
+def test_external_action_routes_when_explicitly_allowlisted() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(
+        event_bus=bus,
+        external_calls_enabled=True,
+        external_call_allowlist=("messenger.message.reply",),
+    )
+
+    first = agent.route(
+        "Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+        {"tenant": "KUKANILEA", "user": "admin"},
+    )
+    approval_id = first.audit_event["approval_id"]
+    approved = agent.approvals.approve(approval_id, tenant="KUKANILEA", approver_user="security-admin")
+    assert approved is not None
+
+    result = agent.route(
+        "Sende bitte eine Messenger Nachricht an den Kunden test inhalt",
+        {"tenant": "KUKANILEA", "user": "admin", "approval_id": approval_id},
+    )
+
+    assert result.ok is True
+    assert result.status == "routed"
+    assert result.audit_event is not None
+    assert result.audit_event["external_policy_decision"] == "external_action_allowlisted"
+    assert result.audit_event["external_action_allowlisted"] is True
 
 def test_runtime_guard_routes_destructive_request_to_review() -> None:
     bus = EventBus()
@@ -349,7 +455,7 @@ def test_runtime_guard_blocks_system_prompt_reveal_attempt() -> None:
     assert audit_payloads[-1]["guard_decision"] == "block"
 
 
-def test_runtime_guard_warns_for_harmless_expert_text_with_trigger_words() -> None:
+def test_runtime_guard_blocks_expert_text_with_prompt_injection_markers() -> None:
     bus = EventBus()
     audit_payloads: list[dict] = []
     agent = ManagerAgent(event_bus=bus, audit_logger=lambda payload: audit_payloads.append(payload), external_calls_enabled=True)
@@ -360,5 +466,6 @@ def test_runtime_guard_warns_for_harmless_expert_text_with_trigger_words() -> No
     )
 
     assert result.ok is False
-    assert result.status == "needs_clarification"
-    assert audit_payloads[-1]["guard_decision"] == "allow_with_warning"
+    assert result.status == "blocked"
+    assert result.reason == "prompt_injection"
+    assert audit_payloads[-1]["guard_decision"] == "block"
