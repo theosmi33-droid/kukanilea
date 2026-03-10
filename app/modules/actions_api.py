@@ -14,6 +14,7 @@ from app.security import (
     action_requires_approval,
     build_params_fingerprint,
     confirm_gate,
+    csrf_protected,
 )
 from kukanilea.idempotency import GLOBAL_IDEMPOTENCY_STORE, canonical_hash
 
@@ -369,6 +370,7 @@ def register_actions_endpoints(bp, templates: Mapping[str, ActionApiTemplate]) -
 
     @bp.post("/api/<tool>/actions/<name>")
     @login_required
+    @csrf_protected
     def api_tool_action_execute(tool: str, name: str):
         template = templates.get(tool)
         if template is None:
