@@ -139,21 +139,15 @@ jobs:
             mapfile -t py_targets < <(git diff --name-only "${base_ref}...HEAD" -- '*.py' ':!app/static/**')
             target_label="pull_request_diff"
           else
-            before_sha="$(python - <<'PY'
-            import json
-            import os
-            from pathlib import Path
-
-            event_path = os.environ.get("GITHUB_EVENT_PATH", "")
-            if not event_path:
-                raise SystemExit(0)
-
-            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-            before = (event.get("before") or "").strip()
-            if before and set(before) != {"0"}:
-                print(before)
-            PY
-            )"
+            before_sha="$(python -c 'import json, os; from pathlib import Path
+event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+if not event_path:
+    raise SystemExit(0)
+event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+before = (event.get("before") or "").strip()
+if before and set(before) != {"0"}:
+    print(before)
+')"
             if [[ -n "${before_sha}" ]]; then
               echo "Using push range ${before_sha}...HEAD"
               git cat-file -e "${before_sha}^{commit}" 2>/dev/null || git fetch --no-tags origin "${before_sha}" || true
