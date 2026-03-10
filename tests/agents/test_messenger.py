@@ -46,5 +46,9 @@ class TestMessengerAgent(unittest.TestCase):
         self.assertIn('reason="missing_context"', source)
         self.assertIn("manager_agent.needs_clarification", source)
 
+    def test_cross_tool_flows_contract_avoids_traceback_storage(self):
+        source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
+        self.assertNotIn("traceback.format_exc()", source)
+
 if __name__ == "__main__":
     unittest.main()
