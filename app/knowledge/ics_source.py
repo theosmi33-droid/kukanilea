@@ -656,7 +656,7 @@ def _read_ocr_deadline_events(tenant_id: str) -> list[dict[str, str]]:
         con = _db()
         try:
             try:
-                rows = con.execute(
+                rows = con.execute(  # nosec B608
                     """
                     SELECT chunk_id, body, source_ref
                     FROM knowledge_chunks
@@ -1388,26 +1388,32 @@ def _expand_manual_event_occurrences(
 
 
 def _read_manual_events(tenant_id: str, owner_user_id: str | None = None) -> list[dict[str, Any]]:
-    params: list[Any] = [tenant_id]
-    where = "WHERE tenant_id=? AND source_type='calendar' AND source_ref LIKE ?"
-    params.append(f"{MANUAL_SOURCE_PREFIX}%")
-    if owner_user_id:
-        where += " AND owner_user_id=?"
-        params.append(owner_user_id)
+    source_ref_like = f"{MANUAL_SOURCE_PREFIX}%"
 
     with legacy_core._DB_LOCK:  # type: ignore[attr-defined]
         con = _db()
         try:
             try:
-                rows = con.execute(
-                    f"""
-                    SELECT chunk_id, owner_user_id, source_ref, title, body, tags, created_at, updated_at
-                    FROM knowledge_chunks
-                    {where}
-                    ORDER BY updated_at DESC, created_at DESC, id DESC
-                    """,
-                    tuple(params),
-                ).fetchall()
+                if owner_user_id:
+                    rows = con.execute(
+                        """
+                        SELECT chunk_id, owner_user_id, source_ref, title, body, tags, created_at, updated_at
+                        FROM knowledge_chunks
+                        WHERE tenant_id=? AND source_type='calendar' AND source_ref LIKE ? AND owner_user_id=?
+                        ORDER BY updated_at DESC, created_at DESC, id DESC
+                        """,
+                        (tenant_id, source_ref_like, owner_user_id),
+                    ).fetchall()
+                else:
+                    rows = con.execute(
+                        """
+                        SELECT chunk_id, owner_user_id, source_ref, title, body, tags, created_at, updated_at
+                        FROM knowledge_chunks
+                        WHERE tenant_id=? AND source_type='calendar' AND source_ref LIKE ?
+                        ORDER BY updated_at DESC, created_at DESC, id DESC
+                        """,
+                        (tenant_id, source_ref_like),
+                    ).fetchall()
             except sqlite3.OperationalError as exc:
                 # Test/bootstrap databases may not have the optional knowledge_chunks table yet.
                 if "no such table" in str(exc).lower():

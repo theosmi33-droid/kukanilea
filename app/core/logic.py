@@ -500,7 +500,7 @@ def list_recent_docs(tenant_id: str = "", limit: int = 10) -> List[Dict[str, Any
     with _DB_LOCK:
         con = _db()
         try:
-            rows = con.execute(
+            rows = con.execute(  # nosec B608
                 """
                 SELECT d.doc_id, d.kdnr, d.doctype, d.doc_date, d.created_at, 
                        idx.file_name, idx.file_path
@@ -1566,7 +1566,7 @@ def time_entry_stop(
         con = _db()
         try:
             if entry_id is None:
-                row = con.execute(
+                row = con.execute(  # nosec B608
                     """
                     SELECT id, start_at FROM time_entries
                     WHERE tenant_id=? AND user=? AND end_at IS NULL
@@ -1574,7 +1574,7 @@ def time_entry_stop(
                     (tenant_id, user),
                 ).fetchone()
             else:
-                row = con.execute(
+                row = con.execute(  # nosec B608
                     """
                     SELECT id, start_at FROM time_entries
                     WHERE tenant_id=? AND user=? AND id=?
@@ -1737,33 +1737,35 @@ def time_entries_list(
     user = normalize_component(user or "").lower()
     limit = max(1, min(int(limit), 2000))
 
-    clauses = ["te.tenant_id=?"]
-    params: List[Any] = [tenant_id]
-    if user:
-        clauses.append("te.user=?")
-        params.append(user)
-    if start_at:
-        clauses.append("te.start_at>=?")
-        params.append(start_at)
-    if end_at:
-        clauses.append("te.start_at<=?")
-        params.append(end_at)
-
-    where_sql = " AND ".join(clauses)
+    user_filter = user or ""
+    start_filter = start_at or ""
+    end_filter = end_at or ""
     with _DB_LOCK:
         con = _db()
         try:
             rows = con.execute(
-                f"""
+                """
                 SELECT te.*, tp.name AS project_name, t.title AS task_title
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
                 LEFT JOIN tasks t ON t.id = te.task_id AND t.tenant = te.tenant_id
-                WHERE {where_sql}
+                WHERE te.tenant_id=?
+                  AND (?='' OR te.user=?)
+                  AND (?='' OR te.start_at>=?)
+                  AND (?='' OR te.start_at<=?)
                 ORDER BY te.start_at DESC, te.id DESC
                 LIMIT ?
                 """,
-                (*params, limit),
+                (
+                    tenant_id,
+                    user_filter,
+                    user_filter,
+                    start_filter,
+                    start_filter,
+                    end_filter,
+                    end_filter,
+                    limit,
+                ),
             ).fetchall()
             entries = [dict(r) for r in rows]
             now = _now_iso()
@@ -4455,31 +4457,44 @@ def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     with _DB_LOCK:
         con = _db()
         try:
-            order_expr = (
-                "version_no DESC, id DESC"
-                if _column_exists(con, "versions", "version_no")
-                else "id DESC"
-            )
-            if _column_exists(con, "versions", "tenant_id"):
+            has_version_no = _column_exists(con, "versions", "version_no")
+            has_tenant_id = _column_exists(con, "versions", "tenant_id")
+            if has_tenant_id and has_version_no:
                 row = con.execute(
                     """
                     SELECT file_path FROM versions
                     WHERE doc_id=? AND tenant_id=?
-                    ORDER BY """
-                    + order_expr
-                    + """
+                    ORDER BY version_no DESC, id DESC
                     LIMIT 1
                     """,
                     (doc_id, tenant_id),
+                ).fetchone()
+            elif has_tenant_id:
+                row = con.execute(
+                    """
+                    SELECT file_path FROM versions
+                    WHERE doc_id=? AND tenant_id=?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (doc_id, tenant_id),
+                ).fetchone()
+            elif has_version_no:
+                row = con.execute(
+                    """
+                    SELECT file_path FROM versions
+                    WHERE doc_id=?
+                    ORDER BY version_no DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (doc_id,),
                 ).fetchone()
             else:
                 row = con.execute(
                     """
                     SELECT file_path FROM versions
                     WHERE doc_id=?
-                    ORDER BY """
-                    + order_expr
-                    + """
+                    ORDER BY id DESC
                     LIMIT 1
                     """,
                     (doc_id,),

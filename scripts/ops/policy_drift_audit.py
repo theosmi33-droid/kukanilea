@@ -44,7 +44,7 @@ class GitHubAPI:
 
         req = urllib.request.Request(url, method=method, headers=headers, data=body)
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310
                 data = resp.read().decode("utf-8")
                 if not data:
                     return None
