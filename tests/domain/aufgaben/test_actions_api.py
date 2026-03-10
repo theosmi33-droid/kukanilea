@@ -34,7 +34,15 @@ def _auth_client(app, *, role="OPERATOR", username="operator"):
         sess["user"] = username
         sess["role"] = role
         sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "test-csrf-token"
     return client
+
+
+def _csrf_headers(headers: dict[str, str] | None = None) -> dict[str, str]:
+    merged = {"X-CSRF-Token": "test-csrf-token"}
+    if headers:
+        merged.update(headers)
+    return merged
 
 
 def test_actions_list_exposes_schema(tmp_path, monkeypatch):
@@ -51,11 +59,20 @@ def test_actions_list_exposes_schema(tmp_path, monkeypatch):
     assert {"list", "create"}.issubset(names)
 
 
+def test_actions_post_requires_csrf_token(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    response = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"})
+
+    assert response.status_code == 403
+
+
 def test_actions_read_and_write_flow_with_approval_engine(tmp_path, monkeypatch):
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
-    read_response = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"})
+    read_response = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"}, headers=_csrf_headers())
     assert read_response.status_code == 200
     read_json = read_response.get_json()
     assert read_json["ok"] is True
@@ -64,6 +81,7 @@ def test_actions_read_and_write_flow_with_approval_engine(tmp_path, monkeypatch)
     denied = client.post(
         "/api/aufgaben/actions/create",
         json={"title": "Neuer Task ohne Approval"},
+        headers=_csrf_headers(),
     )
     assert denied.status_code == 409
     denied_json = denied.get_json()
@@ -77,6 +95,7 @@ def test_actions_read_and_write_flow_with_approval_engine(tmp_path, monkeypatch)
             "details": "scope mismatch",
             "approval_token": approval_token,
         },
+        headers=_csrf_headers(),
     )
     assert wrong_scope.status_code == 409
     assert wrong_scope.get_json()["approval_reason"] == "scope_mismatch"
@@ -84,6 +103,7 @@ def test_actions_read_and_write_flow_with_approval_engine(tmp_path, monkeypatch)
     expired_request = client.post(
         "/api/aufgaben/actions/create",
         json={"title": "Abgelaufener Task", "approval_ttl": 1},
+        headers=_csrf_headers(),
     )
     assert expired_request.status_code == 409
     expired_token = expired_request.get_json()["approval"]["approval_token"]
@@ -94,6 +114,7 @@ def test_actions_read_and_write_flow_with_approval_engine(tmp_path, monkeypatch)
     expired_use = client.post(
         "/api/aufgaben/actions/create",
         json={"title": "Abgelaufener Task", "approval_token": expired_token},
+        headers=_csrf_headers(),
     )
     assert expired_use.status_code == 409
     assert expired_use.get_json()["approval_reason"] == "expired"
@@ -101,6 +122,7 @@ def test_actions_read_and_write_flow_with_approval_engine(tmp_path, monkeypatch)
     challenge = client.post(
         "/api/aufgaben/actions/create",
         json={"title": "Neuer Task", "details": "via actions api"},
+        headers=_csrf_headers(),
     )
     assert challenge.status_code == 409
     valid_token = challenge.get_json()["approval"]["approval_token"]
@@ -108,13 +130,14 @@ def test_actions_read_and_write_flow_with_approval_engine(tmp_path, monkeypatch)
     created = client.post(
         "/api/aufgaben/actions/create",
         json={"title": "Neuer Task", "details": "via actions api", "approval_token": valid_token},
+        headers=_csrf_headers(),
     )
     assert created.status_code == 200
     created_json = created.get_json()
     assert created_json["ok"] is True
     assert created_json["name"] == "create"
 
-    after_read = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"})
+    after_read = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"}, headers=_csrf_headers())
     assert after_read.status_code == 200
     items = after_read.get_json()["result"]["items"]
     assert any("Neuer Task" in str(item.get("title") or "") for item in items)
@@ -124,7 +147,7 @@ def test_actions_write_duplicate_request_returns_idempotent_replay(tmp_path, mon
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
-    headers = {"Idempotency-Key": "dup-001"}
+    headers = _csrf_headers({"Idempotency-Key": "dup-001"})
     first = client.post(
         "/api/aufgaben/actions/create",
         json={"title": "Mail Versand", "details": "kritisch", "confirm": "CONFIRM"},
@@ -140,7 +163,7 @@ def test_actions_write_duplicate_request_returns_idempotent_replay(tmp_path, mon
     assert second.status_code == 200
     assert second.get_json()["idempotent_replay"] is True
 
-    listed = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"}).get_json()["result"]["items"]
+    listed = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"}, headers=_csrf_headers()).get_json()["result"]["items"]
     titles = [str(item.get("title") or "") for item in listed]
     assert titles.count("Mail Versand") == 1
 
@@ -173,7 +196,7 @@ def test_actions_retry_after_timeout_is_safe_and_repeatable(tmp_path, monkeypatc
         handler=flaky,
     )
     try:
-        headers = {"Idempotency-Key": "timeout-001"}
+        headers = _csrf_headers({"Idempotency-Key": "timeout-001"})
         first = client.post(
             "/api/aufgaben/actions/create",
             json={"title": "Kalender Sync", "confirm": "CONFIRM"},
@@ -198,7 +221,7 @@ def test_actions_retry_after_approval_uses_same_idempotency_key(tmp_path, monkey
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
-    headers = {"Idempotency-Key": "approval-001"}
+    headers = _csrf_headers({"Idempotency-Key": "approval-001"})
     denied = client.post(
         "/api/aufgaben/actions/create",
         json={"title": "DMS Upload"},
@@ -220,7 +243,7 @@ def test_actions_read_action_remains_unchanged_without_idempotency_contract(tmp_
     app = _make_app(tmp_path, monkeypatch)
     client = _auth_client(app)
 
-    response = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"})
+    response = client.post("/api/aufgaben/actions/list", json={"status": "OPEN"}, headers=_csrf_headers())
 
     assert response.status_code == 200
     body = response.get_json()
@@ -254,7 +277,7 @@ def test_actions_api_enforces_session_tenant_in_handler_payload(tmp_path, monkey
     )
 
     try:
-        response = client.post("/api/aufgaben/actions/list", json={"tenant_id": "VICTIM"})
+        response = client.post("/api/aufgaben/actions/list", json={"tenant_id": "VICTIM"}, headers=_csrf_headers())
     finally:
         template._actions["list"] = original_action
 
@@ -283,6 +306,7 @@ def test_settings_setting_update_requires_admin_role(tmp_path, monkeypatch):
     denied = operator_client.post(
         "/api/settings/actions/setting.update",
         json={"key": "language", "value": "en"},
+        headers=_csrf_headers(),
     )
     assert denied.status_code == 403
 
@@ -294,6 +318,7 @@ def test_settings_setting_update_admin_can_persist(tmp_path, monkeypatch):
     approved = admin_client.post(
         "/api/settings/actions/setting.update",
         json={"key": "language", "value": "en"},
+        headers=_csrf_headers(),
     )
 
     assert approved.status_code == 200
