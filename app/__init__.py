@@ -4,6 +4,7 @@ import os
 import secrets
 import time
 import re
+import posixpath
 from datetime import timedelta
 from pathlib import Path
 
@@ -50,6 +51,16 @@ def _is_test_context(app: Flask) -> bool:
     if os.environ.get("KUKANILEA_DISABLE_DAEMONS") == "1":
         return True
     return bool(app.config.get("TESTING"))
+
+
+def _normalize_request_path(path: str | None) -> str:
+    raw = str(path or "/")
+    # Normalize dot-segments to avoid allowlist bypasses like
+    # /api/auth/../admin/settings/system.
+    normalized = posixpath.normpath(raw)
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+    return normalized
 
 
 def _apply_env_runtime_overrides(app: Flask) -> None:
@@ -172,7 +183,7 @@ def create_app() -> Flask:
                 return None
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return None
-        path = request.path or "/"
+        path = _normalize_request_path(request.path)
         if bool(app.config.get("READ_ONLY", False)):
             # Auth/session and explicit license-recovery paths stay writable
             # so operators can restore the license state.
