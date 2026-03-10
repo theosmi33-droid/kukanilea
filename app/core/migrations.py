@@ -232,8 +232,7 @@ def _build_fts_indices(db_path: str):
 
         # 2. Sync from docs + latest version metadata.
         # text_column is selected from a fixed internal allowlist in _latest_version_text_column.
-        conn.execute(  # nosec B608
-            f"""
+        query = f"""  # nosec B608
             INSERT INTO docs_fts(doc_id, tenant_id, kdnr, doctype, doc_date, file_name, file_path, content)
             SELECT
                 d.doc_id,
@@ -253,7 +252,7 @@ def _build_fts_indices(db_path: str):
             )
             WHERE doc_id NOT IN (SELECT doc_id FROM docs_fts)
             """
-        )
+        conn.execute(query)
         conn.commit()
         logger.info("✅ Background FTS index build complete.")
     except Exception as e:
