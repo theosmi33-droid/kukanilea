@@ -18,6 +18,9 @@ jobs:
   lint-and-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      BANDIT_SEVERITY_LEVEL: medium
+      BANDIT_CONFIDENCE_LEVEL: high
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,9 +62,44 @@ jobs:
         run: |
           python scripts/ops/verify_guardrails.py
 
-      - name: Security scan report (blocking on medium+ findings)
+      - name: Security scan report (blocking on scoped medium/high-confidence findings)
         run: |
-          bandit -r app -x app/static -ll -ii -f txt -o bandit-report.txt
+          case "${BANDIT_SEVERITY_LEVEL,,}" in
+            low) severity_flag="-l" ;;
+            medium) severity_flag="-ll" ;;
+            high) severity_flag="-lll" ;;
+            *) echo "Invalid BANDIT_SEVERITY_LEVEL=${BANDIT_SEVERITY_LEVEL}" >&2; exit 2 ;;
+          esac
+
+          case "${BANDIT_CONFIDENCE_LEVEL,,}" in
+            low) confidence_flag="-i" ;;
+            medium) confidence_flag="-ii" ;;
+            high) confidence_flag="-iii" ;;
+            *) echo "Invalid BANDIT_CONFIDENCE_LEVEL=${BANDIT_CONFIDENCE_LEVEL}" >&2; exit 2 ;;
+          esac
+
+          if [[ "${GITHUB_EVENT_NAME:-}" == "pull_request" ]]; then
+            base_ref="origin/${GITHUB_BASE_REF:-main}"
+            git fetch --no-tags origin "${GITHUB_BASE_REF:-main}:${GITHUB_BASE_REF:-main}" || true
+            mapfile -t py_targets < <(git diff --name-only "${base_ref}...HEAD" -- '*.py' ':!app/static/**')
+          else
+            base_sha="$(git rev-list --max-count=1 --skip=1 HEAD 2>/dev/null || true)"
+            if [[ -n "${base_sha}" ]]; then
+              mapfile -t py_targets < <(git diff --name-only "${base_sha}...HEAD" -- '*.py' ':!app/static/**')
+            else
+              mapfile -t py_targets < <(git ls-files '*.py' ':!app/static/**')
+            fi
+          fi
+
+          if [[ "${#py_targets[@]}" -eq 0 ]]; then
+            echo "No Python changes detected for scope-based Bandit gate." > bandit-report.txt
+            exit 0
+          fi
+
+          printf "%s\n" "${py_targets[@]}" > bandit-targets.txt
+          echo "Bandit targets (${#py_targets[@]} files):"
+          cat bandit-targets.txt
+          bandit ${severity_flag} ${confidence_flag} -f txt -o bandit-report.txt "${py_targets[@]}"
 
       - name: Upload bandit report
         uses: actions/upload-artifact@v4

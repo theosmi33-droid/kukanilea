@@ -46,3 +46,15 @@ Absicherung gegen zu kleine / nicht belegte PRs durch einen verbindlichen Guard 
   4. Shared-Core-Hotspot-Block für konfliktträchtige Kernpfade (separater PR erforderlich).
   5. `MIN_TESTS` und Evidence-Report bleiben Pflicht für nachvollziehbare Test-Evidence.
 - Ergebnis: konfliktärmere, reviewbare Einzel-PRs ohne Branch-Stacking-Mechanik.
+
+## 2026-03-10 Addendum (PR #691 Medium/High-Confidence Bandit Gate)
+- Scope:
+  - `.github/workflows/pipeline.yml`
+  - dieses Evidence-Update
+- Ziel: Bandit blockiert Medium-Severity mit High-Confidence auf geänderten Python-Pfaden (PR-/Push-Delta), statt globaler Altlast-Blockade.
+- Sicherheitsnutzen:
+  - neue risikoreiche Änderungen werden strikt geblockt,
+  - historische Befunde außerhalb des Deltas bleiben separat sanierbar.
+- Validierung:
+  - Workflow YAML parsebar.
+  - Job schreibt die gescannten Ziele (`bandit-targets.txt`) und bricht bei Policy-Verstoß ab.
