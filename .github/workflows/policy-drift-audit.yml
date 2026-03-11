@@ -23,7 +23,6 @@ jobs:
 
       - name: Run branch protection drift audit
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POLICY_AUDIT_TOKEN: ${{ secrets.POLICY_AUDIT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           POLICY_BASELINE_PATH: .github/policy/branch_protection_baseline.json

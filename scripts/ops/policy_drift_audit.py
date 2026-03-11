@@ -200,9 +200,6 @@ def load_baseline(path: Path) -> dict[str, Any]:
 def main() -> int:
     repo = os.getenv("GITHUB_REPOSITORY", "theosmi33-droid/kukanilea")
     policy_token = os.getenv("POLICY_AUDIT_TOKEN", "").strip()
-    github_token = os.getenv("GITHUB_TOKEN", "").strip()
-    token = policy_token or github_token
-    token_source = "POLICY_AUDIT_TOKEN" if policy_token else "GITHUB_TOKEN"
     baseline_path = Path(
         os.getenv(
             "POLICY_BASELINE_PATH",
@@ -210,15 +207,19 @@ def main() -> int:
         )
     )
 
-    if not token:
-        print("POLICY_AUDIT_TOKEN or GITHUB_TOKEN is required", file=sys.stderr)
+    if not policy_token:
+        print(
+            "POLICY_AUDIT_TOKEN is required for branch protection audit "
+            "(GITHUB_TOKEN lacks required administration scope).",
+            file=sys.stderr,
+        )
         return 1
     if not baseline_path.exists():
         print(f"Baseline file missing: {baseline_path}", file=sys.stderr)
         return 1
 
     branches = load_baseline(baseline_path)
-    api = GitHubAPI(token=token, repo=repo)
+    api = GitHubAPI(token=policy_token, repo=repo)
 
     drifts: list[Drift] = []
     skipped_branches: list[str] = []
@@ -231,7 +232,7 @@ def main() -> int:
                 skipped_branches.append(branch)
                 print(
                     "::error::Branch protection check failed for "
-                    f"'{branch}' due to token scope on {token_source}. "
+                    f"'{branch}' due to token scope on POLICY_AUDIT_TOKEN. "
                     "Configure secret POLICY_AUDIT_TOKEN with repo admin scope."
                 )
                 drifts.append(
