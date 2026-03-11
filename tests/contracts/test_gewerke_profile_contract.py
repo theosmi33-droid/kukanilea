@@ -41,7 +41,7 @@ def test_health_profile_includes_gewerke_profile_configuration(auth_client, monk
     reset_profiles_cache()
 
 
-def test_health_profile_unauthenticated_response_is_sanitized(tmp_path, monkeypatch):
+def test_health_profile_requires_authentication_for_unauthenticated_requests(tmp_path, monkeypatch):
     monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
     monkeypatch.setattr(Config, "AUTH_DB", tmp_path / "auth.sqlite3")
     monkeypatch.setattr(Config, "CORE_DB", tmp_path / "core.sqlite3")
@@ -70,12 +70,8 @@ def test_health_profile_unauthenticated_response_is_sanitized(tmp_path, monkeypa
     app.config["TESTING"] = True
     client = app.test_client()
     response = client.get("/api/health")
-    assert response.status_code == 200
+    assert response.status_code == 401
 
-    profile = response.get_json()["profile"]
-    assert profile["profile_id"] == "sanitaer"
-    assert profile["gewerk_name"] == "Sanitär"
-    assert "gewerk_profile" not in profile
-    assert "db_path" not in profile
-    assert "base_path" not in profile
+    body = response.get_json()
+    assert body["error"]["code"] == "auth_required"
     reset_profiles_cache()

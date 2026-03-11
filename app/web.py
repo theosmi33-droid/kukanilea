@@ -2485,7 +2485,6 @@ def _guard_login():
         "/forgot",
         "/reset-code",
         "/health",
-        "/api/health",
         "/api/ping",
     ]:
         return None
