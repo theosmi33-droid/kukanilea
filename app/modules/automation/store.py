@@ -346,8 +346,10 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
         con.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_tenant_rule_started ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, started_at)"
         )
+        con.execute(f"DROP INDEX IF EXISTS idx_{EXECUTION_LOG_TABLE}_unique")
         con.execute(
-            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_unique ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, trigger_ref)"
+            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_unique "
+            f"ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, trigger_ref) WHERE trigger_ref <> ''"
         )
         con.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{STATE_TABLE}_tenant_source ON {STATE_TABLE}(tenant_id, source)"
