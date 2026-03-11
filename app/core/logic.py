@@ -4514,6 +4514,15 @@ def is_allowed_source_path(p: Path) -> bool:
     return False
 
 
+def _is_within_dir(path: Path, root: Path) -> bool:
+    try:
+        rp = Path(path).expanduser().resolve()
+        rr = Path(root).expanduser().resolve()
+    except Exception:
+        return False
+    return rp == rr or str(rp).startswith(str(rr) + os.sep)
+
+
 def _db_latest_version_path_for_doc(doc_id: str, tenant_id: str = "") -> str:
     doc_id = normalize_component(doc_id)
     if not doc_id:

@@ -2,10 +2,10 @@
 app/core/migrations.py
 Database migration system. Supports background index building.
 """
-import sqlite3
-import logging
-import threading
 import hashlib
+import logging
+import sqlite3
+import threading
 from pathlib import Path
 
 logger = logging.getLogger("kukanilea.migrations")
@@ -215,7 +215,6 @@ def _ensure_docs_fts_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
-
 def _build_fts_indices(db_path: str):
     """Worker to build FTS indices in background to avoid blocking boot."""
     logger.info("Starting background FTS index build...")
@@ -250,7 +249,7 @@ def _build_fts_indices(db_path: str):
                 ORDER BY vv.version_no DESC, vv.id DESC
                 LIMIT 1
             )
-            WHERE doc_id NOT IN (SELECT doc_id FROM docs_fts)
+            WHERE d.doc_id NOT IN (SELECT doc_id FROM docs_fts)
             """
         conn.execute(query)
         conn.commit()

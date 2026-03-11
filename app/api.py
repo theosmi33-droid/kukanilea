@@ -71,11 +71,7 @@ def health():
             core_stats = core.get_health_stats(tenant_id=tenant_id)
         if core and callable(getattr(core, "get_profile", None)):
             full_profile = core.get_profile()
-            profile = (
-                full_profile
-                if is_authenticated
-                else _public_health_profile(full_profile)
-            )
+            profile = full_profile if is_authenticated else _public_health_profile(full_profile)
     except Exception:
         core_stats = {}
     payload = dict(
