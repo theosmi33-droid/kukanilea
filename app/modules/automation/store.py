@@ -65,16 +65,22 @@ def _resolve_db_path(db_path: Path | str | None) -> Path:
     return Path(db_path)
 
 
+def _execute_sql(
+    con: sqlite3.Connection, query: str, params: Sequence[Any] | tuple[Any, ...] = ()
+) -> sqlite3.Cursor:
+    return con.execute(query, tuple(params))
+
+
 def _connect(db_path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(str(db_path), timeout=30)
     con.row_factory = sqlite3.Row
-    con.execute("PRAGMA foreign_keys=ON;")
-    con.execute("PRAGMA busy_timeout=10000;")
+    _execute_sql(con, "PRAGMA foreign_keys=ON;")
+    _execute_sql(con, "PRAGMA busy_timeout=10000;")
     return con
 
 
 def _table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
-    rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
+    rows = _execute_sql(con, f"PRAGMA table_info({table_name})").fetchall()
     return {str(r["name"]) for r in rows}
 
 
@@ -82,7 +88,7 @@ def _ensure_column(con: sqlite3.Connection, table_name: str, column_def: str) ->
     column_name = str(column_def.split()[0]).strip()
     if column_name in _table_columns(con, table_name):
         return
-    con.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_def}")
+    _execute_sql(con, f"ALTER TABLE {table_name} ADD COLUMN {column_def}")
 
 
 def _norm_tenant(tenant_id: str) -> str:
@@ -204,7 +210,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        con.execute(
+        _execute_sql(con, 
             f"""
             CREATE TABLE IF NOT EXISTS {RULE_TABLE}(
               id TEXT PRIMARY KEY,
@@ -219,7 +225,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             )
             """
         )
-        con.execute(
+        _execute_sql(con, 
             f"""
             CREATE TABLE IF NOT EXISTS {TRIGGER_TABLE}(
               id TEXT PRIMARY KEY,
@@ -233,7 +239,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             )
             """
         )
-        con.execute(
+        _execute_sql(con, 
             f"""
             CREATE TABLE IF NOT EXISTS {CONDITION_TABLE}(
               id TEXT PRIMARY KEY,
@@ -247,7 +253,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             )
             """
         )
-        con.execute(
+        _execute_sql(con, 
             f"""
             CREATE TABLE IF NOT EXISTS {ACTION_TABLE}(
               id TEXT PRIMARY KEY,
@@ -261,7 +267,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             )
             """
         )
-        con.execute(
+        _execute_sql(con, 
             f"""
             CREATE TABLE IF NOT EXISTS {EXECUTION_LOG_TABLE}(
               id TEXT PRIMARY KEY,
@@ -278,7 +284,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             )
             """
         )
-        con.execute(
+        _execute_sql(con, 
             f"""
             CREATE TABLE IF NOT EXISTS {STATE_TABLE}(
               id TEXT PRIMARY KEY,
@@ -290,7 +296,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             )
             """
         )
-        con.execute(
+        _execute_sql(con, 
             f"""
             CREATE TABLE IF NOT EXISTS {PENDING_ACTION_TABLE}(
               id TEXT PRIMARY KEY,
@@ -320,7 +326,7 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
             con, PENDING_ACTION_TABLE, "status TEXT NOT NULL DEFAULT 'pending'"
         )
         _ensure_column(con, PENDING_ACTION_TABLE, "confirm_token TEXT")
-        con.execute(
+        _execute_sql(con, 
             f"""
             UPDATE {RULE_TABLE}
             SET max_executions_per_minute={RULE_MAX_EXECUTIONS_DEFAULT}
@@ -328,36 +334,36 @@ def ensure_automation_schema(db_path: Path | str | None = None) -> None:
                OR max_executions_per_minute < 1
             """
         )
-        con.execute(
+        _execute_sql(con, 
             f"UPDATE {PENDING_ACTION_TABLE} SET status='pending' WHERE status IS NULL OR TRIM(status)=''"
         )
-        con.execute(
+        _execute_sql(con, 
             f"CREATE INDEX IF NOT EXISTS idx_{RULE_TABLE}_tenant_enabled ON {RULE_TABLE}(tenant_id, is_enabled)"
         )
-        con.execute(
+        _execute_sql(con, 
             f"CREATE INDEX IF NOT EXISTS idx_{TRIGGER_TABLE}_tenant_rule ON {TRIGGER_TABLE}(tenant_id, rule_id)"
         )
-        con.execute(
+        _execute_sql(con, 
             f"CREATE INDEX IF NOT EXISTS idx_{CONDITION_TABLE}_tenant_rule ON {CONDITION_TABLE}(tenant_id, rule_id)"
         )
-        con.execute(
+        _execute_sql(con, 
             f"CREATE INDEX IF NOT EXISTS idx_{ACTION_TABLE}_tenant_rule ON {ACTION_TABLE}(tenant_id, rule_id)"
         )
-        con.execute(
+        _execute_sql(con, 
             f"CREATE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_tenant_rule_started ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, started_at)"
         )
-        con.execute(f"DROP INDEX IF EXISTS idx_{EXECUTION_LOG_TABLE}_unique")
-        con.execute(
+        _execute_sql(con, f"DROP INDEX IF EXISTS idx_{EXECUTION_LOG_TABLE}_unique")
+        _execute_sql(con, 
             f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{EXECUTION_LOG_TABLE}_unique "
             f"ON {EXECUTION_LOG_TABLE}(tenant_id, rule_id, trigger_ref) WHERE trigger_ref <> ''"
         )
-        con.execute(
+        _execute_sql(con, 
             f"CREATE INDEX IF NOT EXISTS idx_{STATE_TABLE}_tenant_source ON {STATE_TABLE}(tenant_id, source)"
         )
-        con.execute(
+        _execute_sql(con, 
             f"CREATE INDEX IF NOT EXISTS idx_{PENDING_ACTION_TABLE}_tenant_created ON {PENDING_ACTION_TABLE}(tenant_id, created_at DESC)"
         )
-        con.execute(
+        _execute_sql(con, 
             f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{PENDING_ACTION_TABLE}_tenant_confirm_token ON {PENDING_ACTION_TABLE}(tenant_id, confirm_token)"
         )
         con.commit()
@@ -376,7 +382,7 @@ def _insert_children(
     now_iso: str,
 ) -> None:
     for kind, config_json in rows:
-        con.execute(
+        _execute_sql(con, 
             f"""
             INSERT INTO {table_name}(id, tenant_id, rule_id, {kind_column}, config_json, created_at, updated_at)
             VALUES (?,?,?,?,?,?,?)
@@ -393,7 +399,7 @@ def _list_children(
     table_name: str,
     kind_column: str,
 ) -> list[AutomationComponent]:
-    rows = con.execute(
+    rows = _execute_sql(con, 
         f"""
         SELECT id, tenant_id, rule_id, {kind_column} AS component_type, config_json, created_at, updated_at
         FROM {table_name}
@@ -443,8 +449,8 @@ def create_rule(
     rule_id = _new_id()
     con = _connect(path)
     try:
-        con.execute("BEGIN IMMEDIATE")
-        con.execute(
+        _execute_sql(con, "BEGIN IMMEDIATE")
+        _execute_sql(con, 
             f"""
             INSERT INTO {RULE_TABLE}(
               id, tenant_id, name, description, is_enabled,
@@ -522,7 +528,7 @@ def get_rule(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        row = con.execute(
+        row = _execute_sql(con, 
             f"""
             SELECT
               id, tenant_id, name, description, is_enabled,
@@ -581,7 +587,7 @@ def list_rules(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        rows = con.execute(
+        rows = _execute_sql(con, 
             f"""
             SELECT
               r.id,
@@ -643,7 +649,7 @@ def update_rule(
     con = _connect(path)
     now_iso = _now_rfc3339()
     try:
-        existing = con.execute(
+        existing = _execute_sql(con, 
             f"""
             SELECT id, name, description, is_enabled, max_executions_per_minute
             FROM {RULE_TABLE}
@@ -694,8 +700,8 @@ def update_rule(
             else None
         )
 
-        con.execute("BEGIN IMMEDIATE")
-        cur = con.execute(
+        _execute_sql(con, "BEGIN IMMEDIATE")
+        cur = _execute_sql(con, 
             f"""
             UPDATE {RULE_TABLE}
             SET name=?, description=?, is_enabled=?, max_executions_per_minute=?, updated_at=?, version=version+1
@@ -716,7 +722,7 @@ def update_rule(
             return None
 
         if trigger_rows is not None:
-            con.execute(
+            _execute_sql(con, 
                 f"DELETE FROM {TRIGGER_TABLE} WHERE tenant_id=? AND rule_id=?",
                 (tenant, rid),
             )
@@ -730,7 +736,7 @@ def update_rule(
                 now_iso=now_iso,
             )
         if condition_rows is not None:
-            con.execute(
+            _execute_sql(con, 
                 f"DELETE FROM {CONDITION_TABLE} WHERE tenant_id=? AND rule_id=?",
                 (tenant, rid),
             )
@@ -744,7 +750,7 @@ def update_rule(
                 now_iso=now_iso,
             )
         if action_rows is not None:
-            con.execute(
+            _execute_sql(con, 
                 f"DELETE FROM {ACTION_TABLE} WHERE tenant_id=? AND rule_id=?",
                 (tenant, rid),
             )
@@ -794,8 +800,8 @@ def delete_rule(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        con.execute("BEGIN IMMEDIATE")
-        cur = con.execute(
+        _execute_sql(con, "BEGIN IMMEDIATE")
+        cur = _execute_sql(con, 
             f"DELETE FROM {RULE_TABLE} WHERE tenant_id=? AND id=?",
             (tenant, rid),
         )
@@ -825,7 +831,7 @@ def get_state_cursor(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        row = con.execute(
+        row = _execute_sql(con, 
             f"SELECT cursor FROM {STATE_TABLE} WHERE tenant_id=? AND source=? LIMIT 1",
             (tenant, src),
         ).fetchone()
@@ -853,7 +859,7 @@ def upsert_state_cursor(
     con = _connect(path)
     try:
         now_iso = _now_rfc3339()
-        con.execute(
+        _execute_sql(con, 
             f"""
             INSERT INTO {STATE_TABLE}(id, tenant_id, source, cursor, updated_at)
             VALUES (?,?,?,?,?)
@@ -896,7 +902,7 @@ def append_execution_log(
     con = _connect(path)
     try:
         try:
-            con.execute(
+            _execute_sql(con, 
                 f"""
                 INSERT INTO {EXECUTION_LOG_TABLE}(
                   id, tenant_id, rule_id, trigger_type, trigger_ref, status, started_at, finished_at, error_redacted, output_redacted
@@ -951,12 +957,12 @@ def update_execution_log(
     con = _connect(path)
     rule_ref = ""
     try:
-        row = con.execute(
+        row = _execute_sql(con, 
             f"SELECT rule_id FROM {EXECUTION_LOG_TABLE} WHERE tenant_id=? AND id=? LIMIT 1",
             (tenant, lid),
         ).fetchone()
         rule_ref = str((row["rule_id"] if row else "") or lid)
-        cur = con.execute(
+        cur = _execute_sql(con, 
             f"""
             UPDATE {EXECUTION_LOG_TABLE}
             SET status=?, finished_at=?, error_redacted=?, output_redacted=?
@@ -1017,7 +1023,7 @@ def list_execution_logs(
     con = _connect(path)
     try:
         if rid:
-            rows = con.execute(
+            rows = _execute_sql(con, 
                 f"""
                 SELECT id, tenant_id, rule_id, trigger_type, trigger_ref, status,
                        started_at, finished_at, error_redacted, output_redacted
@@ -1029,7 +1035,7 @@ def list_execution_logs(
                 (tenant, rid, lim),
             ).fetchall()
         else:
-            rows = con.execute(
+            rows = _execute_sql(con, 
                 f"""
                 SELECT id, tenant_id, rule_id, trigger_type, trigger_ref, status,
                        started_at, finished_at, error_redacted, output_redacted
@@ -1061,7 +1067,7 @@ def count_execution_logs_since(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        row = con.execute(
+        row = _execute_sql(con, 
             f"""
             SELECT COUNT(1) AS cnt
             FROM {EXECUTION_LOG_TABLE}
@@ -1108,7 +1114,7 @@ def create_pending_action(
     now_iso = _now_rfc3339()
     con = _connect(path)
     try:
-        con.execute(
+        _execute_sql(con, 
             f"""
             INSERT INTO {PENDING_ACTION_TABLE}(
               id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
@@ -1165,7 +1171,7 @@ def list_pending_actions(
     con = _connect(path)
     try:
         if include_confirmed:
-            rows = con.execute(
+            rows = _execute_sql(con, 
                 f"""
                 SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
                 FROM {PENDING_ACTION_TABLE}
@@ -1176,7 +1182,7 @@ def list_pending_actions(
                 (tenant, lim),
             ).fetchall()
         else:
-            rows = con.execute(
+            rows = _execute_sql(con, 
                 f"""
                 SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
                 FROM {PENDING_ACTION_TABLE}
@@ -1205,7 +1211,7 @@ def get_pending_action(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        row = con.execute(
+        row = _execute_sql(con, 
             f"""
             SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
             FROM {PENDING_ACTION_TABLE}
@@ -1236,7 +1242,7 @@ def mark_pending_action_confirmed(
     con = _connect(path)
     rule_ref = ""
     try:
-        row = con.execute(
+        row = _execute_sql(con, 
             f"""
             SELECT rule_id
             FROM {PENDING_ACTION_TABLE}
@@ -1246,7 +1252,7 @@ def mark_pending_action_confirmed(
             (tenant, pid),
         ).fetchone()
         rule_ref = str((row["rule_id"] if row else "") or "")
-        cur = con.execute(
+        cur = _execute_sql(con, 
             f"""
             UPDATE {PENDING_ACTION_TABLE}
             SET status='confirmed', confirmed_at=?, confirm_token=NULL
@@ -1291,8 +1297,8 @@ def confirm_pending_action_once(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        con.execute("BEGIN IMMEDIATE")
-        row = con.execute(
+        _execute_sql(con, "BEGIN IMMEDIATE")
+        row = _execute_sql(con, 
             f"""
             SELECT id, tenant_id, rule_id, action_type, action_config, context_snapshot, created_at, status, confirm_token, confirmed_at
             FROM {PENDING_ACTION_TABLE}
@@ -1306,7 +1312,7 @@ def confirm_pending_action_once(
             return None
 
         now_iso = _now_rfc3339()
-        cur = con.execute(
+        cur = _execute_sql(con, 
             f"""
             UPDATE {PENDING_ACTION_TABLE}
             SET status='confirmed', confirmed_at=?, confirm_token=NULL
@@ -1357,12 +1363,12 @@ def update_pending_action_status(
     path = _resolve_db_path(db_path)
     con = _connect(path)
     try:
-        current_row = con.execute(
+        current_row = _execute_sql(con, 
             f"SELECT rule_id FROM {PENDING_ACTION_TABLE} WHERE tenant_id=? AND id=? LIMIT 1",
             (tenant, pid),
         ).fetchone()
         rule_ref = str((current_row["rule_id"] if current_row else "") or pid)
-        cur = con.execute(
+        cur = _execute_sql(con, 
             f"""
             UPDATE {PENDING_ACTION_TABLE}
             SET status=?
