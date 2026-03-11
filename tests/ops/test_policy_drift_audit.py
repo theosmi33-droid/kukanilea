@@ -61,3 +61,22 @@ def test_scope_error_is_treated_as_drift_and_fails(tmp_path: Path, monkeypatch, 
     assert "protection_api_scope" in calls["body"]
     assert "Skipped branch protection audit for: main" in output
     assert "No policy drift detected" not in output
+
+
+def test_requires_policy_audit_token_and_rejects_github_token_fallback(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    audit = _load_policy_drift_module()
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(json.dumps({"branches": {"main": {}}}), encoding="utf-8")
+
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.delenv("POLICY_AUDIT_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_example")
+    monkeypatch.setenv("POLICY_BASELINE_PATH", str(baseline_path))
+
+    rc = audit.main()
+    err = capsys.readouterr().err
+
+    assert rc == 1
+    assert "POLICY_AUDIT_TOKEN is required" in err
