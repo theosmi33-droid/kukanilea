@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from app.core.migrations import run_migrations
 from app.modules.automation.store import (
-    EXECUTION_LOG_TABLE,
     append_execution_log,
     create_rule,
     ensure_automation_schema,
@@ -12,13 +12,12 @@ from app.modules.automation.store import (
 
 def test_schema_upgrade_tolerates_legacy_execution_rows_without_trigger_ref(tmp_path):
     db_path = tmp_path / "core.sqlite3"
-    ensure_automation_schema(db_path)
     con = sqlite3.connect(str(db_path))
     try:
-        con.execute(f"DROP TABLE IF EXISTS {EXECUTION_LOG_TABLE}")
+        con.execute("DROP TABLE IF EXISTS automation_builder_execution_log")
         con.execute(
-            f"""
-            CREATE TABLE {EXECUTION_LOG_TABLE}(
+            """
+            CREATE TABLE automation_builder_execution_log(
               id TEXT PRIMARY KEY,
               tenant_id TEXT NOT NULL,
               rule_id TEXT NOT NULL,
@@ -29,16 +28,28 @@ def test_schema_upgrade_tolerates_legacy_execution_rows_without_trigger_ref(tmp_
             """
         )
         con.execute(
-            f"INSERT INTO {EXECUTION_LOG_TABLE}(id, tenant_id, rule_id, trigger_type, status, started_at) VALUES ('1', 'T', 'R', 'event', 'ok', '2025-01-01T00:00:00Z')"
+            "INSERT INTO automation_builder_execution_log(id, tenant_id, rule_id, trigger_type, status, started_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("1", "T", "R", "event", "ok", "2025-01-01T00:00:00Z"),
         )
         con.execute(
-            f"INSERT INTO {EXECUTION_LOG_TABLE}(id, tenant_id, rule_id, trigger_type, status, started_at) VALUES ('2', 'T', 'R', 'event', 'ok', '2025-01-01T00:00:01Z')"
+            "INSERT INTO automation_builder_execution_log(id, tenant_id, rule_id, trigger_type, status, started_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("2", "T", "R", "event", "ok", "2025-01-01T00:00:01Z"),
         )
         con.commit()
     finally:
         con.close()
 
+    run_migrations(db_path)
     ensure_automation_schema(db_path)
+
+    with sqlite3.connect(str(db_path)) as verify_con:
+        idx_row = verify_con.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_automation_builder_execution_log_unique'"
+        ).fetchone()
+        assert idx_row is not None
+        assert "WHERE trigger_ref <> ''" in str(idx_row[0] or "")
 
 
 def test_execution_log_unique_index_still_deduplicates_non_empty_trigger_ref(tmp_path):

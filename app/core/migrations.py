@@ -91,6 +91,25 @@ def _ensure_migration_targets(conn: sqlite3.Connection) -> None:
     if _table_exists(conn, "customers") and _column_exists(conn, "customers", "id"):
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_id_unique ON customers(id);")
 
+    _ensure_automation_execution_log_unique_index(conn)
+
+
+def _ensure_automation_execution_log_unique_index(conn: sqlite3.Connection) -> None:
+    """Normalize execution-log uniqueness to ignore empty trigger references."""
+    table_name = "automation_builder_execution_log"
+    if not _table_exists(conn, table_name):
+        return
+    if not _column_exists(conn, table_name, "trigger_ref"):
+        conn.execute(
+            "ALTER TABLE automation_builder_execution_log ADD COLUMN trigger_ref TEXT NOT NULL DEFAULT ''"
+        )
+    conn.execute("DROP INDEX IF EXISTS idx_automation_builder_execution_log_unique")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_automation_builder_execution_log_unique "
+        "ON automation_builder_execution_log(tenant_id, rule_id, trigger_ref) "
+        "WHERE trigger_ref <> ''"
+    )
+
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     row = conn.execute(
