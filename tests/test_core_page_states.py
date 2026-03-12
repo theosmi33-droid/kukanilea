@@ -69,3 +69,14 @@ def test_projects_page_shows_degraded_state_on_backend_failure(tmp_path, monkeyp
     assert "Eingeschränkter Betrieb" in body
     assert 'id="project-hub"' in body
     assert "traceback" not in body.lower()
+
+
+def test_projects_page_renders_loading_state_shell(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    response = client.get("/projects")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Lade Aufgaben…" in body
+    assert "data-cards-loading" in body
