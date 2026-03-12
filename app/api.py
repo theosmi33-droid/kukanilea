@@ -77,8 +77,6 @@ def health():
     payload = dict(
         ok=True,
         schema_version=auth_db.get_schema_version(),
-        auth_db_path=str(auth_db.path),
-        tenants=auth_db.count_tenants(),
         last_indexed_at=core_stats.get("last_indexed_at"),
         doc_count=core_stats.get("doc_count", 0),
         fts_enabled=core_stats.get("fts_enabled", False),

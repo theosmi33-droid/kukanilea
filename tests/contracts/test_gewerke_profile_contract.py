@@ -75,3 +75,14 @@ def test_health_profile_requires_authentication_for_unauthenticated_requests(tmp
     body = response.get_json()
     assert body["error"]["code"] == "auth_required"
     reset_profiles_cache()
+
+
+def test_health_omits_internal_runtime_paths_and_global_tenant_stats(auth_client):
+    response = auth_client.get("/api/health")
+    assert response.status_code == 200
+
+    body = response.get_json()
+    assert "auth_db_path" not in body
+    assert "db_path" not in body
+    assert "tenant_id" not in body
+    assert "tenants" not in body
