@@ -1614,10 +1614,14 @@ class ProjectManager:
         finally:
             con.close()
 
+        linked_task_id_raw = card["linked_task_id"]
+        linked_task_id = int(linked_task_id_raw) if linked_task_id_raw is not None else None
+
         timer_entry = timer_start_fn(
             tenant_id=tenant_id,
             user=actor,
             project_id=None,
+            task_id=linked_task_id,
             note=f"Project Hub Card {card_id}: {card['title']}",
         )
 
@@ -1632,7 +1636,7 @@ class ProjectManager:
                 details=f"Timer fuer Karte '{card['title']}' gestartet.",
                 board_id=card["board_id"],
                 card_id=card_id,
-                payload={"timer_entry": timer_entry},
+                payload={"timer_entry": timer_entry, "linked_task_id": linked_task_id},
                 importance=6,
             )
             con2.commit()
