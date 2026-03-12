@@ -17,6 +17,17 @@ def _resolve_tenant_id(requested_tenant_id: str | None) -> str | None:
     return active_tenant_id
 
 
+def _blocked_tenant_response(*, action: str, requested_tenant_id: str | None) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "status": "blocked",
+        "error": "tenant_mismatch",
+        "requires_confirm": False,
+        "action": action,
+        "tenant_id": requested_tenant_id,
+    }
+
+
 class CalendarFindFreeSlotTool(BaseTool):
     name = "calendar.find_free_slot"
     description = "Findet den nächsten freien Kalender-Slot (lokale Events + optionale ICS-Imports)."
@@ -42,7 +53,10 @@ class CalendarFindFreeSlotTool(BaseTool):
         granularity_minutes: int = 15,
         ics_texts: list[str] | None = None,
     ) -> Any:
-        resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        try:
+            resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        except PermissionError:
+            return _blocked_tenant_response(action=self.name, requested_tenant_id=tenant_id)
         if not resolved_tenant_id:
             return {"error": "No tenant context found."}
         store = CalendarStore()
@@ -85,7 +99,10 @@ class CalendarCreateEventTool(BaseTool):
         created_by: str = "system",
         confirm: bool = False,
     ) -> Any:
-        resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        try:
+            resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        except PermissionError:
+            return _blocked_tenant_response(action=self.name, requested_tenant_id=tenant_id)
         if not resolved_tenant_id:
             return {"error": "No tenant context found."}
         if not confirm:
@@ -146,7 +163,10 @@ class CalendarUpdateEventTool(BaseTool):
         updated_by: str = "system",
         confirm: bool = False,
     ) -> Any:
-        resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        try:
+            resolved_tenant_id = _resolve_tenant_id(tenant_id)
+        except PermissionError:
+            return _blocked_tenant_response(action=self.name, requested_tenant_id=tenant_id)
         if not resolved_tenant_id:
             return {"error": "No tenant context found."}
         if not confirm:

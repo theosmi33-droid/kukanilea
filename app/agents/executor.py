@@ -11,6 +11,7 @@ from app.mia_audit import (
     canonical_mia_payload,
     emit_mia_event_safe,
 )
+from app.security import confirm_gate
 from app.tools.registry import registry
 
 logger = logging.getLogger("kukanilea.agents.executor")
@@ -77,6 +78,30 @@ class AgentExecutor:
                 ),
             )
             raise ValueError(f"Tool '{tool_name}' not found in registry.")
+
+        confirm_required = bool(
+            getattr(tool, "confirm_required", False)
+            or params.get("confirm_required")
+            or params.get("requires_confirm")
+            or params.get("confirm_gate")
+        )
+        confirm_token = params.get("confirm") or params.get("confirmation") or params.get("confirm_token")
+        if confirm_required and not confirm_gate(str(confirm_token or "")):
+            emit_mia_event_safe(
+                event_type=MIA_EVENT_ROUTE_BLOCKED,
+                entity_type="agent_executor",
+                entity_ref=str(tool_name or "unknown"),
+                tenant_id=tenant_id,
+                payload=canonical_mia_payload(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    action=str(tool_name or "unknown"),
+                    status="blocked",
+                    risk="high",
+                    meta={"reason": "confirm_required"},
+                ),
+            )
+            raise PermissionError("confirm_required")
 
         logger.info(f"Executing tool: {tool_name} with params: {params}")
         try:
