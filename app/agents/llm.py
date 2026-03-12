@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from typing import Any, Dict, List
+
+import requests
 
 
 def _env(key: str, default: str = "") -> str:
@@ -98,22 +98,27 @@ class OllamaProvider(LLMProvider):
             return False
 
     def _get_json(self, path: str, timeout: float = 4.0) -> Dict[str, Any]:
-        req = urllib.request.Request(self.host + path, method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        resp = requests.get(
+            self.host + path,
+            timeout=timeout,
+            headers={"Accept": "application/json"},
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        return payload if isinstance(payload, dict) else {}
 
     def _post_json(
         self, path: str, payload: Dict[str, Any], timeout: float = 8.0
     ) -> Dict[str, Any]:
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
+        resp = requests.post(
             self.host + path,
-            method="POST",
-            data=data,
-            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=timeout,
+            headers={"Accept": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        resp.raise_for_status()
+        body = resp.json()
+        return body if isinstance(body, dict) else {}
 
     def complete(self, prompt: str, *, temperature: float = 0.0) -> str:
         if not self.available:
@@ -206,27 +211,28 @@ class OpenAICompatibleProvider(LLMProvider):
     def _ping(self) -> bool:
         if not self.api_key:
             return False
-        req = urllib.request.Request(
-            self.base_url + "/models", method="GET", headers=self._headers()
-        )
         try:
-            with urllib.request.urlopen(req, timeout=2.5):
-                return True
+            resp = requests.get(
+                self.base_url + "/models",
+                headers=self._headers(),
+                timeout=2.5,
+            )
+            return resp.ok
         except Exception:
             return False
 
     def _post_json(
         self, path: str, payload: Dict[str, Any], timeout: float = 12.0
     ) -> Dict[str, Any]:
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
+        resp = requests.post(
             self.base_url + path,
-            method="POST",
-            data=data,
+            json=payload,
             headers=self._headers(),
+            timeout=timeout,
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        resp.raise_for_status()
+        body = resp.json()
+        return body if isinstance(body, dict) else {}
 
     def complete(self, prompt: str, *, temperature: float = 0.0) -> str:
         if not self.available:

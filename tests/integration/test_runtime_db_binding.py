@@ -360,6 +360,17 @@ def test_healthcheck_requires_authentication_for_anonymous_requests(tmp_path, mo
     assert body["error"]["code"] == "auth_required"
 
 
+def test_api_routes_require_authentication_for_anonymous_requests(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+
+    for path in ("/api/aufgaben", "/api/outbound/status"):
+        response = client.get(path)
+        assert response.status_code == 401
+        body = response.get_json()
+        assert body["error"]["code"] == "auth_required"
+
+
 def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(tmp_path, monkeypatch):
     app = _build_app(tmp_path, monkeypatch)
     client = app.test_client()

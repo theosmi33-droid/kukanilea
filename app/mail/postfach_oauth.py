@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib import parse, request
+from urllib import parse
+
+import requests
 
 ProviderConfig = dict[str, Any]
 
@@ -111,16 +112,14 @@ def _token_request(
     *,
     timeout: int = 20,
 ) -> dict[str, Any]:
-    encoded = parse.urlencode(data).encode("utf-8")
-    req = request.Request(
+    resp = requests.post(
         token_url,
-        data=encoded,
+        data=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
+        timeout=timeout,
     )
-    with request.urlopen(req, timeout=timeout) as resp:
-        body = resp.read().decode("utf-8", errors="replace")
-    payload = json.loads(body or "{}")
+    resp.raise_for_status()
+    payload = resp.json() if resp.content else {}
     if not isinstance(payload, dict):
         raise ValueError("oauth_token_invalid_response")
     return payload

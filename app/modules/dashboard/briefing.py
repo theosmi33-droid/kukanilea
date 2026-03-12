@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 import os
 import threading
-import urllib.request
-import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+import requests
+from defusedxml import ElementTree as DefusedET
 from flask import current_app, has_app_context
 
 from app.config import Config
@@ -94,8 +94,9 @@ def save_briefing_settings(*, feeds: list[str], cron_expression: str) -> dict[st
 
 
 def _default_fetch(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=8) as res:  # nosec B310
-        return res.read().decode("utf-8", errors="replace")
+    res = requests.get(url, timeout=8, headers={"Accept": "application/xml,text/xml,*/*"})
+    res.raise_for_status()
+    return res.text
 
 
 def _is_allowed_feed_url(url: str) -> bool:
@@ -141,7 +142,7 @@ def _strip(tag: str) -> str:
     return tag
 
 
-def _item_dict(node: ET.Element) -> dict[str, str]:
+def _item_dict(node: DefusedET.Element) -> dict[str, str]:
     out: dict[str, str] = {"title": "", "link": "", "published": "", "summary": ""}
     for child in list(node):
         key = _strip(child.tag).lower()
@@ -162,11 +163,11 @@ def parse_feed_xml(xml_text: str, *, max_items: int = 12) -> list[dict[str, str]
     if not xml_text.strip():
         return []
     try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError:
+        root = DefusedET.fromstring(xml_text)
+    except DefusedET.ParseError:
         return []
 
-    candidates: list[ET.Element] = []
+    candidates: list[DefusedET.Element] = []
     root_name = _strip(root.tag).lower()
     if root_name == "rss":
         channel = next((node for node in list(root) if _strip(node.tag).lower() == "channel"), None)

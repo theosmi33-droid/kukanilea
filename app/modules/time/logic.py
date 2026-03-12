@@ -14,7 +14,7 @@ from app.core.gewerke_profiles import get_active_profile
 # we expect these to be passed or available via app.core
 try:
     from app import core as legacy_core
-    from app.core.logic import _effective_tenant, TENANT_DEFAULT
+    from app.core.logic import TENANT_DEFAULT, _effective_tenant
     _DB_LOCK = getattr(legacy_core, "_DB_LOCK", threading.Lock())
     # Ensure these are available on legacy_core even if imported from logic
     if not hasattr(legacy_core, "_db"):
@@ -44,7 +44,10 @@ except ImportError:
             with self._db() as con:
                 return fn(con)
     legacy_core = MockCore() # type: ignore
-    _effective_tenant = lambda x: x or "default"
+
+    def _effective_tenant(value: str | None) -> str:
+        return value or "default"
+
     TENANT_DEFAULT = "default"
     _DB_LOCK = threading.Lock()
 
@@ -408,34 +411,35 @@ def time_entries_list(
 ) -> List[Dict[str, Any]]:
     tenant_id = _time_tenant(tenant_id)
     user = legacy_core.normalize_component(user or "").lower()
+    user_filter = user
+    start_filter = str(start_at or "").strip()
+    end_filter = str(end_at or "").strip()
     limit = max(1, min(int(limit), 2000))
-
-    clauses = ["te.tenant_id=?"]
-    params: List[Any] = [tenant_id]
-    if user:
-        clauses.append("te.user=?")
-        params.append(user)
-    if start_at:
-        clauses.append("te.start_at>=?")
-        params.append(start_at)
-    if end_at:
-        clauses.append("te.start_at<=?")
-        params.append(end_at)
-
-    where_sql = " AND ".join(clauses)
     with _DB_LOCK:
         con = legacy_core._db()
         try:
             rows = con.execute(
-                f"""
+                """
                 SELECT te.*, tp.name AS project_name
                 FROM time_entries te
                 LEFT JOIN time_projects tp ON tp.id = te.project_id
-                WHERE {where_sql}
+                WHERE te.tenant_id=?
+                  AND (?='' OR te.user=?)
+                  AND (?='' OR te.start_at>=?)
+                  AND (?='' OR te.start_at<=?)
                 ORDER BY te.start_at DESC, te.id DESC
                 LIMIT ?
                 """,
-                (*params, limit),
+                (
+                    tenant_id,
+                    user_filter,
+                    user_filter,
+                    start_filter,
+                    start_filter,
+                    end_filter,
+                    end_filter,
+                    limit,
+                ),
             ).fetchall()
             entries = [dict(r) for r in rows]
             now = _now_iso()

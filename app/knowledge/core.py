@@ -12,11 +12,18 @@ from typing import Any
 from flask import current_app, has_app_context
 
 from app import core as legacy_core
+from app.event_id_map import entity_id_int
+from app.eventlog.core import event_append
+
 try:
-    if not hasattr(legacy_core, '_run_write_txn'):
+    if not hasattr(legacy_core, "_run_write_txn"):
         def _rw(fn):
-            import sqlite3, os
-            db_p = os.environ.get('DB_FILENAME', '/tmp/stress_worker_c.sqlite3')
+            import os
+            import sqlite3
+            import tempfile
+
+            fallback_db = os.path.join(tempfile.gettempdir(), "stress_worker_c.sqlite3")
+            db_p = os.environ.get("DB_FILENAME", fallback_db)
             last_exc = None
             for _attempt in range(2):
                 con = sqlite3.connect(db_p, timeout=1.0)
@@ -36,20 +43,24 @@ try:
             if last_exc:
                 raise last_exc
         legacy_core._run_write_txn = _rw
-    if not hasattr(legacy_core, '_run_read_txn'):
+    if not hasattr(legacy_core, "_run_read_txn"):
         def _rr(fn):
-            import sqlite3, os
-            db_p = os.environ.get('DB_FILENAME', '/tmp/stress_worker_c.sqlite3')
+            import os
+            import sqlite3
+            import tempfile
+
+            fallback_db = os.path.join(tempfile.gettempdir(), "stress_worker_c.sqlite3")
+            db_p = os.environ.get("DB_FILENAME", fallback_db)
             con = sqlite3.connect(db_p, timeout=10.0)
             con.row_factory = sqlite3.Row
             con.execute("PRAGMA busy_timeout=10000;")
             try:
                 return fn(con)
-            finally: con.close()
+            finally:
+                con.close()
         legacy_core._run_read_txn = _rr
-except Exception: pass
-from app.event_id_map import entity_id_int
-from app.eventlog.core import event_append
+except Exception:
+    pass
 
 MAX_QUERY = 256
 MAX_TITLE = 200
@@ -790,18 +801,9 @@ def knowledge_search(
         con = _db()
         try:
             if _fts5_available(con):
-                clauses = ["c.tenant_id=?", "knowledge_fts MATCH ?"]
-                params: list[Any] = [t, match_q]
-                if owner_user_id:
-                    clauses.append("c.owner_user_id=?")
-                    params.append(owner_user_id)
-                if st:
-                    clauses.append("c.source_type=?")
-                    params.append(st)
-
-                where_sql = " AND ".join(clauses)
+                owner_filter = str(owner_user_id or "").strip()
                 rows = con.execute(
-                    f"""
+                    """
                     SELECT c.chunk_id, c.source_type, c.source_ref, c.title,
                            substr(snippet(knowledge_fts, 1, '', '', ' … ', 16), 1, 240) AS snippet,
                            c.tags,
@@ -809,44 +811,56 @@ def knowledge_search(
                            c.updated_at
                     FROM knowledge_fts
                     JOIN knowledge_chunks c ON c.id = knowledge_fts.rowid
-                    WHERE {where_sql}
+                    WHERE c.tenant_id=?
+                      AND knowledge_fts MATCH ?
+                      AND (?='' OR c.owner_user_id=?)
+                      AND (?='' OR c.source_type=?)
                     ORDER BY score ASC, c.updated_at DESC, c.id DESC
                     LIMIT ?
                     """,
-                    tuple(params + [lim]),
+                    (t, match_q, owner_filter, owner_filter, st, st, lim),
                 ).fetchall()
                 return [dict(r) for r in rows]
 
-            clauses = ["tenant_id=?"]
-            params = [t]
-            for tok in TOKEN_RE.findall(query)[:6]:
-                clauses.append(
-                    "(LOWER(title) LIKE LOWER(?) OR LOWER(body) LIKE LOWER(?) OR LOWER(tags) LIKE LOWER(?))"
-                )
-                like = f"%{tok}%"
-                params.extend([like, like, like])
-            if owner_user_id:
-                clauses.append("owner_user_id=?")
-                params.append(owner_user_id)
-            if st:
-                clauses.append("source_type=?")
-                params.append(st)
-            where_sql = " AND ".join(clauses)
+            owner_filter = str(owner_user_id or "").strip()
+            tokens = [tok.lower() for tok in TOKEN_RE.findall(query)[:6]]
+            scan_limit = max(lim * 40, 200)
             rows = con.execute(
-                f"""
-                SELECT chunk_id, source_type, source_ref, title,
-                       substr(body, 1, 240) AS snippet,
-                       tags,
-                       0.0 AS score,
-                       updated_at
+                """
+                SELECT chunk_id, source_type, source_ref, title, body, tags, updated_at
                 FROM knowledge_chunks
-                WHERE {where_sql}
+                WHERE tenant_id=?
+                  AND (?='' OR owner_user_id=?)
+                  AND (?='' OR source_type=?)
                 ORDER BY updated_at DESC, id DESC
                 LIMIT ?
                 """,
-                tuple(params + [lim]),
+                (t, owner_filter, owner_filter, st, st, scan_limit),
             ).fetchall()
-            return [dict(r) for r in rows]
+            out: list[dict[str, Any]] = []
+            for row in rows:
+                haystack = (
+                    f"{str(row['title'] or '')} "
+                    f"{str(row['body'] or '')} "
+                    f"{str(row['tags'] or '')}"
+                ).lower()
+                if tokens and not all(tok in haystack for tok in tokens):
+                    continue
+                out.append(
+                    {
+                        "chunk_id": row["chunk_id"],
+                        "source_type": row["source_type"],
+                        "source_ref": row["source_ref"],
+                        "title": row["title"],
+                        "snippet": str(row["body"] or "")[:240],
+                        "tags": row["tags"],
+                        "score": 0.0,
+                        "updated_at": row["updated_at"],
+                    }
+                )
+                if len(out) >= lim:
+                    break
+            return out
         finally:
             con.close()
 
