@@ -28,3 +28,18 @@ def test_get_default_provider_falls_back_to_mock(monkeypatch):
 
     provider = llm.get_default_provider()
     assert provider.name == "mock"
+
+
+def test_get_default_provider_remote_enabled_without_key_fails_fast(monkeypatch):
+    from app.agents import llm
+
+    monkeypatch.setenv("OLLAMA_ENABLED", "0")
+    monkeypatch.setenv("KUKANILEA_REMOTE_LLM_ENABLED", "1")
+    monkeypatch.delenv("KUKANILEA_REMOTE_LLM_API_KEY", raising=False)
+
+    try:
+        llm.get_default_provider()
+    except RuntimeError as exc:
+        assert "KUKANILEA_REMOTE_LLM_API_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError when remote LLM key is missing")
