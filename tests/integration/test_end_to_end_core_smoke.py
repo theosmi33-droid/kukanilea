@@ -6,6 +6,7 @@ import sqlite3
 import pytest
 
 from app.auth import hash_password
+from app.core.mia_cross_tool_flows import MiaFlowEngine
 from kukanilea.orchestrator import EventBus, ManagerAgent
 from tests.time_utils import utc_now_iso
 
@@ -213,3 +214,64 @@ def test_smoke_mia_router_read_safety_and_offline_fallback():
     assert "manager_agent.offline_blocked" in event_types
     assert "manager_agent.needs_clarification" in event_types
     assert "manager_agent.blocked" in event_types
+
+
+@pytest.mark.integration
+@pytest.mark.smoke
+def test_smoke_flow_a_inquiry_to_task_and_meeting_proposal_requires_confirm_and_writes_audit():
+    executed_actions: list[str] = []
+
+    def _record_handler(action_name: str):
+        def _handler(payload: dict) -> dict:
+            executed_actions.append(action_name)
+            return {"ok": True, "tenant": payload["tenant"]}
+
+        return _handler
+
+    engine = MiaFlowEngine(
+        handlers={
+            "create_task": _record_handler("create_task"),
+            "create_project_proposal": _record_handler("create_project_proposal"),
+            "create_calendar_event": _record_handler("create_calendar_event"),
+            "suggest_meeting_slots": _record_handler("suggest_meeting_slots"),
+        }
+    )
+
+    proposal = engine.plan(
+        "inquiry.received",
+        {
+            "tenant": "KUKANILEA",
+            "inquiry_id": "inq-smoke-001",
+            "subject": "Anfrage: Projektstart und Termin",
+            "body": "Bitte Aufgabe anlegen und Termin vorschlagen.",
+            "task_title": "Angebot vorbereiten",
+            "project_name": "Projekt Alpha",
+            "suggested_start": "2030-06-01T09:00:00+00:00",
+            "meeting_title": "Kickoff Projekt Alpha",
+        },
+    )
+    assert proposal["flow_id"] == "inquiry_to_task_project_calendar_proposal"
+    assert proposal["confirm_points"] == ["create_task", "create_project_proposal", "create_calendar_event"]
+    write_steps = [step for step in proposal["steps"] if step["action"] != "suggest_meeting_slots"]
+    assert write_steps
+    assert all(step["confirm_required"] is True for step in write_steps)
+
+    blocked = engine.execute(proposal["proposal_id"], confirmed=False)
+    assert blocked["status"] == "confirmation_required"
+
+    executed = engine.execute(proposal["proposal_id"], confirmed=True)
+    assert executed["status"] == "executed"
+    assert [item["status"] for item in executed["results"]] == ["executed", "executed", "executed", "executed"]
+    assert executed_actions == [
+        "create_task",
+        "create_project_proposal",
+        "suggest_meeting_slots",
+        "create_calendar_event",
+    ]
+
+    event_types = [entry["event_type"] for entry in engine.audit_log]
+    assert "mia.proposal.created" in event_types
+    assert "mia.confirm.requested" in event_types
+    assert "mia.confirm.denied" in event_types
+    assert "mia.execution.started" in event_types
+    assert "mia.execution.finished" in event_types
