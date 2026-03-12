@@ -197,6 +197,51 @@ def load_baseline(path: Path) -> dict[str, Any]:
     return branches
 
 
+def validate_baseline_structure(branches: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required_fields = {
+        "required_approving_review_count": int,
+        "require_code_owner_reviews": bool,
+        "dismiss_stale_reviews": bool,
+        "required_conversation_resolution": bool,
+        "required_status_checks_strict": bool,
+        "required_status_checks": list,
+        "enforce_admins": bool,
+        "allow_force_pushes": bool,
+        "allow_deletions": bool,
+        "block_creations": bool,
+        "lock_branch": bool,
+        "allow_fork_syncing": bool,
+    }
+
+    for branch, cfg in branches.items():
+        if not isinstance(cfg, dict):
+            errors.append(f"{branch}: expected object, got {type(cfg).__name__}")
+            continue
+
+        for field, expected_type in required_fields.items():
+            if field not in cfg:
+                errors.append(f"{branch}: missing required field '{field}'")
+                continue
+
+            value = cfg[field]
+            if not isinstance(value, expected_type):
+                errors.append(
+                    f"{branch}: field '{field}' expected {expected_type.__name__}, got {type(value).__name__}"
+                )
+
+        checks = cfg.get("required_status_checks")
+        if isinstance(checks, list):
+            if not checks:
+                errors.append(f"{branch}: field 'required_status_checks' must not be empty")
+            elif any(not isinstance(check, str) or not check.strip() for check in checks):
+                errors.append(f"{branch}: field 'required_status_checks' must contain non-empty strings")
+            elif len(set(checks)) != len(checks):
+                errors.append(f"{branch}: field 'required_status_checks' must not contain duplicates")
+
+    return errors
+
+
 def main() -> int:
     repo = os.getenv("GITHUB_REPOSITORY", "theosmi33-droid/kukanilea")
     policy_token = os.getenv("POLICY_AUDIT_TOKEN", "").strip()
@@ -206,6 +251,23 @@ def main() -> int:
             ".github/policy/branch_protection_baseline.json",
         )
     )
+    validate_only = os.getenv("POLICY_BASELINE_VALIDATE_ONLY", "").strip() == "1"
+
+    if not baseline_path.exists():
+        print(f"Baseline file missing: {baseline_path}", file=sys.stderr)
+        return 1
+
+    branches = load_baseline(baseline_path)
+    baseline_errors = validate_baseline_structure(branches)
+    if baseline_errors:
+        print("Baseline validation failed:", file=sys.stderr)
+        for err in baseline_errors:
+            print(f"- {err}", file=sys.stderr)
+        return 1
+
+    if validate_only:
+        print("Baseline validation passed")
+        return 0
 
     if not policy_token:
         print(
@@ -214,11 +276,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    if not baseline_path.exists():
-        print(f"Baseline file missing: {baseline_path}", file=sys.stderr)
-        return 1
 
-    branches = load_baseline(baseline_path)
     api = GitHubAPI(token=policy_token, repo=repo)
 
     drifts: list[Drift] = []
