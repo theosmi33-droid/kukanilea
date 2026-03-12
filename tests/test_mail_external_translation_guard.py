@@ -99,3 +99,33 @@ def test_external_translation_requires_explicit_opt_in(tmp_path: Path, monkeypat
         and event["meta"].get("reason") == "opt_in_required"
         for event in result["audit_events"]
     )
+
+
+def test_external_translation_stays_blocked_for_string_off_flags(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+    payload = {
+        "external_apis_enabled": "off",
+        "external_translation_enabled": "off",
+    }
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "system_settings.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    called = {"post": 0}
+
+    def _blocked_post(*args, **kwargs):
+        called["post"] += 1
+        raise AssertionError("external request must not be called when flags are string 'off'")
+
+    monkeypatch.setattr("app.plugins.mail.requests.post", _blocked_post)
+
+    agent = MailAgent()
+    monkeypatch.setattr(agent, "deepl_api_key", "dummy")
+    result = agent.generate(_mail_input(), MailOptions(rewrite_mode="deepl_api", external_translation_opt_in=True))
+
+    assert called["post"] == 0
+    assert any(
+        event["action"] == "mail.translation.external"
+        and event["status"] == "blocked"
+        and event["meta"].get("reason") == "feature_flag_disabled"
+        for event in result["audit_events"]
+    )

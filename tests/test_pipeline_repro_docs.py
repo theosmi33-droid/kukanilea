@@ -68,3 +68,10 @@ def test_checklist_has_success_criteria_and_ownership() -> None:
     assert "## Success Criteria" in text
     assert "## Ownership" in text
     assert "dev-ci" in text
+
+
+def test_readme_documents_runtime_default_data_location() -> None:
+    text = _read(README)
+    assert "Data location (macOS)" in text
+    assert "~/Library/Application Support/KUKANILEA/" in text
+    assert "KUKANILEA_USER_DATA_ROOT" in text
