@@ -157,7 +157,8 @@ class ActionRegistry:
             if any(not str(v).strip() for v in required_values):
                 policy_issues.append(action_id)
 
-        non_derivable = sorted(action_id for action_id in self.actions if action_id not in self.derivable_action_ids())
+        derivable_action_ids = self.derivable_action_ids()
+        non_derivable = sorted(action_id for action_id in self.actions if action_id not in derivable_action_ids)
         return ActionRegistryValidationSummary(
             duplicate_action_ids=(),
             incomplete_policy_action_ids=tuple(sorted(policy_issues)),
