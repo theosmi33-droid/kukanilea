@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from tests.time_utils import utc_now_iso
 
 
@@ -69,3 +71,9 @@ def test_projects_page_shows_degraded_state_on_backend_failure(tmp_path, monkeyp
     assert "Eingeschränkter Betrieb" in body
     assert 'id="project-hub"' in body
     assert "traceback" not in body.lower()
+
+
+def test_dashboard_review_pipeline_badge_uses_white_mode_classes() -> None:
+    template = Path("app/templates/dashboard.html").read_text(encoding="utf-8")
+    assert "bg-primary-50 text-primary-700 border border-primary-100" in template
+    assert "bg-primary-600 text-white" not in template
