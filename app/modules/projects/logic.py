@@ -1615,15 +1615,35 @@ class ProjectManager:
             con.close()
 
         linked_task_id_raw = card["linked_task_id"]
-        linked_task_id = int(linked_task_id_raw) if linked_task_id_raw is not None else None
+        linked_task_id: int | None = None
+        if linked_task_id_raw is not None:
+            try:
+                linked_task_id = int(linked_task_id_raw)
+            except (TypeError, ValueError):
+                linked_task_id = None
 
-        timer_entry = timer_start_fn(
-            tenant_id=tenant_id,
-            user=actor,
-            project_id=None,
-            task_id=linked_task_id,
-            note=f"Project Hub Card {card_id}: {card['title']}",
-        )
+        note = f"Project Hub Card {card_id}: {card['title']}"
+        try:
+            timer_entry = timer_start_fn(
+                tenant_id=tenant_id,
+                user=actor,
+                project_id=None,
+                task_id=linked_task_id,
+                note=note,
+            )
+        except ValueError as exc:
+            # Keep timer start tolerant for cards with stale linked task ids.
+            if linked_task_id is not None and str(exc) == "task_not_found":
+                linked_task_id = None
+                timer_entry = timer_start_fn(
+                    tenant_id=tenant_id,
+                    user=actor,
+                    project_id=None,
+                    task_id=None,
+                    note=note,
+                )
+            else:
+                raise
 
         con2 = self.db._db()
         try:
