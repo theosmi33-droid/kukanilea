@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Callable
-import uuid
 
 from app.mia_audit import (
     MIA_EVENT_CONFIRM_DENIED,
+    MIA_EVENT_CONFIRM_GRANTED,
     MIA_EVENT_CONFIRM_REQUESTED,
     MIA_EVENT_EXECUTION_FINISHED,
     MIA_EVENT_EXECUTION_STARTED,
@@ -102,6 +103,21 @@ FLOW_CATALOG: tuple[FlowDefinition, ...] = (
 )
 
 
+MIA_FLOW_AUDIT_EVENT_MATRIX: dict[str, dict[str, tuple[str, ...]]] = {
+    "email_to_task": {
+        "plan": (MIA_EVENT_PROPOSAL_CREATED, MIA_EVENT_CONFIRM_REQUESTED),
+        "execute_confirmed": (
+            MIA_EVENT_CONFIRM_GRANTED,
+            MIA_EVENT_EXECUTION_STARTED,
+            "mia.step.started",
+            "mia.step.simulated",
+            MIA_EVENT_EXECUTION_FINISHED,
+        ),
+        "execute_unconfirmed": (MIA_EVENT_CONFIRM_DENIED,),
+    }
+}
+
+
 class MiaFlowEngine:
     """Small, testable flow planner for cross-tool MIA ROI flows."""
 
@@ -132,6 +148,11 @@ class MiaFlowEngine:
         flow_plan = self._build_flow_plan(trigger_n, payload)
         if not flow_plan:
             return {"status": "ignored", "reason": "no_matching_flow", "trigger": trigger_n}
+
+        flow_plan = {
+            **flow_plan,
+            "steps": self._normalize_steps_for_write_policy(flow_plan.get("steps", [])),
+        }
 
         proposal_id = f"mia-{uuid.uuid4().hex[:10]}"
         now = datetime.now(UTC).isoformat(timespec="seconds")
@@ -169,6 +190,19 @@ class MiaFlowEngine:
             )
         return proposal
 
+    def _normalize_steps_for_write_policy(self, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        normalized_steps: list[dict[str, Any]] = []
+        for step in steps:
+            normalized = dict(step)
+            action = str(normalized.get("action") or "")
+            action_def = self.registered_actions.get(action)
+            if action_def and action_def.kind == "write":
+                normalized["confirm_required"] = True
+            else:
+                normalized["confirm_required"] = bool(normalized.get("confirm_required", False))
+            normalized_steps.append(normalized)
+        return normalized_steps
+
     def execute(self, proposal_id: str, *, confirmed: bool) -> dict[str, Any]:
         proposal = self._proposals.get(proposal_id)
         if proposal is None:
@@ -178,6 +212,8 @@ class MiaFlowEngine:
         if proposal.get("confirm_points") and not confirmed:
             self._audit(MIA_EVENT_CONFIRM_DENIED, proposal_id, {"reason": "explicit_confirm_required", "tenant_id": tenant_id})
             return {"status": "confirmation_required", "proposal_id": proposal_id}
+        if proposal.get("confirm_points") and confirmed:
+            self._audit(MIA_EVENT_CONFIRM_GRANTED, proposal_id, {"tenant_id": tenant_id})
 
         self._audit(MIA_EVENT_EXECUTION_STARTED, proposal_id, {"flow_id": proposal.get("flow_id"), "tenant_id": tenant_id})
         results: list[dict[str, Any]] = []

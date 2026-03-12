@@ -59,6 +59,26 @@ def test_license_upload_endpoint_not_blocked(tmp_path: Path, monkeypatch) -> Non
     assert resp.status_code != 403
 
 
+def test_license_upload_write_allowed_in_read_only_and_returns_validation_error(tmp_path: Path, monkeypatch) -> None:
+    app = _app(tmp_path, monkeypatch)
+    app.config["READ_ONLY"] = True
+    app.config["LICENSE_REASON"] = "license_blocked_smb_unreachable"
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "ADMIN"
+        sess["tenant_id"] = "KUKANILEA"
+        sess["csrf_token"] = "test-csrf"
+
+    resp = client.post(
+        "/admin/settings/license/upload",
+        data={"license_json": "{}", "confirm": "YES", "csrf_token": "test-csrf"},
+    )
+    body = resp.get_json()
+    assert resp.status_code == 400
+    assert body["error"] == "invalid_license"
+
+
 def test_auth_prefix_does_not_allow_path_traversal_bypass(tmp_path: Path, monkeypatch) -> None:
     app = _app(tmp_path, monkeypatch)
     app.config["READ_ONLY"] = True

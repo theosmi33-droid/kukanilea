@@ -4,7 +4,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-
 _LICENSE_STATE_PATH = Path(__file__).resolve().parents[2] / "app" / "license_state.py"
 _LICENSE_SPEC = importlib.util.spec_from_file_location("license_state", _LICENSE_STATE_PATH)
 assert _LICENSE_SPEC and _LICENSE_SPEC.loader
@@ -68,6 +67,16 @@ def test_recover_to_active_when_smb_available() -> None:
     assert out["status"] == "active"
     assert out["reason"] == "recovered"
     assert out["transition"] == "recover->active"
+
+
+def test_recover_waits_in_read_only_when_smb_unavailable() -> None:
+    out = evaluate_license_state(
+        LicenseInputs(valid=True, expired=False, device_mismatch=False, status_hint="recover", smb_reachable=False)
+    )
+    assert out["status"] == "recover"
+    assert out["read_only"] is True
+    assert out["reason"] == "recover_waiting_smb"
+    assert out["transition"] == "recover->recover"
 
 
 def test_device_mismatch_forces_blocked() -> None:
