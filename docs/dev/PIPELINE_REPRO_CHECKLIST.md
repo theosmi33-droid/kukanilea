@@ -74,6 +74,7 @@ Lokale Verifikation ist dann "CI-nah", wenn folgende Signale lokal ebenfalls gr√
 - `lint-and-scan`
 - `pr-quality-guard`
 - `test` (oder betroffene Teilmenge bei Doku-only PR)
+- bei CI-Laufzeitoptimierungen: ausgelagerte Suites weiter √ºber `quality-gates` absichern (`tests/contracts`, `tests/integration/test_end_to_end_core_smoke.py`)
 
 ## Day-2 Routine
 
