@@ -1774,9 +1774,7 @@ class ProjectManager:
             task = self._fetch_task(con, task_id)
             if not task:
                 raise ValueError("task_not_found")
-            if str(task.get("tenant_id") or "") != tenant_id and not self._role_allows(
-                actor_role, "ADMIN"
-            ):
+            if str(task.get("tenant_id") or "") != tenant_id:
                 raise PermissionError("cross_tenant_forbidden")
 
             if action in {"accept", "start"}:
@@ -1815,8 +1813,8 @@ class ProjectManager:
                 if actor != assignee and not self._role_allows(actor_role, "MANAGER"):
                     raise PermissionError("delegate_forbidden")
                 con.execute(
-                    "UPDATE team_tasks SET assigned_to=?, status='OPEN', updated_at=? WHERE id=?",
-                    (to_user, self._now_iso(), task_id),
+                    "UPDATE team_tasks SET assigned_to=?, status='OPEN', updated_at=? WHERE id=? AND tenant_id=?",
+                    (to_user, self._now_iso(), task_id, tenant_id),
                 )
                 self._log_task_event(
                     con,

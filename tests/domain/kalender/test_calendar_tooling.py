@@ -93,17 +93,16 @@ def test_create_event_emits_audit_event(tmp_path, monkeypatch):
     assert audits[0]["payload"]["created_by"] == "tester"
 
 
-def test_calendar_tool_rejects_mismatched_tenant(monkeypatch):
+def test_calendar_find_slot_blocks_mismatched_tenant(monkeypatch):
     monkeypatch.setattr("app.tools.calendar_tools.get_tenant_id", lambda: "KUKANILEA")
     tool = CalendarFindFreeSlotTool()
 
-    try:
-        tool.run(
-            tenant_id="OTHER",
-            window_start="2026-04-03T09:00:00Z",
-            window_end="2026-04-03T10:00:00Z",
-        )
-    except PermissionError as exc:
-        assert str(exc) == "tenant_mismatch"
-    else:
-        raise AssertionError("Expected tenant_mismatch PermissionError")
+    response = tool.run(
+        tenant_id="OTHER",
+        window_start="2026-04-03T09:00:00Z",
+        window_end="2026-04-03T10:00:00Z",
+    )
+
+    assert response["status"] == "blocked"
+    assert response["error"] == "tenant_mismatch"
+    assert response["action"] == "calendar.find_free_slot"
