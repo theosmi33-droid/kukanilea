@@ -1,5 +1,5 @@
-from pathlib import Path
 import re
+from pathlib import Path
 
 
 def _read(path: str) -> str:
@@ -45,3 +45,21 @@ def test_command_palette_stays_local_and_does_not_embed_external_targets() -> No
     assert "http://" not in js
     assert "https://" not in js
     assert "javascript:" not in js.lower()
+
+
+def test_command_palette_primary_order_contract() -> None:
+    js = _read("app/static/js/command_palette.js")
+    ordered_ids = [
+        "nav-dash",
+        "nav-upload",
+        "nav-email",
+        "nav-messenger",
+        "nav-calendar",
+        "nav-tasks",
+        "nav-time",
+        "nav-projects",
+        "nav-visualizer",
+        "nav-settings",
+    ]
+    positions = [js.index(f"id: '{command_id}'") for command_id in ordered_ids]
+    assert positions == sorted(positions)

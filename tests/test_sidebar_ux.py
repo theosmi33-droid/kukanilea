@@ -180,3 +180,21 @@ def test_sidebar_icon_sprite_references_exist() -> None:
 
     assert refs
     assert refs <= symbols
+
+
+def test_sidebar_primary_tab_order_contract() -> None:
+    html = Path("app/templates/partials/sidebar.html").read_text(encoding="utf-8")
+    ordered_keys = [
+        "dashboard",
+        "upload",
+        "email",
+        "messenger",
+        "calendar",
+        "tasks",
+        "time",
+        "projects",
+        "visualizer",
+        "settings",
+    ]
+    positions = [html.index(f"'key': '{key}'") for key in ordered_keys]
+    assert positions == sorted(positions)
