@@ -143,6 +143,22 @@ def test_upload_flow_uses_formdata_and_csrf_token() -> None:
     assert 'formData.append("csrf_token", csrfToken);' in html
 
 
+def test_upload_flow_requests_json_contract_response() -> None:
+    html = Path("app/templates/upload.html").read_text(encoding="utf-8")
+
+    assert 'xhr.setRequestHeader("Accept", "application/json");' in html
+    assert 'if (csrfToken) xhr.setRequestHeader("X-CSRF-Token", csrfToken);' in html
+
+
+def test_upload_flow_maps_read_only_errors_to_actionable_copy() -> None:
+    html = Path("app/templates/upload.html").read_text(encoding="utf-8")
+
+    assert "const mapUploadErrorMessage = (xhr) => {" in html
+    assert 'if (errorCode === "read_only") {' in html
+    assert "Upload ist aktuell gesperrt. Bitte Lizenz in den Einstellungen aktualisieren." in html
+    assert "} else { handleError(mapUploadErrorMessage(xhr)); }" in html
+
+
 def test_upload_flow_falls_back_on_json_parse_failure() -> None:
     html = Path("app/templates/upload.html").read_text(encoding="utf-8")
 
