@@ -74,6 +74,7 @@ Lokale Verifikation ist dann "CI-nah", wenn folgende Signale lokal ebenfalls gr√
 - `lint-and-scan`
 - `pr-quality-guard`
 - `test` (oder betroffene Teilmenge bei Doku-only PR)
+- optionaler Release-Statusabgleich √ºber `RELEASE_READINESS_CURRENT_MAIN.md`
 
 ## Day-2 Routine
 
