@@ -80,7 +80,7 @@ python run.py server --host 127.0.0.1 --port 5051
 
 ## Data location (macOS)
 By default, all writable data is stored under:
-`~/Kukanilea/data/` (or configured via `KUKANILEA_USER_DATA_ROOT`)
+`~/Library/Application Support/KUKANILEA/` (or configured via `KUKANILEA_USER_DATA_ROOT`)
 
 See [CHANGELOG.md](CHANGELOG.md) for full details on the recent overhaul.
 

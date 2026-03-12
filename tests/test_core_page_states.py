@@ -73,6 +73,17 @@ def test_projects_page_shows_degraded_state_on_backend_failure(tmp_path, monkeyp
     assert "traceback" not in body.lower()
 
 
+def test_projects_page_renders_loading_state_shell(tmp_path, monkeypatch):
+    app = _make_app(tmp_path, monkeypatch)
+    client = _auth_client(app)
+
+    response = client.get("/projects")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Lade Aufgaben…" in body
+    assert "data-cards-loading" in body
+
+
 def test_dashboard_review_pipeline_badge_uses_white_mode_classes() -> None:
     template = Path("app/templates/dashboard.html").read_text(encoding="utf-8")
     assert "bg-primary-50 text-primary-700 border border-primary-100" in template
