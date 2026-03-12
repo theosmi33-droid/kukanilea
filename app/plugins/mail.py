@@ -72,6 +72,20 @@ class MailAgent:
     def _system_settings_path(self) -> Path:
         return Config.USER_DATA_ROOT / "system_settings.json"
 
+    @staticmethod
+    def _setting_enabled(value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "on", "yes"}:
+                return True
+            if normalized in {"0", "false", "off", "no", ""}:
+                return False
+        if isinstance(value, int):
+            return value == 1
+        return False
+
     def _external_translation_enabled(self) -> bool:
         settings_file = self._system_settings_path()
         if not settings_file.exists():
@@ -82,7 +96,9 @@ class MailAgent:
             return False
         if not isinstance(payload, dict):
             return False
-        return bool(payload.get("external_apis_enabled")) and bool(payload.get("external_translation_enabled"))
+        return self._setting_enabled(payload.get("external_apis_enabled")) and self._setting_enabled(
+            payload.get("external_translation_enabled")
+        )
 
     def _deadline_text(self, opt: MailOptions) -> str:
         if not opt.set_deadline:

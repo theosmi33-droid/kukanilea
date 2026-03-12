@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -9,6 +10,19 @@ from app.modules.kalender.contracts import build_appointment_proposal
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _proposal_ref(*, source: str, thread_id: str, title: str, sender: str) -> str:
+    seed = "|".join(
+        [
+            source.strip().lower(),
+            thread_id.strip().lower(),
+            title.strip().lower(),
+            sender.strip().lower(),
+        ]
+    )
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+    return f"intake-proposal-{digest}"
 
 
 @dataclass(slots=True)
@@ -78,6 +92,7 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
             )
 
     title = subject or (snippets[0] if snippets else "Neue Anfrage")
+    proposal_ref = _proposal_ref(source=source, thread_id=thread_id, title=title, sender=sender)
     suggested_actions = [
         {
             "type": "create_task",
@@ -87,6 +102,13 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
             "calendar_hint": str(payload.get("calendar_hint") or "").strip() or None,
             "requires_confirm": True,
             "read_only": True,
+            "proposal_ref": proposal_ref,
+            "trace": {
+                "source": source,
+                "thread_id": thread_id,
+                "sender": sender,
+                "title": title,
+            },
         }
     ]
     proposal = build_appointment_proposal(
