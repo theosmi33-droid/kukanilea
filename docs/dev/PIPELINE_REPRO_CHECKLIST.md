@@ -33,13 +33,15 @@ Wenn nur ein kurzer Funktionscheck nötig ist:
 - `bash scripts/dev_bootstrap.sh --fast`
 - `./scripts/ops/healthcheck.sh`
 
-## Support-Playbook (operativ, current main)
+## Troubleshooting-Matrix
+
+_Support-Playbook (operativ, current main)_
 
 | Symptom | Wahrscheinliche Ursache | Konkreter Fix |
 |---|---|---|
 | `Interpreter drift detected` im Healthcheck | Healthcheck läuft nicht mit `.venv` | `PYTHON=.venv/bin/python scripts/ops/healthcheck.sh` |
-| `pytest is not installed for interpreter` | Globaler Python statt Projekt-`.venv` | `.venv` aktivieren oder `PYTHON=.venv/bin/python` setzen und Bootstrap erneut laufen lassen |
-| `Optional dependency 'playwright' not available` | Python-Paket `playwright` fehlt | `PYTHON=.venv/bin/python scripts/dev/doctor.sh --strict` und anschließend `PYTHON=.venv/bin/python -m playwright install --with-deps chromium` |
+| `pytest is not installed for interpreter` / `pytest not found` | Globaler Python statt Projekt-`.venv` | `.venv` aktivieren oder `PYTHON=.venv/bin/python` setzen und Bootstrap erneut laufen lassen |
+| `Optional dependency 'playwright' not available` / `Playwright browser missing` | Python-Paket `playwright` fehlt oder Browser nicht installiert | `PYTHON=.venv/bin/python scripts/dev/doctor.sh --strict` und anschließend `PYTHON=.venv/bin/python -m playwright install --with-deps chromium` |
 | DB-/Seed-Fehler bei `seed_demo_data.py` oder Migration | Zielpfad nicht beschreibbar oder DB-Lock | Schreibbaren DB-Pfad verwenden (z. B. via `KUKANILEA_AUTH_DB`) und Seed/Migration erneut starten |
 | Evidence Gate FAIL | Pflichtartefakte wurden im Lauf nicht erzeugt | `scripts/ops/healthcheck.sh` und danach `scripts/ops/launch_evidence_gate.sh --fast` erneut ausführen |
 
