@@ -348,4 +348,17 @@ def _build_proposed_actions(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "confidence": float(task.get("confidence") or 0.5),
             }
         )
+
+    if not actions:
+        classification = payload.get("classification") if isinstance(payload.get("classification"), dict) else {}
+        actions.append(
+            {
+                "type": "manual_review",
+                "title": "Dokument manuell prüfen",
+                "reason": "no_actionable_entities",
+                "classification_label": str(classification.get("label") or "unknown"),
+                "confidence": 0.3,
+            }
+        )
+
     return actions
