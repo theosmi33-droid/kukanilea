@@ -94,7 +94,8 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
         project=payload.get("project_hint"),
         starts_at=payload.get("due_date"),
     )
-    if proposal.get("starts_at"):
+    has_calendar_context = bool(str(payload.get("calendar_hint") or "").strip())
+    if proposal.get("starts_at") or has_calendar_context:
         suggested_actions.append(proposal)
 
     diary_text = str(payload.get("diary_text") or payload.get("message") or "").strip()
