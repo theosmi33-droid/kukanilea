@@ -124,6 +124,36 @@ def test_messenger_chat_write_intent_requires_confirm(monkeypatch):
     assert body["requires_confirm"] is True
 
 
+
+
+def test_messenger_chat_marks_permission_based_write_action_confirm_required(monkeypatch):
+    app = _messenger_app()
+    client = app.test_client()
+
+    import app.routes.messenger as messenger_route
+
+    monkeypatch.setattr(
+        messenger_route,
+        "agent_answer",
+        lambda _msg: {
+            "ok": True,
+            "text": "done",
+            "actions": [{"type": "sync_status", "permission": "write"}],
+        },
+    )
+
+    response = client.post(
+        "/api/chat",
+        json={"msg": "zeige status"},
+        headers={"X-CSRF-Token": "csrf-test"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+
+    assert body["requires_confirm"] is True
+    assert body["actions"][0]["confirm_required"] is True
+    assert body["actions"][0]["requires_confirm"] is True
+
 def test_messenger_chat_blocks_prompt_injection():
     app = _messenger_app()
     client = app.test_client()
