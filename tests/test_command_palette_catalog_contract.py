@@ -60,6 +60,7 @@ def test_command_palette_primary_order_contract() -> None:
         "nav-projects",
         "nav-visualizer",
         "nav-settings",
+        "nav-assistant",
     ]
     positions = [js.index(f"id: '{command_id}'") for command_id in ordered_ids]
     assert positions == sorted(positions)
