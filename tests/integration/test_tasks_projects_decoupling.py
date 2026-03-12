@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from app import create_app
 from app.modules.projects.logic import ProjectManager
 
@@ -261,6 +263,54 @@ def test_update_task_column_legacy_fallback_blocks_cross_tenant_move(tmp_path, m
     assert row is not None
     assert row["column_name"] == "To Do"
 
+
+def test_execute_task_command_blocks_cross_tenant_for_admin_role(tmp_path, monkeypatch):
+    app, _client = _bootstrap(tmp_path, monkeypatch)
+    pm = ProjectManager(app.extensions["auth_db"])
+
+    _ensure_membership(app, tenant_id="TENANT_B", username="bob", role="ADMIN")
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute(
+            """
+            INSERT OR REPLACE INTO team_tasks(
+                id, tenant_id, board_id, project_id, project_board_id, project_card_id,
+                title, description, priority, due_at, status, created_by, assigned_to,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            """,
+            (
+                "team-task-admin-cross-tenant",
+                "TENANT_A",
+                "board-a",
+                "project-a",
+                "board-a",
+                "",
+                "Cross Tenant Team Task",
+                "",
+                "MEDIUM",
+                None,
+                "OPEN",
+                "alice",
+                "alice",
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    with app.test_request_context("/"):
+        from flask import session
+
+        session["user"] = "bob"
+        session["role"] = "ADMIN"
+        session["tenant_id"] = "TENANT_B"
+
+        with pytest.raises(PermissionError, match="cross_tenant_forbidden"):
+            pm.execute_task_command({"action": "start", "task_id": "team-task-admin-cross-tenant"})
 
 def test_update_task_column_team_tasks_path_blocks_cross_tenant_move(tmp_path, monkeypatch):
     app, _client = _bootstrap(tmp_path, monkeypatch)
