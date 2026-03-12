@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from app.core.mia_cross_tool_flows import MiaFlowEngine, RegisteredAction
+from app.core.mia_cross_tool_flows import (
+    MIA_FLOW_AUDIT_EVENT_MATRIX,
+    MiaFlowEngine,
+    RegisteredAction,
+)
 
 
 def test_flow_catalog_contains_roi_flows() -> None:
@@ -202,6 +206,30 @@ def test_step_level_audit_is_emitted_for_email_to_task_execution() -> None:
     event_types = [entry["event_type"] for entry in engine.audit_log]
     assert "mia.step.started" in event_types
     assert "mia.step.simulated" in event_types
+
+
+def test_email_to_task_audit_event_matrix_complete() -> None:
+    engine = MiaFlowEngine()
+    proposal = engine.plan(
+        "email.received",
+        {
+            "tenant": "KUKANILEA",
+            "subject": "TODO: Angebot senden",
+            "body": "Bitte heute noch.",
+            "email_id": "mail-matrix-1",
+        },
+    )
+
+    plan_event_types = [entry["event_type"] for entry in engine.audit_log]
+    for event_type in MIA_FLOW_AUDIT_EVENT_MATRIX["email_to_task"]["plan"]:
+        assert event_type in plan_event_types
+
+    executed = engine.execute(proposal["proposal_id"], confirmed=True)
+    assert executed["status"] == "executed"
+
+    execute_event_types = [entry["event_type"] for entry in engine.audit_log]
+    for event_type in MIA_FLOW_AUDIT_EVENT_MATRIX["email_to_task"]["execute_confirmed"]:
+        assert event_type in execute_event_types
 
 
 def test_inquiry_flow_requires_confirm_before_write_steps_execute() -> None:

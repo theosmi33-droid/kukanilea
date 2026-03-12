@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from app.mia_audit import (
     MIA_EVENT_CONFIRM_DENIED,
+    MIA_EVENT_CONFIRM_GRANTED,
     MIA_EVENT_CONFIRM_REQUESTED,
     MIA_EVENT_EXECUTION_FINISHED,
     MIA_EVENT_EXECUTION_STARTED,
@@ -100,6 +101,21 @@ FLOW_CATALOG: tuple[FlowDefinition, ...] = (
         value="Aufgaben mit Zeitbezug werden direkt als Kalender-Vorschlag vorbereitet.",
     ),
 )
+
+
+MIA_FLOW_AUDIT_EVENT_MATRIX: dict[str, dict[str, tuple[str, ...]]] = {
+    "email_to_task": {
+        "plan": (MIA_EVENT_PROPOSAL_CREATED, MIA_EVENT_CONFIRM_REQUESTED),
+        "execute_confirmed": (
+            MIA_EVENT_CONFIRM_GRANTED,
+            MIA_EVENT_EXECUTION_STARTED,
+            "mia.step.started",
+            "mia.step.simulated",
+            MIA_EVENT_EXECUTION_FINISHED,
+        ),
+        "execute_unconfirmed": (MIA_EVENT_CONFIRM_DENIED,),
+    }
+}
 
 
 class MiaFlowEngine:
@@ -196,6 +212,8 @@ class MiaFlowEngine:
         if proposal.get("confirm_points") and not confirmed:
             self._audit(MIA_EVENT_CONFIRM_DENIED, proposal_id, {"reason": "explicit_confirm_required", "tenant_id": tenant_id})
             return {"status": "confirmation_required", "proposal_id": proposal_id}
+        if proposal.get("confirm_points") and confirmed:
+            self._audit(MIA_EVENT_CONFIRM_GRANTED, proposal_id, {"tenant_id": tenant_id})
 
         self._audit(MIA_EVENT_EXECUTION_STARTED, proposal_id, {"flow_id": proposal.get("flow_id"), "tenant_id": tenant_id})
         results: list[dict[str, Any]] = []
