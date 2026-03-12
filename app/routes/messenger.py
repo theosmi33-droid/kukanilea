@@ -5,17 +5,22 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from app.auth import current_tenant, login_required
-from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
-from app.contracts.tool_contracts import build_tool_summary, extract_chat_message, normalize_chat_response
-from app.ai.intent_analyzer import detect_standard_request, detect_write_intent
-from app.ai.guardrails import validate_prompt
-from app.security.gates import detect_injection
-from app.security import csrf_protected
-from app.rate_limit import chat_limiter
 from app.agents.orchestrator import answer as agent_answer
+from app.ai.guardrails import validate_prompt
+from app.ai.intent_analyzer import detect_standard_request, detect_write_intent
+from app.auth import current_tenant, login_required
+from app.contracts.tool_contracts import (
+    build_tool_summary,
+    extract_chat_message,
+    normalize_chat_response,
+)
 from app.modules.messenger import parse_chat_intake
+from app.rate_limit import chat_limiter
+from app.security import csrf_protected
+from app.security.approval import action_requires_approval
+from app.security.gates import detect_injection
 from app.security.untrusted_input import assess_untrusted_input
+from app.web import _is_hx_partial_request, _render_base, _render_sovereign_tool
 
 logger = logging.getLogger("kukanilea.messenger")
 bp = Blueprint("messenger", __name__)
@@ -110,7 +115,11 @@ def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]
     for action in actions or []:
         item = dict(action)
         action_type = str(item.get("type") or "")
-        is_write = action_type in WRITE_ACTIONS or action_type.startswith(WRITE_PREFIXES)
+        is_write = action_requires_approval(
+            action_type=action_type,
+            permission=str(item.get("permission") or ""),
+            risk=str(item.get("risk") or ""),
+        )
         if is_write:
             item["confirm_required"] = True
             item["requires_confirm"] = True
@@ -190,11 +199,14 @@ def api_chat():
         actions = _enforce_confirm_gate(ans.get("actions", []))
         write_intent = detect_write_intent(msg)
         intake = parse_chat_intake(msg, actions)
+        action_requires_confirm = any(
+            bool(action.get("confirm_required") or action.get("requires_confirm")) for action in actions
+        )
         if write_intent:
             actions = _enforce_confirm_gate(actions)
             _audit_chat_event("chat_confirm_required", meta={"write_intent": True, "action_count": len(actions)})
         ans["actions"] = actions
-        if write_intent:
+        if write_intent or action_requires_confirm:
             ans["requires_confirm"] = True
         ans.setdefault("data", {})
         if isinstance(ans["data"], dict):

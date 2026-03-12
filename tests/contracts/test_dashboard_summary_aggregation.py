@@ -101,3 +101,23 @@ def test_collect_dashboard_summary_marks_non_blocking_degradation_without_outage
     assert details["degraded_non_blocking"] == ["chatbot"]
     assert details["degraded_blocking"] == []
     assert details["unavailable_tools"] == []
+
+
+def test_collect_dashboard_summary_normalizes_unknown_status_to_error(monkeypatch) -> None:
+    original = contracts.build_tool_summary
+
+    def _summary_with_unknown_status(tool: str, tenant: str = "default") -> dict:
+        payload = original(tool, tenant)
+        if tool == "email":
+            payload["status"] = "unknown"
+        return payload
+
+    monkeypatch.setattr(contracts, "build_tool_summary", _summary_with_unknown_status)
+
+    metrics, details, reason = contracts._collect_dashboard_summary("KUKANILEA")
+
+    assert reason == "tool_summary_partial_outage"
+    assert metrics["error_tools"] == 1
+    assert "email" in details["errors"]
+    assert "email" in details["unavailable_tools"]
+    assert details["aggregation_errors"]["email"] == "error"
