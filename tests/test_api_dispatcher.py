@@ -35,6 +35,7 @@ def test_dispatcher_skips_online_probe_without_lexoffice_key(tmp_path, monkeypat
     db_path = tmp_path / "auth.sqlite3"
     _create_queue_db(db_path)
 
+    monkeypatch.setenv("KUKANILEA_EXTERNAL_CALLS_ENABLED", "1")
     monkeypatch.setattr(api_dispatcher.Config, "LEXOFFICE_API_KEY", "")
 
     def _fail_online_probe():

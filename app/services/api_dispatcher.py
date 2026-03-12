@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -13,6 +14,17 @@ from app.config import Config
 from app.core.lexoffice import LexofficeClient
 
 logger = logging.getLogger("kukanilea.api_dispatcher")
+
+
+def external_calls_enabled() -> bool:
+    """Global offline-first guard for outbound dispatcher calls."""
+    return str(os.getenv("KUKANILEA_EXTERNAL_CALLS_ENABLED", "0")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
 
 def is_online() -> bool:
     """Checks if the system is online by pinging a reliable target."""
@@ -40,6 +52,10 @@ class APIDispatcher:
         return any(job["target_system"] == "lexoffice" for job in jobs)
 
     def process_queue(self):
+        if not external_calls_enabled():
+            logger.info("External calls disabled by policy. Skipping queue processing.")
+            return
+
         con = sqlite3.connect(self.db_path)
         con.row_factory = sqlite3.Row
         try:
