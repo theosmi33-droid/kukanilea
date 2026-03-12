@@ -7,12 +7,16 @@ const CommandPalette = {
   filtered: [],
   commands: [
     { id: 'nav-dash', title: 'Übersicht', subtitle: 'Zur Startübersicht', keywords: 'dashboard home', href: '/dashboard' },
-    { id: 'nav-projects', title: 'Projekte', subtitle: 'Projektstatus und Steuerung', keywords: 'projects kunden', href: '/projects' },
-    { id: 'nav-tasks', title: 'Aufgaben', subtitle: 'To-Dos und Workflows', keywords: 'tasks todos', href: '/tasks' },
     { id: 'nav-upload', title: 'Hochladen', subtitle: 'Neue Dokumente verarbeiten', keywords: 'upload dokumente', href: '/upload' },
-    { id: 'nav-messenger', title: 'Messenger', subtitle: 'Teamkommunikation', keywords: 'chat messages', href: '/messenger' },
-    { id: 'nav-assistant', title: 'KI Assistant', subtitle: 'Mit dem Assistenten arbeiten', keywords: 'assistant ai', href: '/assistant' },
+    { id: 'nav-email', title: 'E-Mails', subtitle: 'Postfach und Entwürfe', keywords: 'email postfach mail', href: '/email' },
+    { id: 'nav-messenger', title: 'Nachrichten', subtitle: 'Teamkommunikation', keywords: 'chat messenger messages', href: '/messenger' },
+    { id: 'nav-calendar', title: 'Kalender', subtitle: 'Termine und Erinnerungen', keywords: 'calendar termine', href: '/calendar' },
+    { id: 'nav-tasks', title: 'Aufgaben', subtitle: 'To-Dos und Workflows', keywords: 'tasks todos', href: '/tasks' },
+    { id: 'nav-time', title: 'Zeiterfassung', subtitle: 'Zeiten buchen und prüfen', keywords: 'time zeiterfassung', href: '/time' },
+    { id: 'nav-projects', title: 'Projekte', subtitle: 'Projektstatus und Steuerung', keywords: 'projects kunden', href: '/projects' },
+    { id: 'nav-visualizer', title: 'Analyseansicht', subtitle: 'Dokumente und Daten analysieren', keywords: 'visualizer analyse excel docs', href: '/visualizer' },
     { id: 'nav-settings', title: 'Einstellungen', subtitle: 'System konfigurieren', keywords: 'settings admin', href: '/settings' },
+    { id: 'nav-assistant', title: 'KI Assistant', subtitle: 'Mit dem Assistenten arbeiten', keywords: 'assistant ai', href: '/assistant' },
   ],
 
   init() {
