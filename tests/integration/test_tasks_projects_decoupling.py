@@ -205,6 +205,165 @@ def test_execute_task_command_prefers_project_board_id_over_legacy_alias(tmp_pat
     assert row["project_card_id"] == "card-zeta-1"
 
 
+
+
+def test_start_timer_for_card_links_task_to_time_entry(tmp_path, monkeypatch):
+    app, _client = _bootstrap(tmp_path, monkeypatch)
+    tenant_id = "KUKANILEA"
+    _ensure_membership(app, tenant_id=tenant_id)
+    pm = ProjectManager(app.extensions["auth_db"])
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    try:
+        con.execute(
+            "INSERT OR REPLACE INTO tenants(tenant_id, display_name, created_at) VALUES (?, ?, datetime('now'))",
+            (tenant_id, tenant_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    project_id = pm.create_project(tenant_id=tenant_id, name="Timer Project")
+    board_id = pm.create_board(project_id, "Execution", tenant_id=tenant_id, actor="dev")
+    columns = pm.list_columns(board_id, tenant_id=tenant_id)
+    todo_column_id = str(columns[0]["id"])
+    card = pm.create_card(
+        tenant_id=tenant_id,
+        board_id=board_id,
+        column_id=todo_column_id,
+        title="Verkabelung vorbereiten",
+        actor="dev",
+    )
+
+    linked = pm.link_card_task(
+        tenant_id=tenant_id,
+        card_id=str(card["id"]),
+        actor="dev",
+        task_id=314,
+    )
+    assert linked["linked_task_id"] == 314
+
+    captured: dict[str, object] = {}
+
+    def fake_timer_start(**kwargs):
+        captured.update(kwargs)
+        return {"id": 99, "task_id": kwargs.get("task_id"), "note": kwargs.get("note")}
+
+    timer_entry = pm.start_timer_for_card(
+        tenant_id=tenant_id,
+        card_id=str(card["id"]),
+        actor="dev",
+        timer_start_fn=fake_timer_start,
+    )
+
+    assert captured["tenant_id"] == tenant_id
+    assert captured["task_id"] == 314
+    assert timer_entry["task_id"] == 314
+
+
+def test_start_timer_for_card_falls_back_when_linked_task_id_is_stale(tmp_path, monkeypatch):
+    app, _client = _bootstrap(tmp_path, monkeypatch)
+    tenant_id = "KUKANILEA"
+    _ensure_membership(app, tenant_id=tenant_id)
+    pm = ProjectManager(app.extensions["auth_db"])
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    try:
+        con.execute(
+            "INSERT OR REPLACE INTO tenants(tenant_id, display_name, created_at) VALUES (?, ?, datetime('now'))",
+            (tenant_id, tenant_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    project_id = pm.create_project(tenant_id=tenant_id, name="Timer Project")
+    board_id = pm.create_board(project_id, "Execution", tenant_id=tenant_id, actor="dev")
+    columns = pm.list_columns(board_id, tenant_id=tenant_id)
+    card = pm.create_card(
+        tenant_id=tenant_id,
+        board_id=board_id,
+        column_id=str(columns[0]["id"]),
+        title="Stale Link",
+        actor="dev",
+    )
+    pm.link_card_task(
+        tenant_id=tenant_id,
+        card_id=str(card["id"]),
+        actor="dev",
+        task_id=999_999,
+    )
+
+    seen_task_ids: list[int | None] = []
+
+    def fake_timer_start(**kwargs):
+        seen_task_ids.append(kwargs.get("task_id"))
+        if kwargs.get("task_id") is not None:
+            raise ValueError("task_not_found")
+        return {"id": 101, "task_id": None}
+
+    timer_entry = pm.start_timer_for_card(
+        tenant_id=tenant_id,
+        card_id=str(card["id"]),
+        actor="dev",
+        timer_start_fn=fake_timer_start,
+    )
+
+    assert seen_task_ids == [999_999, None]
+    assert timer_entry["task_id"] is None
+
+
+def test_start_timer_for_card_ignores_non_numeric_linked_task_id(tmp_path, monkeypatch):
+    app, _client = _bootstrap(tmp_path, monkeypatch)
+    tenant_id = "KUKANILEA"
+    _ensure_membership(app, tenant_id=tenant_id)
+    pm = ProjectManager(app.extensions["auth_db"])
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    try:
+        con.execute(
+            "INSERT OR REPLACE INTO tenants(tenant_id, display_name, created_at) VALUES (?, ?, datetime('now'))",
+            (tenant_id, tenant_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    project_id = pm.create_project(tenant_id=tenant_id, name="Timer Project")
+    board_id = pm.create_board(project_id, "Execution", tenant_id=tenant_id, actor="dev")
+    columns = pm.list_columns(board_id, tenant_id=tenant_id)
+    card = pm.create_card(
+        tenant_id=tenant_id,
+        board_id=board_id,
+        column_id=str(columns[0]["id"]),
+        title="Invalid Link",
+        actor="dev",
+    )
+
+    con = sqlite3.connect(app.config["AUTH_DB"])
+    try:
+        con.execute("UPDATE project_cards SET linked_task_id = ? WHERE id = ?", ("not-a-number", str(card["id"])))
+        con.commit()
+    finally:
+        con.close()
+
+    captured: dict[str, object] = {}
+
+    def fake_timer_start(**kwargs):
+        captured.update(kwargs)
+        return {"id": 102, "task_id": kwargs.get("task_id")}
+
+    timer_entry = pm.start_timer_for_card(
+        tenant_id=tenant_id,
+        card_id=str(card["id"]),
+        actor="dev",
+        timer_start_fn=fake_timer_start,
+    )
+
+    assert captured["task_id"] is None
+    assert timer_entry["task_id"] is None
+
+
 def test_update_task_column_legacy_fallback_blocks_cross_tenant_move(tmp_path, monkeypatch):
     app, _client = _bootstrap(tmp_path, monkeypatch)
     pm = ProjectManager(app.extensions["auth_db"])
