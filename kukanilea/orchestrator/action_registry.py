@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from dataclasses import dataclass, field
 from itertools import product
 from typing import Iterable, Mapping
-import warnings
 
 WRITE_VERBS = {
     "create",
