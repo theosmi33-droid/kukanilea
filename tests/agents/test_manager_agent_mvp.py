@@ -159,6 +159,28 @@ def test_write_with_foreign_user_approval_is_blocked() -> None:
     assert "denied" in result.audit_event["audit_states"]
 
 
+def test_write_with_foreign_tenant_approval_is_blocked() -> None:
+    bus = EventBus()
+    agent = ManagerAgent(event_bus=bus)
+
+    first = agent.route("Bitte erstelle eine Aufgabe für morgen", {"tenant": "TENANT_A", "user": "alice"})
+    approval_id = first.audit_event["approval_id"]
+    approved = agent.approvals.approve(approval_id, tenant="TENANT_A", approver_user="security-admin")
+    assert approved is not None
+
+    result = agent.route(
+        "Bitte erstelle eine Aufgabe für morgen",
+        {"tenant": "TENANT_B", "user": "alice", "approval_id": approval_id},
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert result.reason == "approval_tenant_mismatch"
+    assert bus.events[-1]["event_type"] == "manager_agent.confirm_blocked"
+    assert "blocked" in result.audit_event["audit_states"]
+    assert "denied" in result.audit_event["audit_states"]
+
+
 def test_write_with_expired_approval_is_blocked_and_audited() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
 
