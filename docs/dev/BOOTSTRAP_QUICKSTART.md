@@ -116,10 +116,11 @@ git diff -- docs/dev/BOOTSTRAP_QUICKSTART.md README.md
 
 Leitlinie: erst `rg`/`grep -n`, dann kleine Ausschnitte/targeted diffs; keine absoluten Pfade und keine ungerichteten Full-File/Tree-Ausgaben.
 
-## Known issues / Fallback
+## Known Issues (current main)
 
-- Wenn DB-Schreiben blockiert ist (read-only FS/DB-Lock), kann `seed_demo_data.py` fehlschlagen.
-- Fallback:
-  1. Read-only Fixtures verwenden (Smoke weiterhin ausführbar).
-  2. Demo-Daten via manuellem SQL-Import in eine beschreibbare SQLite-Datei einspielen.
-  3. Danach `KUKANILEA_AUTH_DB` auf diese Datei zeigen lassen und Seed erneut starten.
+- **Schreibschutz/Lock auf SQLite-Dateien:** `scripts/seed_demo_data.py` und Migrationen können fehlschlagen, wenn das Projektverzeichnis oder die Ziel-DB read-only ist.
+  - **Fallback:** in eine beschreibbare Arbeitskopie wechseln oder `KUKANILEA_AUTH_DB` auf eine beschreibbare SQLite-Datei setzen und Seed erneut ausführen.
+- **Interpreter-Drift:** `scripts/ops/healthcheck.sh` bricht ab, wenn nicht der `.venv`-Interpreter genutzt wird.
+  - **Fallback:** Healthcheck explizit mit `PYTHON=.venv/bin/python scripts/ops/healthcheck.sh` starten.
+- **Playwright lokal nicht verfügbar:** E2E-Tests werden außerhalb CI ohne Python-`playwright` ausgelassen.
+  - **Fallback:** `PYTHON=.venv/bin/python scripts/dev/doctor.sh --strict` ausführen und danach `python -m playwright install --with-deps chromium` im `.venv` nachziehen.
