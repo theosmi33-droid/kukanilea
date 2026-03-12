@@ -19,8 +19,8 @@ def test_layout_keeps_mobile_bottom_nav_and_topbar_in_shell() -> None:
     assert "{% include 'partials/topbar.html' %}" in html
     assert 'class="mobile-bottom-nav"' in html
     assert 'data-route="/dashboard"' in html
-    assert 'data-route="/projects"' in html
-    assert 'data-route="/tasks"' in html
+    assert 'data-route="/upload"' in html
+    assert 'data-route="/email"' in html
     assert 'data-route="/messenger"' in html
 
 

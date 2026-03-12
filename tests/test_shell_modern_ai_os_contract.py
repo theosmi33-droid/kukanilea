@@ -22,14 +22,27 @@ def test_topbar_keeps_white_mode_chip_visible_in_shell() -> None:
     assert "White Mode" in html
 
 
-def test_sidebar_contains_workspace_core_communication_and_system_sections() -> None:
+def test_sidebar_contains_workspace_and_primary_navigation_entries() -> None:
     html = _read("app/templates/partials/sidebar.html")
 
     assert "sidebar-workspace" in html
-    assert "Core" in html
-    assert "Kommunikation" in html
-    assert "System" in html
-    assert "Assistenz" in html
+    for nav_key in [
+        "dashboard",
+        "upload",
+        "email",
+        "messenger",
+        "calendar",
+        "tasks",
+        "time",
+        "projects",
+        "visualizer",
+        "settings",
+        "assistant",
+    ]:
+        if nav_key == "assistant":
+            assert 'data-nav-key="assistant"' in html
+            continue
+        assert f"'key': '{nav_key}'" in html
 
 
 def test_sidebar_uses_sprite_icons_and_data_route_metadata() -> None:
