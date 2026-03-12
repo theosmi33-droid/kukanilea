@@ -1,6 +1,7 @@
-import pytest
 import re
-from flask import url_for
+
+import pytest
+
 from app.auth import hash_password
 from tests.time_utils import utc_now_iso
 
@@ -66,3 +67,19 @@ def test_dashboard_focus_management(client):
     html = response.get_data(as_text=True)
     # Main content should be focusable via skip link target
     assert 'id="app-main" tabindex="-1"' in html
+
+
+@pytest.mark.parametrize(
+    "path, expected_title",
+    [
+        ("/assistant", "Assistant"),
+        ("/time", "Zeiterfassung"),
+        ("/admin/mesh", "Mesh-Admin"),
+    ],
+)
+def test_inline_fragment_pages_have_descriptive_page_titles(client, path, expected_title):
+    response = client.get(path)
+    html = response.get_data(as_text=True)
+    title = re.search(r"<title>(.*?)</title>", html, flags=re.IGNORECASE | re.DOTALL)
+    assert title is not None
+    assert expected_title in title.group(1)
