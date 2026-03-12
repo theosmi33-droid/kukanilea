@@ -13,8 +13,9 @@ def _read_kv_report(path: Path) -> dict[str, str]:
         line = line.strip()
         if not line or "=" not in line:
             continue
-        key, value = line.split("=", 1)
-        data[key.strip()] = value.strip()
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key:
+            data[key] = value
     return data
 
 
@@ -72,13 +73,19 @@ def _validate_restore(report: dict[str, str], allow_warn: bool) -> list[str]:
         "restore_report",
     )
 
-    if report.get("integrity_check") not in {"ok", "warn_missing_checksum", "warn_missing_metadata"}:
+    allowed_integrity = {"ok", "warn_missing_checksum", "warn_missing_metadata"} if allow_warn else {"ok"}
+    if report.get("integrity_check") not in allowed_integrity:
         errors.append(
-            f"restore_report: unsupported integrity_check '{report.get('integrity_check', '<missing>')}'"
+            "restore_report: integrity_check must be "
+            f"{sorted(allowed_integrity)} but was '{report.get('integrity_check', '<missing>')}'"
         )
 
-    if report.get("verify_db") != "ok":
-        errors.append(f"restore_report: verify_db must be 'ok' but was '{report.get('verify_db', '<missing>')}'")
+    allowed_verify_db = {"ok", "warn_missing_sqlite3"} if allow_warn else {"ok"}
+    if report.get("verify_db") not in allowed_verify_db:
+        errors.append(
+            "restore_report: verify_db must be "
+            f"{sorted(allowed_verify_db)} but was '{report.get('verify_db', '<missing>')}'"
+        )
     if report.get("verify_files") != "ok":
         errors.append(
             f"restore_report: verify_files must be 'ok' but was '{report.get('verify_files', '<missing>')}'"
