@@ -12,11 +12,14 @@ pip install -r requirements.txt
 pip install pyinstaller
 
 echo Running PyInstaller...
-pyinstaller --noconfirm --onedir --windowed --name "KUKANILEA" ^
+pyinstaller --noconfirm --clean --onefile --name "KUKANILEA" ^
     --add-data "app;app" ^
-    --hidden-import "flask" ^
-    --hidden-import "waitress" ^
-    kukanilea_server.py
+    run.py
 
-echo [SUCCESS] Build finished. Check the 'dist/KUKANILEA' folder.
+if not exist dist\KUKANILEA.exe (
+    echo [ERROR] Build finished but dist\KUKANILEA.exe not found.
+    exit /b 1
+)
+
+echo [SUCCESS] Build finished. Check the 'dist\KUKANILEA.exe' file.
 pause
