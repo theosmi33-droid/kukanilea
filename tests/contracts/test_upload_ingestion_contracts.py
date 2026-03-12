@@ -54,3 +54,45 @@ def test_upload_ingest_respects_artifact_quota(auth_client, monkeypatch):
     assert response.status_code == 403
     body = response.get_json()
     assert body["error"] == "quota_exceeded"
+
+
+def test_upload_rejects_missing_file_with_error_and_message(auth_client):
+    with auth_client.session_transaction() as sess:
+        sess["csrf_token"] = "csrf-test"
+
+    response = auth_client.post(
+        "/upload",
+        data={"csrf_token": "csrf-test"},
+        headers={"X-CSRF-Token": "csrf-test", "Accept": "application/json"},
+    )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error"] == "no_file"
+    assert isinstance(body.get("message"), str)
+    assert body["message"]
+
+
+def test_upload_rejects_invalid_stream_with_error_and_message(auth_client, monkeypatch):
+    from io import BytesIO
+
+    with auth_client.session_transaction() as sess:
+        sess["csrf_token"] = "csrf-test"
+
+    monkeypatch.setattr(
+        "app.core.upload_pipeline.save_upload_stream",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("invalid_upload_stream")),
+    )
+
+    response = auth_client.post(
+        "/upload",
+        data={"file": (BytesIO(b"bad"), "broken.pdf"), "csrf_token": "csrf-test"},
+        headers={"X-CSRF-Token": "csrf-test", "Accept": "application/json"},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error"] == "invalid_upload_stream"
+    assert isinstance(body.get("message"), str)
+    assert body["message"]
