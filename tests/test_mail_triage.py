@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from app.contracts.tool_contracts import validate_summary_health_pair
 from app.modules.mail.contracts import build_health, build_summary
-from app.modules.mail.logic import classify_message, generate_reply_draft, sla_unanswered_alert
+from app.modules.mail.logic import (
+    classify_message,
+    generate_reply_draft,
+    sla_unanswered_alert,
+)
 
 
 def test_mail_triage_classifies_invoice_keyword() -> None:
@@ -70,5 +75,6 @@ def test_mail_summary_and_health_include_sla_metric() -> None:
 
     assert summary["tool"] == "mail"
     assert summary["metrics"]["sla_unanswered_alerts"] == 1
-    assert health["details"]["checks"]["confirm_gate"] is True
+    assert set(health["details"]["checks"]) == {"summary_contract", "backend_ready", "offline_safe"}
+    assert validate_summary_health_pair(summary, health) == []
     assert code == 200

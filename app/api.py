@@ -4,7 +4,7 @@ import sqlite3
 
 from flask import Blueprint, current_app, jsonify, render_template, request, session
 
-from app.auth import login_required, require_role
+from app.auth import current_role, login_required, require_role
 from app.mail.intake import envelope_from_payload, normalize_intake_payload
 from app.mia_audit import (
     MIA_EVENT_AUDIT_TRAIL_LINKED,
@@ -33,6 +33,10 @@ from app.research.service import generate_summary
 from .rate_limit import search_limiter
 
 bp = Blueprint("api", __name__, url_prefix="/api")
+
+# Access policy for operational endpoints:
+# - /api/health: authenticated users (tenant-scoped runtime health only)
+# - /api/outbound/status: authenticated users, but failure metadata is privileged (ADMIN/DEV)
 
 
 def _tenant() -> str:
@@ -520,6 +524,7 @@ def mesh_handshake():
 
 
 @bp.get("/outbound/status")
+@login_required
 def outbound_status():
     """Returns the current status of the API outbound queue."""
     auth_db = current_app.extensions["auth_db"]
@@ -535,10 +540,13 @@ def outbound_status():
                 "SELECT target_system, error_message, last_attempt FROM api_outbound_queue WHERE status = 'failed' ORDER BY last_attempt DESC LIMIT 5"
             ).fetchall()
 
+            privileged_failure_metadata = current_role() in {"ADMIN", "DEV"}
+
             payload = {
                 "ok": True,
                 "stats": stats,
-                "recent_failed": [dict(r) for r in recent_failed],
+                "recent_failed": [dict(r) for r in recent_failed] if privileged_failure_metadata else [],
+                "recent_failed_redacted": not privileged_failure_metadata,
             }
             accept = (request.headers.get("Accept") or "").lower()
             wants_html = (
