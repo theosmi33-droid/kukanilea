@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.core.mia_cross_tool_flows import MiaFlowEngine
+from app.core.mia_cross_tool_flows import MiaFlowEngine, RegisteredAction
 
 
 def test_flow_catalog_contains_roi_flows() -> None:
@@ -59,6 +59,30 @@ def test_execute_blocks_unconfirmed_write_even_if_step_is_misconfigured() -> Non
     first = result["results"][0]
     assert first["status"] == "blocked"
     assert first["reason"] == "write_requires_confirm"
+
+
+def test_plan_enforces_confirm_required_for_registered_write_actions() -> None:
+    engine = MiaFlowEngine(
+        registered_actions={
+            "create_task": RegisteredAction("create_task", kind="write", offline_safe=True),
+        }
+    )
+    plan = {
+        "flow_id": "custom",
+        "flow_title": "custom",
+        "degradation": "none",
+        "steps": [
+            {
+                "action": "create_task",
+                "confirm_required": False,
+                "mode": "confirm",
+                "payload": {"tenant": "KUKANILEA", "title": "x"},
+            }
+        ],
+    }
+
+    normalized = engine._normalize_steps_for_write_policy(plan["steps"])
+    assert normalized[0]["confirm_required"] is True
 
 
 def test_email_to_task_requires_confirm_and_audit_points() -> None:
