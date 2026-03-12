@@ -26,6 +26,35 @@ def _payload() -> dict:
     }
 
 
+def test_intake_normalize_includes_deterministic_task_proposal_trace(tmp_path, monkeypatch):
+    monkeypatch.setenv("KUKANILEA_AUTH_DB", str(tmp_path / "auth.sqlite3"))
+    monkeypatch.setenv("KUKANILEA_CORE_DB", str(tmp_path / "core.sqlite3"))
+    app = create_app()
+    client = app.test_client()
+
+    _seed_session(client)
+
+    payload = _payload()
+    first = client.post("/api/intake/normalize", json=payload)
+    second = client.post("/api/intake/normalize", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    first_action = first.get_json()["envelope"]["suggested_actions"][0]
+    second_action = second.get_json()["envelope"]["suggested_actions"][0]
+
+    assert first_action["type"] == "create_task"
+    assert first_action["proposal_ref"].startswith("intake-proposal-")
+    assert first_action["proposal_ref"] == second_action["proposal_ref"]
+    assert first_action["trace"] == {
+        "source": payload["source"],
+        "thread_id": payload["thread_id"],
+        "sender": payload["sender"],
+        "title": payload["subject"],
+    }
+
+
 def test_intake_execute_requires_explicit_confirm(tmp_path, monkeypatch):
     monkeypatch.setenv("KUKANILEA_AUTH_DB", str(tmp_path / "auth.sqlite3"))
     monkeypatch.setenv("KUKANILEA_CORE_DB", str(tmp_path / "core.sqlite3"))

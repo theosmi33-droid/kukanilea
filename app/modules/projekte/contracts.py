@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.contracts.tool_contracts import build_contract_response
 from app import core
+from app.contracts.tool_contracts import build_contract_response, build_health_response
 
 
 def build_summary(tenant: str) -> dict:
@@ -42,8 +42,9 @@ def build_health(tenant: str) -> tuple[dict, int]:
 
 
 def create_project(*, tenant: str, name: str, description: str = "") -> dict:
-    from app.modules.projects.logic import ProjectManager
     from flask import current_app
+
+    from app.modules.projects.logic import ProjectManager
 
     manager = ProjectManager(current_app.extensions["auth_db"])
     project_id = manager.create_project(tenant, name, description=description)

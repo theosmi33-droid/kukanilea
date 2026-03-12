@@ -44,6 +44,5 @@ def build_health(tenant: str, *, messages: list[dict] | None = None, sla_hours: 
             "summary_contract": True,
             "backend_ready": True,
             "offline_safe": True,
-            "confirm_gate": True,
         },
     )

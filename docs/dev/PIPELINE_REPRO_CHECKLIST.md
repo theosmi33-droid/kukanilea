@@ -35,13 +35,15 @@ Wenn nur ein kurzer Funktionscheck nötig ist:
 
 ## Troubleshooting-Matrix
 
+_Support-Playbook (operativ, current main)_
+
 | Symptom | Wahrscheinliche Ursache | Konkreter Fix |
 |---|---|---|
-| `pytest not found` | Falscher pyenv Interpreter | `PYENV_VERSION=3.12.0 pytest -q ...` |
-| `Playwright browser missing` | Browser nicht installiert | `playwright install chromium` |
-| Healthcheck rot bei DB | fehlende Migration/lock | `python run.py migrate && retry` |
-| Evidence Gate FAIL | fehlende Pflichtartefakte | Healthcheck + Security Gate erneut ausführen |
-| `gh` liefert auth Fehler | Token/Account nicht aktiv | `gh auth status` + re-login |
+| `Interpreter drift detected` im Healthcheck | Healthcheck läuft nicht mit `.venv` | `PYTHON=.venv/bin/python scripts/ops/healthcheck.sh` |
+| `pytest is not installed for interpreter` / `pytest not found` | Globaler Python statt Projekt-`.venv` | `.venv` aktivieren oder `PYTHON=.venv/bin/python` setzen und Bootstrap erneut laufen lassen |
+| `Optional dependency 'playwright' not available` / `Playwright browser missing` | Python-Paket `playwright` fehlt oder Browser nicht installiert | `PYTHON=.venv/bin/python scripts/dev/doctor.sh --strict` und anschließend `PYTHON=.venv/bin/python -m playwright install --with-deps chromium` |
+| DB-/Seed-Fehler bei `seed_demo_data.py` oder Migration | Zielpfad nicht beschreibbar oder DB-Lock | Schreibbaren DB-Pfad verwenden (z. B. via `KUKANILEA_AUTH_DB`) und Seed/Migration erneut starten |
+| Evidence Gate FAIL | Pflichtartefakte wurden im Lauf nicht erzeugt | `scripts/ops/healthcheck.sh` und danach `scripts/ops/launch_evidence_gate.sh` erneut ausführen |
 
 ## Repro Contract (Do/Don't)
 
@@ -74,14 +76,16 @@ Lokale Verifikation ist dann "CI-nah", wenn folgende Signale lokal ebenfalls gr�
 - `lint-and-scan`
 - `pr-quality-guard`
 - `test` (oder betroffene Teilmenge bei Doku-only PR)
+- optionaler Release-Statusabgleich über `RELEASE_READINESS_CURRENT_MAIN.md`
+- bei CI-Laufzeitoptimierungen: ausgelagerte Suites weiter über `quality-gates` absichern (`tests/contracts`, `tests/integration/test_end_to_end_core_smoke.py`)
+- `policy-baseline-validate` bei Änderungen an `.github/policy/branch_protection_baseline.json`
 
 ## Day-2 Routine
 
-- Täglich vor Arbeitsstart: `gh pr status` + `git pull --ff-only`.
+- Täglich vor Arbeitsstart: `git fetch --all --prune` + `git status --short --branch`.
 - Vor jedem Push: ein lokaler Smokecheck.
 - Bei roten Checks: zuerst Log analysieren, dann minimaler Fix.
-- Bei roten GitHub-Action-Runs: nur actionable Failures prüfen
-  (`main` + offene PR-Branches), keine historische Branch-Historie jagen.
+- Bei roten CI-Runs: nur aktuelle, reproduzierbare Failures bearbeiten (keine historische Branch-Historie).
 
 ## Copy/Paste Command Bundle
 
@@ -97,8 +101,8 @@ scripts/ops/launch_evidence_gate.sh
 scripts/ops/list_actionable_failures.sh
 
 # targeted tests examples
-PYENV_VERSION=3.12.0 pytest -q tests/test_tool_interface.py
-PYENV_VERSION=3.12.0 pytest -q tests/contracts/test_tool_contract_endpoints_presence.py
+PYTHON=.venv/bin/python -m pytest -q tests/test_tool_interface.py
+PYTHON=.venv/bin/python -m pytest -q tests/contracts/test_tool_contract_endpoints_presence.py
 ```
 
 ## Success Criteria
