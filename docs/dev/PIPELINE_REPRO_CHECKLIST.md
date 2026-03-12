@@ -74,6 +74,7 @@ Lokale Verifikation ist dann "CI-nah", wenn folgende Signale lokal ebenfalls gr�
 - `lint-and-scan`
 - `pr-quality-guard`
 - `test` (oder betroffene Teilmenge bei Doku-only PR)
+- optionaler Release-Statusabgleich über `RELEASE_READINESS_CURRENT_MAIN.md`
 - bei CI-Laufzeitoptimierungen: ausgelagerte Suites weiter über `quality-gates` absichern (`tests/contracts`, `tests/integration/test_end_to_end_core_smoke.py`)
 - `policy-baseline-validate` bei Änderungen an `.github/policy/branch_protection_baseline.json`
 
