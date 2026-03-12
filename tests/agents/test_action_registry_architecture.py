@@ -130,3 +130,52 @@ def test_manager_agent_contract_emits_missing_context_audit_payload() -> None:
 def test_cross_tool_flows_failure_contract_avoids_traceback_field() -> None:
     source = Path("kukanilea/orchestrator/cross_tool_flows.py").read_text(encoding="utf-8")
     assert '"traceback":' not in source
+
+
+def test_validation_summary_computes_derivable_ids_once() -> None:
+    class _CountingRegistry(ActionRegistry):
+        def __init__(self) -> None:
+            super().__init__()
+            self.derivable_calls = 0
+
+        def derivable_action_ids(self) -> set[str]:
+            self.derivable_calls += 1
+            return set()
+
+    registry = _CountingRegistry()
+    policy = ActionPolicyMetadata(
+        confirm_required=True,
+        audit_required=True,
+        risk="medium",
+        external_call=False,
+        idempotency="non_idempotent",
+    )
+    registry.register(
+        ActionSpec(
+            action_id="tasks.task.create",
+            domain="tasks",
+            entity="task",
+            verb="create",
+            modifiers=(),
+            tool="tasks",
+            parameter_schema={"title": "str"},
+            policy=policy,
+        )
+    )
+    registry.register(
+        ActionSpec(
+            action_id="tasks.task.update",
+            domain="tasks",
+            entity="task",
+            verb="update",
+            modifiers=(),
+            tool="tasks",
+            parameter_schema={"title": "str"},
+            policy=policy,
+        )
+    )
+
+    summary = registry.validation_summary()
+
+    assert registry.derivable_calls == 1
+    assert summary.non_derivable_action_ids == ("tasks.task.create", "tasks.task.update")
