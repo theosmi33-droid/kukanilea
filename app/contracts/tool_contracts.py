@@ -447,13 +447,21 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
             "read_only": True,
         },
     }
-    degraded_reason = "tool_summary_partial_outage" if unavailable_tools else ""
+    if unavailable_tools:
+        degraded_reason = "tool_summary_partial_outage"
+    elif degraded_tools:
+        degraded_reason = "tool_summary_degraded_non_blocking"
+    else:
+        degraded_reason = ""
     return metrics, details, degraded_reason
 
 
 def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
     list_pending = _core_get("list_pending")
-    from app.modules.upload.document_processing import list_processing_queue, list_recent_uploads
+    from app.modules.upload.document_processing import (
+        list_processing_queue,
+        list_recent_uploads,
+    )
 
     pending: list[dict] | list = []
     degraded_reason = ""
@@ -1052,7 +1060,7 @@ def build_tool_matrix(tenant: str = "default") -> list[dict]:
     for tool in CONTRACT_TOOLS:
         try:
             rows.append(build_tool_summary(tool, tenant))
-        except Exception as exc:
+        except Exception:
             payload = _contract_payload(
                 tool=tool,
                 status="degraded",

@@ -75,3 +75,29 @@ def test_build_tool_matrix_maps_internal_collector_error_to_degraded_row(monkeyp
     assert email_row["degraded_reason"] == "summary_aggregation_failed"
     assert email_row["details"]["aggregation_error"] == "internal_error"
     assert email_row["details"]["tenant"] == "KUKANILEA"
+
+
+def test_collect_dashboard_summary_marks_non_blocking_degradation_without_outage(monkeypatch) -> None:
+    def _summary(tool: str, tenant: str = "default") -> dict:
+        payload = contracts._contract_payload(
+            tool=tool,
+            status="ok",
+            metrics={},
+            details={"tenant": tenant},
+            tenant=tenant,
+        )
+        if tool == "chatbot":
+            payload["status"] = "degraded"
+            payload["degraded_reason"] = "mia_parity_below_baseline"
+        return payload
+
+    monkeypatch.setattr(contracts, "build_tool_summary", _summary)
+
+    metrics, details, reason = contracts._collect_dashboard_summary("KUKANILEA")
+
+    assert reason == "tool_summary_degraded_non_blocking"
+    assert metrics["degraded_tools"] == 1
+    assert details["degraded"] == ["chatbot"]
+    assert details["degraded_non_blocking"] == ["chatbot"]
+    assert details["degraded_blocking"] == []
+    assert details["unavailable_tools"] == []
