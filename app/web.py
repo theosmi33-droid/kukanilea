@@ -1340,7 +1340,12 @@ def _render_base(template_name: str, **kwargs) -> str:
         probe = template_name.lstrip().lower()
         if probe.startswith("<!doctype") or "<html" in probe:
             return template_name
-        inline_wrapper = "{% extends 'layout.html' %}{% block content %}{{ inline_content|safe }}{% endblock %}"
+        kwargs.setdefault("page_title", str(kwargs.get("title") or "").strip())
+        inline_wrapper = (
+            "{% extends 'layout.html' %}"
+            "{% block title %}{{ page_title if page_title else (branding.app_name if branding else 'KUKANILEA') }}{% endblock %}"
+            "{% block content %}{{ inline_content|safe }}{% endblock %}"
+        )
         return render_template_string(inline_wrapper, inline_content=template_name, **kwargs)
 
     return render_template(template_name, **kwargs)
@@ -3489,7 +3494,11 @@ def mesh():
         node["sync"] = "100%"
         node["conflicts"] = 0
 
-    return _render_base(render_template_string(HTML_MESH, nodes=nodes), active_tab="mesh")
+    return _render_base(
+        render_template_string(HTML_MESH, nodes=nodes),
+        active_tab="mesh",
+        page_title="Mesh-Admin",
+    )
 
 
 HTML_MESH = r"""
@@ -4884,7 +4893,7 @@ def assistant():
         kdnr=kdnr,
         n=len(results),
     )
-    return _render_base(html, active_tab="assistant")
+    return _render_base(html, active_tab="assistant", page_title="Assistant")
 
 
 @bp.route("/projects")
@@ -5253,7 +5262,9 @@ def time_tracking():
           <div class='text-lg font-semibold'>Time Tracking</div>
           <div class='muted text-sm mt-2'>Time Tracking ist im Core nicht verfügbar.</div>
         </div>"""
-        return _render_base(html, active_tab="time")
+        return _render_base(html, active_tab="time", page_title="Zeiterfassung")
     return _render_base(
-        render_template_string(HTML_TIME, role=current_role()), active_tab="time"
+        render_template_string(HTML_TIME, role=current_role()),
+        active_tab="time",
+        page_title="Zeiterfassung",
     )
