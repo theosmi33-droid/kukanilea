@@ -398,7 +398,23 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
     aggregation_errors: dict[str, str] = {}
     for tool in non_dashboard_tools:
         try:
-            rows.append(build_tool_summary(tool, tenant))
+            row = build_tool_summary(tool, tenant)
+            if row.get("status") not in CONTRACT_STATUSES:
+                aggregation_errors[tool] = "summary_state_normalized"
+                rows.append(
+                    _contract_payload(
+                        tool=tool,
+                        status="error",
+                        metrics=_as_dict(row.get("metrics"), {"collector_error": 1}),
+                        details={
+                            "tenant": tenant,
+                            "aggregation_error": "invalid_status",
+                        },
+                        tenant=tenant,
+                    )
+                )
+                continue
+            rows.append(row)
         except Exception:
             aggregation_errors[tool] = "summary_aggregation_failed"
             rows.append(
@@ -452,8 +468,12 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
 
 
 def _collect_upload_summary(tenant: str) -> tuple[dict, dict, str]:
+    from app.modules.upload.document_processing import (
+        list_processing_queue,
+        list_recent_uploads,
+    )
+
     list_pending = _core_get("list_pending")
-    from app.modules.upload.document_processing import list_processing_queue, list_recent_uploads
 
     pending: list[dict] | list = []
     degraded_reason = ""
@@ -1052,7 +1072,7 @@ def build_tool_matrix(tenant: str = "default") -> list[dict]:
     for tool in CONTRACT_TOOLS:
         try:
             rows.append(build_tool_summary(tool, tenant))
-        except Exception as exc:
+        except Exception:
             payload = _contract_payload(
                 tool=tool,
                 status="degraded",
