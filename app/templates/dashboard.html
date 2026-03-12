@@ -159,7 +159,7 @@
     <div class="card border-light shadow-sm">
         <div class="card-header border-light">
             <h3 class="card-title text-base">Review Pipeline</h3>
-            {% if items %}<span class="badge bg-primary-600 text-white px-2 py-0.5 rounded-full text-[10px] font-black">{{ items|length }}</span>{% endif %}
+            {% if items %}<span class="badge bg-primary-50 text-primary-700 border border-primary-100 px-2 py-0.5 rounded-full text-[10px] font-black">{{ items|length }}</span>{% endif %}
         </div>
         <div class="card-body flex flex-column gap-4">
             {% if items %}
@@ -167,7 +167,7 @@
                 <div class="card card-interactive border-light hover:border-primary-300 group" onclick="location.href='/review/{{ token }}/kdnr'">
                     <div class="card-body p-4 flex items-center justify-between">
                         <div class="flex items-center gap-4">
-                            <div class="w-2.5 h-2.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] animate-pulse"></div>
+                            <div class="w-2.5 h-2.5 rounded-full bg-primary-500 ring-2 ring-primary-100 animate-pulse"></div>
                             <div>
                                 <div class="font-bold text-sm text-main group-hover:text-primary-600 transition-colors">{{ meta.get(token, {}).get('filename', 'Analysiere Dokument...') }}</div>
                                 <div class="text-[10px] text-muted font-mono mt-0.5">ID: {{ token[:12] }}</div>

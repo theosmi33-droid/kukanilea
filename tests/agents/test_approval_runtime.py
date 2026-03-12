@@ -28,6 +28,31 @@ def test_pending_approval_returns_pending_reason() -> None:
     assert decision.reason == "approval_pending"
 
 
+def test_approved_challenge_blocks_foreign_tenant_on_evaluate() -> None:
+    runtime = ApprovalRuntime()
+    challenge = runtime.create_challenge(
+        tenant="TENANT_A",
+        user="alice",
+        action_id="tasks.task.create",
+        scope="write",
+        params={"title": "Task"},
+    )
+    approved = runtime.approve(challenge.challenge_id, tenant="TENANT_A", approver_user="sec-admin")
+    assert approved is not None
+
+    decision = runtime.evaluate(
+        approval_id=challenge.challenge_id,
+        tenant="TENANT_B",
+        user="alice",
+        action_id="tasks.task.create",
+        scope="write",
+        params={"title": "Task"},
+    )
+
+    assert decision.allowed is False
+    assert decision.reason == "approval_tenant_mismatch"
+
+
 def test_scope_specific_ttl_is_applied_and_expires_approval() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
 
