@@ -43,7 +43,7 @@ _Support-Playbook (operativ, current main)_
 | `pytest is not installed for interpreter` / `pytest not found` | Globaler Python statt Projekt-`.venv` | `.venv` aktivieren oder `PYTHON=.venv/bin/python` setzen und Bootstrap erneut laufen lassen |
 | `Optional dependency 'playwright' not available` / `Playwright browser missing` | Python-Paket `playwright` fehlt oder Browser nicht installiert | `PYTHON=.venv/bin/python scripts/dev/doctor.sh --strict` und anschließend `PYTHON=.venv/bin/python -m playwright install --with-deps chromium` |
 | DB-/Seed-Fehler bei `seed_demo_data.py` oder Migration | Zielpfad nicht beschreibbar oder DB-Lock | Schreibbaren DB-Pfad verwenden (z. B. via `KUKANILEA_AUTH_DB`) und Seed/Migration erneut starten |
-| Evidence Gate FAIL | Pflichtartefakte wurden im Lauf nicht erzeugt | `scripts/ops/healthcheck.sh` und danach `scripts/ops/launch_evidence_gate.sh --fast` erneut ausführen |
+| Evidence Gate FAIL | Pflichtartefakte wurden im Lauf nicht erzeugt | `scripts/ops/healthcheck.sh` und danach `scripts/ops/launch_evidence_gate.sh` erneut ausführen |
 
 ## Repro Contract (Do/Don't)
 
@@ -101,8 +101,8 @@ scripts/ops/launch_evidence_gate.sh
 scripts/ops/list_actionable_failures.sh
 
 # targeted tests examples
-PYTHON=.venv/bin/python pytest -q tests/test_tool_interface.py
-PYTHON=.venv/bin/python pytest -q tests/contracts/test_tool_contract_endpoints_presence.py
+PYTHON=.venv/bin/python -m pytest -q tests/test_tool_interface.py
+PYTHON=.venv/bin/python -m pytest -q tests/contracts/test_tool_contract_endpoints_presence.py
 ```
 
 ## Success Criteria
