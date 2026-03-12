@@ -219,6 +219,47 @@ document.addEventListener("DOMContentLoaded", function() {
   });
 
   const csrfToken = "{{ csrf_token() }}";
+  const mapUploadErrorMessage = (xhr) => {
+    let payload = {};
+    try {
+      payload = JSON.parse(xhr.responseText || "{}");
+    } catch (e) {
+      payload = {};
+    }
+    const nestedError = payload && typeof payload.error === "object" ? payload.error : null;
+    const errorCode = (
+      (typeof payload.error === "string" ? payload.error : "") ||
+      (nestedError ? nestedError.code : "") ||
+      payload.error_code ||
+      ""
+    ).toString();
+    const serverMessage = (
+      (nestedError ? nestedError.message : "") ||
+      payload.message ||
+      ""
+    ).toString();
+
+    if (errorCode === "read_only") {
+      const base = serverMessage || "System ist im Read-only-Modus.";
+      return `${base} Upload ist aktuell gesperrt. Bitte Lizenz in den Einstellungen aktualisieren.`;
+    }
+    if (errorCode === "quota_exceeded") {
+      return serverMessage || "Speicherlimit für Mandant erreicht.";
+    }
+    if (errorCode === "file_too_large" || xhr.status === 413) {
+      return serverMessage || "Datei ist zu groß. Bitte kleinere Datei verwenden.";
+    }
+    if (errorCode === "auth_required" || xhr.status === 401) {
+      return "Sitzung abgelaufen. Bitte neu anmelden und Upload erneut starten.";
+    }
+    if (serverMessage) {
+      return serverMessage;
+    }
+    if (xhr.status === 403) {
+      return "Upload ist aktuell nicht erlaubt. Bitte Berechtigung oder Lizenzstatus prüfen.";
+    }
+    return "Upload fehlgeschlagen.";
+  };
   
   const uploadAction = () => {
     if(stagedFiles.length === 0) return;
@@ -232,6 +273,8 @@ document.addEventListener("DOMContentLoaded", function() {
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/upload", true);
+    xhr.setRequestHeader("Accept", "application/json");
+    if (csrfToken) xhr.setRequestHeader("X-CSRF-Token", csrfToken);
     let targetProgress = 0, currentProgress = 0;
 
     const sim = setInterval(() => {
@@ -289,7 +332,7 @@ document.addEventListener("DOMContentLoaded", function() {
             }, 1000);
           }
         } catch(e) { handleError("Fehlerhafte Server-Antwort."); }
-      } else { handleError("Upload fehlgeschlagen."); }
+      } else { handleError(mapUploadErrorMessage(xhr)); }
     };
 
     const handleError = (msg) => {
