@@ -79,3 +79,12 @@ def test_mail_health_invalid_sla_hours_uses_default(client):
     assert response.status_code == 200
     body = response.get_json()
     assert body["metrics"]["sla_threshold_hours"] == 24
+
+
+def test_mail_health_checks_match_summary_health_schema(client):
+    response = client.get("/api/mail/health")
+
+    assert response.status_code in {200, 503}
+    body = response.get_json()
+    checks = body.get("details", {}).get("checks") or {}
+    assert set(checks.keys()) == {"summary_contract", "backend_ready", "offline_safe"}
