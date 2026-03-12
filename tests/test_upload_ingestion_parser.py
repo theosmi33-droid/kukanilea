@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.modules.upload.ingestion import ingest_unstructured_bytes, ingest_unstructured_input
+from app.modules.upload.ingestion import (
+    ingest_unstructured_bytes,
+    ingest_unstructured_input,
+)
 
 
 def test_ingest_extracts_project_and_task_entities(tmp_path: Path, monkeypatch) -> None:
@@ -142,3 +145,23 @@ def test_ingest_enforces_per_tenant_artifact_quota(tmp_path: Path, monkeypatch) 
         assert str(exc) == "quota_exceeded"
     else:
         raise AssertionError("Expected quota_exceeded when tenant artifact quota is exceeded")
+
+
+def test_ingest_bytes_without_entities_returns_manual_review_action(tmp_path: Path, monkeypatch) -> None:
+    from app.config import Config
+
+    monkeypatch.setattr(Config, "USER_DATA_ROOT", tmp_path)
+
+    payload = ingest_unstructured_bytes(
+        source="text",
+        tenant="tenant-a",
+        payload_bytes=b"Kurzer neutraler Hinweis ohne Aufgabenbezug.",
+        metadata={},
+        filename="hint.txt",
+        content_type="text/plain",
+    )
+
+    assert payload["suggested_tasks"] == []
+    assert payload["proposed_actions"]
+    assert payload["proposed_actions"][0]["type"] == "manual_review"
+    assert payload["proposed_actions"][0]["reason"] == "no_actionable_entities"
