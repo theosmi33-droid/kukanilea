@@ -202,3 +202,29 @@ def test_step_level_audit_is_emitted_for_email_to_task_execution() -> None:
     event_types = [entry["event_type"] for entry in engine.audit_log]
     assert "mia.step.started" in event_types
     assert "mia.step.simulated" in event_types
+
+
+def test_inquiry_flow_requires_confirm_before_write_steps_execute() -> None:
+    engine = MiaFlowEngine()
+    proposal = engine.plan(
+        "inquiry.received",
+        {
+            "tenant": "KUKANILEA",
+            "inquiry_id": "inq-core-001",
+            "subject": "Anfrage Projektstart",
+            "body": "Bitte Aufgabe und Termin anlegen.",
+            "task_title": "Projektstart vorbereiten",
+            "project_name": "Projekt Nord",
+            "suggested_start": "2030-06-01T09:00:00+00:00",
+            "meeting_title": "Kickoff Projekt Nord",
+        },
+    )
+
+    assert proposal["flow_id"] == "inquiry_to_task_project_calendar_proposal"
+    assert proposal["confirm_points"] == [
+        "create_task",
+        "create_project_proposal",
+        "create_calendar_event",
+    ]
+    blocked = engine.execute(proposal["proposal_id"], confirmed=False)
+    assert blocked["status"] == "confirmation_required"

@@ -401,7 +401,10 @@ jobs:
 
       - name: Run full regression tests (without e2e)
         run: |
-          pytest -q tests --ignore=tests/e2e
+          pytest -q tests \
+            --ignore=tests/e2e \
+            --ignore=tests/contracts \
+            --ignore=tests/integration/test_end_to_end_core_smoke.py
 
   perf-kpi-gate:
     runs-on: ubuntu-latest

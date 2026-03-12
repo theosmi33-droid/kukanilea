@@ -306,6 +306,10 @@ def get_default_provider() -> LLMProvider:
         remote_base = _env("KUKANILEA_REMOTE_LLM_BASE", "https://openrouter.ai/api/v1")
         remote_model = _env("KUKANILEA_REMOTE_LLM_MODEL", "openai/gpt-4o-mini")
         remote_key = _env("KUKANILEA_REMOTE_LLM_API_KEY", "")
+        if not remote_key.strip():
+            raise RuntimeError(
+                "KUKANILEA_REMOTE_LLM_ENABLED=1 requires KUKANILEA_REMOTE_LLM_API_KEY"
+            )
         try:
             remote = OpenAICompatibleProvider(remote_base, remote_model, remote_key)
             if remote.available:

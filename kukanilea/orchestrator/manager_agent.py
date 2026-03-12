@@ -692,6 +692,7 @@ class ManagerAgent:
         if result.status in {"blocked", "offline_blocked", "needs_review"}:
             states.append("blocked")
         if result.ok and result.status == "routed":
+            states.append("executed")
             states.append("routed")
         if result.status in {"needs_clarification", "failed"}:
             states.append("failed")
