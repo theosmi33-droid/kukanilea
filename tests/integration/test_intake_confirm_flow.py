@@ -51,6 +51,7 @@ def test_intake_normalize_includes_deterministic_task_proposal_trace(tmp_path, m
         "source": payload["source"],
         "thread_id": payload["thread_id"],
         "sender": payload["sender"],
+        "title": payload["subject"],
     }
 
 

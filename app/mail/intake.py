@@ -107,6 +107,7 @@ def normalize_intake_payload(payload: dict[str, Any]) -> IntakeEnvelope:
                 "source": source,
                 "thread_id": thread_id,
                 "sender": sender,
+                "title": title,
             },
         }
     ]
