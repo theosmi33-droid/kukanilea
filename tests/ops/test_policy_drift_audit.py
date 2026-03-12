@@ -18,10 +18,31 @@ def _load_policy_drift_module():
     return module
 
 
+def _valid_baseline() -> dict:
+    return {
+        "branches": {
+            "main": {
+                "required_approving_review_count": 1,
+                "require_code_owner_reviews": False,
+                "dismiss_stale_reviews": True,
+                "required_conversation_resolution": True,
+                "required_status_checks_strict": True,
+                "required_status_checks": ["test"],
+                "enforce_admins": True,
+                "allow_force_pushes": False,
+                "allow_deletions": False,
+                "block_creations": False,
+                "lock_branch": False,
+                "allow_fork_syncing": False,
+            }
+        }
+    }
+
+
 def test_scope_error_is_treated_as_drift_and_fails(tmp_path: Path, monkeypatch, capsys) -> None:
     audit = _load_policy_drift_module()
     baseline_path = tmp_path / "baseline.json"
-    baseline_path.write_text(json.dumps({"branches": {"main": {}}}), encoding="utf-8")
+    baseline_path.write_text(json.dumps(_valid_baseline()), encoding="utf-8")
 
     monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
     monkeypatch.setenv("POLICY_AUDIT_TOKEN", "token")
@@ -68,7 +89,7 @@ def test_requires_policy_audit_token_and_rejects_github_token_fallback(
 ) -> None:
     audit = _load_policy_drift_module()
     baseline_path = tmp_path / "baseline.json"
-    baseline_path.write_text(json.dumps({"branches": {"main": {}}}), encoding="utf-8")
+    baseline_path.write_text(json.dumps(_valid_baseline()), encoding="utf-8")
 
     monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
     monkeypatch.delenv("POLICY_AUDIT_TOKEN", raising=False)
@@ -80,3 +101,19 @@ def test_requires_policy_audit_token_and_rejects_github_token_fallback(
 
     assert rc == 1
     assert "POLICY_AUDIT_TOKEN is required" in err
+
+
+def test_validate_only_mode_skips_policy_token(tmp_path: Path, monkeypatch, capsys) -> None:
+    audit = _load_policy_drift_module()
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(json.dumps(_valid_baseline()), encoding="utf-8")
+
+    monkeypatch.delenv("POLICY_AUDIT_TOKEN", raising=False)
+    monkeypatch.setenv("POLICY_BASELINE_PATH", str(baseline_path))
+    monkeypatch.setenv("POLICY_BASELINE_VALIDATE_ONLY", "1")
+
+    rc = audit.main()
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Baseline validation passed" in out

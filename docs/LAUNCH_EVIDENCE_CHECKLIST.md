@@ -40,6 +40,25 @@ scripts/ops/launch_evidence_gate.sh | tee /tmp/gate.txt
 
 ---
 
+
+## Kompaktes Evidence-Bundle (current main)
+
+Für einen kleinen, reproduzierbaren Nachweis auf aktuellem `main`:
+
+```bash
+python scripts/ops/release_evidence_bundle.py
+```
+
+Erzeugt:
+- `docs/status/release_evidence/release_evidence_latest.md`
+- `docs/status/release_evidence/release_evidence_latest.json`
+
+Inhalt:
+- Guardrail-Check (`verify_guardrails.py`)
+- Healthcheck ohne Full-Suite (`healthcheck.sh --skip-pytest`)
+- Relevante Release/Security-Tests (targeted pytest)
+- Security-Gate + Packaging-Fingerprints (SHA256 der Packaging-Dateien)
+
 ## Gate 1 — Repo & GitHub Truth (CLI only)
 
 Zweck: Widersprüche aus Web-Zählern ausschließen.
