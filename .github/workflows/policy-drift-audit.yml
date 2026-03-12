@@ -4,12 +4,40 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/policy/branch_protection_baseline.json"
+      - "scripts/ops/policy_drift_audit.py"
+      - ".github/workflows/policy-drift-audit.yml"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  policy-baseline-validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate branch protection baseline structure
+        env:
+          POLICY_BASELINE_PATH: .github/policy/branch_protection_baseline.json
+          POLICY_BASELINE_VALIDATE_ONLY: "1"
+        run: |
+          python scripts/ops/policy_drift_audit.py
+
   policy-audit:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

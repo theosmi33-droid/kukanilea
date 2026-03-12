@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
+from app.agents.context_manager import ContextManager
 from app.agents.llm import get_default_provider
 from app.tools.registry import registry
-from app.agents.context_manager import ContextManager
 
 logger = logging.getLogger("kukanilea.agents.planner")
 
@@ -79,7 +79,7 @@ class Planner:
                 end_idx = action_part.rfind("}")
                 if start_idx != -1 and end_idx != -1:
                     json_str = action_part[start_idx : end_idx + 1]
-                    plan = json.loads(json_str)
+                    plan = self._sanitize_plan(json.loads(json_str))
                     if plan and "tool" in plan:
                         plan["thought"] = thought
                         return plan
@@ -136,6 +136,15 @@ class Planner:
                 },
             }
         return None
+
+    def _sanitize_plan(self, plan: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(plan, dict):
+            return None
+        tool = str(plan.get("tool") or "").strip()
+        params = plan.get("params")
+        if not tool or not isinstance(params, dict):
+            return None
+        return {"tool": tool, "params": params}
 
     def _extract_provider(self, text: str) -> str:
         if "telegram" in text:

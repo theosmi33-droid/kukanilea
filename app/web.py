@@ -4560,7 +4560,7 @@ def upload():
         return redirect(url_for("web.upload_page"))
 
     if not files:
-        return _respond_error({"error": "no_file"}, 400)
+        return _respond_error({"error": "no_file", "message": "Keine Datei übergeben."}, 400)
 
     tenant = _norm_tenant(current_tenant() or "default")
 
@@ -4592,7 +4592,7 @@ def upload():
                 except Exception:
                     pass
                 return _respond_error({"error": "file_too_large", "message": "Datei ist zu gross."}, 413)
-            return _respond_error({"error": "invalid_upload_stream"}, 400)
+            return _respond_error({"error": "invalid_upload_stream", "message": "Upload-Daten konnten nicht verarbeitet werden."}, 400)
 
         result = process_upload(dest, tenant)
         if not result.success:

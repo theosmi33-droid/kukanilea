@@ -98,7 +98,12 @@
                 <button class="del-col btn btn-ghost btn-xs p-1" title="Archive"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>
             </div>
         </header>
-        <div class="cards flex flex-column gap-3 flex-1" data-column-id="{{ col.id }}"></div>
+        <div class="cards flex flex-column gap-3 flex-1" data-column-id="{{ col.id }}">
+          <div class="rounded-xl border border-dashed border-neutral-200 p-4 text-center text-xs text-muted bg-white" data-cards-loading>
+            <strong style="display:block; margin-bottom:4px; color:var(--color-text-main);">Lade Aufgaben…</strong>
+            Board-Daten werden lokal synchronisiert.
+          </div>
+        </div>
       </article>
       {% endfor %}
 
