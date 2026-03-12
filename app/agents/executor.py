@@ -79,7 +79,12 @@ class AgentExecutor:
             )
             raise ValueError(f"Tool '{tool_name}' not found in registry.")
 
-        confirm_required = bool(getattr(tool, "confirm_required", False) or params.get("confirm_required") or params.get("requires_confirm"))
+        confirm_required = bool(
+            getattr(tool, "confirm_required", False)
+            or params.get("confirm_required")
+            or params.get("requires_confirm")
+            or params.get("confirm_gate")
+        )
         confirm_token = params.get("confirm") or params.get("confirmation") or params.get("confirm_token")
         if confirm_required and not confirm_gate(str(confirm_token or "")):
             emit_mia_event_safe(

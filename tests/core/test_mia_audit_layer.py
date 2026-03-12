@@ -111,10 +111,17 @@ def test_executor_blocks_unconfirmed_tool_execution(tmp_path):
     else:
         raise AssertionError("expected confirm_required gate")
 
+    try:
+        executor.execute("tool.mutate", {"tenant_id": "KUKANILEA", "user_id": "alice", "confirm_gate": True})
+    except PermissionError as exc:
+        assert str(exc) == "confirm_required"
+    else:
+        raise AssertionError("expected confirm_gate alias to enforce confirm_required gate")
+
     assert _count_event(db_path, MIA_EVENT_ROUTE_BLOCKED) >= 1
 
     result = executor.execute(
         "tool.mutate",
-        {"tenant_id": "KUKANILEA", "user_id": "alice", "confirm_required": True, "confirm": "CONFIRM"},
+        {"tenant_id": "KUKANILEA", "user_id": "alice", "confirm_gate": True, "confirm": "CONFIRM"},
     )
     assert result["ok"] is True
