@@ -1614,12 +1614,36 @@ class ProjectManager:
         finally:
             con.close()
 
-        timer_entry = timer_start_fn(
-            tenant_id=tenant_id,
-            user=actor,
-            project_id=None,
-            note=f"Project Hub Card {card_id}: {card['title']}",
-        )
+        linked_task_id_raw = card["linked_task_id"]
+        linked_task_id: int | None = None
+        if linked_task_id_raw is not None:
+            try:
+                linked_task_id = int(linked_task_id_raw)
+            except (TypeError, ValueError):
+                linked_task_id = None
+
+        note = f"Project Hub Card {card_id}: {card['title']}"
+        try:
+            timer_entry = timer_start_fn(
+                tenant_id=tenant_id,
+                user=actor,
+                project_id=None,
+                task_id=linked_task_id,
+                note=note,
+            )
+        except ValueError as exc:
+            # Keep timer start tolerant for cards with stale linked task ids.
+            if linked_task_id is not None and str(exc) == "task_not_found":
+                linked_task_id = None
+                timer_entry = timer_start_fn(
+                    tenant_id=tenant_id,
+                    user=actor,
+                    project_id=None,
+                    task_id=None,
+                    note=note,
+                )
+            else:
+                raise
 
         con2 = self.db._db()
         try:
@@ -1632,7 +1656,7 @@ class ProjectManager:
                 details=f"Timer fuer Karte '{card['title']}' gestartet.",
                 board_id=card["board_id"],
                 card_id=card_id,
-                payload={"timer_entry": timer_entry},
+                payload={"timer_entry": timer_entry, "linked_task_id": linked_task_id},
                 importance=6,
             )
             con2.commit()
@@ -1770,9 +1794,7 @@ class ProjectManager:
             task = self._fetch_task(con, task_id)
             if not task:
                 raise ValueError("task_not_found")
-            if str(task.get("tenant_id") or "") != tenant_id and not self._role_allows(
-                actor_role, "ADMIN"
-            ):
+            if str(task.get("tenant_id") or "") != tenant_id:
                 raise PermissionError("cross_tenant_forbidden")
 
             if action in {"accept", "start"}:
@@ -1811,8 +1833,8 @@ class ProjectManager:
                 if actor != assignee and not self._role_allows(actor_role, "MANAGER"):
                     raise PermissionError("delegate_forbidden")
                 con.execute(
-                    "UPDATE team_tasks SET assigned_to=?, status='OPEN', updated_at=? WHERE id=?",
-                    (to_user, self._now_iso(), task_id),
+                    "UPDATE team_tasks SET assigned_to=?, status='OPEN', updated_at=? WHERE id=? AND tenant_id=?",
+                    (to_user, self._now_iso(), task_id, tenant_id),
                 )
                 self._log_task_event(
                     con,
