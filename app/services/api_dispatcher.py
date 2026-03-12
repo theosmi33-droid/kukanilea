@@ -32,11 +32,14 @@ class APIDispatcher:
     def __init__(self, auth_db_path: str):
         self.db_path = auth_db_path
 
-    def process_queue(self):
-        if not is_online():
-            logger.info("System is OFFLINE. Skipping queue processing.")
-            return
+    @staticmethod
+    def _requires_online_probe(jobs: list[sqlite3.Row]) -> bool:
+        """Only probe the internet when lexoffice dispatch is actually possible."""
+        if not Config.LEXOFFICE_API_KEY:
+            return False
+        return any(job["target_system"] == "lexoffice" for job in jobs)
 
+    def process_queue(self):
         con = sqlite3.connect(self.db_path)
         con.row_factory = sqlite3.Row
         try:
@@ -46,6 +49,10 @@ class APIDispatcher:
             ).fetchall()
 
             if not jobs:
+                return
+
+            if self._requires_online_probe(jobs) and not is_online():
+                logger.info("System is OFFLINE. Skipping queue processing.")
                 return
 
             logger.info(f"Processing {len(jobs)} pending API jobs...")
