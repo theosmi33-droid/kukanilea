@@ -10,15 +10,25 @@ from app.mia_audit import (
     MIA_EVENT_EXTERNAL_CALL_BLOCKED,
     MIA_EVENT_INTENT_DETECTED,
     MIA_EVENT_PARAMETER_VALIDATION_FAILED,
+    MIA_EVENT_ROUTE_BLOCKED,
     MIA_EVENT_ROUTE_EXECUTED,
     canonical_mia_payload,
 )
+from app.tools.action_registry import action_registry
 from app.tools.base_tool import BaseTool
 from app.tools.registry import registry
 
 
 class _EchoTool(BaseTool):
     name = "tool.echo"
+
+    def run(self, **kwargs):
+        return {"ok": True, "kwargs": kwargs}
+
+
+class _MutatingTool(BaseTool):
+    name = "tool.mutate"
+    confirm_required = True
 
     def run(self, **kwargs):
         return {"ok": True, "kwargs": kwargs}
@@ -83,3 +93,35 @@ def test_executor_emits_executed_and_blocked_events(tmp_path):
     except ValueError:
         pass
     assert _count_event(db_path, MIA_EVENT_PARAMETER_VALIDATION_FAILED) >= 1
+
+
+def test_executor_blocks_unconfirmed_tool_execution(tmp_path):
+    db_path = tmp_path / "core.sqlite3"
+    Config.CORE_DB = str(db_path)
+    registry.tools.clear()
+    action_registry._actions_by_id.clear()
+    registry.register(_MutatingTool())
+
+    executor = AgentExecutor()
+
+    try:
+        executor.execute("tool.mutate", {"tenant_id": "KUKANILEA", "user_id": "alice", "confirm_required": True})
+    except PermissionError as exc:
+        assert str(exc) == "confirm_required"
+    else:
+        raise AssertionError("expected confirm_required gate")
+
+    try:
+        executor.execute("tool.mutate", {"tenant_id": "KUKANILEA", "user_id": "alice", "confirm_gate": True})
+    except PermissionError as exc:
+        assert str(exc) == "confirm_required"
+    else:
+        raise AssertionError("expected confirm_gate alias to enforce confirm_required gate")
+
+    assert _count_event(db_path, MIA_EVENT_ROUTE_BLOCKED) >= 1
+
+    result = executor.execute(
+        "tool.mutate",
+        {"tenant_id": "KUKANILEA", "user_id": "alice", "confirm_gate": True, "confirm": "CONFIRM"},
+    )
+    assert result["ok"] is True
