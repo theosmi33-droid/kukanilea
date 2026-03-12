@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
-import os
-import urllib.request
 import logging
+import os
 from typing import List, Optional
+
+import requests
 
 logger = logging.getLogger("kukanilea.ai.embeddings")
 
@@ -23,15 +23,15 @@ def generate_embedding(text: str) -> Optional[List[float]]:
     }
 
     try:
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
+        resp = requests.post(
             url,
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST"
+            json=payload,
+            timeout=10.0,
+            headers={"Accept": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=10.0) as resp:
-            res_json = json.loads(resp.read().decode("utf-8"))
+        resp.raise_for_status()
+        res_json = resp.json()
+        if isinstance(res_json, dict):
             embedding = res_json.get("embedding")
             if isinstance(embedding, list):
                 return [float(x) for x in embedding]

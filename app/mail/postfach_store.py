@@ -1286,25 +1286,44 @@ def _find_customer_ids_by_emails(
     if not emails:
         return matched
 
-    placeholders = ",".join("?" for _ in emails)
     customer_cols = _table_columns(con, "customers")
     if _table_exists(con, "customers") and "id" in customer_cols and "tenant_id" in customer_cols:
-        for column_name in ("email", "contact_email", "email_address", "mail"):
-            if column_name not in customer_cols:
-                continue
-            rows = con.execute(
-                f"""
+        column_queries = {
+            "email": """
                 SELECT id
                 FROM customers
                 WHERE tenant_id=?
-                  AND LOWER(TRIM(COALESCE({column_name}, ''))) IN ({placeholders})
-                """,
-                [tenant_id] + emails,
-            ).fetchall()
-            for row in rows:
-                value = str(row["id"] or "").strip()
-                if value:
-                    matched.add(value)
+                  AND LOWER(TRIM(COALESCE(email, '')))=?
+            """,
+            "contact_email": """
+                SELECT id
+                FROM customers
+                WHERE tenant_id=?
+                  AND LOWER(TRIM(COALESCE(contact_email, '')))=?
+            """,
+            "email_address": """
+                SELECT id
+                FROM customers
+                WHERE tenant_id=?
+                  AND LOWER(TRIM(COALESCE(email_address, '')))=?
+            """,
+            "mail": """
+                SELECT id
+                FROM customers
+                WHERE tenant_id=?
+                  AND LOWER(TRIM(COALESCE(mail, '')))=?
+            """,
+        }
+        for column_name in ("email", "contact_email", "email_address", "mail"):
+            if column_name not in customer_cols:
+                continue
+            query = column_queries[column_name]
+            for email in emails:
+                rows = con.execute(query, (tenant_id, email)).fetchall()
+                for row in rows:
+                    value = str(row["id"] or "").strip()
+                    if value:
+                        matched.add(value)
 
     leads_cols = _table_columns(con, "leads")
     if _table_exists(con, "leads") and {
@@ -1312,21 +1331,22 @@ def _find_customer_ids_by_emails(
         "contact_email",
         "customer_id",
     }.issubset(leads_cols):
-        rows = con.execute(
-            f"""
-            SELECT DISTINCT customer_id
-            FROM leads
-            WHERE tenant_id=?
-              AND customer_id IS NOT NULL
-              AND TRIM(customer_id) != ''
-              AND LOWER(TRIM(COALESCE(contact_email, ''))) IN ({placeholders})
-            """,
-            [tenant_id] + emails,
-        ).fetchall()
-        for row in rows:
-            value = str(row["customer_id"] or "").strip()
-            if value:
-                matched.add(value)
+        for email in emails:
+            rows = con.execute(
+                """
+                SELECT DISTINCT customer_id
+                FROM leads
+                WHERE tenant_id=?
+                  AND customer_id IS NOT NULL
+                  AND TRIM(customer_id) != ''
+                  AND LOWER(TRIM(COALESCE(contact_email, '')))=?
+                """,
+                (tenant_id, email),
+            ).fetchall()
+            for row in rows:
+                value = str(row["customer_id"] or "").strip()
+                if value:
+                    matched.add(value)
     return matched
 
 
@@ -1524,17 +1544,17 @@ def get_thread(
         messages = [dict(r) for r in message_rows]
         attachments_by_message: dict[str, list[dict[str, Any]]] = {}
         if messages:
-            message_ids = [str(m.get("id") or "") for m in messages if m.get("id")]
-            placeholders = ",".join("?" for _ in message_ids)
-            params: list[str] = [tenant_id] + message_ids
             rows = con.execute(
-                f"""
-                SELECT id, message_id, filename_redacted, mime_type, size_bytes, content_ref, created_at
-                FROM mailbox_attachments
-                WHERE tenant_id=? AND message_id IN ({placeholders})
-                ORDER BY created_at ASC, id ASC
+                """
+                SELECT a.id, a.message_id, a.filename_redacted, a.mime_type, a.size_bytes, a.content_ref, a.created_at
+                FROM mailbox_attachments a
+                JOIN mailbox_messages m
+                  ON m.id = a.message_id
+                 AND m.tenant_id = a.tenant_id
+                WHERE a.tenant_id=? AND m.thread_id=?
+                ORDER BY a.created_at ASC, a.id ASC
                 """,
-                params,
+                (tenant_id, thread_id),
             ).fetchall()
             for row in rows:
                 item = dict(row)

@@ -199,17 +199,28 @@ def _fetch_row_for_kind(
     if kind in {"task", "time_project", "time_entry"} and core_path.exists():
         con = _connect(core_path)
         try:
-            table_map = {
-                "task": ("tasks", _build_task_fact),
-                "time_project": ("time_projects", _build_time_project_fact),
-                "time_entry": ("time_entries", _build_time_entry_fact),
+            query_map = {
+                "task": ("SELECT * FROM tasks WHERE id=?", _build_task_fact),
+                "time_project": (
+                    "SELECT * FROM time_projects WHERE id=?",
+                    _build_time_project_fact,
+                ),
+                "time_entry": (
+                    "SELECT * FROM time_entries WHERE id=?",
+                    _build_time_entry_fact,
+                ),
             }
-            table, builder = table_map[kind]
+            query, builder = query_map[kind]
+            table = (
+                "tasks"
+                if kind == "task"
+                else "time_projects"
+                if kind == "time_project"
+                else "time_entries"
+            )
             if not _table_exists(con, table):
                 return None
-            row = con.execute(
-                f"SELECT * FROM {table} WHERE id=?", (int(pk),)
-            ).fetchone()
+            row = con.execute(query, (int(pk),)).fetchone()
             if not row:
                 return None
             content, meta = builder(row)
@@ -405,19 +416,21 @@ def search(query: str, limit: int = 6) -> List[Dict[str, Any]]:
         tokens = _tokenize(q)
         if not tokens:
             tokens = [q.lower()]
-        where = " OR ".join("LOWER(content) LIKE ?" for _ in tokens)
-        params = [f"%{t}%" for t in tokens] + [max(1, int(limit))]
+        scan_limit = max(50, max(1, int(limit)) * 20)
         rows = con.execute(
-            f"""
+            """
             SELECT kind, pk, content
             FROM facts_meta
-            WHERE {where}
             ORDER BY updated_at DESC
             LIMIT ?
             """,
-            params,
+            (scan_limit,),
         ).fetchall()
+        max_results = max(1, int(limit))
         for row in rows:
+            content_l = str(row["content"] or "").lower()
+            if not any(token in content_l for token in tokens):
+                continue
             out.append(
                 {
                     "text": str(row["content"]),
@@ -425,6 +438,8 @@ def search(query: str, limit: int = 6) -> List[Dict[str, Any]]:
                     "score": 0.0,
                 }
             )
+            if len(out) >= max_results:
+                break
         return out
     finally:
         con.close()

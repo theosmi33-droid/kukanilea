@@ -10,17 +10,22 @@ If offline, returns a graceful message.
 
 from __future__ import annotations
 
-import json
 import urllib.parse
-import urllib.request
+
+import requests
 
 BERLIN = {"lat": 52.5200, "lon": 13.4050, "name": "Berlin"}
 
 
 def _http_json(url: str, timeout: int = 8) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "KUKANILEA/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    r = requests.get(
+        url,
+        timeout=timeout,
+        headers={"User-Agent": "KUKANILEA/1.0", "Accept": "application/json"},
+    )
+    r.raise_for_status()
+    payload = r.json()
+    return payload if isinstance(payload, dict) else {}
 
 
 def get_berlin_weather_now() -> str:

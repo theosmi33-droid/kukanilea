@@ -4,10 +4,10 @@ import json
 import logging
 import sqlite3
 import time
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+
+import requests
 
 from app.config import Config
 from app.core.lexoffice import LexofficeClient
@@ -18,8 +18,8 @@ def is_online() -> bool:
     """Checks if the system is online by pinging a reliable target."""
     try:
         # Ping Lexoffice API directly or a stable DNS
-        urllib.request.urlopen("https://api.lexoffice.de", timeout=5)
-        return True
+        resp = requests.get("https://api.lexoffice.de", timeout=5)
+        return bool(resp.ok)
     except Exception:
         return False
 
