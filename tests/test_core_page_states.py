@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from tests.time_utils import utc_now_iso
 
 
@@ -80,3 +82,9 @@ def test_projects_page_renders_loading_state_shell(tmp_path, monkeypatch):
     body = response.get_data(as_text=True)
     assert "Lade Aufgaben…" in body
     assert "data-cards-loading" in body
+
+
+def test_dashboard_review_pipeline_badge_uses_white_mode_classes() -> None:
+    template = Path("app/templates/dashboard.html").read_text(encoding="utf-8")
+    assert "bg-primary-50 text-primary-700 border border-primary-100" in template
+    assert "bg-primary-600 text-white" not in template
