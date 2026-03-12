@@ -5,6 +5,7 @@ from pathlib import Path
 README = Path("README.md")
 QUICKSTART = Path("docs/dev/BOOTSTRAP_QUICKSTART.md")
 CHECKLIST = Path("docs/dev/PIPELINE_REPRO_CHECKLIST.md")
+RUNTIME_CONFIG = Path("app/config.py")
 
 
 def _read(path: Path) -> str:
@@ -16,6 +17,17 @@ def test_repro_docs_exist() -> None:
     assert README.exists()
     assert QUICKSTART.exists()
     assert CHECKLIST.exists()
+    assert RUNTIME_CONFIG.exists()
+
+
+def test_readme_data_location_tracks_runtime_user_data_root_contract() -> None:
+    readme = _read(README)
+    runtime_config = _read(RUNTIME_CONFIG)
+
+    assert "## Data location" in readme
+    assert "KUKANILEA_USER_DATA_ROOT" in readme
+    assert "KUKANILEA_USER_DATA_ROOT" in runtime_config
+    assert "user_data_dir(\"KUKANILEA\"" in runtime_config
 
 
 def test_readme_includes_quickstart_under_10_minutes() -> None:
