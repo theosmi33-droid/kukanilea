@@ -1,6 +1,7 @@
-Status: Cannot determine drift.
-Befunde: Due to the `.gitignore` file explicitly ignoring the `.vscode/` directory, I am unable to read or inspect the VS Code configuration files (`settings.json`, `launch.json`) within the `kukanilea_production` directory or any other potential worktrees. Therefore, I cannot directly validate the VS Code interpreter/debug settings or detect any drift.
+Status: Lokal konsistent, Remote-Abgleich aktuell nicht möglich.
 
-Nächster Schritt: Please review the generated `validation_report.md` file. It contains the Codex fix commands to apply the expected settings and a detailed checklist for manual validation.
+Befunde: Die Settings-Texte, lokalen Runtime-Hinweise und Produktstatus-Bezeichnungen wurden auf einen konsistenten Stand gebracht (einheitlich deutsch, lokale Runtime klar benannt). Ein Drift-Abgleich gegen `origin/main` ist in dieser Umgebung nicht möglich, da kein `origin`-Remote konfiguriert ist.
 
-NEEDS_CODEX: yes
+Nächster Schritt: Sobald `origin` wieder verfügbar ist, `git fetch origin --prune` und einen kurzen Diff-/Smoke-Check gegen `origin/main` ausführen.
+
+NEEDS_CODEX: no

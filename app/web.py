@@ -3981,20 +3981,20 @@ HTML_MAIL = """
 HTML_SETTINGS = """
 <div class="grid gap-4">
   <div class="card p-4 rounded-2xl border">
-    <div class="text-lg font-semibold mb-2">DEV Settings</div>
+    <div class="text-lg font-semibold mb-2">Einstellungen & Produktstatus</div>
     <div class="grid gap-3 md:grid-cols-2 text-sm">
       <div>
-        <div class="muted text-xs mb-1">Profile</div>
+        <div class="muted text-xs mb-1">Profil</div>
         <div><strong>{{ profile.name }}</strong></div>
-        <div class="muted text-xs">Base Path: {{ profile.base_path }}</div>
+        <div class="muted text-xs">Lokaler Runtime-Pfad: {{ profile.base_path }}</div>
       </div>
       <div>
-        <div class="muted text-xs mb-1">Core DB</div>
+        <div class="muted text-xs mb-1">Produktdatenbank (Core)</div>
         <div><strong>{{ core_db.path }}</strong></div>
         <div class="muted text-xs">Schema: {{ core_db.schema_version }} · Tenants: {{ core_db.tenants }}</div>
       </div>
       <div>
-        <div class="muted text-xs mb-1">Auth DB</div>
+        <div class="muted text-xs mb-1">Authentifizierungsdatenbank</div>
         <div><strong>{{ auth_db_path }}</strong></div>
         <div class="muted text-xs">Schema: {{ auth_schema }} · Tenants: {{ auth_tenants }}</div>
       </div>
@@ -4029,7 +4029,7 @@ HTML_SETTINGS = """
   </div>
 
   <div class="card p-4 rounded-2xl border">
-    <div class="text-sm font-semibold mb-2">Import (DEV)</div>
+    <div class="text-sm font-semibold mb-2">Import (lokale Runtime)</div>
     <div class="muted text-xs mb-2">IMPORT_ROOT: {{ import_root }}</div>
     <div class="flex flex-wrap gap-2 items-center">
       <button id="runImport" class="rounded-xl px-3 py-2 text-sm btn-outline">Import starten</button>
