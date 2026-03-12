@@ -463,7 +463,12 @@ def _collect_dashboard_summary(tenant: str) -> tuple[dict, dict, str]:
             "read_only": True,
         },
     }
-    degraded_reason = "tool_summary_partial_outage" if unavailable_tools else ""
+    if unavailable_tools:
+        degraded_reason = "tool_summary_partial_outage"
+    elif degraded_tools:
+        degraded_reason = "tool_summary_degraded_non_blocking"
+    else:
+        degraded_reason = ""
     return metrics, details, degraded_reason
 
 
