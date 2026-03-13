@@ -34,6 +34,19 @@ def _call_calendar_export_view(auth_client):
         return export_calendar_ics()
 
 
+def _call_legacy_calendar_export_view(auth_client):
+    from app.web import calendar_export_ics
+
+    app = auth_client.application
+    with app.test_request_context("/calendar/export.ics"):
+        from flask import session
+
+        session["user"] = "admin"
+        session["role"] = "ADMIN"
+        session["tenant_id"] = "KUKANILEA"
+        return calendar_export_ics()
+
+
 def test_calendar_export_view_returns_ics_without_path_metadata(auth_client, tmp_path, monkeypatch):
     feed = tmp_path / "calendar.ics"
     feed.write_bytes(_ics_bytes())
@@ -203,3 +216,28 @@ def test_calendar_blueprint_export_view_uses_constant_attachment_filename(auth_c
     response = _call_calendar_export_view(auth_client)
     assert response.status_code == 200
     assert response.headers.get("Content-Disposition") == "attachment; filename=calendar.ics"
+
+
+def test_calendar_export_view_returns_empty_body_when_policy_blocks(auth_client, monkeypatch):
+    def _blocked_builder(_tenant_id, **_kwargs):
+        raise ValueError("policy_blocked")
+
+    monkeypatch.setattr("app.routes.calendar.knowledge_ics_build_local_feed", _blocked_builder)
+
+    response = _call_calendar_export_view(auth_client)
+    assert response.status_code == 200
+    assert response.get_data() == b""
+
+
+def test_legacy_calendar_export_view_returns_empty_body_when_policy_blocks(
+    auth_client, monkeypatch
+):
+    def _blocked_builder(_tenant_id, **_kwargs):
+        raise ValueError("policy_blocked")
+
+    monkeypatch.setattr("app.knowledge.ics_source.knowledge_ics_build_local_feed", _blocked_builder)
+
+    body, status_code, headers = _call_legacy_calendar_export_view(auth_client)
+    assert status_code == 200
+    assert body == b""
+    assert headers["Content-Type"] == "text/calendar; charset=utf-8"

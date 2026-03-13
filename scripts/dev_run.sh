@@ -81,4 +81,7 @@ if [[ "$SEED_DATA" -eq 1 ]]; then
   "$PYTHON" scripts/seed_dev_users.py
 fi
 
-exec "$PYTHON" kukanilea_app.py --host "$HOST" --port "$PORT" "${EXTRA_ARGS[@]}"
+if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+  exec "$PYTHON" kukanilea_app.py --host "$HOST" --port "$PORT" "${EXTRA_ARGS[@]}"
+fi
+exec "$PYTHON" kukanilea_app.py --host "$HOST" --port "$PORT"

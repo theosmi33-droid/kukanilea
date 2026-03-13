@@ -5093,9 +5093,17 @@ def calendar_export_ics():
     from app.knowledge.ics_source import knowledge_ics_build_local_feed
 
     tenant_id = str(current_tenant() or session.get("tenant_id") or "default")
-    feed_info = knowledge_ics_build_local_feed(tenant_id)
-    feed_path = Path(str(feed_info.get("feed_path") or "")).expanduser()
-    ics_content = feed_path.read_bytes() if feed_path.exists() else b""
+    try:
+        feed_info = knowledge_ics_build_local_feed(tenant_id)
+        feed_path = Path(str(feed_info.get("feed_path") or "")).expanduser()
+        ics_content = feed_path.read_bytes() if feed_path.exists() else b""
+    except ValueError as exc:
+        if str(exc) != "policy_blocked":
+            raise
+        current_app.logger.info(
+            "ICS export blocked by knowledge policy", extra={"tenant_id": tenant_id}
+        )
+        ics_content = b""
     return (
         ics_content,
         200,
