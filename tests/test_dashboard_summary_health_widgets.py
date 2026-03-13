@@ -45,9 +45,20 @@ def test_dashboard_renders_speed_to_lead_and_health_strip(tmp_path, monkeypatch)
 
     body = response.get_data(as_text=True)
     assert 'id="speed-to-lead-widget"' in body
-    assert 'id="speed-to-lead-cards"' in body
+    assert 'id="dashboard-email-new-count"' in body
+    assert 'id="dashboard-email-new-meta"' in body
     assert 'id="system-health-strip"' in body
-    assert 'id="health-strip-tools"' in body
+    assert 'id="dashboard-messenger-unread-count"' in body
+    assert 'id="dashboard-messenger-unread-meta"' in body
+    assert 'id="dashboard-calendar-due-count"' in body
+    assert 'id="dashboard-tasks-open-count"' in body
+    assert 'id="dashboard-time-running-count"' in body
+    assert 'id="dashboard-projects-active-count"' in body
+    assert 'id="dashboard-visualizer-sources-count"' in body
+    assert 'id="dashboard-settings-gated-count"' in body
+    assert "Reiter als Widgets" not in body
+    assert "Mehr anzeigen" not in body
+    assert "Technik-Hinweis" not in body
 
 
 def test_dashboard_widget_script_consumes_summary_and_health_contracts(tmp_path, monkeypatch):
@@ -61,12 +72,18 @@ def test_dashboard_widget_script_consumes_summary_and_health_contracts(tmp_path,
     assert "Promise.allSettled" in body
     assert "_fetchToolSummary" in body
     assert "_fetchJsonWithTimeout('/health'" in body
+    assert "remote_llm_enabled" in body
     assert "REFRESH_INTERVAL_MS" in body
     assert "healthRefreshInFlight" in body
-    assert "matrixRefreshInFlight" in body
-    assert "Mehr anzeigen" in body
-    assert "Eingeschränkt verfügbar" in body
-    assert "Systemhinweis:" in body
+    assert "setInterval(loadSpeedToLeadAndHealth, REFRESH_INTERVAL_MS)" in body
+    assert 'id="dashboard-email-new-count"' in body
+    assert 'id="dashboard-messenger-unread-count"' in body
+    assert "renderCalendarTasks(summaryMap);" in body
+    assert "renderTimeProjects(summaryMap);" in body
+    assert "renderVisualizerSettings(summaryMap);" in body
+    assert "loadToolMatrix" not in body
+    assert "renderToolMatrix" not in body
+    assert "overview-mode-grid" not in body
 
 
 def test_dashboard_summary_contract_for_messenger_and_email_available(tmp_path, monkeypatch):

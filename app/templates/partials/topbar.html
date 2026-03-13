@@ -1,45 +1,42 @@
 <header class="topbar" aria-label="Seitenkopf">
-  <div class="topbar-inner">
+  {% set account_user = (user if user is defined else '') or session.get('user', '') %}
+  {% set account_role = (roles if roles is defined else '') or session.get('role', 'USER') %}
+  {% set workspace_tenant = (active_tenant_id if active_tenant_id is defined else '') or session.get('tenant_id', 'SYSTEM') %}
   <div class="topbar-leading">
-    <button id="mobile-sidebar-toggle" class="btn btn-ghost btn-sm mobile-sidebar-toggle" type="button" aria-label="Menü öffnen" aria-controls="app-sidebar" aria-expanded="false">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-    </button>
-    <div class="topbar-title-group">
-      <p class="topbar-eyebrow">AI OS</p>
-      <h1 class="topbar-title">
-        {% block context_title %}{{ branding.app_name if branding else 'KUKANILEA' }}{% endblock %}
-      </h1>
-    </div>
+    <span class="topbar-chip topbar-workspace" aria-label="Aktiver Workspace">
+      <span class="topbar-workspace-meta">
+        <small>Workspace</small>
+        <strong id="topbar-workspace-id">{{ workspace_tenant }}</strong>
+      </span>
+    </span>
   </div>
 
-  <button id="topbar-search-trigger" type="button" class="topbar-search-container" aria-label="Command Palette öffnen (⌘ K)">
-    <svg class="topbar-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-    <span class="topbar-search-placeholder">Fragen, Tools, Navigation…</span>
-    <kbd class="topbar-shortcut">⌘K</kbd>
-  </button>
+  <div class="topbar-actions topbar-center" aria-label="Statusleiste">
+    <span class="topbar-chip">Uhrzeit: <strong id="topbar-clock">13:58:00</strong></span>
+    <span class="topbar-chip">Online: <strong id="topbar-online-count">1</strong></span>
+    <span class="topbar-chip topbar-timer-chip">
+      Zeit aktiv: <strong id="topbar-running-timer">00:00:00</strong>
+      <button id="topbar-time-hide" type="button" class="topbar-time-toggle" aria-label="Zeit ausblenden" title="Zeit ausblenden">
+        <svg class="topbar-time-icon topbar-time-icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        <svg class="topbar-time-icon topbar-time-icon-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" hidden><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-6.5 0-10-7-10-7a21.78 21.78 0 0 1 5.06-6.94"></path><path d="M1 1l22 22"></path><path d="M9.88 9.88A3 3 0 0 0 12 15a3 3 0 0 0 2.12-.88"></path><path d="M14.12 14.12L9.88 9.88"></path><path d="M10.73 5.08A10.94 10.94 0 0 1 12 5c6.5 0 10 7 10 7a21.3 21.3 0 0 1-2.14 3.19"></path></svg>
+      </button>
+    </span>
+  </div>
 
-  <div class="topbar-actions">
-    {% include 'components/system_status.html' %}
-
-    {% if roles in ['DEV', 'ADMIN'] and all_tenants %}
-    <label class="tenant-switch" aria-label="Aktiver Mandant">
-      <span>Mandant</span>
-      <select class="form-select"
-              name="tenant_id"
-              hx-post="/admin/context/switch"
-              hx-headers='{"X-CSRF-Token": "{{ csrf_token() }}"}'
-              hx-confirm="Mandanten-Kontext wirklich wechseln?"
-              hx-trigger="change"
-              aria-label="Aktiver Mandant">
-          <option value="SYSTEM" {{ 'selected' if active_tenant_id == 'SYSTEM' }}>SYSTEM</option>
-          {% for t in all_tenants %}
-          <option value="{{ t.id }}" {{ 'selected' if active_tenant_id == t.id }}>{{ t.name }}</option>
-          {% endfor %}
-      </select>
-    </label>
+  <div class="topbar-right" aria-label="Nutzeraktionen">
+    <a href="/tasks" id="topbar-notifications" class="topbar-chip topbar-chip-link topbar-notification" aria-label="Mitteilungen öffnen" title="Mitteilungen öffnen">
+      <svg class="topbar-notification-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"></path><path d="M9 17a3 3 0 0 0 6 0"></path></svg>
+      <span class="topbar-notification-label">Mitteilungen</span>
+    </a>
+    {% if account_user and account_user != '-' %}
+    <a href="/settings#profile" class="topbar-chip topbar-chip-link topbar-account" aria-label="Account öffnen" title="Account öffnen">
+      <span class="topbar-account-avatar" aria-hidden="true">{{ account_user[0]|upper }}</span>
+      <span class="topbar-account-meta">
+        <strong>{{ account_user }}</strong>
+        <small>{{ account_role }}</small>
+      </span>
+    </a>
     {% endif %}
-
-    <span class="mode-chip" aria-label="Farbmodus">White Mode</span>
-  </div>
+    <div id="system-status-indicator" hidden aria-hidden="true"><span id="outbound-status-badges"></span></div>
   </div>
 </header>

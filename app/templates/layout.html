@@ -8,7 +8,7 @@
   <link rel="preload" href="/static/css/design-system.css" as="style">
   <link rel="stylesheet" href="/static/css/fonts.css">
   <link rel="stylesheet" href="/static/css/design-system.css">
-  <link rel="stylesheet" href="/static/css/shell-navigation.css">
+  <link rel="stylesheet" href="/static/css/shell-navigation.css?v=20260313d">
   <link rel="stylesheet" href="/static/css/sovereign-shell.css">
   <link rel="preload" href="/static/css/toast.css" as="style">
   <link rel="preload" href="/static/css/motion.css" as="style">
@@ -29,7 +29,7 @@
   <script nonce="{{ csp_nonce() }}" src="/static/js/state.js" defer></script>
   <script nonce="{{ csp_nonce() }}" src="/static/js/htmx.min.js" defer></script>
   <script nonce="{{ csp_nonce() }}" src="/static/js/command_palette.js" defer></script>
-  <script nonce="{{ csp_nonce() }}" src="/static/js/navigation.js" defer></script>
+  <script nonce="{{ csp_nonce() }}" src="/static/js/navigation.js?v=20260313a" defer></script>
   <script nonce="{{ csp_nonce() }}" src="/static/js/ui-shell.js" defer></script>
   <script nonce="{{ csp_nonce() }}" src="/static/js/ui-feedback.js" defer></script>
   <script nonce="{{ csp_nonce() }}" src="/static/js/layout-shell.js" defer></script>
@@ -37,8 +37,17 @@
   <script nonce="{{ csp_nonce() }}">
     (function(){
       try {
-        if (localStorage.getItem('ks_sidebar_collapsed') === '1') {
+        var mobileMax = 768;
+        var autoCollapseMax = 1366;
+        var width = window.innerWidth || document.documentElement.clientWidth || 0;
+        if (width > mobileMax && width <= autoCollapseMax) {
           document.documentElement.classList.add('sidebar-collapsed');
+          localStorage.setItem('ks_sidebar_collapsed', '1');
+        } else if (width > autoCollapseMax) {
+          document.documentElement.classList.remove('sidebar-collapsed');
+          localStorage.setItem('ks_sidebar_collapsed', '0');
+        } else {
+          document.documentElement.classList.remove('sidebar-collapsed');
         }
       } catch (e) {}
     })();
