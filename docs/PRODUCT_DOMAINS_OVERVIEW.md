@@ -2,6 +2,8 @@
 
 Single Source of Truth fuer die 11 Domaenen-Projekte.
 
+Ergaenzende Produktregel fuer Attachment-Integration: siehe `docs/product/ANHAENGE_REITER_ZUORDNUNG.md` (keine neuen Hauptreiter, nur Integration in bestehende Reiter).
+
 ## 0) Ziel des Dokuments
 KUKANILEA wird in 11 Domaenen aufgeteilt. Jede Domaene arbeitet isoliert im eigenen Worktree und liefert klar definierte Funktionen, Schnittstellen und Abnahmeziele.
 
