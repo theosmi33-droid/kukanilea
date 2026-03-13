@@ -5051,23 +5051,167 @@ def assistant():
                 results.append(r)
         except Exception:
             pass
-    html = render_template_string(
-        """
-<div class='card p-5'>
-  <div class='text-lg font-semibold mb-1'>Assistant</div>
-  <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
-    <input class='w-full rounded-xl p-2 input' name='q' value='{{ q|e }}' placeholder='Suche…' />
-    <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{{ kdnr|e }}' placeholder='Kdnr optional' />
-    <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
-  </form>
-  <div class='muted text-xs'>Treffer: {{ n }}</div>
-</div>
-        """,
+
+    module_groups = [
+        {
+            "id": "kommunikation",
+            "title": "Kommunikation",
+            "cards": [
+                {
+                    "title": "E-Mail-Assistent",
+                    "description": "Priorisieren, Antwortvorschläge prüfen und dann bewusst senden.",
+                    "status": "verfügbar",
+                    "action": "Öffnen",
+                    "href": "/email",
+                },
+                {
+                    "title": "Follow-up & Meeting-Assistenz",
+                    "description": "Aus Mails und Threads nächste Schritte und Terminvorschläge ableiten.",
+                    "status": "vorbereitet",
+                    "action": "Zum Postfach",
+                    "href": "/email",
+                },
+                {
+                    "title": "Kommunikationsklarheit",
+                    "description": "Weniger Rückfragen durch klare Zusammenfassungen und Handlungsoptionen.",
+                    "status": "vorbereitet",
+                    "action": "Zum Postfach",
+                    "href": "/email",
+                },
+            ],
+        },
+        {
+            "id": "dokumente",
+            "title": "Dokumente",
+            "cards": [
+                {
+                    "title": "Dokument verstehen",
+                    "description": "Dokumente aufnehmen, prüfen und Folgeaktionen vorbereiten.",
+                    "status": "verfügbar",
+                    "action": "Öffnen",
+                    "href": "/upload",
+                },
+                {
+                    "title": "Ausschreibung analysieren",
+                    "description": "Komplexe Unterlagen strukturieren und priorisierte Prüfschritte anzeigen.",
+                    "status": "vorbereitet",
+                    "action": "Zu Upload",
+                    "href": "/upload",
+                },
+                {
+                    "title": "Review-Vorschläge",
+                    "description": "Transparente Vorschläge statt stiller Vollautomatik.",
+                    "status": "vorbereitet",
+                    "action": "Zu Upload",
+                    "href": "/upload",
+                },
+            ],
+        },
+        {
+            "id": "baustelle",
+            "title": "Baustelle / Messenger",
+            "cards": [
+                {
+                    "title": "Baustellenjournal",
+                    "description": "Verlauf, To-dos und Berichtsentwurf aus Feldkommunikation bündeln.",
+                    "status": "verfügbar",
+                    "action": "Öffnen",
+                    "href": "/messenger",
+                },
+                {
+                    "title": "Chat-/Foto-/Sprachzusammenfassung",
+                    "description": "Unstrukturierte Eingänge in klare Tageszusammenhänge überführen.",
+                    "status": "vorbereitet",
+                    "action": "Zum Messenger",
+                    "href": "/messenger",
+                },
+                {
+                    "title": "To-do-Erkennung",
+                    "description": "Erkannte Folgeaktionen mit Confirm-Gate nachvollziehbar vorbereiten.",
+                    "status": "verfügbar",
+                    "action": "Zum Messenger",
+                    "href": "/messenger",
+                },
+            ],
+        },
+        {
+            "id": "zeit",
+            "title": "Zeit",
+            "cards": [
+                {
+                    "title": "Zeitgedächtnis / Auto-Timeline",
+                    "description": "Zeitkontext für laufende Arbeit lokal vorbereiten und prüfen.",
+                    "status": "vorbereitet",
+                    "action": "Zur Zeiterfassung",
+                    "href": "/time",
+                },
+                {
+                    "title": "Laufende Zeit im Fokus",
+                    "description": "Mobile, ruhige Erfassung mit klaren Aktionen für den Baustellenalltag.",
+                    "status": "verfügbar",
+                    "action": "Zur Zeiterfassung",
+                    "href": "/time",
+                },
+                {
+                    "title": "Export-/DATEV-Nähe",
+                    "description": "Spätere Ausbaustufe für strukturierte Übergaben ohne Medienbruch.",
+                    "status": "geplant",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                },
+            ],
+        },
+        {
+            "id": "wissen",
+            "title": "Wissen / Gedächtnis",
+            "cards": [
+                {
+                    "title": "Memory-Layer",
+                    "description": "Kontext über Mandat und Verlauf konsistent zusammenführen.",
+                    "status": "geplant",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                },
+                {
+                    "title": "Kontext-Nachschlagen",
+                    "description": "Gezielte Suche mit tenant-sicherer Sicht auf vorhandenes Wissen.",
+                    "status": "vorbereitet",
+                    "action": "Schnellsuche",
+                    "href": "/assistant#suche",
+                },
+            ],
+        },
+        {
+            "id": "fokus",
+            "title": "Fokus / Privat",
+            "cards": [
+                {
+                    "title": "Private Local-first To-dos",
+                    "description": "Persönliche Priorisierung ohne Cloud-Zwang im Arbeitskontext.",
+                    "status": "geplant",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                },
+                {
+                    "title": "Fokusmodus",
+                    "description": "Ruhe im Tagesgeschäft durch klare, reduzierte Aufgabenfokussierung.",
+                    "status": "vorbereitet",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                },
+            ],
+        },
+    ]
+
+    return _render_base(
+        "assistant.html",
+        active_tab="assistant",
+        page_title="Assistant",
         q=q,
         kdnr=kdnr,
-        n=len(results),
+        results=results,
+        module_groups=module_groups,
     )
-    return _render_base(html, active_tab="assistant", page_title="Assistant")
 
 
 @bp.route("/projects")
