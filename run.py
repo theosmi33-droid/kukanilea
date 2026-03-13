@@ -57,9 +57,16 @@ def start_server(port: int, host: str):
     # Start the watchdog thread (daemon so it exits when main app exits)
     threading.Thread(target=watchdog_ping, daemon=True).start()
 
-    # Switch to production-ready WSGI server: Waitress
+    # Use poll() to avoid select() fd limits on macOS when many descriptors are open.
     from waitress import serve
-    serve(app, host=host, port=port, threads=8, max_request_body_size=100*1024*1024) # 100MB limit
+    serve(
+        app,
+        host=host,
+        port=port,
+        threads=8,
+        max_request_body_size=100 * 1024 * 1024,  # 100MB limit
+        asyncore_use_poll=True,
+    )
 
 
 def run_maintenance():

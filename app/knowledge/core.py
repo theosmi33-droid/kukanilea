@@ -200,11 +200,32 @@ def _policy_defaults() -> dict[str, Any]:
     }
 
 
+def _ensure_policy_table(con: sqlite3.Connection) -> None:
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS knowledge_source_policies(
+          tenant_id TEXT PRIMARY KEY,
+          allow_manual INTEGER NOT NULL DEFAULT 1,
+          allow_tasks INTEGER NOT NULL DEFAULT 1,
+          allow_projects INTEGER NOT NULL DEFAULT 1,
+          allow_documents INTEGER NOT NULL DEFAULT 0,
+          allow_leads INTEGER NOT NULL DEFAULT 0,
+          allow_email INTEGER NOT NULL DEFAULT 0,
+          allow_calendar INTEGER NOT NULL DEFAULT 0,
+          allow_ocr INTEGER NOT NULL DEFAULT 0,
+          allow_customer_pii INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+
 def knowledge_policy_get(tenant_id: str) -> dict[str, Any]:
     t = _tenant(tenant_id)
     defaults = _policy_defaults()
 
     def _tx(con: sqlite3.Connection) -> dict[str, Any]:
+        _ensure_policy_table(con)
         row = con.execute(
             """
             SELECT tenant_id, allow_manual, allow_tasks, allow_projects, allow_documents,

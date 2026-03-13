@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
 
-from app.auth import hash_password
-from app.config import Config
-from app.db import AuthDB
-
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 def main() -> None:
+    from app.auth import hash_password
+    from app.config import Config
+    from app.db import AuthDB
+
     db = AuthDB(Config.AUTH_DB)
     db.init()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(UTC).isoformat()
     admin_password = secrets.token_urlsafe(18)
     dev_password = secrets.token_urlsafe(18)
 

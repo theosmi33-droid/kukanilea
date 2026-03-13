@@ -108,8 +108,14 @@ def main():
 
     flask_app = create_app()
 
-    # Task 177: Waitress Tuning
-    serve(flask_app, host=args.host, port=args.port, threads=8)
+    # Prefer poll() over select() to avoid fd range crashes on macOS.
+    serve(
+        flask_app,
+        host=args.host,
+        port=args.port,
+        threads=8,
+        asyncore_use_poll=True,
+    )
 
 if __name__ == "__main__":
     main()
