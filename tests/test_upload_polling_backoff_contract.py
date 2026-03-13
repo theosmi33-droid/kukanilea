@@ -110,7 +110,11 @@ def test_upload_flow_sets_human_readable_error_message_in_dom() -> None:
 
     assert "lastErrorMessage = msg;" in html
     assert 'phase.textContent = "Unterbrochen";' in html
-    assert "uploadErrorMessage.innerHTML = `<div class=\"rounded-xl border border-error/20 bg-error-bg p-3 text-sm\">${msg}</div>`;" in html
+    assert "const renderUploadErrorMessage = (msg) => {" in html
+    assert "messageBox.textContent = String(msg || \"\");" in html
+    assert "uploadErrorMessage.appendChild(messageBox);" in html
+    assert "renderUploadErrorMessage(msg);" in html
+    assert "uploadErrorMessage.innerHTML" not in html
     assert 'uploadErrorMessage.style.display = "block";' in html
 
 
