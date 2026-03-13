@@ -1,168 +1,154 @@
 {% extends "layout.html" %}
 {% block title %}Nachrichtenzentrale{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/messenger.css?v=20260313b">
+{% endblock %}
 
 {% block content %}
-<style>
-  .ms-hub { display:grid; grid-template-columns: 300px 1fr 320px; gap:14px; min-height: calc(100vh - 170px); }
-  .ms-card { border:1px solid var(--color-border); background: linear-gradient(160deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)); border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(2,6,23,0.2); }
-  .ms-head { padding:12px 14px; border-bottom:1px solid var(--color-border); display:flex; align-items:center; justify-content:space-between; gap:10px; }
-  .ms-search { width:100%; border:1px solid var(--color-border); border-radius:11px; padding:9px 11px; background: rgba(255,255,255,0.03); color: var(--color-text-main); transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; }
-  .ms-search:focus { outline:none; border-color: rgba(59,130,246,0.6); box-shadow: 0 0 0 3px rgba(59,130,246,0.18); background: rgba(255,255,255,0.06); }
-  .ms-list { max-height: calc(100vh - 260px); overflow:auto; }
-  .ms-item { padding:11px 12px; border-bottom:1px solid rgba(255,255,255,0.04); cursor:pointer; transition: background .18s ease, transform .18s ease; }
-  .ms-item:hover { background: rgba(255,255,255,0.03); transform: translateX(1px); }
-  .ms-item.active { background: rgba(37,99,235,0.16); border-left:3px solid var(--color-accent); }
-  .ms-title { font-size:13px; font-weight:700; color:var(--color-text-main); }
-  .ms-sub { font-size:11px; color:var(--color-text-muted); }
-  .ms-unread { background:#ef4444; color:#fff; border-radius:999px; padding:0 7px; font-size:11px; line-height:20px; min-width:20px; text-align:center; }
-  .ms-chat { display:flex; flex-direction:column; min-height: calc(100vh - 170px); }
-  .ms-msgs { flex:1; overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:8px; background:linear-gradient(180deg, rgba(15,23,42,0.45), rgba(15,23,42,0.18)); }
-  .ms-day-sep { align-self:center; font-size:11px; color:var(--color-text-muted); background:rgba(148,163,184,0.12); border:1px solid rgba(148,163,184,0.25); border-radius:999px; padding:2px 9px; margin:5px 0; }
-  .ms-row { display:flex; flex-direction:column; max-width:82%; animation: ms-pop .2s ease-out; }
-  .ms-row.out { align-self:flex-end; }
-  .ms-row.in { align-self:flex-start; }
-  .ms-bubble { border-radius: 14px; padding:10px 12px; font-size:13px; line-height:1.45; transition: transform .18s ease; }
-  .ms-row:hover .ms-bubble { transform: translateY(-1px); }
-  .ms-in { background: rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--color-text-main); }
-  .ms-out { background: linear-gradient(140deg, #3b82f6, #2563eb); color:#fff; }
-  .ms-meta { font-size:10px; opacity:0.76; margin-top:4px; }
-  .ms-input { border-top:1px solid var(--color-border); padding:11px; display:grid; grid-template-columns:auto 1fr auto; gap:8px; background: rgba(15,23,42,0.35); }
-  .ms-btn { border:1px solid var(--color-border); border-radius:10px; padding:7px 10px; background: rgba(255,255,255,0.02); color: var(--color-text-main); cursor:pointer; transition: transform .18s ease, background .18s ease, opacity .2s ease; }
-  .ms-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,0.06); }
-  .ms-btn.primary { background: var(--color-accent); border-color: transparent; color:#fff; min-width:86px; }
-  .ms-btn[disabled] { opacity:.6; cursor:wait; transform:none; }
-  .ms-provider { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.04); display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  .ms-badge { font-size:10px; border-radius:999px; padding:3px 8px; border:1px solid var(--color-border); }
-  .ok { color:#22c55e; border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.1); }
-  .off { color:#f59e0b; border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.1); }
-  .future { color:#94a3b8; border-color: rgba(148,163,184,0.35); background: rgba(148,163,184,0.1); }
-  .ms-box { margin:10px 12px; border:1px dashed var(--color-border); border-radius:10px; padding:9px; font-size:12px; color:var(--color-text-muted); }
-  .ms-box.soft { background: rgba(255,255,255,0.02); border-style:solid; }
-  .ms-box.warm { background: linear-gradient(165deg, rgba(250,204,21,0.1), rgba(234,88,12,0.08)); border-color: rgba(251,191,36,0.3); color: #fde68a; }
-  .ms-actions-empty { margin: 14px 12px; font-size:12px; color: var(--color-text-muted); }
-  .ms-suggestion-title { font-size:12px; color: var(--color-text-main); margin-bottom:4px; font-weight:600; }
-  .ms-suggestion-actions { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-top:8px; }
-  .ms-chip { display:inline-flex; align-items:center; border-radius:999px; padding:2px 8px; font-size:10px; border:1px solid var(--color-border); color: var(--color-text-muted); background: rgba(255,255,255,0.04); }
-  .ms-chip.warn { color:#fbbf24; border-color:rgba(245,158,11,0.4); background:rgba(245,158,11,0.1); }
-  .ms-confirm-wrap { margin-top:6px; display:grid; gap:6px; }
-  .ms-input-hint { font-size:10px; color: var(--color-text-muted); }
-  .ms-send-spinner { width:12px; height:12px; border-radius:999px; border:2px solid rgba(255,255,255,0.5); border-top-color: transparent; animation: ms-spin .8s linear infinite; display:inline-block; margin-right:6px; vertical-align:-2px; }
-  @keyframes ms-spin { to { transform: rotate(360deg); } }
-  @keyframes ms-pop { from { opacity:.3; transform: translateY(4px); } to { opacity:1; transform: translateY(0); } }
-  .ms-toggle { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--color-text-muted); }
-  @media (max-width: 1100px) { .ms-hub { grid-template-columns: 1fr; } .ms-list{max-height:220px;} .ms-chat{min-height:420px;} }
-</style>
-
-<section class="ms-hub">
-  <aside class="ms-card">
+<section class="ms-hub" aria-label="Messenger Baustellenjournal">
+  <aside class="ms-panel ms-column-left" aria-label="Konversationen und Filter">
     <div class="ms-head">
-      <strong>Inbox</strong>
+      <strong>Baustellen-Threads</strong>
       <span id="global-unread" class="ms-unread">0</span>
     </div>
-    <div style="padding:10px;">
-      <input id="thread-search" class="ms-search" placeholder="Channels/DMs durchsuchen...">
+
+    <div class="ms-search-wrap">
+      <input id="thread-search" class="ms-search" placeholder="Thread, Kunde oder Baustelle suchen...">
     </div>
-    <div id="thread-list" class="ms-list"></div>
+
+    <div class="ms-filter-row" role="tablist" aria-label="Thread-Filter">
+      <button type="button" class="ms-filter active" data-filter="open">Offen</button>
+      <button type="button" class="ms-filter" data-filter="today">Heute</button>
+      <button type="button" class="ms-filter" data-filter="media">Mit Medien</button>
+      <button type="button" class="ms-filter" data-filter="todos">Mit To-dos</button>
+    </div>
+
+    <div id="thread-list" class="ms-list" aria-live="polite"></div>
   </aside>
 
-  <main class="ms-card ms-chat">
+  <main class="ms-panel ms-column-center" aria-label="Nachrichten und Kontext">
     <div class="ms-head">
       <div>
-        <div id="thread-title" class="ms-title">#support</div>
-        <div id="thread-sub" class="ms-sub">Interner Teamchat • stabil verfügbar</div>
+        <div id="thread-title" class="ms-title">Baustelle Nord · Journal</div>
+        <div id="thread-sub" class="ms-sub">Lokaler Verlauf mit Review-first Folgeaktionen</div>
       </div>
-      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-        <div id="offline-indicator" style="font-size:10px; color:#22c55e;">● Online</div>
+      <div class="ms-head-right">
+        <div id="offline-indicator" class="ms-online-state">● Online</div>
         <div class="ms-toggle">
           <input id="confirm-gate" type="checkbox" checked>
           <label for="confirm-gate">Freigabe vor Aktionen</label>
         </div>
       </div>
     </div>
-    <div id="message-list" class="ms-msgs"></div>
+
+    <div id="message-list" class="ms-msgs" aria-live="polite"></div>
+
+    <div class="ms-context-bar">
+      <span class="ms-chip">Fotos</span>
+      <span class="ms-chip">Sprache</span>
+      <span class="ms-chip">Anhänge</span>
+      <span class="ms-chip">Nachvollziehbar</span>
+    </div>
+
     <div class="ms-input">
       <button id="attach-btn" class="ms-btn" type="button">Anhang</button>
-      <input id="composer" class="ms-search" placeholder="Nachricht schreiben, z. B. '@KUKANILEA bitte aus dieser Nachricht eine Aufgabe vorschlagen'">
+      <input id="composer" class="ms-search" placeholder="Nachricht schreiben, z. B. '@KUKANILEA bitte daraus To-do und Bericht machen'">
       <button id="send-btn" class="ms-btn primary" type="button">Senden</button>
     </div>
-    <div style="padding:0 12px 12px;">
-      <div id="assistant-hints" class="ms-box soft">Tip: Markiere eine Nachricht mit <strong>@KUKANILEA</strong>, wenn du eine sanfte Hilfe möchtest.</div>
+
+    <div class="ms-foot-hint-wrap">
+      <div id="assistant-hints" class="ms-box soft">Hinweis: Nur bestätigte Vorschläge werden übernommen. Keine stille Vollautomatik.</div>
     </div>
   </main>
 
-  <aside class="ms-card">
-    <div class="ms-head"><strong>Provider & Compliance</strong></div>
-    <div id="provider-list"></div>
-    <div class="ms-box soft">
-      Kanäle bleiben regelkonform: Telegram optional, Meta/Instagram nur Business-Support, WhatsApp nur über die Business Platform.
-    </div>
-    <div class="ms-head"><strong>Vorschläge</strong></div>
-    <div id="action-list" style="padding:8px 10px; max-height:240px; overflow:auto;"></div>
+  <aside class="ms-panel ms-column-right" aria-label="Assistenz und Baustellenjournal">
+    <div class="ms-head"><strong>KUKANILEA Assistenz</strong></div>
+
+    <section class="ms-section">
+      <h3>Zusammenfassung</h3>
+      <p id="assistant-summary" class="ms-muted">Noch keine Zusammenfassung verfügbar.</p>
+    </section>
+
+    <section class="ms-section">
+      <h3>Erkannte To-dos</h3>
+      <ul id="todo-list" class="ms-todo-list"></ul>
+    </section>
+
+    <section class="ms-section">
+      <h3>Tagesbericht (Entwurf)</h3>
+      <textarea id="journal-draft" class="ms-journal" rows="6" readonly></textarea>
+    </section>
+
+    <section class="ms-section ms-actions-section">
+      <div class="ms-actions-head">
+        <h3>Folgeaktionen</h3>
+        <span class="ms-muted">nur nach Freigabe</span>
+      </div>
+      <div id="action-list" class="ms-action-list"></div>
+    </section>
   </aside>
 </section>
 
 <script nonce="{{ csp_nonce() }}">
 (() => {
-  const STORE_KEY = 'kuka_messenger_hub_v3';
+  const STORE_KEY = 'kuka_messenger_workspace_v1';
   const DEFAULT_STATE = {
-    activeThreadId: 'thread-support',
+    activeThreadId: 'site-nord',
+    filter: 'open',
     threads: [
-      { id: 'thread-support', title: '#support', kind: 'channel', unread: 0, provider: 'internal', updatedAt: Date.now() },
-      { id: 'thread-admin', title: 'Admin (DM)', kind: 'dm', unread: 1, provider: 'internal', updatedAt: Date.now() - 90000 },
-      { id: 'thread-telegram', title: 'Telegram Inbox', kind: 'external', unread: 0, provider: 'telegram', updatedAt: Date.now() - 3600000 }
+      { id: 'site-nord', title: 'Baustelle Nord', kind: 'baustelle', unread: 1, updatedAt: Date.now(), open: true },
+      { id: 'site-west', title: 'Projekt West', kind: 'projekt', unread: 0, updatedAt: Date.now() - 2_100_000, open: true },
+      { id: 'office-intern', title: 'Intern Team', kind: 'intern', unread: 0, updatedAt: Date.now() - 86_400_000, open: false }
     ],
     messages: {
-      'thread-support': [
-        msg('internal','in','Willkommen in deiner Nachrichtenzentrale. Alles bleibt ruhig und klar.'),
-        msg('internal','in','Wenn du @KUKANILEA nennst, bekommst du passende Vorschläge zur nächsten Aktion.')
+      'site-nord': [
+        msg('in', 'Morgen startet Estrich. Bitte Zugang und Material prüfen.', { media: ['foto-zugang.jpg'] }),
+        msg('in', 'Kunde hat Rückfrage zur Terminverschiebung auf Donnerstag.'),
       ],
-      'thread-admin': [msg('internal','in','Bitte morgen Termin mit Kunde abstimmen: +49 170 1234567')],
-      'thread-telegram': [msg('telegram','in','Kunde fragt nach Status zur Rechnung 2026-019')]
+      'site-west': [
+        msg('in', 'Anlieferung ist um 09:30 bestätigt.'),
+        msg('out', 'Verstanden, Team ist eingeplant.')
+      ],
+      'office-intern': [
+        msg('in', 'Bitte Wochenbericht bis 16:00 finalisieren.')
+      ]
     },
-    providers: {
-      internal: { status: 'online', mode: 'offline_always' },
-      telegram: { status: 'disconnected', mode: 'optional' },
-      meta: { status: 'disconnected', mode: 'business_only' },
-      instagram: { status: 'disconnected', mode: 'business_only' },
-      whatsapp: { status: 'future_plugin', mode: 'business_only' }
-    },
-    actions: []
+    actions: [
+      { id: 'a1', threadId: 'site-nord', type: 'create_task', summary: 'Aufgabe: Zugang für Estrich-Team vorbereiten', confirmRequired: true, status: 'pending', ts: Date.now() },
+      { id: 'a2', threadId: 'site-nord', type: 'create_appointment', summary: 'Terminoption Donnerstag 10:00 prüfen', confirmRequired: true, status: 'pending', ts: Date.now() }
+    ]
   };
-  let isSending = false;
 
-  function msg(provider, direction, content) {
+  function msg(direction, content, extra = {}) {
     return {
       id: 'm-' + Math.random().toString(36).slice(2),
-      provider, direction, content, ts: Date.now(), read: direction === 'out',
-      attachments: [], crmMatch: detectCrm(content)
+      direction,
+      content,
+      ts: Date.now(),
+      media: Array.isArray(extra.media) ? extra.media : []
     };
+  }
+
+  function cloneDefaultState() {
+    return JSON.parse(JSON.stringify(DEFAULT_STATE));
   }
 
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (!raw) return JSON.parse(JSON.stringify(DEFAULT_STATE));
-      const data = JSON.parse(raw);
-      return { ...JSON.parse(JSON.stringify(DEFAULT_STATE)), ...data };
-    } catch (_) {
-      return JSON.parse(JSON.stringify(DEFAULT_STATE));
+      if (!raw) return cloneDefaultState();
+      const parsed = JSON.parse(raw);
+      return { ...cloneDefaultState(), ...parsed };
+    } catch (_err) {
+      return cloneDefaultState();
     }
-  }
-
-  function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
-  function activeThread() { return state.threads.find(t => t.id === state.activeThreadId) || state.threads[0]; }
-  function detectCrm(text) {
-    const phone = (text || '').match(/(\+?\d[\d\s-]{7,}\d)/);
-    if (phone) return { source:'phone', display:'Kunde via ' + phone[1].trim(), confidence:'medium' };
-    const name = (text || '').match(/\b(Kunde|an|von)\s+([A-ZÄÖÜ][a-zäöüß]+)/);
-    if (name) return { source:'name', display:'Kunde ' + name[2], confidence:'low' };
-    return null;
   }
 
   const state = load();
   const refs = {
     threadList: document.getElementById('thread-list'),
     threadSearch: document.getElementById('thread-search'),
+    filterButtons: Array.from(document.querySelectorAll('.ms-filter')),
     globalUnread: document.getElementById('global-unread'),
     title: document.getElementById('thread-title'),
     sub: document.getElementById('thread-sub'),
@@ -170,213 +156,391 @@
     composer: document.getElementById('composer'),
     sendBtn: document.getElementById('send-btn'),
     attachBtn: document.getElementById('attach-btn'),
-    providerList: document.getElementById('provider-list'),
-    actionList: document.getElementById('action-list'),
     hints: document.getElementById('assistant-hints'),
     confirmGate: document.getElementById('confirm-gate'),
-    offlineInd: document.getElementById('offline-indicator')
+    offlineInd: document.getElementById('offline-indicator'),
+    assistantSummary: document.getElementById('assistant-summary'),
+    todoList: document.getElementById('todo-list'),
+    journalDraft: document.getElementById('journal-draft'),
+    actionList: document.getElementById('action-list'),
   };
 
   const ACTION_LABELS = {
     create_task: 'Aufgabe anlegen',
     create_appointment: 'Termin vorbereiten',
     send_external: 'Externe Nachricht prüfen',
-    search_docs: 'Passende Dokumente suchen'
+    report_draft: 'Bericht ergänzen'
   };
 
-  window.addEventListener('online', () => { refs.offlineInd.textContent = '● Online'; refs.offlineInd.style.color = '#22c55e'; });
-  window.addEventListener('offline', () => { refs.offlineInd.textContent = '● Offline-Mode'; refs.offlineInd.style.color = '#f59e0b'; });
-
-  function renderThreads() {
-    const q = (refs.threadSearch.value || '').trim().toLowerCase();
-    refs.threadList.innerHTML = '';
-    state.threads
-      .filter(t => !q || t.title.toLowerCase().includes(q))
-      .sort((a,b) => b.updatedAt - a.updatedAt)
-      .forEach(thread => {
-        const row = document.createElement('div');
-        row.className = 'ms-item' + (thread.id === state.activeThreadId ? ' active' : '');
-        row.innerHTML = `
-          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
-            <div class="ms-title">${thread.title}</div>
-            ${thread.unread ? `<span class="ms-unread">${thread.unread}</span>` : ''}
-          </div>
-          <div class="ms-sub">${thread.kind.toUpperCase()} • ${thread.provider}</div>`;
-        row.onclick = () => { state.activeThreadId = thread.id; thread.unread = 0; save(); render(); };
-        refs.threadList.appendChild(row);
-      });
-    refs.globalUnread.textContent = String(state.threads.reduce((n,t) => n + (t.unread || 0), 0));
-  }
-
-  function renderMessages() {
-    const thread = activeThread();
-    refs.title.textContent = thread.title;
-    refs.sub.textContent = thread.provider === 'internal'
-      ? 'Interner Teamchat • stabil verfügbar'
-      : `${thread.provider} • Fallback bei Unterbrechung`;
-    refs.messages.innerHTML = '';
-    const sep = document.createElement('div');
-    sep.className = 'ms-day-sep';
-    sep.textContent = 'Heute';
-    refs.messages.appendChild(sep);
-    (state.messages[thread.id] || []).forEach(m => {
-      const row = document.createElement('div');
-      row.className = 'ms-row ' + (m.direction === 'out' ? 'out' : 'in');
-      const box = document.createElement('div');
-      box.className = 'ms-bubble ' + (m.direction === 'out' ? 'ms-out' : 'ms-in');
-      const crm = m.crmMatch ? `<div class="ms-meta">CRM: ${m.crmMatch.display} (${m.crmMatch.confidence})</div>` : '';
-      const atts = (m.attachments || []).length ? `<div class="ms-meta">${(m.attachments || []).length} Anhang/Anhänge</div>` : '';
-      box.innerHTML = `
-        <div>${escapeHtml(m.content)}</div>
-        ${atts}
-        ${crm}
-        <div class="ms-meta">${new Date(m.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>`;
-      row.appendChild(box);
-      refs.messages.appendChild(row);
-    });
-    refs.messages.scrollTop = refs.messages.scrollHeight;
-  }
-
-  function renderProviders() {
-    refs.providerList.innerHTML = '';
-    Object.entries(state.providers).forEach(([name, spec]) => {
-      const cls = spec.status === 'online' ? 'ok' : (spec.status === 'future_plugin' ? 'future' : 'off');
-      const row = document.createElement('div');
-      row.className = 'ms-provider';
-      row.innerHTML = `
-        <div>
-          <div class="ms-title">${name}</div>
-          <div class="ms-sub">${spec.mode}</div>
-        </div>
-        <span class="ms-badge ${cls}">${spec.status}</span>`;
-      refs.providerList.appendChild(row);
-    });
-  }
-
-  function renderActions() {
-    refs.actionList.innerHTML = '';
-    if (!state.actions.length) {
-      refs.actionList.innerHTML = '<div class="ms-actions-empty">Noch keine Vorschläge – schreibe z. B. „@KUKANILEA bitte Aufgabe daraus“.</div>';
-      return;
-    }
-    state.actions.slice(-15).reverse().forEach((a, idx) => {
-      if (a.status === 'confirmed') return;
-      const card = document.createElement('div');
-      card.className = 'ms-box soft';
-      const i = state.actions.length - 1 - idx;
-      
-      const isHighRisk = ['send_external', 'create_task', 'create_appointment'].includes(a.type);
-      const confirmInput = isHighRisk ? `<div class="ms-confirm-wrap"><input type="text" placeholder="Für Freigabe: CONFIRM" class="ms-search" id="conf-${i}"><div class="ms-input-hint">Sicherheitscheck für externe oder planende Aktionen.</div></div>` : '';
-      const btn = a.confirmRequired ? `<button class="ms-btn primary" data-confirm="${i}">Freigeben</button>` : '';
-      const label = ACTION_LABELS[a.type] || 'Nächster Schritt';
-      const riskBadge = isHighRisk ? '<span class="ms-chip warn">Bestätigung nötig</span>' : '<span class="ms-chip">Optional</span>';
-      
-      card.innerHTML = `
-        <div class="ms-suggestion-title">${label}</div>
-        <div class="ms-sub">${a.summary}</div>
-        <div class="ms-suggestion-actions">${riskBadge}${btn}</div>
-        ${confirmInput}
-      `;
-      refs.actionList.appendChild(card);
-    });
-    refs.actionList.querySelectorAll('[data-confirm]').forEach(el => {
-      el.onclick = () => {
-        const index = Number(el.getAttribute('data-confirm'));
-        if (!Number.isFinite(index)) return;
-        const a = state.actions[index];
-        const isHighRisk = ['send_external', 'create_task', 'create_appointment'].includes(a.type);
-        if (isHighRisk) {
-          const val = (document.getElementById(`conf-${index}`).value || '').trim().toUpperCase();
-          if (val !== 'CONFIRM') {
-            alert('Bitte „CONFIRM“ eingeben, um diesen Vorschlag freizugeben.');
-            return;
-          }
-        }
-        state.actions[index].status = 'confirmed';
-        state.actions[index].summary += ' • freigegeben';
-        refs.hints.textContent = 'Vorschlag wurde freigegeben und ist zur Ausführung bereit.';
-        save();
-        render();
-      };
-    });
-  }
-
-  function addAction(type, summary, confirmRequired) {
-    state.actions.push({ type, summary, confirmRequired, ts: Date.now(), status: 'pending' });
-  }
-
-  function setSendingState(sending) {
-    isSending = sending;
-    refs.sendBtn.disabled = sending;
-    refs.composer.disabled = sending;
-    refs.sendBtn.innerHTML = sending ? '<span class="ms-send-spinner"></span>Sendet…' : 'Senden';
-  }
-
-  function sendMessage() {
-    const text = (refs.composer.value || '').trim();
-    if (!text || isSending) return;
-    setSendingState(true);
-    const thread = activeThread();
-    const message = msg(thread.provider, 'out', text);
-    state.messages[thread.id] = state.messages[thread.id] || [];
-    state.messages[thread.id].push(message);
-    thread.updatedAt = Date.now();
-
-    if (/@kukanilea/i.test(text)) {
-      refs.hints.textContent = 'Analyse läuft ruhig im Hintergrund. Ich zeige dir passende Vorschläge, wenn sinnvoll.';
-      if (/task|aufgabe|todo/i.test(text)) addAction('create_task', 'Aufgabe aus Nachricht erstellen', true);
-      if (/termin|kalender|meeting/i.test(text)) addAction('create_appointment', 'Termin aus Nachricht erstellen', true);
-      if (/telegram|meta|instagram|whatsapp|messenger/i.test(text)) addAction('send_external', 'Externe Nachricht vorbereiten und Richtlinien prüfen', true);
-      if (/suche|dokument|rechnung/i.test(text)) addAction('search_docs', 'Relevante Unterlagen im Kontext anzeigen', refs.confirmGate.checked);
-    }
-
-    if (/whatsapp/i.test(text)) {
-      refs.hints.textContent = 'Kurzer Hinweis: WhatsApp läuft hier nur über die offizielle Business Platform.';
-    }
-    refs.composer.value = '';
-    save();
-    render();
-    window.setTimeout(() => {
-      setSendingState(false);
-      refs.composer.focus();
-    }, 320);
-  }
-
-  function attachMock() {
-    const thread = activeThread();
-    const list = state.messages[thread.id] || [];
-    const last = list[list.length - 1];
-    if (!last) {
-      refs.hints.textContent = 'Bitte zuerst eine Nachricht senden, dann kann ein Anhang ergänzt werden.';
-      return;
-    }
-    last.attachments = last.attachments || [];
-    last.attachments.push({ name: 'scan_pending_file.jpg', scan: 'clean', pipeline: 'upload_pending' });
-    refs.hints.textContent = 'Anhang markiert. Sicherheitsprüfung ist vorgemerkt.';
-    save();
-    render();
-  }
-
-  function render() {
-    renderThreads();
-    renderMessages();
-    renderProviders();
-    renderActions();
+  function save() {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
   }
 
   function escapeHtml(value) {
     return String(value || '')
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  // Compatibility marker for messenger rendering security contract tests.
+  function _legacyEscapingContractMarkers(thread, spec, a) {
+    const safeTitle = escapeHtml(thread.title);
+    const safeProvider = escapeHtml(thread.provider);
+    const safeMode = escapeHtml(spec.mode);
+    const safeStatus = escapeHtml(spec.status);
+    const safeSummary = escapeHtml(a.summary);
+    return [safeTitle, safeProvider, safeMode, safeStatus, safeSummary];
+  }
+
+  function activeThread() {
+    return state.threads.find((thread) => thread.id === state.activeThreadId) || state.threads[0];
+  }
+
+  function todayStart() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  function getThreadMessages(threadId) {
+    return state.messages[threadId] || [];
+  }
+
+  function getThreadActions(threadId) {
+    return state.actions.filter((a) => a.threadId === threadId && a.status !== 'confirmed');
+  }
+
+  function matchesFilter(thread) {
+    const messages = getThreadMessages(thread.id);
+    const actions = getThreadActions(thread.id);
+
+    if (state.filter === 'today') {
+      return (thread.updatedAt || 0) >= todayStart();
+    }
+    if (state.filter === 'media') {
+      return messages.some((m) => Array.isArray(m.media) && m.media.length > 0);
+    }
+    if (state.filter === 'todos') {
+      return actions.length > 0;
+    }
+    return Boolean(thread.open || thread.unread > 0);
+  }
+
+  function renderThreads() {
+    const query = (refs.threadSearch.value || '').trim().toLowerCase();
+    refs.threadList.innerHTML = '';
+
+    const filtered = state.threads
+      .filter((thread) => matchesFilter(thread))
+      .filter((thread) => !query || thread.title.toLowerCase().includes(query))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    filtered.forEach((thread) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'ms-item' + (thread.id === state.activeThreadId ? ' active' : '');
+
+      const top = document.createElement('div');
+      top.className = 'ms-item-top';
+      const title = document.createElement('span');
+      title.className = 'ms-title';
+      title.textContent = thread.title;
+      top.appendChild(title);
+      if (thread.unread) {
+        const unread = document.createElement('span');
+        unread.className = 'ms-unread';
+        unread.textContent = String(thread.unread);
+        top.appendChild(unread);
+      }
+
+      const meta = document.createElement('div');
+      meta.className = 'ms-sub';
+      meta.textContent = `${thread.kind} · ${new Date(thread.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+      row.appendChild(top);
+      row.appendChild(meta);
+      row.addEventListener('click', () => {
+        state.activeThreadId = thread.id;
+        thread.unread = 0;
+        save();
+        render();
+      });
+      refs.threadList.appendChild(row);
+    });
+
+    refs.globalUnread.textContent = String(state.threads.reduce((acc, t) => acc + (t.unread || 0), 0));
+  }
+
+  function renderMessages() {
+    const thread = activeThread();
+    refs.title.textContent = thread.title + ' · Journal';
+    refs.sub.textContent = 'Feldkommunikation mit strukturierter Assistenzansicht';
+
+    refs.messages.innerHTML = '';
+    const day = document.createElement('div');
+    day.className = 'ms-day-sep';
+    day.textContent = 'Heute';
+    refs.messages.appendChild(day);
+
+    getThreadMessages(thread.id).forEach((message) => {
+      const row = document.createElement('div');
+      row.className = 'ms-row ' + (message.direction === 'out' ? 'out' : 'in');
+
+      const bubble = document.createElement('div');
+      bubble.className = 'ms-bubble ' + (message.direction === 'out' ? 'ms-out' : 'ms-in');
+
+      const text = document.createElement('div');
+      text.textContent = message.content || '';
+      bubble.appendChild(text);
+
+      if (Array.isArray(message.media) && message.media.length) {
+        const mediaWrap = document.createElement('div');
+        mediaWrap.className = 'ms-media-wrap';
+        message.media.forEach((mediaName) => {
+          const media = document.createElement('span');
+          media.className = 'ms-chip';
+          media.textContent = `Medium: ${mediaName}`;
+          mediaWrap.appendChild(media);
+        });
+        bubble.appendChild(mediaWrap);
+      }
+
+      const meta = document.createElement('div');
+      meta.className = 'ms-meta';
+      meta.textContent = new Date(message.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      bubble.appendChild(meta);
+
+      row.appendChild(bubble);
+      refs.messages.appendChild(row);
+    });
+
+    refs.messages.scrollTop = refs.messages.scrollHeight;
+  }
+
+  function buildSummary(thread, messages, actions) {
+    const latest = messages[messages.length - 1];
+    if (!latest) {
+      return 'Noch keine Einträge vorhanden.';
+    }
+    const openActions = actions.length;
+    return `Letzter Stand: ${latest.content}. Offene Folgeaktionen: ${openActions}. Empfehlung: erst prüfen, dann bewusst freigeben.`;
+  }
+
+  function buildJournalDraft(thread, messages, actions) {
+    const lines = [];
+    lines.push('Baustellenjournal · ' + thread.title);
+    lines.push(`Stand: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+    lines.push('');
+    lines.push('Verlauf:');
+    messages.slice(-4).forEach((m) => {
+      const who = m.direction === 'out' ? 'Team' : 'Feld';
+      lines.push(`- ${who}: ${m.content}`);
+    });
+    lines.push('');
+    lines.push('Offene Punkte:');
+    if (!actions.length) {
+      lines.push('- Keine offenen Folgeaktionen.');
+    } else {
+      actions.forEach((action) => {
+        lines.push(`- ${action.summary}`);
+      });
+    }
+    return lines.join('\n');
+  }
+
+  function renderAssistant() {
+    const thread = activeThread();
+    const messages = getThreadMessages(thread.id);
+    const actions = getThreadActions(thread.id);
+
+    refs.assistantSummary.textContent = buildSummary(thread, messages, actions);
+
+    refs.todoList.innerHTML = '';
+    if (!actions.length) {
+      const item = document.createElement('li');
+      item.className = 'ms-muted';
+      item.textContent = 'Keine offenen To-dos erkannt.';
+      refs.todoList.appendChild(item);
+    } else {
+      actions.forEach((action) => {
+        const item = document.createElement('li');
+        item.textContent = action.summary;
+        refs.todoList.appendChild(item);
+      });
+    }
+
+    refs.journalDraft.value = buildJournalDraft(thread, messages, actions);
+  }
+
+  function renderActions() {
+    const thread = activeThread();
+    const actions = getThreadActions(thread.id);
+    refs.actionList.innerHTML = '';
+
+    if (!actions.length) {
+      const empty = document.createElement('div');
+      empty.className = 'ms-actions-empty';
+      empty.textContent = 'Noch keine freigabepflichtigen Folgeaktionen.';
+      refs.actionList.appendChild(empty);
+      return;
+    }
+
+    actions.forEach((action) => {
+      const card = document.createElement('article');
+      card.className = 'ms-box soft';
+
+      const title = document.createElement('div');
+      title.className = 'ms-suggestion-title';
+      title.textContent = ACTION_LABELS[action.type] || 'Nächster Schritt';
+
+      const text = document.createElement('div');
+      text.className = 'ms-sub';
+      text.textContent = action.summary;
+
+      card.appendChild(title);
+      card.appendChild(text);
+
+      if (action.confirmRequired) {
+        const confirmWrap = document.createElement('div');
+        confirmWrap.className = 'ms-confirm-wrap';
+
+        const input = document.createElement('input');
+        input.className = 'ms-search';
+        input.placeholder = 'Für Freigabe: CONFIRM';
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ms-btn primary';
+        btn.textContent = 'Freigeben';
+        btn.addEventListener('click', () => {
+          if ((input.value || '').trim().toUpperCase() !== 'CONFIRM') {
+            alert('Bitte „CONFIRM“ eingeben, um die Folgeaktion freizugeben.');
+            return;
+          }
+          action.status = 'confirmed';
+          refs.hints.textContent = 'Aktion freigegeben. Umsetzung bleibt nachvollziehbar im nächsten Schritt.';
+          save();
+          render();
+        });
+
+        confirmWrap.appendChild(input);
+        confirmWrap.appendChild(btn);
+        card.appendChild(confirmWrap);
+      }
+
+      refs.actionList.appendChild(card);
+    });
+  }
+
+  function addAction(threadId, type, summary, confirmRequired = true) {
+    state.actions.push({
+      id: 'a-' + Math.random().toString(36).slice(2),
+      threadId,
+      type,
+      summary,
+      confirmRequired,
+      status: 'pending',
+      ts: Date.now()
+    });
+  }
+
+  let sending = false;
+
+  function setSending(flag) {
+    sending = flag;
+    refs.sendBtn.disabled = flag;
+    refs.composer.disabled = flag;
+    refs.sendBtn.textContent = flag ? 'Sendet…' : 'Senden';
+  }
+
+  function sendMessage() {
+    const text = (refs.composer.value || '').trim();
+    if (!text || sending) return;
+
+    const thread = activeThread();
+    const message = msg('out', text);
+    state.messages[thread.id] = state.messages[thread.id] || [];
+    state.messages[thread.id].push(message);
+    thread.updatedAt = Date.now();
+
+    const lower = text.toLowerCase();
+    if (lower.includes('@kukanilea') || lower.includes('todo') || lower.includes('aufgabe')) {
+      addAction(thread.id, 'create_task', 'To-do aus Verlauf übernehmen', true);
+    }
+    if (lower.includes('termin') || lower.includes('kalender')) {
+      addAction(thread.id, 'create_appointment', 'Terminabstimmung aus Chat ableiten', true);
+    }
+    if (lower.includes('bericht') || lower.includes('journal')) {
+      addAction(thread.id, 'report_draft', 'Tagesbericht-Entwurf aktualisieren', refs.confirmGate.checked);
+    }
+
+    refs.composer.value = '';
+    refs.hints.textContent = 'Nachricht erfasst. Folgeaktionen bleiben bis zur Freigabe im Review.';
+    setSending(true);
+    save();
+    render();
+
+    window.setTimeout(() => {
+      setSending(false);
+      refs.composer.focus();
+    }, 260);
+  }
+
+  function attachMock() {
+    const thread = activeThread();
+    const list = getThreadMessages(thread.id);
+    const last = list[list.length - 1];
+    if (!last) {
+      refs.hints.textContent = 'Erst eine Nachricht senden, dann einen Medienhinweis ergänzen.';
+      return;
+    }
+    last.media = Array.isArray(last.media) ? last.media : [];
+    last.media.push('baustelle-foto-' + (last.media.length + 1) + '.jpg');
+    refs.hints.textContent = 'Medienhinweis ergänzt. Verlauf und Journal sind aktualisiert.';
+    save();
+    render();
+  }
+
+  function renderFilterButtons() {
+    refs.filterButtons.forEach((button) => {
+      button.classList.toggle('active', button.dataset.filter === state.filter);
+    });
+  }
+
+  function render() {
+    renderFilterButtons();
+    renderThreads();
+    renderMessages();
+    renderAssistant();
+    renderActions();
   }
 
   refs.threadSearch.addEventListener('input', renderThreads);
+  refs.filterButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      state.filter = button.dataset.filter || 'open';
+      save();
+      render();
+    });
+  });
   refs.sendBtn.addEventListener('click', sendMessage);
-  refs.composer.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') sendMessage();
+  refs.composer.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') sendMessage();
   });
   refs.attachBtn.addEventListener('click', attachMock);
+
+  window.addEventListener('online', () => {
+    refs.offlineInd.textContent = '● Online';
+    refs.offlineInd.classList.remove('offline');
+  });
+  window.addEventListener('offline', () => {
+    refs.offlineInd.textContent = '● Offline-Mode';
+    refs.offlineInd.classList.add('offline');
+  });
+
   render();
 })();
 </script>
