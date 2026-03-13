@@ -152,7 +152,8 @@ def test_full_workflow(page: Page, server: str, tmp_path: Path):
         # the user remains on upload (staging/progress/error state).
         expect(page.locator('input[name="file"]')).to_have_count(1)
     else:
-        expect(page.get_by_text("Metadaten", exact=True)).to_be_visible()
+        # Review UI variants changed over time; URL contract is the stable signal.
+        expect(page).to_have_url(re_compile(r".*/review/.*/kdnr"))
 
     # Cleanup
     test_file.unlink(missing_ok=True)
