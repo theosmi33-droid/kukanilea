@@ -737,6 +737,14 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     return "Upload konnte nicht abgeschlossen werden. Bitte prüfen Sie Dateigröße und Verbindung.";
   };
+
+  const renderUploadErrorMessage = (msg) => {
+    uploadErrorMessage.textContent = "";
+    const messageBox = document.createElement("div");
+    messageBox.className = "rounded-xl border border-error/20 bg-error-bg p-3 text-sm";
+    messageBox.textContent = String(msg || "");
+    uploadErrorMessage.appendChild(messageBox);
+  };
   
   const uploadAction = () => {
     if(stagedFiles.length === 0) return;
@@ -905,7 +913,7 @@ document.addEventListener("DOMContentLoaded", function() {
       status.classList.remove("text-warning");
       status.classList.add("text-error");
       setUploadState("error", msg);
-      uploadErrorMessage.innerHTML = `<div class="rounded-xl border border-error/20 bg-error-bg p-3 text-sm">${msg}</div>`;
+      renderUploadErrorMessage(msg);
       uploadErrorMessage.style.display = "block";
       errorActions.style.display = "flex";
       retryBtn.disabled = false;
