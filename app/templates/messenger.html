@@ -196,12 +196,16 @@
       .forEach(thread => {
         const row = document.createElement('div');
         row.className = 'ms-item' + (thread.id === state.activeThreadId ? ' active' : '');
+        const safeTitle = escapeHtml(thread.title);
+        const safeKind = escapeHtml(String(thread.kind || '').toUpperCase());
+        const safeProvider = escapeHtml(thread.provider);
+        const unreadCount = Number(thread.unread) || 0;
         row.innerHTML = `
           <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
-            <div class="ms-title">${thread.title}</div>
-            ${thread.unread ? `<span class="ms-unread">${thread.unread}</span>` : ''}
+            <div class="ms-title">${safeTitle}</div>
+            ${unreadCount ? `<span class="ms-unread">${unreadCount}</span>` : ''}
           </div>
-          <div class="ms-sub">${thread.kind.toUpperCase()} • ${thread.provider}</div>`;
+          <div class="ms-sub">${safeKind} • ${safeProvider}</div>`;
         row.onclick = () => { state.activeThreadId = thread.id; thread.unread = 0; save(); render(); };
         refs.threadList.appendChild(row);
       });
@@ -224,8 +228,11 @@
       row.className = 'ms-row ' + (m.direction === 'out' ? 'out' : 'in');
       const box = document.createElement('div');
       box.className = 'ms-bubble ' + (m.direction === 'out' ? 'ms-out' : 'ms-in');
-      const crm = m.crmMatch ? `<div class="ms-meta">CRM: ${m.crmMatch.display} (${m.crmMatch.confidence})</div>` : '';
-      const atts = (m.attachments || []).length ? `<div class="ms-meta">${(m.attachments || []).length} Anhang/Anhänge</div>` : '';
+      const crm = m.crmMatch
+        ? `<div class="ms-meta">CRM: ${escapeHtml(m.crmMatch.display)} (${escapeHtml(m.crmMatch.confidence)})</div>`
+        : '';
+      const attachmentsCount = Number((m.attachments || []).length) || 0;
+      const atts = attachmentsCount ? `<div class="ms-meta">${attachmentsCount} Anhang/Anhänge</div>` : '';
       box.innerHTML = `
         <div>${escapeHtml(m.content)}</div>
         ${atts}
@@ -241,14 +248,17 @@
     refs.providerList.innerHTML = '';
     Object.entries(state.providers).forEach(([name, spec]) => {
       const cls = spec.status === 'online' ? 'ok' : (spec.status === 'future_plugin' ? 'future' : 'off');
+      const safeName = escapeHtml(name);
+      const safeMode = escapeHtml(spec.mode);
+      const safeStatus = escapeHtml(spec.status);
       const row = document.createElement('div');
       row.className = 'ms-provider';
       row.innerHTML = `
         <div>
-          <div class="ms-title">${name}</div>
-          <div class="ms-sub">${spec.mode}</div>
+          <div class="ms-title">${safeName}</div>
+          <div class="ms-sub">${safeMode}</div>
         </div>
-        <span class="ms-badge ${cls}">${spec.status}</span>`;
+        <span class="ms-badge ${cls}">${safeStatus}</span>`;
       refs.providerList.appendChild(row);
     });
   }
@@ -270,10 +280,12 @@
       const btn = a.confirmRequired ? `<button class="ms-btn primary" data-confirm="${i}">Freigeben</button>` : '';
       const label = ACTION_LABELS[a.type] || 'Nächster Schritt';
       const riskBadge = isHighRisk ? '<span class="ms-chip warn">Bestätigung nötig</span>' : '<span class="ms-chip">Optional</span>';
+      const safeLabel = escapeHtml(label);
+      const safeSummary = escapeHtml(a.summary);
       
       card.innerHTML = `
-        <div class="ms-suggestion-title">${label}</div>
-        <div class="ms-sub">${a.summary}</div>
+        <div class="ms-suggestion-title">${safeLabel}</div>
+        <div class="ms-sub">${safeSummary}</div>
         <div class="ms-suggestion-actions">${riskBadge}${btn}</div>
         ${confirmInput}
       `;
@@ -368,7 +380,9 @@
     return String(value || '')
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
   }
 
   refs.threadSearch.addEventListener('input', renderThreads);

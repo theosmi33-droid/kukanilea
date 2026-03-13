@@ -33,6 +33,17 @@ def test_messenger_summary_endpoint_contract():
     assert body["details"]["confirm_gate"] is True
 
 
+def test_messenger_health_endpoint_contract():
+    client = _app().test_client()
+    resp = client.get("/api/messenger/health")
+    assert resp.status_code in {200, 503}
+    body = resp.get_json()
+    assert body["tool"] == "messenger"
+    assert body["status"] in {"ok", "degraded", "error"}
+    assert body["details"]["contract"]["kind"] == "health"
+    assert set(body["details"]["checks"].keys()) == {"summary_contract", "backend_ready", "offline_safe"}
+
+
 def test_chat_parsing_and_confirm_gate(monkeypatch):
     app = _app()
     client = app.test_client()

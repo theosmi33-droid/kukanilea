@@ -11,6 +11,7 @@ def test_messenger_summary_exposes_runtime_and_confirm_contract(auth_client):
     runtime = body["details"]["runtime"]
     assert runtime["routes"]["chat_api"] is True
     assert runtime["routes"]["summary_api"] is True
+    assert runtime["routes"]["health_api"] is True
     assert runtime["intake_parser_ready"] is True
     assert body["details"]["confirm_gate"] is True
 

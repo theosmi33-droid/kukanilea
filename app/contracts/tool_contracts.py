@@ -610,6 +610,8 @@ def _collect_messenger_summary(tenant: str) -> tuple[dict, dict, str]:
         "chat_api": _route_available("/api/chat", "POST"),
         "summary_api": _route_available("/api/messenger/summary", "GET")
         or _route_available("/api/<tool>/summary", "GET"),
+        "health_api": _route_available("/api/messenger/health", "GET")
+        or _route_available("/api/<tool>/health", "GET"),
         "messenger_page": _route_available("/messenger", "GET"),
     }
     confirm_required = False

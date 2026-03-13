@@ -8,7 +8,12 @@ def test_messenger_summary_ok_runtime_and_audit_sink(monkeypatch) -> None:
     monkeypatch.setattr(
         tool_contracts,
         "_route_available",
-        lambda route, method: route in {"/api/chat", "/api/messenger/summary", "/messenger"},
+        lambda route, method: route in {
+            "/api/chat",
+            "/api/messenger/summary",
+            "/api/messenger/health",
+            "/messenger",
+        },
     )
     monkeypatch.setattr(
         messenger_module,
@@ -28,6 +33,7 @@ def test_messenger_summary_ok_runtime_and_audit_sink(monkeypatch) -> None:
     assert reason == ""
     assert details["runtime"]["routes"]["chat_api"] is True
     assert details["runtime"]["routes"]["summary_api"] is True
+    assert details["runtime"]["routes"]["health_api"] is True
     assert details["runtime"]["routes"]["messenger_page"] is True
     assert details["runtime"]["intake_parser_ready"] is True
     assert details["runtime"]["audit_sink_ready"] is True
@@ -53,6 +59,7 @@ def test_messenger_summary_degrades_when_route_missing(monkeypatch) -> None:
 
     assert reason == "messenger_routes_missing"
     assert metrics["confirm_gate"] == 1
+    assert details["runtime"]["routes"]["health_api"] is False
     assert details["runtime"]["routes"]["messenger_page"] is False
 
 
