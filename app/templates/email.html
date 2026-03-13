@@ -57,7 +57,13 @@
               <span class="email-time">09:24</span>
             </div>
             <p class="email-preview">Kunde fragt nach finalem Termin und bittet um kurze Rückmeldung.</p>
-            <div class="email-meta-row"><span>Von: bauleitung@kunde.de</span><span>2 Anhänge</span><span class="email-pill">offen</span></div>
+            <div class="email-meta-row">
+              <span>Von: bauleitung@kunde.de</span>
+              <span>2 Anhänge</span>
+              <span class="email-pill">offen</span>
+              <span class="email-pill neutral">Tag: Kunde</span>
+              <span class="email-pill warn">Frist: morgen</span>
+            </div>
           </li>
           <li class="email-inbox-item">
             <div class="email-subject-line">
@@ -65,7 +71,13 @@
               <span class="email-time">Gestern</span>
             </div>
             <p class="email-preview">Bitte Position 14 separat ausweisen, Budget bleibt unverändert.</p>
-            <div class="email-meta-row"><span>Von: einkauf@alpha.de</span><span>kein Anhang</span><span class="email-pill neutral">in Prüfung</span></div>
+            <div class="email-meta-row">
+              <span>Von: einkauf@alpha.de</span>
+              <span>kein Anhang</span>
+              <span class="email-pill neutral">in Prüfung</span>
+              <span class="email-pill neutral">Tag: Händler</span>
+              <span class="email-pill neutral">Wichtigkeit: mittel</span>
+            </div>
           </li>
           <li class="email-inbox-item">
             <div class="email-subject-line">
@@ -73,7 +85,13 @@
               <span class="email-time">Mo</span>
             </div>
             <p class="email-preview">Steuersatz wurde angepasst, neue PDF liegt bei.</p>
-            <div class="email-meta-row"><span>Von: buchhaltung@lieferant.de</span><span>1 Anhang</span><span class="email-pill">wichtig</span></div>
+            <div class="email-meta-row">
+              <span>Von: buchhaltung@lieferant.de</span>
+              <span>1 Anhang</span>
+              <span class="email-pill">wichtig</span>
+              <span class="email-pill danger">Risiko: hoch</span>
+              <span class="email-pill warn">Frist: heute 18:00</span>
+            </div>
           </li>
         </ul>
       </section>
@@ -118,7 +136,7 @@
           <textarea id="draft-body" class="input" rows="9" placeholder="Nachricht"></textarea>
           <div class="email-compose-actions">
             <button type="button" id="draft-generate" class="btn btn-primary">Vorschlag aktualisieren</button>
-            <span class="email-meta-muted">Der Entwurf bleibt lokal, editierbar und wird nie still versendet.</span>
+            <span class="email-meta-muted">Der Entwurf bleibt lokal, editierbar und wird nie still versendet. Versand bleibt review-pflichtig.</span>
           </div>
         </form>
       </section>
@@ -143,6 +161,18 @@
           <li><strong>Dringlichkeit:</strong> heute bis 11:00 Uhr</li>
           <li><strong>Anhänge:</strong> 2</li>
           <li><strong>Nächster Schritt:</strong> Terminslot freigeben</li>
+        </ul>
+      </section>
+
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Handlungsbedarf</h2>
+          <span class="email-meta-muted">Frist-Risiko</span>
+        </div>
+        <ul class="email-keyfacts">
+          <li><strong>Kritisch:</strong> 2 Fälle heute</li>
+          <li><strong>Frist:</strong> Rechnung 2026-017 bis 18:00 Uhr</li>
+          <li><strong>Risiko:</strong> Klärung mit Buchhaltung offen</li>
         </ul>
       </section>
 
