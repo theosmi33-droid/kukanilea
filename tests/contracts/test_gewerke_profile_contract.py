@@ -82,6 +82,7 @@ def test_health_omits_internal_runtime_paths_and_global_tenant_stats(auth_client
     assert response.status_code == 200
 
     body = response.get_json()
+    assert isinstance(body.get("remote_llm_enabled"), bool)
     assert "auth_db_path" not in body
     assert "db_path" not in body
     assert "tenant_id" not in body

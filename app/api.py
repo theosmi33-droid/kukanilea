@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 
 from flask import Blueprint, current_app, jsonify, render_template, request, session
@@ -46,10 +47,30 @@ def _tenant() -> str:
 def _public_health_profile(profile: dict) -> dict:
     if not isinstance(profile, dict):
         return {}
+    gewerk_profile = profile.get("gewerk_profile")
+    safe_gewerk_profile = None
+    if isinstance(gewerk_profile, dict):
+        safe_gewerk_profile = {
+            "profile_id": gewerk_profile.get("profile_id"),
+            "gewerk_name": gewerk_profile.get("gewerk_name"),
+            "document_types": gewerk_profile.get("document_types"),
+            "required_fields": gewerk_profile.get("required_fields"),
+            "task_templates": gewerk_profile.get("task_templates"),
+            "time_export_rules": gewerk_profile.get("time_export_rules"),
+        }
     return {
         "name": profile.get("name"),
         "profile_id": profile.get("profile_id"),
         "gewerk_name": profile.get("gewerk_name"),
+        "gewerk_profile": safe_gewerk_profile,
+    }
+
+
+def _remote_llm_enabled() -> bool:
+    return str(os.getenv("KUKANILEA_REMOTE_LLM_ENABLED", "0")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
     }
 
 
@@ -60,12 +81,12 @@ def ping():
 
 
 @bp.get("/health")
+@login_required
 @search_limiter.limit_required
 def health():
     auth_db = current_app.extensions["auth_db"]
     core_stats = {}
     profile = None
-    is_authenticated = bool(session.get("user"))
     try:
         from app import web  # local import to avoid circular refs
 
@@ -74,8 +95,7 @@ def health():
         if core and callable(getattr(core, "get_health_stats", None)):
             core_stats = core.get_health_stats(tenant_id=tenant_id)
         if core and callable(getattr(core, "get_profile", None)):
-            full_profile = core.get_profile()
-            profile = full_profile if is_authenticated else _public_health_profile(full_profile)
+            profile = _public_health_profile(core.get_profile())
     except Exception:
         core_stats = {}
     payload = dict(
@@ -84,6 +104,7 @@ def health():
         last_indexed_at=core_stats.get("last_indexed_at"),
         doc_count=core_stats.get("doc_count", 0),
         fts_enabled=core_stats.get("fts_enabled", False),
+        remote_llm_enabled=_remote_llm_enabled(),
     )
     payload["profile"] = profile
     return jsonify(payload)

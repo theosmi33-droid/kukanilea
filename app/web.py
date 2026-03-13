@@ -4999,7 +4999,17 @@ def legal_page():
 
 @bp.route("/health")
 def health():
-    return jsonify(ok=True, ts=time.time(), app="kukanilea_upload_v3_ui")
+    remote_llm_enabled = str(os.getenv("KUKANILEA_REMOTE_LLM_ENABLED", "0")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    return jsonify(
+        ok=True,
+        ts=time.time(),
+        app="kukanilea_upload_v3_ui",
+        remote_llm_enabled=remote_llm_enabled,
+    )
 
 
 

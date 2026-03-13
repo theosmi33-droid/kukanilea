@@ -383,3 +383,62 @@ def test_healthcheck_non_write_endpoint_stays_accessible_with_runtime_overrides(
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.get_json()["ok"] is True
+
+
+def test_api_health_reports_remote_llm_flag(tmp_path, monkeypatch):
+    monkeypatch.setenv("KUKANILEA_REMOTE_LLM_ENABLED", "1")
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+    _seed_user_session(client, tenant_db_path=str(tmp_path / "runtime_probe.sqlite3"))
+
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["remote_llm_enabled"] is True
+
+
+def test_api_health_profile_is_sanitized(tmp_path, monkeypatch):
+    app = _build_app(tmp_path, monkeypatch)
+    client = app.test_client()
+    _seed_user_session(client, tenant_db_path=str(tmp_path / "runtime_probe.sqlite3"))
+
+    import app.web as web_module
+
+    monkeypatch.setattr(
+        web_module.core,
+        "get_profile",
+        lambda: {
+            "name": "Demo",
+            "profile_id": "M001",
+            "gewerk_name": "Fliesen",
+            "gewerk_profile": {
+                "profile_id": "M001",
+                "gewerk_name": "Fliesen",
+                "document_types": ["RECHNUNG"],
+                "required_fields": ["tenant"],
+                "task_templates": ["Follow-up"],
+                "time_export_rules": {"rounding_minutes": 15},
+                "internal_path": "/secret/internal",
+            },
+            "db_path": "/secret/core.sqlite3",
+            "base_path": "/secret/base",
+            "token": "should-not-leak",
+        },
+    )
+
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["profile"] == {
+        "name": "Demo",
+        "profile_id": "M001",
+        "gewerk_name": "Fliesen",
+        "gewerk_profile": {
+            "profile_id": "M001",
+            "gewerk_name": "Fliesen",
+            "document_types": ["RECHNUNG"],
+            "required_fields": ["tenant"],
+            "task_templates": ["Follow-up"],
+            "time_export_rules": {"rounding_minutes": 15},
+        },
+    }

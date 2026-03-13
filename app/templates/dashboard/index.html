@@ -378,7 +378,7 @@ function renderSpeedToLead(summaryMap) {
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-function renderHealthStrip(summaryMap, appHealthOk) {
+function renderHealthStrip(summaryMap, appHealthOk, remoteLlmEnabled = false) {
   const summary = document.getElementById("health-strip-summary");
   const tools = document.getElementById("health-strip-tools");
   const state = document.getElementById("health-strip-state");
@@ -397,10 +397,16 @@ function renderHealthStrip(summaryMap, appHealthOk) {
   summary.textContent = appHealthOk
     ? `${okCount} ok · ${degradedCount} degraded · ${downCount} down`
     : `App down · ${okCount} ok · ${degradedCount} degraded · ${downCount} down`;
+  if (remoteLlmEnabled) {
+    summary.textContent = `${summary.textContent} · cloud mode active`;
+  }
 
   tools.innerHTML = rows.map((row) => `
     <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${row.status}</span>
   `).join("");
+  if (remoteLlmEnabled) {
+    tools.innerHTML += '<span class="badge border border-warning text-warning">cloud_mode: active</span>';
+  }
 
   if (!rows.length || downCount === rows.length) {
     _renderState(state, {
@@ -474,15 +480,17 @@ async function loadSpeedToLeadAndHealth() {
     const summaryMap = Object.fromEntries(summaryPairs);
 
     let appHealthOk = false;
+    let remoteLlmEnabled = false;
     try {
       const health = await _fetchJsonWithTimeout('/health', 3000);
       appHealthOk = Boolean(health?.ok);
+      remoteLlmEnabled = Boolean(health?.remote_llm_enabled);
     } catch (_err) {
       appHealthOk = false;
     }
 
     renderSpeedToLead(summaryMap);
-    renderHealthStrip(summaryMap, appHealthOk);
+    renderHealthStrip(summaryMap, appHealthOk, remoteLlmEnabled);
   } finally {
     healthRefreshInFlight = false;
   }
