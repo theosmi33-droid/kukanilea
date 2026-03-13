@@ -13,7 +13,7 @@
       <span class="badge">local-first · review-first · nachvollziehbar</span>
     </div>
     <p class="assistant-hero-copy">
-      Zusatzmodule bleiben gebuendelt in einem Arbeitsraum. Kernreiter bleiben stabil, Assistenz hilft im Kontext.
+      Zusatzmodule bleiben gebündelt in einem Arbeitsraum. Kernreiter bleiben stabil, Assistenz hilft im Kontext.
     </p>
   </section>
 
@@ -21,16 +21,20 @@
     {% for group in module_groups %}
     <article id="{{ group.id }}" class="assistant-group panel">
       <header class="assistant-group-head">
-        <h2>{{ group.title }}</h2>
+        <div>
+          <h2>{{ group.title }}</h2>
+          <p class="assistant-group-subtitle">{{ group.subtitle }}</p>
+        </div>
       </header>
       <div class="assistant-cards">
         {% for card in group.cards %}
         <section class="assistant-card">
           <div class="assistant-card-head">
             <h3>{{ card.title }}</h3>
-            <span class="assist-status {% if card.status == 'verfügbar' %}available{% elif card.status == 'vorbereitet' %}prepared{% else %}planned{% endif %}">{{ card.status }}</span>
+            <span class="assist-status {% if card.status == 'Verfügbar' %}available{% elif card.status == 'Vorbereitet' %}prepared{% else %}planned{% endif %}">{{ card.status }}</span>
           </div>
           <p>{{ card.description }}</p>
+          <div class="assistant-card-hint">{{ card.hint }}</div>
           <div class="assistant-card-actions">
             {% if card.href %}
             <a class="btn btn-ghost" href="{{ card.href }}">{{ card.action }}</a>

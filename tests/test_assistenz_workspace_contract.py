@@ -16,9 +16,9 @@ def test_assistenz_workspace_groups_and_status_cards_present() -> None:
     assert "Zeit" in web_py
     assert "Wissen / Gedächtnis" in web_py
     assert "Fokus / Privat" in web_py
-    assert "verfügbar" in web_py
-    assert "vorbereitet" in web_py
-    assert "geplant" in web_py
+    assert "Verfügbar" in web_py
+    assert "Vorbereitet" in web_py
+    assert "Geplant" in web_py
     assert 'href": "/email"' in web_py
     assert 'href": "/upload"' in web_py
     assert 'href": "/messenger"' in web_py
