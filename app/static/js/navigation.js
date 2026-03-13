@@ -8,6 +8,8 @@
   window.__kukanileaNavigationMotionInit = true;
 
   const ready = () => {
+    normalizeSidebarMarkup();
+    setupSkipLinkFocus();
     setupPressedState();
     setupHtmxLoadingFeedback();
     setupDisclosure();
@@ -24,6 +26,61 @@
     document.addEventListener('DOMContentLoaded', ready, { once: true });
   } else {
     ready();
+  }
+
+  function normalizeSidebarMarkup() {
+    const sidebar = document.getElementById('app-sidebar');
+    if (!sidebar) return;
+
+    // Remove legacy "Navigation" caption to keep tool rail clean.
+    sidebar.querySelectorAll('.sidebar-section-label').forEach((node) => {
+      const text = (node.textContent || '').trim().toLowerCase();
+      if (text === 'navigation') node.remove();
+    });
+
+    // Ensure disclosure rows always have stable label + chevron icon.
+    sidebar.querySelectorAll('[data-disclosure-toggle]').forEach((toggle) => {
+      let label = toggle.querySelector('.sidebar-disclosure-label');
+      if (!label) {
+        const raw = (toggle.textContent || '').trim() || 'Assistenz';
+        toggle.textContent = '';
+        label = document.createElement('span');
+        label.className = 'sidebar-disclosure-label';
+        label.textContent = raw;
+        toggle.appendChild(label);
+      }
+
+      if (!toggle.querySelector('.sidebar-disclosure-icon')) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const icon = document.createElementNS(ns, 'svg');
+        icon.setAttribute('class', 'sidebar-disclosure-icon');
+        icon.setAttribute('width', '14');
+        icon.setAttribute('height', '14');
+        icon.setAttribute('viewBox', '0 0 24 24');
+        icon.setAttribute('fill', 'none');
+        icon.setAttribute('stroke', 'currentColor');
+        icon.setAttribute('stroke-width', '2');
+        icon.setAttribute('aria-hidden', 'true');
+        const polyline = document.createElementNS(ns, 'polyline');
+        polyline.setAttribute('points', '6 9 12 15 18 9');
+        icon.appendChild(polyline);
+        toggle.appendChild(icon);
+      }
+    });
+  }
+
+  function setupSkipLinkFocus() {
+    document.querySelectorAll('.skip-link[href^="#"]').forEach((link) => {
+      link.addEventListener('click', (event) => {
+        const href = link.getAttribute('href') || '';
+        if (!href || href === '#') return;
+        const target = document.querySelector(href);
+        if (!(target instanceof HTMLElement)) return;
+        event.preventDefault();
+        target.focus();
+        target.scrollIntoView({ block: 'start' });
+      });
+    });
   }
 
   function setupPressedState() {
@@ -44,6 +101,15 @@
     let requestsInFlight = 0;
 
     const contentRoot = document.getElementById('main-content');
+    const isBackgroundRequest = (event) => {
+      const source = event?.detail?.elt instanceof Element
+        ? event.detail.elt
+        : (event?.target instanceof Element ? event.target : null);
+      if (!source) return false;
+      if (source.closest('[data-htmx-background="1"], [data-htmx-background="true"]')) return true;
+      const trigger = String(source.getAttribute('hx-trigger') || source.getAttribute('data-hx-trigger') || '');
+      return trigger.includes('every');
+    };
 
     const setLoading = (isLoading) => {
       document.body.setAttribute('data-htmx-loading', isLoading ? '1' : '0');
@@ -55,12 +121,14 @@
 
     setLoading(false);
 
-    document.body.addEventListener('htmx:beforeRequest', () => {
+    document.body.addEventListener('htmx:beforeRequest', (event) => {
+      if (isBackgroundRequest(event)) return;
       requestsInFlight += 1;
       setLoading(true);
     });
 
-    const finalize = () => {
+    const finalize = (event) => {
+      if (isBackgroundRequest(event)) return;
       requestsInFlight = Math.max(0, requestsInFlight - 1);
       if (requestsInFlight === 0) setLoading(false);
     };

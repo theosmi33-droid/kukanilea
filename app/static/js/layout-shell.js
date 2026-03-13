@@ -16,22 +16,69 @@ window.addEventListener('DOMContentLoaded', () => {
 }, { once: true });
 
 document.addEventListener('DOMContentLoaded', () => {
+  const SIDEBAR_MOBILE_MAX = 768;
+  const SIDEBAR_AUTO_COLLAPSE_MAX = 1366;
   const sidebarToggle = document.getElementById('sidebar-toggle');
-  const updateSidebarLabel = () => {
-    const collapsed = document.documentElement.classList.contains('sidebar-collapsed');
-    if (sidebarToggle) {
-      sidebarToggle.setAttribute('aria-expanded', !collapsed);
-      sidebarToggle.title = collapsed ? 'Sidebar ausklappen' : 'Sidebar einklappen';
+  const sidebarToggleTop = document.getElementById('sidebar-toggle-top');
+  const sidebarToggles = [sidebarToggle, sidebarToggleTop].filter(Boolean);
+
+  const isMobileViewport = () => window.matchMedia(`(max-width: ${SIDEBAR_MOBILE_MAX}px)`).matches;
+  const isAutoCollapseViewport = () => (
+    !isMobileViewport() && window.matchMedia(`(max-width: ${SIDEBAR_AUTO_COLLAPSE_MAX}px)`).matches
+  );
+
+  const applySidebarCollapsed = (collapsed, { persist = true } = {}) => {
+    document.documentElement.classList.toggle('sidebar-collapsed', collapsed);
+    if (persist) {
+      try { localStorage.setItem('ks_sidebar_collapsed', collapsed ? '1' : '0'); } catch (_err) {}
     }
   };
 
-  if (sidebarToggle) {
-    sidebarToggle.addEventListener('click', () => {
-      const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
-      try { localStorage.setItem('ks_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+  const updateSidebarLabel = () => {
+    const collapsed = document.documentElement.classList.contains('sidebar-collapsed');
+    sidebarToggles.forEach((toggle) => {
+      toggle.setAttribute('aria-expanded', !collapsed);
+      toggle.setAttribute('aria-label', collapsed ? 'Reiter aufklappen' : 'Reiter minimieren');
+      toggle.title = collapsed ? 'Reiter aufklappen' : 'Reiter minimieren';
+    });
+  };
+
+  const syncSidebarToViewport = () => {
+    if (isMobileViewport()) {
+      applySidebarCollapsed(false, { persist: false });
       updateSidebarLabel();
+      return;
+    }
+    if (isAutoCollapseViewport()) {
+      applySidebarCollapsed(true);
+      updateSidebarLabel();
+      return;
+    }
+    // Wide viewports default to expanded sidebar.
+    applySidebarCollapsed(false);
+    updateSidebarLabel();
+  };
+
+  if (sidebarToggles.length) {
+    const toggleSidebar = () => {
+      if (isAutoCollapseViewport()) return;
+      const collapsed = !document.documentElement.classList.contains('sidebar-collapsed');
+      applySidebarCollapsed(collapsed);
+      updateSidebarLabel();
+    };
+    sidebarToggles.forEach((toggle) => {
+      toggle.addEventListener('click', toggleSidebar);
     });
   }
+
+  let sidebarResizeRaf = 0;
+  window.addEventListener('resize', () => {
+    if (sidebarResizeRaf) window.cancelAnimationFrame(sidebarResizeRaf);
+    sidebarResizeRaf = window.requestAnimationFrame(() => {
+      syncSidebarToViewport();
+      sidebarResizeRaf = 0;
+    });
+  }, { passive: true });
 
   const mobileToggle = document.getElementById('mobile-sidebar-toggle');
   const sidebar = document.querySelector('.sidebar');
@@ -72,7 +119,96 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const initializeUi = () => {
-    updateSidebarLabel();
+    const topbarClock = document.getElementById('topbar-clock');
+    const topbarOnline = document.getElementById('topbar-online-count');
+    const topbarRunning = document.getElementById('topbar-running-timer');
+    const topbarTimeHide = document.getElementById('topbar-time-hide');
+    const topbarTimeShowIcon = topbarTimeHide?.querySelector('.topbar-time-icon-show');
+    const topbarTimeHideIcon = topbarTimeHide?.querySelector('.topbar-time-icon-hide');
+    let topbarTimerHidden = false;
+    let topbarRunningAnchorMs = null;
+    let topbarRunningState = 0;
+
+    const fmtHms = (totalSeconds) => {
+      const sec = Math.max(0, Number(totalSeconds) || 0);
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':');
+    };
+    const updateTopbarClock = () => {
+      if (!topbarClock) return;
+      const next = new Date().toLocaleTimeString('de-DE', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      if (topbarClock.textContent !== next) topbarClock.textContent = next;
+    };
+
+    const renderTopbarOnline = () => {
+      if (!topbarOnline) return;
+      topbarOnline.textContent = navigator.onLine ? '1' : '0';
+    };
+
+    const renderTopbarRunning = () => {
+      if (!topbarRunning) return;
+      const seconds = topbarRunningState > 0 && topbarRunningAnchorMs
+        ? Math.floor((Date.now() - topbarRunningAnchorMs) / 1000)
+        : 0;
+      const next = topbarTimerHidden ? '••:••:••' : fmtHms(seconds);
+      if (topbarRunning.textContent !== next) topbarRunning.textContent = next;
+    };
+
+    const applyTopbarTimeToggle = () => {
+      if (!topbarTimeHide) return;
+      topbarTimeHide.setAttribute('aria-label', topbarTimerHidden ? 'Zeit einblenden' : 'Zeit ausblenden');
+      topbarTimeHide.title = topbarTimerHidden ? 'Zeit einblenden' : 'Zeit ausblenden';
+      if (topbarTimeShowIcon) topbarTimeShowIcon.hidden = topbarTimerHidden;
+      if (topbarTimeHideIcon) topbarTimeHideIcon.hidden = !topbarTimerHidden;
+      renderTopbarRunning();
+    };
+
+    const refreshTopbarTimeState = async () => {
+      if (!topbarRunning) return;
+      try {
+        const res = await fetch('/api/time/summary', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const payload = await res.json();
+        const running = Number(payload?.metrics?.running || 0);
+        if (running > 0 && !topbarRunningAnchorMs) topbarRunningAnchorMs = Date.now();
+        if (running <= 0) topbarRunningAnchorMs = null;
+        topbarRunningState = running > 0 ? 1 : 0;
+        renderTopbarRunning();
+      } catch (_err) {
+        // Keep last known topbar state; do not disrupt shell.
+      }
+    };
+
+    try {
+      topbarTimerHidden = localStorage.getItem('kuka_topbar_time_hidden') === '1';
+    } catch (_err) {
+      topbarTimerHidden = false;
+    };
+
+    updateTopbarClock();
+    renderTopbarOnline();
+    applyTopbarTimeToggle();
+    refreshTopbarTimeState();
+    window.setInterval(updateTopbarClock, 1000);
+    window.setInterval(renderTopbarRunning, 1000);
+    window.setInterval(refreshTopbarTimeState, 30000);
+    window.addEventListener('online', renderTopbarOnline);
+    window.addEventListener('offline', renderTopbarOnline);
+    if (topbarTimeHide) {
+      topbarTimeHide.addEventListener('click', () => {
+        topbarTimerHidden = !topbarTimerHidden;
+        try { localStorage.setItem('kuka_topbar_time_hidden', topbarTimerHidden ? '1' : '0'); } catch (_err) {}
+        applyTopbarTimeToggle();
+      });
+    }
+
+    syncSidebarToViewport();
     updateActiveRoutes();
     const chatToggle = document.getElementById('ki-chat-toggle');
     if (chatToggle) {

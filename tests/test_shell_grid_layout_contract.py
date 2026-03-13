@@ -42,7 +42,7 @@ def test_shell_navigation_css_contains_responsive_mobile_rules() -> None:
     assert "@media (max-width: 768px)" in css
     assert ".sidebar" in css
     assert ".mobile-bottom-nav" in css
-    assert "padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px))" in css
+    assert "padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px))" in css
 
 
 def test_shell_navigation_css_keeps_sidebar_collapse_contract() -> None:

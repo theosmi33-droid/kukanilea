@@ -1,13 +1,21 @@
 from __future__ import annotations
+
+import importlib
+import importlib.util
 import json
 import logging
-from pathlib import Path
-from flask import Blueprint, current_app, jsonify, request, render_template, redirect, url_for
+
+from flask import (
+    Blueprint,
+    jsonify,
+    render_template,
+    request,
+)
 from jinja2 import TemplateNotFound
 
-from app.auth import login_required, current_tenant, current_role, current_user
-from app.config import Config
 from app import core
+from app.auth import current_tenant, login_required
+from app.config import Config
 from app.core.gewerke_profiles import get_active_profile
 from app.modules.dashboard.briefing import get_latest_briefing
 
@@ -34,6 +42,40 @@ def _render_base(template_name: str, **kwargs) -> str:
 def _render_sovereign_tool(tool_key: str, title: str, message: str, active_tab: str = "dashboard") -> str:
     from app.web import _render_sovereign_tool as web_render_tool
     return web_render_tool(tool_key, title, message, active_tab=active_tab)
+
+
+def _dashboard_weather(city: str = "Berlin") -> dict:
+    fallback = {
+        "city": city,
+        "summary": "Offline bereit",
+        "temp_c": None,
+        "wind_kmh": None,
+        "live": False,
+    }
+    try:
+        weather_spec = importlib.util.find_spec("kukanilea_weather_plugin")
+        if not weather_spec:
+            return fallback
+        weather_mod = importlib.import_module("kukanilea_weather_plugin")
+        getter = getattr(weather_mod, "get_weather", None) or getattr(
+            weather_mod, "get_berlin_weather_now", None
+        )
+        if not callable(getter):
+            return fallback
+        payload = getter(city) if getattr(getter, "__name__", "") == "get_weather" else getter()
+        if not isinstance(payload, dict):
+            return fallback
+        summary = str(payload.get("summary") or "Unbekannt").strip()
+        return {
+            "city": str(payload.get("city") or city).strip(),
+            "summary": summary or "Unbekannt",
+            "temp_c": payload.get("temp_c"),
+            "wind_kmh": payload.get("wind_kmh"),
+            "live": True,
+        }
+    except Exception:
+        logger.debug("weather widget fallback active", exc_info=True)
+        return fallback
 
 @bp.get("/dashboard")
 @login_required
@@ -67,6 +109,7 @@ def dashboard_page():
         recent = get_recent(tenant, limit=6)
 
     profile = get_active_profile(tenant_id=tenant)
+    weather_widget = _dashboard_weather("Berlin")
 
     return _render_base(
         "dashboard.html",
@@ -78,6 +121,7 @@ def dashboard_page():
         keywords=profile.get("task_templates", []),
         profile_config=profile,
         briefing=get_latest_briefing(),
+        weather_widget=weather_widget,
     )
 
 @bp.get("/api/system/status")

@@ -32,7 +32,7 @@ const CommandPalette = {
         <section class="cmdk-modal" role="dialog" aria-modal="true" aria-label="Command Palette">
           <header class="cmdk-header">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-            <input id="cmd-input" class="cmdk-input" type="text" placeholder="Befehl, Seite oder Aktion…" autocomplete="off" />
+            <input id="cmd-input" class="cmdk-input" type="text" placeholder="Befehl, Seite oder Aktion…" aria-label="Command Palette Suche" autocomplete="off" />
             <kbd class="topbar-shortcut">ESC</kbd>
           </header>
           <div id="cmd-results" class="cmdk-list" role="listbox" aria-label="Suchergebnisse"></div>

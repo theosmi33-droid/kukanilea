@@ -1,66 +1,328 @@
 {% extends "layout.html" %}
 {% block title %}Dashboard · KUKANILEA{% endblock %}
+{% block extra_head %}
+<style nonce="{{ csp_nonce() }}">
+  .overview-shell {
+    min-height: calc(100dvh - 96px);
+    max-width: none !important;
+    width: 100%;
+    padding-inline: clamp(8px, 1.4vw, 16px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    align-content: start;
+  }
+  .overview-shell > * {
+    margin: 0;
+  }
+  .overview-shell .page-header {
+    padding: 0;
+    border-radius: 12px;
+  }
+  .overview-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    align-items: stretch;
+  }
+  @media (min-width: 980px) {
+    .overview-hero {
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    }
+  }
+  .overview-hero-main {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px 12px;
+  }
+  .weather-widget {
+    border: 1px solid rgba(16, 185, 129, 0.22);
+    border-radius: 12px;
+    background:
+      radial-gradient(120% 140% at 100% 0%, rgba(16, 185, 129, 0.14) 0%, rgba(16, 185, 129, 0.02) 45%, #ffffff 100%);
+    padding: 10px 12px;
+    display: grid;
+    gap: 5px;
+  }
+  .weather-widget-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .weather-widget-kicker {
+    margin: 0;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: var(--text-tertiary);
+  }
+  .weather-widget-city {
+    margin: 1px 0 0 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .weather-widget-icon {
+    font-size: 26px;
+    line-height: 1;
+  }
+  .weather-widget-temp {
+    margin: 0;
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 800;
+    color: #0f766e;
+  }
+  .weather-widget-summary {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 700;
+  }
+  .weather-widget-meta {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+  .overview-comms .card-body {
+    padding: 10px 12px;
+  }
+  .overview-comms {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+  }
+  .overview-comms > .card {
+    min-width: 0;
+    height: 100%;
+  }
+  .overview-comms-kicker {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 800;
+  }
+  .overview-comms-value {
+    margin: 2px 0 0 0;
+    font-size: 34px;
+    line-height: 1;
+    font-weight: 800;
+    color: var(--text-primary);
+  }
+  .overview-comms-meta {
+    margin: 4px 0 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  .overview-comms-updated {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 700;
+  }
+  .overview-secondary details > summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .overview-tool-card,
+  .overview-tool-link,
+  .overview-shell .card,
+  .overview-shell .badge {
+    transition: none !important;
+  }
+  .overview-shell .card:hover,
+  .overview-shell .card:focus-within {
+    transform: none !important;
+    box-shadow: var(--shadow-sm) !important;
+  }
+  .overview-shell .animate-pulse {
+    animation: none !important;
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="page-container page-shell page-shell--wide p-6">
+<div class="page-container p-3 overview-shell">
 
   <!-- 1. Header & Welcome -->
-  <header class="page-header">
-    <div>
-        <p class="page-kicker">Dashboard</p>
-        <h1 class="m-0 text-3xl font-bold tracking-tight">Übersicht</h1>
-        <p class="text-secondary mt-2">Willkommen zurück. Hier sind die aktuellen Status Ihrer Beleg-Zentrale.</p>
+  <header class="page-header overview-hero">
+    <div class="overview-hero-main">
+      <p class="page-kicker">Dashboard</p>
+      <h1 class="m-0 text-2xl font-bold tracking-tight">Übersicht</h1>
+      <p class="text-secondary mt-1 mb-0">Kompakter Live-Status Ihrer Beleg-Zentrale.</p>
     </div>
-    <div class="flex gap-3">
-        <a href="/upload" class="btn btn-primary btn-lg shadow-sm">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-            Neuer Upload
-        </a>
-    </div>
+    {% set weather_text = (weather_widget.summary if weather_widget is defined and weather_widget else 'Offline bereit')|lower %}
+    {% set weather_icon = '☀️' %}
+    {% if 'regen' in weather_text or 'rain' in weather_text %}
+      {% set weather_icon = '🌧️' %}
+    {% elif 'wolk' in weather_text or 'cloud' in weather_text %}
+      {% set weather_icon = '⛅' %}
+    {% elif 'sturm' in weather_text or 'wind' in weather_text %}
+      {% set weather_icon = '🌬️' %}
+    {% elif 'schnee' in weather_text or 'snow' in weather_text %}
+      {% set weather_icon = '❄️' %}
+    {% endif %}
+    <article class="weather-widget" aria-label="Wetter Widget">
+      <div class="weather-widget-head">
+        <div>
+          <p class="weather-widget-kicker">Wetter</p>
+          <p class="weather-widget-city">{{ weather_widget.city if weather_widget is defined and weather_widget else 'Berlin' }}</p>
+        </div>
+        <span class="weather-widget-icon" aria-hidden="true">{{ weather_icon }}</span>
+      </div>
+      <p class="weather-widget-temp">
+        {% if weather_widget is defined and weather_widget and weather_widget.temp_c is not none %}
+          {{ weather_widget.temp_c }}°C
+        {% else %}
+          --°C
+        {% endif %}
+      </p>
+      <p class="weather-widget-summary">{{ weather_widget.summary if weather_widget is defined and weather_widget else 'Offline bereit' }}</p>
+      <p class="weather-widget-meta">
+        Wind:
+        {% if weather_widget is defined and weather_widget and weather_widget.wind_kmh is not none %}
+          {{ weather_widget.wind_kmh }} km/h
+        {% else %}
+          -- km/h
+        {% endif %}
+        · {{ 'Live' if weather_widget is defined and weather_widget and weather_widget.live else 'Lokal' }}
+      </p>
+    </article>
   </header>
 
+  <section class="overview-comms" aria-label="Kommunikation heute" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch;">
+    <article class="card border-light" id="speed-to-lead-widget" style="min-width:0;height:100%;">
+      <div class="card-header border-light flex items-center justify-between">
+        <h2 class="card-title text-base m-0">E-Mails</h2>
+        <span id="speed-to-lead-updated" class="overview-comms-updated">lädt…</span>
+      </div>
+      <div class="card-body">
+        <p class="overview-comms-kicker">Neu am heutigen Tag</p>
+        <p class="overview-comms-value" id="dashboard-email-new-count">0</p>
+        <p class="overview-comms-meta" id="dashboard-email-new-meta">Ungelesen: 0</p>
+        <div id="speed-to-lead-cards" hidden></div>
+        <div id="speed-to-lead-state" class="mt-2"></div>
+      </div>
+    </article>
+    <article class="card border-light" id="system-health-strip" style="min-width:0;height:100%;">
+      <div class="card-header border-light flex items-center justify-between">
+        <h2 class="card-title text-base m-0">Messenger</h2>
+        <span id="health-strip-updated" class="overview-comms-updated">lädt…</span>
+      </div>
+      <div class="card-body">
+        <p class="overview-comms-kicker">Ungelesene Nachrichten</p>
+        <p class="overview-comms-value" id="dashboard-messenger-unread-count">0</p>
+        <p class="overview-comms-meta" id="dashboard-messenger-unread-meta">Offene Threads: 0</p>
+        <div id="health-strip-summary" hidden></div>
+        <div id="health-strip-tools" hidden></div>
+        <div id="health-strip-state" class="mt-2"></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="overview-comms" aria-label="Planung heute" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch;">
+    <article class="card border-light" id="dashboard-calendar-widget" style="min-width:0;height:100%;">
+      <div class="card-header border-light flex items-center justify-between">
+        <h2 class="card-title text-base m-0">Kalender</h2>
+        <span id="dashboard-calendar-updated" class="overview-comms-updated">lädt…</span>
+      </div>
+      <div class="card-body">
+        <p class="overview-comms-kicker">Fällige Erinnerungen</p>
+        <p class="overview-comms-value" id="dashboard-calendar-due-count">0</p>
+        <p class="overview-comms-meta" id="dashboard-calendar-due-meta">Status: lädt…</p>
+      </div>
+    </article>
+    <article class="card border-light" id="dashboard-tasks-widget" style="min-width:0;height:100%;">
+      <div class="card-header border-light flex items-center justify-between">
+        <h2 class="card-title text-base m-0">Aufgaben</h2>
+        <span id="dashboard-tasks-updated" class="overview-comms-updated">lädt…</span>
+      </div>
+      <div class="card-body">
+        <p class="overview-comms-kicker">Offene Aufgaben</p>
+        <p class="overview-comms-value" id="dashboard-tasks-open-count">0</p>
+        <p class="overview-comms-meta" id="dashboard-tasks-open-meta">Gesamt: 0</p>
+      </div>
+    </article>
+  </section>
+
+  <section class="overview-comms" aria-label="Leistung und Projekte" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch;">
+    <article class="card border-light" id="dashboard-time-widget" style="min-width:0;height:100%;">
+      <div class="card-header border-light flex items-center justify-between">
+        <h2 class="card-title text-base m-0">Zeiterfassung</h2>
+        <span id="dashboard-time-updated" class="overview-comms-updated">lädt…</span>
+      </div>
+      <div class="card-body">
+        <p class="overview-comms-kicker">Aktive Timer</p>
+        <p class="overview-comms-value" id="dashboard-time-running-count">0</p>
+        <p class="overview-comms-meta" id="dashboard-time-running-meta">Einträge: 0</p>
+      </div>
+    </article>
+    <article class="card border-light" id="dashboard-projects-widget" style="min-width:0;height:100%;">
+      <div class="card-header border-light flex items-center justify-between">
+        <h2 class="card-title text-base m-0">Projekte</h2>
+        <span id="dashboard-projects-updated" class="overview-comms-updated">lädt…</span>
+      </div>
+      <div class="card-body">
+        <p class="overview-comms-kicker">Aktive Projekte</p>
+        <p class="overview-comms-value" id="dashboard-projects-active-count">0</p>
+        <p class="overview-comms-meta" id="dashboard-projects-active-meta">Offene Defekte: 0</p>
+      </div>
+    </article>
+  </section>
+
+  <section class="overview-comms" aria-label="Analyse und Einstellungen" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch;">
+    <article class="card border-light" id="dashboard-visualizer-widget" style="min-width:0;height:100%;">
+      <div class="card-header border-light flex items-center justify-between">
+        <h2 class="card-title text-base m-0">Analyseansicht</h2>
+        <span id="dashboard-visualizer-updated" class="overview-comms-updated">lädt…</span>
+      </div>
+      <div class="card-body">
+        <p class="overview-comms-kicker">Quellen indexiert</p>
+        <p class="overview-comms-value" id="dashboard-visualizer-sources-count">0</p>
+        <p class="overview-comms-meta" id="dashboard-visualizer-sources-meta">Render bereit: nein</p>
+      </div>
+    </article>
+    <article class="card border-light" id="dashboard-settings-widget" style="min-width:0;height:100%;">
+      <div class="card-header border-light flex items-center justify-between">
+        <h2 class="card-title text-base m-0">Einstellungen</h2>
+        <span id="dashboard-settings-updated" class="overview-comms-updated">lädt…</span>
+      </div>
+      <div class="card-body">
+        <p class="overview-comms-kicker">Write-Actions mit Gate</p>
+        <p class="overview-comms-value" id="dashboard-settings-gated-count">0</p>
+        <p class="overview-comms-meta" id="dashboard-settings-gated-meta">Security Header: aktiv</p>
+      </div>
+    </article>
+  </section>
+
   <section class="card border-light" aria-label="KPI Schnellscan">
-    <div class="card-body py-4 px-6">
+    <div class="card-body py-3 px-4">
       <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
         <h2 class="m-0 text-base font-bold">Leitstand-Schnellscan</h2>
         <span id="optimizer-action-counter" class="badge bg-primary-50 text-primary-700 border border-primary-100 text-[10px] font-black tracking-wider uppercase">Optimierung läuft…</span>
       </div>
-      <div id="kpi-scan-rail" class="grid grid-cols-1 md:grid-cols-4 gap-3"></div>
-      <div id="alert-digest" class="mt-4 p-3 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main" role="status" aria-live="polite"></div>
+      <div id="kpi-scan-rail" class="grid grid-cols-1 md:grid-cols-4 gap-2"></div>
+      <div id="alert-digest" class="mt-2 p-2 rounded-xl border border-warning/20 bg-warning-bg text-sm text-main" role="status" aria-live="polite"></div>
     </div>
   </section>
 
-  <section class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Speed-to-Lead und Systemgesundheit">
-    <article class="card border-light" id="speed-to-lead-widget">
-      <div class="card-header border-light">
-        <h2 class="card-title text-base">Speed-to-Lead</h2>
-        <span id="speed-to-lead-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
-      </div>
-      <div class="card-body">
-        <div id="speed-to-lead-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
-        <div id="speed-to-lead-state" class="mt-3"></div>
-        <p class="text-xs text-muted mt-3 mb-0">Quelle: Nur Contract-Endpoints <code>/api/&lt;tool&gt;/summary</code>.</p>
-      </div>
-    </article>
-    <article class="card border-light" id="system-health-strip">
-      <div class="card-header border-light">
-        <h2 class="card-title text-base">System Health Strip</h2>
-        <span id="health-strip-updated" class="text-[10px] font-bold text-muted uppercase tracking-wider">lädt…</span>
-      </div>
-      <div class="card-body">
-        <div id="health-strip-summary" class="text-sm text-main mb-3">Status initialisiert…</div>
-        <div id="health-strip-tools" class="flex flex-wrap gap-2"></div>
-        <div id="health-strip-state" class="mt-3"></div>
-        <p class="text-xs text-muted mt-3 mb-0">App-Liveness via <code>/health</code>, Tool-Status via Summary-Contracts.</p>
-      </div>
-    </article>
-  </section>
-
   <!-- 2. Priority Stats Grid -->
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
     <!-- Archivierte Belege -->
     <div class="card card-featured border-light">
-        <div class="card-body flex items-center gap-5">
+        <div class="card-body flex items-center gap-3">
             <div class="p-3 bg-primary-50 text-primary-600 rounded-2xl">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             </div>
@@ -73,7 +335,7 @@
     
     <!-- Vault Status -->
     <div class="card border-light">
-        <div class="card-body flex items-center gap-5">
+        <div class="card-body flex items-center gap-3">
             <div class="p-3 bg-success-bg text-success rounded-2xl">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </div>
@@ -88,32 +350,11 @@
     {% include "components/outbound_status_panel.html" %}
   </div>
 
-  <!-- 3. Tool Matrix -->
-  <section class="card bg-subtle border-light">
-    <div class="card-header border-none bg-transparent pt-6 px-6">
-        <div class="flex justify-between items-center w-full">
-            <h2 class="text-lg font-bold m-0 flex items-center gap-2">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary-600"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
-                Werkzeug-Status
-            </h2>
-            <span class="text-[10px] font-bold text-muted uppercase tracking-wider" id="tool-contract-updated">Initialisiere...</span>
-        </div>
-    </div>
-    <div class="card-body p-6 pt-2">
-        <div class="text-xs text-muted mb-3">
-            Systemhinweis: Einzelne Tools können vorübergehend eingeschränkt reagieren.
-            <span class="font-semibold">Eingeschränkt verfügbar</span>
-            <details class="inline-block ml-2">
-                <summary>Mehr anzeigen</summary>
-                <span>Wenn ein Tool degradiert ist, bleibt das Dashboard bedienbar und lädt Daten bei der nächsten Runde nach.</span>
-            </details>
-        </div>
-        {% include "components/tool_matrix_panel.html" %}
-    </div>
-  </section>
-
-  <!-- 4. Main Content Areas -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+  <!-- 3. Main Content Areas -->
+  <div class="overview-secondary">
+  <details>
+  <summary>Weitere Details</summary>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-2">
     
     <!-- Activity Feed -->
     <div class="card border-light shadow-sm">
@@ -127,7 +368,7 @@
                 <table class="table w-full text-sm">
                     <tbody>
                         {% for entry in recent[:6] %}
-                        <tr class="border-b last:border-0 hover:bg-neutral-25 transition-colors">
+                        <tr class="border-b last:border-0">
                             <td class="p-4" style="width: 48px;">
                                 <div class="p-2 bg-neutral-50 text-neutral-400 rounded-lg">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -161,15 +402,15 @@
             <h3 class="card-title text-base">Review Pipeline</h3>
             {% if items %}<span class="badge bg-primary-50 text-primary-700 border border-primary-100 px-2 py-0.5 rounded-full text-[10px] font-black">{{ items|length }}</span>{% endif %}
         </div>
-        <div class="card-body flex flex-column gap-4">
+        <div class="card-body flex flex-column gap-3">
             {% if items %}
                 {% for token in items[:5] %}
-                <div class="card card-interactive border-light hover:border-primary-300 group" onclick="location.href='/review/{{ token }}/kdnr'">
+                <div class="card card-interactive border-light" onclick="location.href='/review/{{ token }}/kdnr'">
                     <div class="card-body p-4 flex items-center justify-between">
                         <div class="flex items-center gap-4">
-                            <div class="w-2.5 h-2.5 rounded-full bg-primary-500 ring-2 ring-primary-100 animate-pulse"></div>
+                            <div class="w-2.5 h-2.5 rounded-full bg-primary-500 ring-2 ring-primary-100"></div>
                             <div>
-                                <div class="font-bold text-sm text-main group-hover:text-primary-600 transition-colors">{{ meta.get(token, {}).get('filename', 'Analysiere Dokument...') }}</div>
+                                <div class="font-bold text-sm text-main">{{ meta.get(token, {}).get('filename', 'Analysiere Dokument...') }}</div>
                                 <div class="text-[10px] text-muted font-mono mt-0.5">ID: {{ token[:12] }}</div>
                             </div>
                         </div>
@@ -191,61 +432,29 @@
     </div>
 
   </div>
+  </details>
+  </div>
 
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script nonce="{{ csp_nonce() }}">
-/**
- * Dashboard Logic v2.5 (Worker 4 Refinement)
- */
-function renderToolMatrix(payload) {
-  const grid = document.getElementById("tool-matrix-grid");
-  const updated = document.getElementById("tool-contract-updated");
-  if (!grid || !updated) return;
-  
-  const tools = Array.isArray(payload?.tools) ? payload.tools : [];
-  updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'})}`;
-  if (!tools.length) {
-    grid.innerHTML = `<article class="card card-tight border-light bg-subtle">
-      <div class="card-body">
-        <div class="text-sm font-bold text-main">Noch keine Tool-Status verfügbar</div>
-        <div class="text-xs text-muted mt-1">Sobald die Verbindung steht, werden die Bereiche automatisch ergänzt.</div>
-      </div>
-    </article>`;
-    return;
-  }
-  
-  grid.innerHTML = tools.map((tool) => {
-    const status = String(tool.status || "error");
-    const isOk = status === "ok";
-    const isDegraded = status === "degraded";
-    
-    const colorClass = isOk ? "text-success" : (isDegraded ? "text-warning" : "text-error");
-    const borderColor = isOk ? "var(--success)" : (isDegraded ? "var(--warning)" : "var(--error)");
-    const bgClass = isOk ? "bg-success-bg" : (isDegraded ? "bg-warning-bg" : "bg-error-bg");
-    
-    const reason = tool.degraded_reason ? `<div class="text-[10px] text-muted mt-1 leading-tight">${humanizeDegradedReason(tool.degraded_reason)}</div>` : "";
-    
-    return `
-    <article class="card card-tight border-light" style="border-left: 4px solid ${borderColor};">
-      <div class="card-body">
-        <div class="flex justify-between items-center gap-2">
-            <span class="text-sm font-bold text-main">${tool.tool}</span>
-            <span class="text-[10px] font-black uppercase ${colorClass}">${label}</span>
-        </div>
-        <div class="text-[11px] mt-1 text-muted">${hint}</div>
-        ${reason}
-      </div>
-    </article>`;
-  }).join("");
-}
+const DASHBOARD_TOOLS = [
+  "dashboard", "upload", "projects", "tasks", "messenger", "email", "calendar", "time", "visualizer", "settings", "chatbot",
+];
+const SUMMARY_TIMEOUT_MS = 4500;
+const REFRESH_INTERVAL_MS = 60000;
+let healthRefreshInFlight = false;
+let lastSummaryRenderSignature = "";
 
-function deriveDashboardSignals(payload) {
-  const toolRows = Array.isArray(payload?.tools) ? payload.tools : [];
-  const toolsDown = toolRows.filter((row) => String(row.status || "error") === "error").length;
-  const toolsWarn = toolRows.filter((row) => String(row.status || "error") === "degraded").length;
+function deriveDashboardSignals(summaryMap) {
+  const statusRows = DASHBOARD_TOOLS.map((tool) => {
+    const raw = String(summaryMap?.[tool]?.status || "error");
+    return raw === "ok" || raw === "degraded" ? raw : "error";
+  });
+  const toolsDown = statusRows.filter((status) => status === "error").length;
+  const toolsWarn = statusRows.filter((status) => status === "degraded").length;
   const reviewQueue = Number({{ items|length if items else 0 }});
   const archivedDocs = Number({{ (recent|length if recent else 0) + (items|length if items else 0) }});
   return {
@@ -303,32 +512,6 @@ function executeOptimizerActions(signals, targetActions = 2200) {
   if (counter) {
     counter.textContent = `${actionCount} Aktionen ausgeführt · KPI-Scan priorisiert`;
   }
-}
-
-
-function humanizeDegradedReason(reason) {
-  const labels = {
-    summary_unreachable: "Live-Daten aktuell nicht erreichbar",
-    timeout: "Antwort dauert länger als erwartet",
-    unknown: "Vorübergehend eingeschränkter Dienst",
-  };
-  return labels[String(reason || "")] || "Vorübergehend eingeschränkter Dienst";
-}
-
-function statusLabel(status) {
-  if (status === "ok") return "stabil";
-  if (status === "degraded") return "eingeschränkt";
-  return "nicht erreichbar";
-}
-
-const DASHBOARD_TOOLS = [
-  "dashboard", "upload", "projects", "tasks", "messenger", "email", "calendar", "time", "visualizer", "settings", "chatbot",
-];
-
-function _statusTone(status) {
-  if (status === "ok") return "bg-success-bg text-success border-success/20";
-  if (status === "degraded") return "bg-warning-bg text-warning border-warning/20";
-  return "bg-error-bg text-error border-error/20";
 }
 
 function _stateIllustration(kind = "empty") {
@@ -393,103 +576,168 @@ function renderLoadingStates() {
 }
 
 function renderSpeedToLead(summaryMap) {
-  const container = document.getElementById("speed-to-lead-cards");
+  const emailCount = document.getElementById("dashboard-email-new-count");
+  const emailMeta = document.getElementById("dashboard-email-new-meta");
   const state = document.getElementById("speed-to-lead-state");
   const updated = document.getElementById("speed-to-lead-updated");
-  if (!container || !updated || !state) return;
+  if (!emailCount || !emailMeta || !updated || !state) return;
 
-  const emailPending = Number(summaryMap.email?.metrics?.pending_threads || summaryMap.email?.metrics?.inbox_unread || 0);
-  const messengerPending = Number(summaryMap.messenger?.metrics?.pending_conversations || summaryMap.messenger?.metrics?.unread_threads || 0);
-  const callsPending = Number(summaryMap.dashboard?.metrics?.missed_calls_placeholder || 0);
-  const updatedAt = [summaryMap.email?.updated_at, summaryMap.messenger?.updated_at]
-    .filter(Boolean)
-    .map((value) => Date.parse(value))
-    .filter((value) => Number.isFinite(value));
-  const lastResponseAgo = updatedAt.length ? Math.max(0, Math.round((Date.now() - Math.max(...updatedAt)) / 60000)) : null;
-
-  const tiles = [
-    { label: "E-Mail offen", value: emailPending },
-    { label: "Messenger offen", value: messengerPending },
-    { label: "Anrufe offen", value: callsPending, hint: "Platzhalter" },
-    { label: "Letzte Reaktion", value: lastResponseAgo === null ? "—" : `${lastResponseAgo} min` },
-  ];
-
-  const hasSummaryData = [summaryMap.email, summaryMap.messenger, summaryMap.dashboard].some(Boolean);
-  if (!hasSummaryData) {
-    container.innerHTML = `<article class="rounded-xl border border-warning/20 p-3 bg-warning-bg sm:col-span-3">
-      <div class="text-sm font-bold text-main">Kennzahlen werden vorbereitet</div>
-      <div class="text-xs text-muted mt-1">Die Übersicht bleibt nutzbar. Werte werden nachgeladen, sobald die Quellen antworten.</div>
-    </article>`;
+  const summary = summaryMap.email;
+  if (!summary || typeof summary !== "object") {
+    emailCount.textContent = "0";
+    emailMeta.textContent = "Ungelesen: 0";
     _renderState(state, {
       kind: "empty",
-      title: "No agents running",
-      instructions: "Es sind noch keine Agent- und Kommunikationsdaten verfügbar.",
-      actions: [{ href: "/settings", label: "Create Agent" }],
+      title: "E-Mail-Summary nicht verfügbar",
+      instructions: "Die Übersicht bleibt nutzbar. E-Mail-Daten werden nachgeladen.",
+      actions: [{ href: "/email", label: "E-Mails öffnen" }],
     });
     updated.textContent = "Wird aktualisiert…";
     return;
   }
 
-  container.innerHTML = tiles.map((tile) => `
-    <article class="rounded-xl border border-light p-3 bg-subtle">
-      <div class="text-[10px] uppercase tracking-wider font-black text-muted">${tile.label}</div>
-      <div class="text-2xl font-bold text-main mt-1">${tile.value}</div>
-      ${tile.hint ? `<div class="text-[10px] text-muted mt-1">${tile.hint}</div>` : ""}
-    </article>
-  `).join("");
+  const newToday = Number(
+    summary.metrics?.new_today
+      || summary.metrics?.inbox_new_today
+      || summary.metrics?.incoming_today
+      || 0
+  );
+  const unread = Number(summary.metrics?.inbox_unread || summary.metrics?.pending_threads || 0);
+  emailCount.textContent = String(Math.max(0, newToday));
+  emailMeta.textContent = `Ungelesen: ${Math.max(0, unread)}`;
   state.innerHTML = "";
   updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-function renderHealthStrip(summaryMap, appHealthOk) {
-  const summary = document.getElementById("health-strip-summary");
-  const tools = document.getElementById("health-strip-tools");
+function renderHealthStrip(summaryMap, appHealthOk, remoteLlmEnabled = false) {
+  const messengerCount = document.getElementById("dashboard-messenger-unread-count");
+  const messengerMeta = document.getElementById("dashboard-messenger-unread-meta");
   const state = document.getElementById("health-strip-state");
   const updated = document.getElementById("health-strip-updated");
-  if (!summary || !tools || !updated || !state) return;
+  if (!messengerCount || !messengerMeta || !updated || !state) return;
 
-  const rows = DASHBOARD_TOOLS.map((tool) => {
-    const status = String(summaryMap[tool]?.status || "down").replace("error", "down");
-    return { tool, status: ["ok", "degraded"].includes(status) ? status : "down" };
-  });
-  const okCount = rows.filter((row) => row.status === "ok").length;
-  const degradedCount = rows.filter((row) => row.status === "degraded").length;
-  const downCount = rows.filter((row) => row.status === "down").length;
+  const summary = summaryMap.messenger;
+  const unread = Number(
+    summary?.metrics?.unread_messages
+      || summary?.metrics?.unread_threads
+      || summary?.metrics?.pending_conversations
+      || 0
+  );
+  const openThreads = Number(summary?.metrics?.pending_conversations || summary?.metrics?.unread_threads || 0);
+  messengerCount.textContent = String(Math.max(0, unread));
+  messengerMeta.textContent = `Offene Threads: ${Math.max(0, openThreads)}`;
 
-  summary.className = `text-sm mb-3 ${appHealthOk ? "text-main" : "text-error"}`;
-  summary.textContent = appHealthOk
-    ? `${okCount} stabil · ${degradedCount} eingeschränkt · ${downCount} nicht erreichbar`
-    : `Systemstatus ist eingeschränkt · ${okCount} stabil · ${degradedCount} eingeschränkt · ${downCount} nicht erreichbar`;
-
-  tools.innerHTML = rows.map((row) => `
-    <span class="badge border ${_statusTone(row.status)}">${row.tool}: ${statusLabel(row.status)}</span>
-  `).join("");
-
-  if (!appHealthOk || downCount > 0) {
-    _renderState(state, {
-      kind: "error",
-      title: "Eingeschränkt verfügbar",
-      instructions: "Ein Teil der Services ist aktuell nicht erreichbar. Dashboard bleibt bedienbar.",
-      actions: [{ href: "/settings", label: "System prüfen" }],
-    });
-  } else if (degradedCount > 0) {
+  const status = String(summary?.status || "degraded");
+  if (!summary || typeof summary !== "object") {
     _renderState(state, {
       kind: "empty",
-      title: "Teilweise eingeschränkt",
-      instructions: "Einzelne Tools liefern gerade reduzierte Daten.",
-      actions: [{ href: "/dashboard", label: "Neu laden" }],
+      title: "Messenger-Summary nicht verfügbar",
+      instructions: "Die Werte werden automatisch nachgeladen.",
+      actions: [{ href: "/messenger", label: "Messenger öffnen" }],
+    });
+  } else if (!appHealthOk || status === "error") {
+    _renderState(state, {
+      kind: "error",
+      title: "Messenger eingeschränkt",
+      instructions: "Der Dienst ist momentan nicht vollständig erreichbar.",
+      actions: [{ href: "/messenger", label: "Status prüfen" }],
+    });
+  } else if (status === "degraded") {
+    _renderState(state, {
+      kind: "empty",
+      title: "Messenger teilweise eingeschränkt",
+      instructions: "Ein Teil der Daten ist vorübergehend reduziert.",
+      actions: [{ href: "/messenger", label: "Messenger öffnen" }],
     });
   } else {
     state.innerHTML = "";
   }
-
-  updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+  updated.textContent = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}${remoteLlmEnabled ? " · Cloud" : ""}`;
 }
 
-const SUMMARY_TIMEOUT_MS = 4500;
-const REFRESH_INTERVAL_MS = 60000;
-let healthRefreshInFlight = false;
-let matrixRefreshInFlight = false;
+function _statusText(statusValue) {
+  const status = String(statusValue || "degraded");
+  if (status === "ok") return "stabil";
+  if (status === "degraded") return "eingeschränkt";
+  return "nicht erreichbar";
+}
+
+function renderCalendarTasks(summaryMap) {
+  const calendarCount = document.getElementById("dashboard-calendar-due-count");
+  const calendarMeta = document.getElementById("dashboard-calendar-due-meta");
+  const calendarUpdated = document.getElementById("dashboard-calendar-updated");
+  const tasksCount = document.getElementById("dashboard-tasks-open-count");
+  const tasksMeta = document.getElementById("dashboard-tasks-open-meta");
+  const tasksUpdated = document.getElementById("dashboard-tasks-updated");
+  if (!calendarCount || !calendarMeta || !calendarUpdated || !tasksCount || !tasksMeta || !tasksUpdated) return;
+
+  const calendarSummary = summaryMap.calendar;
+  const tasksSummary = summaryMap.tasks;
+  const dueReminders = Number(calendarSummary?.metrics?.due_reminders || 0);
+  const tasksOpen = Number(tasksSummary?.metrics?.tasks_open || 0);
+  const tasksTotal = Number(tasksSummary?.metrics?.tasks_total || 0);
+  const stamp = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+
+  calendarCount.textContent = String(Math.max(0, dueReminders));
+  calendarMeta.textContent = `Status: ${_statusText(calendarSummary?.status)}`;
+  calendarUpdated.textContent = stamp;
+
+  tasksCount.textContent = String(Math.max(0, tasksOpen));
+  tasksMeta.textContent = `Gesamt: ${Math.max(0, tasksTotal)}`;
+  tasksUpdated.textContent = stamp;
+}
+
+function renderTimeProjects(summaryMap) {
+  const timeCount = document.getElementById("dashboard-time-running-count");
+  const timeMeta = document.getElementById("dashboard-time-running-meta");
+  const timeUpdated = document.getElementById("dashboard-time-updated");
+  const projectsCount = document.getElementById("dashboard-projects-active-count");
+  const projectsMeta = document.getElementById("dashboard-projects-active-meta");
+  const projectsUpdated = document.getElementById("dashboard-projects-updated");
+  if (!timeCount || !timeMeta || !timeUpdated || !projectsCount || !projectsMeta || !projectsUpdated) return;
+
+  const timeSummary = summaryMap.time;
+  const projectsSummary = summaryMap.projects;
+  const running = Number(timeSummary?.metrics?.running || 0);
+  const entries = Number(timeSummary?.metrics?.entries || 0);
+  const activeProjects = Number(projectsSummary?.metrics?.active_projects || projectsSummary?.metrics?.total_projects || 0);
+  const openDefects = Number(projectsSummary?.metrics?.open_defects || 0);
+  const stamp = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+
+  timeCount.textContent = String(Math.max(0, running));
+  timeMeta.textContent = `Einträge: ${Math.max(0, entries)}`;
+  timeUpdated.textContent = stamp;
+
+  projectsCount.textContent = String(Math.max(0, activeProjects));
+  projectsMeta.textContent = `Offene Defekte: ${Math.max(0, openDefects)}`;
+  projectsUpdated.textContent = stamp;
+}
+
+function renderVisualizerSettings(summaryMap) {
+  const visualizerCount = document.getElementById("dashboard-visualizer-sources-count");
+  const visualizerMeta = document.getElementById("dashboard-visualizer-sources-meta");
+  const visualizerUpdated = document.getElementById("dashboard-visualizer-updated");
+  const settingsCount = document.getElementById("dashboard-settings-gated-count");
+  const settingsMeta = document.getElementById("dashboard-settings-gated-meta");
+  const settingsUpdated = document.getElementById("dashboard-settings-updated");
+  if (!visualizerCount || !visualizerMeta || !visualizerUpdated || !settingsCount || !settingsMeta || !settingsUpdated) return;
+
+  const visualizerSummary = summaryMap.visualizer;
+  const settingsSummary = summaryMap.settings;
+  const indexed = Number(visualizerSummary?.metrics?.sources_indexed || 0);
+  const renderReady = Number(visualizerSummary?.metrics?.render_backend_ready || 0) > 0;
+  const writeGated = Number(settingsSummary?.metrics?.write_actions_gated || 0);
+  const securityHeaders = Number(settingsSummary?.metrics?.security_headers || 0) > 0;
+  const stamp = `Stand: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+
+  visualizerCount.textContent = String(Math.max(0, indexed));
+  visualizerMeta.textContent = `Render bereit: ${renderReady ? "ja" : "nein"}`;
+  visualizerUpdated.textContent = stamp;
+
+  settingsCount.textContent = String(Math.max(0, writeGated));
+  settingsMeta.textContent = `Security Header: ${securityHeaders ? "aktiv" : "prüfen"}`;
+  settingsUpdated.textContent = stamp;
+}
 
 async function _fetchJsonWithTimeout(url, timeoutMs = SUMMARY_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -525,49 +773,54 @@ async function loadSpeedToLeadAndHealth() {
     const summaryMap = Object.fromEntries(summaryPairs);
 
     let appHealthOk = false;
+    let remoteLlmEnabled = false;
     try {
       const health = await _fetchJsonWithTimeout('/health', 3000);
       appHealthOk = Boolean(health?.ok);
+      remoteLlmEnabled = Boolean(health?.remote_llm_enabled);
     } catch (_err) {
       appHealthOk = false;
     }
 
-    renderSpeedToLead(summaryMap);
-    renderHealthStrip(summaryMap, appHealthOk);
+    const renderSignature = JSON.stringify({
+      appHealthOk,
+      remoteLlmEnabled,
+      email: Number(summaryMap.email?.metrics?.pending_threads || summaryMap.email?.metrics?.inbox_unread || 0),
+      messenger: Number(summaryMap.messenger?.metrics?.pending_conversations || summaryMap.messenger?.metrics?.unread_threads || 0),
+      calendarDue: Number(summaryMap.calendar?.metrics?.due_reminders || 0),
+      tasksOpen: Number(summaryMap.tasks?.metrics?.tasks_open || 0),
+      tasksTotal: Number(summaryMap.tasks?.metrics?.tasks_total || 0),
+      running: Number(summaryMap.time?.metrics?.running || 0),
+      timeEntries: Number(summaryMap.time?.metrics?.entries || 0),
+      activeProjects: Number(summaryMap.projects?.metrics?.active_projects || summaryMap.projects?.metrics?.total_projects || 0),
+      openDefects: Number(summaryMap.projects?.metrics?.open_defects || 0),
+      visualizerSources: Number(summaryMap.visualizer?.metrics?.sources_indexed || 0),
+      visualizerRender: Number(summaryMap.visualizer?.metrics?.render_backend_ready || 0),
+      settingsGated: Number(summaryMap.settings?.metrics?.write_actions_gated || 0),
+      settingsHeaders: Number(summaryMap.settings?.metrics?.security_headers || 0),
+      status: DASHBOARD_TOOLS.map((tool) => [tool, summaryMap[tool]?.status || "degraded", summaryMap[tool]?.degraded_reason || ""]),
+    });
+    if (renderSignature !== lastSummaryRenderSignature) {
+      lastSummaryRenderSignature = renderSignature;
+      renderSpeedToLead(summaryMap);
+      renderHealthStrip(summaryMap, appHealthOk, remoteLlmEnabled);
+      renderCalendarTasks(summaryMap);
+      renderTimeProjects(summaryMap);
+      renderVisualizerSettings(summaryMap);
+      const signals = deriveDashboardSignals(summaryMap);
+      renderKpiRail(signals);
+      renderAlertDigest(signals);
+      executeOptimizerActions(signals, 2200);
+    }
   } finally {
     healthRefreshInFlight = false;
-  }
-}
-
-async function loadToolMatrix() {
-  if (matrixRefreshInFlight) return;
-  matrixRefreshInFlight = true;
-  try {
-    const payload = await _fetchJsonWithTimeout('/api/dashboard/tool-matrix');
-    renderToolMatrix(payload);
-    const signals = deriveDashboardSignals(payload);
-    renderKpiRail(signals);
-    renderAlertDigest(signals);
-    executeOptimizerActions(signals, 2200);
-  } catch (_err) {
-    renderToolMatrix({ tools: [] });
-    const signals = deriveDashboardSignals({ tools: [] });
-    renderKpiRail(signals);
-    renderAlertDigest(signals);
-    executeOptimizerActions(signals, 2200);
-    const updated = document.getElementById("tool-contract-updated");
-    if (updated) updated.textContent = 'Live-Daten derzeit nicht verfügbar';
-  } finally {
-    matrixRefreshInFlight = false;
   }
 }
 
 // Initial Load
 document.addEventListener("DOMContentLoaded", () => {
     renderLoadingStates();
-    loadToolMatrix();
     loadSpeedToLeadAndHealth();
-    setInterval(loadToolMatrix, REFRESH_INTERVAL_MS);
     setInterval(loadSpeedToLeadAndHealth, REFRESH_INTERVAL_MS);
 });
 </script>

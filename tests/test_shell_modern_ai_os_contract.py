@@ -5,27 +5,41 @@ def _read(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
-def test_topbar_exposes_command_palette_trigger_and_shortcut() -> None:
+def test_topbar_omits_command_palette_trigger_and_system_chrome() -> None:
     html = _read("app/templates/partials/topbar.html")
 
-    assert 'id="topbar-search-trigger"' in html
-    assert "Command Palette öffnen" in html
-    assert "topbar-search-placeholder" in html
-    assert "topbar-shortcut" in html
-    assert "⌘K" in html
-
-
-def test_topbar_keeps_white_mode_chip_visible_in_shell() -> None:
-    html = _read("app/templates/partials/topbar.html")
-
-    assert 'class="mode-chip"' in html
-    assert "White Mode" in html
+    assert 'id="topbar-search-trigger"' not in html
+    assert "Command Palette öffnen" not in html
+    assert "topbar-search-placeholder" not in html
+    assert "topbar-shortcut" not in html
+    assert "components/system_status.html" not in html
+    assert 'class="mode-chip"' not in html
+    assert "White Mode" not in html
+    assert 'id="sidebar-toggle-top"' not in html
+    assert 'id="mobile-sidebar-toggle"' not in html
+    assert 'id="topbar-clock"' in html
+    assert 'id="topbar-online-count"' in html
+    assert 'id="topbar-running-timer"' in html
+    assert 'id="topbar-time-hide"' in html
+    assert 'id="topbar-workspace-id"' in html
+    assert 'id="topbar-notifications"' in html
+    assert "topbar-workspace-meta" in html
+    assert "topbar-notification" in html
+    assert "topbar-account" in html
+    assert html.index('id="topbar-workspace-id"') < html.index('id="topbar-clock"')
+    assert html.index('id="topbar-clock"') < html.index('id="topbar-online-count"')
+    assert html.index('id="topbar-online-count"') < html.index('id="topbar-running-timer"')
+    assert html.index('id="topbar-running-timer"') < html.index('id="topbar-notifications"')
+    assert html.index('id="topbar-notifications"') < html.index("topbar-account")
 
 
 def test_sidebar_contains_workspace_and_primary_navigation_entries() -> None:
     html = _read("app/templates/partials/sidebar.html")
 
-    assert "sidebar-workspace" in html
+    assert "sidebar-workspace" not in html
+    assert "sidebar-user" not in html
+    assert ">Navigation<" not in html
+    assert "sidebar-disclosure-icon" in html
     for nav_key in [
         "dashboard",
         "upload",
@@ -98,4 +112,7 @@ def test_shell_css_keeps_sidebar_and_topbar_foundation_rules() -> None:
     assert ".sidebar-workspace" in css
     assert ".topbar {" in css
     assert ".topbar-leading" in css
+    assert ".topbar-right" in css
     assert ".topbar-actions" in css
+    assert "html.sidebar-collapsed .sidebar .nav-text" in css
+    assert ".sidebar-disclosure-icon" in css
