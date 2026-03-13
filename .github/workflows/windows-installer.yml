@@ -59,14 +59,31 @@ jobs:
         run: |
           python -m compileall app run.py kukanilea_app.py
 
-      - name: Create RC artifact bundle
+      - name: Build Windows EXE (PyInstaller)
         if: steps.gate.outputs.run_full == 'true'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist_win | Out-Null
+          pyinstaller --noconfirm --clean --onefile --name "KUKANILEA" --add-data "app;app" run.py
+          if (!(Test-Path "dist/KUKANILEA.exe")) { throw "Expected dist/KUKANILEA.exe not found" }
+          .\dist\KUKANILEA.exe --help | Out-Null
+
+      - name: Create RC artifact bundles
+        if: steps.gate.outputs.run_full == 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist_win | Out-Null
+          Compress-Archive -Path dist\KUKANILEA.exe -DestinationPath dist_win/KUKANILEA-rc1-windows-exe.zip -Force
           Compress-Archive -Path app,run.py,kukanilea_app.py,requirements.txt -DestinationPath dist_win/KUKANILEA-rc1-source.zip -Force
 
-      - name: Upload artifact
+      - name: Upload EXE artifact
+        if: steps.gate.outputs.run_full == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KUKANILEA-windows-rc1-exe
+          path: dist_win/KUKANILEA-rc1-windows-exe.zip
+
+      - name: Upload source artifact
         if: steps.gate.outputs.run_full == 'true'
         uses: actions/upload-artifact@v4
         with:
