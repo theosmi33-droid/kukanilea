@@ -1276,9 +1276,10 @@ def _allowed_roots() -> List[Path]:
 
 def _is_allowed_path(fp: Path) -> bool:
     try:
-        rp = fp.resolve()
+        rp = fp.resolve(strict=False)
         for root in _allowed_roots():
-            if rp == root or str(rp).startswith(str(root) + os.sep):
+            rr = root.resolve(strict=False)
+            if rp == rr or rp.is_relative_to(rr):
                 return True
         return False
     except Exception:
