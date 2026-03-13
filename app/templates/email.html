@@ -1,28 +1,50 @@
 {% extends "layout.html" %}
 {% block title %}Email-Postfach{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/email.css?v=20260313b">
+{% endblock %}
 
 {% block content %}
-<div class="email-hub">
-  <aside class="panel email-sidebar-panel">
-    <h2 class="email-section-label">Ordner</h2>
-    <div class="email-sidebar">
-      <button class="btn btn-ghost email-nav-item active" type="button"><span>Posteingang</span><span class="badge">12</span></button>
-      <button class="btn btn-ghost email-nav-item" type="button"><span>Entwürfe</span><span class="badge">3</span></button>
-      <button class="btn btn-ghost email-nav-item" type="button"><span>Gesendet</span></button>
-      <button class="btn btn-ghost email-nav-item" type="button"><span>Archiv</span></button>
+<div class="panel email-workspace">
+  <header class="email-topbar">
+    <div>
+      <h1 class="email-title">Email-Cockpit</h1>
+      <p class="email-subtitle">Postfach als Arbeitsraum: priorisieren, prüfen, antworten, dann bewusst versenden.</p>
     </div>
-  </aside>
+    <span class="badge">Lokale Verarbeitung · Zero-CDN · Review-first</span>
+  </header>
 
-  <section class="panel email-main-panel">
-    <header class="email-topbar">
-      <div>
-        <h1 class="email-title">Email-Cockpit</h1>
-        <p class="email-subtitle">Leiser Überblick über Inbox, Thread und Entwurf in einem Blick.</p>
-      </div>
-      <span class="badge">Lokale Verarbeitung · Zero-CDN</span>
-    </header>
+  <div class="email-workspace-grid">
+    <aside class="email-column email-column-inbox" aria-label="Inbox und Kategorien">
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Ordner</h2>
+        </div>
+        <div class="email-sidebar">
+          <button class="btn btn-ghost email-nav-item active" type="button"><span>Posteingang</span><span class="badge">12</span></button>
+          <button class="btn btn-ghost email-nav-item" type="button"><span>Entwürfe</span><span class="badge">3</span></button>
+          <button class="btn btn-ghost email-nav-item" type="button"><span>Gesendet</span></button>
+          <button class="btn btn-ghost email-nav-item" type="button"><span>Archiv</span></button>
+        </div>
+      </section>
 
-    <div class="email-content-grid">
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Kategorien</h2>
+          <span class="email-meta-muted">betriebsnah</span>
+        </div>
+        <div class="email-tag-list" aria-label="Postfach-Kategorien">
+          <span class="email-tag-chip">Wichtig</span>
+          <span class="email-tag-chip">Intern</span>
+          <span class="email-tag-chip">Händler</span>
+          <span class="email-tag-chip">Kunde</span>
+          <span class="email-tag-chip">Bewerber</span>
+          <span class="email-tag-chip">Termin</span>
+          <span class="email-tag-chip">Rechnung</span>
+          <span class="email-tag-chip">Sonstiges</span>
+        </div>
+      </section>
+
       <section class="email-block">
         <div class="email-block-head">
           <h2>Inbox</h2>
@@ -55,7 +77,9 @@
           </li>
         </ul>
       </section>
+    </aside>
 
+    <section class="email-column email-column-thread" aria-label="Email-Thread und Editor">
       <section class="email-block">
         <div class="email-block-head">
           <h2>Thread</h2>
@@ -66,8 +90,8 @@
             <div class="email-thread-top"><strong>Kunde</strong><span>09:24</span></div>
             <p>Wir möchten den Abnahmetermin am Dienstag bestätigen. Können Sie die Uhrzeit kurz freigeben?</p>
             <div class="email-attachments">
-              <span class="email-attachment">📎 abnahme-plan.pdf</span>
-              <span class="email-attachment">📎 zufahrt.jpg</span>
+              <span class="email-attachment">abnahme-plan.pdf</span>
+              <span class="email-attachment">zufahrt.jpg</span>
             </div>
           </article>
           <article class="email-thread-item outgoing">
@@ -80,41 +104,84 @@
           </article>
         </div>
       </section>
-    </div>
 
-    <section class="email-block">
-      <div class="email-block-head">
-        <h2>Antwortvorschläge</h2>
-        <span id="draft-status" class="email-meta-muted"></span>
-      </div>
-      <div class="email-draft-suggestions" id="draft-suggestions">
-        <button type="button" class="email-draft-card active" data-tone="freundlich-präzise">
-          <strong>Freundlich & klar</strong>
-          <p>Bestätigt Terminrahmen, nennt konkrete Rückmeldezeit und wirkt verbindlich.</p>
-        </button>
-        <button type="button" class="email-draft-card" data-tone="kurz-pragmatisch">
-          <strong>Kurz & pragmatisch</strong>
-          <p>Ein Satz zur Prüfung, ein Satz zur nächsten Aktion. Für schnelle operative Loops.</p>
-        </button>
-        <button type="button" class="email-draft-card" data-tone="formell-ruhig">
-          <strong>Formell & ruhig</strong>
-          <p>Neutraler Ton mit sauberer Struktur, wenn mehrere Stakeholder mitlesen.</p>
-        </button>
-      </div>
-
-      <form id="email-draft-form" class="email-compose-form">
-        <div class="email-compose-grid">
-          <input id="draft-to" class="input" type="email" placeholder="Empfänger">
-          <input id="draft-subject" class="input" type="text" placeholder="Betreff">
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Antwort-Editor</h2>
+          <span class="email-meta-muted">Versand bleibt manuell mit Confirm</span>
         </div>
-        <textarea id="draft-body" class="input" rows="6" placeholder="Nachricht"></textarea>
-        <div class="email-compose-actions">
-          <button type="button" id="draft-generate" class="btn btn-primary">Vorschlag aktualisieren</button>
-          <span class="email-meta-muted">Der Entwurf bleibt lokal und kann vor Versand frei angepasst werden.</span>
-        </div>
-      </form>
+        <form id="email-draft-form" class="email-compose-form">
+          <div class="email-compose-grid">
+            <input id="draft-to" class="input" type="email" placeholder="Empfänger">
+            <input id="draft-subject" class="input" type="text" placeholder="Betreff">
+          </div>
+          <textarea id="draft-body" class="input" rows="9" placeholder="Nachricht"></textarea>
+          <div class="email-compose-actions">
+            <button type="button" id="draft-generate" class="btn btn-primary">Vorschlag aktualisieren</button>
+            <span class="email-meta-muted">Der Entwurf bleibt lokal, editierbar und wird nie still versendet.</span>
+          </div>
+        </form>
+      </section>
     </section>
-  </section>
+
+    <aside class="email-column email-column-assistant" aria-label="Assistenz und Vorschläge">
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>KUKANILEA Assistenz</h2>
+          <span class="email-meta-muted">kontextnah</span>
+        </div>
+        <p class="email-summary-text">Kunde möchte Terminfreigabe für die Abnahme. Empfohlen: Termin intern prüfen, festen Rückmeldezeitpunkt senden und Zugang bestätigen.</p>
+      </section>
+
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Key Facts</h2>
+          <span class="email-meta-muted">auf einen Blick</span>
+        </div>
+        <ul class="email-keyfacts">
+          <li><strong>Kontakt:</strong> bauleitung@kunde.de</li>
+          <li><strong>Dringlichkeit:</strong> heute bis 11:00 Uhr</li>
+          <li><strong>Anhänge:</strong> 2</li>
+          <li><strong>Nächster Schritt:</strong> Terminslot freigeben</li>
+        </ul>
+      </section>
+
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Kontakt-Tags</h2>
+          <span class="email-meta-muted">persistent vorbereitet</span>
+        </div>
+        <div class="email-tag-list" aria-label="Kontakt-Tags">
+          <button type="button" class="email-tag-chip is-active">Kunde</button>
+          <button type="button" class="email-tag-chip">Baustelle A</button>
+          <button type="button" class="email-tag-chip">Terminabstimmung</button>
+          <button type="button" class="email-tag-chip">Priorität mittel</button>
+        </div>
+        <p class="email-meta-muted email-tag-note">Tags sind als mandantenweite Arbeitsgrundlage vorgesehen und bleiben pro Kontakt nachvollziehbar editierbar.</p>
+      </section>
+
+      <section class="email-block">
+        <div class="email-block-head">
+          <h2>Antwortvorschläge</h2>
+          <span id="draft-status" class="email-meta-muted"></span>
+        </div>
+        <div class="email-draft-suggestions" id="draft-suggestions">
+          <button type="button" class="email-draft-card active" data-tone="formell">
+            <strong>Formell</strong>
+            <p>Verbindlich, strukturiert und sauber für mehrere Beteiligte.</p>
+          </button>
+          <button type="button" class="email-draft-card" data-tone="neutral">
+            <strong>Neutral</strong>
+            <p>Ausgewogen mit klarer nächster Aktion und kurzer Rückmeldefrist.</p>
+          </button>
+          <button type="button" class="email-draft-card" data-tone="direkt">
+            <strong>Direkt</strong>
+            <p>Kurz, operativ und fokussiert für schnelle Abstimmungen im Tagesgeschäft.</p>
+          </button>
+        </div>
+      </section>
+    </aside>
+  </div>
 </div>
 {% endblock %}
 
@@ -131,7 +198,7 @@
   document.getElementById('draft-generate')?.addEventListener('click', async () => {
     const status = document.getElementById('draft-status');
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
-    const selectedTone = document.querySelector('.email-draft-card.active')?.dataset?.tone || 'freundlich-präzise';
+    const selectedTone = document.querySelector('.email-draft-card.active')?.dataset?.tone || 'neutral';
     status.textContent = 'Erzeuge Entwurf…';
     try {
       const res = await fetch('/api/mail/draft', {

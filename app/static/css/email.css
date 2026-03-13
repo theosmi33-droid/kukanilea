@@ -1,41 +1,15 @@
 /**
- * KUKANILEA Email Cockpit UX
+ * KUKANILEA Email Workspace v1
  */
 
-.email-hub {
-    display: grid;
-    grid-template-columns: 260px 1fr;
-    gap: var(--space-4);
-}
-
-@media (max-width: 1024px) {
-    .email-hub {
-        grid-template-columns: 1fr;
-    }
-}
-
-.email-sidebar-panel,
-.email-main-panel {
-    margin-bottom: 0;
-}
-
-.email-section-label {
-    margin: 0 0 var(--space-3);
-    font-size: var(--size-xs);
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    color: var(--text-tertiary);
-}
-
-.email-sidebar {
+.email-workspace {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: clamp(10px, 1.3vw, 16px);
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-}
-
-.email-nav-item {
-    justify-content: space-between;
-    width: 100%;
+    gap: var(--space-3);
 }
 
 .email-topbar {
@@ -43,33 +17,46 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--space-3);
-    margin-bottom: var(--space-4);
+    flex-wrap: wrap;
 }
 
 .email-title {
     margin: 0;
-    font-size: 24px;
+    font-size: clamp(1.2rem, 2vw, 1.55rem);
 }
 
 .email-subtitle {
-    margin: var(--space-1) 0 0;
+    margin: 4px 0 0;
     color: var(--text-tertiary);
+    max-width: 70ch;
 }
 
-.email-main-panel {
+.email-workspace-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(280px, 360px);
+    gap: var(--space-3);
+    align-items: start;
+}
+
+.email-column {
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--space-3);
 }
 
-.email-content-grid {
-    display: grid;
-    grid-template-columns: minmax(280px, 380px) 1fr;
-    gap: var(--space-4);
+@media (max-width: 1260px) {
+    .email-workspace-grid {
+        grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+    }
+
+    .email-column-assistant {
+        grid-column: 1 / -1;
+    }
 }
 
-@media (max-width: 1100px) {
-    .email-content-grid {
+@media (max-width: 920px) {
+    .email-workspace-grid {
         grid-template-columns: 1fr;
     }
 }
@@ -79,6 +66,7 @@
     border-radius: var(--radius-lg);
     padding: var(--space-3);
     background: var(--bg-surface-elevated);
+    min-width: 0;
 }
 
 .email-block-head {
@@ -97,6 +85,17 @@
 .email-meta-muted {
     color: var(--text-tertiary);
     font-size: var(--size-xs);
+}
+
+.email-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.email-nav-item {
+    justify-content: space-between;
+    width: 100%;
 }
 
 .email-inbox-list {
@@ -212,17 +211,59 @@
     color: var(--text-secondary);
 }
 
-.email-draft-suggestions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-2);
-    margin-bottom: var(--space-3);
+.email-summary-text {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.5;
 }
 
-@media (max-width: 900px) {
-    .email-draft-suggestions {
-        grid-template-columns: 1fr;
-    }
+.email-keyfacts {
+    margin: 0;
+    padding-left: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    color: var(--text-secondary);
+}
+
+.email-keyfacts li {
+    line-height: 1.4;
+}
+
+.email-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.email-tag-chip {
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    background: var(--bg-muted);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    font-size: var(--size-xs);
+    line-height: 1.2;
+}
+
+button.email-tag-chip {
+    cursor: pointer;
+}
+
+.email-tag-chip.is-active {
+    border-color: var(--primary-500);
+    background: var(--primary-50);
+    color: var(--primary-700);
+}
+
+.email-tag-note {
+    margin: var(--space-2) 0 0;
+}
+
+.email-draft-suggestions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
 }
 
 .email-draft-card {
