@@ -47,9 +47,9 @@ def test_dashboard_state_panel_keeps_accessible_action_markup(tmp_path, monkeypa
 
 def test_dashboard_speed_to_lead_empty_state_contract_copy_present(tmp_path, monkeypatch):
     html = _dashboard_html(tmp_path, monkeypatch)
-    assert "No agents running" in html
-    assert "Create Agent" in html
-    assert "Eingeschränkt verfügbar" in html
+    assert "E-Mail-Summary nicht verfügbar" in html
+    assert "E-Mails öffnen" in html
+    assert "Messenger eingeschränkt" in html
 
 
 def test_dashboard_state_renderer_declares_html_escape_helper(tmp_path, monkeypatch):

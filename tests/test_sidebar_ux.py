@@ -162,7 +162,7 @@ def test_skip_link_and_aria_labels_are_present(tmp_path, monkeypatch):
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
-    assert 'class="skip-link" href="#main-content"' in html
+    assert 'class="skip-link" href="#app-main"' in html
     assert 'data-nav-mode="full-page"' in html
     assert 'aria-label="Sovereign-11 Hauptseiten"' in html
     assert 'aria-label="Assistant öffnen"' in html

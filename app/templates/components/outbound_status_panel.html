@@ -4,8 +4,9 @@
 
 <div id="outbound-status-panel"
      hx-get="/api/outbound/status"
-     hx-trigger="load, every 10s"
+     hx-trigger="every 10s"
      hx-swap="outerHTML"
+     data-htmx-background="1"
      class="panel"
      style="margin-bottom:0; display:flex; align-items:center; gap:16px; padding:20px;">
   {% if failed > 0 %}

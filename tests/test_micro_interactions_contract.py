@@ -52,6 +52,7 @@ def test_sovereign_shell_css_contains_loading_and_disclosure_contracts() -> None
 def test_navigation_js_initializes_motion_loading_and_disclosure() -> None:
     js = _read("app/static/js/navigation.js")
     assert "window.__kukanileaNavigationMotionInit" in js
+    assert "normalizeSidebarMarkup();" in js
     assert "setupPressedState();" in js
     assert "setupHtmxLoadingFeedback();" in js
     assert "setupDisclosure();" in js
@@ -61,11 +62,25 @@ def test_navigation_js_initializes_motion_loading_and_disclosure() -> None:
 
 def test_navigation_js_tracks_htmx_loading_state_and_accessibility() -> None:
     js = _read("app/static/js/navigation.js")
+    assert "function normalizeSidebarMarkup()" in js
+    assert "text === 'navigation'" in js
+    assert "sidebar-disclosure-icon" in js
     assert "document.body.setAttribute('data-htmx-loading'" in js
     assert "contentRoot.classList.toggle('loading-skeleton'" in js
     assert "contentRoot.setAttribute('aria-busy'" in js
+    assert "isBackgroundRequest" in js
+    assert "data-htmx-background" in js
     assert "document.body.addEventListener('htmx:beforeRequest'" in js
     assert "document.body.addEventListener('htmx:afterRequest'" in js
     assert "document.body.addEventListener('htmx:responseError'" in js
     assert "document.body.addEventListener('htmx:sendError'" in js
     assert "markCurrentNavigation();" in js
+
+
+def test_polling_panels_mark_background_htmx_requests() -> None:
+    outbound = _read("app/templates/components/outbound_status_panel.html")
+    system = _read("app/templates/components/system_status.html")
+    assert 'data-htmx-background="1"' in outbound
+    assert 'data-htmx-background="1"' in system
+    assert 'hx-trigger="every 10s"' in outbound
+    assert 'hx-trigger="load, every 10s"' not in outbound

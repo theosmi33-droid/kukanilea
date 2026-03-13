@@ -1,8 +1,189 @@
 {% extends "layout.html" %}
 {% block title %}Upload · KUKANILEA{% endblock %}
+{% block extra_head %}
+<style nonce="{{ csp_nonce() }}">
+  .upload-shell {
+    min-height: calc(100dvh - 120px);
+    max-width: none !important;
+    width: 100%;
+    padding-inline: clamp(12px, 2vw, 24px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    align-content: start;
+  }
+  .upload-shell > * {
+    margin: 0;
+  }
+  .upload-shell .page-header {
+    padding: 10px 14px;
+    border-radius: 12px;
+  }
+  .upload-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(320px, 30vw, 430px);
+    gap: 1rem;
+    align-items: start;
+  }
+  .upload-primary,
+  .upload-secondary {
+    min-width: 0;
+  }
+  .upload-layout > * {
+    min-width: 0;
+  }
+  .upload-layout .card {
+    overflow: hidden;
+  }
+  #dropZone {
+    padding: clamp(1.25rem, 3vw, 2.5rem);
+    transition: border-color 0.18s ease, background-color 0.18s ease;
+    min-height: clamp(200px, 30vh, 300px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  #dropZone[data-has-files="1"] {
+    padding: clamp(1rem, 2.2vw, 1.75rem);
+    min-height: clamp(160px, 24vh, 220px);
+  }
+  #fileList .card-body,
+  #fileList .truncate,
+  #uploadHistoryList {
+    min-width: 0;
+  }
+  #fileList .truncate {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #uploadHistoryList strong {
+    overflow-wrap: anywhere;
+  }
+  .upload-history-row strong {
+    line-height: 1.35;
+  }
+  .upload-secondary {
+    position: sticky;
+    top: 62px;
+    max-height: calc(100dvh - 80px);
+    overflow: auto;
+    padding-right: 2px;
+  }
+  .upload-stepper {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .upload-step {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-subtle);
+    padding: 8px;
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+  }
+  .upload-step.is-active {
+    border-color: var(--primary-100);
+    background: var(--primary-50);
+  }
+  .upload-step-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+  }
+  .upload-step.is-active .upload-step-badge {
+    background: var(--primary-600);
+    color: #fff;
+  }
+  .upload-step-label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+  .upload-history-row {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    padding: 10px;
+    display: grid;
+    gap: 2px;
+  }
+  .upload-history-meta {
+    color: var(--text-tertiary);
+    font-size: 11px;
+  }
+  .upload-state-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border-radius: 999px;
+    padding: .35rem .7rem;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+  }
+  .upload-state-idle {
+    background: var(--color-surface-subtle);
+    color: var(--text-secondary);
+    border-color: var(--color-border);
+  }
+  .upload-state-selected {
+    background: var(--primary-50);
+    color: var(--primary-700);
+    border-color: var(--primary-100);
+  }
+  .upload-state-uploading {
+    background: var(--warning-bg);
+    color: var(--warning);
+    border-color: rgba(217, 119, 6, 0.25);
+  }
+  .upload-state-success {
+    background: var(--success-bg);
+    color: var(--success);
+    border-color: rgba(22, 163, 74, 0.25);
+  }
+  .upload-state-error {
+    background: var(--error-bg);
+    color: var(--error);
+    border-color: rgba(220, 38, 38, 0.25);
+  }
+  @media (max-width: 1160px) {
+    .upload-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .upload-secondary {
+      position: static;
+      top: auto;
+      max-height: none;
+      overflow: visible;
+      padding-right: 0;
+    }
+  }
+  @media (max-width: 720px) {
+    .upload-stepper {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="page-container page-shell p-6">
+<div class="page-container p-6 upload-shell">
 
   <header class="page-header">
     <div>
@@ -13,30 +194,27 @@
     <a href="/dashboard" class="btn btn-secondary btn-sm">Zur Übersicht</a>
   </header>
 
-  <!-- Step Indicator -->
-  <div class="flex items-center justify-between px-4 mb-2" aria-hidden="true">
-      <div class="flex flex-column items-center gap-2">
-          <div class="w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center font-bold shadow-sm">1</div>
-          <span class="text-[10px] font-black uppercase tracking-widest text-primary-600">Auswahl</span>
-      </div>
-      <div class="h-0.5 bg-neutral-100 flex-1 mx-4 mb-6"></div>
-      <div class="flex flex-column items-center gap-2">
-          <div class="w-10 h-10 rounded-full bg-neutral-100 text-muted flex items-center justify-center font-bold">2</div>
-          <span class="text-[10px] font-bold text-muted uppercase tracking-widest">Analyse</span>
-      </div>
-      <div class="h-0.5 bg-neutral-100 flex-1 mx-4 mb-6"></div>
-      <div class="flex flex-column items-center gap-2">
-          <div class="w-10 h-10 rounded-full bg-neutral-100 text-muted flex items-center justify-center font-bold">3</div>
-          <span class="text-[10px] font-bold text-muted uppercase tracking-widest">Review</span>
-      </div>
-  </div>
-
-  <!-- Upload Section -->
-  <div class="card card-featured shadow-md border-light">
-    <div class="card-body p-8">
+  <div class="upload-layout">
+    <section class="card card-featured shadow-md border-light upload-primary">
+      <div class="card-body p-6">
+        <!-- Step Indicator -->
+        <div class="upload-stepper" aria-hidden="true">
+            <div class="upload-step is-active">
+                <span class="upload-step-badge">1</span>
+                <span class="upload-step-label">Auswahl</span>
+            </div>
+            <div class="upload-step">
+                <span class="upload-step-badge">2</span>
+                <span class="upload-step-label">Analyse</span>
+            </div>
+            <div class="upload-step">
+                <span class="upload-step-badge">3</span>
+                <span class="upload-step-label">Review</span>
+            </div>
+        </div>
         
         <!-- Drop Zone -->
-        <div id="dropZone" class="border-2 border-dashed border-neutral-200 rounded-3xl p-16 text-center hover:border-primary-500 hover:bg-primary-50 transition-all cursor-pointer group relative">
+        <div id="dropZone" data-has-files="0" class="border-2 border-dashed border-neutral-200 rounded-3xl text-center hover:border-primary-500 hover:bg-primary-50 cursor-pointer group relative">
             <input type="file" id="file" name="file" class="absolute inset-0 opacity-0 cursor-pointer" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.txt">
             <div class="mb-6 flex justify-center">
                 <div id="dropIcon" class="p-5 bg-neutral-50 text-neutral-400 rounded-2xl group-hover:bg-primary-100 group-hover:text-primary-600 transition-all duration-300">
@@ -45,7 +223,7 @@
             </div>
             <h2 class="text-xl font-bold text-main mb-2">Dateien ablegen oder klicken</h2>
             <p class="text-secondary max-w-md mx-auto">Ziehen Sie Ihre Belege, Rechnungen oder Angebote direkt in dieses Fenster oder wählen Sie Dateien von Ihrem Computer aus.</p>
-            <p class="text-[11px] text-muted mt-4 mb-0">Noch keine Datei ausgewählt. Starten Sie mit einem Beleg oder Angebot.</p>
+            <p id="dropHint" class="text-[11px] text-muted mt-4 mb-0">Noch keine Datei ausgewählt. Starten Sie mit einem Beleg oder Angebot.</p>
             <div class="flex justify-center gap-4 mt-8">
                 <span class="text-[10px] font-bold text-muted uppercase tracking-widest px-3 py-1 bg-neutral-50 rounded-full border border-neutral-100">PDF</span>
                 <span class="text-[10px] font-bold text-muted uppercase tracking-widest px-3 py-1 bg-neutral-50 rounded-full border border-neutral-100">JPG/PNG</span>
@@ -53,25 +231,12 @@
             </div>
         </div>
 
-        <!-- Staging Area (Selection made) -->
-        <div id="stagingArea" class="mt-10" style="display: none; flex-direction: column; gap: var(--space-4);">
-            <div class="flex justify-between items-center border-b border-neutral-50 pb-4">
-                <h3 class="text-sm font-bold text-main">Warteschlange (<span id="fileCount">0</span> Dateien)</h3>
-                <button id="clearStaging" class="btn btn-ghost btn-xs text-error font-bold">Alle entfernen</button>
-            </div>
-            <div id="fileList" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <!-- Staged files appear here -->
-            </div>
-            <div class="pt-4">
-                <button id="startAnalysis" class="btn btn-primary btn-xl w-full text-lg shadow-lg group">
-                    <span>ANALYSE STARTEN</span>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="group-hover:translate-x-1 transition-transform"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-                </button>
-            </div>
+        <div id="acceptedFilesInfo" class="mt-4 text-xs text-secondary">
+          Mehrere Uploads nacheinander sind möglich. Bereits ausgewählte Dateien bleiben in der Warteschlange.
         </div>
 
         <!-- Progress Area -->
-        <div id="progressArea" class="mt-10" style="display: none;">
+        <div id="progressArea" class="mt-6" style="display: none;">
             <div class="p-8 bg-neutral-25 rounded-3xl border border-neutral-100 shadow-inner">
                 <div class="flex justify-between items-end mb-6">
                     <div>
@@ -93,32 +258,62 @@
             </div>
         </div>
 
-    </div>
-  </div>
-
-  <section class="mt-4 px-4">
-      <h3 class="text-xs font-bold text-muted uppercase tracking-widest mb-4">Sicherheits-Check</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="flex gap-3 items-start">
-              <div class="p-2 bg-success-bg text-success rounded-lg">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              </div>
-              <div>
-                  <div class="text-xs font-bold text-main">Ende-zu-Ende Lokal</div>
-                  <div class="text-[11px] text-muted">Dateien verlassen niemals diesen Server.</div>
-              </div>
-          </div>
-          <div class="flex gap-3 items-start">
-              <div class="p-2 bg-success-bg text-success rounded-lg">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
-              </div>
-              <div>
-                  <div class="text-xs font-bold text-main">Integrität gesichert</div>
-                  <div class="text-[11px] text-muted">Automatische Prüfsummen für jedes Dokument.</div>
-              </div>
-          </div>
       </div>
-  </section>
+    </section>
+
+    <aside class="flex flex-column gap-4 upload-secondary">
+      <section class="card border-light">
+        <div class="card-body p-5 flex flex-column gap-3">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-sm font-bold m-0">Upload-Status</h2>
+            <span id="uploadStatePill" class="upload-state-pill upload-state-idle">Keine Datei</span>
+          </div>
+          <p id="uploadStateText" class="text-xs text-secondary m-0">Wählen Sie zuerst mindestens eine Datei aus.</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-xl border border-light bg-subtle p-3">
+              <div class="text-[10px] font-black uppercase tracking-wider text-muted">Warteschlange</div>
+              <div class="text-xl font-bold" id="stagedCounter">0</div>
+            </div>
+            <div class="rounded-xl border border-light bg-subtle p-3">
+              <div class="text-[10px] font-black uppercase tracking-wider text-muted">Erlaubte Typen</div>
+              <div class="text-sm font-semibold">PDF, TXT, Bild</div>
+            </div>
+          </div>
+          <div id="rejectedFiles" class="rounded-xl border border-warning/20 bg-warning-bg p-3 text-xs" style="display:none;"></div>
+          <div id="stagingArea" class="mt-2 pt-3 border-t border-light flex flex-column gap-4" style="display: none;">
+            <div class="flex justify-between items-center border-b border-neutral-50 pb-4">
+              <h3 class="text-sm font-bold text-main">Warteschlange (<span id="fileCount">0</span> Dateien)</h3>
+              <div class="flex items-center gap-2">
+                <button id="parkStaging" class="btn btn-ghost btn-xs font-bold">Parken</button>
+                <button id="clearStaging" class="btn btn-ghost btn-xs text-error font-bold">Alle entfernen</button>
+              </div>
+            </div>
+            <div id="fileList" class="grid grid-cols-1 gap-3">
+              <!-- Staged files appear here -->
+            </div>
+            <div class="pt-2">
+              <button id="startAnalysis" class="btn btn-primary btn-xl w-full text-lg shadow-lg group">
+                  <span>ANALYSE STARTEN</span>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="group-hover:translate-x-1 transition-transform"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card border-light">
+        <div class="card-body p-5">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h3 class="text-xs font-bold text-muted uppercase tracking-widest m-0">Upload-History</h3>
+            <button id="refreshUploadHistory" class="btn btn-ghost btn-xs">Aktualisieren</button>
+          </div>
+          <p class="text-[11px] text-muted mt-0 mb-3">Geparkte oder verarbeitete Uploads bleiben hier sichtbar und können erneut geprüft werden.</p>
+          <div id="uploadCollaborationState" class="rounded-xl border border-light bg-subtle p-3 text-xs mb-3">Bearbeitung: keine aktive Sperre</div>
+          <div id="uploadHistoryList" class="grid grid-cols-1 gap-2 text-xs"></div>
+        </div>
+      </section>
+    </aside>
+  </div>
 
 </div>
 {% endblock %}
@@ -134,6 +329,7 @@ document.addEventListener("DOMContentLoaded", function() {
   const fileList = document.getElementById("fileList");
   const fileCount = document.getElementById("fileCount");
   const clearStaging = document.getElementById("clearStaging");
+  const parkStaging = document.getElementById("parkStaging");
   const startBtn = document.getElementById("startAnalysis");
   const progressArea = document.getElementById("progressArea");
   const bar = document.getElementById("bar");
@@ -141,13 +337,277 @@ document.addEventListener("DOMContentLoaded", function() {
   const status = document.getElementById("status");
   const phase = document.getElementById("phase");
   const dropZone = document.getElementById("dropZone");
+  const dropHint = document.getElementById("dropHint");
   const retryBtn = document.getElementById("retryBtn");
   const cancelBtn = document.getElementById("cancelBtn");
   const errorActions = document.getElementById("errorActions");
   const uploadErrorMessage = document.getElementById("uploadErrorMessage");
+  const uploadStatePill = document.getElementById("uploadStatePill");
+  const uploadStateText = document.getElementById("uploadStateText");
+  const stagedCounter = document.getElementById("stagedCounter");
+  const rejectedFiles = document.getElementById("rejectedFiles");
+  const uploadHistoryList = document.getElementById("uploadHistoryList");
+  const uploadCollaborationState = document.getElementById("uploadCollaborationState");
+  const refreshUploadHistory = document.getElementById("refreshUploadHistory");
 
   let stagedFiles = [];
   let lastErrorMessage = "";
+  const stagedKeys = new Set();
+  const draftDbName = "kuka-upload-draft-v1";
+  const draftStoreName = "files";
+  const uploadHistoryKey = "kuka_upload_history_v1";
+  const uploadEditorKey = "kuka_upload_editor_lock";
+  const currentUploadUser = {{ (user or '-') | tojson }};
+  let draftPersistTimer = null;
+  let lockHeartbeat = null;
+  const allowedExt = new Set(
+    String(fileInput.getAttribute("accept") || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.startsWith("."))
+  );
+
+  const openDraftDb = () => new Promise((resolve) => {
+    if (!("indexedDB" in window)) {
+      resolve(null);
+      return;
+    }
+    const req = window.indexedDB.open(draftDbName, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(draftStoreName)) {
+        db.createObjectStore(draftStoreName, { keyPath: "id", autoIncrement: true });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+
+  const txDone = (tx) => new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("draft tx failed"));
+    tx.onabort = () => reject(tx.error || new Error("draft tx aborted"));
+  });
+
+  const persistDraftFiles = async (files) => {
+    const serialized = await Promise.all(
+      files.map(async (file, index) => ({
+        index,
+        name: file.name,
+        type: file.type || "",
+        lastModified: file.lastModified || Date.now(),
+        buffer: await file.arrayBuffer()
+      }))
+    );
+    const db = await openDraftDb();
+    if (!db) return;
+    const tx = db.transaction(draftStoreName, "readwrite");
+    const store = tx.objectStore(draftStoreName);
+    store.clear();
+    serialized.forEach((row) => {
+      store.add(row);
+    });
+    try {
+      await txDone(tx);
+    } finally {
+      db.close();
+    }
+  };
+
+  const loadDraftFiles = async () => {
+    const db = await openDraftDb();
+    if (!db) return [];
+    const tx = db.transaction(draftStoreName, "readonly");
+    const store = tx.objectStore(draftStoreName);
+    const req = store.getAll();
+    const rows = await new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+    await txDone(tx).catch(() => {});
+    db.close();
+    return rows
+      .sort((a, b) => (a.index || 0) - (b.index || 0))
+      .map((row) => new File([row.buffer || new ArrayBuffer(0)], row.name || "upload.bin", {
+        type: row.type || "",
+        lastModified: row.lastModified || Date.now()
+      }));
+  };
+
+  const scheduleDraftPersist = () => {
+    if (draftPersistTimer) clearTimeout(draftPersistTimer);
+    draftPersistTimer = setTimeout(() => {
+      void persistDraftFiles(stagedFiles);
+    }, 140);
+  };
+
+  const _readUploadHistory = () => {
+    try {
+      const rows = JSON.parse(localStorage.getItem(uploadHistoryKey) || "[]");
+      return Array.isArray(rows) ? rows : [];
+    } catch (_err) {
+      return [];
+    }
+  };
+
+  const _escapeText = (value = "") => String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+  const _writeUploadHistory = (rows) => {
+    try {
+      localStorage.setItem(uploadHistoryKey, JSON.stringify(rows.slice(0, 30)));
+    } catch (_err) {}
+  };
+
+  const _pushUploadHistory = (files, status = "queued") => {
+    const incoming = Array.isArray(files) ? files : [];
+    if (!incoming.length) return;
+    const ts = Date.now();
+    const next = incoming.map((file) => ({
+      name: file.name || "unbekannt",
+      status,
+      user: currentUploadUser,
+      ts,
+    }));
+    _writeUploadHistory([...next, ..._readUploadHistory()]);
+    _renderUploadHistory();
+  };
+
+  const _renderUploadHistory = () => {
+    if (!uploadHistoryList) return;
+    const rows = _readUploadHistory();
+    if (!rows.length) {
+      uploadHistoryList.innerHTML = '<div class="upload-history-row"><strong>Noch keine History</strong><span class="upload-history-meta">Sobald Uploads geparkt oder verarbeitet werden, erscheint der Verlauf hier.</span></div>';
+      return;
+    }
+    uploadHistoryList.innerHTML = rows.slice(0, 8).map((row) => {
+      const time = Number.isFinite(Number(row.ts))
+        ? new Date(Number(row.ts)).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
+        : "--:--";
+      const safeName = _escapeText(row.name || "unbekannt");
+      const safeStatus = _escapeText(String(row.status || "queued"));
+      const safeUser = _escapeText(String(row.user || "-"));
+      return `<div class="upload-history-row">
+        <strong>${safeName}</strong>
+        <span class="upload-history-meta">${safeStatus} · ${safeUser} · ${time}</span>
+      </div>`;
+    }).join("");
+  };
+
+  const _readEditorLock = () => {
+    try {
+      return JSON.parse(localStorage.getItem(uploadEditorKey) || "{}");
+    } catch (_err) {
+      return {};
+    }
+  };
+
+  const _writeEditorLock = () => {
+    try {
+      localStorage.setItem(uploadEditorKey, JSON.stringify({
+        user: currentUploadUser,
+        ts: Date.now(),
+      }));
+    } catch (_err) {}
+  };
+
+  const _renderEditorLock = () => {
+    if (!uploadCollaborationState) return;
+    const lock = _readEditorLock();
+    const lockUser = String(lock.user || "");
+    const ageMs = Date.now() - Number(lock.ts || 0);
+    const lockIsFresh = lockUser && ageMs >= 0 && ageMs < 45000;
+    if (lockIsFresh && lockUser !== String(currentUploadUser)) {
+      uploadCollaborationState.className = "rounded-xl border border-warning/20 bg-warning-bg p-3 text-xs mb-3";
+      uploadCollaborationState.textContent = `Bearbeitung aktiv: ${lockUser} arbeitet gerade am Upload.`;
+      return;
+    }
+    uploadCollaborationState.className = "rounded-xl border border-light bg-subtle p-3 text-xs mb-3";
+    uploadCollaborationState.textContent = `Bearbeitung: ${String(currentUploadUser)} aktiv`;
+  };
+
+  const setUploadState = (state, message = "") => {
+    if (!uploadStatePill || !uploadStateText) return;
+    uploadStatePill.classList.remove(
+      "upload-state-idle",
+      "upload-state-selected",
+      "upload-state-uploading",
+      "upload-state-success",
+      "upload-state-error"
+    );
+    if (state === "selected") {
+      uploadStatePill.classList.add("upload-state-selected");
+      uploadStatePill.textContent = "Datei ausgewählt";
+      uploadStateText.textContent = message || "Dateien liegen bereit und bleiben in der Warteschlange.";
+      return;
+    }
+    if (state === "uploading") {
+      uploadStatePill.classList.add("upload-state-uploading");
+      uploadStatePill.textContent = "Upload läuft";
+      uploadStateText.textContent = message || "Dateien werden übertragen und verarbeitet.";
+      return;
+    }
+    if (state === "success") {
+      uploadStatePill.classList.add("upload-state-success");
+      uploadStatePill.textContent = "Upload erfolgreich";
+      uploadStateText.textContent = message || "Upload abgeschlossen, Weiterleitung folgt.";
+      return;
+    }
+    if (state === "error") {
+      uploadStatePill.classList.add("upload-state-error");
+      uploadStatePill.textContent = "Upload fehlgeschlagen";
+      uploadStateText.textContent = message || "Upload wurde unterbrochen. Bitte erneut versuchen.";
+      return;
+    }
+    uploadStatePill.classList.add("upload-state-idle");
+    uploadStatePill.textContent = "Keine Datei";
+    uploadStateText.textContent = message || "Wählen Sie zuerst mindestens eine Datei aus.";
+  };
+
+  const fileIdentity = (file) => `${file.name}::${file.size}::${file.lastModified}`;
+
+  const splitAcceptedFiles = (files) => {
+    const accepted = [];
+    const rejected = [];
+    files.forEach((file) => {
+      const lowerName = String(file.name || "").toLowerCase();
+      const dot = lowerName.lastIndexOf(".");
+      const ext = dot >= 0 ? lowerName.slice(dot) : "";
+      if (allowedExt.size > 0 && !allowedExt.has(ext)) {
+        rejected.push(file.name || "Unbekannt");
+        return;
+      }
+      accepted.push(file);
+    });
+    return { accepted, rejected };
+  };
+
+  const appendStagedFiles = (incoming) => {
+    const normalized = Array.isArray(incoming) ? incoming : Array.from(incoming || []);
+    if (!normalized.length) return;
+    const { accepted, rejected } = splitAcceptedFiles(normalized);
+    if (rejectedFiles) {
+      if (rejected.length > 0) {
+        rejectedFiles.style.display = "block";
+        rejectedFiles.textContent = `Nicht unterstützte Dateien wurden ausgelassen: ${rejected.join(", ")}`;
+      } else {
+        rejectedFiles.style.display = "none";
+        rejectedFiles.textContent = "";
+      }
+    }
+    accepted.forEach((file) => {
+      const key = fileIdentity(file);
+      if (stagedKeys.has(key)) return;
+      stagedKeys.add(key);
+      stagedFiles.push(file);
+    });
+    _pushUploadHistory(accepted, "queued");
+    updateUI();
+  };
 
   const updateUI = () => {
     fileList.innerHTML = "";
@@ -166,21 +626,57 @@ document.addEventListener("DOMContentLoaded", function() {
       fileList.appendChild(d);
     });
     fileCount.textContent = stagedFiles.length;
+    if (stagedCounter) stagedCounter.textContent = String(stagedFiles.length);
     stagingArea.style.display = stagedFiles.length > 0 ? "flex" : "none";
-    if (stagedFiles.length > 0) {
-        dropZone.style.display = "none";
-    } else {
-        dropZone.style.display = "block";
+    dropZone.style.display = "block";
+    dropZone.dataset.hasFiles = stagedFiles.length > 0 ? "1" : "0";
+    if (dropHint) {
+      dropHint.textContent = stagedFiles.length > 0
+        ? "Weitere Dateien können jederzeit per Drag&Drop oder Klick ergänzt werden."
+        : "Noch keine Datei ausgewählt. Starten Sie mit einem Beleg oder Angebot.";
     }
+    if (stagedFiles.length > 0) {
+      setUploadState("selected");
+    } else {
+      setUploadState("idle");
+    }
+    startBtn.disabled = stagedFiles.length === 0;
+    scheduleDraftPersist();
   };
 
-  window._rm = (idx) => { stagedFiles.splice(idx, 1); updateUI(); };
+  window._rm = (idx) => {
+    const file = stagedFiles[idx];
+    if (file) stagedKeys.delete(fileIdentity(file));
+    stagedFiles.splice(idx, 1);
+    updateUI();
+  };
 
-  clearStaging.addEventListener("click", () => { stagedFiles = []; updateUI(); fileInput.value = ""; });
+  clearStaging.addEventListener("click", () => {
+    _pushUploadHistory(stagedFiles, "cleared");
+    stagedFiles = [];
+    stagedKeys.clear();
+    updateUI();
+    fileInput.value = "";
+  });
+  if (parkStaging) {
+    parkStaging.addEventListener("click", () => {
+      _pushUploadHistory(stagedFiles, "parked");
+      stagedFiles = [];
+      stagedKeys.clear();
+      updateUI();
+      fileInput.value = "";
+    });
+  }
+  if (refreshUploadHistory) {
+    refreshUploadHistory.addEventListener("click", () => {
+      _renderUploadHistory();
+      _renderEditorLock();
+    });
+  }
 
   fileInput.addEventListener("change", () => {
-    stagedFiles = [...stagedFiles, ...Array.from(fileInput.files)];
-    updateUI();
+    appendStagedFiles(Array.from(fileInput.files));
+    fileInput.value = "";
   });
 
   dropZone.addEventListener("dragover", (e) => { 
@@ -194,8 +690,7 @@ document.addEventListener("DOMContentLoaded", function() {
     e.preventDefault();
     dropZone.classList.remove("border-primary-500", "bg-primary-50");
     if(e.dataTransfer.files.length > 0){
-      stagedFiles = [...stagedFiles, ...Array.from(e.dataTransfer.files)];
-      updateUI();
+      appendStagedFiles(Array.from(e.dataTransfer.files));
     }
   });
 
@@ -245,13 +740,17 @@ document.addEventListener("DOMContentLoaded", function() {
   
   const uploadAction = () => {
     if(stagedFiles.length === 0) return;
-    stagingArea.style.display = "none";
+    stagingArea.style.display = "flex";
     progressArea.style.display = "block";
     errorActions.style.display = "none";
     uploadErrorMessage.style.display = "none";
+    retryBtn.disabled = true;
+    clearStaging.disabled = true;
+    startBtn.disabled = true;
     status.classList.remove("text-error", "text-warning");
     phase.textContent = "Schritt 1: Upload läuft";
     status.textContent = "Dateien werden übertragen…";
+    setUploadState("uploading");
     
     const formData = new FormData();
     stagedFiles.forEach(f => formData.append("file", f));
@@ -349,15 +848,21 @@ document.addEventListener("DOMContentLoaded", function() {
                     bar.style.width = "100%";
                     pLabel.textContent = "100%";
                     phase.textContent = failedCount > 0 ? "Teilweise abgeschlossen" : "Abgeschlossen";
+                    _pushUploadHistory(stagedFiles, failedCount > 0 ? "partial" : "uploaded");
+                    stagedFiles = [];
+                    stagedKeys.clear();
+                    void persistDraftFiles([]);
                     if (failedCount > 0) {
                       status.textContent = `${failedCount} Dokument(e) konnten nicht vollständig gelesen werden.`;
                       status.classList.add("text-warning");
+                      setUploadState("error", status.textContent);
                       errorActions.style.display = "flex";
                       retryBtn.textContent = "Erneut versuchen";
                       cancelBtn.textContent = "Zu Aufgaben";
                       cancelBtn.onclick = () => { window.location.href = "/tasks?origin=upload"; };
                     } else {
                       status.textContent = "Analyse fertig. Öffne nächsten Schritt…";
+                      setUploadState("success", status.textContent);
                       if(tokens.length === 1){
                         setTimeout(() => window.location.href = "/review/" + tokens[0] + "/kdnr", 800);
                       } else {
@@ -399,15 +904,18 @@ document.addEventListener("DOMContentLoaded", function() {
       status.textContent = msg;
       status.classList.remove("text-warning");
       status.classList.add("text-error");
+      setUploadState("error", msg);
       uploadErrorMessage.innerHTML = `<div class="rounded-xl border border-error/20 bg-error-bg p-3 text-sm">${msg}</div>`;
       uploadErrorMessage.style.display = "block";
       errorActions.style.display = "flex";
+      retryBtn.disabled = false;
+      clearStaging.disabled = false;
       retryBtn.textContent = "Erneut versuchen";
       cancelBtn.textContent = "Zur Upload-Auswahl";
       cancelBtn.onclick = () => {
         progressArea.style.display = "none";
         stagingArea.style.display = stagedFiles.length > 0 ? "flex" : "none";
-        dropZone.style.display = stagedFiles.length > 0 ? "none" : "block";
+        dropZone.style.display = "block";
       };
     };
 
@@ -415,20 +923,6 @@ document.addEventListener("DOMContentLoaded", function() {
     
     xhr.send(formData);
   };
-
-  retryBtn.addEventListener("click", () => {
-    if (!stagedFiles.length && lastErrorMessage) {
-      progressArea.style.display = "none";
-      dropZone.style.display = "block";
-      return;
-    }
-    uploadAction();
-  });
-
-  cancelBtn.addEventListener("click", () => {
-    progressArea.style.display = "none";
-    updateUI();
-  });
 
   startBtn.addEventListener("click", uploadAction);
   retryBtn.addEventListener("click", uploadAction);
@@ -440,11 +934,35 @@ document.addEventListener("DOMContentLoaded", function() {
     bar.style.width = "0%";
     pLabel.textContent = "0.0%";
     errorActions.style.display = "none";
+    retryBtn.disabled = false;
+    clearStaging.disabled = false;
+    setUploadState(stagedFiles.length > 0 ? "selected" : "idle");
     if (stagedFiles.length > 0) {
       stagingArea.style.display = "flex";
     } else {
       dropZone.style.display = "block";
     }
+  });
+  updateUI();
+  (async () => {
+    const restored = await loadDraftFiles();
+    if (restored.length > 0) {
+      appendStagedFiles(restored);
+    }
+  })();
+  _renderUploadHistory();
+  _writeEditorLock();
+  _renderEditorLock();
+  lockHeartbeat = window.setInterval(() => {
+    _writeEditorLock();
+    _renderEditorLock();
+  }, 10000);
+  window.addEventListener("storage", () => {
+    _renderUploadHistory();
+    _renderEditorLock();
+  });
+  window.addEventListener("beforeunload", () => {
+    if (lockHeartbeat) window.clearInterval(lockHeartbeat);
   });
 });
 </script>

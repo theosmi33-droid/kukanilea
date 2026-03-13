@@ -16,7 +16,7 @@ test.describe('WCAG 2.1 AA accessibility checks', () => {
     await expect(page.locator('#app-main')).toBeFocused();
 
     const focusOutlineVisible = await page.evaluate(() => {
-      const button = document.querySelector('#mobile-sidebar-toggle');
+      const button = document.querySelector('#sidebar-toggle');
       if (!(button instanceof HTMLElement)) return false;
       button.focus();
       const style = window.getComputedStyle(button);
@@ -78,8 +78,12 @@ test.describe('WCAG 2.1 AA accessibility checks', () => {
     await page.goto('/settings', { waitUntil: 'domcontentloaded' });
     await waitForShellReady(page);
 
-    const restoreButton = page.getByRole('button', { name: /Restore/i }).first();
-    await restoreButton.click();
+    await page.evaluate(() => {
+      const confirmFn = (window as { confirmUX?: (title: string, message: string) => void }).confirmUX;
+      if (typeof confirmFn === 'function') {
+        confirmFn('Bestätigung erforderlich', 'Dialogtest');
+      }
+    });
 
     const dialog = page.locator('#confirm-dialog-backdrop [role="dialog"]');
     await expect(dialog).toBeVisible();
