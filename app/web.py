@@ -5051,23 +5051,229 @@ def assistant():
                 results.append(r)
         except Exception:
             pass
-    html = render_template_string(
-        """
-<div class='card p-5'>
-  <div class='text-lg font-semibold mb-1'>Assistant</div>
-  <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
-    <input class='w-full rounded-xl p-2 input' name='q' value='{{ q|e }}' placeholder='Suche…' />
-    <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{{ kdnr|e }}' placeholder='Kdnr optional' />
-    <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
-  </form>
-  <div class='muted text-xs'>Treffer: {{ n }}</div>
-</div>
-        """,
+
+    module_groups = [
+        {
+            "id": "kommunikation",
+            "title": "Kommunikation",
+            "subtitle": "Schneller reagieren, ohne die Kontrolle zu verlieren.",
+            "cards": [
+                {
+                    "title": "E-Mail-Assistent",
+                    "description": "Wichtige Nachrichten schneller erfassen und Antwortvorschläge gezielt prüfen.",
+                    "status": "Verfügbar",
+                    "action": "Öffnen",
+                    "href": "/email",
+                    "hint": "review-first",
+                },
+                {
+                    "title": "Antwortvorschläge",
+                    "description": "Drei klare Antwortrichtungen statt leerem Blatt und unnötigem Hin und Her.",
+                    "status": "Verfügbar",
+                    "action": "Zum Reiter",
+                    "href": "/email",
+                    "hint": "nachvollziehbar",
+                },
+                {
+                    "title": "Follow-up-Hilfe",
+                    "description": "Offene Rückmeldungen und nächste Schritte sichtbar halten.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/email",
+                    "hint": "mandantenbezogen",
+                },
+                {
+                    "title": "Kommunikationsklarheit",
+                    "description": "Kernaussagen knapp zusammenfassen, damit weniger Rückfragen entstehen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/email",
+                    "hint": "alltagstauglich",
+                },
+            ],
+        },
+        {
+            "id": "dokumente",
+            "title": "Dokumente",
+            "subtitle": "Dokumente verstehen, prüfen und sauber weiterführen.",
+            "cards": [
+                {
+                    "title": "Dokument verstehen",
+                    "description": "Dokumente aufnehmen, Kernpunkte sehen und mit Review freigeben.",
+                    "status": "Verfügbar",
+                    "action": "Öffnen",
+                    "href": "/upload",
+                    "hint": "review-first",
+                },
+                {
+                    "title": "Ausschreibung analysieren",
+                    "description": "Lange Unterlagen in klare Prüfschritte für den Betrieb übersetzen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/upload",
+                    "hint": "local-first",
+                },
+                {
+                    "title": "Review-Vorschläge",
+                    "description": "Vorschläge sehen, prüfen und erst dann übernehmen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/upload",
+                    "hint": "kein stilles Handeln",
+                },
+                {
+                    "title": "Folgeaktionen vorbereiten",
+                    "description": "Aus Dokumenten Aufgaben und Termine nachvollziehbar ableiten.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/upload",
+                    "hint": "confirm-gate",
+                },
+            ],
+        },
+        {
+            "id": "baustelle",
+            "title": "Baustelle / Messenger",
+            "subtitle": "Feldkommunikation in eine nutzbare Arbeitsstruktur bringen.",
+            "cards": [
+                {
+                    "title": "Baustellenjournal",
+                    "description": "Verlauf, To-dos und Berichtsentwurf in einer Ansicht bündeln.",
+                    "status": "Verfügbar",
+                    "action": "Öffnen",
+                    "href": "/messenger",
+                    "hint": "nachvollziehbar",
+                },
+                {
+                    "title": "Chat-, Foto- und Sprachzusammenfassung",
+                    "description": "Unklare Eingänge in klare Tagesinfos für die Baustelle überführen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/messenger",
+                    "hint": "local-first",
+                },
+                {
+                    "title": "To-do-Erkennung",
+                    "description": "Vorgeschlagene Folgeaktionen erst nach Bestätigung übernehmen.",
+                    "status": "Verfügbar",
+                    "action": "Zum Reiter",
+                    "href": "/messenger",
+                    "hint": "confirm-gate",
+                },
+                {
+                    "title": "Berichtsentwurf",
+                    "description": "Aus dem Verlauf schneller einen prüfbaren Tagesbericht aufbauen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/messenger",
+                    "hint": "review-first",
+                },
+            ],
+        },
+        {
+            "id": "zeit",
+            "title": "Zeit",
+            "subtitle": "Laufende Zeit im Blick, ohne die Oberfläche zu überladen.",
+            "cards": [
+                {
+                    "title": "Zeitgedächtnis",
+                    "description": "Zeitkontext zur aktuellen Arbeit sichtbar halten und schnell prüfen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/time",
+                    "hint": "mandantenbezogen",
+                },
+                {
+                    "title": "Auto-Timeline",
+                    "description": "Zeitbausteine geordnet sehen, bevor etwas final übernommen wird.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/time",
+                    "hint": "review-first",
+                },
+                {
+                    "title": "Laufende Zeit im Fokus",
+                    "description": "Mobile Erfassung mit klaren Aktionen für den Baustellenalltag.",
+                    "status": "Verfügbar",
+                    "action": "Zum Reiter",
+                    "href": "/time",
+                    "hint": "alltagstauglich",
+                },
+            ],
+        },
+        {
+            "id": "wissen",
+            "title": "Wissen / Gedächtnis",
+            "subtitle": "Wissen wiederfinden und Zusammenhänge schneller sehen.",
+            "cards": [
+                {
+                    "title": "Memory-Layer",
+                    "description": "Wichtige Zusammenhänge pro Mandat bündeln statt verstreut zu suchen.",
+                    "status": "Geplant",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                    "hint": "local-first",
+                },
+                {
+                    "title": "Kontext zusammenführen",
+                    "description": "Relevante Hinweise aus bestehenden Reitern in einem Blick verdichten.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/assistant#suche",
+                    "hint": "nachvollziehbar",
+                },
+                {
+                    "title": "Nachschlagen / Query",
+                    "description": "Gezielt suchen, ohne zwischen mehreren Ansichten zu springen.",
+                    "status": "Verfügbar",
+                    "action": "Zum Reiter",
+                    "href": "/assistant#suche",
+                    "hint": "tenant-sicher",
+                },
+            ],
+        },
+        {
+            "id": "fokus",
+            "title": "Fokus / Privat",
+            "subtitle": "Mehr Ruhe im Alltag durch klare persönliche Priorisierung.",
+            "cards": [
+                {
+                    "title": "Private Aufgaben",
+                    "description": "Persönliche Aufgaben lokal und ohne Cloud-Zwang priorisieren.",
+                    "status": "Geplant",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                    "hint": "local-first",
+                },
+                {
+                    "title": "Priorisierung",
+                    "description": "Wichtiges zuerst sehen und weniger Kontextwechsel haben.",
+                    "status": "Vorbereitet",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                    "hint": "ruhige Oberfläche",
+                },
+                {
+                    "title": "Fokus / Ruhe",
+                    "description": "Arbeitsphasen ohne unnötige Ablenkung strukturieren.",
+                    "status": "Vorbereitet",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                    "hint": "kein Tool-Zoo",
+                },
+            ],
+        },
+    ]
+
+    return _render_base(
+        "assistant.html",
+        active_tab="assistant",
+        page_title="Assistant",
         q=q,
         kdnr=kdnr,
-        n=len(results),
+        results=results,
+        module_groups=module_groups,
     )
-    return _render_base(html, active_tab="assistant", page_title="Assistant")
 
 
 @bp.route("/projects")
