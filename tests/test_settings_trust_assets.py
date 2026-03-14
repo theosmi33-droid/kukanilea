@@ -36,3 +36,6 @@ def test_template_routes_still_reference_core_shell():
     assert "Email-Cockpit" in email_html
     assert "email-inbox-list" in email_html
     assert "Antwortvorschläge" in email_html
+    assert "Handlungsbedarf" in email_html
+    assert "Frist-Risiko" in email_html
+    assert "Risiko: hoch" in email_html

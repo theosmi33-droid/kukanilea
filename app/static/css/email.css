@@ -166,6 +166,16 @@
     color: var(--text-secondary);
 }
 
+.email-pill.warn {
+    background: #fff3cd;
+    color: #7a5900;
+}
+
+.email-pill.danger {
+    background: #fde7e9;
+    color: #8a1f2b;
+}
+
 .email-thread {
     display: flex;
     flex-direction: column;
