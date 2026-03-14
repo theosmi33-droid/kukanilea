@@ -10,6 +10,7 @@ from app.ai.guardrails import validate_prompt
 from app.ai.intent_analyzer import detect_standard_request, detect_write_intent
 from app.auth import current_tenant, login_required
 from app.contracts.tool_contracts import (
+    build_tool_health,
     build_tool_summary,
     extract_chat_message,
     normalize_chat_response,
@@ -108,6 +109,14 @@ def messenger_page():
 @login_required
 def api_messenger_summary():
     return jsonify(build_tool_summary("messenger", tenant=current_tenant() or "default"))
+
+
+@bp.route("/api/messenger/health", methods=["GET"])
+@login_required
+def api_messenger_health():
+    payload = build_tool_health("messenger", tenant=current_tenant() or "default")
+    code = 200 if payload.get("status") in {"ok", "degraded"} else 503
+    return jsonify(payload), code
 
 
 def _enforce_confirm_gate(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
