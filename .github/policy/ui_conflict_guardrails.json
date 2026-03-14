@@ -24,7 +24,12 @@
     ],
     "messenger": [
       "app/templates/messenger.html",
+      "app/static/css/messenger.css",
       "app/static/js/chatbot.js"
+    ],
+    "assistenz": [
+      "app/templates/assistant.html",
+      "app/static/css/assistant.css"
     ],
     "kalender": [
       "app/templates/kalender",
