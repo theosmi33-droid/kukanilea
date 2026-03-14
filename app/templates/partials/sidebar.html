@@ -8,7 +8,8 @@
   {'label': 'Zeiterfassung', 'href': '/time', 'key': 'time', 'match': request.path.startswith('/time'), 'icon': 'icon-time'},
   {'label': 'Projekte', 'href': '/projects', 'key': 'projects', 'match': request.path.startswith('/projects'), 'icon': 'icon-projects'},
   {'label': 'Analyseansicht', 'href': '/visualizer', 'key': 'visualizer', 'match': request.path.startswith('/visualizer'), 'icon': 'icon-visualizer'},
-  {'label': 'Einstellungen', 'href': '/settings', 'key': 'settings', 'match': request.path.startswith('/settings'), 'icon': 'icon-settings'}
+  {'label': 'Einstellungen', 'href': '/settings', 'key': 'settings', 'match': request.path.startswith('/settings'), 'icon': 'icon-settings'},
+  {'label': 'Assistenz', 'href': '/assistant', 'key': 'assistant', 'match': request.path.startswith('/assistant'), 'icon': 'icon-assistant'}
 ] %}
 
 <nav class="sidebar" hx-boost="false" id="app-sidebar" aria-label="Hauptnavigation" data-nav-group="main" data-nav-mode="full-page">
@@ -34,7 +35,7 @@
     </section>
 
     <button class="sidebar-section-label btn btn-ghost btn-sm sidebar-disclosure" type="button" data-disclosure-toggle data-disclosure-target="assistenz-nav" aria-expanded="true">
-      <span class="sidebar-disclosure-label">Assistenz</span>
+      <span class="sidebar-disclosure-label">Assistenz-Module</span>
       <svg class="sidebar-disclosure-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <polyline points="6 9 12 15 18 9"></polyline>
       </svg>
@@ -42,9 +43,21 @@
     <div id="assistenz-nav" data-disclosure-panel class="is-open">
       <ul class="nav-list" role="list" aria-label="Assistenz">
       <li class="nav-item">
-        <a href="/assistant" data-route="/assistant" data-nav-key="assistant" data-nav-active="{{ '1' if request.path.startswith('/assistant') else '0' }}" aria-label="Assistant öffnen" aria-current="{{ 'page' if request.path.startswith('/assistant') else 'false' }}" class="nav-link {{ 'active' if request.path.startswith('/assistant') }}" title="Assistant">
-          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-assistant"></use></svg>
-          <span class="nav-text">Assistant</span>
+        <a href="/assistant#kommunikation" data-route="/assistant#kommunikation" data-nav-key="assistant" aria-label="Assistant öffnen" aria-current="{{ 'page' if request.path.startswith('/assistant') else 'false' }}" class="nav-link {{ 'active' if request.path.startswith('/assistant') }}" title="Kommunikation">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-email"></use></svg>
+          <span class="nav-text">Kommunikation</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/assistant#dokumente" data-route="/assistant#dokumente" aria-label="Dokumente öffnen" class="nav-link" title="Dokumente">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-upload"></use></svg>
+          <span class="nav-text">Dokumente</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/assistant#baustelle" data-route="/assistant#baustelle" aria-label="Baustellenjournal öffnen" class="nav-link" title="Baustelle">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-messenger"></use></svg>
+          <span class="nav-text">Baustelle</span>
         </a>
       </li>
       </ul>

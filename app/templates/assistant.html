@@ -1,0 +1,76 @@
+{% extends "layout.html" %}
+{% block title %}Assistant{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/assistant.css?v=20260314a">
+{% endblock %}
+
+{% block content %}
+<div class="assistant-workspace">
+  <section class="assistant-hero panel">
+    <div class="assistant-hero-head">
+      <h1>Assistenz</h1>
+      <span class="badge">local-first · review-first · nachvollziehbar</span>
+    </div>
+    <p class="assistant-hero-copy">
+      Zusatzmodule bleiben gebündelt in einem Arbeitsraum. Kernreiter bleiben stabil, Assistenz hilft im Kontext.
+    </p>
+  </section>
+
+  <section class="assistant-grid" aria-label="Assistenz-Module">
+    {% for group in module_groups %}
+    <article id="{{ group.id }}" class="assistant-group panel">
+      <header class="assistant-group-head">
+        <div>
+          <h2>{{ group.title }}</h2>
+          <p class="assistant-group-subtitle">{{ group.subtitle }}</p>
+        </div>
+      </header>
+      <div class="assistant-cards">
+        {% for card in group.cards %}
+        <section class="assistant-card">
+          <div class="assistant-card-head">
+            <h3>{{ card.title }}</h3>
+            <span class="assist-status {% if card.status == 'Verfügbar' %}available{% elif card.status == 'Vorbereitet' %}prepared{% else %}planned{% endif %}">{{ card.status }}</span>
+          </div>
+          <p>{{ card.description }}</p>
+          <div class="assistant-card-hint">{{ card.hint }}</div>
+          <div class="assistant-card-actions">
+            {% if card.href %}
+            <a class="btn btn-ghost" href="{{ card.href }}">{{ card.action }}</a>
+            {% else %}
+            <button type="button" class="btn btn-ghost" disabled>{{ card.action }}</button>
+            {% endif %}
+          </div>
+        </section>
+        {% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section id="suche" class="assistant-search panel" aria-label="Assistenz-Schnellsuche">
+    <div class="assistant-group-head">
+      <h2>Kontext-Nachschlagen</h2>
+      <span class="muted">tenant-sicher</span>
+    </div>
+    <form method="get" class="assistant-search-form">
+      <input class="input" name="q" value="{{ q|e }}" placeholder="Suche..." />
+      <input class="input" name="kdnr" value="{{ kdnr|e }}" placeholder="Kdnr optional" />
+      <button class="btn btn-primary" type="submit">Suchen</button>
+    </form>
+    <div class="assistant-results-meta">Treffer: {{ results|length }}</div>
+
+    {% if results %}
+    <ul class="assistant-results">
+      {% for row in results[:8] %}
+      <li>
+        <strong>{{ (row.file_name or row.title or 'Dokument')|e }}</strong>
+        <span class="muted">{{ (row.kdnr or kdnr or 'ohne Kdnr')|e }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

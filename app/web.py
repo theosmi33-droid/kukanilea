@@ -1869,54 +1869,101 @@ HTML_WIZARD = r"""<form method="post" class="space-y-3" autocomplete="off">
   </div>
 </form>"""
 
-HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
-  <div class="lg:col-span-1 space-y-4">
-    <div class="card p-4">
-      <div class="text-lg font-semibold">Timer</div>
-      <div class="muted text-sm">Starte und stoppe Zeiten pro Projekt.</div>
-      <div class="mt-3 space-y-2">
-        <label class="text-xs muted">Projekt</label>
-        <select id="timeProject" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"></select>
-        <label class="text-xs muted">Notiz</label>
-        <input id="timeNote" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="z.B. Baustelle Prüfen" />
-        <div class="flex gap-2 pt-2">
-          <button id="timeStart" class="px-4 py-2 text-sm btn-primary w-full">Start</button>
-          <button id="timeStop" class="px-4 py-2 text-sm btn-outline w-full">Stop</button>
+HTML_TIME = r"""<style nonce="{{ csp_nonce() }}">
+  .time-mobile-wrap { display: grid; gap: 12px; }
+  .time-mobile-shell { display: grid; gap: 12px; width: 100%; }
+  .time-card { border: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); border-radius: var(--radius-lg); padding: 12px; }
+  .time-head-meta { color: var(--text-tertiary); font-size: 12px; }
+  .time-clock-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+  .time-clock { font-size: clamp(1.8rem, 8vw, 2.5rem); line-height: 1; font-weight: 700; letter-spacing: .02em; }
+  .time-state { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--border-subtle); color: var(--text-secondary); background: var(--bg-muted); }
+  .time-state.running { color: #065f46; border-color: rgba(5,150,105,.35); background: rgba(16,185,129,.12); }
+  .time-state.paused { color: #92400e; border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.15); }
+  .time-state.stopped { color: var(--text-secondary); }
+  .time-hide-btn { border: 1px solid var(--border-subtle); border-radius: 999px; padding: 4px 9px; background: var(--bg-surface); font-size: 11px; color: var(--text-secondary); }
+  .time-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .time-action-btn { min-height: 52px; border-radius: 12px; border: 1px solid var(--border-subtle); background: var(--bg-surface); font-weight: 600; font-size: 14px; color: var(--text-main); }
+  .time-action-btn.primary { border-color: transparent; background: var(--primary-600); color: #fff; }
+  .time-action-btn.warn { border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.12); }
+  .time-action-btn.info { border-color: rgba(59,130,246,.45); background: rgba(59,130,246,.12); }
+  .time-context-grid { display: grid; gap: 8px; }
+  .time-input { width: 100%; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px; font-size: 14px; background: var(--bg-surface); color: var(--text-main); }
+  .time-input:focus { outline: none; border-color: var(--primary-400); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-400) 22%, transparent); }
+  .time-row { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .time-summary-grid { display: grid; gap: 8px; grid-template-columns: 1fr; }
+  .time-summary-card { border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--bg-surface); padding: 10px; }
+  .time-entry-list { display: grid; gap: 8px; }
+  .time-entry { border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--bg-surface); padding: 10px; display: grid; gap: 8px; }
+  .time-entry-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .time-inline-btn { border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-surface); color: var(--text-secondary); font-size: 12px; padding: 5px 9px; }
+  .time-status-line { font-size: 12px; color: var(--text-tertiary); min-height: 18px; margin-top: 8px; }
+  .time-status-line.error { color: #b91c1c; }
+  .time-export-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  @media (min-width: 900px) {
+    .time-mobile-shell { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .time-full { grid-column: 1 / -1; }
+    .time-row { grid-template-columns: 1fr 1fr; }
+    .time-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+</style>
+<div class="time-mobile-wrap">
+  <div class="time-mobile-shell">
+    <section class="time-card">
+      <div class="text-lg font-semibold">Zeiterfassung mobil</div>
+      <div class="time-head-meta">Rolle: {{ role }} · lokaler Betriebsmodus</div>
+      <div class="time-clock-row">
+        <div id="timeClock" class="time-clock">00:00:00</div>
+        <button id="timeHide" type="button" class="time-hide-btn" aria-pressed="false" title="Zeit ausblenden">🙈</button>
+      </div>
+      <div id="timeState" class="time-state stopped">Bereit</div>
+      <div id="timeStatus" class="time-status-line">Timer bereit.</div>
+    </section>
+
+    <section class="time-card">
+      <div class="text-sm font-semibold mb-2">Schnellaktionen</div>
+      <div class="time-actions">
+        <button id="timeStart" type="button" class="time-action-btn primary">Start</button>
+        <button id="timeStop" type="button" class="time-action-btn">Stop</button>
+        <button id="timePause" type="button" class="time-action-btn warn">Pause</button>
+        <button id="timeTravel" type="button" class="time-action-btn info">Fahrt</button>
+        <button id="timePhoto" type="button" class="time-action-btn">Foto</button>
+        <button id="exportWeek" type="button" class="time-action-btn">Export</button>
+      </div>
+      <input id="photoInput" type="file" accept="image/*" hidden>
+    </section>
+
+    <section class="time-card time-full">
+      <div class="text-sm font-semibold mb-2">Kontext</div>
+      <div class="time-context-grid">
+        <div class="time-row">
+          <select id="timeProject" class="time-input"></select>
+          <input id="weekDate" type="date" class="time-input">
         </div>
-        <div id="timeStatus" class="muted text-xs pt-2">Timer bereit.</div>
+        <textarea id="timeNote" class="time-input" rows="3" placeholder="Kurze Notiz für Baustelle, Pause, Fahrt oder Materialstatus"></textarea>
       </div>
-    </div>
-    <div class="card p-4">
-      <div class="text-lg font-semibold">Projekt anlegen</div>
-      <div class="mt-3 space-y-2">
-        <input id="projectName" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" placeholder="Projektname" />
-        <textarea id="projectDesc" class="w-full rounded-xl border px-3 py-2 text-sm bg-transparent" rows="3" placeholder="Beschreibung (optional)"></textarea>
-        <button id="projectCreate" class="px-4 py-2 text-sm btn-outline w-full">Anlegen</button>
-        <div id="projectStatus" class="muted text-xs pt-1"></div>
+    </section>
+
+    <section class="time-card">
+      <div class="text-sm font-semibold mb-2">Wochenübersicht</div>
+      <div class="time-head-meta">Summen pro Tag, kompakt und prüfbar.</div>
+      <div id="weekSummary" class="time-summary-grid mt-2"></div>
+    </section>
+
+    <section class="time-card">
+      <div class="text-sm font-semibold mb-2">Projekt anlegen</div>
+      <div class="time-context-grid">
+        <input id="projectName" class="time-input" placeholder="Projektname">
+        <textarea id="projectDesc" class="time-input" rows="3" placeholder="Beschreibung (optional)"></textarea>
+        <button id="projectCreate" class="time-action-btn" type="button">Projekt speichern</button>
+        <div id="projectStatus" class="time-status-line"></div>
       </div>
-    </div>
-    <div class="card p-4">
-      <div class="text-lg font-semibold">Export</div>
-      <div class="muted text-xs">CSV Export der aktuellen Woche.</div>
-      <button id="exportWeek" class="mt-3 px-4 py-2 text-sm btn-outline w-full">CSV herunterladen</button>
-    </div>
-  </div>
-  <div class="lg:col-span-2 space-y-4">
-    <div class="card p-4">
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-        <div>
-          <div class="text-lg font-semibold">Wochenübersicht</div>
-          <div class="muted text-xs">Summen pro Tag, direkt prüfbar.</div>
-        </div>
-        <input id="weekDate" type="date" class="rounded-xl border px-3 py-2 text-sm bg-transparent" />
-      </div>
-      <div id="weekSummary" class="grid md:grid-cols-2 gap-3 mt-4"></div>
-    </div>
-    <div class="card p-4">
-      <div class="text-lg font-semibold">Einträge</div>
-      <div class="muted text-xs">Klick auf „Bearbeiten“ für Korrekturen.</div>
-      <div id="entryList" class="mt-4 space-y-3"></div>
-    </div>
+    </section>
+
+    <section class="time-card time-full">
+      <div class="text-sm font-semibold mb-2">Einträge</div>
+      <div class="time-head-meta">Editierbar und freigabefähig mit Rollenprüfung.</div>
+      <div id="entryList" class="time-entry-list mt-2"></div>
+    </section>
   </div>
 </div>
 <script nonce="{{ csp_nonce() }}">
@@ -1926,7 +1973,14 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   const timeNote = document.getElementById("timeNote");
   const timeStart = document.getElementById("timeStart");
   const timeStop = document.getElementById("timeStop");
+  const timePause = document.getElementById("timePause");
+  const timeTravel = document.getElementById("timeTravel");
+  const timePhoto = document.getElementById("timePhoto");
+  const photoInput = document.getElementById("photoInput");
   const timeStatus = document.getElementById("timeStatus");
+  const timeClock = document.getElementById("timeClock");
+  const timeState = document.getElementById("timeState");
+  const timeHide = document.getElementById("timeHide");
   const projectName = document.getElementById("projectName");
   const projectDesc = document.getElementById("projectDesc");
   const projectCreate = document.getElementById("projectCreate");
@@ -1935,11 +1989,24 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   const weekSummary = document.getElementById("weekSummary");
   const entryList = document.getElementById("entryList");
   const exportWeek = document.getElementById("exportWeek");
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  let runningStartAt = null;
+  let clockInterval = null;
+  let clockHidden = false;
 
   function fmtDuration(seconds){
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    return `${h}h ${m}m`;
+    const s = Math.max(0, Number(seconds) || 0);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return h + "h " + m + "m";
+  }
+
+  function fmtClock(seconds){
+    const s = Math.max(0, Number(seconds) || 0);
+    const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+    const ss = String(Math.floor(s % 60)).padStart(2, "0");
+    return hh + ":" + mm + ":" + ss;
   }
 
   function escapeHtml(value){
@@ -1953,7 +2020,66 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
 
   function setStatus(msg, isError){
     timeStatus.textContent = msg;
-    timeStatus.style.color = isError ? "#f87171" : "";
+    timeStatus.classList.toggle("error", Boolean(isError));
+  }
+
+  function setStateLabel(label, stateClass){
+    timeState.textContent = label;
+    timeState.classList.remove("running", "paused", "stopped");
+    timeState.classList.add(stateClass);
+  }
+
+  function updateClock(){
+    if(clockHidden){
+      timeClock.textContent = "••:••:••";
+      return;
+    }
+    if(!runningStartAt){
+      timeClock.textContent = "00:00:00";
+      return;
+    }
+    const elapsed = Math.max(0, Math.floor((Date.now() - runningStartAt) / 1000));
+    timeClock.textContent = fmtClock(elapsed);
+  }
+
+  function bindRunning(startAtValue){
+    if(clockInterval){
+      window.clearInterval(clockInterval);
+      clockInterval = null;
+    }
+    const parsed = Date.parse(String(startAtValue || ""));
+    if(Number.isFinite(parsed)){
+      runningStartAt = parsed;
+      setStateLabel("Läuft", "running");
+      updateClock();
+      clockInterval = window.setInterval(updateClock, 1000);
+      return;
+    }
+    runningStartAt = null;
+    setStateLabel("Gestoppt", "stopped");
+    updateClock();
+  }
+
+  function appendMarker(marker){
+    const now = new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+    const token = "[" + marker + " " + now + "]";
+    const current = (timeNote.value || "").trim();
+    timeNote.value = current ? current + " " + token : token;
+    timeNote.focus();
+  }
+
+  async function apiJson(url, options){
+    const headers = {"Content-Type": "application/json"};
+    if(csrf){
+      headers["X-CSRF-Token"] = csrf;
+    }
+    const res = await fetch(url, {
+      credentials: "same-origin",
+      headers,
+      ...options,
+    });
+    const data = await res.json();
+    return {res, data};
   }
 
   async function loadProjects(){
@@ -1964,7 +2090,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
     opt.value = "";
     opt.textContent = "Ohne Projekt";
     timeProject.appendChild(opt);
-    (data.projects || []).forEach(p => {
+    (data.projects || []).forEach((p) => {
       const o = document.createElement("option");
       o.value = p.id;
       o.textContent = p.name;
@@ -1975,13 +2101,18 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   function renderSummary(items){
     weekSummary.innerHTML = "";
     if(!items.length){
-      weekSummary.innerHTML = "<div class='muted text-sm'>Keine Einträge.</div>";
+      const empty = document.createElement("div");
+      empty.className = "time-head-meta";
+      empty.textContent = "Keine Einträge in dieser Woche.";
+      weekSummary.appendChild(empty);
       return;
     }
-    items.forEach(day => {
+    items.forEach((day) => {
       const card = document.createElement("div");
-      card.className = "rounded-xl border p-3";
-      card.innerHTML = `<div class="text-sm font-semibold">${escapeHtml(day.date)}</div><div class="muted text-xs">Gesamt</div><div class="text-lg">${fmtDuration(day.total_seconds)}</div>`;
+      card.className = "time-summary-card";
+      card.innerHTML = "<div class='text-sm font-semibold'>" + escapeHtml(day.date) + "</div>"
+        + "<div class='time-head-meta'>Gesamt</div>"
+        + "<div class='text-lg'>" + fmtDuration(day.total_seconds) + "</div>";
       weekSummary.appendChild(card);
     });
   }
@@ -1989,42 +2120,59 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   function renderEntries(entries){
     entryList.innerHTML = "";
     if(!entries.length){
-      entryList.innerHTML = "<div class='muted text-sm'>Keine Einträge in dieser Woche.</div>";
+      const empty = document.createElement("div");
+      empty.className = "time-head-meta";
+      empty.textContent = "Keine Einträge in dieser Woche.";
+      entryList.appendChild(empty);
       return;
     }
-    entries.forEach(entry => {
+
+    entries.forEach((entry) => {
       const wrap = document.createElement("div");
-      wrap.className = "rounded-xl border p-3";
+      wrap.className = "time-entry";
       const entryId = Number.isFinite(Number(entry.id)) ? Number(entry.id) : 0;
-      const approveBtn = (role === "ADMIN" || role === "DEV") && entry.approval_status !== "APPROVED"
-        ? `<button class="px-3 py-1 text-xs btn-outline" data-approve="${entryId}">Freigeben</button>`
-        : "";
-      wrap.innerHTML = `
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-          <div>
-            <div class="text-sm font-semibold">${escapeHtml(entry.project_name || "Ohne Projekt")}</div>
-            <div class="muted text-xs">${escapeHtml(entry.start_at)} → ${escapeHtml(entry.end_at || "läuft")} · ${fmtDuration(entry.duration_seconds || 0)}</div>
-            <div class="muted text-xs">Status: ${escapeHtml(entry.approval_status || "PENDING")} ${entry.approved_by ? "(von " + escapeHtml(entry.approved_by) + ")" : ""}</div>
-            ${entry.note ? `<div class="text-xs mt-1">${escapeHtml(entry.note)}</div>` : ""}
-          </div>
-          <div class="flex gap-2">
-            <button class="px-3 py-1 text-xs btn-outline" data-edit="${entryId}">Bearbeiten</button>
-            ${approveBtn}
-          </div>
-        </div>`;
+
+      const details = document.createElement("div");
+      details.innerHTML = `
+        <div class="text-sm font-semibold">${escapeHtml(entry.project_name || "Ohne Projekt")}</div>
+        <div class="time-head-meta">${escapeHtml(entry.start_at)} → ${escapeHtml(entry.end_at || "läuft")} · ${fmtDuration(entry.duration_seconds || 0)}</div>
+        <div class="time-head-meta">Status: ${escapeHtml(entry.approval_status || "PENDING")} ${entry.approved_by ? "(von " + escapeHtml(entry.approved_by) + ")" : ""}</div>
+        ${entry.note ? `<div class="text-xs">${escapeHtml(entry.note)}</div>` : ""}
+      `;
+      wrap.appendChild(details);
+
+      const actions = document.createElement("div");
+      actions.className = "time-entry-actions";
+
+      const edit = document.createElement("button");
+      edit.className = "time-inline-btn";
+      edit.textContent = "Bearbeiten";
+      edit.setAttribute("data-edit", String(entryId));
+      actions.appendChild(edit);
+
+      if((role === "ADMIN" || role === "DEV") && entry.approval_status !== "APPROVED"){
+        const approve = document.createElement("button");
+        approve.className = "time-inline-btn";
+        approve.textContent = "Freigeben";
+        approve.setAttribute("data-approve", String(entryId));
+        actions.appendChild(approve);
+      }
+      wrap.appendChild(actions);
       entryList.appendChild(wrap);
     });
   }
 
   async function loadEntries(){
     const dateValue = weekDate.value;
-    const res = await fetch(`/api/time/entries?range=week&date=${encodeURIComponent(dateValue)}`, {credentials:"same-origin"});
+    const res = await fetch("/api/time/entries?range=week&date=" + encodeURIComponent(dateValue), {credentials:"same-origin"});
     const data = await res.json();
     renderSummary(data.summary || []);
     renderEntries(data.entries || []);
-    if(data.running){
-      setStatus(`Läuft seit ${data.running.start_at}.`, false);
+    if(data.running && data.running.start_at){
+      bindRunning(data.running.start_at);
+      setStatus("Läuft seit " + data.running.start_at + ".", false);
     } else {
+      bindRunning(null);
       setStatus("Timer bereit.", false);
     }
   }
@@ -2032,20 +2180,17 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   async function startTimer(){
     setStatus("Starte…", false);
     const payload = {project_id: timeProject.value || null, note: timeNote.value || ""};
-    const res = await fetch("/api/time/start", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
-    const data = await res.json();
+    const {res, data} = await apiJson("/api/time/start", {method: "POST", body: JSON.stringify(payload)});
     if(!res.ok){
       setStatus(data.error?.message || "Fehler beim Start.", true);
       return;
     }
-    timeNote.value = "";
     await loadEntries();
   }
 
   async function stopTimer(){
     setStatus("Stoppe…", false);
-    const res = await fetch("/api/time/stop", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({})});
-    const data = await res.json();
+    const {res, data} = await apiJson("/api/time/stop", {method: "POST", body: JSON.stringify({})});
     if(!res.ok){
       setStatus(data.error?.message || "Fehler beim Stoppen.", true);
       return;
@@ -2056,8 +2201,7 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
   async function createProject(){
     projectStatus.textContent = "Speichern…";
     const payload = {name: projectName.value || "", description: projectDesc.value || ""};
-    const res = await fetch("/api/time/projects", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
-    const data = await res.json();
+    const {res, data} = await apiJson("/api/time/projects", {method: "POST", body: JSON.stringify(payload)});
     if(!res.ok){
       projectStatus.textContent = data.error?.message || "Fehler beim Anlegen.";
       return;
@@ -2077,14 +2221,12 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
       const endAt = prompt("Endzeit (YYYY-MM-DDTHH:MM:SS oder leer)", "");
       const note = prompt("Notiz (optional)", "");
       const payload = {entry_id: parseInt(editId, 10), start_at: startAt || null, end_at: endAt || null, note: note || null};
-      const res = await fetch("/api/time/entry/edit", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify(payload)});
-      const data = await res.json();
+      const {res, data} = await apiJson("/api/time/entry/edit", {method: "POST", body: JSON.stringify(payload)});
       if(!res.ok){ alert(data.error?.message || "Fehler beim Update."); }
       await loadEntries();
     }
     if(approveId){
-      const res = await fetch("/api/time/entry/approve", {method:"POST", headers: {"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({entry_id: parseInt(approveId, 10)})});
-      const data = await res.json();
+      const {res, data} = await apiJson("/api/time/entry/approve", {method: "POST", body: JSON.stringify({entry_id: parseInt(approveId, 10)})});
       if(!res.ok){ alert(data.error?.message || "Fehler beim Freigeben."); }
       await loadEntries();
     }
@@ -2092,15 +2234,47 @@ HTML_TIME = r"""<div class="grid gap-6 lg:grid-cols-3">
 
   exportWeek.addEventListener("click", () => {
     const dateValue = weekDate.value;
-    window.location.href = `/api/time/export?range=week&date=${encodeURIComponent(dateValue)}`;
+    window.location.href = "/api/time/export?range=week&date=" + encodeURIComponent(dateValue);
   });
 
   timeStart.addEventListener("click", startTimer);
   timeStop.addEventListener("click", stopTimer);
   projectCreate.addEventListener("click", createProject);
 
+  timePause.addEventListener("click", () => {
+    appendMarker("PAUSE");
+    setStateLabel("Pausiert", "paused");
+    setStatus("Pause markiert. Für Abschluss bitte Stop nutzen.", false);
+  });
+
+  timeTravel.addEventListener("click", () => {
+    appendMarker("FAHRT");
+    setStatus("Fahrt als Marker ergänzt.", false);
+  });
+
+  timePhoto.addEventListener("click", () => {
+    photoInput.click();
+  });
+
+  photoInput.addEventListener("change", () => {
+    const file = photoInput.files && photoInput.files[0];
+    if(file){
+      appendMarker("FOTO:" + file.name);
+      setStatus("Foto-Marker ergänzt: " + file.name, false);
+      photoInput.value = "";
+    }
+  });
+
+  timeHide.addEventListener("click", () => {
+    clockHidden = !clockHidden;
+    timeHide.setAttribute("aria-pressed", String(clockHidden));
+    timeHide.textContent = clockHidden ? "👁️" : "🙈";
+    updateClock();
+  });
+
   const today = new Date().toISOString().slice(0, 10);
   weekDate.value = today;
+  weekDate.addEventListener("change", loadEntries);
   loadProjects().then(loadEntries);
 })();
 </script>
@@ -4877,23 +5051,229 @@ def assistant():
                 results.append(r)
         except Exception:
             pass
-    html = render_template_string(
-        """
-<div class='card p-5'>
-  <div class='text-lg font-semibold mb-1'>Assistant</div>
-  <form method='get' class='flex flex-col md:flex-row gap-2 mb-4'>
-    <input class='w-full rounded-xl p-2 input' name='q' value='{{ q|e }}' placeholder='Suche…' />
-    <input class='w-full md:w-40 rounded-xl p-2 input' name='kdnr' value='{{ kdnr|e }}' placeholder='Kdnr optional' />
-    <button class='rounded-xl px-4 py-2 font-semibold btn-primary md:w-40' type='submit'>Suchen</button>
-  </form>
-  <div class='muted text-xs'>Treffer: {{ n }}</div>
-</div>
-        """,
+
+    module_groups = [
+        {
+            "id": "kommunikation",
+            "title": "Kommunikation",
+            "subtitle": "Schneller reagieren, ohne die Kontrolle zu verlieren.",
+            "cards": [
+                {
+                    "title": "E-Mail-Assistent",
+                    "description": "Wichtige Nachrichten schneller erfassen und Antwortvorschläge gezielt prüfen.",
+                    "status": "Verfügbar",
+                    "action": "Öffnen",
+                    "href": "/email",
+                    "hint": "review-first",
+                },
+                {
+                    "title": "Antwortvorschläge",
+                    "description": "Drei klare Antwortrichtungen statt leerem Blatt und unnötigem Hin und Her.",
+                    "status": "Verfügbar",
+                    "action": "Zum Reiter",
+                    "href": "/email",
+                    "hint": "nachvollziehbar",
+                },
+                {
+                    "title": "Follow-up-Hilfe",
+                    "description": "Offene Rückmeldungen und nächste Schritte sichtbar halten.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/email",
+                    "hint": "mandantenbezogen",
+                },
+                {
+                    "title": "Kommunikationsklarheit",
+                    "description": "Kernaussagen knapp zusammenfassen, damit weniger Rückfragen entstehen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/email",
+                    "hint": "alltagstauglich",
+                },
+            ],
+        },
+        {
+            "id": "dokumente",
+            "title": "Dokumente",
+            "subtitle": "Dokumente verstehen, prüfen und sauber weiterführen.",
+            "cards": [
+                {
+                    "title": "Dokument verstehen",
+                    "description": "Dokumente aufnehmen, Kernpunkte sehen und mit Review freigeben.",
+                    "status": "Verfügbar",
+                    "action": "Öffnen",
+                    "href": "/upload",
+                    "hint": "review-first",
+                },
+                {
+                    "title": "Ausschreibung analysieren",
+                    "description": "Lange Unterlagen in klare Prüfschritte für den Betrieb übersetzen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/upload",
+                    "hint": "local-first",
+                },
+                {
+                    "title": "Review-Vorschläge",
+                    "description": "Vorschläge sehen, prüfen und erst dann übernehmen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/upload",
+                    "hint": "kein stilles Handeln",
+                },
+                {
+                    "title": "Folgeaktionen vorbereiten",
+                    "description": "Aus Dokumenten Aufgaben und Termine nachvollziehbar ableiten.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/upload",
+                    "hint": "confirm-gate",
+                },
+            ],
+        },
+        {
+            "id": "baustelle",
+            "title": "Baustelle / Messenger",
+            "subtitle": "Feldkommunikation in eine nutzbare Arbeitsstruktur bringen.",
+            "cards": [
+                {
+                    "title": "Baustellenjournal",
+                    "description": "Verlauf, To-dos und Berichtsentwurf in einer Ansicht bündeln.",
+                    "status": "Verfügbar",
+                    "action": "Öffnen",
+                    "href": "/messenger",
+                    "hint": "nachvollziehbar",
+                },
+                {
+                    "title": "Chat-, Foto- und Sprachzusammenfassung",
+                    "description": "Unklare Eingänge in klare Tagesinfos für die Baustelle überführen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/messenger",
+                    "hint": "local-first",
+                },
+                {
+                    "title": "To-do-Erkennung",
+                    "description": "Vorgeschlagene Folgeaktionen erst nach Bestätigung übernehmen.",
+                    "status": "Verfügbar",
+                    "action": "Zum Reiter",
+                    "href": "/messenger",
+                    "hint": "confirm-gate",
+                },
+                {
+                    "title": "Berichtsentwurf",
+                    "description": "Aus dem Verlauf schneller einen prüfbaren Tagesbericht aufbauen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/messenger",
+                    "hint": "review-first",
+                },
+            ],
+        },
+        {
+            "id": "zeit",
+            "title": "Zeit",
+            "subtitle": "Laufende Zeit im Blick, ohne die Oberfläche zu überladen.",
+            "cards": [
+                {
+                    "title": "Zeitgedächtnis",
+                    "description": "Zeitkontext zur aktuellen Arbeit sichtbar halten und schnell prüfen.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/time",
+                    "hint": "mandantenbezogen",
+                },
+                {
+                    "title": "Auto-Timeline",
+                    "description": "Zeitbausteine geordnet sehen, bevor etwas final übernommen wird.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/time",
+                    "hint": "review-first",
+                },
+                {
+                    "title": "Laufende Zeit im Fokus",
+                    "description": "Mobile Erfassung mit klaren Aktionen für den Baustellenalltag.",
+                    "status": "Verfügbar",
+                    "action": "Zum Reiter",
+                    "href": "/time",
+                    "hint": "alltagstauglich",
+                },
+            ],
+        },
+        {
+            "id": "wissen",
+            "title": "Wissen / Gedächtnis",
+            "subtitle": "Wissen wiederfinden und Zusammenhänge schneller sehen.",
+            "cards": [
+                {
+                    "title": "Memory-Layer",
+                    "description": "Wichtige Zusammenhänge pro Mandat bündeln statt verstreut zu suchen.",
+                    "status": "Geplant",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                    "hint": "local-first",
+                },
+                {
+                    "title": "Kontext zusammenführen",
+                    "description": "Relevante Hinweise aus bestehenden Reitern in einem Blick verdichten.",
+                    "status": "Vorbereitet",
+                    "action": "Zum Reiter",
+                    "href": "/assistant#suche",
+                    "hint": "nachvollziehbar",
+                },
+                {
+                    "title": "Nachschlagen / Query",
+                    "description": "Gezielt suchen, ohne zwischen mehreren Ansichten zu springen.",
+                    "status": "Verfügbar",
+                    "action": "Zum Reiter",
+                    "href": "/assistant#suche",
+                    "hint": "tenant-sicher",
+                },
+            ],
+        },
+        {
+            "id": "fokus",
+            "title": "Fokus / Privat",
+            "subtitle": "Mehr Ruhe im Alltag durch klare persönliche Priorisierung.",
+            "cards": [
+                {
+                    "title": "Private Aufgaben",
+                    "description": "Persönliche Aufgaben lokal und ohne Cloud-Zwang priorisieren.",
+                    "status": "Geplant",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                    "hint": "local-first",
+                },
+                {
+                    "title": "Priorisierung",
+                    "description": "Wichtiges zuerst sehen und weniger Kontextwechsel haben.",
+                    "status": "Vorbereitet",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                    "hint": "ruhige Oberfläche",
+                },
+                {
+                    "title": "Fokus / Ruhe",
+                    "description": "Arbeitsphasen ohne unnötige Ablenkung strukturieren.",
+                    "status": "Vorbereitet",
+                    "action": "Bald verfügbar",
+                    "href": "",
+                    "hint": "kein Tool-Zoo",
+                },
+            ],
+        },
+    ]
+
+    return _render_base(
+        "assistant.html",
+        active_tab="assistant",
+        page_title="Assistant",
         q=q,
         kdnr=kdnr,
-        n=len(results),
+        results=results,
+        module_groups=module_groups,
     )
-    return _render_base(html, active_tab="assistant", page_title="Assistant")
 
 
 @bp.route("/projects")
