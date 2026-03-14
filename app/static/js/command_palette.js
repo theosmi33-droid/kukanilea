@@ -16,7 +16,7 @@ const CommandPalette = {
     { id: 'nav-projects', title: 'Projekte', subtitle: 'Projektstatus und Steuerung', keywords: 'projects kunden', href: '/projects' },
     { id: 'nav-visualizer', title: 'Analyseansicht', subtitle: 'Dokumente und Daten analysieren', keywords: 'visualizer analyse excel docs', href: '/visualizer' },
     { id: 'nav-settings', title: 'Einstellungen', subtitle: 'System konfigurieren', keywords: 'settings admin', href: '/settings' },
-    { id: 'nav-assistant', title: 'KI Assistant', subtitle: 'Mit dem Assistenten arbeiten', keywords: 'assistant ai', href: '/assistant' },
+    { id: 'nav-assistant', title: 'Assistenz', subtitle: 'Zusatztools und Hilfsmodule', keywords: 'assistant assistenz ai', href: '/assistant' },
   ],
 
   init() {
